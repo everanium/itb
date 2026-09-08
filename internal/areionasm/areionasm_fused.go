@@ -16,7 +16,7 @@ import (
 // fixed key ‖ (group XOR previous round's output), the length-tagged
 // message is absorbed in 24- / 56-byte chunks through the SoEM PRF, and
 // the last chunk's output is the round's result. The kernels
-// (areion_fusedchain{256,512}_<shape>x{4,1}_<tier>_*.s, emitted by
+// (areion_fusedchain{256,512}_<shape>x{8,4,1}_<tier>_*.s, emitted by
 // scripts/kernels/areion/gen_fused_kernels.py) evaluate the whole cascade
 // per lane in one call; [ScalarFusedChain256] / [ScalarFusedChain512]
 // evaluate it in Go over aes.AreionSoEM256 / aes.AreionSoEM512 and are
@@ -216,3 +216,38 @@ func scalarFill512X4(fixedKey *[64]byte, components []uint64, groupIdxBase uint6
 
 // lanePtr views n bytes at p as a slice for the pure-Go fallbacks.
 func lanePtr(p *byte, n int) []byte { return unsafe.Slice(p, n) }
+
+// Eight-lane per-pixel and batch-32 fill references. The eight-lane
+// dispatchers (Fused{256,512}Chain{20,36,68}x8) and the width-512
+// batch-32 fill hook (Fused512Fill13x8) are pinned to these the way the
+// four-lane and batch-16 arms are pinned to the functions above; each is
+// by construction two half-width evaluations over the same components.
+
+func scalarFused256X8(fixedKey *[32]byte, components []uint64, dataPtrs *[8]*byte, n int, out *[8][4]uint64) {
+	for lane := 0; lane < 8; lane++ {
+		out[lane] = ScalarFusedChain256(fixedKey, components, lanePtr(dataPtrs[lane], n))
+	}
+}
+
+func scalarFused512X8(fixedKey *[64]byte, components []uint64, dataPtrs *[8]*byte, n int, out *[8][8]uint64) {
+	for lane := 0; lane < 8; lane++ {
+		out[lane] = ScalarFusedChain512(fixedKey, components, lanePtr(dataPtrs[lane], n))
+	}
+}
+
+// scalarFill512X8 is the pure-Go reference of the width-512 batch-32
+// fill hook: lane i (0..7) runs the cascade over the fill block of
+// group groupIdxBase+i.
+func scalarFill512X8(fixedKey *[64]byte, components []uint64, groupIdxBase uint64, out *[8][8]uint64) {
+	var blk [13]byte
+	for i := range out {
+		fillBlock(&blk, groupIdxBase+uint64(i))
+		out[i] = ScalarFusedChain512(fixedKey, components, blk[:])
+	}
+}
+
+// Half views of the eight-lane argument arrays, for the arms that run
+// a wide call as two narrower ones.
+func ptrs8Half(p *[8]*byte, h int) *[4]*byte            { return (*[4]*byte)(p[4*h : 4*h+4]) }
+func out8x256Half(o *[8][4]uint64, h int) *[4][4]uint64 { return (*[4][4]uint64)(o[4*h : 4*h+4]) }
+func out8x512Half(o *[8][8]uint64, h int) *[4][8]uint64 { return (*[4][8]uint64)(o[4*h : 4*h+4]) }

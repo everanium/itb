@@ -92,8 +92,9 @@ func applyHashTier() {
 }
 
 // applyInterlockPRFFillTier applies ITB_FORCE_INTERLOCK_PRF_FILL_TIER to
-// the batch-16 fill flags (HasVAESAVX512X16, HasVAESAVX2X16,
-// HasAESNIX16), assigned as one consistent set. avx2 and vex have no
+// the fill flags (HasVAESAVX512X16, HasVAESAVX2X16, HasAESNIX16 — the
+// batch-16 hooks and the width-512 batch-32 hook), assigned as one
+// consistent set. avx2 and vex have no
 // batch-16 arm of their own: avx2 disarms the fill (the arms-only probe),
 // vex selects the AES-NI XMM arm, each with a stderr note.
 func applyInterlockPRFFillTier() {

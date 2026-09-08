@@ -106,3 +106,58 @@ func areion512InterlockFillBatch16(key []byte) (itb.InterlockFillFunc16x512, err
 		areionasm.Fused512Fill13x4(&k, components, groupIdxBase, out)
 	}, nil
 }
+
+// areion512FusedChainHash8 is the [Spec.FusedChainHash512x8] factory of
+// the areion512 entry — the width-512 form of areion256FusedChainHash8
+// with the 64-byte fixed key of the arms.
+func areion512FusedChainHash8(key []byte) (itb.BatchFusedChainHashFunc512x8, error) {
+	if len(key) != 64 {
+		return nil, fmt.Errorf("hashes: %q fused cascade needs a 64-byte key, got %d", CipherAreion512, len(key))
+	}
+	if forcetier.ChainHashSeq() || !areionasm.FusedX8Active() {
+		return nil, nil
+	}
+	var k [64]byte
+	copy(k[:], key)
+	return func(components []uint64, data *[8][]byte) ([8][8]uint64, bool) {
+		var out [8][8]uint64
+		n := len(data[0])
+		switch n {
+		case 20, 36, 68:
+		default:
+			return out, false
+		}
+		var dataPtrs [8]*byte
+		for l := range data {
+			if len(data[l]) != n {
+				return out, false
+			}
+			dataPtrs[l] = &data[l][0]
+		}
+		switch n {
+		case 20:
+			areionasm.Fused512Chain20x8(&k, components, &dataPtrs, &out)
+		case 36:
+			areionasm.Fused512Chain36x8(&k, components, &dataPtrs, &out)
+		case 68:
+			areionasm.Fused512Chain68x8(&k, components, &dataPtrs, &out)
+		}
+		return out, true
+	}, nil
+}
+
+// areion512InterlockFillBatch32 is the [Spec.InterlockFillBatch32x512]
+// factory: the batch-32 Interlocked Barrier fill hook that runs the
+// whole cascade over eight consecutive 13-byte fill blocks per call
+// (see [itb.InterlockFillFunc32x512]) — the eight-lane ZMM / NEON fill
+// kernels, or two four-lane calls on the YMM / XMM tiers.
+func areion512InterlockFillBatch32(key []byte) (itb.InterlockFillFunc32x512, error) {
+	if len(key) != 64 {
+		return nil, fmt.Errorf("hashes: %q interlock fill batch-32 needs a 64-byte key, got %d", CipherAreion512, len(key))
+	}
+	var k [64]byte
+	copy(k[:], key)
+	return func(components []uint64, groupIdxBase uint64, out *[8][8]uint64) {
+		areionasm.Fused512Fill13x8(&k, components, groupIdxBase, out)
+	}, nil
+}

@@ -12,12 +12,14 @@ import (
 // batch-32 fill hook of the width-256 / width-512 attach surface:
 // Spec.FusedChainHash256x8 / FusedChainHash512x8 through AttachFused256 /
 // AttachFused512 and Spec.InterlockFillBatch32x256 / x512 through
-// AttachInterlockBatch32x256 / x512. Every shipped entry leaves the
-// factory fields nil, so the helpers are pinned as no-ops on the
-// registry and exercised through custom primitives registered with
-// pure-Go factories, including divergent factories the Register smoke
-// must reject and declining factories (nil kernel) that leave the seed
-// on the narrower paths.
+// AttachInterlockBatch32x256 / x512. On the shipped registry the helpers
+// are pinned entry by entry — a hook an entry's factory returns must be
+// bit-exact with the sequential cascade of the entry's single arm, and
+// an entry without a factory leaves the seed unhooked — and the helpers
+// are exercised through custom primitives registered with pure-Go
+// factories, including divergent factories the Register smoke must
+// reject and declining factories (nil kernel) that leave the seed on
+// the narrower paths.
 
 // goX8Factory256 returns a FusedChainHash256x8 factory evaluating the
 // cascade lane by lane in Go over the supplied single arm; corrupt flips
@@ -143,21 +145,26 @@ func cascade512(single itb.HashFunc512, components []uint64, data []byte) [8]uin
 	return h
 }
 
-// TestWide32AttachHelpersRegistry pins that no shipped entry populates
-// the eight-lane / batch-32 factory fields and that the helpers are
-// no-ops on every shipped name and on unknown names.
+// TestWide32AttachHelpersRegistry pins the attach helpers on every
+// shipped entry: an entry that populates an eight-lane or batch-32
+// factory yields hooks that are bit-exact with the sequential cascade of
+// its single arm (an eight-lane hook may decline a shape with ok =
+// false), an entry without one leaves the seed unhooked, and unknown
+// names are no-ops.
 func TestWide32AttachHelpersRegistry(t *testing.T) {
+	comps := make([]uint64, 16)
+	for i := range comps {
+		comps[i] = 0x0123456789abcdef ^ uint64(i)*0x9e3779b97f4a7c15
+	}
+	const base = uint64(0x00FFFFFFFFFFFFF8)
 	for _, spec := range Registry {
 		switch spec.Width {
 		case W256:
-			if spec.FusedChainHash256x8 != nil || spec.InterlockFillBatch32x256 != nil {
-				t.Fatalf("%s: shipped entry populates a wide factory field", spec.Name)
-			}
 			s, err := newSeed256(spec.Name, 512)
 			if err != nil {
 				t.Fatal(err)
 			}
-			_, _, key, err := Make256Pair(spec.Name)
+			single, _, key, err := Make256Pair(spec.Name)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -167,18 +174,50 @@ func TestWide32AttachHelpersRegistry(t *testing.T) {
 			if err := AttachInterlockBatch32x256(s, spec.Name, key); err != nil {
 				t.Fatalf("AttachInterlockBatch32x256: %v", err)
 			}
-			if s.BatchFusedChain8() != nil || s.InterlockFillX32() != nil {
-				t.Fatalf("%s: attach populated a wide hook", spec.Name)
+			if spec.FusedChainHash256x8 == nil && s.BatchFusedChain8() != nil {
+				t.Fatalf("%s: attach populated an eight-lane hook without a factory", spec.Name)
+			}
+			if spec.InterlockFillBatch32x256 == nil && s.InterlockFillX32() != nil {
+				t.Fatalf("%s: attach populated a batch-32 hook without a factory", spec.Name)
+			}
+			if x8 := s.BatchFusedChain8(); x8 != nil {
+				for _, n := range []int{13, 20, 36, 68} {
+					var lanes [8][]byte
+					for l := range lanes {
+						lanes[l] = make([]byte, n)
+						for i := range lanes[l] {
+							lanes[l][i] = byte(i*3 + l*7 + 1)
+						}
+					}
+					out, ok := x8(comps, &lanes)
+					if !ok {
+						continue
+					}
+					for l := range lanes {
+						if out[l] != cascade256(single, comps, lanes[l]) {
+							t.Fatalf("%s: eight-lane hook lane %d diverges at len=%d", spec.Name, l, n)
+						}
+					}
+				}
+			}
+			if fill := s.InterlockFillX32(); fill != nil {
+				var out [16][4]uint64
+				fill(comps, base, &out)
+				for i := range out {
+					var block [13]byte
+					block[0] = 0x03
+					binary.LittleEndian.PutUint64(block[1:9], base+uint64(i))
+					if out[i] != cascade256(single, comps, block[:]) {
+						t.Fatalf("%s: batch-32 hook group %d diverges", spec.Name, i)
+					}
+				}
 			}
 		case W512:
-			if spec.FusedChainHash512x8 != nil || spec.InterlockFillBatch32x512 != nil {
-				t.Fatalf("%s: shipped entry populates a wide factory field", spec.Name)
-			}
 			s, err := newSeed512(spec.Name, 512)
 			if err != nil {
 				t.Fatal(err)
 			}
-			_, _, key, err := Make512Pair(spec.Name)
+			single, _, key, err := Make512Pair(spec.Name)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -188,8 +227,43 @@ func TestWide32AttachHelpersRegistry(t *testing.T) {
 			if err := AttachInterlockBatch32x512(s, spec.Name, key); err != nil {
 				t.Fatalf("AttachInterlockBatch32x512: %v", err)
 			}
-			if s.BatchFusedChain8() != nil || s.InterlockFillX32() != nil {
-				t.Fatalf("%s: attach populated a wide hook", spec.Name)
+			if spec.FusedChainHash512x8 == nil && s.BatchFusedChain8() != nil {
+				t.Fatalf("%s: attach populated an eight-lane hook without a factory", spec.Name)
+			}
+			if spec.InterlockFillBatch32x512 == nil && s.InterlockFillX32() != nil {
+				t.Fatalf("%s: attach populated a batch-32 hook without a factory", spec.Name)
+			}
+			if x8 := s.BatchFusedChain8(); x8 != nil {
+				for _, n := range []int{13, 20, 36, 68} {
+					var lanes [8][]byte
+					for l := range lanes {
+						lanes[l] = make([]byte, n)
+						for i := range lanes[l] {
+							lanes[l][i] = byte(i*3 + l*7 + 1)
+						}
+					}
+					out, ok := x8(comps, &lanes)
+					if !ok {
+						continue
+					}
+					for l := range lanes {
+						if out[l] != cascade512(single, comps, lanes[l]) {
+							t.Fatalf("%s: eight-lane hook lane %d diverges at len=%d", spec.Name, l, n)
+						}
+					}
+				}
+			}
+			if fill := s.InterlockFillX32(); fill != nil {
+				var out [8][8]uint64
+				fill(comps, base, &out)
+				for i := range out {
+					var block [13]byte
+					block[0] = 0x03
+					binary.LittleEndian.PutUint64(block[1:9], base+uint64(i))
+					if out[i] != cascade512(single, comps, block[:]) {
+						t.Fatalf("%s: batch-32 hook group %d diverges", spec.Name, i)
+					}
+				}
 			}
 		}
 	}

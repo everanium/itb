@@ -119,3 +119,48 @@ func areion256InterlockFillBatch16(key []byte) (itb.InterlockFillFunc16x256, err
 		areionasm.Fused256Fill13x8(&k, components, groupIdxBase, out)
 	}, nil
 }
+
+// areion256FusedChainHash8 is the [Spec.FusedChainHash256x8] factory of
+// the areion256 entry: the whole ChainHash256 cascade on eight lanes
+// inside one internal/areionasm eight-lane dispatcher call for the
+// three nonce-buf shapes (20 / 36 / 68 bytes, all lanes equal); any
+// other lane-length configuration reports ok = false and the seed runs
+// the four-lane path twice. The hook is returned only where the
+// eight-lane ZMM arm is the selected tier (areionasm.FusedX8Active), so a
+// seed built on any other host or tier keeps the four-lane stride; under
+// ITB_FORCE_CHAINHASH_SEQ it is nil as the four-lane evaluators are.
+func areion256FusedChainHash8(key []byte) (itb.BatchFusedChainHashFunc256x8, error) {
+	if len(key) != 32 {
+		return nil, fmt.Errorf("hashes: %q fused cascade needs a 32-byte key, got %d", CipherAreion256, len(key))
+	}
+	if forcetier.ChainHashSeq() || !areionasm.FusedX8Active() {
+		return nil, nil
+	}
+	var k [32]byte
+	copy(k[:], key)
+	return func(components []uint64, data *[8][]byte) ([8][4]uint64, bool) {
+		var out [8][4]uint64
+		n := len(data[0])
+		switch n {
+		case 20, 36, 68:
+		default:
+			return out, false
+		}
+		var dataPtrs [8]*byte
+		for l := range data {
+			if len(data[l]) != n {
+				return out, false
+			}
+			dataPtrs[l] = &data[l][0]
+		}
+		switch n {
+		case 20:
+			areionasm.Fused256Chain20x8(&k, components, &dataPtrs, &out)
+		case 36:
+			areionasm.Fused256Chain36x8(&k, components, &dataPtrs, &out)
+		case 68:
+			areionasm.Fused256Chain68x8(&k, components, &dataPtrs, &out)
+		}
+		return out, true
+	}, nil
+}

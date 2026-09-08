@@ -308,3 +308,51 @@ func TestAreionHooksZeroAlloc(t *testing.T) {
 	check("areion256 InterlockFillX16", func() { fill256(lock256, 0x00FFFFFFFFFFFFF8, &out256) })
 	check("areion512 InterlockFillX16", func() { fill512(lock512, 0x00FFFFFFFFFFFFF8, &out512) })
 }
+
+// TestAreionWideHooksZeroAlloc asserts that the eight-lane per-pixel
+// hooks and the width-512 batch-32 fill hook installed on areion256 /
+// areion512 seeds run without a heap allocation per call; the eight-lane
+// hooks are present only where the ZMM eight-lane arm is selected.
+func TestAreionWideHooksZeroAlloc(t *testing.T) {
+	if forcetier.ChainHashSeq() {
+		t.Skip("ITB_FORCE_CHAINHASH_SEQ disables the fused hooks")
+	}
+	check := func(what string, f func()) {
+		t.Helper()
+		if n := testing.AllocsPerRun(50, f); n != 0 {
+			t.Errorf("%s allocates %.0f objects per call", what, n)
+		}
+	}
+	s256, _, err := NewSeed256(CipherAreion256, 1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s512, _, err := NewSeed512(CipherAreion512, 1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lock256 := append(areionKATLock(256), s256.Components...)
+	lock512 := append(areionKATLock(512), s512.Components...)
+	for _, n := range []int{20, 36, 68} {
+		buf := aescmacKATBuf(n, 4)
+		var lanes [8][]byte
+		for l := range lanes {
+			lanes[l] = append([]byte(nil), buf...)
+		}
+		if x8 := s256.BatchFusedChain8(); x8 != nil {
+			check(fmt.Sprintf("areion256 BatchFusedChain8 n=%d", n), func() { x8(lock256, &lanes) })
+		}
+		if x8 := s512.BatchFusedChain8(); x8 != nil {
+			check(fmt.Sprintf("areion512 BatchFusedChain8 n=%d", n), func() { x8(lock512, &lanes) })
+		}
+	}
+	if s256.InterlockFillX32() != nil {
+		t.Error("areion256 carries a batch-32 fill hook; none is registered")
+	}
+	fill := s512.InterlockFillX32()
+	if fill == nil {
+		t.Fatal("areion512 carries no batch-32 fill hook")
+	}
+	var out [8][8]uint64
+	check("areion512 InterlockFillX32", func() { fill(lock512, 0x00FFFFFFFFFFFFF8, &out) })
+}

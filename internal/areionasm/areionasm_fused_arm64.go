@@ -16,8 +16,10 @@ var (
 	FusedHasAESNI      = false
 )
 
-// Batch-16 fill tier flag of the NEON arm: the fill hooks run four-lane
-// NEON kernel calls over Go-synthesised fill blocks.
+// Batch-16 / batch-32 fill tier flag of the NEON arm: the width-256
+// batch-16 hook and the width-512 batch-32 hook run the eight-lane NEON
+// fill kernels (blocks synthesised in the frame), the width-512
+// batch-16 hook a four-lane kernel call over Go-synthesised blocks.
 var (
 	HasARMAESX16     = aes.CPU.HasARMCrypto
 	HasVAESAVX512X16 = false
@@ -148,19 +150,15 @@ func Fused512Chain68x1(fixedKey *[64]byte, components []uint64, data *byte, out 
 	*out = ScalarFusedChain512(fixedKey, components, lanePtr(data, 68))
 }
 
-// Fused256Fill13x8 runs the width-256 batch-16 fill as two four-lane
-// NEON kernel calls over Go-synthesised fill blocks.
+// Fused256Fill13x8 runs the width-256 batch-16 fill through the
+// eight-lane NEON kernel (four lanes per pass, two passes, fill blocks
+// synthesised in the frame).
 func Fused256Fill13x8(fixedKey *[32]byte, components []uint64, groupIdxBase uint64, out *[8][4]uint64) {
 	if !HasARMAESX16 || !validComponents256(components) {
 		scalarFill256X8(fixedKey, components, groupIdxBase, out)
 		return
 	}
-	c, ng := &components[0], len(components)/4
-	var blocks [4][13]byte
-	for h := 0; h < 2; h++ {
-		ptrs := fillPtrs4(&blocks, groupIdxBase+uint64(4*h))
-		areion256FusedChain13x4NeonAsm(fixedKey, c, ng, &ptrs, (*[4][4]uint64)(out[4*h:4*h+4]))
-	}
+	areion256FusedChain13x8NeonAsm(fixedKey, &components[0], len(components)/4, groupIdxBase, out)
 }
 
 // Fused512Fill13x4 runs the width-512 batch-16 fill as one four-lane
@@ -231,3 +229,54 @@ func areion512FusedChain68x4NeonAsm(fixedKey *[64]byte, comps *uint64, nGroups i
 
 //go:noescape
 func areion512FusedChain68x1NeonAsm(fixedKey *[64]byte, comps *uint64, nGroups int, data *byte, out *[8]uint64)
+
+// Eight-lane per-pixel arm: no NEON eight-lane per-pixel kernel exists;
+// the eight-lane dispatchers run two four-lane NEON calls.
+var FusedHasVAESAVX512X8 = false
+
+// FusedX8Active is always false on arm64 builds.
+func FusedX8Active() bool { return false }
+
+func Fused256Chain20x8(fixedKey *[32]byte, components []uint64, dataPtrs *[8]*byte, out *[8][4]uint64) {
+	Fused256Chain20x4(fixedKey, components, ptrs8Half(dataPtrs, 0), out8x256Half(out, 0))
+	Fused256Chain20x4(fixedKey, components, ptrs8Half(dataPtrs, 1), out8x256Half(out, 1))
+}
+func Fused256Chain36x8(fixedKey *[32]byte, components []uint64, dataPtrs *[8]*byte, out *[8][4]uint64) {
+	Fused256Chain36x4(fixedKey, components, ptrs8Half(dataPtrs, 0), out8x256Half(out, 0))
+	Fused256Chain36x4(fixedKey, components, ptrs8Half(dataPtrs, 1), out8x256Half(out, 1))
+}
+func Fused256Chain68x8(fixedKey *[32]byte, components []uint64, dataPtrs *[8]*byte, out *[8][4]uint64) {
+	Fused256Chain68x4(fixedKey, components, ptrs8Half(dataPtrs, 0), out8x256Half(out, 0))
+	Fused256Chain68x4(fixedKey, components, ptrs8Half(dataPtrs, 1), out8x256Half(out, 1))
+}
+func Fused512Chain20x8(fixedKey *[64]byte, components []uint64, dataPtrs *[8]*byte, out *[8][8]uint64) {
+	Fused512Chain20x4(fixedKey, components, ptrs8Half(dataPtrs, 0), out8x512Half(out, 0))
+	Fused512Chain20x4(fixedKey, components, ptrs8Half(dataPtrs, 1), out8x512Half(out, 1))
+}
+func Fused512Chain36x8(fixedKey *[64]byte, components []uint64, dataPtrs *[8]*byte, out *[8][8]uint64) {
+	Fused512Chain36x4(fixedKey, components, ptrs8Half(dataPtrs, 0), out8x512Half(out, 0))
+	Fused512Chain36x4(fixedKey, components, ptrs8Half(dataPtrs, 1), out8x512Half(out, 1))
+}
+func Fused512Chain68x8(fixedKey *[64]byte, components []uint64, dataPtrs *[8]*byte, out *[8][8]uint64) {
+	Fused512Chain68x4(fixedKey, components, ptrs8Half(dataPtrs, 0), out8x512Half(out, 0))
+	Fused512Chain68x4(fixedKey, components, ptrs8Half(dataPtrs, 1), out8x512Half(out, 1))
+}
+
+// Fused512Fill13x8 runs the width-512 batch-32 fill through the
+// eight-lane NEON kernel (two lanes per pass, four passes, fill blocks
+// synthesised in the frame).
+func Fused512Fill13x8(fixedKey *[64]byte, components []uint64, groupIdxBase uint64, out *[8][8]uint64) {
+	if !HasARMAESX16 || !validComponents512(components) {
+		scalarFill512X8(fixedKey, components, groupIdxBase, out)
+		return
+	}
+	areion512FusedChain13x8NeonAsm(fixedKey, &components[0], len(components)/8, groupIdxBase, out)
+}
+
+// Eight-lane fill kernels (areion_fusedchain{256,512}_13x8_neon_arm64.s).
+//
+//go:noescape
+func areion256FusedChain13x8NeonAsm(fixedKey *[32]byte, comps *uint64, nGroups int, groupIdxBase uint64, out *[8][4]uint64)
+
+//go:noescape
+func areion512FusedChain13x8NeonAsm(fixedKey *[64]byte, comps *uint64, nGroups int, groupIdxBase uint64, out *[8][8]uint64)

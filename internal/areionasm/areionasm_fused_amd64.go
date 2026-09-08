@@ -2,7 +2,11 @@
 
 package areionasm
 
-import aes "github.com/jedisct1/go-aes"
+import (
+	aes "github.com/jedisct1/go-aes"
+
+	"github.com/everanium/itb/internal/forcetier"
+)
 
 // Fused-cascade tier flags of the Areion-SoEM kernels. At most one flag
 // of the family is true; auto-selection takes the widest VAES tier the
@@ -27,11 +31,12 @@ var (
 	FusedHasARMAES = false
 )
 
-// Batch-16 fill tier flags: the tier of the Interlocked Barrier fill
-// hooks (Fused256Fill13x8 / Fused512Fill13x4), overridable on their own
-// through ITB_FORCE_INTERLOCK_PRF_FILL_TIER. The ZMM tier of width 256
-// runs the dedicated eight-lane kernel; every other arm runs four-lane
-// kernel calls over Go-synthesised fill blocks.
+// Fill tier flags: the tier of the Interlocked Barrier fill hooks
+// (Fused256Fill13x8 / Fused512Fill13x4 / Fused512Fill13x8), overridable
+// on their own through ITB_FORCE_INTERLOCK_PRF_FILL_TIER. The ZMM tier
+// runs the dedicated eight-lane kernels (the width-256 batch-16 hook,
+// the width-512 batch-32 hook); every other arm runs four-lane kernel
+// calls over Go-synthesised fill blocks.
 var (
 	HasVAESAVX512X16 = aes.CPU.HasVAES && aes.CPU.HasAVX512
 	HasVAESAVX2X16   = aes.CPU.HasVAES && aes.CPU.HasAVX2 && !aes.CPU.HasAVX512
@@ -464,3 +469,141 @@ func areion512FusedChain68x1AesNiAsm(fixedKey *[64]byte, comps *uint64, nGroups 
 //
 //go:noescape
 func areion256FusedChain13x8Avx512Asm(fixedKey *[32]byte, comps *uint64, nGroups int, groupIdxBase uint64, out *[8][4]uint64)
+
+// FusedHasVAESAVX512X8 arms the eight-lane ZMM per-pixel kernels
+// (Fused{256,512}Chain{20,36,68}x8: two four-lane groups with
+// interleaved round streams). Needs VAES + AVX-512; cleared at init by
+// ITB_FORCE_CHAINHASH_X4 so a parity or benchmark run can pin the
+// four-lane kernels on a host that would otherwise select x8. The flag
+// is a package variable so the in-package tests and the parent
+// package's wire-parity tests can toggle the arm within one process.
+//
+// The eight-lane arm is selected only together with the ZMM fused tier
+// (see [FusedX8Active]); it does not add a tier of its own to the
+// exclusive fused flag set above.
+var FusedHasVAESAVX512X8 = aes.CPU.HasVAES && aes.CPU.HasAVX512 && !forcetier.ChainHashX4()
+
+// FusedX8Active reports whether the eight-lane ZMM per-pixel kernels are
+// the selected arm: [FusedHasVAESAVX512X8] together with
+// [FusedHasVAESAVX512], so ITB_FORCE_HASH_TIER — which reassigns the
+// fused tier flags as one set — steers the eight-lane arm with the rest
+// of the family. Under any other flag state the eight-lane dispatchers
+// run two four-lane calls of the selected tier. The parent package's
+// attach step consults this predicate, so a seed built on a host or
+// tier without the arm carries no eight-lane hook and its pixel loop
+// keeps the four-lane stride.
+func FusedX8Active() bool { return FusedHasVAESAVX512X8 && FusedHasVAESAVX512 }
+
+// Fused256Chain20x8 runs the width-256 cascade on eight 20-byte lanes.
+func Fused256Chain20x8(fixedKey *[32]byte, components []uint64, dataPtrs *[8]*byte, out *[8][4]uint64) {
+	if FusedX8Active() && validComponents256(components) {
+		areion256FusedChain20x8Avx512Asm(fixedKey, &components[0], len(components)/4, dataPtrs, out)
+		return
+	}
+	Fused256Chain20x4(fixedKey, components, ptrs8Half(dataPtrs, 0), out8x256Half(out, 0))
+	Fused256Chain20x4(fixedKey, components, ptrs8Half(dataPtrs, 1), out8x256Half(out, 1))
+}
+
+// Fused256Chain36x8 runs the width-256 cascade on eight 36-byte lanes.
+func Fused256Chain36x8(fixedKey *[32]byte, components []uint64, dataPtrs *[8]*byte, out *[8][4]uint64) {
+	if FusedX8Active() && validComponents256(components) {
+		areion256FusedChain36x8Avx512Asm(fixedKey, &components[0], len(components)/4, dataPtrs, out)
+		return
+	}
+	Fused256Chain36x4(fixedKey, components, ptrs8Half(dataPtrs, 0), out8x256Half(out, 0))
+	Fused256Chain36x4(fixedKey, components, ptrs8Half(dataPtrs, 1), out8x256Half(out, 1))
+}
+
+// Fused256Chain68x8 runs the width-256 cascade on eight 68-byte lanes.
+func Fused256Chain68x8(fixedKey *[32]byte, components []uint64, dataPtrs *[8]*byte, out *[8][4]uint64) {
+	if FusedX8Active() && validComponents256(components) {
+		areion256FusedChain68x8Avx512Asm(fixedKey, &components[0], len(components)/4, dataPtrs, out)
+		return
+	}
+	Fused256Chain68x4(fixedKey, components, ptrs8Half(dataPtrs, 0), out8x256Half(out, 0))
+	Fused256Chain68x4(fixedKey, components, ptrs8Half(dataPtrs, 1), out8x256Half(out, 1))
+}
+
+// Fused512Chain20x8 runs the width-512 cascade on eight 20-byte lanes.
+func Fused512Chain20x8(fixedKey *[64]byte, components []uint64, dataPtrs *[8]*byte, out *[8][8]uint64) {
+	if FusedX8Active() && validComponents512(components) {
+		areion512FusedChain20x8Avx512Asm(fixedKey, &components[0], len(components)/8, dataPtrs, out)
+		return
+	}
+	Fused512Chain20x4(fixedKey, components, ptrs8Half(dataPtrs, 0), out8x512Half(out, 0))
+	Fused512Chain20x4(fixedKey, components, ptrs8Half(dataPtrs, 1), out8x512Half(out, 1))
+}
+
+// Fused512Chain36x8 runs the width-512 cascade on eight 36-byte lanes.
+func Fused512Chain36x8(fixedKey *[64]byte, components []uint64, dataPtrs *[8]*byte, out *[8][8]uint64) {
+	if FusedX8Active() && validComponents512(components) {
+		areion512FusedChain36x8Avx512Asm(fixedKey, &components[0], len(components)/8, dataPtrs, out)
+		return
+	}
+	Fused512Chain36x4(fixedKey, components, ptrs8Half(dataPtrs, 0), out8x512Half(out, 0))
+	Fused512Chain36x4(fixedKey, components, ptrs8Half(dataPtrs, 1), out8x512Half(out, 1))
+}
+
+// Fused512Chain68x8 runs the width-512 cascade on eight 68-byte lanes.
+func Fused512Chain68x8(fixedKey *[64]byte, components []uint64, dataPtrs *[8]*byte, out *[8][8]uint64) {
+	if FusedX8Active() && validComponents512(components) {
+		areion512FusedChain68x8Avx512Asm(fixedKey, &components[0], len(components)/8, dataPtrs, out)
+		return
+	}
+	Fused512Chain68x4(fixedKey, components, ptrs8Half(dataPtrs, 0), out8x512Half(out, 0))
+	Fused512Chain68x4(fixedKey, components, ptrs8Half(dataPtrs, 1), out8x512Half(out, 1))
+}
+
+// Fused512Fill13x8 is the batch-32 Interlocked Barrier fill hook of
+// width 512: lane i (0..7) runs the cascade over the fill block of group
+// groupIdxBase+i. The ZMM tier synthesises the blocks in-register and
+// runs two interleaved four-lane groups; the YMM and XMM tiers run two
+// four-lane kernel calls over Go-synthesised blocks.
+func Fused512Fill13x8(fixedKey *[64]byte, components []uint64, groupIdxBase uint64, out *[8][8]uint64) {
+	if !validComponents512(components) {
+		scalarFill512X8(fixedKey, components, groupIdxBase, out)
+		return
+	}
+	c, ng := &components[0], len(components)/8
+	switch {
+	case HasVAESAVX512X16:
+		areion512FusedChain13x8Avx512Asm(fixedKey, c, ng, groupIdxBase, out)
+	case HasVAESAVX2X16:
+		var blocks [4][13]byte
+		for h := 0; h < 2; h++ {
+			ptrs := fillPtrs4(&blocks, groupIdxBase+uint64(4*h))
+			areion512FusedChain13x4VaesAvx2Asm(fixedKey, c, ng, &ptrs, out8x512Half(out, h))
+		}
+	case HasAESNIX16:
+		var blocks [4][13]byte
+		for h := 0; h < 2; h++ {
+			ptrs := fillPtrs4(&blocks, groupIdxBase+uint64(4*h))
+			areion512FusedChain13x4AesNiAsm(fixedKey, c, ng, &ptrs, out8x512Half(out, h))
+		}
+	default:
+		scalarFill512X8(fixedKey, components, groupIdxBase, out)
+	}
+}
+
+// Wide kernels (areion_fusedchain{256,512}_<shape>x8_avx512_amd64.s).
+//
+//go:noescape
+func areion256FusedChain20x8Avx512Asm(fixedKey *[32]byte, comps *uint64, nGroups int, dataPtrs *[8]*byte, out *[8][4]uint64)
+
+//go:noescape
+func areion256FusedChain36x8Avx512Asm(fixedKey *[32]byte, comps *uint64, nGroups int, dataPtrs *[8]*byte, out *[8][4]uint64)
+
+//go:noescape
+func areion256FusedChain68x8Avx512Asm(fixedKey *[32]byte, comps *uint64, nGroups int, dataPtrs *[8]*byte, out *[8][4]uint64)
+
+//go:noescape
+func areion512FusedChain20x8Avx512Asm(fixedKey *[64]byte, comps *uint64, nGroups int, dataPtrs *[8]*byte, out *[8][8]uint64)
+
+//go:noescape
+func areion512FusedChain36x8Avx512Asm(fixedKey *[64]byte, comps *uint64, nGroups int, dataPtrs *[8]*byte, out *[8][8]uint64)
+
+//go:noescape
+func areion512FusedChain68x8Avx512Asm(fixedKey *[64]byte, comps *uint64, nGroups int, dataPtrs *[8]*byte, out *[8][8]uint64)
+
+//go:noescape
+func areion512FusedChain13x8Avx512Asm(fixedKey *[64]byte, comps *uint64, nGroups int, groupIdxBase uint64, out *[8][8]uint64)

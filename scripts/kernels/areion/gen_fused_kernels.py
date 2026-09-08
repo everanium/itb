@@ -5,22 +5,51 @@ One file per (width, shape, lanes, tier). Widths 256 (Areion-SoEM-256:
 two 16-byte state blocks, 24-byte absorb chunk, 32-byte fixed key, four
 component words per cascade group) and 512 (four blocks, 56-byte chunk,
 64-byte fixed key, eight words per group); shapes 13 / 20 / 36 / 68;
-lanes x4 (four data lanes over one shared component slice) and x1; amd64
-tiers avx512 (VAES on ZMM, four lanes per register), vaesavx2 (VAES on
+lanes x4 (four data lanes over one shared component slice) and x1, plus
+the wide x8 / fill kernels described below; amd64 tiers avx512 (VAES on
+ZMM, four lanes per register), vaesavx2 (VAES on
 YMM, two lanes per pass, two passes) and aesni (legacy-SSE AES-NI on XMM,
 two lanes per pass at width 256, one lane per pass at width 512, the
 single-lane arm of both tiers); arm64 tier neon (ARM Crypto Extension,
 two lanes per pass at width 256, one at width 512).
 
-The avx512 tier additionally carries areion_fusedchain256_13x8_avx512_amd64.s,
-the batch-16 Interlocked Barrier fill kernel of width 256: eight lanes in
-two ZMM groups whose cascade rounds are interleaved instruction by
-instruction (four independent VAESENC chains per permutation instead of
-the two a single lane group exposes), with the eight 13-byte fill blocks
+The avx512 tier additionally carries the wide kernels: the eight-lane
+per-pixel kernels areion_fusedchain{256,512}_{20,36,68}x8_avx512_amd64.s
+— two four-lane ZMM groups whose cascade rounds are interleaved
+instruction by instruction, so four (width 256) / eight (width 512)
+independent VAESENC chains are in flight per permutation instead of the
+two / four a single lane group exposes — and the eight-lane Interlocked
+Barrier fill kernels areion_fusedchain256_13x8_avx512_amd64.s (the
+batch-16 hook of width 256) and areion_fusedchain512_13x8_avx512_amd64.s
+(the batch-32 hook of width 512), with the eight 13-byte fill blocks
 [0x03 | LE64(groupIdxBase+i) | 4×0x00] synthesised in-register from
-groupIdxBase. Width 512 has no dedicated fill kernel: its batch-16 hook
-covers four groups per call, exactly the x4 kernel over Go-synthesised
-blocks, and so do the YMM / XMM / NEON tiers of width 256.
+groupIdxBase. The neon tier carries the eight-lane fill kernels
+areion_fusedchain{256,512}_13x8_neon_arm64.s (four / two lanes per pass,
+blocks synthesised into the frame). The YMM / XMM tiers run every fill
+hook as four-lane kernel calls over Go-synthesised blocks; the width-512
+batch-16 hook does so on every tier.
+
+Wide cells that are register-legal but not emitted, with the reason:
+    areion256 13x16 avx512  4 groups × (s1 2 + s2 2 + temps 2) = 24 + zero 1 +
+                            K1 2 + scratch 1 = 28 ≤ 32 (zmm256_wide(13, 4,
+                            fill=True)). Measured on an i7-11700K against two
+                            calls of the eight-lane kernel over the same sixteen
+                            groups, ns per sixteen groups at 2 / 4 / 8 groups:
+                            122.7 / 226.2 / 444.5 vs 114.4 / 223.0 / 440.4 — no
+                            gain, both arms sit at the ZMM VAESENC port ceiling.
+                            The eight-lane kernel stays the width-256 fill top;
+                            width 256 populates no batch-32 hook.
+    areion512 13x16 avx512  4 groups × (s1 4 + s2 4) = 32 = 32 with zero, K1,
+                            D, RC, the blocks and the component broadcasts all
+                            as memory operands; and no batch-32 hook hosts
+                            sixteen groups at width 512 (InterlockFillFunc32x512
+                            covers eight groups = 32 chunks). Not emitted.
+    x8 / x16 shape 13 on vaesavx2 / aesni
+                            YMM (two lanes per register): 4 pairs × (6 + temps 2)
+                            = 32 > 16 at width 256, 2 pairs × 12 = 24 > 16 at
+                            width 512; XMM: 4 lanes × 4 + temps 4 = 20 > 16 at
+                            width 256, 2 lanes × 12 = 24 > 16 at width 512. The
+                            four-lane kernels stay the top of those tiers.
 
 Cascade evaluated per lane (see areionasm_fused.go):
     h = 0
@@ -80,6 +109,24 @@ Register plans:
                   X1, V28..V31 X2
     neon 512      V0..V3 s1, V4..V7 s2, V8..V11 temps, V12 zero, V13 RC,
                   V14..V17 K1, V18..V21 k2, V22..V25 S0, V26/V27 X1
+    zmm 256 x8    (shapes 20 / 36 / 68) group g: Z{6g}/Z{6g+1} s1 — and the
+                  feed-forward state between permutations — Z{6g+2}/Z{6g+3}
+                  s2, Z{6g+4}/Z{6g+5} temps; Z12..Z15 k2 at the multi-chunk
+                  shapes; then zero, K1 (2), broadcast scratch; RC / D /
+                  staged blocks as memory operands (20 of 32)
+    zmm 512 x8    group g: s1 (4), s2 (4, and the state between
+                  permutations), k2 (4, multi-chunk shapes only); then zero,
+                  K1 (4), one scratch per group (broadcast / rotation temp);
+                  RC / D / staged or synthesised blocks as memory operands
+                  (31 of 32 at shape 68, 27 elsewhere)
+    neon 256 x8   V{4l}..V{4l+3} lane l of the pass (s1 a/b, s2 a/b),
+                  V16..V19 temps, V24 zero, V25 RC, V26/V27 K1, V28/V29
+                  group words, V30 D; S0 reloaded from the frame per
+                  cascade round (27 of 32)
+    neon 512 x8   V{8l}..V{8l+7} lane l of the pass (s1, s2), V16..V19
+                  temps, V20 RC, V21 zero, V22..V25 K1, V26..V29 group
+                  words, V30 D; S0 reloaded from the frame per cascade
+                  round (31 of 32)
 """
 import os
 import sys
@@ -984,6 +1031,479 @@ def neon512(n, lanes):
     return lines + f"\n{sig}\nTEXT ·{name}(SB), NOSPLIT, ${frame.aligned}-40\n" + "\n".join(body) + "\n"
 
 
+# ------------------------------------------------------- zmm wide --
+#
+# The wide ZMM kernels (x8 per-pixel at shapes 20 / 36 / 68, x16 fill at
+# shape 13 of width 256, x8 fill at shape 13 of width 512) run two or
+# four four-lane groups with their round streams interleaved instruction
+# by instruction. They differ from the four-lane kernels in three ways
+# that free registers: the round temps are written by VAESENC directly
+# (no VMOVDQA copy; the width-512 round needs no temp at all — the XOR
+# of one block into the next is the round-key operand of the VAESENC
+# that produces it), the feed-forward state is carried in the s1 (width
+# 256) / s2 (width 512) registers between permutations rather than in
+# registers of its own (it is dead during the permutation), and the
+# staged message blocks, the round constants and the domain constant
+# are memory operands.
+
+def zmm256_round_w(s1a, s1b, s2a, s2b, rc, t1, t2, zero):
+    return [f"\tVAESENC {rc}, {s1a}, {t1}", f"\tVAESENC {rc}, {s2a}, {t2}",
+            f"\tVAESENC {s1b}, {t1}, {s1b}", f"\tVAESENC {s2b}, {t2}, {s2b}",
+            f"\tVAESENCLAST {zero}, {s1a}, {s1a}", f"\tVAESENCLAST {zero}, {s2a}, {s2a}"]
+
+
+def zmm512_round_w(s1, s2, rc, zero):
+    a, b, c, d = s1
+    e, f, g, h = s2
+    return [f"\tVAESENC {b}, {a}, {b}", f"\tVAESENC {f}, {e}, {f}",
+            f"\tVAESENC {d}, {c}, {d}", f"\tVAESENC {h}, {g}, {h}",
+            f"\tVAESENCLAST {zero}, {a}, {a}", f"\tVAESENCLAST {zero}, {e}, {e}",
+            f"\tVAESENCLAST {rc}, {c}, {c}", f"\tVAESENCLAST {rc}, {g}, {g}",
+            f"\tVAESENC {zero}, {c}, {c}", f"\tVAESENC {zero}, {g}, {g}"]
+
+
+# NOSPLIT_FRAME_MAX is the largest frame the wide kernels declare with
+# NOSPLIT; the shape-68 x8 kernels stage six blocks of two groups
+# (768 bytes) and are emitted without it, so the linker's nosplit stack
+# check does not apply and the function carries the stack-growth
+# prologue instead.
+NOSPLIT_FRAME_MAX = 512
+
+
+def text_flags(frame):
+    return "NOSPLIT, " if frame.aligned <= NOSPLIT_FRAME_MAX else ""
+
+
+def interleave(streams):
+    """Merge equally long instruction lists slot by slot."""
+    out = []
+    for lines in zip(*streams):
+        out += list(lines)
+    return out
+
+
+def stage_amd64_wide(width, n, groups, frame):
+    """Stage the message blocks of 4 * groups lanes: group g loads its
+    four lane pointers into R8..R11 (dead after its stores), then
+    stores in SoA layout (block slot = 64 * groups bytes, group g at
+    +64 * g, lane l of the group at +16 * l)."""
+    lines = []
+    chunks = chunk_maps(width, n)
+    for c, blocks in enumerate(chunks):
+        for b, m in enumerate(blocks):
+            if nonzero(m):
+                frame.alloc((c, b), 64 * groups)
+    for g in range(groups):
+        lines.append("\tMOVQ dataPtrs+24(FP), DX")
+        for i, r in enumerate(["R8", "R9", "R10", "R11"]):
+            lines.append(f"\tMOVQ {8 * (4 * g + i)}(DX), {r}")
+        for c, blocks in enumerate(chunks):
+            for b, m in enumerate(blocks):
+                if not nonzero(m):
+                    continue
+                for l, r in enumerate(["R8", "R9", "R10", "R11"]):
+                    o = frame.slots[(c, b)] + 64 * g + 16 * l
+                    for kind, so, ln, d in runs(m):
+                        if kind == "len":
+                            lines.append(f"\tMOVQ ${n}, {o + so}(SP)")
+                        elif kind == "zero":
+                            p = so
+                            for sz in pieces(ln, None, False):
+                                lines.append(f"\t{AMD_STORE[sz]} $0, {o + p}(SP)")
+                                p += sz
+                        else:
+                            p, dd = so, d
+                            for sz in pieces(ln, d, True):
+                                lines.append(f"\t{AMD_LOAD[sz]} {dd}({r}), R12")
+                                lines.append(f"\t{AMD_STORE[sz]} R12, {o + p}(SP)")
+                                p += sz
+                                dd += sz
+    lines.append("\tMOVQ out+32(FP), DX")
+    return lines
+
+
+def fill_table(name, groups):
+    """RODATA: per-lane index offsets in the low qword of every 128-bit
+    lane slot (64 bytes per group), the 13-byte length tag and the 0x03
+    domain tag as qword vectors."""
+    lines = []
+    off = 0
+    for i in range(4 * groups):
+        lines.append(f"DATA {name}+0x{off:03x}(SB)/8, ${i}")
+        lines.append(f"DATA {name}+0x{off + 8:03x}(SB)/8, $0")
+        off += 16
+    for i in range(8):
+        lines.append(f"DATA {name}+0x{off + 8 * i:03x}(SB)/8, $13")
+    off += 64
+    for i in range(8):
+        lines.append(f"DATA {name}+0x{off + 8 * i:03x}(SB)/8, $3")
+    off += 64
+    lines.append(f"GLOBL {name}(SB), RODATA|NOPTR, ${off}")
+    return "\n".join(lines) + "\n", 64 * groups, 64 * groups + 64
+
+
+def synth_fill_amd64(name, groups, frame, zero, base_reg, t_idx, t_a, t_b):
+    """Synthesise the 13-byte fill blocks of 4 * groups lanes into the
+    frame slots (0, 0) / (0, 1): block 0 = [LE64(13) | (idx << 8) | 0x03],
+    block 1 = [idx >> 56 | 0]."""
+    table, tag13, tag3 = fill_table(name, groups)
+    lines = [f"\tVPBROADCASTQ groupIdxBase+24(FP), {base_reg}"]
+    for g in range(groups):
+        lines += [f"\tVPADDQ {name}+{64 * g}(SB), {base_reg}, {t_idx}",
+                  f"\tVPSLLQ $8, {t_idx}, {t_a}", f"\tVPORQ {name}+{tag3}(SB), {t_a}, {t_a}",
+                  f"\tVMOVDQU64 {name}+{tag13}(SB), {t_b}", f"\tVPUNPCKLQDQ {t_a}, {t_b}, {t_a}",
+                  f"\tVMOVDQU64 {t_a}, {frame.slots[(0, 0)] + 64 * g}(SP)",
+                  f"\tVPSRLQ $56, {t_idx}, {t_b}", f"\tVPUNPCKLQDQ {zero}, {t_b}, {t_b}",
+                  f"\tVMOVDQU64 {t_b}, {frame.slots[(0, 1)] + 64 * g}(SP)"]
+    return table, lines
+
+
+def zmm256_wide(n, groups, fill=False):
+    """Width-256 ZMM kernel over `groups` interleaved four-lane groups:
+    per-pixel x8 (groups = 2, message blocks staged from the lane
+    pointers) or the batch-32 fill x16 (groups = 4, blocks synthesised
+    from groupIdxBase)."""
+    lanes = 4 * groups
+    frame = Frame()
+    chunks = chunk_maps(256, n)
+    nch = len(chunks)
+    tier = f"AVX-512 + VAES ZMM ({groups} interleaved four-lane groups)"
+    lines = header(AMD, 256, n, lanes, tier, fill=fill)
+    if fill:
+        lines = lines.replace("batch-16 Interlocked Barrier fill kernel", "batch-32 Interlocked Barrier fill kernel")
+    s1 = [[f"Z{6 * g}", f"Z{6 * g + 1}"] for g in range(groups)]
+    s2 = [[f"Z{6 * g + 2}", f"Z{6 * g + 3}"] for g in range(groups)]
+    tt = [[f"Z{6 * g + 4}", f"Z{6 * g + 5}"] for g in range(groups)]
+    nxt = 6 * groups
+    k2 = None
+    if nch > 1:
+        k2 = [[f"Z{nxt + 2 * g}", f"Z{nxt + 2 * g + 1}"] for g in range(groups)]
+        nxt += 2 * groups
+    zero, k1, scr = f"Z{nxt}", [f"Z{nxt + 1}", f"Z{nxt + 2}"], f"Z{nxt + 3}"
+    body = ["\tMOVQ fixedKey+0(FP), AX", "\tMOVQ comps+8(FP), BX", "\tMOVQ nGroups+16(FP), CX"]
+    body += [f"\tVPXORD {zero}, {zero}, {zero}"]
+    table = ""
+    if fill:
+        frame.alloc((0, 0), 64 * groups)
+        frame.alloc((0, 1), 64 * groups)
+        table, synth = synth_fill_amd64("areionFill13<>", groups, frame, zero, scr, s1[0][0], s1[0][1], s2[0][0])
+        body += synth + ["\tMOVQ out+32(FP), DX"]
+    else:
+        body += stage_amd64_wide(256, n, groups, frame)
+    body += [f"\tVBROADCASTI32X4 0(AX), {k1[0]}", f"\tVBROADCASTI32X4 16(AX), {k1[1]}"]
+    for g in range(groups):
+        body += [f"\tVPXORD {r}, {r}, {r}" for r in s1[g]]
+    body += ["", "loop:"]
+
+    def blk(c, b, g):
+        return f"{frame.slots[(c, b)] + 64 * g}(SP)"
+
+    # k2 = comps ^ h (D folded into block 0); s1 = S0 ^ K1; s2 = S0 ^ k2.
+    for b in range(2):
+        body.append(f"\tVBROADCASTI32X4 {16 * b}(BX), {scr}")
+        for g in range(groups):
+            if k2 is not None:
+                body.append(f"\tVPXORD {scr}, {s1[g][b]}, {k2[g][b]}")
+                if b == 0:
+                    body.append(f"\tVPXORD {DSEP}(SB), {k2[g][0]}, {k2[g][0]}")
+                body += [f"\tVPXORD {blk(0, b, g)}, {k2[g][b]}, {s2[g][b]}",
+                         f"\tVPXORD {blk(0, b, g)}, {k1[b]}, {s1[g][b]}"]
+            else:
+                body.append(f"\tVPXORD {scr}, {s1[g][b]}, {s2[g][b]}")
+                if b == 0:
+                    body.append(f"\tVPXORD {DSEP}(SB), {s2[g][0]}, {s2[g][0]}")
+                body += [f"\tVPXORD {blk(0, b, g)}, {s2[g][b]}, {s2[g][b]}",
+                         f"\tVPXORD {blk(0, b, g)}, {k1[b]}, {s1[g][b]}"]
+    body.append("\tADDQ $32, BX")
+    for c in range(nch):
+        if c > 0:
+            for b in range(2):
+                for g in range(groups):
+                    if (c, b) in frame.slots:
+                        body.append(f"\tVPXORD {blk(c, b, g)}, {s1[g][b]}, {s1[g][b]}")
+                    body += [f"\tVPXORD {k2[g][b]}, {s1[g][b]}, {s2[g][b]}",
+                             f"\tVPXORD {k1[b]}, {s1[g][b]}, {s1[g][b]}"]
+        for r in range(10):
+            a, b = (0, 1) if r % 2 == 0 else (1, 0)
+            body += interleave([zmm256_round_w(s1[g][a], s1[g][b], s2[g][a], s2[g][b], f"{RC}+{64 * r}(SB)",
+                                               tt[g][0], tt[g][1], zero) for g in range(groups)])
+        for b in range(2):
+            for g in range(groups):
+                body.append(f"\tVPXORD {s2[g][b]}, {s1[g][b]}, {s1[g][b]}")
+    body += ["\tDECQ CX", "\tJNZ loop", ""]
+    for g in range(groups):
+        for l in range(4):
+            lane = 4 * g + l
+            body += [f"\tVEXTRACTI64X2 ${l}, {s1[g][0]}, {32 * lane}(DX)",
+                     f"\tVEXTRACTI64X2 ${l}, {s1[g][1]}, {32 * lane + 16}(DX)"]
+    body += ["\tVZEROUPPER", "\tRET"]
+    if fill:
+        sig = f"// func areion256FusedChain{n}x{lanes}Avx512Asm(fixedKey *[32]byte, comps *uint64, nGroups int, groupIdxBase uint64, out *[{lanes}][4]uint64)"
+    else:
+        sig = f"// func areion256FusedChain{n}x{lanes}Avx512Asm(fixedKey *[32]byte, comps *uint64, nGroups int, dataPtrs *[{lanes}]*byte, out *[{lanes}][4]uint64)"
+    return lines + table + f"\n{sig}\nTEXT ·areion256FusedChain{n}x{lanes}Avx512Asm(SB), {text_flags(frame)}${frame.aligned}-40\n" + "\n".join(body) + "\n"
+
+
+def zmm512_wide(n, groups, fill=False):
+    """Width-512 ZMM kernel over `groups` interleaved four-lane groups
+    (groups = 2: per-pixel x8, or the batch-32 fill x8 at shape 13). The
+    feed-forward state is rotated into the s2 registers after every
+    permutation (one temp per group), so the next chunk / group starts
+    from canonical block order."""
+    lanes = 4 * groups
+    frame = Frame()
+    chunks = chunk_maps(512, n)
+    nch = len(chunks)
+    tier = f"AVX-512 + VAES ZMM ({groups} interleaved four-lane groups)"
+    lines = header(AMD, 512, n, lanes, tier, fill=fill)
+    if fill:
+        lines = lines.replace("batch-16 Interlocked Barrier fill kernel", "batch-32 Interlocked Barrier fill kernel")
+    per = 8 if nch == 1 else 12
+    s1 = [[f"Z{per * g + b}" for b in range(4)] for g in range(groups)]
+    s2 = [[f"Z{per * g + 4 + b}" for b in range(4)] for g in range(groups)]
+    k2 = [[f"Z{per * g + 8 + b}" for b in range(4)] for g in range(groups)] if nch > 1 else None
+    nxt = per * groups
+    zero, k1 = f"Z{nxt}", [f"Z{nxt + 1 + b}" for b in range(4)]
+    scr = [f"Z{nxt + 5 + g}" for g in range(groups)]
+    body = ["\tMOVQ fixedKey+0(FP), AX", "\tMOVQ comps+8(FP), BX", "\tMOVQ nGroups+16(FP), CX"]
+    body += [f"\tVPXORD {zero}, {zero}, {zero}"]
+    table = ""
+    if fill:
+        frame.alloc((0, 0), 64 * groups)
+        frame.alloc((0, 1), 64 * groups)
+        table, synth = synth_fill_amd64("areionFill13<>", groups, frame, zero, scr[0], s1[0][0], s1[0][1], s1[0][2])
+        body += synth + ["\tMOVQ out+32(FP), DX"]
+    else:
+        body += stage_amd64_wide(512, n, groups, frame)
+    body += [f"\tVBROADCASTI32X4 {16 * b}(AX), {k1[b]}" for b in range(4)]
+    for g in range(groups):
+        body += [f"\tVPXORD {r}, {r}, {r}" for r in s2[g]]
+    body += ["", "loop:"]
+
+    def blk(c, b, g):
+        return f"{frame.slots[(c, b)] + 64 * g}(SP)"
+
+    # h sits in s2 (canonical order). k2 = comps ^ h (D folded into block
+    # 0); s1 = S0 ^ K1; s2 = S0 ^ k2.
+    for b in range(4):
+        body.append(f"\tVBROADCASTI32X4 {16 * b}(BX), {scr[0]}")
+        for g in range(groups):
+            staged = (0, b) in frame.slots
+            if k2 is not None:
+                body.append(f"\tVPXORD {scr[0]}, {s2[g][b]}, {k2[g][b]}")
+                if b == 0:
+                    body.append(f"\tVPXORD {DSEP}(SB), {k2[g][0]}, {k2[g][0]}")
+                if staged:
+                    body += [f"\tVPXORD {blk(0, b, g)}, {k2[g][b]}, {s2[g][b]}",
+                             f"\tVPXORD {blk(0, b, g)}, {k1[b]}, {s1[g][b]}"]
+                else:
+                    body += [f"\tVMOVDQA64 {k2[g][b]}, {s2[g][b]}", f"\tVMOVDQA64 {k1[b]}, {s1[g][b]}"]
+            else:
+                body.append(f"\tVPXORD {scr[0]}, {s2[g][b]}, {s2[g][b]}")
+                if b == 0:
+                    body.append(f"\tVPXORD {DSEP}(SB), {s2[g][0]}, {s2[g][0]}")
+                if staged:
+                    body += [f"\tVPXORD {blk(0, b, g)}, {s2[g][b]}, {s2[g][b]}",
+                             f"\tVPXORD {blk(0, b, g)}, {k1[b]}, {s1[g][b]}"]
+                else:
+                    body.append(f"\tVMOVDQA64 {k1[b]}, {s1[g][b]}")
+    body.append("\tADDQ $64, BX")
+    for c in range(nch):
+        if c > 0:
+            for b in range(4):
+                for g in range(groups):
+                    if (c, b) in frame.slots:
+                        body.append(f"\tVPXORD {blk(c, b, g)}, {s2[g][b]}, {s2[g][b]}")
+                    body += [f"\tVPXORD {k1[b]}, {s2[g][b]}, {s1[g][b]}",
+                             f"\tVPXORD {k2[g][b]}, {s2[g][b]}, {s2[g][b]}"]
+        for r in range(15):
+            body += interleave([zmm512_round_w(roles(s1[g], r), roles(s2[g], r), f"{RC}+{64 * r}(SB)", zero)
+                                for g in range(groups)])
+        # state block b = s1[ROT[b]] ^ s2[ROT[b]], rotated into s2 in
+        # canonical order through one temp per group.
+        rot = []
+        for g in range(groups):
+            rot.append([f"\tVPXORD {s2[g][3]}, {s1[g][3]}, {scr[g]}",
+                        f"\tVPXORD {s2[g][2]}, {s1[g][2]}, {s2[g][3]}",
+                        f"\tVPXORD {s2[g][1]}, {s1[g][1]}, {s2[g][2]}",
+                        f"\tVPXORD {s2[g][0]}, {s1[g][0]}, {s2[g][1]}",
+                        f"\tVMOVDQA64 {scr[g]}, {s2[g][0]}"])
+        body += interleave(rot)
+    body += ["\tDECQ CX", "\tJNZ loop", ""]
+    for g in range(groups):
+        for l in range(4):
+            lane = 4 * g + l
+            body += [f"\tVEXTRACTI64X2 ${l}, {s2[g][b]}, {64 * lane + 16 * b}(DX)" for b in range(4)]
+    body += ["\tVZEROUPPER", "\tRET"]
+    if fill:
+        sig = f"// func areion512FusedChain{n}x{lanes}Avx512Asm(fixedKey *[64]byte, comps *uint64, nGroups int, groupIdxBase uint64, out *[{lanes}][8]uint64)"
+    else:
+        sig = f"// func areion512FusedChain{n}x{lanes}Avx512Asm(fixedKey *[64]byte, comps *uint64, nGroups int, dataPtrs *[{lanes}]*byte, out *[{lanes}][8]uint64)"
+    return lines + table + f"\n{sig}\nTEXT ·areion512FusedChain{n}x{lanes}Avx512Asm(SB), {text_flags(frame)}${frame.aligned}-40\n" + "\n".join(body) + "\n"
+
+
+# ------------------------------------------------------- neon wide --
+#
+# The eight-lane NEON fill kernels of shape 13 run four lanes per pass
+# at width 256 (two passes) and two lanes per pass at width 512 (four
+# passes), against the two / one lanes per pass of the four-lane
+# kernels. Their rounds write each AES step in place and take the
+# MixColumns result into a temp (AESMC Vn, Vd), so a chain needs one
+# temp for a few instructions and the feed-forward state is carried in
+# the s1 (width 256) / s2 (width 512) registers between permutations.
+# The fill blocks are synthesised into the frame with GPR stores and
+# reloaded through the temps at every cascade round.
+
+def synth_fill_arm64(lanes, base="R7"):
+    lines = ["\tMOVD groupIdxBase+24(FP), R12", "\tMOVD $13, R13"]
+    for l in range(lanes):
+        o = 32 * l
+        lines += [f"\tMOVD R13, {o}({base})",
+                  "\tLSL $8, R12, R14", "\tORR $3, R14, R14", f"\tMOVD R14, {o + 8}({base})",
+                  "\tLSR $56, R12, R14", f"\tMOVD R14, {o + 16}({base})", f"\tMOVD ZR, {o + 24}({base})",
+                  "\tADD $1, R12, R12"]
+    return lines
+
+
+def neon256_round_w(chains, rc, zero, temps):
+    """chains: (a, b) pairs; temps: one per chain slot, chains are
+    processed in blocks of len(temps) so no temp is live across its
+    reuse."""
+    lines = []
+    k = len(temps)
+    for i0 in range(0, len(chains), k):
+        blk = chains[i0:i0 + k]
+        lines += [f"\tAESE {zero}.B16, {a}.B16" for a, b in blk]
+        lines += [f"\tAESMC {a}.B16, {temps[i]}.B16" for i, (a, b) in enumerate(blk)]
+        lines += [f"\tAESE {rc}.B16, {temps[i]}.B16" for i in range(len(blk))]
+        lines += [f"\tAESMC {temps[i]}.B16, {temps[i]}.B16" for i in range(len(blk))]
+        lines += [f"\tVEOR {temps[i]}.B16, {b}.B16, {b}.B16" for i, (a, b) in enumerate(blk)]
+    return lines
+
+
+def neon256_x8_fill():
+    frame = Frame()
+    lanes = 8
+    lines = header(ARM, 256, 13, lanes, "NEON + ARM Crypto Extension (four lanes per pass, two passes)", fill=True)
+    body = ["\tMOVD fixedKey+0(FP), R0", "\tMOVD out+32(FP), R4"]
+    frame.alloc("s0", 32 * lanes)
+    doff = frame.alloc("d", 16)
+    body.append(f"\tMOVD $frame-{frame.aligned}(SP), R7")
+    body += synth_fill_arm64(lanes)
+    body += ["\tMOVD $1, R12", f"\tMOVD R12, {doff}(R7)", f"\tMOVD ZR, {doff + 8}(R7)",
+             f"\tADD ${doff}, R7, R6", "\tVLD1 (R6), [V30.B16]",
+             "\tVEOR V24.B16, V24.B16, V24.B16", "\tVLD1 (R0), [V26.B16, V27.B16]"]
+    zero, rc, k1, comps, dsep = "V24", "V25", ["V26", "V27"], ["V28", "V29"], "V30"
+    temps = ["V16", "V17", "V18", "V19"]
+    regs = [(f"V{4 * l}", f"V{4 * l + 1}", f"V{4 * l + 2}", f"V{4 * l + 3}") for l in range(4)]
+    for p in range(2):
+        body += ["", f"\t// pass {p}: lanes {4 * p}..{4 * p + 3}", "\tMOVD comps+8(FP), R1", "\tMOVD nGroups+16(FP), R2"]
+        for s1a, s1b, _, _ in regs:
+            body += [f"\tVEOR {s1a}.B16, {s1a}.B16, {s1a}.B16", f"\tVEOR {s1b}.B16, {s1b}.B16, {s1b}.B16"]
+        body += ["", f"loop{p}:", f"\tVLD1.P 32(R1), [{comps[0]}.B16, {comps[1]}.B16]"]
+        for li, (s1a, s1b, s2a, s2b) in enumerate(regs):
+            lane = 4 * p + li
+            t0, t1 = temps[0], temps[1]
+            body += [f"\tADD ${32 * lane}, R7, R6", f"\tVLD1 (R6), [{t0}.B16, {t1}.B16]",
+                     f"\tVEOR {comps[0]}.B16, {s1a}.B16, {s2a}.B16", f"\tVEOR {dsep}.B16, {s2a}.B16, {s2a}.B16",
+                     f"\tVEOR {comps[1]}.B16, {s1b}.B16, {s2b}.B16",
+                     f"\tVEOR {t0}.B16, {s2a}.B16, {s2a}.B16", f"\tVEOR {t1}.B16, {s2b}.B16, {s2b}.B16",
+                     f"\tVEOR {t0}.B16, {k1[0]}.B16, {s1a}.B16", f"\tVEOR {t1}.B16, {k1[1]}.B16, {s1b}.B16"]
+        body.append("\tMOVD $·AreionRCTable(SB), R5")
+        for r in range(10):
+            body.append(f"\tVLD1.P 16(R5), [{rc}.B16]")
+            chains = []
+            for s1a, s1b, s2a, s2b in regs:
+                if r % 2 == 0:
+                    chains += [(s1a, s1b), (s2a, s2b)]
+                else:
+                    chains += [(s1b, s1a), (s2b, s2a)]
+            body += neon256_round_w(chains, rc, zero, temps)
+        for s1a, s1b, s2a, s2b in regs:
+            body += [f"\tVEOR {s2a}.B16, {s1a}.B16, {s1a}.B16", f"\tVEOR {s2b}.B16, {s1b}.B16, {s1b}.B16"]
+        body += ["\tSUBS $1, R2, R2", f"\tBNE loop{p}"]
+        for li, (s1a, s1b, _, _) in enumerate(regs):
+            lane = 4 * p + li
+            body += [f"\tADD ${32 * lane}, R4, R6", f"\tVST1 [{s1a}.B16, {s1b}.B16], (R6)"]
+    body.append("\tRET")
+    sig = "// func areion256FusedChain13x8NeonAsm(fixedKey *[32]byte, comps *uint64, nGroups int, groupIdxBase uint64, out *[8][4]uint64)"
+    return lines + f"\n{sig}\nTEXT ·areion256FusedChain13x8NeonAsm(SB), NOSPLIT, ${frame.aligned}-40\n" + "\n".join(body) + "\n"
+
+
+def neon512_round_w(quads, rc, zero, temps):
+    """quads: (s1, s2) register quads per lane; the (a, b) / (e, f) steps
+    of every lane go first, then the (c, d) / (g, h) steps, each block
+    over its own temps."""
+    lines = []
+    first, second = [], []
+    for s1, s2 in quads:
+        a, b, c, d = s1
+        e, f, g, h = s2
+        first += [(a, b), (e, f)]
+        second += [(c, d), (g, h)]
+    for blk in (first, second):
+        lines += [f"\tAESE {zero}.B16, {a}.B16" for a, b in blk]
+        lines += [f"\tAESMC {a}.B16, {temps[i]}.B16" for i, (a, b) in enumerate(blk)]
+        lines += [f"\tVEOR {temps[i]}.B16, {b}.B16, {b}.B16" for i, (a, b) in enumerate(blk)]
+    lines += [f"\tAESE {rc}.B16, {c}.B16" for c, d in second]
+    lines += [f"\tAESMC {c}.B16, {c}.B16" for c, d in second]
+    return lines
+
+
+def neon512_x8_fill():
+    frame = Frame()
+    lanes = 8
+    lines = header(ARM, 512, 13, lanes, "NEON + ARM Crypto Extension (two lanes per pass, four passes)", fill=True)
+    lines = lines.replace("batch-16 Interlocked Barrier fill kernel", "batch-32 Interlocked Barrier fill kernel")
+    body = ["\tMOVD fixedKey+0(FP), R0", "\tMOVD out+32(FP), R4"]
+    frame.alloc("s0", 32 * lanes)
+    doff = frame.alloc("d", 16)
+    body.append(f"\tMOVD $frame-{frame.aligned}(SP), R7")
+    body += synth_fill_arm64(lanes)
+    body += ["\tMOVD $1, R12", f"\tMOVD R12, {doff}(R7)", f"\tMOVD ZR, {doff + 8}(R7)",
+             f"\tADD ${doff}, R7, R6", "\tVLD1 (R6), [V30.B16]",
+             "\tVEOR V21.B16, V21.B16, V21.B16", "\tVLD1 (R0), [V22.B16, V23.B16, V24.B16, V25.B16]"]
+    zero, rc, dsep = "V21", "V20", "V30"
+    k1 = [f"V{22 + b}" for b in range(4)]
+    comps = [f"V{26 + b}" for b in range(4)]
+    temps = ["V16", "V17", "V18", "V19"]
+    s1 = [[f"V{8 * l + b}" for b in range(4)] for l in range(2)]
+    s2 = [[f"V{8 * l + 4 + b}" for b in range(4)] for l in range(2)]
+    for p in range(4):
+        body += ["", f"\t// pass {p}: lanes {2 * p}, {2 * p + 1}", "\tMOVD comps+8(FP), R1", "\tMOVD nGroups+16(FP), R2"]
+        for l in range(2):
+            body += [f"\tVEOR {r}.B16, {r}.B16, {r}.B16" for r in s2[l]]
+        body += ["", f"loop{p}:", f"\tVLD1.P 64(R1), [{comps[0]}.B16, {comps[1]}.B16, {comps[2]}.B16, {comps[3]}.B16]"]
+        for l in range(2):
+            lane = 2 * p + l
+            t0, t1 = temps[2 * l], temps[2 * l + 1]
+            body += [f"\tADD ${32 * lane}, R7, R6", f"\tVLD1 (R6), [{t0}.B16, {t1}.B16]"]
+            body += [f"\tVEOR {comps[b]}.B16, {s2[l][b]}.B16, {s2[l][b]}.B16" for b in range(4)]
+            body += [f"\tVEOR {dsep}.B16, {s2[l][0]}.B16, {s2[l][0]}.B16",
+                     f"\tVEOR {t0}.B16, {s2[l][0]}.B16, {s2[l][0]}.B16", f"\tVEOR {t1}.B16, {s2[l][1]}.B16, {s2[l][1]}.B16",
+                     f"\tVEOR {t0}.B16, {k1[0]}.B16, {s1[l][0]}.B16", f"\tVEOR {t1}.B16, {k1[1]}.B16, {s1[l][1]}.B16",
+                     f"\tVMOV {k1[2]}.B16, {s1[l][2]}.B16", f"\tVMOV {k1[3]}.B16, {s1[l][3]}.B16"]
+        body.append("\tMOVD $·AreionRCTable(SB), R5")
+        for r in range(15):
+            body.append(f"\tVLD1.P 16(R5), [{rc}.B16]")
+            body += neon512_round_w([(roles(s1[l], r), roles(s2[l], r)) for l in range(2)], rc, zero, temps)
+        for l in range(2):
+            t = temps[l]
+            body += [f"\tVEOR {s2[l][3]}.B16, {s1[l][3]}.B16, {t}.B16",
+                     f"\tVEOR {s2[l][2]}.B16, {s1[l][2]}.B16, {s2[l][3]}.B16",
+                     f"\tVEOR {s2[l][1]}.B16, {s1[l][1]}.B16, {s2[l][2]}.B16",
+                     f"\tVEOR {s2[l][0]}.B16, {s1[l][0]}.B16, {s2[l][1]}.B16",
+                     f"\tVMOV {t}.B16, {s2[l][0]}.B16"]
+        body += ["\tSUBS $1, R2, R2", f"\tBNE loop{p}"]
+        for l in range(2):
+            lane = 2 * p + l
+            body += [f"\tADD ${64 * lane}, R4, R6",
+                     f"\tVST1 [{s2[l][0]}.B16, {s2[l][1]}.B16, {s2[l][2]}.B16, {s2[l][3]}.B16], (R6)"]
+    body.append("\tRET")
+    sig = "// func areion512FusedChain13x8NeonAsm(fixedKey *[64]byte, comps *uint64, nGroups int, groupIdxBase uint64, out *[8][8]uint64)"
+    return lines + f"\n{sig}\nTEXT ·areion512FusedChain13x8NeonAsm(SB), NOSPLIT, ${frame.aligned}-40\n" + "\n".join(body) + "\n"
+
+
 # ------------------------------------------------------------ render --
 
 def render_all():
@@ -1002,6 +1522,12 @@ def render_all():
         files[f"areion_fusedchain512_{n}x4_neon_arm64.s"] = neon512(n, 4)
         files[f"areion_fusedchain512_{n}x1_neon_arm64.s"] = neon512(n, 1)
     files["areion_fusedchain256_13x8_avx512_amd64.s"] = zmm256_x8()
+    for n in (20, 36, 68):
+        files[f"areion_fusedchain256_{n}x8_avx512_amd64.s"] = zmm256_wide(n, 2)
+        files[f"areion_fusedchain512_{n}x8_avx512_amd64.s"] = zmm512_wide(n, 2)
+    files["areion_fusedchain512_13x8_avx512_amd64.s"] = zmm512_wide(13, 2, fill=True)
+    files["areion_fusedchain256_13x8_neon_arm64.s"] = neon256_x8_fill()
+    files["areion_fusedchain512_13x8_neon_arm64.s"] = neon512_x8_fill()
     return files
 
 

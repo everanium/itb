@@ -258,8 +258,8 @@ const (
 // — see a stable primitive set.
 var Registry = [10]Spec{
 	{Name: CipherAESITB128, Width: W128, Class: ClassNone, FusedChainHash128: aesITB128FusedChainHash, InterlockFillBatch16: aesITB128InterlockFillBatch16},
-	{Name: CipherAreion256, Width: W256, Class: ClassPRFCounter, FusedChainHash256: areion256FusedChainHash, InterlockFillBatch16x256: areion256InterlockFillBatch16},
-	{Name: CipherAreion512, Width: W512, Class: ClassPRFCounter, FusedChainHash512: areion512FusedChainHash, InterlockFillBatch16x512: areion512InterlockFillBatch16},
+	{Name: CipherAreion256, Width: W256, Class: ClassPRFCounter, FusedChainHash256: areion256FusedChainHash, FusedChainHash256x8: areion256FusedChainHash8, InterlockFillBatch16x256: areion256InterlockFillBatch16},
+	{Name: CipherAreion512, Width: W512, Class: ClassPRFCounter, FusedChainHash512: areion512FusedChainHash, FusedChainHash512x8: areion512FusedChainHash8, InterlockFillBatch16x512: areion512InterlockFillBatch16, InterlockFillBatch32x512: areion512InterlockFillBatch32},
 	{Name: CipherBLAKE2b256, Width: W256, Class: ClassPRFCounter, HashHash: blake2b256HashHash, KeyedHash: blake2b256KeyedHash},
 	{Name: CipherBLAKE2b512, Width: W512, Class: ClassPRFCounter, HashHash: blake2b512HashHash, KeyedHash: blake2b512KeyedHash},
 	{Name: CipherBLAKE2s, Width: W256, Class: ClassPRFCounter, HashHash: blake2sHashHash, KeyedHash: blake2sKeyedHash},
