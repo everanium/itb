@@ -24,14 +24,18 @@ import (
 //	avx2   — requires AVX2 + BMI2 silicon; selects the 4-lane AVX2
 //	         rank-unrank kernel, disabling the AVX-512 kernel so the
 //	         AVX2 arm is reachable on AVX-512F hosts. HasBMI2 keeps
-//	         its auto value (orthogonal, as above).
-//	scalar — disables the AVX-512 and AVX2 rank-mask kernels and the
-//	         BMI2 PEXT/PDEP kernels, so the pure-Go softPEXT48 /
-//	         softPDEP48 and scalar rankToMaskTriple48 paths run.
+//	         its auto value (orthogonal, as above); the batched
+//	         chunk-apply kernel is cleared so the per-chunk apply
+//	         path is reproduced for cross-tier parity checks
+//	         (production BMI2 hosts default to the batched kernel).
+//	scalar — disables the AVX-512 and AVX2 rank-mask kernels, the
+//	         BMI2 PEXT/PDEP kernels and the batched chunk-apply
+//	         kernel, so the pure-Go softPEXT48 / softPDEP48 and
+//	         scalar rankToMaskTriple48 paths run.
 //
 // Production auto-dispatch is unaffected when the variable is unset: a
-// CPU with BMI2 but no AVX-512 keeps its BMI2 fast path exactly as
-// before.
+// CPU with BMI2 keeps its BMI2 rank-mask and batched chunk-apply fast
+// path exactly as auto-selection would set them.
 func init() {
 	switch forcetier.InterlockTier() {
 	case "avx512":
@@ -54,9 +58,11 @@ func init() {
 		}
 		HasAVX2RankMask = true
 		HasAVX512RankMask = false
+		HasChunk48Batch = false
 	case "scalar":
 		HasAVX512RankMask = false
 		HasAVX2RankMask = false
 		HasBMI2 = false
+		HasChunk48Batch = false
 	}
 }

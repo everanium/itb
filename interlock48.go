@@ -883,17 +883,19 @@ func splitTriple48LockedBatchInto(src framedSrc48, p0, p1, p2 []byte, bp lockBat
 				if bp.fillRanksSuper != nil && ge-g >= 16 {
 					bp.fillRanksSuper(scratch, uint64(g), prf[0:32])
 					fillLockMasksTriple48Super16((*[32]uint64)(prf[0:32]), &masks16)
-					for j := 0; j < 16; j++ {
-						k := g + j
-						if k >= M {
-							break
+					if !chunk48lockBatch(src, M, g, 16, masks16[:], p0, p1, p2) {
+						for j := 0; j < 16; j++ {
+							k := g + j
+							if k >= M {
+								break
+							}
+							m0, m1, m2 := masks16[j][0], masks16[j][1], masks16[j][2]
+							x := src.chunk(k)
+							l0, l1, l2 := chunk48lock(x, m0, m1, m2)
+							binary.LittleEndian.PutUint16(p0[2*k:], l0)
+							binary.LittleEndian.PutUint16(p1[2*k:], l1)
+							binary.LittleEndian.PutUint16(p2[2*k:], l2)
 						}
-						m0, m1, m2 := masks16[j][0], masks16[j][1], masks16[j][2]
-						x := src.chunk(k)
-						l0, l1, l2 := chunk48lock(x, m0, m1, m2)
-						binary.LittleEndian.PutUint16(p0[2*k:], l0)
-						binary.LittleEndian.PutUint16(p1[2*k:], l1)
-						binary.LittleEndian.PutUint16(p2[2*k:], l2)
 					}
 					g += 16
 					continue
@@ -907,6 +909,9 @@ func splitTriple48LockedBatchInto(src framedSrc48, p0, p1, p2 []byte, bp lockBat
 					for off := 0; off < nChunks; off += superChunks48 {
 						p := (*[2 * superChunks48]uint64)(prf[2*off : 2*off+2*superChunks48])
 						fillLockMasksTriple48Super(p, superChunks48, &masks)
+						if chunk48lockBatch(src, M, base+off, superChunks48, masks[:], p0, p1, p2) {
+							continue
+						}
 						for j := 0; j < superChunks48; j++ {
 							k := base + off + j
 							if k >= M {
@@ -934,6 +939,9 @@ func splitTriple48LockedBatchInto(src framedSrc48, p0, p1, p2 []byte, bp lockBat
 					n += factor
 				}
 				fillLockMasksTriple48Super((*[2 * superChunks48]uint64)(prf[0:2*superChunks48]), n, &masks)
+				if chunk48lockBatch(src, M, base, n, masks[:], p0, p1, p2) {
+					continue
+				}
 				for j := 0; j < n; j++ {
 					k := base + j
 					if k >= M {
@@ -1008,17 +1016,19 @@ func interleaveTriple48LockedBatch(p0, p1, p2 []byte, bp lockBatchPRF48, cfg *Co
 				if bp.fillRanksSuper != nil && ge-g >= 16 {
 					bp.fillRanksSuper(scratch, uint64(g), prf[0:32])
 					fillLockMasksTriple48Super16((*[32]uint64)(prf[0:32]), &masks16)
-					for j := 0; j < 16; j++ {
-						k := g + j
-						if k >= M {
-							break
+					if !unchunk48lockBatch(result, M, g, 16, masks16[:], p0, p1, p2) {
+						for j := 0; j < 16; j++ {
+							k := g + j
+							if k >= M {
+								break
+							}
+							m0, m1, m2 := masks16[j][0], masks16[j][1], masks16[j][2]
+							l0 := binary.LittleEndian.Uint16(p0[2*k:])
+							l1 := binary.LittleEndian.Uint16(p1[2*k:])
+							l2 := binary.LittleEndian.Uint16(p2[2*k:])
+							x := unchunk48lock(l0, l1, l2, m0, m1, m2)
+							writeChunk48(result, 6*k, x)
 						}
-						m0, m1, m2 := masks16[j][0], masks16[j][1], masks16[j][2]
-						l0 := binary.LittleEndian.Uint16(p0[2*k:])
-						l1 := binary.LittleEndian.Uint16(p1[2*k:])
-						l2 := binary.LittleEndian.Uint16(p2[2*k:])
-						x := unchunk48lock(l0, l1, l2, m0, m1, m2)
-						writeChunk48(result, 6*k, x)
 					}
 					g += 16
 					continue
@@ -1032,6 +1042,9 @@ func interleaveTriple48LockedBatch(p0, p1, p2 []byte, bp lockBatchPRF48, cfg *Co
 					for off := 0; off < nChunks; off += superChunks48 {
 						p := (*[2 * superChunks48]uint64)(prf[2*off : 2*off+2*superChunks48])
 						fillLockMasksTriple48Super(p, superChunks48, &masks)
+						if unchunk48lockBatch(result, M, base+off, superChunks48, masks[:], p0, p1, p2) {
+							continue
+						}
 						for j := 0; j < superChunks48; j++ {
 							k := base + off + j
 							if k >= M {
@@ -1059,6 +1072,9 @@ func interleaveTriple48LockedBatch(p0, p1, p2 []byte, bp lockBatchPRF48, cfg *Co
 					n += factor
 				}
 				fillLockMasksTriple48Super((*[2 * superChunks48]uint64)(prf[0:2*superChunks48]), n, &masks)
+				if unchunk48lockBatch(result, M, base, n, masks[:], p0, p1, p2) {
+					continue
+				}
 				for j := 0; j < n; j++ {
 					k := base + j
 					if k >= M {
