@@ -45,3 +45,33 @@ func (s *Seed512) InterlockFillX16() InterlockFillFunc16x512 {
 func (s *Seed512) SetInterlockBatch16(fn InterlockFillFunc16x512) {
 	s.interlockFillX16 = fn
 }
+
+// InterlockFillFunc32x512 is the batch-32 Interlocked Barrier fill
+// kernel interface at width 512 — the wider counterpart of
+// [InterlockFillFunc16x512]. One call fills the 8 consecutive groups
+// (32 chunks) starting at groupIdxBase: lane offset i (0..7) produces
+// groupIdx = groupIdxBase + i on the fill block
+// [0x03 | LE64(groupIdx) | 4×0x00] and runs the whole ChainHash512
+// cascade over components; out receives the 8 × 512-bit outputs at
+// [0..7]. The result must be bit-exact with eight sequential
+// single-lane cascades over the same components and blocks. A
+// performance hook only: the cascade fill is the wire with or without
+// it (see [Seed512.SetInterlockBatch32]). The fill ladder tries this
+// hook first, then the batch-16 hook, then the four-lane and
+// single-lane arms.
+type InterlockFillFunc32x512 func(components []uint64, groupIdxBase uint64, out *[8][8]uint64)
+
+// InterlockFillX32 returns the batch-32 interlock PRF fill hook, nil
+// when none is attached.
+func (s *Seed512) InterlockFillX32() InterlockFillFunc32x512 {
+	return s.interlockFillX32
+}
+
+// SetInterlockBatch32 installs the batch-32 interlock PRF fill hook.
+// nil removes it; the Interlocked Barrier fill then runs the cascade
+// through the batch-16 hook (when attached), the four-lane and the
+// single-lane arms. The hook is a performance path only: with or
+// without it the seed produces the same wire.
+func (s *Seed512) SetInterlockBatch32(fn InterlockFillFunc32x512) {
+	s.interlockFillX32 = fn
+}

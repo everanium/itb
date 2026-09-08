@@ -77,6 +77,9 @@ func newLowLevelConstellation(t *testing.T, name string, bits int) lowLevelConst
 			if err := hashes.AttachInterlockBatch16x256(s, name, key); err != nil {
 				t.Fatal(err)
 			}
+			if err := hashes.AttachInterlockBatch32x256(s, name, key); err != nil {
+				t.Fatal(err)
+			}
 			c.seeds[i], c.keys[i] = s, key
 		case hashes.W512:
 			single, batched, key, err := hashes.Make512Pair(name)
@@ -92,6 +95,9 @@ func newLowLevelConstellation(t *testing.T, name string, bits int) lowLevelConst
 				t.Fatal(err)
 			}
 			if err := hashes.AttachInterlockBatch16x512(s, name, key); err != nil {
+				t.Fatal(err)
+			}
+			if err := hashes.AttachInterlockBatch32x512(s, name, key); err != nil {
 				t.Fatal(err)
 			}
 			c.seeds[i], c.keys[i] = s, key
@@ -130,9 +136,9 @@ func (c lowLevelConstellation) hooked(i int) bool {
 	case *itb.Seed128:
 		return s.FusedChain != nil || s.BatchFusedChain != nil || s.InterlockFillX16() != nil
 	case *itb.Seed256:
-		return s.FusedChain != nil || s.BatchFusedChain != nil || s.InterlockFillX16() != nil
+		return s.FusedChain != nil || s.BatchFusedChain != nil || s.BatchFusedChain8() != nil || s.InterlockFillX16() != nil || s.InterlockFillX32() != nil
 	case *itb.Seed512:
-		return s.FusedChain != nil || s.BatchFusedChain != nil || s.InterlockFillX16() != nil
+		return s.FusedChain != nil || s.BatchFusedChain != nil || s.BatchFusedChain8() != nil || s.InterlockFillX16() != nil || s.InterlockFillX32() != nil
 	}
 	return false
 }
@@ -244,6 +250,9 @@ func (c lowLevelConstellation) rebuild(t *testing.T, cfg *itb.Config, mode strin
 				if err := hashes.AttachInterlockBatch16x256(s, c.name, keys[i]); err != nil {
 					t.Fatal(err)
 				}
+				if err := hashes.AttachInterlockBatch32x256(s, c.name, keys[i]); err != nil {
+					t.Fatal(err)
+				}
 			}
 			out.seeds[i] = s
 		case *itb.Seed512:
@@ -257,6 +266,9 @@ func (c lowLevelConstellation) rebuild(t *testing.T, cfg *itb.Config, mode strin
 					t.Fatal(err)
 				}
 				if err := hashes.AttachInterlockBatch16x512(s, c.name, keys[i]); err != nil {
+					t.Fatal(err)
+				}
+				if err := hashes.AttachInterlockBatch32x512(s, c.name, keys[i]); err != nil {
 					t.Fatal(err)
 				}
 			}

@@ -275,7 +275,7 @@ fn, hashKey, _ := hashes.Make256("blake3") // random
 fn, _, _       := hashes.Make256("blake3", saved) // explicit
 ```
 
-The name-keyed seed constructors `hashes.NewSeed{128,256,512}(name, keyBits, key...)` go one step further: each builds a seed of the named primitive with its (single, batched) arms and every fast-path hook the primitive offers — the fused ChainHash cascade and the batch-16 Interlocked Barrier fill kernel — and returns the fixed key its arms were built with (`nil` for a primitive keyed by its seed components alone). The hooks are performance paths only; a seed built on the arms alone through `itb.NewSeed{128,256,512}` produces and decrypts the same wire.
+The name-keyed seed constructors `hashes.NewSeed{128,256,512}(name, keyBits, key...)` go one step further: each builds a seed of the named primitive with its (single, batched) arms and every fast-path hook the primitive offers — the fused ChainHash cascade (four- and, where the tier carries it, eight-lane), the batch-16 and batch-32 Interlocked Barrier fill kernels — and returns the fixed key its arms were built with (`nil` for a primitive keyed by its seed components alone). The hooks are performance paths only; a seed built on the arms alone through `itb.NewSeed{128,256,512}` produces and decrypts the same wire.
 
 ```go
 seed, hashKey, _ := hashes.NewSeed256("blake3", 1024)        // random key

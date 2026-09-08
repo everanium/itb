@@ -392,6 +392,10 @@ func NewSeedFromComponents(hashName string, components []uint64, hashKey []byte)
 			setLastErr(StatusBadHash)
 			return 0, StatusBadHash
 		}
+		if err := hashes.AttachInterlockBatch32x256(s, hashName, generatedKey); err != nil {
+			setLastErr(StatusBadHash)
+			return 0, StatusBadHash
+		}
 		h.seed256 = s
 		h.hashKey = generatedKey
 	case hashes.W512:
@@ -413,6 +417,10 @@ func NewSeedFromComponents(hashName string, components []uint64, hashKey []byte)
 			return 0, StatusBadHash
 		}
 		if err := hashes.AttachInterlockBatch16x512(s, hashName, generatedKey); err != nil {
+			setLastErr(StatusBadHash)
+			return 0, StatusBadHash
+		}
+		if err := hashes.AttachInterlockBatch32x512(s, hashName, generatedKey); err != nil {
 			setLastErr(StatusBadHash)
 			return 0, StatusBadHash
 		}

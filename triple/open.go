@@ -321,6 +321,9 @@ func importInnerBlob256(cfg *itb.Config, innerBytes []byte, innerHash string) ([
 		if ierr := hashes.AttachInterlockBatch16x256(rawSeeds[i], innerHash, keys[i]); ierr != nil {
 			return out, keys, "", nil, fmt.Errorf("triple: hashes.AttachInterlockBatch16x256(%q): %w", innerHash, ierr)
 		}
+		if ierr := hashes.AttachInterlockBatch32x256(rawSeeds[i], innerHash, keys[i]); ierr != nil {
+			return out, keys, "", nil, fmt.Errorf("triple: hashes.AttachInterlockBatch32x256(%q): %w", innerHash, ierr)
+		}
 		out[i] = rawSeeds[i]
 	}
 	return out, keys, b.MACName, append([]byte(nil), b.MACKey...), nil
@@ -353,6 +356,9 @@ func importInnerBlob512(cfg *itb.Config, innerBytes []byte, innerHash string) ([
 		}
 		if ierr := hashes.AttachInterlockBatch16x512(rawSeeds[i], innerHash, keys[i]); ierr != nil {
 			return out, keys, "", nil, fmt.Errorf("triple: hashes.AttachInterlockBatch16x512(%q): %w", innerHash, ierr)
+		}
+		if ierr := hashes.AttachInterlockBatch32x512(rawSeeds[i], innerHash, keys[i]); ierr != nil {
+			return out, keys, "", nil, fmt.Errorf("triple: hashes.AttachInterlockBatch32x512(%q): %w", innerHash, ierr)
 		}
 		out[i] = rawSeeds[i]
 	}
@@ -447,6 +453,9 @@ func importInnerBlob256Mixed(cfg *itb.Config, innerBytes []byte, mixedHashes [8]
 		if ierr := hashes.AttachInterlockBatch16x256(rawSeeds[i], name, keys[i]); ierr != nil {
 			return out, keys, "", nil, fmt.Errorf("triple: hashes.AttachInterlockBatch16x256(%q) slot %d: %w", name, i, ierr)
 		}
+		if ierr := hashes.AttachInterlockBatch32x256(rawSeeds[i], name, keys[i]); ierr != nil {
+			return out, keys, "", nil, fmt.Errorf("triple: hashes.AttachInterlockBatch32x256(%q) slot %d: %w", name, i, ierr)
+		}
 		out[i] = rawSeeds[i]
 	}
 	return out, keys, b.MACName, append([]byte(nil), b.MACKey...), nil
@@ -480,6 +489,9 @@ func importInnerBlob512Mixed(cfg *itb.Config, innerBytes []byte, mixedHashes [8]
 		}
 		if ierr := hashes.AttachInterlockBatch16x512(rawSeeds[i], name, keys[i]); ierr != nil {
 			return out, keys, "", nil, fmt.Errorf("triple: hashes.AttachInterlockBatch16x512(%q) slot %d: %w", name, i, ierr)
+		}
+		if ierr := hashes.AttachInterlockBatch32x512(rawSeeds[i], name, keys[i]); ierr != nil {
+			return out, keys, "", nil, fmt.Errorf("triple: hashes.AttachInterlockBatch32x512(%q) slot %d: %w", name, i, ierr)
 		}
 		out[i] = rawSeeds[i]
 	}

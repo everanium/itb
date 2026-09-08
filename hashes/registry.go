@@ -179,6 +179,38 @@ type Spec struct {
 	// components. Every shipped entry currently leaves both fields nil.
 	InterlockFillBatch16x256 func(key []byte) (itb.InterlockFillFunc16x256, error) `json:"-"`
 	InterlockFillBatch16x512 func(key []byte) (itb.InterlockFillFunc16x512, error) `json:"-"`
+
+	// FusedChainHash256x8 and FusedChainHash512x8 optionally build the
+	// eight-lane fused cascade evaluators installed through
+	// [AttachFused256] / [AttachFused512] on [itb.Seed256.SetBatchFusedChain8]
+	// / [itb.Seed512.SetBatchFusedChain8] (see
+	// [itb.BatchFusedChainHashFunc256x8] / [itb.BatchFusedChainHashFunc512x8]):
+	// the pixel pipeline's eight-pixel stride at the two wide widths. key
+	// is the primitive's fixed key exactly as returned by the Make256Pair
+	// / Make512Pair factory. A factory returns a nil evaluator on hosts
+	// whose selected tier carries no eight-lane kernel, which leaves the
+	// seed on the four-pixel stride; a populated evaluator must be
+	// bit-exact with two four-lane evaluations over the lane halves (and
+	// hence with the sequential loop). The hooks are performance paths
+	// only and never change the wire. Every shipped entry currently
+	// leaves both fields nil.
+	FusedChainHash256x8 func(key []byte) (itb.BatchFusedChainHashFunc256x8, error) `json:"-"`
+	FusedChainHash512x8 func(key []byte) (itb.BatchFusedChainHashFunc512x8, error) `json:"-"`
+
+	// InterlockFillBatch32x256 and InterlockFillBatch32x512 optionally
+	// build the batch-32 Interlocked Barrier fill kernels installed
+	// through [AttachInterlockBatch32x256] / [AttachInterlockBatch32x512]
+	// (see [itb.InterlockFillFunc32x256] and [itb.InterlockFillFunc32x512]
+	// for the group count one call covers at each width: 16 groups at
+	// width 256, 8 at width 512, 32 chunks either way). key is the
+	// primitive's fixed key exactly as returned by the Make256Pair /
+	// Make512Pair factory. A factory returns a nil kernel on hosts whose
+	// selected tier carries no batch-32 kernel, which leaves the fill on
+	// the batch-16 hook and the four-lane / single-lane arms; a populated
+	// kernel must be bit-exact with the sequential cascades over the same
+	// components. Every shipped entry currently leaves both fields nil.
+	InterlockFillBatch32x256 func(key []byte) (itb.InterlockFillFunc32x256, error) `json:"-"`
+	InterlockFillBatch32x512 func(key []byte) (itb.InterlockFillFunc32x512, error) `json:"-"`
 }
 
 // Canonical shipped primitive names. Every registry consumer (ctr, kdf,
@@ -887,6 +919,9 @@ func smokeValidate(spec Spec) error {
 				return err
 			}
 		}
+		if err := smokeWideHooks256(spec, single, key); err != nil {
+			return err
+		}
 	case W512:
 		single, batched, key, err := spec.Make512Pair()
 		if err != nil {
@@ -918,6 +953,9 @@ func smokeValidate(spec Spec) error {
 			if err := smokeFusedChainHash512(spec, single, key); err != nil {
 				return err
 			}
+		}
+		if err := smokeWideHooks512(spec, single, key); err != nil {
+			return err
 		}
 	}
 	if err := smokeOptionalHashHooks(spec, probe); err != nil {

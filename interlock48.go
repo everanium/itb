@@ -395,13 +395,29 @@ type lockBatchPRF48 struct {
 	// TestFillRanksSuperVsFillRanksParity and the wide-factor parity
 	// tests).
 	fillRanksSuper func(s *lockFillScratch48, groupIdxBase uint64, prf []uint64)
+
+	// fillRanksSuper32 is the optional batch-32 counterpart of
+	// fillRanksSuper: one call performs the PRF fill for the
+	// 2 * superGroups48 / factor consecutive groups that cover 32
+	// consecutive chunks through a single batch-32 kernel invocation,
+	// writing 64 rank words into prf[0:64] in chunk order — 16 groups at
+	// factor 2, 8 at factor 4 (no width-128 primitive carries a batch-32
+	// kernel, so the field stays nil at factor 1). Only available when
+	// the lockSeed carries a batch-32 hook
+	// (Seed{256,512}.InterlockFillX32). The fill ladder tries it ahead of
+	// fillRanksSuper; the two agree on every group index by the same
+	// argument (identical 13-byte fill buf per lane, identical cascade),
+	// pinned by the batch-32 parity tests.
+	fillRanksSuper32 func(s *lockFillScratch48, groupIdxBase uint64, prf []uint64)
 }
 
 // lockFillScratch48 is the per-worker scratch consumed by
 // lockBatchPRF48.fillRanksX4 — four domain-tagged 13-byte fill bufs
 // plus the slice-header array handed to the seed's BatchHash arm — and
 // by lockBatchPRF48.fillRanksSuper, whose out16 / out16x256 / out16x512
-// receives the batch-16 kernel's 16 rank pairs at the respective width.
+// receives the batch-16 kernel's 16 rank pairs at the respective width,
+// and by lockBatchPRF48.fillRanksSuper32, whose out32x256 / out32x512
+// receives the batch-32 kernel's 32 rank pairs.
 // Declared once per worker goroutine; the BatchHash / batch-16 hook
 // indirections make the buffers escape, so worker-scoped reuse keeps
 // both batched fills allocation-free per invocation. The bufs' reserved
@@ -413,6 +429,8 @@ type lockFillScratch48 struct {
 	out16     [16][2]uint64
 	out16x256 [8][4]uint64
 	out16x512 [4][8]uint64
+	out32x256 [16][4]uint64
+	out32x512 [8][8]uint64
 }
 
 // interlockWorkerScratch48 groups the per-worker buffers of the split /
@@ -423,16 +441,18 @@ type lockFillScratch48 struct {
 type interlockWorkerScratch48 struct {
 	buf     [13]byte
 	scratch lockFillScratch48
-	prf     [8 * lockBatchFactor48Max]uint64
+	prf     [2 * 8 * lockBatchFactor48Max]uint64
 }
 
 // superGroups48 is the chunk span of one fillRanksSuper call: 16
 // chunks, i.e. 16 / factor groups at every width. The batch-16 fill
-// writes 2 * superGroups48 rank words into the worker's prf staging of
-// 8 * lockBatchFactor48Max words; the staging must hold one full batch.
+// writes 2 * superGroups48 rank words and the batch-32 fill
+// (fillRanksSuper32, 2 * superGroups48 chunks) 4 * superGroups48 rank
+// words into the worker's prf staging of 2 * 8 * lockBatchFactor48Max
+// words; the staging must hold one full batch-32 call.
 const superGroups48 = 2 * superChunks48
 
-const _ = uint(8*lockBatchFactor48Max - 2*superGroups48)
+const _ = uint(2*8*lockBatchFactor48Max - 4*superGroups48)
 
 // fillLockMasksTriple48 fills masks[0..count-1] from count 128-bit ranks
 // packed into prf as pairs (prf[2*j], prf[2*j+1]). count must be <=
@@ -721,6 +741,34 @@ func splitTriple48LockedBatchInto(src framedSrc48, p0, p1, p2 []byte, bp lockBat
 				}
 			}
 			for g := gs; g < ge; {
+				// Batch-32 path: one kernel call per 32 consecutive chunks
+				// (2 * superGroups48 / factor groups) whenever the worker
+				// range still holds a full batch, then two 16-chunk unrank
+				// passes over the two halves of the staged ranks.
+				if bp.fillRanksSuper32 != nil && ge-g >= 2*superGroups {
+					bp.fillRanksSuper32(scratch, uint64(g), prf[0:4*superGroups48])
+					for half := 0; half < 2; half++ {
+						p := (*[2 * superGroups48]uint64)(prf[half*2*superGroups48 : (half+1)*2*superGroups48])
+						fillLockMasksTriple48Super16(p, &masks16)
+						if chunk48lockBatch(src, M, g*factor+half*superGroups48, superGroups48, masks16[:], p0, p1, p2) {
+							continue
+						}
+						for j := 0; j < superGroups48; j++ {
+							k := g*factor + half*superGroups48 + j
+							if k >= M {
+								break
+							}
+							m0, m1, m2 := masks16[j][0], masks16[j][1], masks16[j][2]
+							x := src.chunk(k)
+							l0, l1, l2 := chunk48lock(x, m0, m1, m2)
+							binary.LittleEndian.PutUint16(p0[2*k:], l0)
+							binary.LittleEndian.PutUint16(p1[2*k:], l1)
+							binary.LittleEndian.PutUint16(p2[2*k:], l2)
+						}
+					}
+					g += 2 * superGroups
+					continue
+				}
 				// Batch-16 path: one kernel call per 16 consecutive chunks
 				// (superGroups48 / factor groups) whenever the worker range
 				// still holds a full batch, then one 16-chunk unrank pass.
@@ -854,6 +902,31 @@ func interleaveTriple48LockedBatch(p0, p1, p2 []byte, bp lockBatchPRF48, cfg *Co
 				}
 			}
 			for g := gs; g < ge; {
+				// Batch-32 path: mirrors splitTriple48LockedBatchInto.
+				if bp.fillRanksSuper32 != nil && ge-g >= 2*superGroups {
+					bp.fillRanksSuper32(scratch, uint64(g), prf[0:4*superGroups48])
+					for half := 0; half < 2; half++ {
+						p := (*[2 * superGroups48]uint64)(prf[half*2*superGroups48 : (half+1)*2*superGroups48])
+						fillLockMasksTriple48Super16(p, &masks16)
+						if unchunk48lockBatch(result, M, g*factor+half*superGroups48, superGroups48, masks16[:], p0, p1, p2) {
+							continue
+						}
+						for j := 0; j < superGroups48; j++ {
+							k := g*factor + half*superGroups48 + j
+							if k >= M {
+								break
+							}
+							m0, m1, m2 := masks16[j][0], masks16[j][1], masks16[j][2]
+							l0 := binary.LittleEndian.Uint16(p0[2*k:])
+							l1 := binary.LittleEndian.Uint16(p1[2*k:])
+							l2 := binary.LittleEndian.Uint16(p2[2*k:])
+							x := unchunk48lock(l0, l1, l2, m0, m1, m2)
+							writeChunk48(result, 6*k, x)
+						}
+					}
+					g += 2 * superGroups
+					continue
+				}
 				// Batch-16 path: mirrors splitTriple48LockedBatchInto.
 				if bp.fillRanksSuper != nil && ge-g >= superGroups {
 					bp.fillRanksSuper(scratch, uint64(g), prf[0:2*superGroups48])

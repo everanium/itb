@@ -47,7 +47,7 @@ func NewSeed128(name string, keyBits int, key ...[]byte) (*itb.Seed128, []byte, 
 
 // NewSeed256 is the width-256 form of [NewSeed128]: the arms of
 // [Make256Pair], the hooks of [AttachFused256] /
-// [AttachInterlockBatch16x256], the fixed key of the arms as the second
+// [AttachInterlockBatch16x256] / [AttachInterlockBatch32x256], the fixed key of the arms as the second
 // return value.
 func NewSeed256(name string, keyBits int, key ...[]byte) (*itb.Seed256, []byte, error) {
 	single, batched, fixedKey, err := Make256Pair(name, key...)
@@ -65,12 +65,15 @@ func NewSeed256(name string, keyBits int, key ...[]byte) (*itb.Seed256, []byte, 
 	if err := AttachInterlockBatch16x256(s, name, fixedKey); err != nil {
 		return nil, nil, err
 	}
+	if err := AttachInterlockBatch32x256(s, name, fixedKey); err != nil {
+		return nil, nil, err
+	}
 	return s, fixedKey, nil
 }
 
 // NewSeed512 is the width-512 form of [NewSeed128]: the arms of
 // [Make512Pair], the hooks of [AttachFused512] /
-// [AttachInterlockBatch16x512], the fixed key of the arms as the second
+// [AttachInterlockBatch16x512] / [AttachInterlockBatch32x512], the fixed key of the arms as the second
 // return value.
 func NewSeed512(name string, keyBits int, key ...[]byte) (*itb.Seed512, []byte, error) {
 	single, batched, fixedKey, err := Make512Pair(name, key...)
@@ -86,6 +89,9 @@ func NewSeed512(name string, keyBits int, key ...[]byte) (*itb.Seed512, []byte, 
 		return nil, nil, err
 	}
 	if err := AttachInterlockBatch16x512(s, name, fixedKey); err != nil {
+		return nil, nil, err
+	}
+	if err := AttachInterlockBatch32x512(s, name, fixedKey); err != nil {
 		return nil, nil, err
 	}
 	return s, fixedKey, nil
@@ -144,6 +150,9 @@ func SeedFromComponents256(name string, key []byte, components ...uint64) (*itb.
 	if err := AttachInterlockBatch16x256(s, name, fixedKey); err != nil {
 		return nil, err
 	}
+	if err := AttachInterlockBatch32x256(s, name, fixedKey); err != nil {
+		return nil, err
+	}
 	return s, nil
 }
 
@@ -166,6 +175,9 @@ func SeedFromComponents512(name string, key []byte, components ...uint64) (*itb.
 		return nil, err
 	}
 	if err := AttachInterlockBatch16x512(s, name, fixedKey); err != nil {
+		return nil, err
+	}
+	if err := AttachInterlockBatch32x512(s, name, fixedKey); err != nil {
 		return nil, err
 	}
 	return s, nil

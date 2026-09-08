@@ -312,11 +312,17 @@ func processChunk256(cfg *Config, noiseSeed, dataSeed *Seed256, nonce []byte, co
 	useBatch := noiseSeed.BatchHash != nil && dataSeed.BatchHash != nil
 
 	// Per-worker hash-input lanes (see lanescratch.go): lane 0 is the
-	// serial single-call buffer, lanes 0..3 feed the batched path.
+	// serial single-call buffer, lanes 0..3 feed the four-pixel batched
+	// path and lanes 0..7 the eight-pixel stride, all in one block.
 	ls := newLaneScratch(nonce, currentNonceSizeCfg(cfg))
 	defer ls.wipe()
 	noiseBuf, dataBuf := ls.noise[0], ls.data[0]
 	noiseBufs, dataBufs := &ls.noise4, &ls.data4
+
+	// Eight-pixel stride (see process256_x8.go): lanes 4..7 extend the
+	// four-lane buffers when both seeds carry the eight-lane fused hook.
+	useBatch8 := useBatch8Seeds256(noiseSeed, dataSeed)
+	noiseBufs8, dataBufs8 := &ls.noise, &ls.data
 
 	for batchStart := startP; batchStart < endP; batchStart += batchSz {
 		batchEnd := batchStart + batchSz
@@ -327,6 +333,18 @@ func processChunk256(cfg *Config, noiseSeed, dataSeed *Seed256, nonce []byte, co
 
 		if useBatch {
 			i := 0
+			if useBatch8 {
+				for ; i+8 <= bn; i += 8 {
+					base := batchStart + i
+					pixelIndices := [8]int{base, base + 1, base + 2, base + 3, base + 4, base + 5, base + 6, base + 7}
+					noiseHs := noiseSeed.blockHash256x8(noiseBufs8, pixelIndices)
+					dataHs := dataSeed.blockHash256x8(dataBufs8, pixelIndices)
+					for lane := 0; lane < 8; lane++ {
+						ha.noise[i+lane] = noiseHs[lane][0]
+						ha.data[i+lane] = dataHs[lane][0]
+					}
+				}
+			}
 			for ; i+4 <= bn; i += 4 {
 				pixelIndices := [4]int{batchStart + i, batchStart + i + 1, batchStart + i + 2, batchStart + i + 3}
 				noiseHs := noiseSeed.blockHash256x4(noiseBufs, pixelIndices)
@@ -387,6 +405,11 @@ func processChunk512(cfg *Config, noiseSeed, dataSeed *Seed512, nonce []byte, co
 	noiseBuf, dataBuf := ls.noise[0], ls.data[0]
 	noiseBufs, dataBufs := &ls.noise4, &ls.data4
 
+	// Eight-pixel stride (see process512_x8.go): lanes 4..7 extend the
+	// four-lane buffers when both seeds carry the eight-lane fused hook.
+	useBatch8 := useBatch8Seeds512(noiseSeed, dataSeed)
+	noiseBufs8, dataBufs8 := &ls.noise, &ls.data
+
 	for batchStart := startP; batchStart < endP; batchStart += batchSz {
 		batchEnd := batchStart + batchSz
 		if batchEnd > endP {
@@ -396,6 +419,18 @@ func processChunk512(cfg *Config, noiseSeed, dataSeed *Seed512, nonce []byte, co
 
 		if useBatch {
 			i := 0
+			if useBatch8 {
+				for ; i+8 <= bn; i += 8 {
+					base := batchStart + i
+					pixelIndices := [8]int{base, base + 1, base + 2, base + 3, base + 4, base + 5, base + 6, base + 7}
+					noiseHs := noiseSeed.blockHash512x8(noiseBufs8, pixelIndices)
+					dataHs := dataSeed.blockHash512x8(dataBufs8, pixelIndices)
+					for lane := 0; lane < 8; lane++ {
+						ha.noise[i+lane] = noiseHs[lane][0]
+						ha.data[i+lane] = dataHs[lane][0]
+					}
+				}
+			}
 			for ; i+4 <= bn; i += 4 {
 				pixelIndices := [4]int{batchStart + i, batchStart + i + 1, batchStart + i + 2, batchStart + i + 3}
 				noiseHs := noiseSeed.blockHash512x4(noiseBufs, pixelIndices)

@@ -67,6 +67,19 @@ type Seed256 struct {
 	// performance hook only — the cascade fill is the wire with or
 	// without it. Populated via SetInterlockBatch16.
 	interlockFillX16 InterlockFillFunc16x256
+
+	// interlockFillX32 is the batch-32 counterpart of interlockFillX16:
+	// 16 groups (32 chunks) per kernel call, see [InterlockFillFunc32x256].
+	// The fill ladder tries it ahead of the batch-16 hook. Populated via
+	// SetInterlockBatch32.
+	interlockFillX32 InterlockFillFunc32x256
+
+	// batchFusedChainX8 is the eight-lane fused cascade hook of the pixel
+	// pipeline (see [BatchFusedChainHashFunc256x8]). When non-nil on both
+	// seeds of a call, processChunk256 hashes eight pixels per call ahead
+	// of the four-pixel stride. A performance hook only: the wire is
+	// identical with and without it. Populated via SetBatchFusedChain8.
+	batchFusedChainX8 BatchFusedChainHashFunc256x8
 }
 
 // NewSeed256 creates a new 256-bit seed with cryptographically random components.
