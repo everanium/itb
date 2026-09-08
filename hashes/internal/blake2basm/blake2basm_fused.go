@@ -1,3 +1,17 @@
+// Package blake2basm holds the fused ChainHash cascade kernels of
+// BLAKE2b-256 / -512 for the parent hashes package: the whole component
+// cascade of a seed evaluated in one kernel call at the four per-pixel
+// shapes (13 / 20 / 36 / 68 bytes) — four lanes on the AVX-512 EVEX YMM,
+// AVX2 VEX YMM and NEON tiers, eight lanes on ZMM registers at the
+// nonce-buf shapes and for the Interlocked Barrier fill (the batch-16
+// hook at width 256, the batch-32 hook at width 512), and one lane in
+// general-purpose registers as the single-lane arm of every tier. One
+// kernel set per width: the digest-length parameter block and the 32- /
+// 64-byte key and seed-injection widths are folded into the kernels by
+// the generator (scripts/kernels/blake2b/gen_fused_kernels.py).
+// Register layout after github.com/saucecontrol/Blake2Fast (MIT),
+// Blake2bAvx512.g.cs: one register per state word, one qword lane per
+// pixel, VPRORQ for the four ARX rotates on the EVEX tier.
 package blake2basm
 
 import (

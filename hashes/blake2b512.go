@@ -41,11 +41,10 @@ func BLAKE2b512(key ...[64]byte) (itb.HashFunc512, [64]byte) {
 // caller-supplied 64-byte fixed key, for serialization paths.
 //
 // The closure runs on the upstream golang.org/x/crypto/blake2b path
-// (which itself uses the BLAKE2b AVX2 kernel on amd64). For ITB
-// throughput-critical use, prefer BLAKE2b512Pair: the batched arm of
-// the pair dispatches to a 4-pixel-parallel AVX-512 ZMM kernel that
-// amortises the per-call overhead the upstream single-pixel path
-// cannot.
+// (which itself uses the BLAKE2b AVX2 kernel on amd64). The per-pixel
+// and Interlocked Barrier fill work of a seed built through the
+// registry runs in the fused cascade kernels of
+// hashes/internal/blake2basm instead.
 func BLAKE2b512WithKey(b2key [64]byte) itb.HashFunc512 {
 	pool := &sync.Pool{New: func() any { b := make([]byte, 0, 128); return &b }}
 
@@ -95,13 +94,11 @@ func BLAKE2b512WithKey(b2key [64]byte) itb.HashFunc512 {
 // computed via the batched dispatch match the single-call path
 // bit-exact (the parity invariant required by itb.BatchHashFunc512).
 //
-// On amd64 with AVX-512+VL the batched arm dispatches to a fused
-// ZMM-batched chain-absorb kernel for ITB's three per-pixel buf
-// shapes (20 / 36 / 68 byte inputs), holding four lane-isolated
-// BLAKE2b states in 16 ZMM registers across all 12 mixing rounds.
-// On hosts without AVX-512+VL, and for non-{20,36,68} input lengths,
-// the batched arm falls back to four single-call invocations and
-// remains bit-exact.
+// The batched arm evaluates the four lanes through the single arm;
+// the per-pixel and Interlocked Barrier fill work of a seed built
+// through the registry runs in the fused cascade kernels of
+// hashes/internal/blake2basm, installed by the blake2b512 entry's
+// FusedChainHash512 / InterlockFillBatch16x512 factories.
 //
 // With no argument a fresh 64-byte fixed key is generated via
 // crypto/rand; passing a single caller-supplied [64]byte uses that
@@ -125,72 +122,16 @@ func BLAKE2b512Pair(key ...[64]byte) (itb.HashFunc512, itb.BatchHashFunc512, [64
 // persistence-restore path where the original fixed key has been
 // saved across processes (encrypt today, decrypt tomorrow).
 //
-// The single arm is identical to BLAKE2b512WithKey(fixedKey). The
-// batched arm hot-dispatches to the fused ZMM-batched chain-absorb
-// kernel when all four lanes share an input length in {20, 36, 68};
-// for any other lane-length configuration it falls back to four
-// single-call invocations of the single arm.
+// The single arm is identical to BLAKE2b512WithKey(fixedKey); the
+// batched arm evaluates the four lanes through it under their per-lane
+// seeds and is bit-exact with four single calls on every input. Every
+// shipped constructor path attaches the fused cascade hooks of the
+// blake2b512 registry entry, which the batched ChainHash512 entry
+// points consult first, so the batched arm is the fallback for seeds
+// built without those hooks.
 func BLAKE2b512PairWithKey(fixedKey [64]byte) (itb.HashFunc512, itb.BatchHashFunc512) {
 	single := BLAKE2b512WithKey(fixedKey)
-	// On hosts without a fused chain-absorb path (neither AVX-512 nor
-	// AVX2) the batched closure falls into the scalar Go reference;
-	// under that path process_cgo.go's nil-fallback (driving 4 single
-	// calls into the upstream golang.org/x/crypto BLAKE2b asm)
-	// outperforms the 4-lane wrapper. Return nil to opt into that
-	// fallback.
-	if !blake2basm.HasAVX512Fused && !blake2basm.HasAVX2Fused {
-		return single, nil
-	}
 	batched := func(data *[4][]byte, seeds [4][8]uint64) [4][8]uint64 {
-		commonLen := len(data[0])
-		if (commonLen == 13 || commonLen == 20 || commonLen == 36 || commonLen == 68) &&
-			len(data[1]) == commonLen &&
-			len(data[2]) == commonLen &&
-			len(data[3]) == commonLen {
-			var dataPtrs [4]*byte
-			dataPtrs[0] = &data[0][0]
-			dataPtrs[1] = &data[1][0]
-			dataPtrs[2] = &data[2][0]
-			dataPtrs[3] = &data[3][0]
-			var out [4][8]uint64
-			seedsCopy := seeds
-			switch commonLen {
-			case 13:
-				// Interlocked Barrier PRF fill shape (Lift 2).
-				blake2basm.Blake2b512ChainAbsorb13x4(
-					&blake2basm.Blake2bIV512Param,
-					&fixedKey,
-					&seedsCopy,
-					&dataPtrs,
-					&out,
-				)
-			case 20:
-				blake2basm.Blake2b512ChainAbsorb20x4(
-					&blake2basm.Blake2bIV512Param,
-					&fixedKey,
-					&seedsCopy,
-					&dataPtrs,
-					&out,
-				)
-			case 36:
-				blake2basm.Blake2b512ChainAbsorb36x4(
-					&blake2basm.Blake2bIV512Param,
-					&fixedKey,
-					&seedsCopy,
-					&dataPtrs,
-					&out,
-				)
-			case 68:
-				blake2basm.Blake2b512ChainAbsorb68x4(
-					&blake2basm.Blake2bIV512Param,
-					&fixedKey,
-					&seedsCopy,
-					&dataPtrs,
-					&out,
-				)
-			}
-			return out
-		}
 		var out [4][8]uint64
 		for lane := 0; lane < 4; lane++ {
 			out[lane] = single(data[lane], seeds[lane])

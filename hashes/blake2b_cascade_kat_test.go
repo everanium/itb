@@ -123,12 +123,6 @@ func TestBLAKE2bCascadeKAT(t *testing.T) {
 					if !printKAT && singleGot != kat.single {
 						t.Errorf("%s ChainHash256 = %s, want %s", label, singleGot, kat.single)
 					}
-					if s.BatchFusedChain == nil && s.BatchHash == nil {
-						// The arms-only seed has no batched arm on this
-						// build; the hooked seed's batched path is
-						// checked above.
-						continue
-					}
 					b := s.BatchChainHash256(&lanes)
 					var acc uint64
 					for l := range b {
@@ -183,12 +177,6 @@ func TestBLAKE2bCascadeKAT(t *testing.T) {
 					singleGot = fmt.Sprintf("%016x", foldWords(0, h[:]))
 					if !printKAT && singleGot != kat.single {
 						t.Errorf("%s ChainHash512 fold = %s, want %s", label, singleGot, kat.single)
-					}
-					if s.BatchFusedChain == nil && s.BatchHash == nil {
-						// The arms-only seed has no batched arm on this
-						// build; the hooked seed's batched path is
-						// checked above.
-						continue
 					}
 					b := s.BatchChainHash512(&lanes)
 					var acc uint64

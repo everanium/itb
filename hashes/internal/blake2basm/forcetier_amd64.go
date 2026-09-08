@@ -9,8 +9,8 @@ import (
 )
 
 // init applies the two forcing variables in order: ITB_FORCE_HASH_TIER
-// to every BLAKE2b dispatch family — the chain-absorb arm flags, the
-// fused cascade flags and the batch-16 fill flags — then
+// to both BLAKE2b dispatch families — the fused cascade flags and the
+// batch-16 fill flags — then
 // ITB_FORCE_INTERLOCK_PRF_FILL_TIER to the batch-16 family alone. Each
 // variable is handled by its own function so an unsatisfiable token in
 // one cannot skip the other.
@@ -41,7 +41,6 @@ func applyHashTier() {
 			forcetier.Warnf("blake2basm: avx512 tier needs AVX-512F; keeping auto-dispatch")
 			return
 		}
-		HasAVX512Fused, HasAVX2Fused = true, false
 		FusedHasAVX512, FusedHasAVX2 = true, false
 		HasAVX512X16, HasAVX2X16 = true, false
 	case "avx2", "vex":
@@ -52,18 +51,15 @@ func applyHashTier() {
 		if forcetier.HashTier() == "vex" {
 			forcetier.Warnf("blake2basm: no vex arm; selecting the AVX2 kernels")
 		}
-		HasAVX512Fused, HasAVX2Fused = false, true
 		FusedHasAVX512, FusedHasAVX2 = false, true
 		HasAVX512X16, HasAVX2X16 = false, true
 	case "aesni":
 		forcetier.Warnf("blake2basm: no aesni arm; forcing scalar")
-		HasAVX512Fused, HasAVX2Fused = false, false
 		FusedHasAVX512, FusedHasAVX2 = false, false
 		HasAVX512X16, HasAVX2X16 = false, false
 	case "neon", "sve2", "sve":
 		forcetier.Warnf("blake2basm: %s tier is arm64-only; keeping auto-dispatch", forcetier.HashTier())
 	case "scalar":
-		HasAVX512Fused, HasAVX2Fused = false, false
 		FusedHasAVX512, FusedHasAVX2 = false, false
 		HasAVX512X16, HasAVX2X16 = false, false
 	}
