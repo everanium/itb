@@ -33,11 +33,12 @@ in-register from `groupIdxBase`. The avx2 and neon tiers run the fill
 hook as two four-lane kernel calls over Go-synthesised blocks. The
 single-lane entry points of every tier run
 `chacha20_fusedchain256_<shape>x1_gpr_{amd64,arm64}.s`, the
-general-purpose-register kernels: the compression state in 32-bit
+general-purpose-register kernels: the ChaCha20 block state in 32-bit
 general-purpose registers (amd64 keeps fifteen of the sixteen words in
-registers and one c word in a frame slot, which its G steps reach through
-memory operands; arm64 keeps all sixteen), the message words as frame
-slots, the rotates as `RORL` / `RORW`.
+registers and one c word in a frame slot, which its quarter-round steps
+reach through memory operands; arm64 keeps all sixteen), the key words,
+the accumulator and the data words as frame slots, the rotates as
+`ROLL` / `RORW`.
 
 Per cascade round the kernel derives the ChaCha20 key per lane as the
 32-byte fixed key XOR the seed — the seed of the round being the

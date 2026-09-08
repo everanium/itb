@@ -503,15 +503,17 @@ func Make128(name string, key ...[]byte) (itb.HashFunc128, []byte, error) {
 //
 // Primitives currently returning a non-nil batched arm:
 //
-//   - "aesitb128" — 4-lane chain-absorb kernels (AES-NI XMM on amd64,
-//     NEON on arm64; VAES YMM / ZMM kernels built and force-selectable)
-//     for the 13 / 20 / 36 / 68-byte per-pixel shapes, scalar reference
-//     elsewhere
+//   - "aesitb128" — always: the four lanes through the pure-Go cascade
+//     reference of internal/aesitbasm; the assembly kernels of the
+//     primitive are reached through the fused hooks the name-keyed
+//     constructors install
 //   - "aescmac" — four single-arm calls per lane; the assembly kernels of
 //     the primitive evaluate the whole ChainHash cascade
 //     (hashes/internal/aescmacasm) and are reached through the fused
 //     hooks the name-keyed constructors install
-//   - "siphash24" — AVX-512 ZMM-batched SipHash-2-4 chain-absorb kernels
+//   - "siphash24" — four single-arm calls per lane; the assembly kernels
+//     of the primitive (hashes/internal/siphashasm) are reached through
+//     the fused hooks the name-keyed constructors install
 //
 // Variadic key arg follows the same pattern as Make128 / Make256Pair.
 func Make128Pair(name string, key ...[]byte) (itb.HashFunc128, itb.BatchHashFunc128, []byte, error) {
@@ -810,7 +812,9 @@ func Make512(name string, key ...[]byte) (itb.HashFunc512, []byte, error) {
 //     present, the four-way Go permutation elsewhere); the fused cascade
 //     kernels of the primitive (internal/areionasm) are reached through
 //     the hooks the name-keyed constructors install
-//   - "blake2b512" — AVX-512 ZMM-batched BLAKE2b chain-absorb kernels
+//   - "blake2b512" — always: the four lanes through the single arm; the
+//     fused cascade kernels of the primitive (hashes/internal/blake2basm)
+//     are reached through the hooks the entry's factories install
 func Make512Pair(name string, key ...[]byte) (itb.HashFunc512, itb.BatchHashFunc512, []byte, error) {
 	switch name {
 	case "areion512":

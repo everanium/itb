@@ -230,13 +230,15 @@ arm_env() {
 
 # arm_applicable HASH ARM — succeeds when the (hash, arm) pair names a
 # real dispatch arm. Skip rules:
-#   * avx512x4: aesitb128 (internal/aesitbasm), aescmac
+#   * avx512x4: every shipped primitive carries eight-lane fused
+#     ChainHash kernels (x8 at the nonce-buf shapes) on its AVX-512
+#     tier — aesitb128 (internal/aesitbasm), areion256 / areion512
+#     (internal/areionasm), blake2b256 / blake2b512
+#     (hashes/internal/blake2basm), blake2s (hashes/internal/blake2sasm),
+#     blake3 (hashes/internal/blake3asm), aescmac
 #     (hashes/internal/aescmacasm), siphash24
-#     (hashes/internal/siphashasm), blake2s (hashes/internal/blake2sasm),
-#     blake3 (hashes/internal/blake3asm) and chacha20
-#     (hashes/internal/chacha20asm) carry eight-lane fused ChainHash
-#     kernels (x8 at the nonce-buf shapes), so only there does the
-#     pseudo-arm select something the plain avx512 arm does not.
+#     (hashes/internal/siphashasm) and chacha20
+#     (hashes/internal/chacha20asm) — so the pseudo-arm applies to all.
 #   * aesni: only the AES-based primitives carry AES-NI XMM fused
 #     cascade kernels (aesitb128 / areion256 / areion512 / aescmac).
 #   * vaesavx2: aesitb128, aescmac, areion256 and areion512 carry VAES
@@ -251,11 +253,7 @@ arm_env() {
 arm_applicable() {
     case "$2" in
         avx512|scalar|avx2) return 0 ;;
-        avx512x4)
-            case "$1" in
-                aesitb128|aescmac|siphash24|blake2s|blake3|chacha20) return 0 ;;
-                *) return 1 ;;
-            esac ;;
+        avx512x4) return 0 ;;
         vaesavx2)
             case "$1" in
                 aesitb128|areion256|areion512|aescmac) return 0 ;;
