@@ -727,127 +727,127 @@ func BenchmarkExtTripleSipHash24_2048bit_Decrypt_64MB(b *testing.B) {
 // --- Areion-SoEM-256 Triple Pair benches: 512-bit ITB width ---
 
 func BenchmarkExtTripleAreion256_512bit_Encrypt_1MB(b *testing.B) {
-	benchEncrypt3x256CachedBatchedExt(b, makeAreion256Hash256PairExt, 512, 1<<20)
+	benchEncrypt3x256HookedExt(b, hashes.CipherAreion256, 512, 1<<20)
 }
 func BenchmarkExtTripleAreion256_512bit_Encrypt_16MB(b *testing.B) {
-	benchEncrypt3x256CachedBatchedExt(b, makeAreion256Hash256PairExt, 512, 16<<20)
+	benchEncrypt3x256HookedExt(b, hashes.CipherAreion256, 512, 16<<20)
 }
 func BenchmarkExtTripleAreion256_512bit_Encrypt_64MB(b *testing.B) {
-	benchEncrypt3x256CachedBatchedExt(b, makeAreion256Hash256PairExt, 512, 64<<20)
+	benchEncrypt3x256HookedExt(b, hashes.CipherAreion256, 512, 64<<20)
 }
 func BenchmarkExtTripleAreion256_512bit_Decrypt_1MB(b *testing.B) {
-	benchDecrypt3x256CachedBatchedExt(b, makeAreion256Hash256PairExt, 512, 1<<20)
+	benchDecrypt3x256HookedExt(b, hashes.CipherAreion256, 512, 1<<20)
 }
 func BenchmarkExtTripleAreion256_512bit_Decrypt_16MB(b *testing.B) {
-	benchDecrypt3x256CachedBatchedExt(b, makeAreion256Hash256PairExt, 512, 16<<20)
+	benchDecrypt3x256HookedExt(b, hashes.CipherAreion256, 512, 16<<20)
 }
 func BenchmarkExtTripleAreion256_512bit_Decrypt_64MB(b *testing.B) {
-	benchDecrypt3x256CachedBatchedExt(b, makeAreion256Hash256PairExt, 512, 64<<20)
+	benchDecrypt3x256HookedExt(b, hashes.CipherAreion256, 512, 64<<20)
 }
 
 // --- Areion-SoEM-512 Triple Pair benches: 512-bit ITB width ---
 
 func BenchmarkExtTripleAreion512_512bit_Encrypt_1MB(b *testing.B) {
-	benchEncrypt3x512CachedBatchedExt(b, makeAreion512Hash512PairExt, 512, 1<<20)
+	benchEncrypt3x512HookedExt(b, hashes.CipherAreion512, 512, 1<<20)
 }
 func BenchmarkExtTripleAreion512_512bit_Encrypt_16MB(b *testing.B) {
-	benchEncrypt3x512CachedBatchedExt(b, makeAreion512Hash512PairExt, 512, 16<<20)
+	benchEncrypt3x512HookedExt(b, hashes.CipherAreion512, 512, 16<<20)
 }
 func BenchmarkExtTripleAreion512_512bit_Encrypt_64MB(b *testing.B) {
-	benchEncrypt3x512CachedBatchedExt(b, makeAreion512Hash512PairExt, 512, 64<<20)
+	benchEncrypt3x512HookedExt(b, hashes.CipherAreion512, 512, 64<<20)
 }
 func BenchmarkExtTripleAreion512_512bit_Decrypt_1MB(b *testing.B) {
-	benchDecrypt3x512CachedBatchedExt(b, makeAreion512Hash512PairExt, 512, 1<<20)
+	benchDecrypt3x512HookedExt(b, hashes.CipherAreion512, 512, 1<<20)
 }
 func BenchmarkExtTripleAreion512_512bit_Decrypt_16MB(b *testing.B) {
-	benchDecrypt3x512CachedBatchedExt(b, makeAreion512Hash512PairExt, 512, 16<<20)
+	benchDecrypt3x512HookedExt(b, hashes.CipherAreion512, 512, 16<<20)
 }
 func BenchmarkExtTripleAreion512_512bit_Decrypt_64MB(b *testing.B) {
-	benchDecrypt3x512CachedBatchedExt(b, makeAreion512Hash512PairExt, 512, 64<<20)
+	benchDecrypt3x512HookedExt(b, hashes.CipherAreion512, 512, 64<<20)
 }
 
 // --- Areion-SoEM-256 Triple Pair benches: 1024-bit ITB width ---
 
 func BenchmarkExtTripleAreion256_1024bit_Encrypt_1MB(b *testing.B) {
-	benchEncrypt3x256CachedBatchedExt(b, makeAreion256Hash256PairExt, 1024, 1<<20)
+	benchEncrypt3x256HookedExt(b, hashes.CipherAreion256, 1024, 1<<20)
 }
 func BenchmarkExtTripleAreion256_1024bit_Encrypt_16MB(b *testing.B) {
-	benchEncrypt3x256CachedBatchedExt(b, makeAreion256Hash256PairExt, 1024, 16<<20)
+	benchEncrypt3x256HookedExt(b, hashes.CipherAreion256, 1024, 16<<20)
 }
 func BenchmarkExtTripleAreion256_1024bit_Encrypt_64MB(b *testing.B) {
-	benchEncrypt3x256CachedBatchedExt(b, makeAreion256Hash256PairExt, 1024, 64<<20)
+	benchEncrypt3x256HookedExt(b, hashes.CipherAreion256, 1024, 64<<20)
 }
 func BenchmarkExtTripleAreion256_1024bit_Decrypt_1MB(b *testing.B) {
-	benchDecrypt3x256CachedBatchedExt(b, makeAreion256Hash256PairExt, 1024, 1<<20)
+	benchDecrypt3x256HookedExt(b, hashes.CipherAreion256, 1024, 1<<20)
 }
 func BenchmarkExtTripleAreion256_1024bit_Decrypt_16MB(b *testing.B) {
-	benchDecrypt3x256CachedBatchedExt(b, makeAreion256Hash256PairExt, 1024, 16<<20)
+	benchDecrypt3x256HookedExt(b, hashes.CipherAreion256, 1024, 16<<20)
 }
 func BenchmarkExtTripleAreion256_1024bit_Decrypt_64MB(b *testing.B) {
-	benchDecrypt3x256CachedBatchedExt(b, makeAreion256Hash256PairExt, 1024, 64<<20)
+	benchDecrypt3x256HookedExt(b, hashes.CipherAreion256, 1024, 64<<20)
 }
 
 // --- Areion-SoEM-512 Triple Pair benches: 1024-bit ITB width ---
 
 func BenchmarkExtTripleAreion512_1024bit_Encrypt_1MB(b *testing.B) {
-	benchEncrypt3x512CachedBatchedExt(b, makeAreion512Hash512PairExt, 1024, 1<<20)
+	benchEncrypt3x512HookedExt(b, hashes.CipherAreion512, 1024, 1<<20)
 }
 func BenchmarkExtTripleAreion512_1024bit_Encrypt_16MB(b *testing.B) {
-	benchEncrypt3x512CachedBatchedExt(b, makeAreion512Hash512PairExt, 1024, 16<<20)
+	benchEncrypt3x512HookedExt(b, hashes.CipherAreion512, 1024, 16<<20)
 }
 func BenchmarkExtTripleAreion512_1024bit_Encrypt_64MB(b *testing.B) {
-	benchEncrypt3x512CachedBatchedExt(b, makeAreion512Hash512PairExt, 1024, 64<<20)
+	benchEncrypt3x512HookedExt(b, hashes.CipherAreion512, 1024, 64<<20)
 }
 func BenchmarkExtTripleAreion512_1024bit_Decrypt_1MB(b *testing.B) {
-	benchDecrypt3x512CachedBatchedExt(b, makeAreion512Hash512PairExt, 1024, 1<<20)
+	benchDecrypt3x512HookedExt(b, hashes.CipherAreion512, 1024, 1<<20)
 }
 func BenchmarkExtTripleAreion512_1024bit_Decrypt_16MB(b *testing.B) {
-	benchDecrypt3x512CachedBatchedExt(b, makeAreion512Hash512PairExt, 1024, 16<<20)
+	benchDecrypt3x512HookedExt(b, hashes.CipherAreion512, 1024, 16<<20)
 }
 func BenchmarkExtTripleAreion512_1024bit_Decrypt_64MB(b *testing.B) {
-	benchDecrypt3x512CachedBatchedExt(b, makeAreion512Hash512PairExt, 1024, 64<<20)
+	benchDecrypt3x512HookedExt(b, hashes.CipherAreion512, 1024, 64<<20)
 }
 
 // --- Areion-SoEM-256 Triple Pair benches: 2048-bit ITB width ---
 
 func BenchmarkExtTripleAreion256_2048bit_Encrypt_1MB(b *testing.B) {
-	benchEncrypt3x256CachedBatchedExt(b, makeAreion256Hash256PairExt, 2048, 1<<20)
+	benchEncrypt3x256HookedExt(b, hashes.CipherAreion256, 2048, 1<<20)
 }
 func BenchmarkExtTripleAreion256_2048bit_Encrypt_16MB(b *testing.B) {
-	benchEncrypt3x256CachedBatchedExt(b, makeAreion256Hash256PairExt, 2048, 16<<20)
+	benchEncrypt3x256HookedExt(b, hashes.CipherAreion256, 2048, 16<<20)
 }
 func BenchmarkExtTripleAreion256_2048bit_Encrypt_64MB(b *testing.B) {
-	benchEncrypt3x256CachedBatchedExt(b, makeAreion256Hash256PairExt, 2048, 64<<20)
+	benchEncrypt3x256HookedExt(b, hashes.CipherAreion256, 2048, 64<<20)
 }
 func BenchmarkExtTripleAreion256_2048bit_Decrypt_1MB(b *testing.B) {
-	benchDecrypt3x256CachedBatchedExt(b, makeAreion256Hash256PairExt, 2048, 1<<20)
+	benchDecrypt3x256HookedExt(b, hashes.CipherAreion256, 2048, 1<<20)
 }
 func BenchmarkExtTripleAreion256_2048bit_Decrypt_16MB(b *testing.B) {
-	benchDecrypt3x256CachedBatchedExt(b, makeAreion256Hash256PairExt, 2048, 16<<20)
+	benchDecrypt3x256HookedExt(b, hashes.CipherAreion256, 2048, 16<<20)
 }
 func BenchmarkExtTripleAreion256_2048bit_Decrypt_64MB(b *testing.B) {
-	benchDecrypt3x256CachedBatchedExt(b, makeAreion256Hash256PairExt, 2048, 64<<20)
+	benchDecrypt3x256HookedExt(b, hashes.CipherAreion256, 2048, 64<<20)
 }
 
 // --- Areion-SoEM-512 Triple Pair benches: 2048-bit ITB width ---
 
 func BenchmarkExtTripleAreion512_2048bit_Encrypt_1MB(b *testing.B) {
-	benchEncrypt3x512CachedBatchedExt(b, makeAreion512Hash512PairExt, 2048, 1<<20)
+	benchEncrypt3x512HookedExt(b, hashes.CipherAreion512, 2048, 1<<20)
 }
 func BenchmarkExtTripleAreion512_2048bit_Encrypt_16MB(b *testing.B) {
-	benchEncrypt3x512CachedBatchedExt(b, makeAreion512Hash512PairExt, 2048, 16<<20)
+	benchEncrypt3x512HookedExt(b, hashes.CipherAreion512, 2048, 16<<20)
 }
 func BenchmarkExtTripleAreion512_2048bit_Encrypt_64MB(b *testing.B) {
-	benchEncrypt3x512CachedBatchedExt(b, makeAreion512Hash512PairExt, 2048, 64<<20)
+	benchEncrypt3x512HookedExt(b, hashes.CipherAreion512, 2048, 64<<20)
 }
 func BenchmarkExtTripleAreion512_2048bit_Decrypt_1MB(b *testing.B) {
-	benchDecrypt3x512CachedBatchedExt(b, makeAreion512Hash512PairExt, 2048, 1<<20)
+	benchDecrypt3x512HookedExt(b, hashes.CipherAreion512, 2048, 1<<20)
 }
 func BenchmarkExtTripleAreion512_2048bit_Decrypt_16MB(b *testing.B) {
-	benchDecrypt3x512CachedBatchedExt(b, makeAreion512Hash512PairExt, 2048, 16<<20)
+	benchDecrypt3x512HookedExt(b, hashes.CipherAreion512, 2048, 16<<20)
 }
 func BenchmarkExtTripleAreion512_2048bit_Decrypt_64MB(b *testing.B) {
-	benchDecrypt3x512CachedBatchedExt(b, makeAreion512Hash512PairExt, 2048, 64<<20)
+	benchDecrypt3x512HookedExt(b, hashes.CipherAreion512, 2048, 64<<20)
 }
 
 // --- Dedicated lockSeed coverage, Triple Ouroboros (BLAKE3 256-bit) ---

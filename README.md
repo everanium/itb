@@ -137,6 +137,11 @@ The shipped `_amd64.s` kernels target a modern x86_64 baseline. The exact CPU fe
 | Areion-SoEM — mid-tier per-half permute | VAES + AVX2 | `areionasm.HasVAESAVX2NoAVX512` |
 | Areion-SoEM — mid-tier YMM 2-lane batched chain-absorb (`Areion*ChainAbsorb*x4VaesAvx2`) | VAES + AVX2 (no AVX-512F) | `areionasm.HasVAESAVX2Batched` |
 | Areion-SoEM — AES-NI XMM 4-lane batched chain-absorb | AES-NI (AESENC / AESENCLAST on XMM) | `areionasm.HasAESNIBatched` |
+| Areion-SoEM-256 / -512 — VAES ZMM 4-lane fused chain (the whole component cascade per call; auto-selected on VAES + AVX-512F hosts) | VAES + AVX-512F | `areionasm.FusedHasVAESAVX512` |
+| Areion-SoEM-256 / -512 — VAES YMM 2-lane-per-pass fused chain (auto-selected on VAES + AVX2 hosts without AVX-512F) | VAES + AVX2 | `areionasm.FusedHasVAESAVX2` |
+| Areion-SoEM-256 / -512 — AES-NI XMM fused chain (two lanes per pass at width 256, one at width 512; auto-selected on AES-NI hosts without VAES, and the single-lane arm of every tier) | AES-NI (AESENC / AESENCLAST on XMM) | `areionasm.FusedHasAESNI` |
+| Areion-SoEM-256 / -512 — batch-16 Interlocked Barrier PRF fill cascade (a dedicated eight-lane ZMM kernel at width 256 on the VAES + AVX-512F tier; four-lane kernel calls over Go-synthesised fill blocks elsewhere; overridable via `ITB_FORCE_INTERLOCK_PRF_FILL_TIER`) | as per tier above | `areionasm.HasVAESAVX512X16` / `HasVAESAVX2X16` / `HasAESNIX16` |
+| Areion-SoEM-256 / -512 — NEON fused chain + batch-16 fill (arm64, auto-selected on ARM Crypto Extension hosts) | ARMv8 Crypto Extension (AESE / AESMC) | `areionasm.FusedHasARMAES` / `areionasm.HasARMAESX16` |
 | BLAKE2b — AVX-512 4-lane YMM chain-absorb + fused chain | AVX-512F | `blake2basm.HasAVX512Fused` |
 | BLAKE2b — AVX2 4-lane YMM chain-absorb (synthesised rotates) | AVX2 (no AVX-512F) | `blake2basm.HasAVX2Fused` |
 | BLAKE2s — AVX-512 4-lane XMM chain-absorb + fused chain | AVX-512F | `blake2sasm.HasAVX512Fused` |
@@ -159,7 +164,7 @@ The shipped `_amd64.s` kernels target a modern x86_64 baseline. The exact CPU fe
 | ChaCha20 — AVX-512 4-lane XMM chain-absorb + fused chain (68-byte chain fuses two compressions per YMM register) | AVX-512F | `chacha20asm.HasAVX512Fused` |
 | ChaCha20 — AVX2 4-lane XMM chain-absorb (synthesised rotates; 68-byte AVX2 chain also fuses two compressions per YMM) | AVX2 (no AVX-512F) | `chacha20asm.HasAVX2Fused` |
 
-Every chain-absorb family other than AES-ITB-128, AES-CMAC and SipHash-2-4 additionally ships a 13-byte-shape kernel (`*ChainAbsorb13x4`) at each tier that serves the four-lane arm of the Interlocked Barrier cascade fill — four consecutive groups per call, one kernel call per cascade round — under the family's capability flag for that tier; AES-ITB-128, AES-CMAC and SipHash-2-4 fill the Interlocked Barrier through their batch-16 fused cascade kernels instead.
+Every chain-absorb family other than AES-ITB-128, AES-CMAC, SipHash-2-4 and Areion-SoEM-256 / -512 additionally ships a 13-byte-shape kernel (`*ChainAbsorb13x4`) at each tier that serves the four-lane arm of the Interlocked Barrier cascade fill — four consecutive groups per call, one kernel call per cascade round — under the family's capability flag for that tier; AES-ITB-128, AES-CMAC, SipHash-2-4 and Areion-SoEM-256 / -512 fill the Interlocked Barrier through their batch-16 fused cascade kernels instead.
 
 Cross-referenced to shipping x86 microarchitectures:
 

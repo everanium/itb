@@ -1,6 +1,12 @@
 package hashes
 
-import "github.com/everanium/itb"
+import (
+	"fmt"
+
+	"github.com/everanium/itb"
+	"github.com/everanium/itb/internal/areionasm"
+	"github.com/everanium/itb/internal/forcetier"
+)
 
 // Areion256Pair returns a fresh (single, batched) Areion-SoEM-256 hash
 // pair for itb.Seed256 integration. The two arms share the same
@@ -37,4 +43,79 @@ func Areion256Pair(key ...[32]byte) (itb.HashFunc256, itb.BatchHashFunc256, [32]
 // the rest of the hashes/ package's WithKey factories.
 func Areion256PairWithKey(fixedKey [32]byte) (itb.HashFunc256, itb.BatchHashFunc256) {
 	return itb.MakeAreionSoEM256HashWithKey(fixedKey)
+}
+
+// areion256FusedChainHash is the [Spec.FusedChainHash256] factory of the
+// areion256 entry. The returned evaluators run the ChainHash256 cascade
+// inside one internal/areionasm kernel call for the four per-pixel
+// shapes (13 / 20 / 36 / 68 bytes) and report ok = false for any other
+// input length or unequal lane lengths, which sends the seed back to the
+// sequential loop. The key is the 32-byte fixed key the arms were built
+// with. When ITB_FORCE_CHAINHASH_SEQ is set both evaluators are nil so
+// the sequential loop runs end to end.
+func areion256FusedChainHash(key []byte) (itb.FusedChainHashFunc256, itb.BatchFusedChainHashFunc256, error) {
+	if len(key) != 32 {
+		return nil, nil, fmt.Errorf("hashes: %q fused cascade needs a 32-byte key, got %d", CipherAreion256, len(key))
+	}
+	if forcetier.ChainHashSeq() {
+		return nil, nil, nil
+	}
+	var k [32]byte
+	copy(k[:], key)
+	single := func(components []uint64, data []byte) ([4]uint64, bool) {
+		var out [4]uint64
+		switch len(data) {
+		case 13:
+			areionasm.Fused256Chain13x1(&k, components, &data[0], &out)
+		case 20:
+			areionasm.Fused256Chain20x1(&k, components, &data[0], &out)
+		case 36:
+			areionasm.Fused256Chain36x1(&k, components, &data[0], &out)
+		case 68:
+			areionasm.Fused256Chain68x1(&k, components, &data[0], &out)
+		default:
+			return out, false
+		}
+		return out, true
+	}
+	batched := func(components []uint64, data *[4][]byte) ([4][4]uint64, bool) {
+		var out [4][4]uint64
+		n := len(data[0])
+		if len(data[1]) != n || len(data[2]) != n || len(data[3]) != n {
+			return out, false
+		}
+		switch n {
+		case 13, 20, 36, 68:
+		default:
+			return out, false
+		}
+		dataPtrs := [4]*byte{&data[0][0], &data[1][0], &data[2][0], &data[3][0]}
+		switch n {
+		case 13:
+			areionasm.Fused256Chain13x4(&k, components, &dataPtrs, &out)
+		case 20:
+			areionasm.Fused256Chain20x4(&k, components, &dataPtrs, &out)
+		case 36:
+			areionasm.Fused256Chain36x4(&k, components, &dataPtrs, &out)
+		case 68:
+			areionasm.Fused256Chain68x4(&k, components, &dataPtrs, &out)
+		}
+		return out, true
+	}
+	return single, batched, nil
+}
+
+// areion256InterlockFillBatch16 is the [Spec.InterlockFillBatch16x256]
+// factory: the batch-16 Interlocked Barrier fill hook that runs the
+// whole cascade over eight consecutive 13-byte fill blocks per call
+// (see [itb.InterlockFillFunc16x256]).
+func areion256InterlockFillBatch16(key []byte) (itb.InterlockFillFunc16x256, error) {
+	if len(key) != 32 {
+		return nil, fmt.Errorf("hashes: %q interlock fill batch-16 needs a 32-byte key, got %d", CipherAreion256, len(key))
+	}
+	var k [32]byte
+	copy(k[:], key)
+	return func(components []uint64, groupIdxBase uint64, out *[8][4]uint64) {
+		areionasm.Fused256Fill13x8(&k, components, groupIdxBase, out)
+	}, nil
 }

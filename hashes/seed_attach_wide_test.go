@@ -61,28 +61,26 @@ var wideAttachCases = []wideAttachCase{
 	}},
 }
 
-// TestWideAttachHelpersRegistryNoOp pins that every shipped width-256 /
-// width-512 entry leaves its wide factory fields nil, so the attach
-// helpers return without error and without populating any hook.
-func TestWideAttachHelpersRegistryNoOp(t *testing.T) {
+// TestWideAttachHelpersRegistry pins, for every shipped width-256 /
+// width-512 entry, that the attach helpers populate the hooks exactly
+// when the entry carries a wide factory field and return without error
+// and without touching the seed otherwise.
+func TestWideAttachHelpersRegistry(t *testing.T) {
 	for _, spec := range Registry {
 		for _, c := range wideAttachCases {
 			if spec.Width != c.width {
 				continue
 			}
 			t.Run(spec.Name, func(t *testing.T) {
+				var has bool
 				switch c.width {
 				case W256:
-					if spec.FusedChainHash256 != nil || spec.InterlockFillBatch16x256 != nil {
-						t.Fatal("shipped entry populates a width-256 factory field")
-					}
+					has = spec.FusedChainHash256 != nil || spec.InterlockFillBatch16x256 != nil
 				case W512:
-					if spec.FusedChainHash512 != nil || spec.InterlockFillBatch16x512 != nil {
-						t.Fatal("shipped entry populates a width-512 factory field")
-					}
+					has = spec.FusedChainHash512 != nil || spec.InterlockFillBatch16x512 != nil
 				}
-				if c.registryNoOp(t, spec.Name) {
-					t.Fatal("attach helpers populated a hook on a primitive without factories")
+				if got := c.registryNoOp(t, spec.Name); got != has {
+					t.Fatalf("attach helpers populated a hook: %v, wide factory fields present: %v", got, has)
 				}
 			})
 		}
