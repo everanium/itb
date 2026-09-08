@@ -8,6 +8,7 @@ import (
 	"github.com/everanium/itb"
 	"github.com/everanium/itb/aesitb"
 	"github.com/everanium/itb/hashes"
+	"github.com/everanium/itb/internal/forcetier"
 	"github.com/everanium/itb/triple"
 )
 
@@ -22,6 +23,9 @@ var fusedKeyBits = []int{512, 1024, 2048}
 
 func newAESITBSeedPair(t *testing.T, bits int) (fused, seq *itb.Seed128) {
 	t.Helper()
+	if forcetier.ChainHashSeq() {
+		t.Skip("ITB_FORCE_CHAINHASH_SEQ set: the fused hooks stay nil by design")
+	}
 	single, batched, key, err := hashes.Make128Pair(hashes.CipherAESITB128, aesitbParityKey[:])
 	if err != nil {
 		t.Fatal(err)

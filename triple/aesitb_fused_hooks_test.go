@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/everanium/itb"
+	"github.com/everanium/itb/internal/forcetier"
 )
 
 // TestAESITBProfilesFusedHooksAttached pins that every one of the eight
@@ -11,6 +12,9 @@ import (
 // both when built by Init and when rebuilt from a saved blob by Load —
 // a seed without them silently runs the sequential loop.
 func TestAESITBProfilesFusedHooksAttached(t *testing.T) {
+	if forcetier.ChainHashSeq() {
+		t.Skip("ITB_FORCE_CHAINHASH_SEQ set: the fused hooks stay nil by design")
+	}
 	for _, name := range []string{
 		ProfileSingleMsgAESITBMACV1, ProfileSingleMsgAESITBNoMACV1,
 		ProfileStreamingAEADAESITBMACV1, ProfileStreamingNoAEADAESITBV1,

@@ -23,12 +23,14 @@ func init() {
 
 // applyHashTier applies ITB_FORCE_HASH_TIER. The fused flags are
 // assigned as one consistent set: "avx512" selects the EVEX kernels,
-// "avx2" the VEX kernels. SipHash has no AES-based arm, so "vaesavx2",
-// "vex" and "aesni" disable both batched arms (scalar behaviour) with a
-// stderr note; the parity script's skip matrix avoids those pairings.
-// "scalar" means no assembly anywhere in this package's dispatch, so it
-// also disarms the batch-16 flags; ITB_FORCE_INTERLOCK_PRF_FILL_TIER,
-// applied afterwards, can re-arm a batch-16 tier on its own.
+// "avx2" the VEX kernels, and "vex" — the VEX-encoded kernels are the
+// avx2 tier — selects them with a stderr note. SipHash has no AES-based
+// arm, so "vaesavx2" and "aesni" name no arm of this family and keep
+// auto-dispatch with a stderr note; the parity script's skip matrix
+// avoids those pairings. "scalar" means no assembly anywhere in this
+// package's dispatch, so it also disarms the batch-16 flags;
+// ITB_FORCE_INTERLOCK_PRF_FILL_TIER, applied afterwards, can re-arm a
+// batch-16 tier on its own.
 func applyHashTier() {
 	switch forcetier.HashTier() {
 	case "avx512":
@@ -38,17 +40,20 @@ func applyHashTier() {
 		}
 		FusedHasAVX512, FusedHasAVX2 = true, false
 		HasAVX512X16, HasAVX2X16 = true, false
-	case "avx2":
+	case "avx2", "vex":
 		if !cpu.X86.HasAVX2 {
-			forcetier.Warnf("siphashasm: avx2 tier needs AVX2; keeping auto-dispatch")
+			forcetier.Warnf("siphashasm: %s tier needs AVX2; keeping auto-dispatch", forcetier.HashTier())
 			return
+		}
+		if forcetier.HashTier() == "vex" {
+			forcetier.Warnf("siphashasm: no vex arm; selecting the AVX2 kernels")
 		}
 		FusedHasAVX512, FusedHasAVX2 = false, true
 		HasAVX512X16, HasAVX2X16 = false, true
-	case "vaesavx2", "vex", "aesni":
-		forcetier.Warnf("siphashasm: no %s arm; forcing scalar", forcetier.HashTier())
-		FusedHasAVX512, FusedHasAVX2 = false, false
-		HasAVX512X16, HasAVX2X16 = false, false
+	case "vaesavx2", "aesni":
+		forcetier.Warnf("siphashasm: no %s arm; keeping auto-dispatch", forcetier.HashTier())
+	case "neon", "sve2", "sve":
+		forcetier.Warnf("siphashasm: %s tier is arm64-only; keeping auto-dispatch", forcetier.HashTier())
 	case "scalar":
 		FusedHasAVX512, FusedHasAVX2 = false, false
 		HasAVX512X16, HasAVX2X16 = false, false
@@ -57,8 +62,9 @@ func applyHashTier() {
 
 // applyInterlockPRFFillTier applies ITB_FORCE_INTERLOCK_PRF_FILL_TIER to
 // the batch-16 dispatch flags (HasAVX512X16, HasAVX2X16), assigned as one
-// consistent set. The AES-only tokens ("vaesavx2", "vex", "aesni")
-// disarm the batch-16 kernels with a stderr note.
+// consistent set. vex selects the AVX2 arm with a stderr note; the
+// AES-only tokens ("vaesavx2", "aesni") name no arm of this family and
+// keep auto-dispatch with a stderr note.
 func applyInterlockPRFFillTier() {
 	switch forcetier.InterlockPRFFillTier() {
 	case "avx512":
@@ -67,15 +73,17 @@ func applyInterlockPRFFillTier() {
 			return
 		}
 		HasAVX512X16, HasAVX2X16 = true, false
-	case "avx2":
+	case "avx2", "vex":
 		if !cpu.X86.HasAVX2 {
-			forcetier.Warnf("siphashasm: avx2 batch-16 tier needs AVX2; keeping auto-dispatch")
+			forcetier.Warnf("siphashasm: %s batch-16 tier needs AVX2; keeping auto-dispatch", forcetier.InterlockPRFFillTier())
 			return
 		}
+		if forcetier.InterlockPRFFillTier() == "vex" {
+			forcetier.Warnf("siphashasm: no vex batch-16 arm; selecting the AVX2 arm")
+		}
 		HasAVX512X16, HasAVX2X16 = false, true
-	case "vaesavx2", "vex", "aesni":
-		forcetier.Warnf("siphashasm: no %s batch-16 arm; forcing scalar", forcetier.InterlockPRFFillTier())
-		HasAVX512X16, HasAVX2X16 = false, false
+	case "vaesavx2", "aesni":
+		forcetier.Warnf("siphashasm: no %s batch-16 arm; keeping auto-dispatch", forcetier.InterlockPRFFillTier())
 	case "neon":
 		forcetier.Warnf("siphashasm: neon batch-16 tier is arm64-only; keeping auto-dispatch")
 	case "scalar":

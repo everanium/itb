@@ -27,11 +27,9 @@ func init() {
 //	avx2   — VEX XMM fused cascade and batch-16 fill
 //	vex    — the VEX XMM kernels are the avx2 tier; the token selects
 //	         them with a stderr note
-//	aesni  — BLAKE2s has no AES-based arm; the token forces scalar with
-//	         a stderr note (the parity script's skip matrix avoids the
-//	         pairing)
-//	vaesavx2 — no VAES arm exists; the token keeps auto-dispatch with a
-//	         stderr note
+//	aesni / vaesavx2 — BLAKE2s has no AES-based arm; the token names no
+//	         arm of this family and keeps auto-dispatch with a stderr
+//	         note (the parity script's skip matrix avoids the pairing)
 //	scalar — every kernel off
 //
 // The arm64 tokens (neon / sve2 / sve) keep auto-dispatch with a note.
@@ -54,12 +52,8 @@ func applyHashTier() {
 		}
 		FusedHasAVX512, FusedHasAVX2 = false, true
 		HasAVX512X16, HasAVX2X16 = false, true
-	case "aesni":
-		forcetier.Warnf("blake2sasm: no aesni fused arm; forcing scalar")
-		FusedHasAVX512, FusedHasAVX2 = false, false
-		HasAVX512X16, HasAVX2X16 = false, false
-	case "vaesavx2":
-		forcetier.Warnf("blake2sasm: no vaesavx2 fused arm; keeping auto-dispatch")
+	case "aesni", "vaesavx2":
+		forcetier.Warnf("blake2sasm: no %s fused arm; keeping auto-dispatch", forcetier.HashTier())
 	case "neon", "sve2", "sve":
 		forcetier.Warnf("blake2sasm: %s tier is arm64-only; keeping auto-dispatch", forcetier.HashTier())
 	case "scalar":
@@ -70,8 +64,9 @@ func applyHashTier() {
 
 // applyInterlockPRFFillTier applies ITB_FORCE_INTERLOCK_PRF_FILL_TIER
 // to the batch-16 fill flags (HasAVX512X16, HasAVX2X16), assigned as one
-// consistent set. vex selects the AVX2 arm and aesni forces scalar, each
-// with a stderr note.
+// consistent set. vex selects the AVX2 arm with a stderr note; aesni and
+// vaesavx2 name no arm of this family and keep auto-dispatch with a
+// stderr note.
 func applyInterlockPRFFillTier() {
 	switch forcetier.InterlockPRFFillTier() {
 	case "avx512":
@@ -80,18 +75,17 @@ func applyInterlockPRFFillTier() {
 			return
 		}
 		HasAVX512X16, HasAVX2X16 = true, false
-	case "avx2", "vex", "vaesavx2":
+	case "avx2", "vex":
 		if !cpu.X86.HasAVX2 {
 			forcetier.Warnf("blake2sasm: %s batch-16 tier needs AVX2; keeping auto-dispatch", forcetier.InterlockPRFFillTier())
 			return
 		}
-		if forcetier.InterlockPRFFillTier() != "avx2" {
-			forcetier.Warnf("blake2sasm: no %s batch-16 arm; selecting the AVX2 arm", forcetier.InterlockPRFFillTier())
+		if forcetier.InterlockPRFFillTier() == "vex" {
+			forcetier.Warnf("blake2sasm: no vex batch-16 arm; selecting the AVX2 arm")
 		}
 		HasAVX512X16, HasAVX2X16 = false, true
-	case "aesni":
-		forcetier.Warnf("blake2sasm: no aesni batch-16 arm; forcing scalar")
-		HasAVX512X16, HasAVX2X16 = false, false
+	case "aesni", "vaesavx2":
+		forcetier.Warnf("blake2sasm: no %s batch-16 arm; keeping auto-dispatch", forcetier.InterlockPRFFillTier())
 	case "neon":
 		forcetier.Warnf("blake2sasm: neon batch-16 tier is arm64-only; keeping auto-dispatch")
 	case "scalar":

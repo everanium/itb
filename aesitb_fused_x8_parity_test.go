@@ -9,6 +9,7 @@ import (
 	"github.com/everanium/itb"
 	"github.com/everanium/itb/hashes"
 	"github.com/everanium/itb/internal/aesitbasm"
+	"github.com/everanium/itb/internal/forcetier"
 	"github.com/everanium/itb/triple"
 )
 
@@ -19,11 +20,15 @@ import (
 // through the four-pixel stride and vice versa.
 
 // x8Hosted skips the test on hosts (or forced tiers) without the
-// eight-lane arm; the four-lane parity tests cover those.
+// eight-lane arm and under ITB_FORCE_CHAINHASH_SEQ, which leaves every
+// fused hook nil by design; the four-lane parity tests cover those.
 func x8Hosted(t *testing.T) {
 	t.Helper()
 	if !aesitbasm.FusedX8Active() {
 		t.Skip("eight-lane ZMM fused arm not selected on this host / tier")
+	}
+	if forcetier.ChainHashSeq() {
+		t.Skip("ITB_FORCE_CHAINHASH_SEQ set: the fused hooks stay nil by design")
 	}
 }
 

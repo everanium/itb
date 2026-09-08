@@ -37,13 +37,15 @@ func TestForceHashTierApplied(t *testing.T) {
 			t.Skip("avx512 tier not executable on this host")
 		}
 		want(true, false)
-	case "avx2":
+	case "avx2", "vex":
 		if !cpu.X86.HasAVX2 {
-			t.Skip("avx2 tier not executable on this host")
+			t.Skipf("%s tier not executable on this host", tier)
 		}
 		want(false, true)
-	case "vaesavx2", "vex", "aesni", "scalar":
+	case "scalar":
 		want(false, false)
+	case "aesni", "vaesavx2":
+		want(cpu.X86.HasAVX512F, cpu.X86.HasAVX2 && !cpu.X86.HasAVX512F)
 	case "sve2", "sve", "neon":
 		t.Skipf("%s: arm64-only tier; not applicable on amd64", tier)
 	default:
@@ -73,16 +75,37 @@ func TestForceInterlockPRFFillTierApplied(t *testing.T) {
 			t.Skip("avx512 batch-16 tier not executable on this host")
 		}
 		want(true, false)
-	case "avx2":
+	case "avx2", "vex":
 		if !cpu.X86.HasAVX2 {
-			t.Skip("avx2 batch-16 tier not executable on this host")
+			t.Skipf("%s batch-16 tier not executable on this host", tier)
 		}
 		want(false, true)
-	case "vaesavx2", "vex", "aesni", "scalar":
+	case "scalar":
 		want(false, false)
+	case "aesni", "vaesavx2":
+		want(fillFlagsFromHashTier())
 	case "neon":
 		t.Skip("neon batch-16 tier is arm64-only")
 	default:
 		t.Fatalf("unexpected validated tier %q", tier)
 	}
+}
+
+// fillFlagsFromHashTier returns the batch-16 flag pair
+// ITB_FORCE_HASH_TIER leaves behind — the state a batch-16 token that
+// names no arm of this family keeps.
+func fillFlagsFromHashTier() (avx512, avx2 bool) {
+	switch forcetier.HashTier() {
+	case "avx512":
+		if cpu.X86.HasAVX512F {
+			return true, false
+		}
+	case "avx2", "vex":
+		if cpu.X86.HasAVX2 {
+			return false, true
+		}
+	case "scalar":
+		return false, false
+	}
+	return cpu.X86.HasAVX512F, cpu.X86.HasAVX2 && !cpu.X86.HasAVX512F
 }
