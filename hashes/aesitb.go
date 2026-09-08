@@ -121,29 +121,58 @@ func aesITB128FusedChainHash(key []byte) (itb.FusedChainHashFunc128, itb.BatchFu
 
 // AttachFused128 populates s.FusedChain / s.BatchFusedChain from the
 // named primitive's [Spec.FusedChainHash128] factory, using the fixed
-// key the seed's Hash / BatchHash arms were built with. Primitives
-// without a fused cascade, unknown names, and factories that decline
-// (nil evaluators) leave the seed unchanged — the sequential loop keeps
-// running. A factory error is returned; the seed is left unchanged.
-// The hooks are a performance path only: the seed produces the same
-// wire with and without them. Every shipping constructor path — the
-// triple package's Init / Load seed builders and the C ABI seed
-// constructors — calls AttachFused128 and [AttachInterlockBatch16]
-// together.
+// key the seed's Hash / BatchHash arms were built with, and the
+// eight-lane hook ([itb.Seed128.SetBatchFusedChain8]) from the
+// [Spec.FusedChainHash128x8] factory when the entry populates it and
+// the factory returns a kernel for the selected tier; either factory
+// may be present without the other. Primitives without a fused cascade,
+// unknown names, and factories that decline (nil evaluators) leave the
+// seed unchanged — the sequential loop keeps running. A factory error
+// is returned; the seed is left unchanged. The hooks are a performance
+// path only: the seed produces the same wire with and without them.
+// Every shipping constructor path — the triple package's Init / Load
+// seed builders and the C ABI seed constructors — calls AttachFused128
+// and [AttachInterlockBatch16] together.
 func AttachFused128(s *itb.Seed128, name string, key []byte) error {
 	spec, ok := Find(name)
-	if !ok || spec.FusedChainHash128 == nil {
+	if !ok {
 		return nil
 	}
-	single, batched, err := spec.FusedChainHash128(key)
-	if err != nil {
-		return err
+	if spec.FusedChainHash128 != nil {
+		single, batched, err := spec.FusedChainHash128(key)
+		if err != nil {
+			return err
+		}
+		s.FusedChain, s.BatchFusedChain = single, batched
 	}
-	s.FusedChain, s.BatchFusedChain = single, batched
-	if batched != nil {
-		attachFused128x8(s, name, key)
+	if spec.FusedChainHash128x8 != nil {
+		x8, err := spec.FusedChainHash128x8(key)
+		if err != nil {
+			return err
+		}
+		if x8 != nil {
+			s.SetBatchFusedChain8(x8)
+		}
 	}
 	return nil
+}
+
+// aesITB128FusedChainHash128x8 is the [Spec.FusedChainHash128x8] factory
+// of the aesitb128 entry: [aesITB128FusedChainHash8] under the 16-byte
+// fixed key, returned only where the eight-lane ZMM arm is the selected
+// tier (aesitbasm.FusedX8Active), so a seed built on any other host or
+// tier keeps the four-lane stride; under ITB_FORCE_CHAINHASH_SEQ it is
+// nil as the four-lane evaluators are.
+func aesITB128FusedChainHash128x8(key []byte) (itb.BatchFusedChainHashFunc128x8, error) {
+	if len(key) != 16 {
+		return nil, fmt.Errorf("hashes: %q fused cascade needs a 16-byte key, got %d", CipherAESITB128, len(key))
+	}
+	if forcetier.ChainHashSeq() || !aesitbasm.FusedX8Active() {
+		return nil, nil
+	}
+	var k [16]byte
+	copy(k[:], key)
+	return aesITB128FusedChainHash8(k), nil
 }
 
 // aesITB128FusedChainHash8 builds the eight-lane fused cascade hook of
@@ -219,5 +248,52 @@ func AttachInterlockBatch16(s *itb.Seed128, name string, key []byte) error {
 		return err
 	}
 	s.SetInterlockBatch16(fn)
+	return nil
+}
+
+// smokeWideHooks128 is the Register-time check of the optional
+// [Spec.FusedChainHash128x8] factory of a user-registered W128 Spec — the
+// width-128 counterpart of smokeWideHooks256: a populated factory must
+// return without error, and a non-nil evaluator must be bit-exact with
+// the sequential HashFunc128 loop on every lane it accepts. A nil
+// evaluator is a valid opt-out.
+func smokeWideHooks128(spec Spec, single itb.HashFunc128, key []byte) error {
+	if spec.FusedChainHash128x8 == nil {
+		return nil
+	}
+	x8, err := spec.FusedChainHash128x8(key)
+	if err != nil {
+		return fmt.Errorf("hashes: Register: %q FusedChainHash128x8(key): %w", spec.Name, err)
+	}
+	if x8 == nil {
+		return nil
+	}
+	var comps [8]uint64
+	for i := range comps {
+		comps[i] = 0x0123456789abcdef ^ uint64(i)*0x9e3779b97f4a7c15
+	}
+	seqChain := func(data []byte) [2]uint64 {
+		lo, hi := single(data, comps[0], comps[1])
+		for i := 2; i < len(comps); i += 2 {
+			lo, hi = single(data, comps[i]^lo, comps[i+1]^hi)
+		}
+		return [2]uint64{lo, hi}
+	}
+	for _, n := range [...]int{13, 20, 36, 68} {
+		var lanes [8][]byte
+		for l := range lanes {
+			lanes[l] = make([]byte, n)
+			for i := range lanes[l] {
+				lanes[l][i] = byte(i + l*7)
+			}
+		}
+		if out, ok := x8(comps[:], &lanes); ok {
+			for l := 0; l < 8; l++ {
+				if out[l] != seqChain(lanes[l]) {
+					return fmt.Errorf("hashes: Register: %q FusedChainHash128x8 lane %d diverges from the sequential HashFunc128 loop at len=%d", spec.Name, l, n)
+				}
+			}
+		}
+	}
 	return nil
 }

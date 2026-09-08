@@ -140,6 +140,19 @@ type Spec struct {
 	// evaluators bit-exact with that loop. Shipped: aesitb128, aescmac, siphash24.
 	FusedChainHash128 func(key []byte) (itb.FusedChainHashFunc128, itb.BatchFusedChainHashFunc128, error) `json:"-"`
 
+	// FusedChainHash128x8 optionally builds the eight-lane fused cascade
+	// evaluator installed on [itb.Seed128.SetBatchFusedChain8] (see
+	// [itb.BatchFusedChainHashFunc128x8]): the pixel pipeline's
+	// eight-pixel stride at width 128. key is the primitive's fixed key
+	// exactly as returned by the Make128Pair factory. A factory returns a
+	// nil evaluator on hosts whose selected tier carries no eight-lane
+	// kernel, which leaves the seed on the four-pixel stride; a populated
+	// evaluator must be bit-exact with two four-lane evaluations over the
+	// lane halves (and hence with the sequential loop). The hook is a
+	// performance path only and never changes the wire. Shipped: aesitb128,
+	// aescmac, siphash24.
+	FusedChainHash128x8 func(key []byte) (itb.BatchFusedChainHashFunc128x8, error) `json:"-"`
+
 	// InterlockFillBatch16 optionally builds the batch-16 Interlocked
 	// Barrier fill kernel installed through
 	// [itb.Seed128.SetInterlockBatch16] (see [itb.InterlockFillFunc16]).
@@ -257,15 +270,15 @@ const (
 // bindings — which are triple-only and cannot themselves call Register
 // — see a stable primitive set.
 var Registry = [10]Spec{
-	{Name: CipherAESITB128, Width: W128, Class: ClassNone, FusedChainHash128: aesITB128FusedChainHash, InterlockFillBatch16: aesITB128InterlockFillBatch16},
+	{Name: CipherAESITB128, Width: W128, Class: ClassNone, FusedChainHash128: aesITB128FusedChainHash, FusedChainHash128x8: aesITB128FusedChainHash128x8, InterlockFillBatch16: aesITB128InterlockFillBatch16},
 	{Name: CipherAreion256, Width: W256, Class: ClassPRFCounter, FusedChainHash256: areion256FusedChainHash, FusedChainHash256x8: areion256FusedChainHash8, InterlockFillBatch16x256: areion256InterlockFillBatch16},
 	{Name: CipherAreion512, Width: W512, Class: ClassPRFCounter, FusedChainHash512: areion512FusedChainHash, FusedChainHash512x8: areion512FusedChainHash8, InterlockFillBatch16x512: areion512InterlockFillBatch16, InterlockFillBatch32x512: areion512InterlockFillBatch32},
 	{Name: CipherBLAKE2b256, Width: W256, Class: ClassPRFCounter, HashHash: blake2b256HashHash, KeyedHash: blake2b256KeyedHash, FusedChainHash256: blake2b256FusedChainHash, FusedChainHash256x8: blake2b256FusedChainHash8, InterlockFillBatch16x256: blake2b256InterlockFillBatch16},
 	{Name: CipherBLAKE2b512, Width: W512, Class: ClassPRFCounter, HashHash: blake2b512HashHash, KeyedHash: blake2b512KeyedHash, FusedChainHash512: blake2b512FusedChainHash, FusedChainHash512x8: blake2b512FusedChainHash8, InterlockFillBatch16x512: blake2b512InterlockFillBatch16, InterlockFillBatch32x512: blake2b512InterlockFillBatch32},
 	{Name: CipherBLAKE2s, Width: W256, Class: ClassPRFCounter, HashHash: blake2sHashHash, KeyedHash: blake2sKeyedHash, FusedChainHash256: blake2sFusedChainHash, FusedChainHash256x8: blake2sFusedChainHash8, InterlockFillBatch16x256: blake2sInterlockFillBatch16},
 	{Name: CipherBLAKE3, Width: W256, Class: ClassPRFCounter, HashHash: blake3HashHash, KeyedHash: blake3KeyedHash, FusedChainHash256: blake3FusedChainHash, FusedChainHash256x8: blake3FusedChainHash8, InterlockFillBatch16x256: blake3InterlockFillBatch16},
-	{Name: CipherAES128CTR, Width: W128, Class: ClassNativeStream, FusedChainHash128: aesCMACFusedChainHash, InterlockFillBatch16: aesCMACInterlockFillBatch16},
-	{Name: CipherSipHash24, Width: W128, Class: ClassNativeStream, KeyedHash: siphash24KeyedHash, FusedChainHash128: sipHash24FusedChainHash, InterlockFillBatch16: sipHash24InterlockFillBatch16},
+	{Name: CipherAES128CTR, Width: W128, Class: ClassNativeStream, FusedChainHash128: aesCMACFusedChainHash, FusedChainHash128x8: aesCMACFusedChainHash128x8, InterlockFillBatch16: aesCMACInterlockFillBatch16},
+	{Name: CipherSipHash24, Width: W128, Class: ClassNativeStream, KeyedHash: siphash24KeyedHash, FusedChainHash128: sipHash24FusedChainHash, FusedChainHash128x8: sipHash24FusedChainHash128x8, InterlockFillBatch16: sipHash24InterlockFillBatch16},
 	{Name: CipherChaCha20, Width: W256, Class: ClassNativeStream, FusedChainHash256: chacha20FusedChainHash, FusedChainHash256x8: chacha20FusedChainHash8, InterlockFillBatch16x256: chacha20InterlockFillBatch16},
 }
 
@@ -887,6 +900,9 @@ func smokeValidate(spec Spec) error {
 			if err := smokeFusedChainHash128(spec, single, key); err != nil {
 				return err
 			}
+		}
+		if err := smokeWideHooks128(spec, single, key); err != nil {
+			return err
 		}
 	case W256:
 		single, batched, key, err := spec.Make256Pair()

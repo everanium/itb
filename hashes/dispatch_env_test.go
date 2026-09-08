@@ -37,8 +37,8 @@ func TestRegistryFusedHooksFollowDisarmKnobs(t *testing.T) {
 				if x4 && s.BatchFusedChain8() != nil {
 					t.Fatal("ITB_FORCE_CHAINHASH_X4: eight-lane hook present")
 				}
-				if (seq || spec.FusedChainHash128 == nil) && s.BatchFusedChain8() != nil {
-					t.Fatal("eight-lane hook present without the four-lane factory")
+				if (seq || spec.FusedChainHash128x8 == nil) && s.BatchFusedChain8() != nil {
+					t.Fatal("eight-lane hook present without its factory")
 				}
 			case W256:
 				s, _, err := NewSeed256(spec.Name, 1024)

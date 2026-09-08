@@ -167,7 +167,6 @@ func TestSipHash24HooksZeroAlloc(t *testing.T) {
 	if err := AttachInterlockBatch16(s, CipherSipHash24, nil); err != nil {
 		t.Fatal(err)
 	}
-	attachFused128x8(s, CipherSipHash24, nil)
 	check := func(what string, f func()) {
 		t.Helper()
 		if n := testing.AllocsPerRun(50, f); n != 0 {
