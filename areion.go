@@ -552,24 +552,14 @@ func MakeAreionSoEM256HashWithKey(fixedKey [32]byte) (HashFunc256, BatchHashFunc
 			binary.LittleEndian.Uint64(state[24:]),
 		}
 	}
-	// On hosts without any VAES-capable asm path (purego / non-amd64
-	// / no-AESNI) the batched closure's AreionSoEM256x4 dispatch falls
-	// through to the package's portable Go SoEM scalar path, which
-	// pays the 4-lane wrapper cost on top of work the single arm
-	// already does through its own dispatcher. Returning nil here
-	// lets process_cgo.go's nil-fallback drive per-pixel hashing
-	// through the single arm directly. The check covers both AVX-512
-	// + VAES (HasVAESAVX512) and AVX-2 + VAES (HasVAESAVX2NoAVX512);
-	// either flag is enough to keep the batched path engaged because
-	// the AVX-2 4-way permutation still SIMD-parallelises across
-	// lanes.
-	// Batched chain: 4 lanes run their CBC-MAC chain in lock-step,
-	// each round dispatching one AreionSoEM256x4 call so the AVX-512
-	// 4-way SIMD parallelism is preserved. ITB feeds equal-length
-	// data per batched call (one ChainHash round across 4 pixels);
-	// the inner XOR loops clamp at each lane's own length boundary
-	// to stay safe if a future caller violates the equal-length
-	// invariant.
+	// The batched arm is returned on every build: on hosts with an
+	// Areion assembly tier the ITB buf shapes run the single-lane
+	// fused cascade kernel per lane; everywhere else, and for other
+	// lengths, the 4 lanes run their CBC-MAC chain in lock-step, each
+	// round dispatching one AreionSoEM256x4 call (VAES ZMM / YMM, the
+	// ARM Crypto Extension, or the portable Go permutation). ITB
+	// feeds equal-length data per batched call (one ChainHash round
+	// across 4 pixels), the contract the batched arm requires.
 	batched := func(data *[4][]byte, seeds [4][4]uint64) [4][4]uint64 {
 		commonLen := len(data[0])
 
@@ -712,11 +702,11 @@ func MakeAreionSoEM512HashWithKey(fixedKey [64]byte) (HashFunc512, BatchHashFunc
 		}
 		return out
 	}
-	// On hosts without any VAES-capable asm path the batched
-	// AreionSoEM512x4 dispatch falls through to the portable Go
-	// scalar SoEM path; nil-out the batched arm so process_cgo.go's
-	// nil-fallback drives per-pixel hashing through the single arm
-	// directly. See the SoEM-256 counterpart above for the rationale.
+	// The batched arm is returned on every build, with the same two
+	// routes as the SoEM-256 counterpart above: the single-lane fused
+	// cascade kernel per lane for the ITB buf shapes on hosts with an
+	// Areion assembly tier, the lock-step AreionSoEM512x4 chain
+	// otherwise.
 	batched := func(data *[4][]byte, seeds [4][8]uint64) [4][8]uint64 {
 		commonLen := len(data[0])
 

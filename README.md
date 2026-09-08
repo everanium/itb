@@ -133,8 +133,8 @@ The shipped `_amd64.s` kernels target a modern x86_64 baseline. The exact CPU fe
 | AES-ITB-128 — legacy-SSE AES-NI XMM 4-lane fused chain (auto-selected on AES-NI hosts without AVX) | AES-NI (AESENC / AESENCLAST on XMM) | `aesitbasm.FusedHasAESNI` |
 | AES-ITB-128 — batch-16 Interlocked Barrier PRF fill cascade (VAES ZMM auto-selected on VAES + AVX-512F hosts, VAES YMM on VAES + AVX2 hosts without AVX-512F, VEX / legacy-SSE XMM on the remaining AES-NI hosts; overridable via `ITB_FORCE_INTERLOCK_PRF_FILL_TIER`) | as per tier above | `aesitbasm.HasVAESAVX512X16` / `HasVAESAVX2X16` / `HasAVXAESNIX16` / `HasAESNIX16` |
 | AES-ITB-128 — NEON 4-lane fused chain + batch-16 fill (arm64, auto-selected on ARM Crypto Extension hosts) | ARMv8 Crypto Extension (AESE / AESMC) | `aesitbasm.FusedHasARMAES` / `aesitbasm.HasARMAESX16` |
-| Areion-SoEM — top-tier batched permute (the four-lane SoEM of the arms) | VAES + AVX-512 | `areionasm.HasVAESAVX512` |
-| Areion-SoEM — mid-tier per-half permute | VAES + AVX2 | `areionasm.HasVAESAVX2NoAVX512` |
+| Areion-SoEM — top-tier batched permute (the four-lane SoEM of the arms' batched permutation path: lengths outside the fused kernel shapes, and the `ITB_FORCE_HASH_TIER=avx2` arms-only probe) | VAES + AVX-512 | `areionasm.HasVAESAVX512` |
+| Areion-SoEM — mid-tier per-half permute (same role on VAES + AVX2 hosts without AVX-512F) | VAES + AVX2 | `areionasm.HasVAESAVX2NoAVX512` |
 | Areion-SoEM-256 / -512 — VAES ZMM 4-lane fused chain (the whole component cascade per call; auto-selected on VAES + AVX-512F hosts) | VAES + AVX-512F | `areionasm.FusedHasVAESAVX512` |
 | Areion-SoEM-256 / -512 — VAES YMM 2-lane-per-pass fused chain (auto-selected on VAES + AVX2 hosts without AVX-512F) | VAES + AVX2 | `areionasm.FusedHasVAESAVX2` |
 | Areion-SoEM-256 / -512 — AES-NI XMM fused chain (two lanes per pass at width 256, one at width 512; auto-selected on AES-NI hosts without VAES, and the single-lane arm of every tier) | AES-NI (AESENC / AESENCLAST on XMM) | `areionasm.FusedHasAESNI` |
