@@ -69,12 +69,36 @@ import (
 // lifetimes. The pool stores *[]byte to keep Get/Put pointer-shaped
 // (avoids the slice-header re-boxing sync.Pool would otherwise perform
 // on every call).
+//
+// The pool's New returns an empty item: the first checkout on a miss
+// allocates the requested width (see acquireChunkBuffer) and the
+// release stores that width back, so items converge on the widest
+// request seen and no starter capacity is ever allocated only to be
+// discarded on the next regrow.
 var streamChunkPool = &sync.Pool{
 	New: func() any {
 		poolstats.ChunkNew.Add(1)
-		b := make([]byte, 0, 4096)
+		var b []byte
 		return &b
 	},
+}
+
+// chunkAllocGranule is the rounding unit for pool-miss allocations in
+// acquireChunkBuffer. One pool serves both the chunkCap-sized
+// plaintext accumulator and the frame buffers (body + frameLenSize +
+// NonceSize); rounding every miss allocation up to a granule after
+// adding the frame overhead lands both shapes in the same capacity
+// class, so an item acquired for one shape can be handed back to the
+// other without a regrow.
+const chunkAllocGranule = 64 << 10
+
+// chunkAllocSize returns the capacity allocated on a pool miss for a
+// capBytes request: capBytes plus the frame overhead, rounded up to
+// chunkAllocGranule. The slack is bounded by frameLenSize + NonceSize +
+// chunkAllocGranule regardless of the request width.
+func chunkAllocSize(capBytes int) int {
+	n := capBytes + frameLenSize + NonceSize
+	return (n + chunkAllocGranule - 1) / chunkAllocGranule * chunkAllocGranule
 }
 
 // acquireChunkBuffer borrows a *[]byte sized for capBytes from the
@@ -84,9 +108,10 @@ func acquireChunkBuffer(capBytes int) (*[]byte, []byte) {
 	buf := *ptr
 	poolstats.ChunkGet.Add(1)
 	if cap(buf) < capBytes {
+		alloc := chunkAllocSize(capBytes)
 		poolstats.ChunkRegrow.Add(1)
-		poolstats.ChunkRegrowBytes.Add(int64(capBytes))
-		buf = make([]byte, 0, capBytes)
+		poolstats.ChunkRegrowBytes.Add(int64(alloc))
+		buf = make([]byte, 0, alloc)
 	} else {
 		buf = buf[:0]
 	}

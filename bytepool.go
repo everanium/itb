@@ -77,3 +77,49 @@ func releaseBuffer(ptr *[]byte, buf []byte) {
 	*ptr = buf
 	bufferPool.Put(ptr)
 }
+
+// stagePool is a process-wide *[]byte pool for the chunk-budget read
+// stage of the streaming encrypt entry points. A stage buffer is sized
+// to the stream's chunk budget (up to maxDataSize) rather than to the
+// payload, so it is kept apart from [bufferPool]: mixing chunk-budget
+// items into the scratch pool would inflate what every small
+// acquireBuffer call retains.
+//
+// The pool's New returns an empty item; the first checkout on a miss
+// allocates exactly the requested width and the release stores that
+// width back, so items converge on the widest chunk budget requested
+// across the pipelines sharing the pool and are never regrown into
+// throw-away capacity.
+var stagePool = &sync.Pool{
+	New: func() any {
+		var b []byte
+		return &b
+	},
+}
+
+// acquireStage returns a slice of exactly n bytes drawn from
+// [stagePool], allocating a fresh n-byte buffer when the pooled item is
+// narrower. Contents are unspecified beyond what the caller writes —
+// stage consumers fill a prefix through io.ReadFull and read back only
+// that prefix, so no zero pass is performed on borrow.
+//
+// Always paired with a [releaseStage] call carrying the high-water
+// mark of bytes the caller wrote.
+func acquireStage(n int) (*[]byte, []byte) {
+	ptr := stagePool.Get().(*[]byte)
+	buf := *ptr
+	if cap(buf) < n {
+		buf = make([]byte, n)
+	}
+	return ptr, buf[:n]
+}
+
+// releaseStage wipes the written prefix buf[:used] through [secureWipe]
+// (the stage holds plaintext) and returns the buffer to [stagePool].
+// Wiping the high-water mark rather than the full capacity keeps the
+// release cost proportional to the bytes actually staged.
+func releaseStage(ptr *[]byte, buf []byte, used int) {
+	secureWipe(buf[:used])
+	*ptr = buf[:0]
+	stagePool.Put(ptr)
+}

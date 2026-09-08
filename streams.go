@@ -206,7 +206,13 @@ func EncryptStream3xCfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, 
 	if err != nil {
 		return err
 	}
-	buf := make([]byte, cs)
+	// Chunk-budget read stage drawn from stagePool — same discipline as
+	// the Streaming AEAD arm: only buf[:n] is read back after readUpTo
+	// fills it, and the release wipes the high-water mark of bytes
+	// staged.
+	bufPtr, buf := acquireStage(cs)
+	bufUsed := 0
+	defer func() { releaseStage(bufPtr, buf, bufUsed) }()
 	var prefix [streamIDPrefixLen]byte
 	if _, rerr := rand.Read(prefix[:]); rerr != nil {
 		return fmt.Errorf("itb: crypto/rand: %w", rerr)
@@ -214,6 +220,9 @@ func EncryptStream3xCfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, 
 	prefixPending := true
 	for {
 		n, err := readUpTo(src, buf)
+		if n > bufUsed {
+			bufUsed = n
+		}
 		if err == io.EOF {
 			if prefixPending {
 				return ErrEmptyInput
@@ -329,12 +338,23 @@ func EncryptStreamAuth3xCfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSee
 		return werr
 	}
 
-	stage := make([]byte, cs)
+	// The read stage is chunk-budget sized (cs, independent of the
+	// payload) and lives for the whole stream, so it is drawn from the
+	// process-wide stagePool instead of being allocated per call. Only
+	// stage[:n] is ever read back after readUpTo fills it, so no zero
+	// pass is needed on borrow; the wipe on release covers the
+	// high-water mark of bytes staged.
+	stagePtr, stage := acquireStage(cs)
+	stageUsed := 0
+	defer func() { releaseStage(stagePtr, stage, stageUsed) }()
 	var pending []byte
 	var cumulative uint64
 
 	for {
 		n, rerr := readUpTo(src, stage)
+		if n > stageUsed {
+			stageUsed = n
+		}
 		if rerr == io.EOF {
 			break
 		}
