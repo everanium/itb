@@ -3,6 +3,7 @@ package hashes
 import (
 	"crypto/sha512"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/everanium/itb"
@@ -260,9 +261,10 @@ func TestWideAttachCustomFusedFactory(t *testing.T) {
 				t.Fatalf("ChainHash256 differs at len %d", n)
 			}
 		}
-		bad := customFactoryName + "fused256bad"
-		if err := Register(Spec{Name: bad, Width: W256, Make256Pair: mk256, FusedChainHash256: goFused256Factory(mk256, true)}); err == nil {
-			t.Fatal("Register accepted a divergent FusedChainHash256 factory")
+		bad := customFactoryName + "f256bad"
+		err = Register(Spec{Name: bad, Width: W256, Make256Pair: mk256, FusedChainHash256: goFused256Factory(mk256, true)})
+		if err == nil || !strings.Contains(err.Error(), "diverges") {
+			t.Fatalf("Register of a divergent FusedChainHash256 factory: err=%v", err)
 		}
 	})
 	t.Run("512", func(t *testing.T) {
@@ -301,9 +303,10 @@ func TestWideAttachCustomFusedFactory(t *testing.T) {
 				t.Fatalf("ChainHash512 differs at len %d", n)
 			}
 		}
-		bad := customFactoryName + "fused512bad"
-		if err := Register(Spec{Name: bad, Width: W512, Make512Pair: mk512, FusedChainHash512: goFused512Factory(mk512, true)}); err == nil {
-			t.Fatal("Register accepted a divergent FusedChainHash512 factory")
+		bad := customFactoryName + "f512bad"
+		err = Register(Spec{Name: bad, Width: W512, Make512Pair: mk512, FusedChainHash512: goFused512Factory(mk512, true)})
+		if err == nil || !strings.Contains(err.Error(), "diverges") {
+			t.Fatalf("Register of a divergent FusedChainHash512 factory: err=%v", err)
 		}
 	})
 }
