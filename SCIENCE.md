@@ -10,7 +10,7 @@
 
 ITB (Information-Theoretic Barrier) is a parameterized symmetric cipher construction that renders the hash output unreconstructible from ciphertext-only observation. **Noise absorption** interposes a CSPRNG-generated random container between the PRF hash output and the observer; each byte retains one random noise bit at an unknown position. Under known-plaintext, chosen-plaintext, and chosen-ciphertext attacks the closure is computational and PRF-conditional; the information-theoretic property scopes to the noise-absorption layer under passive observation (Theorem 1). **Encoding ambiguity** applies a secret rotation (0–6) from an independent per-snake dataSeed to each pixel's data bits, creating 7^P unverifiable configurations across P pixels. A mandatory, always-on **48-bit Interlocked Barrier** forms a second architectural layer: each 48-bit chunk of the payload is partitioned into three disjoint 16-of-48 lane payloads by a PRF-keyed balanced mask triple drawn from a space of cardinality ≈ 2^70.20 per chunk, unobservable without the dedicated lockSeed. Even if the noise mechanism is bypassed via CCA (which reveals noise positions), the rotation barrier, the per-chunk mask permutation, and CSPRNG residue in data positions survive through 8-seed isolation.
 
-The 8-seed architecture (noiseSeed, lockSeed, three per-snake dataSeeds, three per-snake startSeeds) ensures that compromise of any single configuration domain provides zero information about the remaining domains; the lockSeed → per-chunk mask path is bound to the primitive through cascade PRF binding (two consecutive live PRF calls). A dual-nonce wire format carries two independently CSPRNG-drawn nonces per message, producing independent configurations per encryption with no caller-addressable override.
+The 8-seed architecture (noiseSeed, lockSeed, three per-snake dataSeeds, three per-snake startSeeds) ensures that compromise of any single configuration domain provides zero information about the remaining domains; the lockSeed → per-chunk mask path is bound to the primitive through cascade PRF binding (two consecutive live PRF cascades). A dual-nonce wire format carries two independently CSPRNG-drawn nonces per message, producing independent configurations per encryption with no caller-addressable override.
 
 The construction exhibits **ambiguity-based security**: the number of observation-consistent **configurations** grows exponentially with data size. This property is orthogonal to Shannon's key-entropy bound and distinct from Shannon's perfect-secrecy relationship on plaintext entropy. Above a threshold P_th = ⌈k / log₂ C⌉ (C = 56 without CCA, C = 7 under CCA), encoding ambiguity exceeds the 2^k key space. At 64 KB plaintext, ambiguity reaches 2^26,414; its exponent is 25.8× the 1024-bit key-space exponent. An attacker-realistic audit suite in the reference implementation confirms the barrier's absorption across multiple trapdoor mechanism classes at the tested sample sizes (see [REDTEAM.md](REDTEAM.md)).
 
@@ -78,14 +78,14 @@ The interleaved payload is chunked into 48-bit (6-byte) words. For each chunk in
 
 **Mask space.** The triple is drawn from a space `Ω_chunk` of cardinality `|Ω_chunk| = A · B ≈ 2^70.20` per chunk, with `A = C(48, 16)` and `B = C(32, 16)`; the full statement and cascade constants appear as Theorem 11 (§2.15).
 
-**Cascade PRF binding.** The mask derivation is keyed by the dedicated `lockSeed` through two consecutive live PRF calls:
+**Cascade PRF binding.** The mask derivation is keyed by the dedicated `lockSeed` through two consecutive live PRF cascades:
 
 ```
 lockKey = ChainHash(0x04 ‖ N_il, lockSeed)
-prf_i   = H(0x03 ‖ ⟨i⟩,    lockKey)
+prf_i   = ChainHash(0x03 ‖ ⟨i⟩,  lockKey ‖ lockSeed)
 ```
 
-where `H` is the primitive's hash function, `N_il` is the interlock_nonce component of the dual-nonce header, and `⟨i⟩` is the little-endian byte encoding of the chunk index. The 128-bit output `rank = prf_i` (the full primitive output for a 128-bit primitive, the low 128 bits of wider primitives) is unranked into the mask triple by a two-step combinadic unrank:
+where `ChainHash` is the primitive's component cascade over `H`, the primitive's hash function (one `H` call per component tuple of the primitive's width, the previous output folded into the next tuple), `lockKey ‖ lockSeed` is the lockSeed's component sequence with the width-sized `lockKey` prepended as its first tuple — so the per-chunk cascade runs `1 + keyBits / width` calls of `H`, round 1 under `lockKey`, the following rounds under the session components — `N_il` is the interlock_nonce component of the dual-nonce header, and `⟨i⟩` is the little-endian byte encoding of the chunk-group index. The 128-bit output `rank = prf_i` (the full cascade output for a 128-bit primitive; for wider primitives each 128-bit slice of the output feeds one chunk of the group) is unranked into the mask triple by a two-step combinadic unrank:
 
 ```
 (idx_0, idx_1) = (⌊rank / B⌋ mod A,   rank mod B)
@@ -95,7 +95,7 @@ followed by combinadic unrank of `idx_0` (yielding `m_0`) and of `idx_1` over th
 
 **One composite operation.** `chunk48lock` applies three simultaneous PEXT operations under `(m_0, m_1, m_2)` to the 48-bit chunk word, producing three 16-bit lane payloads in one step (§1.3): split into 3 snakes and per-chunk permutation are one operation, not two. The mapping from a plaintext bit to the lane it lands in is a hidden per-chunk secret. The permutation layer alone is a keyed permutation (it re-orders bits without XOR of key material); the per-pixel stage (channelXOR, rotation, noise-bit insertion at noisePos) applies to each snake's permuted payload independently under its own `dataSeed_i` / `noiseSeed` / `startSeed_i`.
 
-**Indivisibility.** The lockSeed → per-chunk mask path runs through two consecutive live PRF calls before the combinadic unrank produces the mask triple. Consequently, isolating the permutation layer's unrank hardness from the per-pixel configuration hardness requires either (a) granting seven of eight seeds via lab peek (not attacker-realistic under any threat model) or (b) trivializing the PRF (which destroys the cross-chunk coupling the mask hardness rides). The barrier is indivisible by construction at attacker-realism.
+**Indivisibility.** The lockSeed → per-chunk mask path runs through two consecutive live PRF cascades before the combinadic unrank produces the mask triple. Consequently, isolating the permutation layer's unrank hardness from the per-pixel configuration hardness requires either (a) granting seven of eight seeds via lab peek (not attacker-realistic under any threat model) or (b) trivializing the PRF (which destroys the cross-chunk coupling the mask hardness rides). The barrier is indivisible by construction at attacker-realism.
 
 ## 2. Security Analysis
 
@@ -129,7 +129,7 @@ Additionally, the per-chunk mask permutation (§2.15, Theorem 11) removes any fi
 
 The 8 seeds are drawn independently from CSPRNG. Each seed's ChainHash uses only its own components (`noiseSeed → noisePos`; `lockSeed → lockKey → per-chunk mask via cascade PRF`; `dataSeed_i → rotation_i, XOR_i`; `startSeed_i → startPixel_i`), so `I(any subset ; complement) = 0` where `I` is mutual information. CCA reveals noise positions (noiseSeed config); cache side-channel reveals a `startPixel_i` (startSeed_i config); neither carries any information about any other seed — in particular, none about lockSeed. The pairwise independence between seeds is information-theoretic (all 8 are CSPRNG-drawn); the individual unrecoverability of lockSeed under Full KPA is **computationally** hidden under the PRF assumption via cascade PRF binding, not information-theoretic — total PRF inversion recovers lockSeed via the Asymmetry note (§2.6). Full derivation: [PROOFS.md § Proof 3](PROOFS.md#proof-3-8-seed-isolation).
 
-The lockSeed → per-chunk mask path is bound to the primitive via two consecutive live PRF calls (`deriveInterLockSeed`, then the per-chunk hash), so any attempt to isolate the permutation layer's unrank hardness from the primitive's PRF hardness reduces the instance to PRF preimage recovery — dominated by the primitive's SAT-hardness, not by the interlock structure.
+The lockSeed → per-chunk mask path is bound to the primitive via two consecutive live PRF cascades (`deriveInterLockSeed`, then the per-chunk cascade over `lockKey ‖ lockSeed`), so any attempt to isolate the permutation layer's unrank hardness from the primitive's PRF hardness reduces the instance to PRF preimage recovery — dominated by the primitive's SAT-hardness, not by the interlock structure.
 
 **Theorem 3a (Minimality).** **Eight seeds are the minimum configuration where every leak in the 3-snake construction is architecturally isolated. Fewer seeds would create cross-domain leakage in at least one snake pair or between the barrier layer and one per-snake role.**
 

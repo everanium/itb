@@ -249,7 +249,7 @@ Honest phrasing of the verdict: the CRC128 linear-algebra path is closed not bec
 **Reason 2 — Different derivation-chain shape.**
 The compound-key linear structure depends on the length-`L` CRC64 state-transfer matrix `M_L`:
 - `dataSeed → dataHash`: `data(p) = pixel_le_u32 ‖ nonce`, so `L = 4 + nonceBytes` — fixed per session at the caller's nonce size — and `M_L` stays constant at that `L` across all pixels; this is what the compound-key script exploits
-- `lockSeed` cascade: `lockKey = ChainHash(0x04 ‖ N_il, lockSeed)` with `L = 1 + nonceBytes`; then `prf_i = H(0x03 ‖ ⟨i⟩, lockKey)` with `L = 9` (1 byte tag + 8-byte LE index). **Different length constants → different matrix products → different compound-key algebra.**
+- `lockSeed` cascade: `lockKey = ChainHash(0x04 ‖ N_il, lockSeed)` with `L = 1 + nonceBytes`; then `prf_i = ChainHash(0x03 ‖ ⟨i⟩, lockKey ‖ lockSeed)` with `L = 13` (1 byte tag + 8-byte LE index + 4 zero bytes), a cascade of `1 + keyBits / width` calls under `lockKey` and the session components. **Different length constants → different matrix products → different compound-key algebra.**
 
 **Reason 3 — Different domain tags.**
 `0x04` for `lockKey` derivation, `0x03` for per-chunk PRF, counter for `dataSeed`. Even with identical seed material, different tags yield different `const(data)` in the affine decomposition `hLo(p) = K XOR const(data(p))`. `K_data` cannot be re-used to predict `lockSeed`'s chain output.
@@ -349,14 +349,14 @@ The cascade is:
 
 ```
 lockKey  = ChainHash(0x04 ‖ N_il, lockSeed)
-prf_i    = H(0x03 ‖ ⟨i⟩, lockKey)
+prf_i    = ChainHash(0x03 ‖ ⟨i⟩, lockKey ‖ lockSeed)
 rank     = prf_i (128 bits)
 (m0,m1,m2) = combinadic_unrank(rank)                 ← breaks T-function here
 lane_N   = PEXT(chunk_48, m_N)                       ← 48 → 16 bit compression
 wire     = Part_2_encode(lane_N, dataSeed, noiseSeed, startSeed, container)
 ```
 
-FNV-1a's T-function property covers the first two operations (`ChainHash` and per-chunk hash). Unrank breaks T-function friendliness in three places at once:
+FNV-1a's T-function property covers the first two operations (the setup `ChainHash` and the per-chunk cascade). Unrank breaks T-function friendliness in three places at once:
 
 **Break 1 — Two-step divmod.**
 `idx_0 = ⌊rank / B⌋ mod A`, `idx_1 = rank mod B`, where `A = C(48, 16)` and `B = C(32, 16)`. Division by a non-power-of-2 constant, and modulo of a non-power-of-2, both involve carry propagation in both directions (multiply-by-reciprocal + shifts + subtract). Output bit `t` depends on input bits both above and below `t`. Not a T-function.

@@ -351,13 +351,13 @@ const (
 // chunks; factor reports how many the underlying hash width yields.
 //
 // fillRanks is the rank-producing variant of fill consumed by the
-// superblock worker loops: it performs the same Hash call over the same
-// buf layout but writes the raw 128-bit rank pairs into prf[0:2*factor]
+// superblock worker loops: it runs the same cascade over the same buf
+// layout but writes the raw 128-bit rank pairs into prf[0:2*factor]
 // and defers the mask derivation to the caller, which accumulates the
 // ranks of [superChunks48] chunks and derives all their mask triples in
 // one [fillLockMasksTriple48Super] pass. fill and fillRanks agree on
 // every (buf, groupIdx) input by construction — both closures wrap the
-// identical Hash invocation.
+// identical ChainHash cascade over lockComps.
 type lockBatchPRF48 struct {
 	factor    int
 	fill      func(buf []byte, groupIdx uint64, masks *[lockBatchFactor48Max][3]uint64)
@@ -366,9 +366,9 @@ type lockBatchPRF48 struct {
 	// fillRanksX4 is the optional 4-group batched counterpart of
 	// fillRanks, present when the lockSeed exposes a BatchHash arm. One
 	// call performs the PRF fill for 4 consecutive groups
-	// (groupIdx .. groupIdx+3) through a single 4-lane batched Hash
-	// invocation: every lane carries the identical lockKey with a
-	// distinct per-lane groupIdx buf, so the call yields 4 distinct
+	// (groupIdx .. groupIdx+3) through one 4-lane batched ChainHash
+	// cascade over lockComps: every lane runs the identical cascade on
+	// a distinct per-lane groupIdx buf, so the call yields 4 distinct
 	// rank sources exactly matching 4 sequential fillRanks calls. The
 	// call writes 4 * 2 * factor rank words into prf[0 : 8*factor] in
 	// chunk order. s provides per-worker scratch for the 4 lane bufs so

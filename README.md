@@ -150,7 +150,7 @@ The shipped `_amd64.s` kernels target a modern x86_64 baseline. The exact CPU fe
 | ChaCha20 — AVX-512 4-lane XMM chain-absorb + fused chain (68-byte chain fuses two compressions per YMM register) | AVX-512F | `chacha20asm.HasAVX512Fused` |
 | ChaCha20 — AVX2 4-lane XMM chain-absorb (synthesised rotates; 68-byte AVX2 chain also fuses two compressions per YMM) | AVX2 (no AVX-512F) | `chacha20asm.HasAVX2Fused` |
 
-Every chain-absorb family other than AES-ITB-128 additionally ships a 13-byte-shape kernel (`*ChainAbsorb13x4`) at each tier that batches the Interlocked Barrier per-group PRF fill derivation — four sequential group indices per call — under the family's capability flag for that tier; AES-ITB-128 fills the Interlocked Barrier through its batch-16 fused cascade kernel instead.
+Every chain-absorb family other than AES-ITB-128 additionally ships a 13-byte-shape kernel (`*ChainAbsorb13x4`) at each tier that serves the four-lane arm of the Interlocked Barrier cascade fill — four consecutive groups per call, one kernel call per cascade round — under the family's capability flag for that tier; AES-ITB-128 fills the Interlocked Barrier through its batch-16 fused cascade kernel instead.
 
 Cross-referenced to shipping x86 microarchitectures:
 
@@ -806,19 +806,24 @@ C-ABI callers install a persistent profile via `ITB_Triple_Register(name, profil
 
 The `triple/` facade is the recommended entry point. Callers who need the raw 8-seed handoff — for custom key management, unusual PRF combinations, or in-process integration with existing seed material — consume the Low-Level `*Cfg` free functions directly. Every Low-Level entry takes an explicit `*itb.Config` (`nil` accepts all compile-in defaults); there is no process-wide setter surface.
 
-> **⚠ AES-ITB-128 Low-Level construction — use `hashes.NewSeed128x16`, not `itb.NewSeed128`.** AES-ITB-128 is a reduced-round primitive that relies on the interlock cascade fill hook attached to the seed (see [HARNESS.md § 3.10.3](HARNESS.md#3103-interlocked-barrier-fill-consumption-chain)). The raw `itb.NewSeed128(bits, fn)` constructor does not know the primitive name and cannot attach the cascade hook; a Low-Level caller who uses it directly for AES-ITB-128 gets a seed with the hook nil, and the interlock fill silently falls back to a single-round primitive call in the hot loop — losing the cascade that closes the reduced-primitive weakness structurally.
->
-> The `triple/` facade attaches every fast-path hook automatically, so this notice only applies to code that constructs seeds through the Low-Level constructors. Use the helper:
+> **Low-Level seed construction.** Every seed built through `itb.NewSeed{128,256,512}` / `itb.SeedFromComponents{128,256,512}` runs the Interlocked Barrier cascade fill (see [HARNESS.md § 3.10.3](HARNESS.md#3103-interlocked-barrier-fill-consumption-chain)) — the fill is the wire for every primitive at every width and does not depend on any hook attached to the seed. The fast-path hooks (`hashes.AttachFused128` for the fused ChainHash cascade, `hashes.AttachInterlockBatch16` for the batch-16 fill kernel) are performance paths the `triple/` facade attaches automatically; a Low-Level caller attaches them after construction:
 >
 > ```go
-> // AES-ITB-128 Low-Level construction — attaches all fast-path hooks (fused
-> // ChainHash cascade + batch-16 interlock PRF fill cascade) in one call.
-> ns, key, err := hashes.NewSeed128x16(1024, hashes.CipherAESITB128, nil) // nil key → CSPRNG-generated
+> // Low-Level construction — arms first, then the fast-path hooks the
+> // primitive offers (no-ops for primitives without them).
+> single, batched, key, err := hashes.Make128Pair(hashes.CipherAESITB128) // no key → CSPRNG-generated
 > if err != nil { panic(err) }
+> ns, err := itb.NewSeed128(1024, single)
+> if err != nil { panic(err) }
+> ns.BatchHash = batched
+> if err := hashes.AttachFused128(ns, hashes.CipherAESITB128, key); err != nil { panic(err) }
+> if err := hashes.AttachInterlockBatch16(ns, hashes.CipherAESITB128, key); err != nil { panic(err) }
 > _ = key // save if the seed needs to be reconstructed across processes
 > ```
 >
-> Every other primitive at width 128 (`aescmac`, `siphash24`) does not have a cascade requirement; `itb.NewSeed128(bits, fn)` remains the direct Low-Level constructor for those cases. The primitive-name-aware `hashes.NewSeed128x16` helper is safe for all of them — it attaches the cascade hook only when the registry entry declares it (AES-ITB-128 alone today).
+> A seed built without the hooks produces and decrypts the same wire through the sequential arms.
+>
+> **Migration note.** Ciphertext produced by earlier releases under any primitive other than AES-ITB-128 decrypts only with the release that produced it (the Interlocked Barrier fill differs; there is no error oracle — the recovered bytes do not match). AES-ITB-128 ciphertext and every seed blob (`Blob{128,256,512}` export / import) are unaffected.
 
 ### Low-Level 1 — Single Message with MAC
 
@@ -1254,7 +1259,7 @@ The 8 mandatory seeds are drawn as independent CSPRNG components; the API surfac
 
 ### Interlocked Barrier — combinadic unrank routing layer
 
-The always-on Interlocked Barrier is driven by a **combinadic unrank** step: a public, deterministic combinatorial algorithm that transforms one 128-bit PRF output (from the `lockSeed` cascade under domain tag `0x04`) into a pairwise-disjoint balanced three-lane bit-permutation over each 48-bit input chunk. Every snake receives exactly 16 bits from each 48-bit chunk via its assigned mask; the three masks together cover the full 48 bits with no overlap.
+The always-on Interlocked Barrier is driven by a **combinadic unrank** step: a public, deterministic combinatorial algorithm that transforms one 128-bit PRF output (from the per-group `lockSeed` cascade under domain tag `0x03`, keyed by the per-container `0x04` derivation) into a pairwise-disjoint balanced three-lane bit-permutation over each 48-bit input chunk. Every snake receives exactly 16 bits from each 48-bit chunk via its assigned mask; the three masks together cover the full 48 bits with no overlap.
 
 Four architectural properties emerge simultaneously from the same layer:
 
