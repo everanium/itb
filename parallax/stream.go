@@ -118,13 +118,20 @@ func acquireChunkBuffer(capBytes int) (*[]byte, []byte) {
 	return ptr, buf
 }
 
-// releaseChunkBuffer wipes buf and returns it to the pool.
-func releaseChunkBuffer(ptr *[]byte, buf []byte) {
+// releaseChunkBuffer wipes buf[:used] and returns the buffer to the
+// pool. used is the high-water mark of bytes the owning stream ever
+// wrote into buf (never above cap); wiping that prefix rather than the
+// full capacity keeps the release cost proportional to the bytes the
+// stream actually staged once pool items have converged on the widest
+// capacity class.
+func releaseChunkBuffer(ptr *[]byte, buf []byte, used int) {
 	if ptr == nil {
 		return
 	}
-	full := buf[:cap(buf)]
-	clear(full)
+	if used > cap(buf) {
+		used = cap(buf)
+	}
+	clear(buf[:used])
 	*ptr = buf[:0]
 	streamChunkPool.Put(ptr)
 }
@@ -152,6 +159,7 @@ type chunkedEncryptWriter struct {
 	chunkCap int
 	bufPtr   *[]byte
 	buf      []byte
+	bufHW    int // high-water mark of bytes written into buf
 	closed   bool
 	err      error
 }
@@ -171,6 +179,9 @@ func (w *chunkedEncryptWriter) Write(p []byte) (int, error) {
 			take = len(p)
 		}
 		w.buf = append(w.buf, p[:take]...)
+		if len(w.buf) > w.bufHW {
+			w.bufHW = len(w.buf)
+		}
 		p = p[take:]
 		total += take
 		if len(w.buf) == w.chunkCap {
@@ -224,7 +235,7 @@ func (w *chunkedEncryptWriter) Close() error {
 		err = w.err
 	}
 	if w.bufPtr != nil {
-		releaseChunkBuffer(w.bufPtr, w.buf)
+		releaseChunkBuffer(w.bufPtr, w.buf, w.bufHW)
 		w.bufPtr = nil
 		w.buf = nil
 	}
@@ -290,6 +301,7 @@ type chunkedDecryptWriter struct {
 	dst      io.Writer
 	bufPtr   *[]byte
 	bodyBuf  []byte
+	bodyHW   int // high-water mark of bytes written into bodyBuf
 	lenBuf   []byte
 	bodyLen  int // -1 when waiting on length prefix
 	closed   bool
@@ -327,11 +339,15 @@ func (w *chunkedDecryptWriter) Write(p []byte) (int, error) {
 			frameSize := w.bodyLen + NonceSize
 			if cap(w.bodyBuf) < frameSize {
 				if w.bufPtr != nil {
-					releaseChunkBuffer(w.bufPtr, w.bodyBuf)
+					releaseChunkBuffer(w.bufPtr, w.bodyBuf, w.bodyHW)
 				}
 				w.bufPtr, w.bodyBuf = acquireChunkBuffer(frameSize)
+				w.bodyHW = 0
 			} else {
 				w.bodyBuf = w.bodyBuf[:0]
+			}
+			if frameSize > w.bodyHW {
+				w.bodyHW = frameSize
 			}
 			continue
 		}
@@ -371,7 +387,7 @@ func (w *chunkedDecryptWriter) Close() error {
 	bodyBytes := len(w.bodyBuf)
 	prefixBytes := len(w.lenBuf)
 	if w.bufPtr != nil {
-		releaseChunkBuffer(w.bufPtr, w.bodyBuf)
+		releaseChunkBuffer(w.bufPtr, w.bodyBuf, w.bodyHW)
 		w.bufPtr = nil
 		w.bodyBuf = nil
 	}
@@ -430,8 +446,10 @@ type chunkedEncryptReader struct {
 	chunkCap    int
 	plainBufPtr *[]byte
 	plainBuf    []byte
+	plainHW     int // high-water mark of bytes written into plainBuf
 	outBufPtr   *[]byte
 	outBuf      []byte
+	outHW       int // high-water mark of bytes written into outBuf
 	outOff      int
 	upstreamEOF bool
 	released    bool
@@ -461,6 +479,9 @@ func (r *chunkedEncryptReader) Read(p []byte) (int, error) {
 		// Pull up to chunkCap bytes from src into the plaintext buffer.
 		r.plainBuf = r.plainBuf[:r.chunkCap]
 		n, err := io.ReadFull(r.src, r.plainBuf)
+		if n > r.plainHW {
+			r.plainHW = n
+		}
 		switch {
 		case err == nil:
 			r.plainBuf = r.plainBuf[:n]
@@ -493,9 +514,13 @@ func (r *chunkedEncryptReader) encodeFrame() error {
 	frameSize := frameLenSize + NonceSize + bodyLen
 	if cap(r.outBuf) < frameSize {
 		if r.outBufPtr != nil {
-			releaseChunkBuffer(r.outBufPtr, r.outBuf)
+			releaseChunkBuffer(r.outBufPtr, r.outBuf, r.outHW)
 		}
 		r.outBufPtr, r.outBuf = acquireChunkBuffer(frameSize)
+		r.outHW = 0
+	}
+	if frameSize > r.outHW {
+		r.outHW = frameSize
 	}
 	r.outBuf = r.outBuf[:frameSize]
 	nonce, err := r.schedule.EncryptInto(r.outBuf[frameLenSize+NonceSize:], r.plainBuf, r.cs)
@@ -523,12 +548,12 @@ func (r *chunkedEncryptReader) release() {
 	}
 	r.released = true
 	if r.plainBufPtr != nil {
-		releaseChunkBuffer(r.plainBufPtr, r.plainBuf)
+		releaseChunkBuffer(r.plainBufPtr, r.plainBuf, r.plainHW)
 		r.plainBufPtr = nil
 		r.plainBuf = nil
 	}
 	if r.outBufPtr != nil {
-		releaseChunkBuffer(r.outBufPtr, r.outBuf)
+		releaseChunkBuffer(r.outBufPtr, r.outBuf, r.outHW)
 		r.outBufPtr = nil
 		r.outBuf = nil
 	}
@@ -578,6 +603,7 @@ type chunkedDecryptReader struct {
 	src      io.Reader
 	bodyPtr  *[]byte
 	bodyBuf  []byte
+	bodyHW   int // high-water mark of bytes written into bodyBuf
 	plainBuf []byte
 	plainOff int
 	released bool
@@ -637,9 +663,13 @@ func (r *chunkedDecryptReader) readFrame() error {
 	frameSize := bodyLen + NonceSize
 	if cap(r.bodyBuf) < frameSize {
 		if r.bodyPtr != nil {
-			releaseChunkBuffer(r.bodyPtr, r.bodyBuf)
+			releaseChunkBuffer(r.bodyPtr, r.bodyBuf, r.bodyHW)
 		}
 		r.bodyPtr, r.bodyBuf = acquireChunkBuffer(frameSize)
+		r.bodyHW = 0
+	}
+	if frameSize > r.bodyHW {
+		r.bodyHW = frameSize
 	}
 	r.bodyBuf = r.bodyBuf[:frameSize]
 	if _, err := io.ReadFull(r.src, r.bodyBuf); err != nil {
@@ -665,7 +695,7 @@ func (r *chunkedDecryptReader) release() {
 	}
 	r.released = true
 	if r.bodyPtr != nil {
-		releaseChunkBuffer(r.bodyPtr, r.bodyBuf)
+		releaseChunkBuffer(r.bodyPtr, r.bodyBuf, r.bodyHW)
 		r.bodyPtr = nil
 		r.bodyBuf = nil
 	}
