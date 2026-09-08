@@ -353,3 +353,94 @@ func TestNewSeedCustomPrimitive(t *testing.T) {
 		t.Fatal("arms-only twins do not decrypt the constructor seeds' wire")
 	}
 }
+
+// TestSeedFromComponentsRestore pins the restore constructors: a seed
+// rebuilt from the components and key NewSeed<W> produced carries the
+// same hook set and the same ChainHash output as the original at every
+// shipped primitive, a keyed primitive rejects a missing key with a
+// different wire (the arms differ), and a bad component count errors.
+func TestSeedFromComponentsRestore(t *testing.T) {
+	for _, spec := range Registry {
+		t.Run(spec.Name, func(t *testing.T) {
+			buf := newSeedTestBuf(36)
+			switch spec.Width {
+			case W128:
+				a, key, err := NewSeed128(spec.Name, 1024)
+				if err != nil {
+					t.Fatal(err)
+				}
+				b, err := SeedFromComponents128(spec.Name, key, a.Components...)
+				if err != nil {
+					t.Fatal(err)
+				}
+				alo, ahi := a.ChainHash128(buf)
+				blo, bhi := b.ChainHash128(buf)
+				if alo != blo || ahi != bhi {
+					t.Fatal("restored seed diverges from the original")
+				}
+				if (a.FusedChain == nil) != (b.FusedChain == nil) || (a.BatchFusedChain8() == nil) != (b.BatchFusedChain8() == nil) ||
+					(a.InterlockFillX16() == nil) != (b.InterlockFillX16() == nil) || (a.BatchHash == nil) != (b.BatchHash == nil) {
+					t.Fatal("restored seed carries a different hook set")
+				}
+				if _, err := SeedFromComponents128(spec.Name, key, a.Components[:len(a.Components)-1]...); err == nil {
+					t.Fatal("odd component count accepted")
+				}
+			case W256:
+				a, key, err := NewSeed256(spec.Name, 1024)
+				if err != nil {
+					t.Fatal(err)
+				}
+				b, err := SeedFromComponents256(spec.Name, key, a.Components...)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if a.ChainHash256(buf) != b.ChainHash256(buf) {
+					t.Fatal("restored seed diverges from the original")
+				}
+				if (a.FusedChain == nil) != (b.FusedChain == nil) || (a.InterlockFillX16() == nil) != (b.InterlockFillX16() == nil) || (a.BatchHash == nil) != (b.BatchHash == nil) {
+					t.Fatal("restored seed carries a different hook set")
+				}
+				if _, err := SeedFromComponents256(spec.Name, key, a.Components[:len(a.Components)-1]...); err == nil {
+					t.Fatal("bad component count accepted")
+				}
+			case W512:
+				a, key, err := NewSeed512(spec.Name, 1024)
+				if err != nil {
+					t.Fatal(err)
+				}
+				b, err := SeedFromComponents512(spec.Name, key, a.Components...)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if a.ChainHash512(buf) != b.ChainHash512(buf) {
+					t.Fatal("restored seed diverges from the original")
+				}
+				if (a.FusedChain == nil) != (b.FusedChain == nil) || (a.InterlockFillX16() == nil) != (b.InterlockFillX16() == nil) || (a.BatchHash == nil) != (b.BatchHash == nil) {
+					t.Fatal("restored seed carries a different hook set")
+				}
+				if _, err := SeedFromComponents512(spec.Name, key, a.Components[:len(a.Components)-1]...); err == nil {
+					t.Fatal("bad component count accepted")
+				}
+			}
+		})
+	}
+	// A keyed primitive restored without its key builds different arms.
+	a, key, err := NewSeed128(CipherAESITB128, 512)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := SeedFromComponents128(CipherAESITB128, nil, a.Components...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	buf := newSeedTestBuf(20)
+	alo, ahi := a.ChainHash128(buf)
+	blo, bhi := b.ChainHash128(buf)
+	if alo == blo && ahi == bhi {
+		t.Fatal("a restore without the key reproduced the keyed arms")
+	}
+	_ = key
+	if _, err := SeedFromComponents128(CipherSipHash24, []byte{1}, a.Components...); err == nil {
+		t.Fatal("siphash24 restore accepted a key")
+	}
+}

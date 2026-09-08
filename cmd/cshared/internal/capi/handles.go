@@ -109,80 +109,32 @@ func NewSeed(hashName string, keyBits int) (id HandleID, st Status) {
 
 	h := &SeedHandle{width: spec.Width, hashStr: hashName}
 
+	// hashes.NewSeed<W> builds the arms, the components and the fused
+	// ChainHash / batch-16 interlock hooks (performance paths only,
+	// mirroring the triple package's construction) and returns the fixed
+	// key of the arms. The keyBits range and multiple-of-width checks
+	// above already enforce the predicate the itb constructor validates,
+	// so the only reachable failure here is a primitive-factory error.
 	switch spec.Width {
 	case hashes.W128:
-		// The fused ChainHash and batch-16 interlock hooks are attached
-		// alongside the base arms, mirroring the triple package's
-		// automatic attach; both are performance paths only. The
-		// keyBits range and multiple-of-width checks above already
-		// enforce the predicate itb.NewSeed128 validates, so the only
-		// reachable failure here is a primitive-factory error.
-		hf, bf, hashKey, err := hashes.Make128Pair(hashName)
+		s, hashKey, err := hashes.NewSeed128(hashName, keyBits)
 		if err != nil {
-			setLastErr(StatusBadHash)
-			return 0, StatusBadHash
-		}
-		s, err := itb.NewSeed128(keyBits, hf)
-		if err != nil {
-			setLastErr(StatusBadKeyBits)
-			return 0, StatusBadKeyBits
-		}
-		if bf != nil {
-			s.BatchHash = bf
-		}
-		if err := hashes.AttachFused128(s, hashName, hashKey); err != nil {
-			setLastErr(StatusBadHash)
-			return 0, StatusBadHash
-		}
-		if err := hashes.AttachInterlockBatch16(s, hashName, hashKey); err != nil {
 			setLastErr(StatusBadHash)
 			return 0, StatusBadHash
 		}
 		h.seed128 = s
 		h.hashKey = hashKey
 	case hashes.W256:
-		hf, bf, hashKey, err := hashes.Make256Pair(hashName)
+		s, hashKey, err := hashes.NewSeed256(hashName, keyBits)
 		if err != nil {
-			setLastErr(StatusBadHash)
-			return 0, StatusBadHash
-		}
-		s, err := itb.NewSeed256(keyBits, hf)
-		if err != nil {
-			setLastErr(StatusBadKeyBits)
-			return 0, StatusBadKeyBits
-		}
-		if bf != nil {
-			s.BatchHash = bf
-		}
-		if err := hashes.AttachFused256(s, hashName, hashKey); err != nil {
-			setLastErr(StatusBadHash)
-			return 0, StatusBadHash
-		}
-		if err := hashes.AttachInterlockBatch16x256(s, hashName, hashKey); err != nil {
 			setLastErr(StatusBadHash)
 			return 0, StatusBadHash
 		}
 		h.seed256 = s
 		h.hashKey = hashKey
 	case hashes.W512:
-		hf, bf, hashKey, err := hashes.Make512Pair(hashName)
+		s, hashKey, err := hashes.NewSeed512(hashName, keyBits)
 		if err != nil {
-			setLastErr(StatusBadHash)
-			return 0, StatusBadHash
-		}
-		s, err := itb.NewSeed512(keyBits, hf)
-		if err != nil {
-			setLastErr(StatusBadKeyBits)
-			return 0, StatusBadKeyBits
-		}
-		if bf != nil {
-			s.BatchHash = bf
-		}
-		if err := hashes.AttachFused512(s, hashName, hashKey); err != nil {
-			setLastErr(StatusBadHash)
-			return 0, StatusBadHash
-		}
-		if err := hashes.AttachInterlockBatch16x512(s, hashName, hashKey); err != nil {
 			setLastErr(StatusBadHash)
 			return 0, StatusBadHash
 		}

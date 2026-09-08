@@ -90,3 +90,83 @@ func NewSeed512(name string, keyBits int, key ...[]byte) (*itb.Seed512, []byte, 
 	}
 	return s, fixedKey, nil
 }
+
+// SeedFromComponents128 rebuilds a width-128 seed of the named primitive
+// from saved components with every hook the primitive offers — the
+// restore counterpart of [NewSeed128]: key is the fixed key NewSeed128
+// returned (nil for a primitive keyed by its seed components alone), and
+// components are the seed's Components. The arms of [Make128Pair] are
+// rebuilt under that key, [itb.SeedFromComponents128] installs the
+// components, and [AttachFused128] / [AttachInterlockBatch16] attach the
+// hooks. A seed restored this way is indistinguishable on the wire from
+// one restored through [itb.SeedFromComponents128] on the arms alone.
+func SeedFromComponents128(name string, key []byte, components ...uint64) (*itb.Seed128, error) {
+	var keyArg [][]byte
+	if len(key) > 0 {
+		keyArg = [][]byte{key}
+	}
+	single, batched, fixedKey, err := Make128Pair(name, keyArg...)
+	if err != nil {
+		return nil, err
+	}
+	s, err := itb.SeedFromComponents128(single, components...)
+	if err != nil {
+		return nil, err
+	}
+	s.BatchHash = batched
+	if err := AttachFused128(s, name, fixedKey); err != nil {
+		return nil, err
+	}
+	if err := AttachInterlockBatch16(s, name, fixedKey); err != nil {
+		return nil, err
+	}
+	return s, nil
+}
+
+// SeedFromComponents256 is the width-256 form of [SeedFromComponents128].
+func SeedFromComponents256(name string, key []byte, components ...uint64) (*itb.Seed256, error) {
+	var keyArg [][]byte
+	if len(key) > 0 {
+		keyArg = [][]byte{key}
+	}
+	single, batched, fixedKey, err := Make256Pair(name, keyArg...)
+	if err != nil {
+		return nil, err
+	}
+	s, err := itb.SeedFromComponents256(single, components...)
+	if err != nil {
+		return nil, err
+	}
+	s.BatchHash = batched
+	if err := AttachFused256(s, name, fixedKey); err != nil {
+		return nil, err
+	}
+	if err := AttachInterlockBatch16x256(s, name, fixedKey); err != nil {
+		return nil, err
+	}
+	return s, nil
+}
+
+// SeedFromComponents512 is the width-512 form of [SeedFromComponents128].
+func SeedFromComponents512(name string, key []byte, components ...uint64) (*itb.Seed512, error) {
+	var keyArg [][]byte
+	if len(key) > 0 {
+		keyArg = [][]byte{key}
+	}
+	single, batched, fixedKey, err := Make512Pair(name, keyArg...)
+	if err != nil {
+		return nil, err
+	}
+	s, err := itb.SeedFromComponents512(single, components...)
+	if err != nil {
+		return nil, err
+	}
+	s.BatchHash = batched
+	if err := AttachFused512(s, name, fixedKey); err != nil {
+		return nil, err
+	}
+	if err := AttachInterlockBatch16x512(s, name, fixedKey); err != nil {
+		return nil, err
+	}
+	return s, nil
+}
