@@ -172,10 +172,15 @@ The shipped `_amd64.s` kernels target a modern x86_64 baseline. The exact CPU fe
 | SipHash-2-4 — GPR single-lane fused chain (the single-lane arm under either tier above) | x86-64 baseline | `siphashasm.FusedAvailable()` |
 | SipHash-2-4 — batch-16 Interlocked Barrier PRF fill cascade (sixteen-lane ZMM kernel on the AVX-512 tier, two calls of an eight-lane YMM kernel on the AVX2 tier; overridable via `ITB_FORCE_INTERLOCK_PRF_FILL_TIER`) | as per tier above | `siphashasm.HasAVX512X16` / `HasAVX2X16` |
 | SipHash-2-4 — NEON 4-lane fused chain + GPR single-lane fused chain + batch-16 fill through an eight-lane NEON kernel (arm64, NEON baseline) | ARMv8-A NEON | `siphashasm.FusedHasNEON` / `siphashasm.HasNEONX16` |
+| ChaCha20 — EVEX XMM 4-lane / YMM 8-lane fused chain (the whole component cascade per call, one dword lane per pixel, eight pixels per call at the nonce-buf shapes; auto-selected on AVX-512F hosts) | AVX-512F | `chacha20asm.FusedHasAVX512` / `chacha20asm.FusedHasAVX512X8` |
+| ChaCha20 — AVX2 XMM 4-lane fused chain (synthesised rotates, key words and accumulator as memory operands; auto-selected on AVX2 hosts without AVX-512F) | AVX2 (no AVX-512F) | `chacha20asm.FusedHasAVX2` |
+| ChaCha20 — batch-16 Interlocked Barrier PRF fill cascade (dedicated eight-lane YMM kernel on the AVX-512F tier; two four-lane kernel calls over Go-synthesised fill blocks elsewhere; overridable via `ITB_FORCE_INTERLOCK_PRF_FILL_TIER`) | as per tier above | `chacha20asm.HasAVX512X16` / `HasAVX2X16` |
+| ChaCha20 — GPR single-lane fused chain (the single-lane arm under either tier above) | x86-64 baseline | `chacha20asm.FusedAvailable()` |
+| ChaCha20 — NEON fused chain + GPR single-lane fused chain + batch-16 fill through four-lane NEON calls (arm64, four dword lanes per register; auto-selected on every ARMv8-A host) | Advanced SIMD | `chacha20asm.FusedHasNEON` / `chacha20asm.HasNEONX16` |
 | ChaCha20 — AVX-512 4-lane XMM chain-absorb + fused chain (68-byte chain fuses two compressions per YMM register) | AVX-512F | `chacha20asm.HasAVX512Fused` |
 | ChaCha20 — AVX2 4-lane XMM chain-absorb (synthesised rotates; 68-byte AVX2 chain also fuses two compressions per YMM) | AVX2 (no AVX-512F) | `chacha20asm.HasAVX2Fused` |
 
-Every chain-absorb family other than AES-ITB-128, AES-CMAC, SipHash-2-4, Areion-SoEM-256 / -512, BLAKE2b-256 / -512, BLAKE2s and BLAKE3 additionally ships a 13-byte-shape kernel (`*ChainAbsorb13x4`) at each tier that serves the four-lane arm of the Interlocked Barrier cascade fill — four consecutive groups per call, one kernel call per cascade round — under the family's capability flag for that tier; AES-ITB-128, AES-CMAC, SipHash-2-4, Areion-SoEM-256 / -512, BLAKE2b-256 / -512, BLAKE2s and BLAKE3 fill the Interlocked Barrier through their batch-16 fused cascade kernels instead.
+Every shipped primitive fills the Interlocked Barrier through its batch-16 fused cascade kernels; the chain-absorb families of BLAKE2s, BLAKE3 and ChaCha20 additionally carry a 13-byte-shape kernel (`*ChainAbsorb13x4`) at each tier, the four-lane arm of the batched cascade over the arms alone.
 
 Cross-referenced to shipping x86 microarchitectures:
 
