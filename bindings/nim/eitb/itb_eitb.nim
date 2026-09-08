@@ -113,8 +113,8 @@ proc main(): int =
     return 2
   try:
     # Go-runtime pacing caps applied before any cipher work.
-    discard setMemoryLimit(2 * 1024 * 1024 * 1024)
-    discard setGcPercent(85)
+    discard setMemoryLimit(4 * 1024 * 1024 * 1024)
+    discard setGcPercent(100)
     case argv[0]
     of "version": cmdVersion()
     of "profiles": cmdProfiles()

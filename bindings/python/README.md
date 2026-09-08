@@ -186,8 +186,8 @@ adjustable at any time programmatically. Pass `-1` to query without
 changing:
 
 ```python
-itb.set_memory_limit(2 << 30)
-itb.set_gc_percent(85)
+itb.set_memory_limit(4 << 30)
+itb.set_gc_percent(100)
 ```
 
 ## Testing

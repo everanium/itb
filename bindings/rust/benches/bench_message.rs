@@ -61,8 +61,8 @@ fn profile_name() -> String {
 }
 
 fn bench_message(c: &mut Criterion) {
-    let _ = set_memory_limit(2 << 30);
-    let _ = set_gc_percent(85);
+    let _ = set_memory_limit(4 << 30);
+    let _ = set_gc_percent(100);
     let opts = build_opts();
     let pipe = Pipeline::init(&profile_name(), &opts).unwrap();
     let mut group = c.benchmark_group("encrypt_message");

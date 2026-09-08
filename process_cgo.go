@@ -52,7 +52,7 @@ import (
 // between calls, which under a constrained GOGC widens the collector's
 // heap goal and spaces collections (and the pool evictions they cause)
 // further apart. Lazy sizing lowers bytes per call but measurably
-// lowers throughput at GOGC=50 on the 1 MB message cells.
+// lowers throughput at GOGC=100 on the 1 MB message cells.
 //
 // The ITB_HASHPOOL_STARTERS env var overrides this ladder for the
 // microBatch-sweep test harness. Format: comma-separated int list, e.g.

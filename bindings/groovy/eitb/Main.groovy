@@ -30,8 +30,8 @@ final class Main {
     }
 
     static void main(String[] args) {
-        Runtime.setMemoryLimit(2L * 1024 * 1024 * 1024)
-        Runtime.setGCPercent(85)
+        Runtime.setMemoryLimit(4L * 1024 * 1024 * 1024)
+        Runtime.setGCPercent(100)
         int rc
         try {
             rc = dispatch(args)

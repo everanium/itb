@@ -25,8 +25,8 @@ int main(string[] args)
 {
     // Go-runtime pacing caps applied up front so ad-hoc shell use of
     // large files stays under a bounded heap.
-    cast(void) setMemoryLimit(2L * 1024 * 1024 * 1024);
-    cast(void) setGCPercent(85);
+    cast(void) setMemoryLimit(4L * 1024 * 1024 * 1024);
+    cast(void) setGCPercent(100);
 
     try
     {

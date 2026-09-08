@@ -190,8 +190,8 @@ libitb load time via env vars (`ITB_GOMEMLIMIT`, `ITB_GOGC`) and
 adjustable at any time programmatically:
 
 ```ocaml
-Itb.set_memory_limit (2 * 1024 * 1024 * 1024);
-Itb.set_gc_percent 85
+Itb.set_memory_limit (4 * 1024 * 1024 * 1024);
+Itb.set_gc_percent 100
 ```
 
 ## Testing

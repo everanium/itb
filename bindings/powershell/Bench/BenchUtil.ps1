@@ -25,8 +25,8 @@ Import-Module (Join-Path $PSScriptRoot '../Itb/Itb.psd1') -Force
 # Bench-scale allocation churn leaks Go scratch heap unboundedly
 # without a soft memory cap + aggressive GC; the return values report
 # the previous settings, not an error.
-[void](Set-ItbMemoryLimit -Bytes (2GB))
-[void](Set-ItbGCPercent -Percent 85)
+[void](Set-ItbMemoryLimit -Bytes (4GB))
+[void](Set-ItbGCPercent -Percent 100)
 
 # Payload sizes exercised by both shapes.
 $script:BenchSizes = @(1MB, 16MB, 64MB)

@@ -229,8 +229,8 @@ bulk encryption) should set both — without a soft cap + aggressive
 GC the Go scratch heap grows unboundedly under allocation churn:
 
 ```lisp
-(itb-lfe:set-memory-limit (* 2 1024 1024 1024)) ;; 2 GiB soft cap
-(itb-lfe:set-gc-percent 85)                     ;; balanced GC
+(itb-lfe:set-memory-limit (* 4 1024 1024 1024)) ;; 4 GiB soft cap
+(itb-lfe:set-gc-percent 100)                     ;; balanced GC
 ```
 
 ## Testing
@@ -257,7 +257,7 @@ checks; the deep suite lives in Go under the shipped tree.
 Micro-benches: `message` (encrypt-message) and `stream_pump`
 (incremental encrypt session) throughput at 1 MiB / 16 MiB /
 64 MiB, reported as an MB/s table on stdout. The runner exports
-`ITB_GOMEMLIMIT=2GiB` + `ITB_GOGC=85` defaults (respecting caller
+`ITB_GOMEMLIMIT=4GiB` + `ITB_GOGC=100` defaults (respecting caller
 overrides) and the bench module applies the same caps
 programmatically. `./run_bench.sh message` / `./run_bench.sh
 stream` runs one shape.

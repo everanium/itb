@@ -23,8 +23,8 @@ import kotlin.system.exitProcess
 fun main(args: Array<String>) {
     // Defensive Go-runtime pacing caps — the CLI can be pointed at
     // gigabyte files.
-    ItbRuntime.setMemoryLimit(2L shl 30)
-    ItbRuntime.setGCPercent(85)
+    ItbRuntime.setMemoryLimit(4L shl 30)
+    ItbRuntime.setGCPercent(100)
     try {
         val rc = when {
             args.firstOrNull() == "version" && args.size == 1 -> cmdVersion()

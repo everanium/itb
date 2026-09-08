@@ -24,8 +24,8 @@ $ErrorActionPreference = 'Stop'
 
 Import-Module (Join-Path $PSScriptRoot '../Itb/Itb.psd1') -Force
 
-[void](Set-ItbMemoryLimit -Bytes (2GB))
-[void](Set-ItbGCPercent -Percent 85)
+[void](Set-ItbMemoryLimit -Bytes (4GB))
+[void](Set-ItbGCPercent -Percent 100)
 
 function Show-Usage {
     [Console]::Error.WriteLine(@'

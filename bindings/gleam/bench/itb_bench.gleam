@@ -65,8 +65,8 @@ pub fn main() {
   // Bench-scale allocation churn leaks Go scratch heap unboundedly
   // without a soft memory cap + aggressive GC; the return values
   // report the previous settings, not an error.
-  let _ = itb_gleam.set_memory_limit(2_147_483_648)
-  let _ = itb_gleam.set_gc_percent(85)
+  let _ = itb_gleam.set_memory_limit(4_294_967_296)
+  let _ = itb_gleam.set_gc_percent(100)
 
   case argv() {
     ["message"] -> bench_message()

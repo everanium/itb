@@ -185,8 +185,8 @@ adjustable at any time programmatically. Pass `-1` to query without
 changing:
 
 ```java
-com.everanium.itb.Runtime.setMemoryLimit(2L << 30);
-com.everanium.itb.Runtime.setGCPercent(85);
+com.everanium.itb.Runtime.setMemoryLimit(4L << 30);
+com.everanium.itb.Runtime.setGCPercent(100);
 ```
 
 ## Testing
@@ -213,8 +213,8 @@ the deep suite lives in Go under the shipped tree.
 
 Plain-table micro-benches: `message` (Single Message encrypt) and
 `stream_pump` throughput at 1 MiB / 16 MiB / 64 MiB. The script
-exports the canonical bench env defaults (`ITB_GOMEMLIMIT=2GiB`,
-`ITB_GOGC=85`, `ITB_NONCE_BITS=512`, `ITB_KEY_BITS=1024`,
+exports the canonical bench env defaults (`ITB_GOMEMLIMIT=4GiB`,
+`ITB_GOGC=100`, `ITB_NONCE_BITS=512`, `ITB_KEY_BITS=1024`,
 `ITB_WITH_PARALLAX=false`, `ITB_WITH_WRAPPER=false`,
 `ITB_INNER_HASH=areion512`); override any of them before invocation.
 `ITB_BENCH_MIN_SEC` adjusts the per-case wall-clock budget.

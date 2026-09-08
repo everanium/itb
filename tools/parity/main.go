@@ -72,8 +72,8 @@ const parityKeyBits = 1024
 // [itb.SetGCPercent]. Matches the binding-fleet standard so bench-scale
 // FFI churn stays bounded even under repeated multi-MB fixture rounds.
 const (
-	parityMemoryLimitBytes int64 = 512 << 20
-	parityGCPercent              = 20
+	parityMemoryLimitBytes int64 = 4 << 30
+	parityGCPercent              = 100
 )
 
 // seedBlobV1 is the on-disk wrapper written by -mode=init and read by

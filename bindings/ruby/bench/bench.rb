@@ -189,8 +189,8 @@ end
 # Bench-scale allocation churn leaks Go scratch heap unboundedly
 # without a soft memory cap + aggressive GC; the return values report
 # the previous settings, not an error.
-ITB.set_memory_limit(2 << 30)
-ITB.set_gc_percent(85)
+ITB.set_memory_limit(4 << 30)
+ITB.set_gc_percent(100)
 
 printf("%-17s %-8s %s\n", "bench", "size", "mb_per_sec")
 bench_message

@@ -151,8 +151,8 @@ int cmd_profiles()
  * error. */
 void cap_go_runtime()
 {
-    (void)itb::set_memory_limit(2LL << 30); /* 2 GiB soft cap */
-    (void)itb::set_gc_percent(85);          /* balanced GC */
+    (void)itb::set_memory_limit(4LL << 30); /* 4 GiB soft cap */
+    (void)itb::set_gc_percent(100);          /* balanced GC */
 }
 
 int cmd_encrypt(const char *profile, const char *infile, const char *outfile)

@@ -9,8 +9,8 @@ fun main(args: Array<String>) {
     // Go-runtime pacing caps for bench-scale allocation churn;
     // run_bench.sh exports the same defaults via ITB_GOMEMLIMIT /
     // ITB_GOGC as a fallback.
-    ItbRuntime.setMemoryLimit(2L shl 30)
-    ItbRuntime.setGCPercent(85)
+    ItbRuntime.setMemoryLimit(4L shl 30)
+    ItbRuntime.setGCPercent(100)
 
     when (args.firstOrNull() ?: "all") {
         "message" -> BenchMessage.run()

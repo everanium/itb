@@ -22,8 +22,8 @@ export ITB_LIBITB_PATH="$DIST_DIR/libitb.so"
 # setMemoryLimit / setGCPercent calls still runs under a bounded
 # heap. The benches themselves reassert these via the API for
 # self-contained reproducibility.
-export ITB_GOMEMLIMIT="${ITB_GOMEMLIMIT:-2GiB}"
-export ITB_GOGC="${ITB_GOGC:-85}"
+export ITB_GOMEMLIMIT="${ITB_GOMEMLIMIT:-4GiB}"
+export ITB_GOGC="${ITB_GOGC:-100}"
 
 # Bench-shape defaults — match the root Go BENCH3.md pin so the
 # throughput numbers are directly comparable to the shipped Go

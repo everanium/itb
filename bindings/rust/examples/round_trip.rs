@@ -8,8 +8,8 @@ use itb::{OptsBuilder, Pipeline, set_gc_percent, set_memory_limit};
 fn main() -> Result<(), itb::ItbError> {
     // Cap the Go runtime's heap so a workload that scales up does
     // not grow scratch heaps between GC cycles.
-    let _ = set_memory_limit(2 << 30);
-    let _ = set_gc_percent(85);
+    let _ = set_memory_limit(4 << 30);
+    let _ = set_gc_percent(100);
 
     let opts = OptsBuilder::new();
 

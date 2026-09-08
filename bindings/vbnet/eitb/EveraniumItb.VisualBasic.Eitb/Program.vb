@@ -18,8 +18,8 @@ Imports Everanium.Itb.VisualBasic
 Friend Module Program
 
     Friend Function Main(args As String()) As Integer
-        Library.SetMemoryLimit(2L * 1024 * 1024 * 1024)
-        Library.SetGCPercent(85)
+        Library.SetMemoryLimit(4L * 1024 * 1024 * 1024)
+        Library.SetGCPercent(100)
         Try
             Select Case If(args.Length > 0, args(0), Nothing)
                 Case "version"

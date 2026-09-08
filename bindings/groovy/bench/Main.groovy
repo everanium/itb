@@ -17,8 +17,8 @@ final class Main {
         // the run_bench.sh env defaults apply the same values at
         // load time — the programmatic setter wins when both are
         // present.
-        Runtime.setMemoryLimit(2L * 1024 * 1024 * 1024)
-        Runtime.setGCPercent(85)
+        Runtime.setMemoryLimit(4L * 1024 * 1024 * 1024)
+        Runtime.setGCPercent(100)
         String shape = args.length > 0 ? args[0] : 'all'
         switch (shape) {
             case 'message':

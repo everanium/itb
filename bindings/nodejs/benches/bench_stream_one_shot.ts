@@ -58,8 +58,8 @@ function measure(label: string, sizeBytes: number, iter: () => void): void {
   );
 }
 
-setMemoryLimit(2n * 1024n * 1024n * 1024n);
-setGCPercent(85);
+setMemoryLimit(4n * 1024n * 1024n * 1024n);
+setGCPercent(100);
 
 const profile = process.env['ITB_PROFILE'] ?? 'streaming-noaead-triple-v1';
 const pipe = Pipeline.init(profile, buildOpts());

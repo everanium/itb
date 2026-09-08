@@ -23,8 +23,8 @@ import dev.everanium.itb.{ItbError, Pipeline, Runtime}
 object Main:
 
   def main(args: Array[String]): Unit =
-    val _ = Runtime.setMemoryLimit(2L * 1024 * 1024 * 1024)
-    val _ = Runtime.setGCPercent(85)
+    val _ = Runtime.setMemoryLimit(4L * 1024 * 1024 * 1024)
+    val _ = Runtime.setGCPercent(100)
     val rc =
       try
         args.toList match

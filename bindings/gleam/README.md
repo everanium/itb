@@ -244,8 +244,8 @@ bulk encryption) should set both — without a soft cap + aggressive
 GC the Go scratch heap grows unboundedly under allocation churn:
 
 ```gleam
-itb_gleam.set_memory_limit(2_147_483_648) // 2 GiB soft cap
-itb_gleam.set_gc_percent(85)              // balanced GC
+itb_gleam.set_memory_limit(4_294_967_296) // 4 GiB soft cap
+itb_gleam.set_gc_percent(100)              // balanced GC
 ```
 
 ## Testing
@@ -274,7 +274,7 @@ suite lives in Go under the shipped tree.
 Micro-benches: `message` (encrypt_message) and `stream_pump`
 (incremental encrypt session) throughput at 1 MiB / 16 MiB /
 64 MiB, reported as an MB/s table on stdout. The runner exports
-`ITB_GOMEMLIMIT=2GiB` + `ITB_GOGC=85` defaults (respecting caller
+`ITB_GOMEMLIMIT=4GiB` + `ITB_GOGC=100` defaults (respecting caller
 overrides) and the bench main applies the same caps
 programmatically; the shape env vars (`ITB_PROFILE`,
 `ITB_INNER_HASH`, `ITB_KEY_BITS`, `ITB_NONCE_BITS`,

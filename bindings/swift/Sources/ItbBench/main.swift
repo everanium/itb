@@ -10,8 +10,8 @@
 import Foundation
 import Itb
 
-ItbRuntime.setMemoryLimit(2 << 30) // 2 GiB soft cap
-ItbRuntime.setGCPercent(85)        // balanced GC
+ItbRuntime.setMemoryLimit(4 << 30) // 4 GiB soft cap
+ItbRuntime.setGCPercent(100)        // balanced GC
 
 let mode = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "all"
 switch mode {

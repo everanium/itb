@@ -29,8 +29,8 @@ procedure Bench_Stream is
 begin
    --  Bench-scale allocation churn leaks Go scratch heap unboundedly
    --  without a soft memory cap + aggressive GC.
-   Itb.Runtime.Set_Memory_Limit (2_147_483_648);  --  2 GiB soft cap
-   Itb.Runtime.Set_GC_Percent (85);
+   Itb.Runtime.Set_Memory_Limit (4_294_967_296);  --  4 GiB soft cap
+   Itb.Runtime.Set_GC_Percent (100);
 
    Pipe.Init
      (Common.Profile_Name ("streaming-noaead-triple-v1"),

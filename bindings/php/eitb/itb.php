@@ -142,8 +142,8 @@ function main(array $argv): int
     ini_set('memory_limit', '-1');
     try {
         // Go-runtime pacing caps applied before any cipher work.
-        Itb::setMemoryLimit(2 << 30);
-        Itb::setGcPercent(85);
+        Itb::setMemoryLimit(4 << 30);
+        Itb::setGcPercent(100);
         switch ($argv[0]) {
             case 'version':
                 cmd_version();

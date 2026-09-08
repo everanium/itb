@@ -25,8 +25,8 @@ program eitb
   ! Go-runtime pacing caps applied up front so file-scale encrypt /
   ! decrypt runs under a bounded heap; the return values report the
   ! previous settings, not an error.
-  prev_limit = itb_set_memory_limit(int(2, c_int64_t) * 1024 * 1024 * 1024)
-  prev_gc = itb_set_gc_percent(85_c_int)
+  prev_limit = itb_set_memory_limit(int(4, c_int64_t) * 1024 * 1024 * 1024)
+  prev_gc = itb_set_gc_percent(100_c_int)
 
   if (command_argument_count() < 1) call usage()
   cmd = argument(1)

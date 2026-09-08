@@ -205,8 +205,8 @@ bulk encryption) should set both — without a soft cap + aggressive GC
 the Go scratch heap grows unboundedly under allocation churn:
 
 ```c
-itb_set_memory_limit(2LL << 30); /* 2 GiB soft cap */
-itb_set_gc_percent(85);          /* balanced GC */
+itb_set_memory_limit(4LL << 30); /* 4 GiB soft cap */
+itb_set_gc_percent(100);          /* balanced GC */
 ```
 
 ## Testing
@@ -257,7 +257,7 @@ binding's own C frames are never suppressed.
 Micro-benches: `message` (EncryptMessage) and `stream_pump`
 (encrypt stream pump) throughput at 1 KiB / 64 KiB / 1 MiB / 16 MiB,
 reported as an MB/s table on stdout. The runner exports
-`ITB_GOMEMLIMIT=2GiB` + `ITB_GOGC=85` defaults (respecting caller
+`ITB_GOMEMLIMIT=4GiB` + `ITB_GOGC=100` defaults (respecting caller
 overrides) and the bench binaries apply the same caps
 programmatically.
 

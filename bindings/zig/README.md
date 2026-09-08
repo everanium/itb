@@ -201,8 +201,8 @@ bulk encryption) should set both — without a soft cap + aggressive GC
 the Go scratch heap grows unboundedly under allocation churn:
 
 ```zig
-_ = itb.setMemoryLimit(2 << 30); // 2 GiB soft cap
-_ = itb.setGcPercent(85);        // balanced GC
+_ = itb.setMemoryLimit(4 << 30); // 4 GiB soft cap
+_ = itb.setGcPercent(100);        // balanced GC
 ```
 
 ## Testing
@@ -231,7 +231,7 @@ parity checks; the deep suite lives in Go under the shipped tree.
 Micro-benches (always ReleaseFast): `message` (encryptMessage) and
 `stream_pump` (encrypt stream pump) throughput at 1 MiB / 16 MiB /
 64 MiB, reported as an MB/s table on stdout. The runner exports
-`ITB_GOMEMLIMIT=2GiB` + `ITB_GOGC=85` defaults plus the canonical
+`ITB_GOMEMLIMIT=4GiB` + `ITB_GOGC=100` defaults plus the canonical
 bench-shape env vars (`ITB_NONCE_BITS` / `ITB_KEY_BITS` /
 `ITB_WITH_PARALLAX` / `ITB_WITH_WRAPPER` / `ITB_INNER_HASH` /
 `ITB_PROFILE` / `ITB_BENCH_MIN_SEC`), respecting caller overrides;

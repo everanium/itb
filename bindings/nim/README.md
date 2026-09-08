@@ -197,8 +197,8 @@ adjustable at any time programmatically. Pass `-1` to query without
 changing:
 
 ```nim
-discard setMemoryLimit(2 * 1024 * 1024 * 1024)
-discard setGcPercent(85)
+discard setMemoryLimit(4 * 1024 * 1024 * 1024)
+discard setGcPercent(100)
 ```
 
 ## Testing

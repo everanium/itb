@@ -111,8 +111,8 @@ let () =
   let argv = Array.to_list Sys.argv in
   let run () =
     (* Go-runtime pacing caps applied before any cipher work. *)
-    Itb.set_memory_limit (2 * 1024 * 1024 * 1024);
-    Itb.set_gc_percent 85;
+    Itb.set_memory_limit (4 * 1024 * 1024 * 1024);
+    Itb.set_gc_percent 100;
     match List.tl argv with
     | [ "version" ] -> cmd_version ()
     | [ "profiles" ] -> cmd_profiles ()

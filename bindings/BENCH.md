@@ -32,7 +32,7 @@ this fixed shape:
 | Stream profile  | `streaming-noaead-triple-v1`       | `ITB_PROFILE`       |
 | Wall-clock      | 5 s per case                       | `ITB_BENCH_MIN_SEC` |
 | Sizes           | 1 MB, 16 MB, 64 MB                 | (hard-coded)        |
-| Go runtime cap  | 2 GiB soft heap, 85% GC            | `ITB_GOMEMLIMIT` / `ITB_GOGC` |
+| Go runtime cap  | 4 GiB soft heap, 100% GC           | `ITB_GOMEMLIMIT` / `ITB_GOGC` |
 
 The pin matches the root Go BENCH3.md `BenchmarkExtTripleAreion512_1024bit_*`
 row so any binding's throughput is directly comparable to the Go native number.
@@ -323,8 +323,8 @@ Every binding accepts the same env vars:
 | `ITB_MSG_PROFILE`   | Message-shape override — falls back to `ITB_PROFILE`, then the derived MAC/no-MAC default |
 | `ITB_STREAM_PROFILE`| Stream-shape override — same fallback chain as `ITB_MSG_PROFILE` |
 | `ITB_BENCH_MIN_SEC` | `5`                           |
-| `ITB_GOMEMLIMIT`    | `2GiB`                        |
-| `ITB_GOGC`          | `85`                          |
+| `ITB_GOMEMLIMIT`    | `4GiB`                        |
+| `ITB_GOGC`          | `100`                         |
 
 `ITB_WITH_MAC=true` is the single knob that switches Message from the no-MAC profile to the MAC-authenticated profile AND simultaneously switches Stream from the non-AEAD profile to the AEAD profile — one boolean covers "authentication ON" on both shapes symmetrically. Expert callers pass `ITB_PROFILE=<name>` to force any specific profile (bypasses derivation), or `ITB_MSG_PROFILE` / `ITB_STREAM_PROFILE` for per-shape fine-grained overrides (e.g. MAC Message + non-AEAD Stream in one call). The full-production tables above run with `ITB_WITH_MAC=true ITB_WITH_PARALLAX=true ITB_WITH_WRAPPER=true`.
 

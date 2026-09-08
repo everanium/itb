@@ -203,8 +203,8 @@ static int cmd_profiles(void)
  * error. */
 static void cap_go_runtime(void)
 {
-    (void)itb_set_memory_limit(2LL << 30); /* 2 GiB soft cap */
-    (void)itb_set_gc_percent(85);          /* balanced GC */
+    (void)itb_set_memory_limit(4LL << 30); /* 4 GiB soft cap */
+    (void)itb_set_gc_percent(100);          /* balanced GC */
 }
 
 static int cmd_encrypt(const char *profile, const char *infile,

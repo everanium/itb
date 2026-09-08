@@ -44,8 +44,8 @@ fn print(io: std.Io, comptime fmt: []const u8, args: anytype) !void {
 /// The setter return values report the previous settings, not an
 /// error.
 fn capGoRuntime() void {
-    _ = itb.setMemoryLimit(2 << 30); // 2 GiB soft cap
-    _ = itb.setGcPercent(85); // balanced GC
+    _ = itb.setMemoryLimit(4 << 30); // 4 GiB soft cap
+    _ = itb.setGcPercent(100); // balanced GC
 }
 
 /// Profiles whose canonical name begins with "streaming-" route

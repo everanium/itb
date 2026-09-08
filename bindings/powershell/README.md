@@ -207,8 +207,8 @@ adjustable at any time programmatically. Pass a negative value to
 query without changing:
 
 ```powershell
-Set-ItbMemoryLimit -Bytes 2GB
-Set-ItbGCPercent -Percent 85
+Set-ItbMemoryLimit -Bytes 4GB
+Set-ItbGCPercent -Percent 100
 ```
 
 ## Testing

@@ -72,7 +72,7 @@ echo ""
 
 BENCH_ENC="BenchmarkExtTripleAESITB128_512bit_Encrypt_${PAYLOAD}"
 BENCH_DEC="BenchmarkExtTripleAESITB128_512bit_Decrypt_${PAYLOAD}"
-COMMON_ENV="ITB_GOMEMLIMIT=2GiB ITB_GOGC=20"
+COMMON_ENV="ITB_GOMEMLIMIT=4GiB ITB_GOGC=100"
 
 # median prints the lower-middle element of the newline-separated
 # numbers on stdin, or nothing for empty input.

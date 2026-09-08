@@ -18,8 +18,8 @@ internal static class Program
 {
     private static int Main(string[] args)
     {
-        Itb.Runtime.SetMemoryLimit(2L * 1024 * 1024 * 1024);
-        Itb.Runtime.SetGCPercent(85);
+        Itb.Runtime.SetMemoryLimit(4L * 1024 * 1024 * 1024);
+        Itb.Runtime.SetGCPercent(100);
         try
         {
             switch (args.Length > 0 ? args[0] : null)

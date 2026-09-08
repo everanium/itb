@@ -9,8 +9,8 @@ Friend Module Program
         ' Bench-scale allocation churn leaks Go scratch heap
         ' unboundedly without a soft memory cap + aggressive GC; the
         ' return values report the previous settings, not an error.
-        Library.SetMemoryLimit(2L * 1024 * 1024 * 1024)
-        Library.SetGCPercent(85)
+        Library.SetMemoryLimit(4L * 1024 * 1024 * 1024)
+        Library.SetGCPercent(100)
 
         Select Case If(args.Length > 0, args(0), "all")
             Case "message"

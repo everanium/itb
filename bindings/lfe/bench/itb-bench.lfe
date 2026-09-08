@@ -123,8 +123,8 @@
 ;; without a soft memory cap + aggressive GC; the return values
 ;; report the previous settings, not an error.
 (defun cap-go-runtime ()
-  (itb-lfe:set-memory-limit (bsl 2 30)) ;; 2 GiB soft cap
-  (itb-lfe:set-gc-percent 85)           ;; balanced GC
+  (itb-lfe:set-memory-limit (bsl 4 30)) ;; 4 GiB soft cap
+  (itb-lfe:set-gc-percent 100)           ;; balanced GC
   'ok)
 
 (defun header ()

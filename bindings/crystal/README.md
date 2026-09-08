@@ -206,8 +206,8 @@ aggressive GC the Go scratch heap grows unboundedly under allocation
 churn:
 
 ```crystal
-ITB.set_memory_limit(2_i64 << 30) # 2 GiB soft cap
-ITB.set_gc_percent(85)            # balanced GC
+ITB.set_memory_limit(4_i64 << 30) # 4 GiB soft cap
+ITB.set_gc_percent(100)            # balanced GC
 ```
 
 ## Testing

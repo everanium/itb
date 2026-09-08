@@ -122,8 +122,8 @@ end
 
 begin
   # Go-runtime pacing caps applied before any cipher work.
-  ITB.set_memory_limit(2 << 30)
-  ITB.set_gc_percent(85)
+  ITB.set_memory_limit(4 << 30)
+  ITB.set_gc_percent(100)
   case argv[0]
   when "version" then cmd_version
   when "profiles" then cmd_profiles

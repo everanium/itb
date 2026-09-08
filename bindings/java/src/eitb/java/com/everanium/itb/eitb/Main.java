@@ -26,8 +26,8 @@ public final class Main {
 
     public static void main(String[] args) {
         // Defensive heap caps — the CLI can be run on gigabyte files.
-        com.everanium.itb.Runtime.setMemoryLimit(2L << 30);
-        com.everanium.itb.Runtime.setGCPercent(85);
+        com.everanium.itb.Runtime.setMemoryLimit(4L << 30);
+        com.everanium.itb.Runtime.setGCPercent(100);
         try {
             switch (args.length > 0 ? args[0] : "") {
                 case "version":

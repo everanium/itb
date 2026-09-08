@@ -187,8 +187,8 @@ adjustable at any time programmatically. Pass `-1` to query without
 changing:
 
 ```fsharp
-Runtime.setMemoryLimit (2L * 1024L * 1024L * 1024L) |> ignore
-Runtime.setGCPercent 85 |> ignore
+Runtime.setMemoryLimit (4L * 1024L * 1024L * 1024L) |> ignore
+Runtime.setGCPercent 100 |> ignore
 ```
 
 ## Testing

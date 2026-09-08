@@ -204,8 +204,8 @@ adjustable at any time programmatically. Pass `-1` to query without
 changing:
 
 ```php
-Itb::setMemoryLimit(2 << 30);
-Itb::setGcPercent(85);
+Itb::setMemoryLimit(4 << 30);
+Itb::setGcPercent(100);
 ```
 
 Large payloads pass through PHP strings, so the PHP-side

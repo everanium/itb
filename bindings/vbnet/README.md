@@ -187,8 +187,8 @@ adjustable at any time programmatically. Pass `-1` to query without
 changing:
 
 ```vb
-Library.SetMemoryLimit(2L * 1024 * 1024 * 1024)
-Library.SetGCPercent(85)
+Library.SetMemoryLimit(4L * 1024 * 1024 * 1024)
+Library.SetGCPercent(100)
 ```
 
 ## Testing

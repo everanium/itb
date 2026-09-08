@@ -152,8 +152,8 @@ main <- function() {
   # Bench-scale allocation churn leaks Go scratch heap unboundedly
   # without a soft memory cap + aggressive GC; the return values
   # report the previous settings, not an error.
-  set_memory_limit(2 * 1024 * 1024 * 1024)
-  set_gc_percent(85)
+  set_memory_limit(4 * 1024 * 1024 * 1024)
+  set_gc_percent(100)
 
   opts <- build_opts()
   cat(sprintf("%-17s %-8s mb_per_sec\n", "bench", "size"))

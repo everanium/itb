@@ -30,8 +30,8 @@ import {
   version,
 } from '../src/index.js';
 
-setMemoryLimit(2n * 1024n * 1024n * 1024n);
-setGCPercent(85);
+setMemoryLimit(4n * 1024n * 1024n * 1024n);
+setGCPercent(100);
 
 function usage(): never {
   console.error(
