@@ -2,7 +2,6 @@ package itb
 
 import (
 	"encoding/binary"
-	"math/bits"
 	"sync"
 
 	"github.com/everanium/itb/internal/interlock"
@@ -103,31 +102,15 @@ func unrankCombination48(rank uint64, k, n int) uint64 {
 //	(q, idx1) = divmod128(rank, B)   — 128-by-30 schoolbook divmod
 //	idx0      = q mod A              — secondary reduction (q < 2^99)
 //
-// The schoolbook divmod is performed limb-by-limb via [math/bits.Div64]
-// and the secondary reduction accumulates the running quotient's
-// residue mod A across the two 64-bit limbs — no big-integer arithmetic
-// is used in production; every step operates on native 64-bit values.
+// The schoolbook divmod is performed limb-by-limb through [splitRank48]
+// (the [math/bits.Div64] formulation where Div64 is a hardware divide,
+// the bit-exact constant-divisor reciprocal formulation elsewhere) and
+// the secondary reduction accumulates the running quotient's residue
+// mod A across the two 64-bit limbs — no big-integer arithmetic is used
+// in production; every step operates on native 64-bit values.
 func rankToMaskTriple48(lane0, lane1 uint64) (m0, m1, m2 uint64) {
-	// Step 1: divide the 128-bit rank by B, MSB-first.
-	//
-	//   qHi = lane1 / B                            (uint64 quotient)
-	//   r1  = lane1 mod B                          (uint64 remainder < B)
-	//   qLo = (r1 * 2^64 + lane0) / B              (uint64 quotient)
-	//   r   = (r1 * 2^64 + lane0) mod B            (uint64 remainder < B)
-	//
-	// Full 128-bit quotient q = qHi * 2^64 + qLo; idx1 = r.
-	qHi, r1 := bits.Div64(0, lane1, interlockB48)
-	qLo, r := bits.Div64(r1, lane0, interlockB48)
-	idx1 := r
-
-	// Step 2: reduce q mod A across its two limbs.
-	//
-	// qHi is at most floor(2^64 / B) ≈ 2^34 < A, so bits.Div64(0, qHi, A)
-	// returns quotient 0 and remainder qHi. The second bits.Div64 then
-	// combines qHi (as high limb, < A) with qLo (low limb) and reduces
-	// the 128-bit value (qHi * 2^64 + qLo) mod A in one step.
-	_, hiMod := bits.Div64(0, qHi, interlockA48)
-	_, idx0 := bits.Div64(hiMod, qLo, interlockA48)
+	// Step 1 and 2: (q, idx1) = divmod(rank, B); idx0 = q mod A.
+	idx0, idx1 := splitRank48(lane0, lane1)
 
 	// m0: 16-of-48 mask selected by idx0.
 	m0 = unrankCombination48(idx0, 16, 48)
@@ -136,7 +119,7 @@ func rankToMaskTriple48(lane0, lane1 uint64) (m0, m1, m2 uint64) {
 	// (bits where m0 is zero). unrankCombination48 keeps everything below
 	// bit 32, so the local mask fits in a uint32; it is carried as uint64
 	// throughout to keep the arithmetic uniform.
-	m1Local := unrankCombination48(idx1, 16, 32)
+	m1Local := unrankCombination48(uint64(idx1), 16, 32)
 
 	// Map m1Local positions onto the actual remaining bit positions.
 	const domain uint64 = 0x0000_FFFF_FFFF_FFFF
@@ -467,12 +450,7 @@ func fillLockMasksTriple48(prf *[8]uint64, count int, masks *[lockBatchFactor48M
 		var idx1 [8]uint32
 		for j := 0; j < count; j++ {
 			// Two-step 128-by-30 divmod: q, idx1 = divmod(rank, B); idx0 = q mod A.
-			qHi, r1 := bits.Div64(0, prf[2*j+1], interlockB48)
-			qLo, r := bits.Div64(r1, prf[2*j], interlockB48)
-			_, hiMod := bits.Div64(0, qHi, interlockA48)
-			_, m := bits.Div64(hiMod, qLo, interlockA48)
-			idx0[j] = m
-			idx1[j] = uint32(r)
+			idx0[j], idx1[j] = splitRank48(prf[2*j], prf[2*j+1])
 		}
 		var out [3][8]uint64
 		interlock.RankToMaskTripleUnrank48(&idx0, &idx1, &out)
@@ -488,12 +466,7 @@ func fillLockMasksTriple48(prf *[8]uint64, count int, masks *[lockBatchFactor48M
 		var idx1 [8]uint32
 		for j := 0; j < count; j++ {
 			// Two-step 128-by-30 divmod: q, idx1 = divmod(rank, B); idx0 = q mod A.
-			qHi, r1 := bits.Div64(0, prf[2*j+1], interlockB48)
-			qLo, r := bits.Div64(r1, prf[2*j], interlockB48)
-			_, hiMod := bits.Div64(0, qHi, interlockA48)
-			_, m := bits.Div64(hiMod, qLo, interlockA48)
-			idx0[j] = m
-			idx1[j] = uint32(r)
+			idx0[j], idx1[j] = splitRank48(prf[2*j], prf[2*j+1])
 		}
 		var out [3][8]uint64
 		interlock.RankToMaskTripleUnrank48AVX2(&idx0, &idx1, &out)
@@ -509,12 +482,7 @@ func fillLockMasksTriple48(prf *[8]uint64, count int, masks *[lockBatchFactor48M
 		var idx1 [8]uint32
 		for j := 0; j < count; j++ {
 			// Two-step 128-by-30 divmod: q, idx1 = divmod(rank, B); idx0 = q mod A.
-			qHi, r1 := bits.Div64(0, prf[2*j+1], interlockB48)
-			qLo, r := bits.Div64(r1, prf[2*j], interlockB48)
-			_, hiMod := bits.Div64(0, qHi, interlockA48)
-			_, m := bits.Div64(hiMod, qLo, interlockA48)
-			idx0[j] = m
-			idx1[j] = uint32(r)
+			idx0[j], idx1[j] = splitRank48(prf[2*j], prf[2*j+1])
 		}
 		var out [3][8]uint64
 		interlock.RankToMaskTripleUnrank48NEON(&idx0, &idx1, &out)
@@ -554,12 +522,7 @@ func fillLockMasksTriple48Super(prf *[2 * superChunks48]uint64, count int, masks
 		var idx1 [8]uint32
 		for j := 0; j < count; j++ {
 			// Two-step 128-by-30 divmod: q, idx1 = divmod(rank, B); idx0 = q mod A.
-			qHi, r1 := bits.Div64(0, prf[2*j+1], interlockB48)
-			qLo, r := bits.Div64(r1, prf[2*j], interlockB48)
-			_, hiMod := bits.Div64(0, qHi, interlockA48)
-			_, m := bits.Div64(hiMod, qLo, interlockA48)
-			idx0[j] = m
-			idx1[j] = uint32(r)
+			idx0[j], idx1[j] = splitRank48(prf[2*j], prf[2*j+1])
 		}
 		var out [3][8]uint64
 		interlock.RankToMaskTripleUnrank48(&idx0, &idx1, &out)
@@ -575,12 +538,7 @@ func fillLockMasksTriple48Super(prf *[2 * superChunks48]uint64, count int, masks
 		var idx1 [8]uint32
 		for j := 0; j < count; j++ {
 			// Two-step 128-by-30 divmod: q, idx1 = divmod(rank, B); idx0 = q mod A.
-			qHi, r1 := bits.Div64(0, prf[2*j+1], interlockB48)
-			qLo, r := bits.Div64(r1, prf[2*j], interlockB48)
-			_, hiMod := bits.Div64(0, qHi, interlockA48)
-			_, m := bits.Div64(hiMod, qLo, interlockA48)
-			idx0[j] = m
-			idx1[j] = uint32(r)
+			idx0[j], idx1[j] = splitRank48(prf[2*j], prf[2*j+1])
 		}
 		var out [3][8]uint64
 		interlock.RankToMaskTripleUnrank48AVX2(&idx0, &idx1, &out)
@@ -596,12 +554,7 @@ func fillLockMasksTriple48Super(prf *[2 * superChunks48]uint64, count int, masks
 		var idx1 [8]uint32
 		for j := 0; j < count; j++ {
 			// Two-step 128-by-30 divmod: q, idx1 = divmod(rank, B); idx0 = q mod A.
-			qHi, r1 := bits.Div64(0, prf[2*j+1], interlockB48)
-			qLo, r := bits.Div64(r1, prf[2*j], interlockB48)
-			_, hiMod := bits.Div64(0, qHi, interlockA48)
-			_, m := bits.Div64(hiMod, qLo, interlockA48)
-			idx0[j] = m
-			idx1[j] = uint32(r)
+			idx0[j], idx1[j] = splitRank48(prf[2*j], prf[2*j+1])
 		}
 		var out [3][8]uint64
 		interlock.RankToMaskTripleUnrank48NEON(&idx0, &idx1, &out)
@@ -634,12 +587,7 @@ func fillLockMasksTriple48Super16(prf *[32]uint64, masks *[16][3]uint64) {
 		var idx1 [16]uint32
 		for j := 0; j < 16; j++ {
 			// Two-step 128-by-30 divmod: q, idx1 = divmod(rank, B); idx0 = q mod A.
-			qHi, r1 := bits.Div64(0, prf[2*j+1], interlockB48)
-			qLo, r := bits.Div64(r1, prf[2*j], interlockB48)
-			_, hiMod := bits.Div64(0, qHi, interlockA48)
-			_, m := bits.Div64(hiMod, qLo, interlockA48)
-			idx0[j] = m
-			idx1[j] = uint32(r)
+			idx0[j], idx1[j] = splitRank48(prf[2*j], prf[2*j+1])
 		}
 		var out [3][16]uint64
 		interlock.RankToMaskTripleUnrank48x16(&idx0, &idx1, &out)
