@@ -263,10 +263,10 @@ var Registry = [10]Spec{
 	{Name: CipherBLAKE2b256, Width: W256, Class: ClassPRFCounter, HashHash: blake2b256HashHash, KeyedHash: blake2b256KeyedHash, FusedChainHash256: blake2b256FusedChainHash, FusedChainHash256x8: blake2b256FusedChainHash8, InterlockFillBatch16x256: blake2b256InterlockFillBatch16},
 	{Name: CipherBLAKE2b512, Width: W512, Class: ClassPRFCounter, HashHash: blake2b512HashHash, KeyedHash: blake2b512KeyedHash, FusedChainHash512: blake2b512FusedChainHash, FusedChainHash512x8: blake2b512FusedChainHash8, InterlockFillBatch16x512: blake2b512InterlockFillBatch16, InterlockFillBatch32x512: blake2b512InterlockFillBatch32},
 	{Name: CipherBLAKE2s, Width: W256, Class: ClassPRFCounter, HashHash: blake2sHashHash, KeyedHash: blake2sKeyedHash, FusedChainHash256: blake2sFusedChainHash, FusedChainHash256x8: blake2sFusedChainHash8, InterlockFillBatch16x256: blake2sInterlockFillBatch16},
-	{Name: CipherBLAKE3, Width: W256, Class: ClassPRFCounter, HashHash: blake3HashHash, KeyedHash: blake3KeyedHash},
+	{Name: CipherBLAKE3, Width: W256, Class: ClassPRFCounter, HashHash: blake3HashHash, KeyedHash: blake3KeyedHash, FusedChainHash256: blake3FusedChainHash, FusedChainHash256x8: blake3FusedChainHash8, InterlockFillBatch16x256: blake3InterlockFillBatch16},
 	{Name: CipherAES128CTR, Width: W128, Class: ClassNativeStream, FusedChainHash128: aesCMACFusedChainHash, InterlockFillBatch16: aesCMACInterlockFillBatch16},
 	{Name: CipherSipHash24, Width: W128, Class: ClassNativeStream, KeyedHash: siphash24KeyedHash, FusedChainHash128: sipHash24FusedChainHash, InterlockFillBatch16: sipHash24InterlockFillBatch16},
-	{Name: CipherChaCha20, Width: W256, Class: ClassNativeStream},
+	{Name: CipherChaCha20, Width: W256, Class: ClassNativeStream, FusedChainHash256: chacha20FusedChainHash, FusedChainHash256x8: chacha20FusedChainHash8, InterlockFillBatch16x256: chacha20InterlockFillBatch16},
 }
 
 // ErrHashExists is returned by [Register] when the supplied Spec.Name

@@ -232,8 +232,9 @@ arm_env() {
 # real dispatch arm. Skip rules:
 #   * avx512x4: aesitb128 (internal/aesitbasm), aescmac
 #     (hashes/internal/aescmacasm), siphash24
-#     (hashes/internal/siphashasm) and blake2s
-#     (hashes/internal/blake2sasm) carry eight-lane fused ChainHash
+#     (hashes/internal/siphashasm), blake2s (hashes/internal/blake2sasm),
+#     blake3 (hashes/internal/blake3asm) and chacha20
+#     (hashes/internal/chacha20asm) carry eight-lane fused ChainHash
 #     kernels (x8 at the nonce-buf shapes), so only there does the
 #     pseudo-arm select something the plain avx512 arm does not.
 #   * aesni: only the AES-based primitives carry AES-NI XMM fused
@@ -244,15 +245,15 @@ arm_env() {
 #     tier; areion256 / areion512 run their VAES-on-YMM batched
 #     permutation with the fused cascade off (the arms-only probe on
 #     the AMD Zen 3 class), so the pair is applicable; blake2b256 /
-#     blake2b512 and blake2s run their AVX2 fused cascade kernels and
-#     the other ARX / BLAKE primitives their AVX2 chain kernels.
+#     blake2b512, blake2s, blake3 and chacha20 run their AVX2 fused
+#     cascade kernels.
 #   * avx512 / scalar: every primitive has both.
 arm_applicable() {
     case "$2" in
         avx512|scalar|avx2) return 0 ;;
         avx512x4)
             case "$1" in
-                aesitb128|aescmac|siphash24|blake2s) return 0 ;;
+                aesitb128|aescmac|siphash24|blake2s|blake3|chacha20) return 0 ;;
                 *) return 1 ;;
             esac ;;
         vaesavx2)
