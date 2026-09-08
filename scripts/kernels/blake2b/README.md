@@ -62,23 +62,24 @@ generator lists the register plan of every tier.
 
 ## Register budget
 
-The 64-bit-lane state of BLAKE2b fills 16 registers at one qword lane per
-pixel, and the 16 message words fill the other 16 of the EVEX register
-file: the avx512 tier keeps state and words in YMM registers at four
-lanes and in ZMM registers at eight lanes (the eight-pixel stride of the
-width-256 / -512 pipelines and the fill kernels), 32 of 32 in both forms
-with the seed-word rebuild and the fold as embedded-broadcast memory
-operands. No sixteen-lane fill kernel exists: sixteen lanes would need two
-ZMM registers per state word, the whole file, with the message words as
-memory operands and no scratch — the port-bound outcome of that layout on
-Areion-256 (0.93× / 0.99× / 0.99× of two eight-lane calls) makes it a
-no-gain cell, and the generator carries no emitter for it. The avx2 tier has 16 YMM
-registers: `Y0..Y14` hold `v[0..14]`, `Y15` is the ror63 temp, `v[15]`
-lives in a frame slot with `v[12]` spilled around the two G functions that
-touch `v[15]`, and the message words are frame slots read as memory
-operands; the frame exceeds the NOSPLIT budget, so these kernels carry
-the stack check. The NEON tier runs two lanes per pass over the same
-16-register state with the words loaded pairwise from the frame.
+The 64-bit-lane state of BLAKE2b fills 16 registers at one qword lane
+per pixel, and the 16 message words fill the other 16 of the EVEX
+register file: the avx512 tier keeps state and words in YMM registers at
+four lanes and in ZMM registers at eight lanes (the eight-pixel stride
+of the width-256 / -512 pipelines and the fill kernels), 32 of 32 in
+both forms with the seed-word rebuild and the fold as embedded-broadcast
+memory operands. No sixteen-lane fill kernel exists: sixteen lanes would
+need two ZMM registers per state word, the whole file, with the message
+words as memory operands and no scratch — the port-bound outcome of that
+layout on Areion-256 (0.93× / 0.99× / 0.99× of two eight-lane calls)
+makes it a no-gain cell, and the generator carries no emitter for it.
+The avx2 tier has 16 YMM registers: `Y0..Y14` hold `v[0..14]`, `Y15` is
+the ror63 temp, `v[15]` lives in a frame slot with `v[12]` spilled
+around the two G functions that touch `v[15]`, and the message words are
+frame slots read as memory operands; the frame exceeds the NOSPLIT
+budget, so these kernels carry the stack check. The NEON tier runs two
+lanes per pass over the same 16-register state with the words loaded
+pairwise from the frame.
 
 ## Store-to-load forwarding discipline (amd64)
 
@@ -100,3 +101,18 @@ the `hashes` package's known-answer vectors of the cascade
 (`blake2b_cascade_kat_test.go`, produced under `-tags noitbasm`), and by
 the cross-tier wire-parity tests. The generator changes how a kernel
 reads its inputs and where it stages them, never what it computes.
+
+Independently of any reference, every kernel is held to the
+input-entropy differential audit of `internal/kernelaudit`
+(`hashes/internal/blake2basm/blake2basm_entropy*_test.go`, every tier by
+direct call and the dispatchers under every dispatch state): every bit
+of every lane buffer, component word, key byte and group index base
+flipped alone changes the output — the flipped lane's and no other
+lane's for a lane buffer, every lane's for a shared input — so an input
+read at a narrower width than its buffer, a skipped component word or an
+ignored key byte is caught where a reference sharing the defect would
+not catch it, and the kernel must agree with the pure-Go cascade at the
+baseline and after every flip. The `hashes` package runs the same audit
+over the arms and the hooks of every shipped registry entry against the
+sequential cascade of the entry's single arm
+(`nonce_entropy_audit_test.go`).

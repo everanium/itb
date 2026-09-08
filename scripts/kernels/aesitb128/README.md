@@ -85,3 +85,17 @@ every tier by direct call plus `ITB_FORCE_HASH_TIER` /
 `aesitb_parity_test.go` / `aesitb_fused_parity_test.go`, and by the
 cross-tier wire-parity tests. The generators change how a kernel reads its
 inputs and where it stages them, never what it computes.
+
+Independently of any reference, every kernel is held to the
+input-entropy differential audit of `internal/kernelaudit`
+(`internal/aesitbasm/aesitbasm_entropy*_test.go`, every tier by direct
+call and the dispatchers under every dispatch state): every bit of every
+lane buffer, component word, key byte and group index base flipped alone
+changes the output — the flipped lane's and no other lane's for a lane
+buffer, every lane's for a shared input — so an input read at a narrower
+width than its buffer, a skipped component word or an ignored key byte
+is caught where a reference sharing the defect would not catch it, and
+the kernel must agree with the pure-Go cascade at the baseline and after
+every flip. The `hashes` package runs the same audit over the arms and
+the hooks of every shipped registry entry against the sequential cascade
+of the entry's single arm (`nonce_entropy_audit_test.go`).
