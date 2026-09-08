@@ -243,6 +243,8 @@ func run() int {
 	logf("overrides: profile=%q key-bits=%d nonce-bits=%d chunk-size=%s barrier-fill=%d gomaxprocs=%d rekey-every=%d blob-cycle-every=%d payload-mode=%s seed=%d json-output=%v",
 		cfg.profile, cfg.keyBits, cfg.nonceBits, humanBytes(cfg.chunkSize), cfg.barrierFill,
 		cfg.gomaxprocs, cfg.rekeyEvery, cfg.blobCycleEvery, cfg.payloadMode, cfg.seed, cfg.jsonOutput)
+	logf("policy: microbatch-tiers=%s hashpool-starters=%s",
+		policyLabel(os.Getenv("ITB_MICROBATCH_TIERS")), policyLabel(os.Getenv("ITB_HASHPOOL_STARTERS")))
 
 	r := &runState{cfg: cfg, release: make(chan struct{})}
 

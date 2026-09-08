@@ -277,7 +277,22 @@ type summaryReport struct {
 	PayloadBytes int64  `json:"payload_bytes"`
 	Workers      int    `json:"goroutines"`
 
+	// Encoder policy knobs the process was started with, read from the
+	// ITB_MICROBATCH_TIERS / ITB_HASHPOOL_STARTERS env at init ("default"
+	// when unset), so every cell of a policy sweep is self-describing.
+	MicroBatchTiers  string `json:"microbatch_tiers"`
+	HashPoolStarters string `json:"hashpool_starters"`
+
 	allocMetrics
+}
+
+// policyLabel renders an encoder policy env value for the summary:
+// the raw string when set, "default" when the shipped ladder applies.
+func policyLabel(env string) string {
+	if s := strings.TrimSpace(env); s != "" {
+		return s
+	}
+	return "default"
 }
 
 // allocMetrics is the allocation-rate / GC-cost / pool hit-miss block
@@ -437,6 +452,8 @@ func printJSONSummary(r *runState, elapsed time.Duration, finalHeap uint64, fina
 		Hash:                r.cfg.hash,
 		PayloadBytes:        r.cfg.payload,
 		Workers:             r.cfg.workers,
+		MicroBatchTiers:     policyLabel(os.Getenv("ITB_MICROBATCH_TIERS")),
+		HashPoolStarters:    policyLabel(os.Getenv("ITB_HASHPOOL_STARTERS")),
 		allocMetrics:        am,
 	}
 	b, err := json.Marshal(rep)

@@ -159,3 +159,38 @@ policy of a session.
 If a policy shows visibly noisy numbers, bump `BENCH_TIME=2s`; if still
 noisy on the very small end of the ladder, bump `BENCH_COUNT=3` and read
 the median across runs.
+
+## Steady-state policy sweep via tools/loop
+
+`loop_policy_sweep.sh` drives the same two policy env vars through
+`tools/loop` instead of `go test -bench`: one long-lived Streaming AEAD
+pipeline per cell, three worker goroutines, a fixed run duration, and
+the loop's `--json-output` summary captured per cell. The loop echoes
+the active policy on a `policy:` log line and in the `microbatch_tiers`
+/ `hashpool_starters` JSON fields, so every cell is self-describing.
+
+Cells are listed one per line in a pipe-delimited spec file
+(`label|tiers|pools|gogc|hash|payload|extra loop flags`; `-` selects the
+default for that column, `#` starts a comment):
+
+```sh
+bash scripts/bench/loop_policy_sweep.sh cells.txt /tmp/policy-out
+python3 scripts/bench/loop_policy_aggregate.py /tmp/policy-out --sort payload
+```
+
+`LOOP_DURATION` (default `90s`), `LOOP_MEMLIMIT` (default `2GiB`,
+applied both as `GOMEMLIMIT` and `--memlimit`), `LOOP_GOGC` (default
+`85`), `LOOP_HASH` (default `aesitb128`) and `LOOP_COMMON` (the fixed
+loop flags — Streaming AEAD with `hmac-blake3`, parallax and wrapper on,
+1024-bit key, three goroutines) override the fixed knobs; `LOOP_BIN`
+points at a prebuilt loop binary instead of building one into the
+output directory.
+
+The aggregator prints a Markdown table with the policy knobs, encrypt /
+decrypt throughput, allocation per iteration, GC rate and cost, and the
+per-pool miss rates. The figures are steady-state Streaming AEAD
+numbers and are not comparable with the cold-start Single Message rows
+`sweep.sh` produces; the tier thresholds are per-snake byte counts, so
+under the default 16 MiB chunk budget a stream never reaches the
+shipped ladder's third tier — probing it takes an explicit
+`--chunk-size` above three times the second tier's upper bound.
