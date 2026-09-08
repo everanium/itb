@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"crypto/rand"
 	"testing"
-
-	"github.com/everanium/itb/hashes/internal/blake3asm"
 )
 
 // TestBLAKE3256BatchedParityWithSingle confirms that the 4-way
@@ -51,30 +49,17 @@ func TestBLAKE3256BatchedParityWithSingle(t *testing.T) {
 	}
 }
 
-// TestBLAKE3MakePairBatchedFollowsAsmEngagement verifies the
-// asm-conditional contract of the FFI-facing Make256Pair entry
-// point for blake3. When the AVX-512 fused chain-absorb path is
-// engaged on the host (blake3asm.HasAVX512Fused == true), the
-// batched arm must be non-nil so the C ABI / Python FFI layers
-// drive per-pixel hashing through the ZMM-batched kernel. When
-// the asm path is not engaged (purego build, non-amd64 host, or
-// amd64 without AVX-512+VL) the batched arm must be nil so
-// process_cgo.go's nil-fallback drives 4 single-call dispatches
-// through the upstream zeebo/blake3 path — measurably faster
-// than the scalar 4-lane chain-absorb wrapper would be.
-func TestBLAKE3MakePairBatchedFollowsAsmEngagement(t *testing.T) {
+// TestBLAKE3MakePairBatchedArms verifies that Make256Pair returns a
+// batched arm for blake3 on every build: the arm evaluates the four
+// lanes through the single arm, and the fused cascade hooks of the
+// registry entry carry the assembly.
+func TestBLAKE3MakePairBatchedArms(t *testing.T) {
 	_, b, _, err := Make256Pair("blake3")
 	if err != nil {
 		t.Fatalf("Make256Pair(blake3): %v", err)
 	}
-	if blake3asm.HasAVX512Fused {
-		if b == nil {
-			t.Fatal("Make256Pair(blake3) returned nil batched arm despite AVX-512+VL asm engaged — FFI will fall back to per-pixel dispatch")
-		}
-	} else {
-		if b != nil {
-			t.Fatal("Make256Pair(blake3) returned non-nil batched arm without asm engaged — the scalar 4-lane wrapper costs more than process_cgo's nil-fallback through 4 single calls")
-		}
+	if b == nil {
+		t.Fatal("Make256Pair(blake3) returned a nil batched arm")
 	}
 }
 

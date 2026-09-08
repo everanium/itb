@@ -1,3 +1,19 @@
+// Package blake3asm holds the fused ChainHash cascade kernels of BLAKE3
+// for the parent hashes package: the whole component cascade of a seed
+// evaluated in one kernel call at the four per-pixel shapes (13 / 20 /
+// 36 / 68 bytes) — four lanes on the AVX-512 EVEX XMM, AVX2 VEX XMM and
+// NEON tiers, eight lanes on EVEX YMM registers at the nonce-buf shapes
+// and for the batch-16 Interlocked Barrier fill hook, and one lane in
+// general-purpose registers as the single-lane arm of every tier. The
+// keyed mode places the fixed key in the chaining value: the
+// initialisation vector, the block lengths and the flag set
+// (CHUNK_START / CHUNK_END / ROOT / KEYED_HASH) are folded into
+// per-kernel read-only tables by the generator
+// (scripts/kernels/blake3/gen_fused_kernels.py). Register layout after
+// github.com/saucecontrol/Blake2Fast (MIT), Blake3Scalar.g.cs: one
+// register per state word, one dword lane per pixel, VPRORD for the
+// four ARX rotates on the EVEX tier, the seven-round message schedule
+// unrolled.
 package blake3asm
 
 import (
