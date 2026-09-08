@@ -133,6 +133,12 @@ func allocOneSeed(primitive string, keyBits, width int) (seed any, prfKey []byte
 			return nil, nil, fmt.Errorf("triple: itb.NewSeed256: %w", serr)
 		}
 		s.BatchHash = batched
+		if ferr := hashes.AttachFused256(s, primitive, key); ferr != nil {
+			return nil, nil, fmt.Errorf("triple: hashes.AttachFused256(%q): %w", primitive, ferr)
+		}
+		if ierr := hashes.AttachInterlockBatch16x256(s, primitive, key); ierr != nil {
+			return nil, nil, fmt.Errorf("triple: hashes.AttachInterlockBatch16x256(%q): %w", primitive, ierr)
+		}
 		return s, key, nil
 	case 512:
 		single, batched, key, herr := hashes.Make512Pair(primitive)
@@ -144,6 +150,12 @@ func allocOneSeed(primitive string, keyBits, width int) (seed any, prfKey []byte
 			return nil, nil, fmt.Errorf("triple: itb.NewSeed512: %w", serr)
 		}
 		s.BatchHash = batched
+		if ferr := hashes.AttachFused512(s, primitive, key); ferr != nil {
+			return nil, nil, fmt.Errorf("triple: hashes.AttachFused512(%q): %w", primitive, ferr)
+		}
+		if ierr := hashes.AttachInterlockBatch16x512(s, primitive, key); ierr != nil {
+			return nil, nil, fmt.Errorf("triple: hashes.AttachInterlockBatch16x512(%q): %w", primitive, ierr)
+		}
 		return s, key, nil
 	}
 	return nil, nil, fmt.Errorf("triple: unsupported primitive width %d", width)

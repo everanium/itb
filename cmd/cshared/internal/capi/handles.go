@@ -154,6 +154,14 @@ func NewSeed(hashName string, keyBits int) (id HandleID, st Status) {
 		if bf != nil {
 			s.BatchHash = bf
 		}
+		if err := hashes.AttachFused256(s, hashName, hashKey); err != nil {
+			setLastErr(StatusBadHash)
+			return 0, StatusBadHash
+		}
+		if err := hashes.AttachInterlockBatch16x256(s, hashName, hashKey); err != nil {
+			setLastErr(StatusBadHash)
+			return 0, StatusBadHash
+		}
 		h.seed256 = s
 		h.hashKey = hashKey
 	case hashes.W512:
@@ -169,6 +177,14 @@ func NewSeed(hashName string, keyBits int) (id HandleID, st Status) {
 		}
 		if bf != nil {
 			s.BatchHash = bf
+		}
+		if err := hashes.AttachFused512(s, hashName, hashKey); err != nil {
+			setLastErr(StatusBadHash)
+			return 0, StatusBadHash
+		}
+		if err := hashes.AttachInterlockBatch16x512(s, hashName, hashKey); err != nil {
+			setLastErr(StatusBadHash)
+			return 0, StatusBadHash
 		}
 		h.seed512 = s
 		h.hashKey = hashKey
@@ -416,6 +432,14 @@ func NewSeedFromComponents(hashName string, components []uint64, hashKey []byte)
 		if bf != nil {
 			s.BatchHash = bf
 		}
+		if err := hashes.AttachFused256(s, hashName, generatedKey); err != nil {
+			setLastErr(StatusBadHash)
+			return 0, StatusBadHash
+		}
+		if err := hashes.AttachInterlockBatch16x256(s, hashName, generatedKey); err != nil {
+			setLastErr(StatusBadHash)
+			return 0, StatusBadHash
+		}
 		h.seed256 = s
 		h.hashKey = generatedKey
 	case hashes.W512:
@@ -431,6 +455,14 @@ func NewSeedFromComponents(hashName string, components []uint64, hashKey []byte)
 		}
 		if bf != nil {
 			s.BatchHash = bf
+		}
+		if err := hashes.AttachFused512(s, hashName, generatedKey); err != nil {
+			setLastErr(StatusBadHash)
+			return 0, StatusBadHash
+		}
+		if err := hashes.AttachInterlockBatch16x512(s, hashName, generatedKey); err != nil {
+			setLastErr(StatusBadHash)
+			return 0, StatusBadHash
 		}
 		h.seed512 = s
 		h.hashKey = generatedKey

@@ -137,7 +137,7 @@ type Spec struct {
 	// Make128Pair factory that built the seed's Hash / BatchHash arms.
 	// nil (every entry without a fused cascade) leaves the seed on the
 	// sequential per-round loop; a populated factory must return
-	// evaluators bit-exact with that loop. Shipped: aesitb128.
+	// evaluators bit-exact with that loop. Shipped: aesitb128, aescmac.
 	FusedChainHash128 func(key []byte) (itb.FusedChainHashFunc128, itb.BatchFusedChainHashFunc128, error) `json:"-"`
 
 	// InterlockFillBatch16 optionally builds the batch-16 Interlocked
@@ -149,8 +149,36 @@ type Spec struct {
 	// single-lane arms. A populated factory must return a kernel
 	// bit-exact with sixteen sequential cascades over the same
 	// components; the kernel is a performance path and never changes the
-	// wire. Shipped: aesitb128.
+	// wire. Shipped: aesitb128, aescmac.
 	InterlockFillBatch16 func(key []byte) (itb.InterlockFillFunc16, error) `json:"-"`
+
+	// FusedChainHash256 and FusedChainHash512 are the width-256 and
+	// width-512 counterparts of FusedChainHash128: whole-cascade
+	// evaluators for [itb.Seed256.FusedChain] / [itb.Seed256.BatchFusedChain]
+	// and [itb.Seed512.FusedChain] / [itb.Seed512.BatchFusedChain],
+	// installed through [AttachFused256] / [AttachFused512]. key is the
+	// primitive's fixed key exactly as returned by the Make256Pair /
+	// Make512Pair factory that built the seed's arms. nil leaves the seed
+	// on the sequential per-round loop, which is the cascade definition
+	// at every width; a populated factory must return evaluators
+	// bit-exact with that loop. Every shipped entry currently leaves both
+	// fields nil.
+	FusedChainHash256 func(key []byte) (itb.FusedChainHashFunc256, itb.BatchFusedChainHashFunc256, error) `json:"-"`
+	FusedChainHash512 func(key []byte) (itb.FusedChainHashFunc512, itb.BatchFusedChainHashFunc512, error) `json:"-"`
+
+	// InterlockFillBatch16x256 and InterlockFillBatch16x512 are the
+	// width-256 and width-512 counterparts of InterlockFillBatch16: the
+	// batch-16 Interlocked Barrier fill kernels installed through
+	// [AttachInterlockBatch16x256] / [AttachInterlockBatch16x512] (see
+	// [itb.InterlockFillFunc16x256] and [itb.InterlockFillFunc16x512] for
+	// the group count one call covers at each width). key is the
+	// primitive's fixed key exactly as returned by the Make256Pair /
+	// Make512Pair factory. nil leaves the seed filling the cascade through
+	// its four-lane and single-lane arms; a populated factory must return
+	// a kernel bit-exact with the sequential cascades over the same
+	// components. Every shipped entry currently leaves both fields nil.
+	InterlockFillBatch16x256 func(key []byte) (itb.InterlockFillFunc16x256, error) `json:"-"`
+	InterlockFillBatch16x512 func(key []byte) (itb.InterlockFillFunc16x512, error) `json:"-"`
 }
 
 // Canonical shipped primitive names. Every registry consumer (ctr, kdf,
@@ -827,7 +855,6 @@ func smokeValidate(spec Spec) error {
 		if single == nil {
 			return fmt.Errorf("hashes: Register: %q Make256Pair returned a nil single-arm closure", spec.Name)
 		}
-		_ = key
 		var zseed [4]uint64
 		a := single(probe, zseed)
 		b := single(probe, zseed)
@@ -847,6 +874,11 @@ func smokeValidate(spec Spec) error {
 				}
 			}
 		}
+		if spec.FusedChainHash256 != nil {
+			if err := smokeFusedChainHash256(spec, single, key); err != nil {
+				return err
+			}
+		}
 	case W512:
 		single, batched, key, err := spec.Make512Pair()
 		if err != nil {
@@ -855,7 +887,6 @@ func smokeValidate(spec Spec) error {
 		if single == nil {
 			return fmt.Errorf("hashes: Register: %q Make512Pair returned a nil single-arm closure", spec.Name)
 		}
-		_ = key
 		var zseed [8]uint64
 		a := single(probe, zseed)
 		b := single(probe, zseed)
@@ -873,6 +904,11 @@ func smokeValidate(spec Spec) error {
 				if out[i] != a {
 					return fmt.Errorf("hashes: Register: %q batched-arm lane %d diverges from the single-arm result over identical inputs", spec.Name, i)
 				}
+			}
+		}
+		if spec.FusedChainHash512 != nil {
+			if err := smokeFusedChainHash512(spec, single, key); err != nil {
+				return err
 			}
 		}
 	}

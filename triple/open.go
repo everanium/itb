@@ -315,6 +315,12 @@ func importInnerBlob256(cfg *itb.Config, innerBytes []byte, innerHash string) ([
 		}
 		rawSeeds[i].Hash = single
 		rawSeeds[i].BatchHash = batched
+		if ferr := hashes.AttachFused256(rawSeeds[i], innerHash, keys[i]); ferr != nil {
+			return out, keys, "", nil, fmt.Errorf("triple: hashes.AttachFused256(%q): %w", innerHash, ferr)
+		}
+		if ierr := hashes.AttachInterlockBatch16x256(rawSeeds[i], innerHash, keys[i]); ierr != nil {
+			return out, keys, "", nil, fmt.Errorf("triple: hashes.AttachInterlockBatch16x256(%q): %w", innerHash, ierr)
+		}
 		out[i] = rawSeeds[i]
 	}
 	return out, keys, b.MACName, append([]byte(nil), b.MACKey...), nil
@@ -342,6 +348,12 @@ func importInnerBlob512(cfg *itb.Config, innerBytes []byte, innerHash string) ([
 		}
 		rawSeeds[i].Hash = single
 		rawSeeds[i].BatchHash = batched
+		if ferr := hashes.AttachFused512(rawSeeds[i], innerHash, keys[i]); ferr != nil {
+			return out, keys, "", nil, fmt.Errorf("triple: hashes.AttachFused512(%q): %w", innerHash, ferr)
+		}
+		if ierr := hashes.AttachInterlockBatch16x512(rawSeeds[i], innerHash, keys[i]); ierr != nil {
+			return out, keys, "", nil, fmt.Errorf("triple: hashes.AttachInterlockBatch16x512(%q): %w", innerHash, ierr)
+		}
 		out[i] = rawSeeds[i]
 	}
 	return out, keys, b.MACName, append([]byte(nil), b.MACKey...), nil
@@ -429,6 +441,12 @@ func importInnerBlob256Mixed(cfg *itb.Config, innerBytes []byte, mixedHashes [8]
 		}
 		rawSeeds[i].Hash = single
 		rawSeeds[i].BatchHash = batched
+		if ferr := hashes.AttachFused256(rawSeeds[i], name, keys[i]); ferr != nil {
+			return out, keys, "", nil, fmt.Errorf("triple: hashes.AttachFused256(%q) slot %d: %w", name, i, ferr)
+		}
+		if ierr := hashes.AttachInterlockBatch16x256(rawSeeds[i], name, keys[i]); ierr != nil {
+			return out, keys, "", nil, fmt.Errorf("triple: hashes.AttachInterlockBatch16x256(%q) slot %d: %w", name, i, ierr)
+		}
 		out[i] = rawSeeds[i]
 	}
 	return out, keys, b.MACName, append([]byte(nil), b.MACKey...), nil
@@ -457,6 +475,12 @@ func importInnerBlob512Mixed(cfg *itb.Config, innerBytes []byte, mixedHashes [8]
 		}
 		rawSeeds[i].Hash = single
 		rawSeeds[i].BatchHash = batched
+		if ferr := hashes.AttachFused512(rawSeeds[i], name, keys[i]); ferr != nil {
+			return out, keys, "", nil, fmt.Errorf("triple: hashes.AttachFused512(%q) slot %d: %w", name, i, ferr)
+		}
+		if ierr := hashes.AttachInterlockBatch16x512(rawSeeds[i], name, keys[i]); ierr != nil {
+			return out, keys, "", nil, fmt.Errorf("triple: hashes.AttachInterlockBatch16x512(%q) slot %d: %w", name, i, ierr)
+		}
 		out[i] = rawSeeds[i]
 	}
 	return out, keys, b.MACName, append([]byte(nil), b.MACKey...), nil

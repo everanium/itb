@@ -32,9 +32,9 @@ type lowLevelConstellation struct {
 }
 
 // newLowLevelConstellation builds the eight seeds through the explicit
-// Low-Level sequence — Make{W}Pair arms, itb.NewSeed{W}, BatchHash and,
-// at width 128, the attach helpers — the sequence the triple package
-// runs for every slot.
+// Low-Level sequence — Make{W}Pair arms, itb.NewSeed{W}, BatchHash and
+// the width's attach helpers — the sequence the triple package runs for
+// every slot.
 func newLowLevelConstellation(t *testing.T, name string, bits int) lowLevelConstellation {
 	t.Helper()
 	spec, ok := hashes.Find(name)
@@ -71,6 +71,12 @@ func newLowLevelConstellation(t *testing.T, name string, bits int) lowLevelConst
 				t.Fatal(err)
 			}
 			s.BatchHash = batched
+			if err := hashes.AttachFused256(s, name, key); err != nil {
+				t.Fatal(err)
+			}
+			if err := hashes.AttachInterlockBatch16x256(s, name, key); err != nil {
+				t.Fatal(err)
+			}
 			c.seeds[i], c.keys[i] = s, key
 		case hashes.W512:
 			single, batched, key, err := hashes.Make512Pair(name)
@@ -82,6 +88,12 @@ func newLowLevelConstellation(t *testing.T, name string, bits int) lowLevelConst
 				t.Fatal(err)
 			}
 			s.BatchHash = batched
+			if err := hashes.AttachFused512(s, name, key); err != nil {
+				t.Fatal(err)
+			}
+			if err := hashes.AttachInterlockBatch16x512(s, name, key); err != nil {
+				t.Fatal(err)
+			}
 			c.seeds[i], c.keys[i] = s, key
 		}
 	}
@@ -225,6 +237,14 @@ func (c lowLevelConstellation) rebuild(t *testing.T, cfg *itb.Config, mode strin
 				t.Fatalf("Make256Pair slot %d: %v", i, err)
 			}
 			s.Hash, s.BatchHash = single, batched
+			if mode == "manual-attach" {
+				if err := hashes.AttachFused256(s, c.name, keys[i]); err != nil {
+					t.Fatal(err)
+				}
+				if err := hashes.AttachInterlockBatch16x256(s, c.name, keys[i]); err != nil {
+					t.Fatal(err)
+				}
+			}
 			out.seeds[i] = s
 		case *itb.Seed512:
 			single, batched, _, err := hashes.Make512Pair(c.name, keyArg...)
@@ -232,6 +252,14 @@ func (c lowLevelConstellation) rebuild(t *testing.T, cfg *itb.Config, mode strin
 				t.Fatalf("Make512Pair slot %d: %v", i, err)
 			}
 			s.Hash, s.BatchHash = single, batched
+			if mode == "manual-attach" {
+				if err := hashes.AttachFused512(s, c.name, keys[i]); err != nil {
+					t.Fatal(err)
+				}
+				if err := hashes.AttachInterlockBatch16x512(s, c.name, keys[i]); err != nil {
+					t.Fatal(err)
+				}
+			}
 			out.seeds[i] = s
 		}
 	}
