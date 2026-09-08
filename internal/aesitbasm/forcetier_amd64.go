@@ -54,6 +54,8 @@ func applyHashTier() {
 			return
 		}
 		FusedHasVAESAVX512, FusedHasVAESAVX2, FusedHasAVXAESNI, FusedHasAESNI = false, false, false, true
+	case "neon", "sve2", "sve":
+		forcetier.Warnf("aesitbasm: %s tier is arm64-only; keeping auto-dispatch", forcetier.HashTier())
 	case "scalar":
 		FusedHasVAESAVX512, FusedHasVAESAVX2, FusedHasAVXAESNI, FusedHasAESNI = false, false, false, false
 		HasVAESAVX512X16, HasVAESAVX2X16, HasAVXAESNIX16, HasAESNIX16 = false, false, false, false
