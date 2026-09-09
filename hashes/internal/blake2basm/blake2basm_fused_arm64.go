@@ -36,11 +36,21 @@ func FusedAvailable() bool { return FusedHasNEON || FusedHasGPR }
 
 // Fused256Chain13x4 runs the width-256 cascade on four 13-byte lanes.
 func Fused256Chain13x4(fixedKey *[32]byte, components []uint64, dataPtrs *[4]*byte, out *[4][4]uint64) {
-	if FusedHasNEON && validComponents256(components) {
-		blake2b256FusedChain13x4NeonAsm(fixedKey, &components[0], len(components)/4, dataPtrs, out)
+	if !validComponents256(components) {
+		scalarFused256X4(fixedKey, components, dataPtrs, 13, out)
 		return
 	}
-	scalarFused256X4(fixedKey, components, dataPtrs, 13, out)
+	c, ng := &components[0], len(components)/4
+	switch {
+	case FusedHasNEON:
+		blake2b256FusedChain13x4NeonAsm(fixedKey, c, ng, dataPtrs, out)
+	case FusedHasGPR:
+		for l := range dataPtrs {
+			blake2b256FusedChain13x1GprAsm(fixedKey, c, ng, dataPtrs[l], &out[l])
+		}
+	default:
+		scalarFused256X4(fixedKey, components, dataPtrs, 13, out)
+	}
 }
 
 // Fused256Chain13x1 runs the width-256 cascade on one 13-byte lane
@@ -55,11 +65,21 @@ func Fused256Chain13x1(fixedKey *[32]byte, components []uint64, data *byte, out 
 
 // Fused256Chain20x4 runs the width-256 cascade on four 20-byte lanes.
 func Fused256Chain20x4(fixedKey *[32]byte, components []uint64, dataPtrs *[4]*byte, out *[4][4]uint64) {
-	if FusedHasNEON && validComponents256(components) {
-		blake2b256FusedChain20x4NeonAsm(fixedKey, &components[0], len(components)/4, dataPtrs, out)
+	if !validComponents256(components) {
+		scalarFused256X4(fixedKey, components, dataPtrs, 20, out)
 		return
 	}
-	scalarFused256X4(fixedKey, components, dataPtrs, 20, out)
+	c, ng := &components[0], len(components)/4
+	switch {
+	case FusedHasNEON:
+		blake2b256FusedChain20x4NeonAsm(fixedKey, c, ng, dataPtrs, out)
+	case FusedHasGPR:
+		for l := range dataPtrs {
+			blake2b256FusedChain20x1GprAsm(fixedKey, c, ng, dataPtrs[l], &out[l])
+		}
+	default:
+		scalarFused256X4(fixedKey, components, dataPtrs, 20, out)
+	}
 }
 
 // Fused256Chain20x1 runs the width-256 cascade on one 20-byte lane
@@ -74,11 +94,21 @@ func Fused256Chain20x1(fixedKey *[32]byte, components []uint64, data *byte, out 
 
 // Fused256Chain36x4 runs the width-256 cascade on four 36-byte lanes.
 func Fused256Chain36x4(fixedKey *[32]byte, components []uint64, dataPtrs *[4]*byte, out *[4][4]uint64) {
-	if FusedHasNEON && validComponents256(components) {
-		blake2b256FusedChain36x4NeonAsm(fixedKey, &components[0], len(components)/4, dataPtrs, out)
+	if !validComponents256(components) {
+		scalarFused256X4(fixedKey, components, dataPtrs, 36, out)
 		return
 	}
-	scalarFused256X4(fixedKey, components, dataPtrs, 36, out)
+	c, ng := &components[0], len(components)/4
+	switch {
+	case FusedHasNEON:
+		blake2b256FusedChain36x4NeonAsm(fixedKey, c, ng, dataPtrs, out)
+	case FusedHasGPR:
+		for l := range dataPtrs {
+			blake2b256FusedChain36x1GprAsm(fixedKey, c, ng, dataPtrs[l], &out[l])
+		}
+	default:
+		scalarFused256X4(fixedKey, components, dataPtrs, 36, out)
+	}
 }
 
 // Fused256Chain36x1 runs the width-256 cascade on one 36-byte lane
@@ -93,11 +123,21 @@ func Fused256Chain36x1(fixedKey *[32]byte, components []uint64, data *byte, out 
 
 // Fused256Chain68x4 runs the width-256 cascade on four 68-byte lanes.
 func Fused256Chain68x4(fixedKey *[32]byte, components []uint64, dataPtrs *[4]*byte, out *[4][4]uint64) {
-	if FusedHasNEON && validComponents256(components) {
-		blake2b256FusedChain68x4NeonAsm(fixedKey, &components[0], len(components)/4, dataPtrs, out)
+	if !validComponents256(components) {
+		scalarFused256X4(fixedKey, components, dataPtrs, 68, out)
 		return
 	}
-	scalarFused256X4(fixedKey, components, dataPtrs, 68, out)
+	c, ng := &components[0], len(components)/4
+	switch {
+	case FusedHasNEON:
+		blake2b256FusedChain68x4NeonAsm(fixedKey, c, ng, dataPtrs, out)
+	case FusedHasGPR:
+		for l := range dataPtrs {
+			blake2b256FusedChain68x1GprAsm(fixedKey, c, ng, dataPtrs[l], &out[l])
+		}
+	default:
+		scalarFused256X4(fixedKey, components, dataPtrs, 68, out)
+	}
 }
 
 // Fused256Chain68x1 runs the width-256 cascade on one 68-byte lane
@@ -112,11 +152,21 @@ func Fused256Chain68x1(fixedKey *[32]byte, components []uint64, data *byte, out 
 
 // Fused512Chain13x4 runs the width-512 cascade on four 13-byte lanes.
 func Fused512Chain13x4(fixedKey *[64]byte, components []uint64, dataPtrs *[4]*byte, out *[4][8]uint64) {
-	if FusedHasNEON && validComponents512(components) {
-		blake2b512FusedChain13x4NeonAsm(fixedKey, &components[0], len(components)/8, dataPtrs, out)
+	if !validComponents512(components) {
+		scalarFused512X4(fixedKey, components, dataPtrs, 13, out)
 		return
 	}
-	scalarFused512X4(fixedKey, components, dataPtrs, 13, out)
+	c, ng := &components[0], len(components)/8
+	switch {
+	case FusedHasNEON:
+		blake2b512FusedChain13x4NeonAsm(fixedKey, c, ng, dataPtrs, out)
+	case FusedHasGPR:
+		for l := range dataPtrs {
+			blake2b512FusedChain13x1GprAsm(fixedKey, c, ng, dataPtrs[l], &out[l])
+		}
+	default:
+		scalarFused512X4(fixedKey, components, dataPtrs, 13, out)
+	}
 }
 
 // Fused512Chain13x1 runs the width-512 cascade on one 13-byte lane
@@ -131,11 +181,21 @@ func Fused512Chain13x1(fixedKey *[64]byte, components []uint64, data *byte, out 
 
 // Fused512Chain20x4 runs the width-512 cascade on four 20-byte lanes.
 func Fused512Chain20x4(fixedKey *[64]byte, components []uint64, dataPtrs *[4]*byte, out *[4][8]uint64) {
-	if FusedHasNEON && validComponents512(components) {
-		blake2b512FusedChain20x4NeonAsm(fixedKey, &components[0], len(components)/8, dataPtrs, out)
+	if !validComponents512(components) {
+		scalarFused512X4(fixedKey, components, dataPtrs, 20, out)
 		return
 	}
-	scalarFused512X4(fixedKey, components, dataPtrs, 20, out)
+	c, ng := &components[0], len(components)/8
+	switch {
+	case FusedHasNEON:
+		blake2b512FusedChain20x4NeonAsm(fixedKey, c, ng, dataPtrs, out)
+	case FusedHasGPR:
+		for l := range dataPtrs {
+			blake2b512FusedChain20x1GprAsm(fixedKey, c, ng, dataPtrs[l], &out[l])
+		}
+	default:
+		scalarFused512X4(fixedKey, components, dataPtrs, 20, out)
+	}
 }
 
 // Fused512Chain20x1 runs the width-512 cascade on one 20-byte lane
@@ -150,11 +210,21 @@ func Fused512Chain20x1(fixedKey *[64]byte, components []uint64, data *byte, out 
 
 // Fused512Chain36x4 runs the width-512 cascade on four 36-byte lanes.
 func Fused512Chain36x4(fixedKey *[64]byte, components []uint64, dataPtrs *[4]*byte, out *[4][8]uint64) {
-	if FusedHasNEON && validComponents512(components) {
-		blake2b512FusedChain36x4NeonAsm(fixedKey, &components[0], len(components)/8, dataPtrs, out)
+	if !validComponents512(components) {
+		scalarFused512X4(fixedKey, components, dataPtrs, 36, out)
 		return
 	}
-	scalarFused512X4(fixedKey, components, dataPtrs, 36, out)
+	c, ng := &components[0], len(components)/8
+	switch {
+	case FusedHasNEON:
+		blake2b512FusedChain36x4NeonAsm(fixedKey, c, ng, dataPtrs, out)
+	case FusedHasGPR:
+		for l := range dataPtrs {
+			blake2b512FusedChain36x1GprAsm(fixedKey, c, ng, dataPtrs[l], &out[l])
+		}
+	default:
+		scalarFused512X4(fixedKey, components, dataPtrs, 36, out)
+	}
 }
 
 // Fused512Chain36x1 runs the width-512 cascade on one 36-byte lane
@@ -169,11 +239,21 @@ func Fused512Chain36x1(fixedKey *[64]byte, components []uint64, data *byte, out 
 
 // Fused512Chain68x4 runs the width-512 cascade on four 68-byte lanes.
 func Fused512Chain68x4(fixedKey *[64]byte, components []uint64, dataPtrs *[4]*byte, out *[4][8]uint64) {
-	if FusedHasNEON && validComponents512(components) {
-		blake2b512FusedChain68x4NeonAsm(fixedKey, &components[0], len(components)/8, dataPtrs, out)
+	if !validComponents512(components) {
+		scalarFused512X4(fixedKey, components, dataPtrs, 68, out)
 		return
 	}
-	scalarFused512X4(fixedKey, components, dataPtrs, 68, out)
+	c, ng := &components[0], len(components)/8
+	switch {
+	case FusedHasNEON:
+		blake2b512FusedChain68x4NeonAsm(fixedKey, c, ng, dataPtrs, out)
+	case FusedHasGPR:
+		for l := range dataPtrs {
+			blake2b512FusedChain68x1GprAsm(fixedKey, c, ng, dataPtrs[l], &out[l])
+		}
+	default:
+		scalarFused512X4(fixedKey, components, dataPtrs, 68, out)
+	}
 }
 
 // Fused512Chain68x1 runs the width-512 cascade on one 68-byte lane

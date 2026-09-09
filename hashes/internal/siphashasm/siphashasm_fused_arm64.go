@@ -26,32 +26,72 @@ var HasGPRX16 = true
 func FusedAvailable() bool { return FusedHasNEON || FusedHasGPR }
 
 func FusedChain13x4(components []uint64, dataPtrs *[4]*byte, out *[4][2]uint64) {
-	if FusedHasNEON && validComponents(components) {
-		sipHash24FusedChain13x4NeonAsm(&components[0], len(components)/2, dataPtrs, out)
+	if !validComponents(components) {
+		scalarFusedBatch(components, dataPtrs, 13, out)
 		return
 	}
-	scalarFusedBatch(components, dataPtrs, 13, out)
+	c, np := &components[0], len(components)/2
+	switch {
+	case FusedHasNEON:
+		sipHash24FusedChain13x4NeonAsm(c, np, dataPtrs, out)
+	case FusedHasGPR:
+		for l := range dataPtrs {
+			sipHash24FusedChain13x1GprAsm(c, np, dataPtrs[l], &out[l])
+		}
+	default:
+		scalarFusedBatch(components, dataPtrs, 13, out)
+	}
 }
 func FusedChain20x4(components []uint64, dataPtrs *[4]*byte, out *[4][2]uint64) {
-	if FusedHasNEON && validComponents(components) {
-		sipHash24FusedChain20x4NeonAsm(&components[0], len(components)/2, dataPtrs, out)
+	if !validComponents(components) {
+		scalarFusedBatch(components, dataPtrs, 20, out)
 		return
 	}
-	scalarFusedBatch(components, dataPtrs, 20, out)
+	c, np := &components[0], len(components)/2
+	switch {
+	case FusedHasNEON:
+		sipHash24FusedChain20x4NeonAsm(c, np, dataPtrs, out)
+	case FusedHasGPR:
+		for l := range dataPtrs {
+			sipHash24FusedChain20x1GprAsm(c, np, dataPtrs[l], &out[l])
+		}
+	default:
+		scalarFusedBatch(components, dataPtrs, 20, out)
+	}
 }
 func FusedChain36x4(components []uint64, dataPtrs *[4]*byte, out *[4][2]uint64) {
-	if FusedHasNEON && validComponents(components) {
-		sipHash24FusedChain36x4NeonAsm(&components[0], len(components)/2, dataPtrs, out)
+	if !validComponents(components) {
+		scalarFusedBatch(components, dataPtrs, 36, out)
 		return
 	}
-	scalarFusedBatch(components, dataPtrs, 36, out)
+	c, np := &components[0], len(components)/2
+	switch {
+	case FusedHasNEON:
+		sipHash24FusedChain36x4NeonAsm(c, np, dataPtrs, out)
+	case FusedHasGPR:
+		for l := range dataPtrs {
+			sipHash24FusedChain36x1GprAsm(c, np, dataPtrs[l], &out[l])
+		}
+	default:
+		scalarFusedBatch(components, dataPtrs, 36, out)
+	}
 }
 func FusedChain68x4(components []uint64, dataPtrs *[4]*byte, out *[4][2]uint64) {
-	if FusedHasNEON && validComponents(components) {
-		sipHash24FusedChain68x4NeonAsm(&components[0], len(components)/2, dataPtrs, out)
+	if !validComponents(components) {
+		scalarFusedBatch(components, dataPtrs, 68, out)
 		return
 	}
-	scalarFusedBatch(components, dataPtrs, 68, out)
+	c, np := &components[0], len(components)/2
+	switch {
+	case FusedHasNEON:
+		sipHash24FusedChain68x4NeonAsm(c, np, dataPtrs, out)
+	case FusedHasGPR:
+		for l := range dataPtrs {
+			sipHash24FusedChain68x1GprAsm(c, np, dataPtrs[l], &out[l])
+		}
+	default:
+		scalarFusedBatch(components, dataPtrs, 68, out)
+	}
 }
 func FusedChain13x1(components []uint64, data *byte, out *[2]uint64) {
 	if FusedHasGPR && validComponents(components) {
