@@ -1,10 +1,11 @@
 package itb
 
 import (
-	"crypto/rand"
 	"encoding/binary"
 	"fmt"
 	"sync"
+
+	"github.com/everanium/itb/internal/drbg"
 )
 
 // Shared encrypt-side stages of the Triple Ouroboros entry points
@@ -143,7 +144,7 @@ func buildTriplePayloads(cfg *Config, data []byte, bp lockBatchPRF48, reserve in
 					fillEnd = len(buf)
 				}
 				if fillStart := tp.encLen[i] + 1; fillStart < fillEnd {
-					if _, e := rand.Read(buf[fillStart:fillEnd]); e != nil {
+					if e := drbg.Fill(buf[fillStart:fillEnd]); e != nil {
 						errs[i] = fmt.Errorf("itb: crypto/rand: %w", e)
 					}
 				}
@@ -180,9 +181,9 @@ func newTripleWire(cfg *Config, nonce, ilNonce []byte, width, height int) (out, 
 	var wg sync.WaitGroup
 	var randErr [3]error
 	wg.Add(3)
-	go func() { _, randErr[0] = rand.Read(container[0 : third*Channels]); wg.Done() }()
-	go func() { _, randErr[1] = rand.Read(container[third*Channels : 2*third*Channels]); wg.Done() }()
-	go func() { _, randErr[2] = rand.Read(container[2*third*Channels : totalPixels*Channels]); wg.Done() }()
+	go func() { randErr[0] = drbg.Fill(container[0 : third*Channels]); wg.Done() }()
+	go func() { randErr[1] = drbg.Fill(container[third*Channels : 2*third*Channels]); wg.Done() }()
+	go func() { randErr[2] = drbg.Fill(container[2*third*Channels : totalPixels*Channels]); wg.Done() }()
 	wg.Wait()
 	for _, e := range randErr {
 		if e != nil {
