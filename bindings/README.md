@@ -32,13 +32,17 @@ per-language naming variations:
 
 ## Tier model
 
-- **Tier 1 Thin (14 bindings)** — direct in-process consumers of
-  `libitb.so` / `.dylib` / `.dll`. Language-idiomatic handle
+- **Tier 1 Thin (23 bindings)** — direct in-process consumers of
+  `libitb.so` / `.dylib` / `.dll` through the language-native FFI
+  mechanism (dlopen / `dynlib` / `dart:ffi` / `ccall` / P/Invoke /
+  JNI / NIF / `foreign import ccall` / `ocaml-ctypes` / `.Call` C
+  shim / language-specific C module). Language-idiomatic handle
   lifetime, `io`-style adapters, status-code table.
-- **Tier 2 Relay (19 bindings)** — small out-of-process relay
-  speaking the `ITB_Triple_*` shim over one of four backends
-  (C / Java / C# / BEAM) for language runtimes that cannot embed
-  the shared library directly.
+- **Tier 2 Relay (10 bindings)** — small in-process relay speaking
+  the `ITB_Triple_*` shim over another binding's build output
+  (JVM jar / .NET assembly / Erlang NIF) for language runtimes that
+  ride an existing runtime's binding rather than link the shared
+  library directly.
 
 ## Fleet listing
 
@@ -68,16 +72,16 @@ per-language naming variations:
 | VB.NET | [`vbnet/`](vbnet/) | 2 relay (over C# Itb.dll) |
 | Gleam | [`gleam/`](gleam/) | 2 relay (over Erlang NIF) |
 | LFE | [`lfe/`](lfe/) | 2 relay (over Erlang NIF) |
-| PHP | [`php/`](php/) | 2 relay (over C FFI) |
-| Ruby | [`ruby/`](ruby/) | 2 relay (over C FFI via `ffi` gem) |
-| Dart | [`dart/`](dart/) | 2 relay (over C FFI via `dart:ffi`) |
-| Lua | [`lua/`](lua/) | 2 relay (C module for Lua 5.4) |
+| PHP | [`php/`](php/) | 1 native (PHP FFI) |
+| Ruby | [`ruby/`](ruby/) | 1 native (`ffi` gem) |
+| Dart | [`dart/`](dart/) | 1 native (`dart:ffi`) |
+| Lua | [`lua/`](lua/) | 1 native (C module for Lua 5.4) |
 | Nim | [`nim/`](nim/) | 1 native (`{.importc, dynlib.}`) |
 | Crystal | [`crystal/`](crystal/) | 1 native |
-| Julia | [`julia/`](julia/) | 2 relay (ccall) |
+| Julia | [`julia/`](julia/) | 1 native (ccall) |
 | OCaml | [`ocaml/`](ocaml/) | 1 native (ocaml-ctypes) |
 | Haskell | [`haskell/`](haskell/) | 1 native (`foreign import ccall`) |
-| R | [`r/`](r/) | 2 relay (`.Call` C shim) |
+| R | [`r/`](r/) | 1 native (`.Call` C shim) |
 
 34 rows total (Go core + 33 language bindings).
 
