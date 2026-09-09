@@ -6,7 +6,7 @@ import (
 	"sync/atomic"
 )
 
-// testNonceOverride is set only by test code (see setTestNonce in *_test.go).
+// testNonceOverride is set only by test code (see installTestNonce in *_test.go).
 // Production callers never set this — generateNonceCfg falls through to
 // crypto/rand. One atomic load per encryption in the hot path; negligible
 // overhead in production, critical for nonce-reuse attack simulation in

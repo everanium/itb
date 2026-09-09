@@ -40,12 +40,11 @@ func scratchAtLeast(pool *sync.Pool, need int) (*[]byte, []byte) {
 
 // builders.go — safe pluggable PRF construction helpers for user primitives.
 //
-// The eight built-in primitives in this package (areion256, areion512,
-// blake2b256, blake2b512, blake2s, blake3, aescmac, siphash24, chacha20)
-// each implement chain-absorb or native variable-length absorb directly in
-// their closure body, with primitive-specific stack-allocated state arrays,
-// inlined permutation calls, and unsafe.Pointer escape-analysis tricks for
-// hot-path performance.
+// The built-in primitives in this package each implement chain-absorb
+// or native variable-length absorb directly in their closure body, with
+// primitive-specific stack-allocated state arrays, inlined permutation
+// calls, and unsafe.Pointer escape-analysis tricks for hot-path
+// performance.
 //
 // The helpers in this file expose three generic patterns —
 // BuildCBCMACChainAbsorb, BuildSpongeChainAbsorb, BuildARXChainAbsorb —

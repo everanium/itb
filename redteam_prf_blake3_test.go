@@ -4,8 +4,7 @@ package itb
 
 // Red-team empirical corroboration for the PRF-grade primitive null
 // result, run against BLAKE3 as the representative PRF-grade primitive
-// (Areion-SoEM-256/512, BLAKE2b-256/512, BLAKE2s, BLAKE3, AES-CMAC,
-// SipHash-2-4, ChaCha20 all inherit the argument via the PRF
+// (every PRF-grade registry primitive inherits the argument via the PRF
 // assumption — see REDTEAM.md "PRF-grade primitives" section).
 //
 // Every probe drives the shipped core Triple entrypoint

@@ -158,17 +158,14 @@ func (s *Seed128) Bits() int {
 
 // MinPixels returns the minimum pixel count ensuring encoding ambiguity
 // exceeds the key space (2^keyBits). Aliases [MinPixelsAuth]'s CCA-
-// resistant formula (ceil(keyBits / log2(7))) so plain and
-// MAC-authenticated modes share one small-message container envelope
-// — the envelope no longer distinguishes mode on tiny payloads.
+// resistant formula so plain and MAC-authenticated modes share one
+// container envelope on small messages.
 func (s *Seed128) MinPixels() int {
 	return s.MinPixelsAuth()
 }
 
 // MinPixelsAuth returns the CCA-resistant minimum pixel count. Formula:
-// ceil(keyBits / log2(7)). Used by EncryptAuthenticated/DecryptAuthenticated
-// (MAC + Reveal possible) and, since the plain-mode floor was unified,
-// also by Encrypt/Decrypt and Stream.
+// ceil(keyBits / log2(7)).
 func (s *Seed128) MinPixelsAuth() int {
 	return (s.Bits()*minPixelsScale + minPixelsDivisor7 - 1) / minPixelsDivisor7
 }

@@ -8,8 +8,8 @@ import (
 )
 
 // BenchmarkAESITBBatchedArm compares the aesitb128 batched arm (4-lane
-// chain-absorb kernel) against four calls of the single arm on the same
-// inputs, per per-pixel shape. Bytes/op = 4 × shape.
+// chain-absorb reference) against four calls of the single arm on the
+// same inputs, per per-pixel shape. Bytes/op = 4 × shape.
 func BenchmarkAESITBBatchedArm(b *testing.B) {
 	single, batched, _, err := hashes.Make128Pair(hashes.CipherAESITB128, aesitbParityKey[:])
 	if err != nil {

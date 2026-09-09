@@ -41,7 +41,7 @@ func TestMACRegistryKeySizeAndTagSizeAllIndices(t *testing.T) {
 }
 
 // ───────────────────────────────────────────────────────────────────
-// Low-level DecryptAuth3 — buffer-too-small probe path
+// Low-Level DecryptAuth3 — buffer-too-small probe path
 // ───────────────────────────────────────────────────────────────────
 
 // TestDecryptAuth3BufferTooSmallVariant covers a second

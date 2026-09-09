@@ -898,7 +898,7 @@ func TestTripleLockSeedRoundtrip256(t *testing.T) {
 //     framing overhead is negligible).
 //   - BLAKE3 keyed-hash primitive via [hashes.BLAKE3256Pair],
 //     which on amd64 + AVX-512 dispatches the batched arm to the
-//     ZMM-batched chain-absorb kernels in
+//     fused ChainHash cascade kernels in
 //     hashes/internal/blake3asm. A fresh BLAKE3 fixed key is
 //     generated for each of the 8 seeds so all carry
 //     independent keying material.

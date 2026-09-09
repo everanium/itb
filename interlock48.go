@@ -627,7 +627,7 @@ func fillLockMasksTriple48Super16(prf *[32]uint64, masks *[16][3]uint64) {
 
 // buildLockBatchPRF48_128Cfg — Cfg variant of [buildLockBatchPRF48_128]. The cfg
 // pointer is accepted only for symmetry with the surrounding Cfg-suffixed
-// helpers; no cfg field feeds into the derivation any more.
+// helpers; no cfg field feeds into the derivation.
 func buildLockBatchPRF48_128Cfg(_ *Config, lockSeed *Seed128, nonce []byte) lockBatchPRF48 {
 	return buildLockBatchPRF48_128(lockSeed, nonce)
 }

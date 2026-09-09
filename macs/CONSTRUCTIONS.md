@@ -89,13 +89,13 @@ The registry name is nonetheless kept as `hmac-blake3` for two reasons. First, *
 
 ## Cross-cutting design properties
 
-**Uniform 32-byte tag.** All three primitives emit exactly 32 bytes regardless of key length, so a consumer does not vary its authenticated-payload layout based on which MAC was selected — a binding-friendly invariant the FFI surface (`ITB_MACTagSize`) relies on.
+**Uniform 32-byte tag.** Every shipped primitive emits exactly 32 bytes regardless of key length, so a consumer does not vary its authenticated-payload layout based on which MAC was selected — a binding-friendly invariant the FFI surface (`ITB_MACTagSize`) relies on.
 
-**Pre-key once, clone / pool per call.** Each factory absorbs its key into a long-lived template once, then reuses it per call with no key-derivation overhead: KMAC256 clones a cSHAKE256 template pre-absorbed up through `bytepad(encode_string(K), 136)`; HMAC-SHA-256 draws a pre-keyed `hmac.Hash` from a `sync.Pool` and `Reset()`s it to the post-ipad state; HMAC-BLAKE3 clones a `blake3.NewKeyed` template. All three closures are safe for concurrent invocation across goroutines.
+**Pre-key once, clone / pool per call.** Each factory absorbs its key into a long-lived template once, then reuses it per call with no key-derivation overhead: KMAC256 clones a cSHAKE256 template pre-absorbed up through `bytepad(encode_string(K), 136)`; HMAC-SHA-256 draws a pre-keyed `hmac.Hash` from a `sync.Pool` and `Reset()`s it to the post-ipad state; HMAC-BLAKE3 clones a `blake3.NewKeyed` template. Every shipped closure is safe for concurrent invocation across goroutines.
 
-**No fixed-width-slot truncation.** All three are native variable-length absorb primitives — the full message (the entire encrypted container the MAC authenticates) reaches the tag with no silent truncation hidden in a fixed-width nonce or IV slot. The trap documented for the keyed-hash registry in [`hashes/CONSTRUCTIONS.md`](../hashes/CONSTRUCTIONS.md) does not arise here.
+**No fixed-width-slot truncation.** Every shipped primitive is a native variable-length absorb primitive — the full message (the entire encrypted container the MAC authenticates) reaches the tag with no silent truncation hidden in a fixed-width nonce or IV slot. The trap documented for the keyed-hash registry in [`hashes/CONSTRUCTIONS.md`](../hashes/CONSTRUCTIONS.md) does not arise here.
 
-**No AEAD claim from the MAC alone.** None of the three claims AEAD security or ciphertext integrity on its own — each is only a keyed PRF / MAC on its tag output. ITB's authenticated-encryption surface is built **on top** via the MAC-Inside-Encrypt construction (`EncryptAuth*` and its streaming counterpart), not from these MACs directly.
+**No AEAD claim from the MAC alone.** No shipped primitive claims AEAD security or ciphertext integrity on its own — each is only a keyed PRF / MAC on its tag output. ITB's authenticated-encryption surface is built **on top** via the MAC-Inside-Encrypt construction (`EncryptAuth*` and its streaming counterpart), not from these MACs directly.
 
 ## Why these three, and why a sound keyed PRF suffices
 

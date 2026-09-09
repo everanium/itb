@@ -486,7 +486,7 @@ func TestStreamAuth_FullStreamTriplePrefixTamper(t *testing.T) {
 // TestStreamAuth_FlagPreservedTripleSingleByte exercises the final
 // flag round-trip on Triple Ouroboros at the aggressive chunkSize = 1
 // path (one full ITB container per plaintext byte). Under the always-on
-// 48-bit Interlocked barrier the per-chunk PRF is applied uniformly;
+// 48-bit Interlocked Barrier the per-chunk PRF is applied uniformly;
 // the flag byte's container position must survive the barrier without
 // leaking mid-transcript regardless of finalFlag value.
 func TestStreamAuth_FlagPreservedTripleSingleByte(t *testing.T) {

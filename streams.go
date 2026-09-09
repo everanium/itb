@@ -186,7 +186,7 @@ func streamAuthDecryptTripleCfg(cfg *Config, width int, noiseSeed, lockSeed, dat
 	return nil, false, errSeedWidthMix
 }
 
-// EncryptStream3xCfg is the width-less Triple Ouroboros plain-stream
+// EncryptStream3xCfg is the width-less Triple Ouroboros No MAC stream
 // Encrypt entry point with a per-encryptor Config override.
 //
 // The streamID prefix and the first chunk body are emitted as a single
@@ -252,7 +252,7 @@ func EncryptStream3xCfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, 
 	}
 }
 
-// DecryptStream3xCfg is the width-less Triple Ouroboros plain-stream
+// DecryptStream3xCfg is the width-less Triple Ouroboros No MAC stream
 // Decrypt entry point with a per-encryptor Config override.
 func DecryptStream3xCfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 any, src io.Reader, dst io.Writer) error {
 	width, err := dispatchWidthTriple(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3)

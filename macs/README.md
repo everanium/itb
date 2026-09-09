@@ -153,14 +153,14 @@ primitive itself only has to be a sound keyed PRF — the surrounding
 ITB construction handles placement-hiding, replay-resistance
 (per-message nonce), and CCA-resistance.
 
-Three primitives keep the choice tractable:
+A curated primitive set keeps the choice tractable:
 
 - **`kmac256`** — modern NIST-standard keyed XOF (SP 800-185), based
   on the well-vetted Keccak permutation. But slowest.
 - **`hmac-sha256`** — universal interoperability standard,
   hardware-accelerated through SHA-NI on amd64 / arm64 where the
   underlying CPU exposes the SHA-256 round instructions.
-- **`hmac-blake3`** — fastest of the three through BLAKE3's
+- **`hmac-blake3`** — fastest of the shipped set through BLAKE3's
   AVX-512 ASM kernel.
 
 ## Validation
@@ -178,9 +178,9 @@ Three primitives keep the choice tractable:
   `My Tagged Application`, sample 6 with the 200-byte
   `0x00..0xC7` message), plus a degenerate empty-message case.
   Reproduce via the python snippet shown in the test file.
-- All three primitives pass `TestITBAuthIntegration` (3 MACs × 3
-  hash widths × encrypt/decrypt round trip + bit-flip tamper
-  rejection).
+- Every shipped primitive passes `TestITBAuthIntegration` (every
+  registered MAC × every hash width × encrypt/decrypt round trip +
+  bit-flip tamper rejection).
 
 ## User-pluggable custom MACs
 

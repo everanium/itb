@@ -99,22 +99,20 @@ type Spec struct {
 	// HashHash optionally returns the primitive's general-purpose
 	// unkeyed hash.Hash form — the shape the HMAC construction
 	// (RFC 2104) wraps, consumed by the macs package's BuildHMAC
-	// builder. Populated on the shipped entries built over a
-	// general-purpose hash (the BLAKE family); nil for primitives
-	// without such a form (the Areion SoEM constructions, AES-CMAC,
-	// SipHash-2-4, ChaCha20). A user-registered custom primitive may
-	// populate the field so macs.BuildHMAC composes with it by name;
-	// when nil, macs.BuildHMAC rejects the name and the hand-rolled
+	// builder. Populated on shipped entries built over a
+	// general-purpose hash; nil for primitives without such a form.
+	// A user-registered custom primitive may populate the field so
+	// macs.BuildHMAC composes with it by name; when nil,
+	// macs.BuildHMAC rejects the name and the hand-rolled
 	// macs.Register path applies instead. Each call must return a
 	// fresh instance safe for exclusive use by the caller.
 	HashHash func() hash.Hash `json:"-"`
 
 	// KeyedHash optionally returns the primitive's native keyed mode
 	// as a hash.Hash pre-keyed with key, consumed by the macs
-	// package's BuildKeyedHash builder. Populated on the shipped
-	// entries whose keyed form is itself a sound PRF (the BLAKE2
-	// variants, BLAKE3, SipHash-2-4); nil for primitives without a
-	// native keyed hash.Hash mode. A user-registered custom primitive
+	// package's BuildKeyedHash builder. Populated on shipped entries
+	// whose keyed form is itself a sound PRF; nil for primitives
+	// without a native keyed hash.Hash mode. A user-registered custom primitive
 	// may populate the field so macs.BuildKeyedHash composes with it
 	// by name; when nil, macs.BuildKeyedHash rejects the name. The
 	// constructor is the single source of truth for accepted key
@@ -175,8 +173,8 @@ type Spec struct {
 	// Make512Pair factory that built the seed's arms. nil leaves the seed
 	// on the sequential per-round loop, which is the cascade definition
 	// at every width; a populated factory must return evaluators
-	// bit-exact with that loop. Every shipped entry currently leaves both
-	// fields nil.
+	// bit-exact with that loop. Populated on every width-256 and
+	// width-512 shipped entry; see [Registry].
 	FusedChainHash256 func(key []byte) (itb.FusedChainHashFunc256, itb.BatchFusedChainHashFunc256, error) `json:"-"`
 	FusedChainHash512 func(key []byte) (itb.FusedChainHashFunc512, itb.BatchFusedChainHashFunc512, error) `json:"-"`
 
@@ -190,7 +188,8 @@ type Spec struct {
 	// Make512Pair factory. nil leaves the seed filling the cascade through
 	// its four-lane and single-lane arms; a populated factory must return
 	// a kernel bit-exact with the sequential cascades over the same
-	// components. Every shipped entry currently leaves both fields nil.
+	// components. Populated on every width-256 and width-512 shipped
+	// entry; see [Registry].
 	InterlockFillBatch16x256 func(key []byte) (itb.InterlockFillFunc16x256, error) `json:"-"`
 	InterlockFillBatch16x512 func(key []byte) (itb.InterlockFillFunc16x512, error) `json:"-"`
 
@@ -206,8 +205,8 @@ type Spec struct {
 	// seed on the four-pixel stride; a populated evaluator must be
 	// bit-exact with two four-lane evaluations over the lane halves (and
 	// hence with the sequential loop). The hooks are performance paths
-	// only and never change the wire. Every shipped entry currently
-	// leaves both fields nil.
+	// only and never change the wire. Populated on every width-256 and
+	// width-512 shipped entry; see [Registry].
 	FusedChainHash256x8 func(key []byte) (itb.BatchFusedChainHashFunc256x8, error) `json:"-"`
 	FusedChainHash512x8 func(key []byte) (itb.BatchFusedChainHashFunc512x8, error) `json:"-"`
 
@@ -222,7 +221,8 @@ type Spec struct {
 	// selected tier carries no batch-32 kernel, which leaves the fill on
 	// the batch-16 hook and the four-lane / single-lane arms; a populated
 	// kernel must be bit-exact with the sequential cascades over the same
-	// components. Every shipped entry currently leaves both fields nil.
+	// components. Populated on the width-512 shipped entries only;
+	// see [Registry].
 	InterlockFillBatch32x256 func(key []byte) (itb.InterlockFillFunc32x256, error) `json:"-"`
 	InterlockFillBatch32x512 func(key []byte) (itb.InterlockFillFunc32x512, error) `json:"-"`
 }

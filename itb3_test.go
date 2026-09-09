@@ -1045,8 +1045,8 @@ func BenchmarkTripleBLAKE3RoundTripLockSeed(b *testing.B) {
 // makeStreamTripleSeeds builds the 8-seed Triple Ouroboros constellation
 // (1 noise + 1 lockSeed + 3 data + 3 start) under the supplied 512-bit
 // hash pair, with the batched arm wired on every seed so per-pixel
-// hashing routes through the ZMM-batched chain-absorb dispatch when
-// AVX-512 is available.
+// hashing routes through the ZMM-batched fused ChainHash cascade dispatch
+// when AVX-512 is available.
 func makeStreamTripleSeeds(b *testing.B, bits int, maker func() (HashFunc512, BatchHashFunc512)) (*Seed512, *Seed512, *Seed512, *Seed512, *Seed512, *Seed512, *Seed512, *Seed512) {
 	nsH, nsB := maker()
 	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeeds512(bits, nsH)

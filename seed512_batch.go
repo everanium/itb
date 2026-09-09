@@ -4,9 +4,9 @@ import "encoding/binary"
 
 // BatchHashFunc512 is the 4-way batched 512-bit hash interface
 // alongside [HashFunc512]. Primitives whose SIMD kernel processes
-// four independent (data, seed) tuples per call expose this — e.g.
-// the ZMM-batched Areion-SoEM-512 / BLAKE2b-512 kernels on amd64
-// with AVX-512 + VAES.
+// four independent (data, seed) tuples per call expose this, through
+// the ZMM-batched width-512 registry kernels on amd64 with
+// AVX-512 + VAES.
 //
 // Bit-exact parity invariant: each lane output
 // BatchHashFunc512(data, seeds)[i] matches the serial

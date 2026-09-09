@@ -47,7 +47,7 @@ cd bindings/crystal && crystal build -o bin/eitb eitb/itb_eitb.cr
 ```
 
 Hosts without AVX-512+VL: pass `--noitbasm` to `build.sh` to opt out
-of ITB's chain-absorb asm.
+of ITB's SIMD asm kernels.
 
 ## Library lookup order
 

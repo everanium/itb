@@ -75,11 +75,10 @@ func decodeBlobStrict(data []byte, out *blobV1) error {
 // Blob — native-API session-bundle surface. Three width-specific
 // types ([Blob128], [Blob256], [Blob512]) pack the low-level
 // encryptor material (hash keys + seed components + dedicated
-// lockSeed + optional MAC material) plus the sender's
-// process-wide bit-permutation / nonce / barrier configuration into
-// one JSON blob. The receiver calls Import3Cfg, which applies
-// the captured globals unconditionally and populates the struct's
-// public fields.
+// lockSeed + optional MAC material) plus the sender's per-instance
+// nonce / barrier configuration into one JSON blob. The receiver
+// calls Import3Cfg, which restores the captured configuration into
+// the caller's *Config and populates the struct's public fields.
 //
 // Hash function closures and BatchHash batched-arm wrappers are
 // NOT stored — the caller picks factories at restore time and
@@ -92,7 +91,7 @@ func decodeBlobStrict(data []byte, out *blobV1) error {
 // the high-level alternative for callers that prefer one
 // constructor call + auto-coupling + per-instance Config snapshot.
 // The native Blob API trades that convenience for explicit factory
-// control and global-Set-based configuration.
+// control and per-instance Config wiring.
 
 // ErrBlobModeMismatch is returned by [Blob128.Import3Cfg] /
 // [Blob256.Import3Cfg] / [Blob512.Import3Cfg] when the JSON blob

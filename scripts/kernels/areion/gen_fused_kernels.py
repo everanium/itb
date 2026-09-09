@@ -656,7 +656,7 @@ def xmm256_perm(states):
 
 def xmm256(n, lanes):
     frame = Frame()
-    tier = "AES-NI XMM (two lanes per pass, two passes)" if lanes == 4 else "AES-NI XMM (single lane)"
+    tier = "Legacy-SSE AES-NI XMM (two lanes per pass, two passes)" if lanes == 4 else "Legacy-SSE AES-NI XMM (single lane)"
     lines = header(AMD, 256, n, lanes, tier)
     body = prologue_amd64(lanes, "x4" if lanes == 4 else "x1")
     body += stage_amd64(256, n, lanes, ["R8", "R9", "R10", "R11"][:lanes], frame)
@@ -747,7 +747,7 @@ def xmm512_round(s1, s2, r):
 
 def xmm512(n, lanes):
     frame = Frame()
-    tier = "AES-NI XMM (one lane per pass, four passes)" if lanes == 4 else "AES-NI XMM (single lane)"
+    tier = "Legacy-SSE AES-NI XMM (one lane per pass, four passes)" if lanes == 4 else "Legacy-SSE AES-NI XMM (single lane)"
     lines = header(AMD, 512, n, lanes, tier)
     body = prologue_amd64(lanes, "x4" if lanes == 4 else "x1")
     body += stage_amd64(512, n, lanes, ["R8", "R9", "R10", "R11"][:lanes], frame)

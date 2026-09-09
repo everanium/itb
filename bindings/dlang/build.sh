@@ -7,7 +7,7 @@
 #
 # Usage:
 #   ./build.sh             # default build (full asm stack, DMD)
-#   ./build.sh --noitbasm  # opt out of ITB's chain-absorb asm
+#   ./build.sh --noitbasm  # opt out of ITB's SIMD asm kernels
 #   COMPILER=ldc2 ./build.sh
 
 set -eu

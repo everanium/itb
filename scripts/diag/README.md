@@ -40,11 +40,10 @@ PAYLOAD=1MB BENCH_TIME=1s bash scripts/diag/tier_diag.sh
 
 ## hash_diag.sh
 
-Renders a 9-hash x 3-nonce-width throughput matrix (27 cells for
-encrypt, 27 for decrypt) at a fixed tier configuration. The nine
-canonical hashes and three nonce widths cover every shipped
-chain-absorb kernel width (13 / 20 / 36 / 68) across every registered
-inner primitive.
+Renders a per-registry-hash × three-nonce-width throughput matrix at
+a fixed tier configuration. The canonical hash set and three nonce
+widths cover every shipped fused-cascade kernel width (13 / 20 / 36 /
+68) across every registered inner primitive.
 
 A uniform host-vs-host ratio across all 27 cells signals general
 silicon performance difference; an outlier cell signals a
@@ -83,7 +82,7 @@ runs. Change these only if you understand the profile matters.
    problem to that axis.
 2. Once localised, run `hash_diag.sh` under the identified healthy
    arm (e.g. `INTERLOCK_TIER=avx2`) to check whether the other axes
-   have any secondary regressions across the 9-hash × 3-nonce
+   have any secondary regressions across the per-hash × per-nonce-width
    surface, or whether they are uniformly healthy on this silicon.
 3. If confirmed narrow (one tier axis, one CPU family), first attempt
    to fix the offending kernel — rewrite so the affected silicon runs

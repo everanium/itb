@@ -7,7 +7,7 @@
 #
 # Usage:
 #   ./build.sh             # default build (full asm stack)
-#   ./build.sh --noitbasm  # opt out of ITB's chain-absorb asm
+#   ./build.sh --noitbasm  # opt out of ITB's SIMD asm kernels
 #                          # (use on hosts without AVX-512+VL)
 
 set -eu

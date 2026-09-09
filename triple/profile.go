@@ -85,9 +85,10 @@ const (
 	ProfileStreamingNoAEADTripleMixedV1 = "streaming-noaead-triple-mixed-v1"
 
 	// ProfileSingleMsgTripleMACMixedV1 is the width-128 mixed-
-	// primitive counterpart to [ProfileSingleMsgTripleMACV1]. Only
-	// two shipped primitives sit at width 128 (aescmac + siphash24);
-	// the constellation alternates the pair across all eight slots.
+	// primitive counterpart to [ProfileSingleMsgTripleMACV1]. The
+	// constellation alternates the two PRF-grade width-128 primitives
+	// (aescmac + siphash24) across all eight slots — the inner-PRF-only
+	// aesitb128 entry is excluded from Triple slot assignment.
 	ProfileSingleMsgTripleMACMixedV1 = "singlemsg-triple-mac-mixed-v1"
 
 	// ProfileSingleMsgTripleNoMACMixedV1 is the width-512 mixed-

@@ -1,6 +1,6 @@
 //go:build amd64 && !purego && !noitbasm
 
-// AES-NI XMM (single lane) fused ChainHash cascade kernel for Areion-SoEM-256 at the
+// Legacy-SSE AES-NI XMM (single lane) fused ChainHash cascade kernel for Areion-SoEM-256 at the
 // 20-byte shape, 1 lane (1 absorb chunk, 1 SoEM evaluation —
 // 2 10-round Areion-256 permutations — per cascade round). The message
 // blocks are staged once per call; see areionasm_fused.go for the

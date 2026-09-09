@@ -10,7 +10,7 @@ import (
 	"github.com/everanium/itb/hashes"
 )
 
-// aesitb_cascade_constructors_test.go — cross-constructor agreement of
+// cascade_constructors_test.go — cross-constructor agreement of
 // Low-Level seeds at every width and for every shipped primitive. The
 // Interlocked Barrier cascade fill is the wire for every lockSeed, and
 // the optional fast-path hooks (fused cascade, batch-16 fill) never

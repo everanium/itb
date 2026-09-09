@@ -38,7 +38,7 @@ go test -run='^$' -bench='BenchmarkParallaxStream/aescmac'                  -ben
 go test -run='^$' -bench='BenchmarkParallaxWorkerScaling'                   -benchtime=1s -count=1 ./parallax/
 ```
 
-Bench-side tuning is available through `PARALLAX_*` environment variables consumed by `parallax/testmain_test.go`: `PARALLAX_S`, `PARALLAX_SIZE`, `PARALLAX_CHUNK_SIZE`, `PARALLAX_N`, `PARALLAX_PRIMITIVE`, `PARALLAX_PALETTE`, `PARALLAX_PALETTE_LABEL`. These knobs adjust segment size, plaintext size, streaming chunk size, palette width, single-primitive focus, and explicit heterogeneous palette composition respectively.
+Bench-side tuning is available through `PARALLAX_*` environment variables consumed by `parallax/bench_test.go`'s `TestMain`: `PARALLAX_S`, `PARALLAX_SIZE`, `PARALLAX_CHUNK_SIZE`, `PARALLAX_N`, `PARALLAX_PRIMITIVE`, `PARALLAX_PALETTE`, `PARALLAX_PALETTE_LABEL`. These knobs adjust segment size, plaintext size, streaming chunk size, palette width, single-primitive focus, and explicit heterogeneous palette composition respectively.
 
 ## Per-primitive throughput across segment size (Single Message, 4 MiB, N=9, Encrypt)
 

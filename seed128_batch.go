@@ -4,8 +4,8 @@ import "encoding/binary"
 
 // BatchHashFunc128 is the 4-way batched 128-bit hash interface
 // alongside [HashFunc128]. Primitives whose SIMD kernel processes
-// four independent (data, seed) tuples per call expose this — e.g.
-// the ZMM-batched SipHash-2-4 / AES-CMAC kernels on amd64 with
+// four independent (data, seed) tuples per call expose this, through
+// the ZMM-batched width-128 registry kernels on amd64 with
 // AVX-512 + VAES.
 //
 // Bit-exact parity invariant: each lane output
