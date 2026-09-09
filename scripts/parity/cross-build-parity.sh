@@ -442,11 +442,178 @@ for SIZE in "${SIZES[@]}"; do
     done
 done
 
+# ---------------------------------------------------------------------------
+# Section 6 — batch-16 interlock PRF fill dispatch matrix × nonce widths.
+# Exercises the fill-ladder rung disarm knobs and the fill-tier axis
+# separately from the ChainHash arm sweep of Section 3, so every
+# dispatch state of the Interlocked Barrier's batch-16 fill hook is
+# reached end-to-end. Two primitives cover the two hook families the
+# ladder resolves against:
+#   * aesitb128  — AES-family fill (aesni / vex / vaesavx2 / avx512 tiers)
+#   * blake2b512 — ARX-family fill (gpr / avx2 / avx512 tiers)
+# Both sit on the widened batch-32 rung at width 512, so the whole
+# four-rung ladder (batch-32 top → batch-16 → four-lane → single-lane)
+# is reachable through the four disarm knobs.
+#
+# Rung sweep: for every rung disarm knob and every applicable tier
+# token, the forced side runs on the cgo build against the
+# scalar-forced (HASH+PRF-FILL) opposite build, both directions.
+# ---------------------------------------------------------------------------
+FILLHASHES=(aesitb128 blake2b512)
+FILLRUNGS=(seq x1 x4 x16)
+
+# fill_tier_applicable HASH TIER — succeeds when the (hash, PRF-fill
+# tier) pair names a real batch-16 fill kernel on this build.
+#   * avx512 / scalar — every primitive has both
+#   * vaesavx2 / vex / aesni — AES-family only (aesitb128 / aescmac /
+#     areion256 / areion512)
+#   * avx2 — non-AES ARX family (blake2b / blake2s / blake3 /
+#     chacha20 / siphash24)
+#   * gpr — ARX family (blake2b / blake2s / blake3 / chacha20 /
+#     siphash24), single-lane general-purpose-register kernels
+#   * neon — arm64 only, all primitives (skipped here — the amd64
+#     forcetier init rejects the token with a stderr note)
+fill_tier_applicable() {
+    case "$2" in
+        avx512|scalar) return 0 ;;
+        vaesavx2|vex|aesni)
+            case "$1" in
+                aesitb128|aescmac|areion256|areion512) return 0 ;;
+                *) return 1 ;;
+            esac ;;
+        avx2|gpr)
+            case "$1" in
+                blake2b256|blake2b512|blake2s|blake3|chacha20|siphash24) return 0 ;;
+                *) return 1 ;;
+            esac ;;
+    esac
+    return 1
+}
+
+# rung_env RUNG — prints the environment for a fill-rung disarm knob.
+rung_env() {
+    case "$1" in
+        seq) echo "ITB_FORCE_INTERLOCK_PRF_FILL_SEQ=1" ;;
+        x1)  echo "ITB_FORCE_INTERLOCK_PRF_FILL_X1=1"  ;;
+        x4)  echo "ITB_FORCE_INTERLOCK_PRF_FILL_X4=1"  ;;
+        x16) echo "ITB_FORCE_INTERLOCK_PRF_FILL_X16=1" ;;
+    esac
+}
+
+FILL_CELLS=0
+FILL_SKIPPED_PAIRS=0
+FILL_SKIPPED_CELLS=0
+
+# Sub-section 6a — fill-rung disarm sweep.
+for RUNG in "${FILLRUNGS[@]}"; do
+    for HASH in "${FILLHASHES[@]}"; do
+        PROFILE="parity-${HASH}-v1"
+        for NB in "${NONCEBITS[@]}"; do
+            SEED="$WORKDIR/seed-${HASH}-nb${NB}.blob"
+
+            for SIZE in "${SIZES[@]}"; do
+                PLAIN="$WORKDIR/plain-${HASH}-${SIZE}.bin"
+                PLAIN_HASH=$(sha256sum "$PLAIN" | awk '{print $1}')
+
+                # Direction 1: encrypt cgo + rung disarmed, decrypt nocgo + scalar.
+                WIRE1="$WORKDIR/wire-fill-${HASH}-${SIZE}-nb${NB}-rung${RUNG}.bin"
+                BACK1="$WORKDIR/back-fill-${HASH}-${SIZE}-nb${NB}-rung${RUNG}-nocgo.bin"
+                env $(rung_env "$RUNG") ./tools/parity/parity-cgo -mode=encrypt \
+                    -profile="$PROFILE" -hash="$HASH" -seed-file="$SEED" -nonce-bits="$NB" \
+                    -in="$PLAIN" -out="$WIRE1"
+                ITB_FORCE_HASH_TIER=scalar ITB_FORCE_INTERLOCK_PRF_FILL_TIER=scalar \
+                    ./tools/parity/parity-nocgo -mode=decrypt \
+                    -profile="$PROFILE" -hash="$HASH" -seed-file="$SEED" -nonce-bits="$NB" \
+                    -in="$WIRE1" -out="$BACK1"
+                if [ "$(sha256sum "$BACK1" | awk '{print $1}')" != "$PLAIN_HASH" ]; then
+                    echo "FAIL: rung=$RUNG encrypt=cgo decrypt=nocgo-scalar hash=$HASH size=$SIZE nb=$NB"
+                    FAIL=$((FAIL + 1))
+                fi
+                FILL_CELLS=$((FILL_CELLS + 1))
+
+                # Direction 2: encrypt nocgo + scalar, decrypt cgo + rung disarmed.
+                WIRE2="$WORKDIR/wire-fill-${HASH}-${SIZE}-nb${NB}-scalar-vs-rung${RUNG}.bin"
+                BACK2="$WORKDIR/back-fill-${HASH}-${SIZE}-nb${NB}-rung${RUNG}-cgo.bin"
+                ITB_FORCE_HASH_TIER=scalar ITB_FORCE_INTERLOCK_PRF_FILL_TIER=scalar \
+                    ./tools/parity/parity-nocgo -mode=encrypt \
+                    -profile="$PROFILE" -hash="$HASH" -seed-file="$SEED" -nonce-bits="$NB" \
+                    -in="$PLAIN" -out="$WIRE2"
+                env $(rung_env "$RUNG") ./tools/parity/parity-cgo -mode=decrypt \
+                    -profile="$PROFILE" -hash="$HASH" -seed-file="$SEED" -nonce-bits="$NB" \
+                    -in="$WIRE2" -out="$BACK2"
+                if [ "$(sha256sum "$BACK2" | awk '{print $1}')" != "$PLAIN_HASH" ]; then
+                    echo "FAIL: rung=$RUNG encrypt=nocgo-scalar decrypt=cgo hash=$HASH size=$SIZE nb=$NB"
+                    FAIL=$((FAIL + 1))
+                fi
+                FILL_CELLS=$((FILL_CELLS + 1))
+            done
+        done
+    done
+done
+
+# Sub-section 6b — PRF-fill tier sweep.
+FILLTIERS=(avx512 vaesavx2 avx2 vex aesni gpr scalar)
+FILL_CELLS_PER_PAIR=$(( ${#NONCEBITS[@]} * ${#SIZES[@]} * 2 ))
+
+for FT in "${FILLTIERS[@]}"; do
+    for HASH in "${FILLHASHES[@]}"; do
+        if ! fill_tier_applicable "$HASH" "$FT"; then
+            echo "SKIP: hash=$HASH fill-tier=$FT (no such kernel; $FILL_CELLS_PER_PAIR cells skipped)"
+            FILL_SKIPPED_PAIRS=$((FILL_SKIPPED_PAIRS + 1))
+            FILL_SKIPPED_CELLS=$((FILL_SKIPPED_CELLS + FILL_CELLS_PER_PAIR))
+            continue
+        fi
+        PROFILE="parity-${HASH}-v1"
+
+        for NB in "${NONCEBITS[@]}"; do
+            SEED="$WORKDIR/seed-${HASH}-nb${NB}.blob"
+
+            for SIZE in "${SIZES[@]}"; do
+                PLAIN="$WORKDIR/plain-${HASH}-${SIZE}.bin"
+                PLAIN_HASH=$(sha256sum "$PLAIN" | awk '{print $1}')
+
+                # Direction 1: encrypt cgo + forced fill-tier, decrypt nocgo + scalar.
+                WIRE1="$WORKDIR/wire-filltier-${HASH}-${SIZE}-nb${NB}-${FT}.bin"
+                BACK1="$WORKDIR/back-filltier-${HASH}-${SIZE}-nb${NB}-${FT}-nocgo.bin"
+                ITB_FORCE_INTERLOCK_PRF_FILL_TIER="$FT" ./tools/parity/parity-cgo -mode=encrypt \
+                    -profile="$PROFILE" -hash="$HASH" -seed-file="$SEED" -nonce-bits="$NB" \
+                    -in="$PLAIN" -out="$WIRE1"
+                ITB_FORCE_HASH_TIER=scalar ITB_FORCE_INTERLOCK_PRF_FILL_TIER=scalar \
+                    ./tools/parity/parity-nocgo -mode=decrypt \
+                    -profile="$PROFILE" -hash="$HASH" -seed-file="$SEED" -nonce-bits="$NB" \
+                    -in="$WIRE1" -out="$BACK1"
+                if [ "$(sha256sum "$BACK1" | awk '{print $1}')" != "$PLAIN_HASH" ]; then
+                    echo "FAIL: fill-tier=$FT encrypt=cgo decrypt=nocgo-scalar hash=$HASH size=$SIZE nb=$NB"
+                    FAIL=$((FAIL + 1))
+                fi
+                FILL_CELLS=$((FILL_CELLS + 1))
+
+                # Direction 2: encrypt nocgo + scalar, decrypt cgo + forced fill-tier.
+                WIRE2="$WORKDIR/wire-filltier-${HASH}-${SIZE}-nb${NB}-scalar-vs-${FT}.bin"
+                BACK2="$WORKDIR/back-filltier-${HASH}-${SIZE}-nb${NB}-${FT}-cgo.bin"
+                ITB_FORCE_HASH_TIER=scalar ITB_FORCE_INTERLOCK_PRF_FILL_TIER=scalar \
+                    ./tools/parity/parity-nocgo -mode=encrypt \
+                    -profile="$PROFILE" -hash="$HASH" -seed-file="$SEED" -nonce-bits="$NB" \
+                    -in="$PLAIN" -out="$WIRE2"
+                ITB_FORCE_INTERLOCK_PRF_FILL_TIER="$FT" ./tools/parity/parity-cgo -mode=decrypt \
+                    -profile="$PROFILE" -hash="$HASH" -seed-file="$SEED" -nonce-bits="$NB" \
+                    -in="$WIRE2" -out="$BACK2"
+                if [ "$(sha256sum "$BACK2" | awk '{print $1}')" != "$PLAIN_HASH" ]; then
+                    echo "FAIL: fill-tier=$FT encrypt=nocgo-scalar decrypt=cgo hash=$HASH size=$SIZE nb=$NB"
+                    FAIL=$((FAIL + 1))
+                fi
+                FILL_CELLS=$((FILL_CELLS + 1))
+            done
+        done
+    done
+done
+
 echo "---"
 echo "skipped: $SKIPPED_PAIRS (hash, arm) pairs / $SKIPPED_CELLS cells (no such arm — see SKIP lines)"
-TOTAL=$(( CELLS + TIER_CELLS + ARM_CELLS + IL_CELLS + MAC_CELLS ))
+echo "skipped: $FILL_SKIPPED_PAIRS (hash, fill-tier) pairs / $FILL_SKIPPED_CELLS cells (no such kernel — see SKIP lines)"
+TOTAL=$(( CELLS + TIER_CELLS + ARM_CELLS + IL_CELLS + MAC_CELLS + FILL_CELLS ))
 if [ "$FAIL" -eq 0 ]; then
-    echo "PASS: $CELLS host-tier + $TIER_CELLS forced-pixel-tier + $ARM_CELLS forced-hash-arm + $IL_CELLS interlock-tier + $MAC_CELLS kmac-mac = $TOTAL cells"
+    echo "PASS: $CELLS host-tier + $TIER_CELLS forced-pixel-tier + $ARM_CELLS forced-hash-arm + $IL_CELLS interlock-tier + $MAC_CELLS kmac-mac + $FILL_CELLS batch-16-fill = $TOTAL cells"
     exit 0
 fi
 echo "FAIL: $FAIL of $TOTAL cells failed"
