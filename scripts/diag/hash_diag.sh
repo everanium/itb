@@ -17,9 +17,11 @@
 #   PAYLOAD=1MB BENCH_TIME=1s bash scripts/diag/hash_diag.sh # bigger sample
 #
 # Env inputs (all optional):
-#   INTERLOCK_TIER  = natural | avx512 | avx2 | scalar             (default: avx2)
+#   INTERLOCK_TIER  = natural | avx512 | avx512x8 | avx2 | sve2 | sve | neon | scalar
+#                                                                    (default: avx2)
 #   PIXEL_TIER      = natural | A | A_NOGFNI | B | B_NOGFNI | C    (default: natural)
-#   HASH_TIER       = natural | avx512 | vaesavx2 | avx2 | aesni | scalar  (default: natural)
+#   HASH_TIER       = natural | avx512 | vaesavx2 | avx2 | vex | aesni | gpr | sve2 | sve | neon | scalar
+#                                                                    (default: natural)
 #   PAYLOAD         = 4KB..64MB from ExtProductionMessage ladder   (default: 4MB)
 #   BENCH_TIME      = Go bench duration                            (default: 300ms)
 #   BENCH_COUNT     = Go bench -count (samples averaged in output) (default: 3)
