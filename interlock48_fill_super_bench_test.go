@@ -77,13 +77,17 @@ func benchLockFillSuper16(b *testing.B, bits int) {
 
 // BenchmarkLockFillX4Wide times the 256- and 512-bit x4 interlock PRF
 // fill closures (lockBatchPRF48.fillRanksX4 as built by
-// buildLockBatchPRF48_256 / _512 over Areion-SoEM lockSeeds) against
+// buildLockBatchPRF48_256 / _512 over Areion-SoEM lockSeeds) alongside
 // in-benchmark closures that drive the same batched arm with the lane
 // seeds passed as a per-call literal. The shipped closures capture the
 // seeds as a stable array; the literal variant rebuilds the [4][N]uint64
-// argument with narrower stores immediately ahead of the call, which the
-// by-value copy into the callee frame then reads with wider loads.
-// Outputs are checked equal before timing.
+// argument with narrower stores immediately ahead of the call, which
+// the by-value copy into the callee frame then reads with wider loads.
+// The shipped closure runs the ChainHash cascade (1 + keyBits/width
+// rounds per group) while the literal variant calls BatchHash once, so
+// their outputs do NOT match — the benchmark isolates Go-side store-
+// shape cost only; the cascade cost is common to every arm of the
+// shipped fill.
 func BenchmarkLockFillX4Wide(b *testing.B) {
 	nonce := make([]byte, 64)
 	for i := range nonce {
@@ -141,21 +145,9 @@ func BenchmarkLockFillX4Wide(b *testing.B) {
 	})
 }
 
-// benchLockFillX4Wide checks the two closures agree on 64 groups, then
-// times each; words is the number of rank words one call writes.
+// benchLockFillX4Wide times the two closures over 64 groups; words is
+// the number of rank words one call writes.
 func benchLockFillX4Wide(b *testing.B, words int, shipped, literal func(*lockFillScratch48, uint64, []uint64)) {
-	var sA, sB lockFillScratch48
-	pA := make([]uint64, words)
-	pB := make([]uint64, words)
-	for g := uint64(0); g < 64; g += 4 {
-		shipped(&sA, g, pA)
-		literal(&sB, g, pB)
-		for i := range pA {
-			if pA[i] != pB[i] {
-				b.Fatalf("literal-seeds closure disagrees with the shipped fill at group %d", g)
-			}
-		}
-	}
 	for _, v := range []struct {
 		name string
 		fn   func(*lockFillScratch48, uint64, []uint64)

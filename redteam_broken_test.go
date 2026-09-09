@@ -511,7 +511,7 @@ func TestRedTeamBrokenCRC128NonceReuse(t *testing.T) {
 
 	// Confirm the nonce genuinely collided (lab assumption realised).
 	if string(ctA[:NonceSize]) != string(ctB[:NonceSize]) {
-		t.Fatalf("nonce did not collide — setTestNonce override not in effect")
+		t.Fatalf("nonce did not collide — installTestNonce override not in effect")
 	}
 	t.Logf("Nonce-Reuse lab assumption realised: identical %d-byte nonce on both ciphertexts", NonceSize)
 

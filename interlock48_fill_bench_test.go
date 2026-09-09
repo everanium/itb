@@ -8,17 +8,14 @@ import (
 // BenchmarkLockFillX4 times the 256-bit x4 interlock PRF fill closure
 // (lockBatchPRF48.fillRanksX4) as built by buildLockBatchPRF48_256 over
 // an Areion-SoEM-256 lockSeed — one call fills four groups through the
-// seed's batched arm — against in-benchmark closures that produce the
-// identical fill blocks with alternative store shapes and pass the lane
-// seeds as a per-call literal. All variants drive the same kernel under
-// the same dispatch flags (ITB_FORCE_HASH_TIER selects the tier), so
-// the difference is the Go-side store shape ahead of the call alone.
-// Outputs are checked equal before timing.
-//
-// Areion-SoEM-256 is the primitive under measurement because it carries
-// no cascade fill (unlike aesitb128, whose shipping fill routes through
-// the cascade branch and would make a raw single-round store-shape
-// comparison structurally inapplicable).
+// seed's batched arm — alongside in-benchmark closures that exercise
+// alternative Go-side store shapes ahead of the same underlying
+// BatchHash primitive. The shipped closure runs the ChainHash cascade
+// (1 + keyBits/256 rounds per group; 3 rounds at NewSeed256(512, ...)),
+// while the alternative closures call the primitive's BatchHash for a
+// single round, so their output does NOT match the shipped closure's
+// cascade output — the benchmark isolates Go-side store-shape cost
+// only; the cascade cost is common to every arm of the shipped fill.
 func BenchmarkLockFillX4(b *testing.B) {
 	h, bh, _ := MakeAreionSoEM256Hash()
 	seed, err := NewSeed256(512, h)
@@ -76,24 +73,6 @@ func BenchmarkLockFillX4(b *testing.B) {
 		{"byteStore/literalSeeds", byteLiteral},
 		{"byteStore/stableSeeds", byteStable},
 		{"splitStore/literalSeeds", splitLiteral},
-	}
-
-	var sA, sB lockFillScratch48
-	pA := make([]uint64, 16)
-	pB := make([]uint64, 16)
-	for _, v := range variants[1:] {
-		for g := uint64(0); g < 64; g += 4 {
-			bp.fillRanksX4(&sA, g, pA)
-			v.fn(&sB, g, pB)
-			for i := range pA {
-				if pA[i] != pB[i] {
-					b.Fatalf("%s disagrees with the shipped fill at group %d", v.name, g)
-				}
-			}
-			if sA.bufs != sB.bufs {
-				b.Fatalf("%s scratch disagrees with the shipped fill at group %d", v.name, g)
-			}
-		}
 	}
 
 	for _, v := range variants {

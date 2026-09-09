@@ -17,7 +17,7 @@ ITB_NONCE_BITS=512 ITB_GOMEMLIMIT=4GiB ITB_GOGC=100 \
 
 ## Intel Core i7-11700K 8C/16HT
 
-The AES-ITB-128 rows appear here and in the AMD EPYC 9655P section further down; the ARM64 Graviton 4 section does not carry an AES-ITB-128 row until a full-fleet rebench.
+The AES-ITB-128 rows appear here, in the AMD EPYC 9655P section further down, and in the ARM64 Graviton 4 section.
 
 ### ITB Triple 512-bit (security: P × 2^(3×512) = P × 2^1536)
 
@@ -117,43 +117,46 @@ The AES-ITB-128 rows appear here and in the AMD EPYC 9655P section further down;
 
 | Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
 |---|---|---|---|---|---|---|---|---|---|
-| **Areion-SoEM-256** | 256 | 512 | PRF | 43 | 49 | 51 | 46 | 54 | 57 |
-| **Areion-SoEM-512** | 512 | 512 | PRF | 50 | 57 | 59 | 56 | 63 | 66 |
-| **BLAKE2b-256** | 256 | 512 | PRF | 41 | 44 | 46 | 42 | 49 | 50 |
-| **BLAKE2b-512** | 512 | 512 | PRF | 42 | 47 | 48 | 44 | 52 | 53 |
-| **BLAKE2s** | 256 | 512 | PRF | 33 | 36 | 37 | 34 | 39 | 40 |
-| **BLAKE3** | 256 | 512 | PRF | 20 | 23 | 23 | 19 | 21 | 25 |
-| **AES-CMAC** | 128 | 512 | PRF | 53 | 60 | 61 | 57 | 67 | 69 |
-| **SipHash-2-4** | 128 | 512 | PRF | 58 | 66 | 68 | 76 | 75 | 78 |
-| **ChaCha20** | 256 | 512 | PRF | 6 | 22 | 31 | 7 | 20 | 32 |
+| **AES-ITB-128** | 128 | 512 | NPRF | 430 | 454 | 432 | 445 | 483 | 464 |
+| **Areion-SoEM-256** | 256 | 512 | PRF | 178 | 178 | 177 | 181 | 183 | 182 |
+| **Areion-SoEM-512** | 512 | 512 | PRF | 224 | 227 | 221 | 229 | 231 | 233 |
+| **BLAKE2b-256** | 256 | 512 | PRF | 92 | 90 | 92 | 93 | 94 | 94 |
+| **BLAKE2b-512** | 512 | 512 | PRF | 107 | 107 | 107 | 107 | 107 | 109 |
+| **BLAKE2s** | 256 | 512 | PRF | 124 | 123 | 124 | 125 | 126 | 128 |
+| **BLAKE3** | 256 | 512 | PRF | 158 | 158 | 158 | 159 | 159 | 161 |
+| **AES-CMAC** | 128 | 512 | PRF | 346 | 358 | 352 | 359 | 380 | 374 |
+| **SipHash-2-4** | 128 | 512 | PRF | 181 | 180 | 180 | 184 | 190 | 186 |
+| **ChaCha20** | 256 | 512 | PRF | 141 | 141 | 140 | 142 | 142 | 144 |
 
 ### ITB Triple 1024-bit (security: P × 2^(3×1024) = P × 2^3072)
 
 | Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
 |---|---|---|---|---|---|---|---|---|---|
-| **Areion-SoEM-256** | 256 | 1024 | PRF | 32 | 36 | 36 | 34 | 38 | 39 |
-| **Areion-SoEM-512** | 512 | 1024 | PRF | 39 | 44 | 45 | 45 | 48 | 49 |
-| **BLAKE2b-256** | 256 | 1024 | PRF | 27 | 32 | 31 | 28 | 34 | 34 |
-| **BLAKE2b-512** | 512 | 1024 | PRF | 29 | 33 | 33 | 31 | 36 | 36 |
-| **BLAKE2s** | 256 | 1024 | PRF | 20 | 24 | 24 | 23 | 25 | 26 |
-| **BLAKE3** | 256 | 1024 | PRF | 11 | 14 | 12 | 14 | 13 | 15 |
-| **AES-CMAC** | 128 | 1024 | PRF | 41 | 45 | 46 | 43 | 50 | 51 |
-| **SipHash-2-4** | 128 | 1024 | PRF | 48 | 53 | 54 | 54 | 59 | 61 |
-| **ChaCha20** | 256 | 1024 | PRF | 4 | 13 | 20 | 4 | 11 | 20 |
+| **AES-ITB-128** | 128 | 1024 | NPRF | 390 | 411 | 389 | 408 | 434 | 414 |
+| **Areion-SoEM-256** | 256 | 1024 | PRF | 111 | 110 | 111 | 112 | 113 | 113 |
+| **Areion-SoEM-512** | 512 | 1024 | PRF | 151 | 151 | 150 | 152 | 156 | 154 |
+| **BLAKE2b-256** | 256 | 1024 | PRF | 52 | 53 | 54 | 53 | 54 | 54 |
+| **BLAKE2b-512** | 512 | 1024 | PRF | 62 | 62 | 63 | 62 | 63 | 64 |
+| **BLAKE2s** | 256 | 1024 | PRF | 73 | 73 | 74 | 74 | 74 | 75 |
+| **BLAKE3** | 256 | 1024 | PRF | 99 | 99 | 99 | 100 | 101 | 101 |
+| **AES-CMAC** | 128 | 1024 | PRF | 271 | 278 | 271 | 280 | 294 | 287 |
+| **SipHash-2-4** | 128 | 1024 | PRF | 114 | 112 | 114 | 112 | 115 | 116 |
+| **ChaCha20** | 256 | 1024 | PRF | 84 | 85 | 85 | 86 | 86 | 87 |
 
 ### ITB Triple 2048-bit (security: P × 2^(3×2048) = P × 2^6144)
 
 | Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
 |---|---|---|---|---|---|---|---|---|---|
-| **Areion-SoEM-256** | 256 | 2048 | PRF | 20 | 23 | 23 | 23 | 24 | 24 |
-| **Areion-SoEM-512** | 512 | 2048 | PRF | 26 | 30 | 30 | 28 | 32 | 32 |
-| **BLAKE2b-256** | 256 | 2048 | PRF | 18 | 20 | 20 | 19 | 21 | 21 |
-| **BLAKE2b-512** | 512 | 2048 | PRF | 19 | 21 | 21 | 21 | 22 | 22 |
-| **BLAKE2s** | 256 | 2048 | PRF | 13 | 14 | 14 | 14 | 15 | 15 |
-| **BLAKE3** | 256 | 2048 | PRF | 7 | 8 | 8 | 8 | 8 | 8 |
-| **AES-CMAC** | 128 | 2048 | PRF | 27 | 31 | 31 | 28 | 33 | 33 |
-| **SipHash-2-4** | 128 | 2048 | PRF | 35 | 39 | 39 | 39 | 42 | 43 |
-| **ChaCha20** | 256 | 2048 | PRF | 2 | 7 | 11 | 2 | 6 | 11 |
+| **AES-ITB-128** | 128 | 2048 | NPRF | 326 | 330 | 324 | 340 | 353 | 346 |
+| **Areion-SoEM-256** | 256 | 2048 | PRF | 61 | 63 | 64 | 61 | 63 | 64 |
+| **Areion-SoEM-512** | 512 | 2048 | PRF | 91 | 91 | 91 | 90 | 92 | 93 |
+| **BLAKE2b-256** | 256 | 2048 | PRF | 28 | 29 | 29 | 28 | 29 | 29 |
+| **BLAKE2b-512** | 512 | 2048 | PRF | 32 | 34 | 34 | 33 | 35 | 35 |
+| **BLAKE2s** | 256 | 2048 | PRF | 39 | 41 | 41 | 39 | 41 | 42 |
+| **BLAKE3** | 256 | 2048 | PRF | 55 | 55 | 57 | 55 | 56 | 57 |
+| **AES-CMAC** | 128 | 2048 | PRF | 189 | 191 | 191 | 194 | 199 | 196 |
+| **SipHash-2-4** | 128 | 2048 | PRF | 65 | 65 | 65 | 66 | 65 | 67 |
+| **ChaCha20** | 256 | 2048 | PRF | 46 | 48 | 48 | 45 | 48 | 48 |
 
 ## Intel Core i7-11700K 8C/16HT — New 48-bit Interlocked ITB vs Old ITB (Lock Soup + Lock Batch mode) — Delta
 
