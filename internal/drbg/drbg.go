@@ -1,9 +1,9 @@
 // Package drbg provides a bulk-fill CSPRNG for the ITB encrypt hot path.
 //
-// The two production consumers are the container fill in newTripleWire
+// The two production consumers are the container fill in buildTripleWire3
 // (three parallel goroutines each filling roughly a third of the wire
 // container with noise bytes) and the CSPRNG tail fill of every
-// Interlocked lane in buildTriplePayloads. The bytes produced are
+// Interlocked lane in the same fused function. The bytes produced are
 // consumed as ciphertext-carrier noise or as CSPRNG residue trimmed
 // against the plaintext-derived payload — they never re-appear as key
 // material, seed components, or any output that survives beyond the
@@ -29,7 +29,7 @@
 // scratch/drbg-bench Phase A); the ChaCha20 tier matches crypto/rand's
 // vgetrandom throughput on hardware without AES acceleration. Either
 // tier is a strict throughput win over the syscall-backed baseline in
-// the three-goroutine newTripleWire fill because per-goroutine cost is
+// the three-goroutine container-fill shape because per-goroutine cost is
 // no longer serialised through the kernel's per-thread ChaCha20-DRBG
 // state.
 //

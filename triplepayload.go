@@ -61,8 +61,10 @@ func (tp *triplePayloads) release() {
 	}
 }
 
-// buildTriplePayloads runs the interlock split, the COBS stage, the
-// container sizing and the payload assembly for one encrypt call.
+// buildTripleWire3 fuses payload assembly and wire allocation for one
+// encrypt call. It runs the interlock split, the COBS stage, and the
+// container sizing, then draws the container CSPRNG fill and the payload
+// tail CSPRNG fill as six independent parallel goroutines.
 //
 // reserve is the byte count held back at the end of the last third
 // (the No MAC tag stub, or tagSize + 1 for the authenticated shapes);
@@ -80,7 +82,23 @@ func (tp *triplePayloads) release() {
 // lane is COBS-encoded into it in place, and the buffer is then
 // resliced to the actual capacity — the encoded bytes are already where
 // the pixel pipeline reads them.
-func buildTriplePayloads(cfg *Config, data []byte, bp lockBatchPRF48, reserve int, fillReserve bool, sizeFn func(cobsLens [3]int) (width, height int)) (tp *triplePayloads, width, height int, err error) {
+//
+// On return: tp carries the three per-third payload buffers ready for
+// pixel-encode (identical semantics to the pre-fused payload builder);
+// out is the wire buffer sized for
+// [main nonce | interlock nonce | W | H | W·H·Ch container] with the
+// header written and the container CSPRNG-filled; container aliases out
+// past the header, so the pixel pipeline writes the wire in place and
+// no final header-plus-container copy is made.
+//
+// The wire produced is byte-identical under the same DRBG state to what
+// a two-phase implementation (payload assembly followed by wire
+// allocation and container fill) would produce; both paths draw the
+// same total byte counts from drbg.Fill in the same lane partitioning.
+// The only observable change is wall time on the encrypt critical path:
+// the container CSPRNG fill overlaps with the payload tail CSPRNG fill
+// instead of running after it.
+func buildTripleWire3(cfg *Config, data []byte, bp lockBatchPRF48, reserve int, fillReserve bool, nonce, ilNonce []byte, sizeFn func(cobsLens [3]int) (width, height int)) (tp *triplePayloads, out, container []byte, width, height int, err error) {
 	// Interlock split into three pooled lanes through the framed view
 	// of data (no framed or padded plaintext copy).
 	laneLen := tripleLaneLen(len(data))
@@ -124,50 +142,14 @@ func buildTriplePayloads(cfg *Config, data []byte, bp lockBatchPRF48, reserve in
 	for i := 0; i < 3; i++ {
 		if tp.encLen[i]+1 > tp.payloadLen[i] {
 			tp.release()
-			return nil, 0, 0, fmt.Errorf("itb: internal error: container third %d too small", i)
+			return nil, nil, nil, 0, 0, fmt.Errorf("itb: internal error: container third %d too small", i)
 		}
 		tp.bufs[i] = tp.full[i][:caps[i]]
 	}
 
-	// Terminator and CSPRNG tail fill, drawn straight into each payload.
-	{
-		var errs [3]error
-		var wg sync.WaitGroup
-		wg.Add(3)
-		for i := 0; i < 3; i++ {
-			go func(i int) {
-				defer wg.Done()
-				buf := tp.bufs[i]
-				buf[tp.encLen[i]] = 0x00
-				fillEnd := tp.payloadLen[i]
-				if fillReserve {
-					fillEnd = len(buf)
-				}
-				if fillStart := tp.encLen[i] + 1; fillStart < fillEnd {
-					if e := drbg.Fill(buf[fillStart:fillEnd]); e != nil {
-						errs[i] = fmt.Errorf("itb: crypto/rand: %w", e)
-					}
-				}
-			}(i)
-		}
-		wg.Wait()
-		for _, e := range errs {
-			if e != nil {
-				tp.release()
-				return nil, 0, 0, e
-			}
-		}
-	}
-	return tp, width, height, nil
-}
-
-// newTripleWire allocates the output wire for a width × height
-// container in one buffer — [main nonce][interlock nonce][W][H] followed
-// by the container — writes the header, and fills the container with
-// CSPRNG bytes in three parallel draws. container aliases out past the
-// header, so the pixel pipeline writes the wire in place and no final
-// header-plus-container copy is made.
-func newTripleWire(cfg *Config, nonce, ilNonce []byte, width, height int) (out, container []byte, err error) {
+	// Allocate the wire and write the header on the calling goroutine —
+	// the cheap prelude to the container CSPRNG fill runs inline to
+	// avoid one indirection through a goroutine.
 	hdr := headerSizeCfg(cfg)
 	totalPixels := width * height
 	third := totalPixels / 3
@@ -178,17 +160,53 @@ func newTripleWire(cfg *Config, nonce, ilNonce []byte, width, height int) (out, 
 	binary.BigEndian.PutUint16(out[2*len(nonce)+2:], uint16(height))
 	container = out[hdr:]
 
-	var wg sync.WaitGroup
-	var randErr [3]error
-	wg.Add(3)
-	go func() { randErr[0] = drbg.Fill(container[0 : third*Channels]); wg.Done() }()
-	go func() { randErr[1] = drbg.Fill(container[third*Channels : 2*third*Channels]); wg.Done() }()
-	go func() { randErr[2] = drbg.Fill(container[2*third*Channels : totalPixels*Channels]); wg.Done() }()
+	// Six independent CSPRNG draws in parallel: three container thirds
+	// + three payload tails. Sharing one WaitGroup and one error slot
+	// per group keeps error propagation cheap and preserves the
+	// first-error-wins semantics of the pre-fused pipeline.
+	var (
+		wg      sync.WaitGroup
+		wireErr [3]error
+		tailErr [3]error
+	)
+	wg.Add(6)
+
+	// Container CSPRNG fill × 3.
+	go func() { defer wg.Done(); wireErr[0] = drbg.Fill(container[0 : third*Channels]) }()
+	go func() { defer wg.Done(); wireErr[1] = drbg.Fill(container[third*Channels : 2*third*Channels]) }()
+	go func() { defer wg.Done(); wireErr[2] = drbg.Fill(container[2*third*Channels : totalPixels*Channels]) }()
+
+	// Payload tail CSPRNG × 3.
+	for i := 0; i < 3; i++ {
+		i := i
+		go func() {
+			defer wg.Done()
+			buf := tp.bufs[i]
+			buf[tp.encLen[i]] = 0x00
+			fillEnd := tp.payloadLen[i]
+			if fillReserve {
+				fillEnd = len(buf)
+			}
+			if fillStart := tp.encLen[i] + 1; fillStart < fillEnd {
+				if e := drbg.Fill(buf[fillStart:fillEnd]); e != nil {
+					tailErr[i] = fmt.Errorf("itb: crypto/rand: %w", e)
+				}
+			}
+		}()
+	}
 	wg.Wait()
-	for _, e := range randErr {
+
+	for _, e := range wireErr {
 		if e != nil {
-			return nil, nil, fmt.Errorf("itb: crypto/rand: %w", e)
+			tp.release()
+			return nil, nil, nil, 0, 0, fmt.Errorf("itb: crypto/rand: %w", e)
 		}
 	}
-	return out, container, nil
+	for _, e := range tailErr {
+		if e != nil {
+			tp.release()
+			return nil, nil, nil, 0, 0, e
+		}
+	}
+	return tp, out, container, width, height, nil
 }

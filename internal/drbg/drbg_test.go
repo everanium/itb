@@ -252,7 +252,7 @@ var benchSizes = []int{
 	73 << 20,  // 73 MB — container ceiling for 64 MB plaintext
 }
 
-// BenchmarkFillProduction mirrors the newTripleWire shape at production
+// BenchmarkFillProduction mirrors the container-fill shape at production
 // sizes: 3 goroutines each filling a third of the buffer with a fresh
 // per-goroutine DRBG via the auto-selected tier. Pins the aggregate
 // throughput floor for regression watch.
@@ -339,7 +339,7 @@ func BenchmarkStdlibCryptoRand(b *testing.B) {
 }
 
 // BenchmarkDRBGAESCTRParallel3 times the AES-CTR fill worker under the
-// newTripleWire three-goroutine shape at every container-relevant size.
+// container-fill three-goroutine shape at every container-relevant size.
 // Reports aggregate MB/s.
 func BenchmarkDRBGAESCTRParallel3(b *testing.B) {
 	for _, size := range benchSizes {
@@ -363,7 +363,7 @@ func BenchmarkDRBGAESCTRParallel3(b *testing.B) {
 }
 
 // BenchmarkDRBGChaCha20Parallel3 times the ChaCha20 fill worker under
-// the newTripleWire three-goroutine shape at every container-relevant
+// the container-fill three-goroutine shape at every container-relevant
 // size. Reports aggregate MB/s.
 func BenchmarkDRBGChaCha20Parallel3(b *testing.B) {
 	for _, size := range benchSizes {
@@ -387,7 +387,7 @@ func BenchmarkDRBGChaCha20Parallel3(b *testing.B) {
 }
 
 // BenchmarkStdlibCryptoRandParallel3 times the baseline crypto/rand.Read
-// under the newTripleWire three-goroutine shape at every
+// under the container-fill three-goroutine shape at every
 // container-relevant size. Aggregate MB/s reference point for the DRBG
 // tiers.
 func BenchmarkStdlibCryptoRandParallel3(b *testing.B) {

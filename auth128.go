@@ -40,18 +40,20 @@ func EncryptAuthenticated3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, d
 		return nil, err
 	}
 
-	// Interlock split, COBS and payload assembly (see triplepayload.go).
-	// part2 COBS length increased by tagSize + 1 for container sizing:
-	// the +1 mirrors the Streaming AEAD flag-byte slot so the single
-	// message wire envelope matches the No MAC Encrypt3x envelope
-	// (which reserves nomacTagStubSizeCfg(cfg) = tagSize + 1 for the
-	// same mode-ambiguity reason — the zero-value default covers the
-	// shipped 32-byte tags, and Config.TagStubSize carries a
-	// custom MAC's tag length). Single messages carry a fixed 0x00 in
-	// that slot — there is no finalFlag semantic on this path. part0
-	// and part1 are filled to full capacity, part2 reserves tagSize + 1
-	// (tag slot + fixed 0x00 dummy flag slot) that is written below.
-	tp, width, height, err := buildTriplePayloads(cfg, data, buildLockBatchPRF48_128Cfg(cfg, lockSeed, ilNonce), tagSize+1, false,
+	// Interlock split, COBS, payload assembly and wire allocation with
+	// overlapped container + payload-tail CSPRNG fill (see
+	// triplepayload.go). part2 COBS length increased by tagSize + 1
+	// for container sizing: the +1 mirrors the Streaming AEAD flag-byte
+	// slot so the single message wire envelope matches the No MAC
+	// Encrypt3x envelope (which reserves nomacTagStubSizeCfg(cfg) =
+	// tagSize + 1 for the same mode-ambiguity reason — the zero-value
+	// default covers the shipped 32-byte tags, and Config.TagStubSize
+	// carries a custom MAC's tag length). Single messages carry a
+	// fixed 0x00 in that slot — there is no finalFlag semantic on this
+	// path. part0 and part1 are filled to full capacity, part2 reserves
+	// tagSize + 1 (tag slot + fixed 0x00 dummy flag slot) that is
+	// written below.
+	tp, out, container, width, height, err := buildTripleWire3(cfg, data, buildLockBatchPRF48_128Cfg(cfg, lockSeed, ilNonce), tagSize+1, false, nonce, ilNonce,
 		func(cobsLens [3]int) (int, int) {
 			return containerSizeAuth3_128Cfg(cfg, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, cobsLens)
 		})
@@ -71,12 +73,6 @@ func EncryptAuthenticated3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, d
 	full2 := tp.bufs[2]
 	copy(full2[len(payloads[2]):], tag)
 	full2[len(payloads[2])+tagSize] = 0x00
-
-	// Wire buffer: header followed by the CSPRNG-filled container.
-	out, container, err := newTripleWire(cfg, nonce, ilNonce, width, height)
-	if err != nil {
-		return nil, err
-	}
 
 	perThird := configuredWorkerCount(cfg) / 3
 	if perThird < 1 {
@@ -272,11 +268,13 @@ func EncryptStreamAuthenticated3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSe
 		return nil, err
 	}
 
-	// Interlock split, COBS and payload assembly (see triplepayload.go).
-	// part2 COBS length increased by tagSize + 1 (flag byte) for
-	// container sizing; part0 and part1 are filled to full capacity,
-	// part2 reserves tagSize + 1 (tag slot + flag) that is written below.
-	tp, width, height, err := buildTriplePayloads(cfg, data, buildLockBatchPRF48_128Cfg(cfg, lockSeed, ilNonce), tagSize+1, false,
+	// Interlock split, COBS, payload assembly and wire allocation with
+	// overlapped container + payload-tail CSPRNG fill (see
+	// triplepayload.go). part2 COBS length increased by tagSize + 1
+	// (flag byte) for container sizing; part0 and part1 are filled to
+	// full capacity, part2 reserves tagSize + 1 (tag slot + flag) that
+	// is written below.
+	tp, out, container, width, height, err := buildTripleWire3(cfg, data, buildLockBatchPRF48_128Cfg(cfg, lockSeed, ilNonce), tagSize+1, false, nonce, ilNonce,
 		func(cobsLens [3]int) (int, int) {
 			return containerSizeAuth3_128Cfg(cfg, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, cobsLens)
 		})
@@ -300,12 +298,6 @@ func EncryptStreamAuthenticated3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSe
 	full2 := tp.bufs[2]
 	copy(full2[len(payloads[2]):], tag)
 	full2[len(payloads[2])+tagSize] = flag
-
-	// Wire buffer: header followed by the CSPRNG-filled container.
-	out, container, err := newTripleWire(cfg, nonce, ilNonce, width, height)
-	if err != nil {
-		return nil, err
-	}
 
 	perThird := configuredWorkerCount(cfg) / 3
 	if perThird < 1 {

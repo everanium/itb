@@ -152,13 +152,14 @@ func Encrypt3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dat
 		return nil, err
 	}
 
-	// Interlock split, COBS and payload assembly (see triplepayload.go).
-	// nomacTagStubSizeCfg(cfg) bytes are reserved in the third snake's
-	// container capacity so a wire observer cannot distinguish this
-	// No MAC chunk from the paired authenticated chunk (whose third
-	// snake carries payload || tag || flag(1)). The reserved bytes are
-	// pure CSPRNG on the No MAC side.
-	tp, width, height, err := buildTriplePayloads(cfg, data, buildLockBatchPRF48_128Cfg(cfg, lockSeed, ilNonce), nomacTagStubSizeCfg(cfg), true,
+	// Interlock split, COBS, payload assembly and wire allocation with
+	// overlapped container + payload-tail CSPRNG fill (see
+	// triplepayload.go). nomacTagStubSizeCfg(cfg) bytes are reserved in
+	// the third snake's container capacity so a wire observer cannot
+	// distinguish this No MAC chunk from the paired authenticated chunk
+	// (whose third snake carries payload || tag || flag(1)). The
+	// reserved bytes are pure CSPRNG on the No MAC side.
+	tp, out, container, width, height, err := buildTripleWire3(cfg, data, buildLockBatchPRF48_128Cfg(cfg, lockSeed, ilNonce), nomacTagStubSizeCfg(cfg), true, nonce, ilNonce,
 		func(cobsLens [3]int) (int, int) {
 			return containerSize3_128Cfg(cfg, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, cobsLens)
 		})
@@ -169,12 +170,6 @@ func Encrypt3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dat
 	payloads := tp.bufs
 	totalPixels := width * height
 	third, thirdPixels2, _ := tripleThirdCaps(totalPixels)
-
-	// Wire buffer: header followed by the CSPRNG-filled container.
-	out, container, err := newTripleWire(cfg, nonce, ilNonce, width, height)
-	if err != nil {
-		return nil, err
-	}
 
 	// 3 parallel goroutines for pixel processing, each limited to 1/3 of CPU cores
 	offset1 := third * Channels
