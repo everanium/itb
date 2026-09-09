@@ -272,6 +272,13 @@ Single-primitive profiles (one inner hash across every seed slot):
 - `streaming-noaead-triple-v1` — Streaming Non-AEAD Triple.
 - `blob-triple-mac-v1` — MAC Authenticated blob-only bundle (no cipher surface; used by `Init` / `Rekey` to bundle session state).
 
+AES-ITB-128 native profiles (width 128, AES-ITB inner PRF only — **parallax off, wrapper off** by construction, so the pipeline exercises the AES-ITB inner PRF alone):
+
+- `singlemsg-aesitb-mac-v1` — Single Message with MAC.
+- `singlemsg-aesitb-nomac-v1` — Single Message No MAC.
+- `streaming-aead-aesitb-mac-v1` — Streaming AEAD with MAC.
+- `streaming-noaead-aesitb-v1` — Streaming Non-AEAD.
+
 Mixed-primitive profiles (per-slot primitive constellation, uniform width per profile):
 
 - `singlemsg-triple-mac-mixed-v1` — Single Message Triple with MAC, width 128 (alternates aescmac / siphash24).
@@ -279,7 +286,7 @@ Mixed-primitive profiles (per-slot primitive constellation, uniform width per pr
 - `streaming-aead-triple-mac-mixed-v1` — Streaming AEAD Triple with MAC, width 256 (spread across every shipped width-256 primitive).
 - `streaming-noaead-triple-mixed-v1` — Streaming Non-AEAD Triple, width 256 (different balance from the AEAD mixed profile so paired mixed streams stay slot-distinguishable).
 
-All shipped profiles default to **parallax on (Pre-inner ciphers) + wrapper (Outer cipher) on**; both toggles are opt-out via `triple.Opts`. Every seed component, PRF key, MAC key, and wrapper master is drawn from `crypto/rand` at `Init` time.
+The single-primitive Triple, blob, and mixed-primitive profiles default to **parallax on (Pre-inner ciphers) + wrapper (Outer cipher) on**; the four AES-ITB-128 native profiles keep parallax and wrapper off by construction. Both toggles are opt-out via `triple.Opts` on the overlay-enabled profiles. Every seed component, PRF key, MAC key, and wrapper master is drawn from `crypto/rand` at `Init` time.
 
 **The user's story.** Call `triple.Init(profile, opts)` to receive a `*triple.Pipeline` plus a `blob` byte slice. **The blob is the full session bundle** — the resolved `triple.Profile` record (the recipe: mode, width, primitives, key width, MAC, outer cipher, palette, chunk / segment sizes, layer toggles, and the sender's profile label), both masters, and the inner Blob{N} carrying the 8-seed components + per-slot PRF keys + optional MAC material + the `NonceBits` / `BarrierFill` snapshot. Ship the blob to the receiver out-of-band; the receiver calls `triple.Load(blob)` (or `triple.LoadF(path)` for a blob on disk) and reconstructs the same Pipeline from the recipe alone — no profile registration is needed on the receiving side, and no `Opts` are accepted because every structural field is fixed by the blob. Both sides then encrypt / decrypt against their Pipeline. The per-machine worker cap is the one runtime knob and is set after construction via `pipe.MaxWorkers(n)`.
 
@@ -693,6 +700,10 @@ Every other name in the registry maps 1:1 across fields (a `blake3` `InnerHash` 
 | `triple.ProfileStreamingAEADTripleMACV1` | `"streaming-aead-triple-mac-v1"` | Single-primitive, width 512 |
 | `triple.ProfileStreamingNoAEADTripleV1` | `"streaming-noaead-triple-v1"` | Single-primitive, width 512 |
 | `triple.ProfileBlobTripleMACV1` | `"blob-triple-mac-v1"` | Single-primitive, width 512, blob-only |
+| `triple.ProfileSingleMsgAESITBMACV1` | `"singlemsg-aesitb-mac-v1"` | Single-primitive, width 128, AES-ITB inner PRF |
+| `triple.ProfileSingleMsgAESITBNoMACV1` | `"singlemsg-aesitb-nomac-v1"` | Single-primitive, width 128, AES-ITB inner PRF |
+| `triple.ProfileStreamingAEADAESITBMACV1` | `"streaming-aead-aesitb-mac-v1"` | Single-primitive, width 128, AES-ITB inner PRF |
+| `triple.ProfileStreamingNoAEADAESITBV1` | `"streaming-noaead-aesitb-v1"` | Single-primitive, width 128, AES-ITB inner PRF |
 | `triple.ProfileSingleMsgTripleMACMixedV1` | `"singlemsg-triple-mac-mixed-v1"` | Mixed-primitive, width 128 |
 | `triple.ProfileSingleMsgTripleNoMACMixedV1` | `"singlemsg-triple-nomac-mixed-v1"` | Mixed-primitive, width 512 |
 | `triple.ProfileStreamingAEADTripleMACMixedV1` | `"streaming-aead-triple-mac-mixed-v1"` | Mixed-primitive, width 256 |
