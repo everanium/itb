@@ -61,6 +61,8 @@ func TestForceHashTierApplied(t *testing.T) {
 		want(false, false, true)
 	case "scalar":
 		want(false, false, false)
+	case "gpr":
+		t.Skip("gpr: no arm in this family; auto-dispatch kept (asserted by the hashes dispatch matrix)")
 	case "sve2", "sve", "neon":
 		t.Skipf("%s: arm64-only tier; not applicable on amd64", tier)
 	default:
@@ -101,6 +103,8 @@ func TestForceInterlockPRFFillTierApplied(t *testing.T) {
 		want(false, false, true)
 	case "avx2", "scalar":
 		want(false, false, false)
+	case "gpr":
+		t.Skip("gpr: no batch-16 arm in this family; auto-dispatch kept")
 	case "neon":
 		t.Skip("neon batch-16 tier is arm64-only")
 	default:

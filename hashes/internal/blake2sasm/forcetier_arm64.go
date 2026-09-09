@@ -36,6 +36,9 @@ func applyHashTier() {
 			return
 		}
 		FusedHasNEON, HasNEONX16 = true, true
+	case "gpr":
+		FusedHasNEON, HasNEONX16 = false, false
+		FusedHasGPR, HasGPRX16 = true, true
 	case "scalar":
 		FusedHasNEON, HasNEONX16 = false, false
 		FusedHasGPR, HasGPRX16 = false, false
@@ -56,6 +59,9 @@ func applyInterlockPRFFillTier() {
 			return
 		}
 		HasNEONX16 = true
+	case "gpr":
+		HasNEONX16 = false
+		HasGPRX16 = true
 	case "scalar":
 		HasNEONX16 = false
 		HasGPRX16 = false

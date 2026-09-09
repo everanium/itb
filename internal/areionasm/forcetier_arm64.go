@@ -41,6 +41,8 @@ func applyHashTier() {
 		HasARMAESBatched, FusedHasARMAES, HasARMAESX16 = true, true, true
 	case "scalar":
 		HasARMAESBatched, FusedHasARMAES, HasARMAESX16 = false, false, false
+	case "gpr":
+		forcetier.Warnf("areionasm: no gpr arm; keeping auto-dispatch")
 	default:
 		forcetier.Warnf("areionasm: %s tier is amd64-only; keeping auto-dispatch", forcetier.HashTier())
 	}
@@ -60,6 +62,8 @@ func applyInterlockPRFFillTier() {
 		HasARMAESX16 = true
 	case "scalar":
 		HasARMAESX16 = false
+	case "gpr":
+		forcetier.Warnf("areionasm: no gpr batch-16 arm; keeping auto-dispatch")
 	default:
 		forcetier.Warnf("areionasm: %s batch-16 tier is amd64-only; keeping auto-dispatch", forcetier.InterlockPRFFillTier())
 	}

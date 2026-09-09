@@ -55,6 +55,8 @@ func applyHashTier() {
 			return
 		}
 		FusedHasVAESAVX512, FusedHasVAESAVX2, FusedHasAVXAESNI, FusedHasAESNI = false, false, false, true
+	case "gpr":
+		forcetier.Warnf("aescmacasm: no gpr arm; keeping auto-dispatch")
 	case "neon", "sve2", "sve":
 		forcetier.Warnf("aescmacasm: %s tier is arm64-only; keeping auto-dispatch", forcetier.HashTier())
 	case "scalar":
@@ -94,6 +96,8 @@ func applyInterlockPRFFillTier() {
 		HasVAESAVX512X16, HasVAESAVX2X16, HasAVXAESNIX16, HasAESNIX16 = false, false, false, true
 	case "avx2":
 		forcetier.Warnf("aescmacasm: no avx2 batch-16 arm (the VAES / AES-NI YMM arms are vaesavx2 / vex); keeping auto-dispatch")
+	case "gpr":
+		forcetier.Warnf("aescmacasm: no gpr batch-16 arm; keeping auto-dispatch")
 	case "neon":
 		forcetier.Warnf("aescmacasm: neon batch-16 tier is arm64-only; keeping auto-dispatch")
 	case "scalar":

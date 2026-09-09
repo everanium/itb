@@ -42,6 +42,11 @@ func TestForceHashTierApplied(t *testing.T) {
 			t.Skipf("%s tier not executable on this host", tier)
 		}
 		want(false, true)
+	case "gpr":
+		want(false, false)
+		if !FusedHasGPR || (x16Owned && !HasGPRX16) {
+			t.Fatalf("gpr: GPR arms disarmed (fused=%v fill=%v)", FusedHasGPR, HasGPRX16)
+		}
 	case "scalar":
 		want(false, false)
 		if FusedHasGPR || (x16Owned && HasGPRX16) {
@@ -83,6 +88,11 @@ func TestForceInterlockPRFFillTierApplied(t *testing.T) {
 			t.Skipf("%s batch-16 tier not executable on this host", tier)
 		}
 		want(false, true)
+	case "gpr":
+		want(false, false)
+		if !HasGPRX16 {
+			t.Fatal("gpr: batch-16 GPR arm disarmed")
+		}
 	case "scalar":
 		want(false, false)
 		if HasGPRX16 {

@@ -7,8 +7,6 @@ import (
 	"encoding/hex"
 	"sync/atomic"
 	"testing"
-
-	"github.com/everanium/itb/internal/forcetier"
 )
 
 // interlock48_cascade_wide_test.go — the universal Interlocked Barrier
@@ -296,8 +294,8 @@ func wordsEqual(a, b []uint64) bool {
 // builder must reproduce the explicit reference cascade on every group,
 // and the hooked build must actually route through the hooks.
 func TestCascadeFillWideReferenceParity(t *testing.T) {
-	if forcetier.InterlockPRFFillSeq() {
-		t.Skip("ITB_FORCE_INTERLOCK_PRF_FILL_SEQ set; batch-16 hooks disarmed")
+	if fillBatch16Disarmed() {
+		t.Skip("a fill-ladder knob disarms the batch-16 hooks")
 	}
 	nonce := interlock48Nonce()
 	for _, wc := range cascadeWideCases() {
@@ -542,8 +540,8 @@ var cascadeWideSplitSizes = func() []int {
 // it disarmed, the armed path must actually run, and the armed and
 // disarmed encoders and decoders must round-trip each other's lanes.
 func TestFillRanksSuperWideSplitParity(t *testing.T) {
-	if forcetier.InterlockPRFFillSeq() {
-		t.Skip("ITB_FORCE_INTERLOCK_PRF_FILL_SEQ set; batch-16 hooks disarmed")
+	if fillBatch16Disarmed() {
+		t.Skip("a fill-ladder knob disarms the batch-16 hooks")
 	}
 	nonce := interlock48Nonce()
 	for _, wc := range cascadeWideCases() {

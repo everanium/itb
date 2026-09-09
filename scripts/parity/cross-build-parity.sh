@@ -215,7 +215,7 @@ done
 # checked against the independent scalar reference implementation.
 # Non-existent pairs are skipped with an audit line.
 # ---------------------------------------------------------------------------
-HASHARMS=(avx512 avx512x4 vaesavx2 avx2 vex aesni scalar)
+HASHARMS=(avx512 avx512x4 vaesavx2 avx2 vex aesni gpr scalar)
 
 # arm_env ARM — prints the forcing environment of an arm: the
 # ITB_FORCE_HASH_TIER token, plus ITB_FORCE_CHAINHASH_X4=1 for the
@@ -249,6 +249,9 @@ arm_env() {
 #     the AMD Zen 3 class), so the pair is applicable; blake2b256 /
 #     blake2b512, blake2s, blake3 and chacha20 run their AVX2 fused
 #     cascade kernels.
+#   * gpr: blake2b256 / blake2b512, blake2s, blake3, siphash24 and
+#     chacha20 carry single-lane general-purpose-register kernels as the
+#     arm below their SIMD tiers; the token pins them as the only arm.
 #   * avx512 / scalar: every primitive has both.
 arm_applicable() {
     case "$2" in
@@ -262,6 +265,11 @@ arm_applicable() {
         aesni)
             case "$1" in
                 aesitb128|areion256|areion512|aescmac) return 0 ;;
+                *) return 1 ;;
+            esac ;;
+        gpr)
+            case "$1" in
+                blake2b256|blake2b512|blake2s|blake3|siphash24|chacha20) return 0 ;;
                 *) return 1 ;;
             esac ;;
     esac

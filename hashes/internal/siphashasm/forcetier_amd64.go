@@ -27,8 +27,10 @@ func init() {
 // avx2 tier — selects them with a stderr note. SipHash has no AES-based
 // arm, so "vaesavx2" and "aesni" name no arm of this family and keep
 // auto-dispatch with a stderr note; the parity script's skip matrix
-// avoids those pairings. "scalar" means no assembly anywhere in this
-// package's dispatch, so it also disarms the batch-16 flags;
+// avoids those pairings. "gpr" keeps the single-lane
+// general-purpose-register kernels alone, the SIMD tiers of both families
+// off. "scalar" means no assembly anywhere in this package's dispatch,
+// so it also disarms the batch-16 flags;
 // ITB_FORCE_INTERLOCK_PRF_FILL_TIER, applied afterwards, can re-arm a
 // batch-16 tier on its own.
 func applyHashTier() {
@@ -54,6 +56,10 @@ func applyHashTier() {
 		forcetier.Warnf("siphashasm: no %s arm; keeping auto-dispatch", forcetier.HashTier())
 	case "neon", "sve2", "sve":
 		forcetier.Warnf("siphashasm: %s tier is arm64-only; keeping auto-dispatch", forcetier.HashTier())
+	case "gpr":
+		FusedHasAVX512, FusedHasAVX2 = false, false
+		HasAVX512X16, HasAVX2X16 = false, false
+		FusedHasGPR, HasGPRX16 = true, true
 	case "scalar":
 		FusedHasAVX512, FusedHasAVX2 = false, false
 		HasAVX512X16, HasAVX2X16 = false, false
@@ -87,6 +93,9 @@ func applyInterlockPRFFillTier() {
 		forcetier.Warnf("siphashasm: no %s batch-16 arm; keeping auto-dispatch", forcetier.InterlockPRFFillTier())
 	case "neon":
 		forcetier.Warnf("siphashasm: neon batch-16 tier is arm64-only; keeping auto-dispatch")
+	case "gpr":
+		HasAVX512X16, HasAVX2X16 = false, false
+		HasGPRX16 = true
 	case "scalar":
 		HasAVX512X16, HasAVX2X16 = false, false
 		HasGPRX16 = false

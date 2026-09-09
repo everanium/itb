@@ -7,7 +7,6 @@ import (
 	aes "github.com/jedisct1/go-aes"
 
 	"github.com/everanium/itb/internal/aesitbasm"
-	"github.com/everanium/itb/internal/forcetier"
 	"github.com/everanium/itb/internal/interlock"
 )
 
@@ -144,14 +143,14 @@ func x16HostTiers() []struct {
 // the sequential Hash / BatchHash cascade over the prepended lock
 // components and the layers below pin the batch-16 kernel to that
 // sequential reference. Every case's fillRanksSuper must be armed; the
-// test is skipped when ITB_FORCE_INTERLOCK_PRF_FILL_SEQ disarms it.
+// test is skipped when a fill-ladder knob disarms it.
 func x16LockSeedCases(t *testing.T) []struct {
 	label string
 	bp    lockBatchPRF48
 } {
 	t.Helper()
-	if forcetier.InterlockPRFFillSeq() {
-		t.Skip("ITB_FORCE_INTERLOCK_PRF_FILL_SEQ set; batch-16 hook disarmed")
+	if fillBatch16Disarmed() {
+		t.Skip("a fill-ladder knob disarms the batch-16 hook")
 	}
 	nonce := interlock48Nonce()
 	keys := [][16]byte{

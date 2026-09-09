@@ -114,10 +114,10 @@ func TestCascadeFillThreeArmParity(t *testing.T) {
 					comps := cascadeLockSeedComponents[i]
 					seed := cascadeLockSeed(t, key, comps, armed)
 					bp := buildLockBatchPRF48_128(seed, nonce)
-					if bp.fillRanksX4 == nil {
+					if bp.fillRanksX4 == nil && !forcetier.InterlockPRFFillSeq() && !forcetier.InterlockPRFFillX1() {
 						t.Fatal("fillRanksX4 not armed")
 					}
-					if bp.fillRanksSuper == nil && !forcetier.InterlockPRFFillSeq() {
+					if bp.fillRanksSuper == nil && !fillBatch16Disarmed() {
 						t.Fatal("fillRanksSuper not armed")
 					}
 					lockLo, lockHi := seed.deriveInterLockSeed(nonce)
@@ -149,13 +149,15 @@ func TestCascadeFillThreeArmParity(t *testing.T) {
 						}
 
 						var scratch lockFillScratch48
-						var x4 [8 * lockBatchFactor48Max]uint64
-						for j := 0; j < 16; j += 4 {
-							bp.fillRanksX4(&scratch, base+uint64(j), x4[2*j:])
-						}
-						for j := 0; j < 16; j++ {
-							if x4[2*j] != want[j][0] || x4[2*j+1] != want[j][1] {
-								t.Fatalf("armed=%v key %d base=%#x lane %d: fillRanksX4 != cascade", armed, i, base, j)
+						if bp.fillRanksX4 != nil {
+							var x4 [8 * lockBatchFactor48Max]uint64
+							for j := 0; j < 16; j += 4 {
+								bp.fillRanksX4(&scratch, base+uint64(j), x4[2*j:])
+							}
+							for j := 0; j < 16; j++ {
+								if x4[2*j] != want[j][0] || x4[2*j+1] != want[j][1] {
+									t.Fatalf("armed=%v key %d base=%#x lane %d: fillRanksX4 != cascade", armed, i, base, j)
+								}
 							}
 						}
 
@@ -230,4 +232,37 @@ func TestCascadeFillNonceBinding(t *testing.T) {
 			}
 		}
 	}
+}
+
+// TestCascadeFill128DisarmKnobs pins the fill-ladder knobs at width 128,
+// where the batch-16 hook is the widest rung: _X16 leaves it armed, _X4
+// leaves the four-lane arm as the top rung, _X1 and _SEQ disarm every
+// batched rung, and with no knob set both rungs are armed.
+func TestCascadeFill128DisarmKnobs(t *testing.T) {
+	knobs := []string{"ITB_FORCE_INTERLOCK_PRF_FILL_SEQ", "ITB_FORCE_INTERLOCK_PRF_FILL_X1", "ITB_FORCE_INTERLOCK_PRF_FILL_X4", "ITB_FORCE_INTERLOCK_PRF_FILL_X16"}
+	key, comps := cascadeLockSeedKeys[0], cascadeLockSeedComponents[0]
+	nonce := interlock48Nonce()
+	check := func(set string, x4, b16 bool) {
+		t.Helper()
+		for _, k := range knobs {
+			if k == set {
+				t.Setenv(k, "1")
+			} else {
+				t.Setenv(k, "")
+			}
+		}
+		seed := cascadeLockSeed(t, key, comps, true)
+		seed.SetInterlockBatch16(func(components []uint64, groupIdxBase uint64, out *[16][2]uint64) {
+			aesitbasm.FusedChain13x16(&key, components, groupIdxBase, out)
+		})
+		bp := buildLockBatchPRF48_128(seed, nonce)
+		if (bp.fillRanksX4 != nil) != x4 || (bp.fillRanksSuper != nil) != b16 {
+			t.Fatalf("%s: four-lane armed=%v batch-16 armed=%v, want %v/%v", set, bp.fillRanksX4 != nil, bp.fillRanksSuper != nil, x4, b16)
+		}
+	}
+	check("ITB_FORCE_INTERLOCK_PRF_FILL_X16", true, true)
+	check("ITB_FORCE_INTERLOCK_PRF_FILL_X4", true, false)
+	check("ITB_FORCE_INTERLOCK_PRF_FILL_X1", false, false)
+	check("ITB_FORCE_INTERLOCK_PRF_FILL_SEQ", false, false)
+	check("", true, true)
 }

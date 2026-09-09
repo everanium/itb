@@ -30,6 +30,7 @@ func TestInterlockPRFFillSeqEnvVarToggle(t *testing.T) {
 	seed.SetInterlockBatch16(func(components []uint64, groupIdxBase uint64, out *[16][2]uint64) {})
 
 	nonce := bytes.Repeat([]byte{0xAA}, 16)
+	clearFillKnobs(t)
 
 	// Test 1: SEQ=1 → fillRanksSuper must be nil (sequential path forced)
 	t.Setenv("ITB_FORCE_INTERLOCK_PRF_FILL_SEQ", "1")

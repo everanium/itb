@@ -31,6 +31,8 @@ func init() {
 //	aesni / vaesavx2 — BLAKE2b has no AES-based arm; the token names no
 //	         arm of this family and keeps auto-dispatch with a stderr
 //	         note (the parity script's skip matrix avoids the pairing)
+//	gpr    — the single-lane general-purpose-register kernels alone: the
+//	         SIMD tiers of both families off, the GPR arms on
 //	scalar — every kernel off, the single-lane GPR arm included
 //
 // The arm64 tokens (neon / sve2 / sve) keep auto-dispatch with a note.
@@ -57,6 +59,10 @@ func applyHashTier() {
 		forcetier.Warnf("blake2basm: no %s arm; keeping auto-dispatch", forcetier.HashTier())
 	case "neon", "sve2", "sve":
 		forcetier.Warnf("blake2basm: %s tier is arm64-only; keeping auto-dispatch", forcetier.HashTier())
+	case "gpr":
+		FusedHasAVX512, FusedHasAVX2 = false, false
+		HasAVX512X16, HasAVX2X16 = false, false
+		FusedHasGPR, HasGPRX16 = true, true
 	case "scalar":
 		FusedHasAVX512, FusedHasAVX2 = false, false
 		HasAVX512X16, HasAVX2X16 = false, false
@@ -90,6 +96,9 @@ func applyInterlockPRFFillTier() {
 		forcetier.Warnf("blake2basm: no %s batch-16 arm; keeping auto-dispatch", forcetier.InterlockPRFFillTier())
 	case "neon":
 		forcetier.Warnf("blake2basm: neon batch-16 tier is arm64-only; keeping auto-dispatch")
+	case "gpr":
+		HasAVX512X16, HasAVX2X16 = false, false
+		HasGPRX16 = true
 	case "scalar":
 		HasAVX512X16, HasAVX2X16 = false, false
 		HasGPRX16 = false

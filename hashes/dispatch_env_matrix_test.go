@@ -103,7 +103,7 @@ func TestDispatchEnvMatrixChild(t *testing.T) {
 			fmt.Printf("FLAG %s.%s=%v\n", fam.name, n, *fam.flags[n])
 		}
 	}
-	fmt.Printf("KNOB seq=%v x4=%v fillseq=%v x16=%v\n", forcetier.ChainHashSeq(), forcetier.ChainHashX4(), forcetier.InterlockPRFFillSeq(), forcetier.InterlockPRFFillX16())
+	fmt.Printf("KNOB seq=%v x4=%v fillseq=%v fillx1=%v fillx4=%v fillx16=%v\n", forcetier.ChainHashSeq(), forcetier.ChainHashX4(), forcetier.InterlockPRFFillSeq(), forcetier.InterlockPRFFillX1(), forcetier.InterlockPRFFillX4(), forcetier.InterlockPRFFillX16())
 	if forcetier.ChainHashSeq() || forcetier.ChainHashX4() {
 		TestRegistryFusedHooksFollowDisarmKnobs(t)
 	}
@@ -230,6 +230,8 @@ func expectHashTier(class, token string) matrixExpect {
 			return need(hostAVX2, on("FusedHasAVX512=0", "FusedHasAVX2=1", "FusedHasGPR=1", "HasAVX512X16=0", "HasAVX2X16=1", "HasGPRX16=1"))
 		case "aesni", "vaesavx2":
 			return autoNote
+		case "gpr":
+			return on("FusedHasAVX512=0", "FusedHasAVX2=0", "FusedHasGPR=1", "HasAVX512X16=0", "HasAVX2X16=0", "HasGPRX16=1")
 		case "scalar":
 			return on("FusedHasAVX512=0", "FusedHasAVX2=0", "FusedHasGPR=0", "HasAVX512X16=0", "HasAVX2X16=0", "HasGPRX16=0")
 		}
@@ -288,6 +290,8 @@ func expectFillTier(class, token string) matrixExpect {
 			return need(hostAVX2, on("HasAVX512X16=0", "HasAVX2X16=1", "HasGPRX16=1"))
 		case "aesni", "vaesavx2", "neon":
 			return autoNote
+		case "gpr":
+			return on("HasAVX512X16=0", "HasAVX2X16=0", "HasGPRX16=1")
 		case "scalar":
 			return on("HasAVX512X16=0", "HasAVX2X16=0", "HasGPRX16=0")
 		}
@@ -339,7 +343,7 @@ func TestDispatchEnvMatrix(t *testing.T) {
 	base, _, _ := runMatrixChild(t, nil)
 	fams := matrixFamilies()
 
-	for _, tok := range []string{"avx512", "vaesavx2", "avx2", "vex", "aesni", "sve2", "sve", "neon", "scalar"} {
+	for _, tok := range []string{"avx512", "vaesavx2", "avx2", "vex", "aesni", "gpr", "sve2", "sve", "neon", "scalar"} {
 		t.Run("HASH_TIER="+tok, func(t *testing.T) {
 			snap, _, stderr := runMatrixChild(t, map[string]string{"ITB_FORCE_HASH_TIER": tok})
 			for _, fam := range fams {
@@ -347,7 +351,7 @@ func TestDispatchEnvMatrix(t *testing.T) {
 			}
 		})
 	}
-	for _, tok := range []string{"avx512", "vaesavx2", "avx2", "vex", "aesni", "neon", "scalar"} {
+	for _, tok := range []string{"avx512", "vaesavx2", "avx2", "vex", "aesni", "gpr", "neon", "scalar"} {
 		t.Run("FILL_TIER="+tok, func(t *testing.T) {
 			snap, _, stderr := runMatrixChild(t, map[string]string{"ITB_FORCE_INTERLOCK_PRF_FILL_TIER": tok})
 			for _, fam := range fams {
@@ -373,10 +377,12 @@ func TestDispatchEnvMatrix(t *testing.T) {
 		want string
 		x8   bool
 	}{
-		{map[string]string{"ITB_FORCE_CHAINHASH_SEQ": "1"}, "seq=true x4=false fillseq=false x16=false", true},
-		{map[string]string{"ITB_FORCE_CHAINHASH_X4": "1"}, "seq=false x4=true fillseq=false x16=false", false},
-		{map[string]string{"ITB_FORCE_INTERLOCK_PRF_FILL_SEQ": "1"}, "seq=false x4=false fillseq=true x16=false", true},
-		{map[string]string{"ITB_FORCE_INTERLOCK_PRF_FILL_X16": "1"}, "seq=false x4=false fillseq=false x16=true", true},
+		{map[string]string{"ITB_FORCE_CHAINHASH_SEQ": "1"}, "seq=true x4=false fillseq=false fillx1=false fillx4=false fillx16=false", true},
+		{map[string]string{"ITB_FORCE_CHAINHASH_X4": "1"}, "seq=false x4=true fillseq=false fillx1=false fillx4=false fillx16=false", false},
+		{map[string]string{"ITB_FORCE_INTERLOCK_PRF_FILL_SEQ": "1"}, "seq=false x4=false fillseq=true fillx1=false fillx4=false fillx16=false", true},
+		{map[string]string{"ITB_FORCE_INTERLOCK_PRF_FILL_X1": "1"}, "seq=false x4=false fillseq=false fillx1=true fillx4=false fillx16=false", true},
+		{map[string]string{"ITB_FORCE_INTERLOCK_PRF_FILL_X4": "1"}, "seq=false x4=false fillseq=false fillx1=false fillx4=true fillx16=false", true},
+		{map[string]string{"ITB_FORCE_INTERLOCK_PRF_FILL_X16": "1"}, "seq=false x4=false fillseq=false fillx1=false fillx4=false fillx16=true", true},
 	}
 	for _, k := range knobs {
 		name := ""

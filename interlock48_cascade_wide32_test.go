@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"sync/atomic"
 	"testing"
-
-	"github.com/everanium/itb/internal/forcetier"
 )
 
 // interlock48_cascade_wide32_test.go — the batch-32 rung of the
@@ -108,8 +106,8 @@ func cascadeWide32Cases() []cascadeWide32Case {
 // reference cascade on every group of every probe base, and it agrees
 // with the batch-16 closure over the same groups.
 func TestCascadeFillWide32ReferenceParity(t *testing.T) {
-	if forcetier.InterlockPRFFillSeq() || forcetier.InterlockPRFFillX16() {
-		t.Skip("batch-32 hooks disarmed by ITB_FORCE_INTERLOCK_PRF_FILL_SEQ / _X16")
+	if fillBatch32Disarmed() {
+		t.Skip("a fill-ladder knob disarms the batch-32 hooks")
 	}
 	nonce := interlock48Nonce()
 	for _, wc := range cascadeWide32Cases() {
@@ -162,8 +160,8 @@ func TestCascadeFillWide32ReferenceParity(t *testing.T) {
 // sequential arms, the armed path must actually run, and every pair of
 // encoders and decoders must round-trip each other's lanes.
 func TestFillRanksSuper32WideSplitParity(t *testing.T) {
-	if forcetier.InterlockPRFFillSeq() || forcetier.InterlockPRFFillX16() {
-		t.Skip("batch-32 hooks disarmed by ITB_FORCE_INTERLOCK_PRF_FILL_SEQ / _X16")
+	if fillBatch32Disarmed() {
+		t.Skip("a fill-ladder knob disarms the batch-32 hooks")
 	}
 	nonce := interlock48Nonce()
 	for _, wc := range cascadeWide32Cases() {
@@ -250,33 +248,38 @@ func TestFillRanksSuper32WideSplitParity(t *testing.T) {
 	}
 }
 
-// TestCascadeFillWide32DisarmKnobs pins the two disarm knobs on the
-// batch-32 rung: ITB_FORCE_INTERLOCK_PRF_FILL_X16 leaves the batch-16
-// rung armed and the batch-32 rung off, ITB_FORCE_INTERLOCK_PRF_FILL_SEQ
-// disarms both.
+// TestCascadeFillWide32DisarmKnobs pins the fill-ladder knobs on the
+// wide widths: ITB_FORCE_INTERLOCK_PRF_FILL_X16 leaves the batch-16 rung
+// armed and the batch-32 rung off, _X4 leaves the four-lane arm as the
+// top rung, _X1 and _SEQ disarm every batched rung, and with no knob set
+// every rung is armed.
 func TestCascadeFillWide32DisarmKnobs(t *testing.T) {
 	nonce := interlock48Nonce()
+	knobs := []string{"ITB_FORCE_INTERLOCK_PRF_FILL_SEQ", "ITB_FORCE_INTERLOCK_PRF_FILL_X1", "ITB_FORCE_INTERLOCK_PRF_FILL_X4", "ITB_FORCE_INTERLOCK_PRF_FILL_X16"}
 	for _, wc := range cascadeWide32Cases() {
 		wc := wc
 		t.Run(wc.label, func(t *testing.T) {
-			t.Setenv("ITB_FORCE_INTERLOCK_PRF_FILL_X16", "1")
-			t.Setenv("ITB_FORCE_INTERLOCK_PRF_FILL_SEQ", "")
 			var calls atomic.Int64
-			bp := wc.build(t, cascadeLockSeedComponents[0], nonce, true, &calls)
-			if bp.fillRanksSuper == nil || bp.fillRanksSuper32 != nil {
-				t.Fatalf("X16: batch-16 armed=%v batch-32 armed=%v", bp.fillRanksSuper != nil, bp.fillRanksSuper32 != nil)
+			check := func(set string, x4, b16, b32 bool) {
+				t.Helper()
+				for _, k := range knobs {
+					if k == set {
+						t.Setenv(k, "1")
+					} else {
+						t.Setenv(k, "")
+					}
+				}
+				bp := wc.build(t, cascadeLockSeedComponents[0], nonce, true, &calls)
+				if (bp.fillRanksX4 != nil) != x4 || (bp.fillRanksSuper != nil) != b16 || (bp.fillRanksSuper32 != nil) != b32 {
+					t.Fatalf("%s: four-lane armed=%v batch-16 armed=%v batch-32 armed=%v, want %v/%v/%v", set,
+						bp.fillRanksX4 != nil, bp.fillRanksSuper != nil, bp.fillRanksSuper32 != nil, x4, b16, b32)
+				}
 			}
-			t.Setenv("ITB_FORCE_INTERLOCK_PRF_FILL_X16", "")
-			t.Setenv("ITB_FORCE_INTERLOCK_PRF_FILL_SEQ", "1")
-			bp = wc.build(t, cascadeLockSeedComponents[0], nonce, true, &calls)
-			if bp.fillRanksSuper != nil || bp.fillRanksSuper32 != nil {
-				t.Fatalf("SEQ: batch-16 armed=%v batch-32 armed=%v", bp.fillRanksSuper != nil, bp.fillRanksSuper32 != nil)
-			}
-			t.Setenv("ITB_FORCE_INTERLOCK_PRF_FILL_SEQ", "")
-			bp = wc.build(t, cascadeLockSeedComponents[0], nonce, true, &calls)
-			if bp.fillRanksSuper == nil || bp.fillRanksSuper32 == nil {
-				t.Fatalf("unset: batch-16 armed=%v batch-32 armed=%v", bp.fillRanksSuper != nil, bp.fillRanksSuper32 != nil)
-			}
+			check("ITB_FORCE_INTERLOCK_PRF_FILL_X16", true, true, false)
+			check("ITB_FORCE_INTERLOCK_PRF_FILL_X4", true, false, false)
+			check("ITB_FORCE_INTERLOCK_PRF_FILL_X1", false, false, false)
+			check("ITB_FORCE_INTERLOCK_PRF_FILL_SEQ", false, false, false)
+			check("", true, true, true)
 		})
 	}
 }
