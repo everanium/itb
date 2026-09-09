@@ -64,7 +64,8 @@ func (tp *triplePayloads) release() {
 // buildTripleWire3 fuses payload assembly and wire allocation for one
 // encrypt call. It runs the interlock split, the COBS stage, and the
 // container sizing, then draws the container CSPRNG fill and the payload
-// tail CSPRNG fill as six independent parallel goroutines.
+// tail CSPRNG fill on independent goroutines organised as a classical
+// producer-consumer pipeline.
 //
 // reserve is the byte count held back at the end of the last third
 // (the No MAC tag stub, or tagSize + 1 for the authenticated shapes);
@@ -74,34 +75,103 @@ func (tp *triplePayloads) release() {
 // write (tag and flag). sizeFn maps the three COBS lengths to the
 // container dimensions.
 //
-// Container sizing is monotone non-decreasing in every COBS length, so
-// the dimensions computed from the COBS upper bound
-// ([cobsEncodeBound] of the lane length) yield a per-third capacity
-// that is never smaller than the capacity computed from the actual
-// lengths. Each payload buffer is acquired at that bound capacity, the
-// lane is COBS-encoded into it in place, and the buffer is then
-// resliced to the actual capacity — the encoded bytes are already where
-// the pixel pipeline reads them.
+// Container dimensions are computed from the COBS upper bound
+// ([cobsEncodeBound] of the lane length), not from the post-COBS
+// actual lengths. Since calcContainerSize3Cfg is monotone
+// non-decreasing in every COBS length, bound-based dimensions are ≥
+// actual-length dimensions on any input; the wire inflation is at most
+// the per-lane COBS overhead margin (n/254 + 2 bytes ≈ 0.4% of the
+// lane) which the ceil-sqrt pixel roundup and the BarrierFill margin
+// absorb — in practice the bound-based side matches the actual-length
+// side on any non-trivial input.
+//
+// Choosing bound over actual breaks the sequential dependency between
+// the COBS stage and the container CSPRNG fill. Container CSPRNG is
+// spawned earliest possible — three background goroutines start filling
+// the wire container from t=0, before interlock even runs — because
+// container dimensions are known upfront from the bound and the wire
+// buffer has no data dependency on any downstream stage. The main
+// goroutine then advances through interlock (which uses its own G
+// internal workers) and the three COBS-plus-tail lane goroutines. The
+// wgContainer.Wait at the end typically returns instantly because
+// container CSPRNG completed while interlock was still running.
+//
+// Timeline (typical, wall time per stage):
+//
+//	Main goroutine:  [interlock ─────][COBS+tail 3 × ─][wait bkg]
+//	Background:      [container CSPRNG 3 × ────][idle]
+//
+// Wall = interlock_wall + cobs_tail_wall (container fill hides
+// entirely inside interlock in the common case where interlock is the
+// longest stage). On CPU-constrained hosts where container CSPRNG
+// becomes the dominant stage, this pattern still achieves
+// max(container, interlock+COBS) wall — never worse than the sequential
+// alternative.
+//
+// Decrypt reads W, H from the header and finds the COBS 0x00
+// terminator inside each third via bytes.IndexByte — the bytes between
+// the terminator and the third boundary are CSPRNG residue that
+// decrypt already tolerates for the BarrierFill margin, so
+// bound-vs-actual padding is indistinguishable from that margin on the
+// wire.
 //
 // On return: tp carries the three per-third payload buffers ready for
-// pixel-encode (identical semantics to the pre-fused payload builder);
-// out is the wire buffer sized for
+// pixel-encode; out is the wire buffer sized for
 // [main nonce | interlock nonce | W | H | W·H·Ch container] with the
 // header written and the container CSPRNG-filled; container aliases out
 // past the header, so the pixel pipeline writes the wire in place and
 // no final header-plus-container copy is made.
-//
-// The wire produced is byte-identical under the same DRBG state to what
-// a two-phase implementation (payload assembly followed by wire
-// allocation and container fill) would produce; both paths draw the
-// same total byte counts from drbg.Fill in the same lane partitioning.
-// The only observable change is wall time on the encrypt critical path:
-// the container CSPRNG fill overlaps with the payload tail CSPRNG fill
-// instead of running after it.
 func buildTripleWire3(cfg *Config, data []byte, bp lockBatchPRF48, reserve int, fillReserve bool, nonce, ilNonce []byte, sizeFn func(cobsLens [3]int) (width, height int)) (tp *triplePayloads, out, container []byte, width, height int, err error) {
-	// Interlock split into three pooled lanes through the framed view
-	// of data (no framed or padded plaintext copy).
 	laneLen := tripleLaneLen(len(data))
+
+	// Container dimensions from the COBS upper bound. sizeFn, cfg and
+	// its BarrierFill setting are all fixed here, so width, height and
+	// the per-third capacities are known before interlock or COBS run.
+	bound := cobsEncodeBound(laneLen)
+	width, height = sizeFn([3]int{bound, bound, bound + reserve})
+	totalPixels := width * height
+	third, _, caps := tripleThirdCaps(totalPixels)
+
+	// Allocate the wire and write the header on the calling goroutine.
+	// The wire buffer has no data dependency on interlock or COBS, so
+	// the three background container-fill goroutines can enter
+	// drbg.Fill immediately after this point.
+	hdr := headerSizeCfg(cfg)
+	out = make([]byte, hdr+totalPixels*Channels)
+	copy(out, nonce)
+	copy(out[len(nonce):], ilNonce)
+	binary.BigEndian.PutUint16(out[2*len(nonce):], uint16(width))
+	binary.BigEndian.PutUint16(out[2*len(nonce)+2:], uint16(height))
+	container = out[hdr:]
+
+	// Producer stage — spawn three container CSPRNG fill workers as
+	// early as the wire exists. They race the main goroutine's
+	// interlock+COBS chain; in the common case they finish first and
+	// the trailing wgContainer.Wait unblocks instantly.
+	var (
+		wgContainer sync.WaitGroup
+		wireErr     [3]error
+	)
+	wgContainer.Add(3)
+	go func() {
+		defer wgContainer.Done()
+		wireErr[0] = drbg.Fill(container[0 : third*Channels])
+	}()
+	go func() {
+		defer wgContainer.Done()
+		wireErr[1] = drbg.Fill(container[third*Channels : 2*third*Channels])
+	}()
+	go func() {
+		defer wgContainer.Done()
+		wireErr[2] = drbg.Fill(container[2*third*Channels : totalPixels*Channels])
+	}()
+
+	// Main goroutine — interlock split into three pooled lanes through
+	// the framed view of data (no framed or padded plaintext copy),
+	// then per-lane COBS + tail CSPRNG. splitForTriple48LockedInto uses
+	// its own G internal workers, so it saturates the CPU; the
+	// container CSPRNG goroutines above ride whatever headroom the
+	// scheduler gives them.
 	var lanePtrs [3]*[]byte
 	var lanes [3][]byte
 	for i := range lanes {
@@ -112,75 +182,34 @@ func buildTripleWire3(cfg *Config, data []byte, bp lockBatchPRF48, reserve int, 
 			releaseBuffer(lanePtrs[i], lanes[i])
 		}
 	}
-	splitForTriple48LockedInto(cfg, data, bp, lanes[0], lanes[1], lanes[2])
 
-	// Payload buffers at the upper-bound capacity, then COBS in place.
-	bound := cobsEncodeBound(laneLen)
-	bw, bh := sizeFn([3]int{bound, bound, bound + reserve})
-	_, _, capsBound := tripleThirdCaps(bw * bh)
 	tp = &triplePayloads{}
-	for i := range tp.full {
-		tp.ptrs[i], tp.full[i] = acquireBuffer(capsBound[i])
-	}
-	{
-		var wg sync.WaitGroup
-		wg.Add(3)
-		for i := 0; i < 3; i++ {
-			go func(i int) {
-				defer wg.Done()
-				tp.encLen[i] = len(cobsEncodeInto(tp.full[i], lanes[i]))
-			}(i)
-		}
-		wg.Wait()
-	}
-	releaseLanes()
-
-	// Actual container dimensions and per-third capacities.
-	width, height = sizeFn([3]int{tp.encLen[0], tp.encLen[1], tp.encLen[2] + reserve})
-	_, _, caps := tripleThirdCaps(width * height)
 	tp.payloadLen = [3]int{caps[0], caps[1], caps[2] - reserve}
-	for i := 0; i < 3; i++ {
-		if tp.encLen[i]+1 > tp.payloadLen[i] {
-			tp.release()
-			return nil, nil, nil, 0, 0, fmt.Errorf("itb: internal error: container third %d too small", i)
-		}
+	for i := range tp.full {
+		tp.ptrs[i], tp.full[i] = acquireBuffer(caps[i])
 		tp.bufs[i] = tp.full[i][:caps[i]]
 	}
 
-	// Allocate the wire and write the header on the calling goroutine —
-	// the cheap prelude to the container CSPRNG fill runs inline to
-	// avoid one indirection through a goroutine.
-	hdr := headerSizeCfg(cfg)
-	totalPixels := width * height
-	third := totalPixels / 3
-	out = make([]byte, hdr+totalPixels*Channels)
-	copy(out, nonce)
-	copy(out[len(nonce):], ilNonce)
-	binary.BigEndian.PutUint16(out[2*len(nonce):], uint16(width))
-	binary.BigEndian.PutUint16(out[2*len(nonce)+2:], uint16(height))
-	container = out[hdr:]
+	splitForTriple48LockedInto(cfg, data, bp, lanes[0], lanes[1], lanes[2])
 
-	// Six independent CSPRNG draws in parallel: three container thirds
-	// + three payload tails. Sharing one WaitGroup and one error slot
-	// per group keeps error propagation cheap and preserves the
-	// first-error-wins semantics of the pre-fused pipeline.
+	// Consumer stage — three COBS + tail CSPRNG lane goroutines.
+	// Each lane's tail depends on its own COBS length, so the fused
+	// per-lane goroutine handles both in sequence for that lane while
+	// the other lanes run concurrently.
 	var (
-		wg      sync.WaitGroup
-		wireErr [3]error
-		tailErr [3]error
+		wgLanes sync.WaitGroup
+		laneErr [3]error
 	)
-	wg.Add(6)
-
-	// Container CSPRNG fill × 3.
-	go func() { defer wg.Done(); wireErr[0] = drbg.Fill(container[0 : third*Channels]) }()
-	go func() { defer wg.Done(); wireErr[1] = drbg.Fill(container[third*Channels : 2*third*Channels]) }()
-	go func() { defer wg.Done(); wireErr[2] = drbg.Fill(container[2*third*Channels : totalPixels*Channels]) }()
-
-	// Payload tail CSPRNG × 3.
+	wgLanes.Add(3)
 	for i := 0; i < 3; i++ {
 		i := i
 		go func() {
-			defer wg.Done()
+			defer wgLanes.Done()
+			tp.encLen[i] = len(cobsEncodeInto(tp.full[i], lanes[i]))
+			if tp.encLen[i]+1 > tp.payloadLen[i] {
+				laneErr[i] = fmt.Errorf("itb: internal error: container third %d too small", i)
+				return
+			}
 			buf := tp.bufs[i]
 			buf[tp.encLen[i]] = 0x00
 			fillEnd := tp.payloadLen[i]
@@ -189,12 +218,18 @@ func buildTripleWire3(cfg *Config, data []byte, bp lockBatchPRF48, reserve int, 
 			}
 			if fillStart := tp.encLen[i] + 1; fillStart < fillEnd {
 				if e := drbg.Fill(buf[fillStart:fillEnd]); e != nil {
-					tailErr[i] = fmt.Errorf("itb: crypto/rand: %w", e)
+					laneErr[i] = fmt.Errorf("itb: crypto/rand: %w", e)
 				}
 			}
 		}()
 	}
-	wg.Wait()
+	wgLanes.Wait()
+	releaseLanes()
+
+	// Container fill has been running since t=0; in the common case
+	// this returns instantly because it completed while interlock and
+	// COBS were on the main goroutine's critical path.
+	wgContainer.Wait()
 
 	for _, e := range wireErr {
 		if e != nil {
@@ -202,7 +237,7 @@ func buildTripleWire3(cfg *Config, data []byte, bp lockBatchPRF48, reserve int, 
 			return nil, nil, nil, 0, 0, fmt.Errorf("itb: crypto/rand: %w", e)
 		}
 	}
-	for _, e := range tailErr {
+	for _, e := range laneErr {
 		if e != nil {
 			tp.release()
 			return nil, nil, nil, 0, 0, e
