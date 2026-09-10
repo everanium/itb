@@ -33,7 +33,7 @@ test_that("version reports library and binding versions", {
   v <- version()
   expect_type(v, "character")
   expect_gt(nchar(v), 0)
-  expect_equal(as.character(utils::packageVersion("itb")), "0.4.1")
+  expect_equal(as.character(utils::packageVersion("itb")), "0.5.1")
 })
 
 test_that("profiles lists the registered Triple profiles", {

@@ -8,7 +8,7 @@ import Foundation
 
 /// Binding version. Tracks the Swift wrapper; `ItbRuntime.version`
 /// reports the underlying libitb library version.
-public let itbSwiftVersion = "0.4.1"
+public let itbSwiftVersion = "0.5.1"
 
 /// Runs a `char **json_out` C entry and hands back the JSON string,
 /// releasing the C buffer via itb_string_free.
@@ -54,7 +54,7 @@ public func profiles() throws -> [String] {
 }
 
 public enum ItbRuntime {
-    /// The libitb library version string (e.g. "0.4.1").
+    /// The libitb library version string (e.g. "0.5.1").
     public static var version: String {
         guard let v = itb_version() else {
             return ""

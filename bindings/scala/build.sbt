@@ -19,7 +19,7 @@ val javaBindingJars = Def.setting {
 
 lazy val commonSettings = Seq(
   organization := "dev.everanium",
-  version := "0.4.1",
+  version := "0.5.1",
   scalaVersion := "3.6.2",
   scalacOptions ++= Seq(
     "-deprecation",

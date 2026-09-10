@@ -28,7 +28,7 @@ import itb/pipeline.{type Pipeline}
 import itb/stream
 import itb_gleam.{type ItbError, ItbError}
 
-const eitb_gleam_version = "0.4.1"
+const eitb_gleam_version = "0.5.1"
 
 @external(erlang, "itb_gleam_ffi", "argv")
 fn argv() -> List(String)

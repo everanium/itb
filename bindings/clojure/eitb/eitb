@@ -7,7 +7,7 @@
 set -eu
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-JAR="$HERE/../../java/build/libs/itb-java-0.4.1.jar"
+JAR="$HERE/../../java/build/libs/itb-java-0.5.1.jar"
 JNI="$HERE/../../java/build/jni/libitb_jni.so"
 
 if [ ! -f "$JAR" ] || [ ! -f "$JNI" ]; then

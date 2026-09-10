@@ -28,7 +28,7 @@ end
 describe ITB do
   it "reports the library and binding versions" do
     ITB.version.should_not be_empty
-    ITB::VERSION.should eq "0.4.1"
+    ITB::VERSION.should eq "0.5.1"
   end
 
   it "lists the shipped profiles" do

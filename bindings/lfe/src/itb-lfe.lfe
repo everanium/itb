@@ -245,7 +245,7 @@
 ;;; ------------------------------------------------------------------
 
 (defun version ()
-  "The libitb library version string (e.g. #\"0.4.1\")."
+  "The libitb library version string (e.g. #\"0.5.1\")."
   (itb:version))
 
 (defun last-error ()

@@ -14,7 +14,7 @@ module itb_runtime
 
   ! Binding release; printed by `eitb version` next to the libitb
   ! version reported by ITB_Version.
-  character(*), parameter, public :: ITB_BINDING_VERSION = "0.4.1"
+  character(*), parameter, public :: ITB_BINDING_VERSION = "0.5.1"
 
 contains
 

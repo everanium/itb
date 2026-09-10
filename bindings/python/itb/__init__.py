@@ -27,7 +27,7 @@ from .runtime import set_gc_percent, set_memory_limit, version
 from .status import Status
 from .stream import DecryptStream, EncryptStream
 
-__version__ = "0.4.1"
+__version__ = "0.5.1"
 
 __all__ = [
     "DecryptStream",
