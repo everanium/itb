@@ -5,12 +5,15 @@ import (
 	"bytes"
 	"crypto/rand"
 	"encoding/binary"
+	"errors"
 	"io"
+	"sync"
 	"testing"
 
 	"github.com/everanium/itb"
 	"github.com/everanium/itb/hashes"
 	"github.com/everanium/itb/macs"
+	"github.com/everanium/itb/triple"
 	"github.com/everanium/itb/wrapper"
 )
 
@@ -62,6 +65,70 @@ func benchOuterKey(b *testing.B, cn string) []byte {
 		b.Fatalf("wrapper.GenerateKey: %v", err)
 	}
 	return k
+}
+
+// benchTripleOnce guards the bench-only profile registrations so
+// concurrent b.Run invocations converge on a single register pass.
+var benchTripleOnce sync.Once
+
+// benchTripleProfileName returns the deterministic name for a
+// bench-only triple profile keyed by (mode, outer cipher).
+func benchTripleProfileName(mode, cn string) string {
+	return "bench-" + mode + "-" + benchPrimitive + "-" + cn
+}
+
+// registerBenchTripleProfiles installs one Profile per (mode, outer
+// cipher) combination the Pipeline-based benches consume. Runs once;
+// re-registration of an already-installed name is tolerated.
+func registerBenchTripleProfiles() {
+	benchTripleOnce.Do(func() {
+		modes := []struct {
+			mode string
+			mac  string
+			chsz int
+		}{
+			{"singlemsg-nomac", "", 0},
+			{"singlemsg-mac", benchMACName, 0},
+			{"streaming-noaead", "", benchStreamChunk},
+			{"streaming-aead", benchMACName, benchStreamChunk},
+		}
+		for _, m := range modes {
+			for _, cn := range wrapper.CipherNames {
+				name := benchTripleProfileName(m.mode, cn)
+				prof := triple.Profile{
+					Name:        name,
+					Mode:        m.mode,
+					Width:       512,
+					ChunkSize:   m.chsz,
+					InnerHash:   benchPrimitive,
+					KeyBits:     benchSeedWidth,
+					MacName:     m.mac,
+					OuterCipher: cn,
+					Wrapper:     true,
+					Parallax:    false,
+				}
+				if err := triple.Register(name, prof); err != nil && !errors.Is(err, triple.ErrProfileExists) {
+					panic("triple.Register: " + err.Error())
+				}
+			}
+		}
+	})
+}
+
+// benchTripleInit opens a fresh Pipeline for the (mode, outer cipher)
+// bench cell. The Opts pin NonceBits / BarrierFill to the same values
+// the low-level wrapper benches use so throughput is comparable.
+func benchTripleInit(b *testing.B, mode, cn string) *triple.Pipeline {
+	b.Helper()
+	registerBenchTripleProfiles()
+	pipeline, _, err := triple.Init(benchTripleProfileName(mode, cn), triple.Opts{
+		NonceBits:   benchNonceBits,
+		BarrierFill: benchBarrierFill,
+	})
+	if err != nil {
+		b.Fatalf("triple.Init(%s/%s): %v", mode, cn, err)
+	}
+	return pipeline
 }
 
 // composeWire concatenates nonce || body into *buf, growing it only when
@@ -197,53 +264,40 @@ func BenchmarkMessageTriple(b *testing.B) {
 	}
 }
 
-// --- Low-Level Triple Ouroboros Message helpers ---
+// --- Triple Pipeline Message helpers ---
+//
+// The full ITB + wrapper Single Message benches route through the
+// triple.Pipeline facade rather than composing itb.Encrypt3x512Cfg +
+// wrapper.WrapInPlace by hand. Pipeline owns the buffer lifecycle, so
+// the throughput reflects real user-facing composition cost — no
+// per-iteration heap allocation of a fresh 18 MiB wire and no memcpy
+// artefact.
 
 func runMessageLowLevelTripleNoMACEncrypt(b *testing.B, plaintext []byte, cn string) {
-	noise, lock, d1, d2, d3, s1, s2, s3 := benchLowLevelTripleSeeds(b)
-	outerKey := benchOuterKey(b, cn)
-	var wireBuf []byte
+	pipeline := benchTripleInit(b, "singlemsg-nomac", cn)
+	defer pipeline.Close()
 	b.SetBytes(int64(len(plaintext)))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		encrypted, err := itb.Encrypt3x512Cfg(benchCfg, noise, lock, d1, d2, d3, s1, s2, s3, plaintext)
-		if err != nil {
-			b.Fatalf("Encrypt3x: %v", err)
+		if _, err := pipeline.EncryptMessage(plaintext); err != nil {
+			b.Fatalf("EncryptMessage: %v", err)
 		}
-		nonce, err := wrapper.WrapInPlace(cn, outerKey, encrypted)
-		if err != nil {
-			b.Fatalf("WrapInPlace: %v", err)
-		}
-		_ = composeWire(&wireBuf, nonce, encrypted)
 	}
 }
 
 func runMessageLowLevelTripleNoMACDecrypt(b *testing.B, plaintext []byte, cn string) {
-	noise, lock, d1, d2, d3, s1, s2, s3 := benchLowLevelTripleSeeds(b)
-	outerKey := benchOuterKey(b, cn)
-
-	encrypted, err := itb.Encrypt3x512Cfg(benchCfg, noise, lock, d1, d2, d3, s1, s2, s3, plaintext)
+	pipeline := benchTripleInit(b, "singlemsg-nomac", cn)
+	defer pipeline.Close()
+	wire, err := pipeline.EncryptMessage(plaintext)
 	if err != nil {
-		b.Fatalf("Encrypt3x setup: %v", err)
+		b.Fatalf("EncryptMessage setup: %v", err)
 	}
-	nonce, err := wrapper.WrapInPlace(cn, outerKey, encrypted)
-	if err != nil {
-		b.Fatalf("WrapInPlace setup: %v", err)
-	}
-	pristineWire := append(append([]byte{}, nonce...), encrypted...)
-	workWire := make([]byte, len(pristineWire))
-
 	b.SetBytes(int64(len(plaintext)))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		copy(workWire, pristineWire)
-		body, err := wrapper.UnwrapInPlace(cn, outerKey, workWire)
+		pt, err := pipeline.DecryptMessage(wire)
 		if err != nil {
-			b.Fatalf("UnwrapInPlace: %v", err)
-		}
-		pt, err := itb.Decrypt3x512Cfg(benchCfg, noise, lock, d1, d2, d3, s1, s2, s3, body)
-		if err != nil {
-			b.Fatalf("Decrypt3x: %v", err)
+			b.Fatalf("DecryptMessage: %v", err)
 		}
 		if len(pt) != len(plaintext) {
 			b.Fatalf("len mismatch: got %d want %d", len(pt), len(plaintext))
@@ -252,52 +306,30 @@ func runMessageLowLevelTripleNoMACDecrypt(b *testing.B, plaintext []byte, cn str
 }
 
 func runMessageLowLevelTripleAuthEncrypt(b *testing.B, plaintext []byte, cn string) {
-	noise, lock, d1, d2, d3, s1, s2, s3 := benchLowLevelTripleSeeds(b)
-	macFunc := benchMACFunc(b)
-	outerKey := benchOuterKey(b, cn)
-	var wireBuf []byte
+	pipeline := benchTripleInit(b, "singlemsg-mac", cn)
+	defer pipeline.Close()
 	b.SetBytes(int64(len(plaintext)))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		encrypted, err := itb.EncryptAuth3x512Cfg(benchCfg, noise, lock, d1, d2, d3, s1, s2, s3, plaintext, macFunc)
-		if err != nil {
-			b.Fatalf("EncryptAuth3x: %v", err)
+		if _, err := pipeline.EncryptMessage(plaintext); err != nil {
+			b.Fatalf("EncryptMessage: %v", err)
 		}
-		nonce, err := wrapper.WrapInPlace(cn, outerKey, encrypted)
-		if err != nil {
-			b.Fatalf("WrapInPlace: %v", err)
-		}
-		_ = composeWire(&wireBuf, nonce, encrypted)
 	}
 }
 
 func runMessageLowLevelTripleAuthDecrypt(b *testing.B, plaintext []byte, cn string) {
-	noise, lock, d1, d2, d3, s1, s2, s3 := benchLowLevelTripleSeeds(b)
-	macFunc := benchMACFunc(b)
-	outerKey := benchOuterKey(b, cn)
-
-	encrypted, err := itb.EncryptAuth3x512Cfg(benchCfg, noise, lock, d1, d2, d3, s1, s2, s3, plaintext, macFunc)
+	pipeline := benchTripleInit(b, "singlemsg-mac", cn)
+	defer pipeline.Close()
+	wire, err := pipeline.EncryptMessage(plaintext)
 	if err != nil {
-		b.Fatalf("EncryptAuth3x setup: %v", err)
+		b.Fatalf("EncryptMessage setup: %v", err)
 	}
-	nonce, err := wrapper.WrapInPlace(cn, outerKey, encrypted)
-	if err != nil {
-		b.Fatalf("WrapInPlace setup: %v", err)
-	}
-	pristineWire := append(append([]byte{}, nonce...), encrypted...)
-	workWire := make([]byte, len(pristineWire))
-
 	b.SetBytes(int64(len(plaintext)))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		copy(workWire, pristineWire)
-		body, err := wrapper.UnwrapInPlace(cn, outerKey, workWire)
+		pt, err := pipeline.DecryptMessage(wire)
 		if err != nil {
-			b.Fatalf("UnwrapInPlace: %v", err)
-		}
-		pt, err := itb.DecryptAuth3x512Cfg(benchCfg, noise, lock, d1, d2, d3, s1, s2, s3, body, macFunc)
-		if err != nil {
-			b.Fatalf("DecryptAuth3x: %v", err)
+			b.Fatalf("DecryptMessage: %v", err)
 		}
 		if len(pt) != len(plaintext) {
 			b.Fatalf("len mismatch: got %d want %d", len(pt), len(plaintext))
@@ -333,106 +365,71 @@ func BenchmarkStreamingTriple(b *testing.B) {
 	}
 }
 
-// --- Streaming AEAD Low-Level — Triple (Encrypt / Decrypt) ---
+// --- Streaming AEAD (IO-Driven) — Triple Pipeline (Encrypt / Decrypt) ---
+//
+// The IO-Driven streaming benches route the plaintext through
+// bytes.NewReader → Pipeline.EncryptStream → io.Discard so the timed
+// path is exactly what a real caller runs (plaintext bytes.Reader
+// piped straight into the Pipeline, wire discarded to isolate encrypt
+// cost). Decrypt caches the wire once and pipes it through
+// Pipeline.DecryptStream on every iteration.
 
 func runAEADLowLevelIOTripleEncrypt(b *testing.B, plaintext []byte, cn string) {
-	noise, lock, d1, d2, d3, s1, s2, s3 := benchLowLevelTripleSeeds(b)
-	macFunc := benchMACFunc(b)
-	outerKey := benchOuterKey(b, cn)
-	var wireBuf bytes.Buffer
+	pipeline := benchTripleInit(b, "streaming-aead", cn)
+	defer pipeline.Close()
 	b.SetBytes(int64(len(plaintext)))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		wireBuf.Reset()
-		wrapWriter, err := wrapper.NewWrapWriter(cn, outerKey, &wireBuf)
-		if err != nil {
-			b.Fatalf("NewWrapWriter: %v", err)
-		}
-		if err := itb.EncryptStreamAuth3xCfg(benchCfg, noise, lock, d1, d2, d3, s1, s2, s3, bytes.NewReader(plaintext), wrapWriter, macFunc, benchStreamChunk); err != nil {
-			b.Fatalf("EncryptStreamAuth3x: %v", err)
+		if err := pipeline.EncryptStream(bytes.NewReader(plaintext), io.Discard); err != nil {
+			b.Fatalf("EncryptStream: %v", err)
 		}
 	}
 }
 
 func runAEADLowLevelIOTripleDecrypt(b *testing.B, plaintext []byte, cn string) {
-	noise, lock, d1, d2, d3, s1, s2, s3 := benchLowLevelTripleSeeds(b)
-	macFunc := benchMACFunc(b)
-	outerKey := benchOuterKey(b, cn)
-
-	var pristineBuf bytes.Buffer
-	wrapWriter, err := wrapper.NewWrapWriter(cn, outerKey, &pristineBuf)
-	if err != nil {
-		b.Fatalf("NewWrapWriter setup: %v", err)
+	pipeline := benchTripleInit(b, "streaming-aead", cn)
+	defer pipeline.Close()
+	var wireBuf bytes.Buffer
+	if err := pipeline.EncryptStream(bytes.NewReader(plaintext), &wireBuf); err != nil {
+		b.Fatalf("EncryptStream setup: %v", err)
 	}
-	if err := itb.EncryptStreamAuth3xCfg(benchCfg, noise, lock, d1, d2, d3, s1, s2, s3, bytes.NewReader(plaintext), wrapWriter, macFunc, benchStreamChunk); err != nil {
-		b.Fatalf("EncryptStreamAuth3x setup: %v", err)
-	}
-	pristineWire := pristineBuf.Bytes()
-
+	wire := wireBuf.Bytes()
 	b.SetBytes(int64(len(plaintext)))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		unwrapReader, err := wrapper.NewUnwrapReader(cn, outerKey, bytes.NewReader(pristineWire))
-		if err != nil {
-			b.Fatalf("NewUnwrapReader: %v", err)
-		}
-		var dst bytes.Buffer
-		if err := itb.DecryptStreamAuth3xCfg(benchCfg, noise, lock, d1, d2, d3, s1, s2, s3, unwrapReader, &dst, macFunc); err != nil {
-			b.Fatalf("DecryptStreamAuth3x: %v", err)
-		}
-		if dst.Len() != len(plaintext) {
-			b.Fatalf("len mismatch: got %d want %d", dst.Len(), len(plaintext))
+		if err := pipeline.DecryptStream(bytes.NewReader(wire), io.Discard); err != nil {
+			b.Fatalf("DecryptStream: %v", err)
 		}
 	}
 }
 
-// --- Streaming No MAC Low-Level (IO-Driven) — Triple (Encrypt / Decrypt) ---
+// --- Streaming Non-AEAD (IO-Driven) — Triple Pipeline (Encrypt / Decrypt) ---
 
 func runNoAEADLowLevelIOTripleEncrypt(b *testing.B, plaintext []byte, cn string) {
-	noise, lock, d1, d2, d3, s1, s2, s3 := benchLowLevelTripleSeeds(b)
-	outerKey := benchOuterKey(b, cn)
-	var wireBuf bytes.Buffer
+	pipeline := benchTripleInit(b, "streaming-noaead", cn)
+	defer pipeline.Close()
 	b.SetBytes(int64(len(plaintext)))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		wireBuf.Reset()
-		wrapWriter, err := wrapper.NewWrapWriter(cn, outerKey, &wireBuf)
-		if err != nil {
-			b.Fatalf("NewWrapWriter: %v", err)
-		}
-		if err := itb.EncryptStream3xCfg(benchCfg, noise, lock, d1, d2, d3, s1, s2, s3, bytes.NewReader(plaintext), wrapWriter, benchStreamChunk); err != nil {
-			b.Fatalf("EncryptStream3x: %v", err)
+		if err := pipeline.EncryptStream(bytes.NewReader(plaintext), io.Discard); err != nil {
+			b.Fatalf("EncryptStream: %v", err)
 		}
 	}
 }
 
 func runNoAEADLowLevelIOTripleDecrypt(b *testing.B, plaintext []byte, cn string) {
-	noise, lock, d1, d2, d3, s1, s2, s3 := benchLowLevelTripleSeeds(b)
-	outerKey := benchOuterKey(b, cn)
-
-	var pristineBuf bytes.Buffer
-	wrapWriter, err := wrapper.NewWrapWriter(cn, outerKey, &pristineBuf)
-	if err != nil {
-		b.Fatalf("NewWrapWriter setup: %v", err)
+	pipeline := benchTripleInit(b, "streaming-noaead", cn)
+	defer pipeline.Close()
+	var wireBuf bytes.Buffer
+	if err := pipeline.EncryptStream(bytes.NewReader(plaintext), &wireBuf); err != nil {
+		b.Fatalf("EncryptStream setup: %v", err)
 	}
-	if err := itb.EncryptStream3xCfg(benchCfg, noise, lock, d1, d2, d3, s1, s2, s3, bytes.NewReader(plaintext), wrapWriter, benchStreamChunk); err != nil {
-		b.Fatalf("EncryptStream3x setup: %v", err)
-	}
-	pristineWire := pristineBuf.Bytes()
-
+	wire := wireBuf.Bytes()
 	b.SetBytes(int64(len(plaintext)))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		unwrapReader, err := wrapper.NewUnwrapReader(cn, outerKey, bytes.NewReader(pristineWire))
-		if err != nil {
-			b.Fatalf("NewUnwrapReader: %v", err)
-		}
-		var dst bytes.Buffer
-		if err := itb.DecryptStream3xCfg(benchCfg, noise, lock, d1, d2, d3, s1, s2, s3, unwrapReader, &dst); err != nil {
-			b.Fatalf("DecryptStream3x: %v", err)
-		}
-		if dst.Len() != len(plaintext) {
-			b.Fatalf("len mismatch: got %d want %d", dst.Len(), len(plaintext))
+		if err := pipeline.DecryptStream(bytes.NewReader(wire), io.Discard); err != nil {
+			b.Fatalf("DecryptStream: %v", err)
 		}
 	}
 }
