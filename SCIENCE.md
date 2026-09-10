@@ -8,7 +8,7 @@
 
 ## Abstract
 
-ITB (Information-Theoretic Barrier) is a parameterized symmetric cipher construction that renders the hash output unreconstructible from ciphertext-only observation. **Noise absorption** interposes a CSPRNG-generated random container between the PRF hash output and the observer; each byte retains one random noise bit at an unknown position. Under known-plaintext, chosen-plaintext, and chosen-ciphertext attacks the closure is computational and PRF-conditional; the information-theoretic property scopes to the noise-absorption layer under passive observation (Theorem 1). **Encoding ambiguity** applies a secret rotation (0–6) from an independent per-snake dataSeed to each pixel's data bits, creating 7^P unverifiable configurations across P pixels. A mandatory, always-on **48-bit Interlocked Barrier** forms a second architectural layer: each 48-bit chunk of the payload is partitioned into three disjoint 16-of-48 lane payloads by a PRF-keyed balanced mask triple drawn from a space of cardinality ≈ 2^70.20 per chunk, unobservable without the dedicated lockSeed. Even if the noise mechanism is bypassed via CCA (which reveals noise positions), the rotation barrier, the per-chunk mask permutation, and CSPRNG residue in data positions survive through 8-seed isolation.
+ITB (Information-Theoretic Barrier) is a parameterized symmetric cipher construction that renders the hash output unreconstructible from ciphertext-only observation. **Noise absorption** interposes a random container — filled by `internal/drbg` (AES-CTR or ChaCha20, seeded per call from CSPRNG) — between the PRF hash output and the observer; each byte retains one random noise bit at an unknown position. Under known-plaintext, chosen-plaintext, and chosen-ciphertext attacks the closure is computational and PRF-conditional; the information-theoretic property scopes to the noise-absorption layer under passive observation (Theorem 1). **Encoding ambiguity** applies a secret rotation (0–6) from an independent per-snake dataSeed to each pixel's data bits, creating 7^P unverifiable configurations across P pixels. A mandatory, always-on **48-bit Interlocked Barrier** forms a second architectural layer: each 48-bit chunk of the payload is partitioned into three disjoint 16-of-48 lane payloads by a PRF-keyed balanced mask triple drawn from a space of cardinality ≈ 2^70.20 per chunk, unobservable without the dedicated lockSeed. Even if the noise mechanism is bypassed via CCA (which reveals noise positions), the rotation barrier, the per-chunk mask permutation, and DRBG residue in data positions survive through 8-seed isolation.
 
 The 8-seed architecture (noiseSeed, lockSeed, three per-snake dataSeeds, three per-snake startSeeds) ensures that compromise of any single configuration domain provides zero information about the remaining domains; the lockSeed → per-chunk mask path is bound to the primitive through cascade PRF binding (two consecutive live PRF cascades). A dual-nonce wire format carries two independently CSPRNG-drawn nonces per message, producing independent configurations per encryption with no caller-addressable override.
 
@@ -58,7 +58,7 @@ For each channel of each pixel:
 1. Extract 7 plaintext data bits from the snake_i payload emitted by `chunk48lock`.
 2. XOR with the 7-bit channel mask from `dataSeed_i`.
 3. Rotate by `r` positions (from `dataSeed_i`).
-4. Insert into the CSPRNG-generated container byte, preserving the noise bit at position `noisePos`.
+4. Insert into the DRBG-generated container byte, preserving the noise bit at position `noisePos`.
 
 The dual-nonce wire header carries two nonces, `N_m` (main) and `N_il` (interlock), drawn independently from CSPRNG per encryption. `N_m` feeds the seven per-pixel derivation slots (noisePos, per-snake rotation and channelXOR, per-snake startPixel); `N_il` feeds the eighth — the lockSeed-keyed per-chunk mask draw. Neither slot is caller-addressable.
 
@@ -101,9 +101,9 @@ followed by combinadic unrank of `idx_0` (yielding `m_0`) and of `idx_1` over th
 
 ### 2.1 Information-Theoretic Barrier (Theorem 1)
 
-**Theorem 1 (Barrier).** **For a random container `C` generated from a CSPRNG and any PRF hash function `H`, the distribution of observed pixel values after embedding is independent of the hash output.**
+**Theorem 1 (Barrier).** **For a random container `C` generated from a DRBG and any PRF hash function `H`, the distribution of observed pixel values after embedding is independent of the hash output.**
 
-The core observation: `P(C'[p, ch] = v | h) = 1/2` for any observed value `v` and any hash output `h`, because the noise bit at `noisePos` retains the original CSPRNG-generated container bit — Bernoulli(1/2) and independent of everything.
+The core observation: `P(C'[p, ch] = v | h) = 1/2` for any observed value `v` and any hash output `h`, because the noise bit at `noisePos` retains the original DRBG-generated container bit — Bernoulli(1/2) and independent of everything.
 
 **Compatibility formula:**
 
@@ -185,13 +185,13 @@ The CCA oracle classifies each bit as noise (accept) or data (reject). Per pixel
 
 CCA leak = 3 / 62 ≈ 4.8 % of per-pixel configuration. CCA reveals no plaintext, no XOR masks, no startPixel, no barrier permutation — but eliminates noiseSeed from brute-force: `P × 2^(2·keyBits) → P × 2^keyBits`. Remaining brute-force enumeration cost far exceeds the Landauer bound (~2^306) at all shipped key sizes; structural attacks that do not enumerate the seed space are not bounded by Landauer.
 
-### 2.9 Guaranteed CSPRNG Residue (Theorem 10)
+### 2.9 Guaranteed DRBG Residue (Theorem 10)
 
-**Theorem 10 (No Perfect Fill).** **With container dimensions `(s+1) × (s+1)` where `s = ⌈√max(dataPixels, MinPixels)⌉`, the container capacity strictly exceeds the maximum payload. CSPRNG fill bytes are always present in the data bit positions.**
+**Theorem 10 (No Perfect Fill).** **With container dimensions `(s+1) × (s+1)` where `s = ⌈√max(dataPixels, MinPixels)⌉`, the container capacity strictly exceeds the maximum payload. DRBG fill bytes are always present in the data bit positions.**
 
-The container capacity gap is `≥ (2s + 1) × 7 > 0` for all `s ≥ 1`; perfect fill is mathematically impossible. Full derivation: [PROOFS.md § Proof 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill).
+The container capacity gap is `≥ (2s + 1) × 7 > 0` for all `s ≥ 1`; perfect fill is mathematically impossible. Full derivation: [PROOFS.md § Proof 10](PROOFS.md#proof-10-guaranteed-drbg-residue-no-perfect-fill).
 
-**Consequence for CCA.** After CCA removes noise bits, the data bit positions contain both encrypted plaintext and encrypted CSPRNG fill — processed identically by `dataSeed_i` (rotation + XOR). The attacker cannot distinguish fill from plaintext. CCA weakens the CSPRNG-residue barrier layer without eliminating it: the residue preserves configuration ambiguity within the data channel independent of the `7^P` rotation barrier (Theorem 4). The Full KPA closure under CCA remains computational and PRF-conditional (Theorem 4a).
+**Consequence for CCA.** After CCA removes noise bits, the data bit positions contain both encrypted plaintext and encrypted DRBG fill — processed identically by `dataSeed_i` (rotation + XOR). The attacker cannot distinguish fill from plaintext. CCA weakens the DRBG-residue barrier layer without eliminating it: the residue preserves configuration ambiguity within the data channel independent of the `7^P` rotation barrier (Theorem 4). The Full KPA closure under CCA remains computational and PRF-conditional (Theorem 4a).
 
 ### 2.10 Byte-Splitting Property
 
@@ -213,7 +213,7 @@ No magic bytes, no checksums. The COBS null terminator is encrypted inside the c
 
 ### 2.13 MAC-Inside-Encrypt Composition
 
-For integrity protection, the MAC tag is computed over the entire decrypted capacity (COBS + null + fill) and encrypted inside the container, preserving oracle-free deniability. Flipping any data bit causes MAC failure. Only noise-bit flips produce «accept» — uniform 12.5 % across all pixels, with no spatial pattern. After noise removal, CSPRNG fill bytes persist in data positions (Theorem 10).
+For integrity protection, the MAC tag is computed over the entire decrypted capacity (COBS + null + fill) and encrypted inside the container, preserving oracle-free deniability. Flipping any data bit causes MAC failure. Only noise-bit flips produce «accept» — uniform 12.5 % across all pixels, with no spatial pattern. After noise removal, DRBG fill bytes persist in data positions (Theorem 10).
 
 If the attacker has insider knowledge that a MAC tag is present (MAC + Silent Drop), the encrypted tag serves as a local verification oracle. The brute-force cost remains identical to Core ITB for both classical and Grover bounds, with additional `O(P)` per candidate for MAC verification. No external oracle is required — the attacker verifies locally by decrypting, computing MAC(payload), and comparing against the embedded tag.
 
@@ -221,7 +221,7 @@ If the attacker has insider knowledge that a MAC tag is present (MAC + Silent Dr
 
 The dual-nonce wire header carries two independently drawn CSPRNG nonces. Birthday collision on either single slot reaches ~50 % after `2^(N/2)` messages (`N` = the configured nonce width in bits, default `DefaultNonceBits = 512`); simultaneous collision on both slots is the product probability, requiring on the order of `2^N` messages. Simultaneous collision is not reachable through the shipped API: both nonces are drawn independently from CSPRNG per encryption, neither slot is caller-addressable, so simultaneous collision requires a **CSPRNG hardware fault**. Under single-slot collision, the un-collided axis provides fresh-nonce closure and the barrier's confidentiality closure holds a fortiori. Each dual-nonce pair creates an independent configuration map; a collision affects only the colliding pair.
 
-**Empirical verdict — plaintext recovery is null under every attacker-realistic dual-slot / main-only / interlock-only collision scenario at the tested sample sizes** (see [REDTEAM.md § Nonce reuse](REDTEAM.md#nonce-reuse-lab-only)). Under the maximum-leverage dual-slot collision the lab can force (both nonces overridden through test-only setters — impossible through the shipped API), the container XOR carries `rotate7(snake_XOR_bits, r)` at every non-noise bit position plus a fresh CSPRNG noise bit, but only up to the barrier's Part 1 permutation of the plaintext bits into three lane-scrambled snake payloads. The lane assignment a two-time-pad demasker would need to anchor on is a per-chunk PRF secret keyed by lockSeed and unobservable without it. Empirical null holds across BLAKE3 as a PRF-grade reference and FNV-1a as a below-spec stress control on every one of the 8 seed roles.
+**Empirical verdict — plaintext recovery is null under every attacker-realistic dual-slot / main-only / interlock-only collision scenario at the tested sample sizes** (see [REDTEAM.md § Nonce reuse](REDTEAM.md#nonce-reuse-lab-only)). Under the maximum-leverage dual-slot collision the lab can force (both nonces overridden through test-only setters — impossible through the shipped API), the container XOR carries `rotate7(snake_XOR_bits, r)` at every non-noise bit position plus a fresh DRBG noise bit, but only up to the barrier's Part 1 permutation of the plaintext bits into three lane-scrambled snake payloads. The lane assignment a two-time-pad demasker would need to anchor on is a per-chunk PRF secret keyed by lockSeed and unobservable without it. Empirical null holds across BLAKE3 as a PRF-grade reference and FNV-1a as a below-spec stress control on every one of the 8 seed roles.
 
 **Nonce-misuse resistance is strictly local.** Even the two lab-forced colliding messages recover zero plaintext bytes under attacker-realistic probes at the tested sample sizes. Seeds remain secret because a single collision provides one ChainHash output for one (pixelIndex, nonce) input — insufficient to invert ChainHash (PRF non-invertibility). All 8 seeds retain full entropy; future messages with fresh nonces are unaffected, so **no key rotation is required** after a collision. A single collision also provides too few observations for Simon's periodicity detection, BHT collision-finding, or quantum structural algebraic attacks. This contrasts with AES-GCM where a single nonce reuse leaks the GHASH authentication key `H`, enabling **permanent forgery** of arbitrary messages under the same key until key rotation — a global catastrophe. ITB achieves nonce-misuse resistance through PRF architecture plus the barrier's per-chunk permutation, rather than dedicated misuse-resistant construction (as in AES-GCM-SIV).
 
@@ -245,7 +245,7 @@ Balanced-partition counting: `A` ways to choose `m_0`, then `B` ways for `m_1` f
 | Noise barrier (P = 400) | 2^3200 |
 | Encoding ambiguity `56^P` (P = 400) | 2^2323 |
 | Encoding ambiguity `7^P` (P = 400) | 2^1123 |
-| CSPRNG residue (P = 400) | ≥ 287 bytes (Theorem 10) |
+| DRBG residue (P = 400) | ≥ 287 bytes (Theorem 10) |
 | Mask-space cardinality per chunk (A · B) | ≈ 2^70.20 |
 | PRF-preimage count per mask triple | ≈ 2^57.80 |
 | Distinguisher sample budget | ≈ 2^115.6 chunks |

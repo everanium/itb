@@ -23,7 +23,7 @@ func nomacStreamPrefix() ([]byte, error) {
 // so its on-wire envelope matches the paired authenticated envelope
 // (payload || MAC tag || 1-byte flag) bit-for-bit in shape, across
 // both the Single Message and Streaming pipelines. The bytes carry
-// pure CSPRNG dummy content on the No MAC path; the decrypt side
+// pure DRBG dummy content on the No MAC path; the decrypt side
 // ignores them (the COBS terminator lands strictly before this region,
 // so the null-search stops well ahead of the stub).
 //

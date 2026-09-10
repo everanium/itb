@@ -195,7 +195,7 @@ type Profile struct {
 	// [Opts.NonceBits] is zero at Init.
 	NonceBits int
 
-	// BarrierFill is the CSPRNG barrier fill margin (1 / 2 / 4 / 8 /
+	// BarrierFill is the DRBG barrier fill margin (1 / 2 / 4 / 8 /
 	// 16 / 32) this Pipeline runs with. Same lifecycle as
 	// [Profile.NonceBits] — populated by [Inspect] / [Load] only;
 	// zero on Register-time Profile; a non-zero value at Register
@@ -208,7 +208,7 @@ type Profile struct {
 	// [github.com/everanium/itb/macs.Find].
 	MacName string
 
-	// TagStubSize pins the CSPRNG dummy stub reservation size (bytes)
+	// TagStubSize pins the DRBG dummy stub reservation size (bytes)
 	// the No MAC envelope reserves so its wire shape matches a paired
 	// MAC-carrying counterpart with a specific MAC tag length. Zero
 	// defers to the MacName auto-probe (MAC-carrying profiles) or the

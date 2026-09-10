@@ -443,7 +443,7 @@ func parseFlags(argv []string) (config, error) {
 		keyBits        = fs.Int("key-bits", 0, "per-seed key width in bits: 512 | 1024 | 2048; 0 = profile default (1024)")
 		nonceBits      = fs.Int("nonce-bits", 0, "on-wire nonce width in bits: 128 | 256 | 512; 0 = profile default (512)")
 		chunkSizeStr   = fs.String("chunk-size", "0", "streaming chunk-size budget (e.g. 4MB); 0 = profile default; inert for pure message shape")
-		barrierFill    = fs.Int("barrier-fill", 0, "CSPRNG barrier fill margin: 1 | 2 | 4 | 8 | 16 | 32; 0 = profile default (1)")
+		barrierFill    = fs.Int("barrier-fill", 0, "DRBG barrier fill margin: 1 | 2 | 4 | 8 | 16 | 32; 0 = profile default (1)")
 		gomaxprocs     = fs.Int("gomaxprocs", 0, "runtime.GOMAXPROCS override; 0 = inherit from the environment")
 		rekeyEvery     = fs.Int64("rekey-every", 0, "rotate the parallax + wrapper masters via Pipeline.Rekey every N iterations per worker; 0 = never")
 		blobCycleEvery = fs.Int64("blob-cycle-every", 0, "reopen each pipeline from its session blob every N iterations per worker; 0 = never")

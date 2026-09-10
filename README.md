@@ -25,7 +25,7 @@
 
 ---
 
-A parameterized symmetric cipher construction library for Go that makes hash output unobservable under passive observation through independent barrier mechanisms: **noise absorption** (a CSPRNG random container makes hash output unobservable), **encoding ambiguity** (secret rotation yields 7^P unverifiable configurations that survive CCA), and the **Interlocked Barrier** (a per-chunk PRF-keyed 48-bit permutation over three snakes, with a per-chunk mask space of ≈ 2^70.20 balanced partitions). 8-Seed isolation ensures compromise of any one domain provides zero information about the others.
+A parameterized symmetric cipher construction library for Go that makes hash output unobservable under passive observation through independent barrier mechanisms: **noise absorption** (a random container filled by `internal/drbg` — AES-CTR or ChaCha20 seeded per call from CSPRNG — makes hash output unobservable), **encoding ambiguity** (secret rotation yields 7^P unverifiable configurations that survive CCA), and the **Interlocked Barrier** (a per-chunk PRF-keyed 48-bit permutation over three snakes, with a per-chunk mask space of ≈ 2^70.20 balanced partitions). 8-Seed isolation ensures compromise of any one domain provides zero information about the others.
 
 **Ambiguity-Based Security.** The number of observation-consistent **configurations** grows with data size — a property orthogonal to Shannon's key-entropy bound (distinct from Shannon's perfect-secrecy relationship on plaintext entropy; not a violation of it). The Interlocked Barrier converts known-plaintext cryptanalysis from a computational-hardness problem into an instance-formulation one under the PRF assumption: a known-plaintext crib does not fix any bit-position-to-lane mapping for a solver to anchor on.
 
@@ -600,7 +600,7 @@ withWrapper := true
 
 enc, blob, err := triple.Init(triple.ProfileStreamingAEADTripleMACV1, triple.Opts{
     NonceBits:    256,          // per-Pipeline nonce width (default: itb.DefaultNonceBits)
-    BarrierFill:  4,            // per-Pipeline CSPRNG barrier fill margin
+    BarrierFill:  4,            // per-Pipeline DRBG barrier fill margin
     MaxWorkers:   8,            // per-Pipeline worker cap
     ChunkSize:    16 << 20,     // streaming chunk-size budget
     WithParallax: &withParallax, // opt out of parallax
@@ -666,10 +666,10 @@ Any field left at its zero value defers to the resolved profile's default; a nil
 | `WithWrapper` | `*bool` (nil / &false / &true) | Three-state override; nil = profile default. |
 | `MaxWorkers` | `int` | ≤ 0 = auto (`runtime.NumCPU`); 1 .. 256 = per-Pipeline goroutine cap; > 256 clamps to 256. A per-machine runtime knob: never written to the blob, and adjustable on a live Pipeline (from `Init` or `Load`) via `pipe.MaxWorkers(n)` with the same clamp. |
 | `NonceBits` | `128` / `256` / `512` (or 0 = default) | On-wire nonce width. Default per profile. |
-| `BarrierFill` | `int > 0` (or 0 = default) | CSPRNG barrier fill margin; profile default varies. |
+| `BarrierFill` | `int > 0` (or 0 = default) | DRBG barrier fill margin; profile default varies. |
 | `ChunkSize` | `int > 0` bytes (or 0 = default) | Streaming chunk-size budget; default `itb.DefaultChunkSize` = 16 MiB. |
 | `MacName` | `"kmac256"` \| `"hmac-sha256"` \| `"hmac-blake3"` | The shipped MACs (see `macs/registry.go`). Empty = profile default. Non-MAC profiles ignore. |
-| `TagStubSize` | `int` in `[16, 64]` (or 0 = default) | Overrides the profile's `TagStubSize` — the No MAC envelope's CSPRNG dummy stub reservation, pinned to a paired MAC counterpart's tag length for wire-shape indistinguishability. Resolution: Opts > Profile > MacName auto-probe > 32-byte default (every shipped MAC's tag length). The floor matches the `macs.Register` TagSize ≥ 16 contract; the ceiling covers the longest realistic MAC tag. Meaningful for No MAC profiles paired with a custom-tag-size MAC counterpart. |
+| `TagStubSize` | `int` in `[16, 64]` (or 0 = default) | Overrides the profile's `TagStubSize` — the No MAC envelope's DRBG dummy stub reservation, pinned to a paired MAC counterpart's tag length for wire-shape indistinguishability. Resolution: Opts > Profile > MacName auto-probe > 32-byte default (every shipped MAC's tag length). The floor matches the `macs.Register` TagSize ≥ 16 contract; the ceiling covers the longest realistic MAC tag. Meaningful for No MAC profiles paired with a custom-tag-size MAC counterpart. |
 | `InnerHash` | one of the shipped primitive names below | Empty = profile default. |
 | `MixedHashes` | `[8]string`, all slots one of the shipped primitive names below | Zero-value array (all slots empty) = profile default. When any slot is non-empty, all 8 must be non-empty, every entry's primitive width must equal the effective width, and the override wins over `InnerHash` (both dispatch paths are mutually exclusive). Slot ordering: `[0]noise [1]lock [2]data1 [3]data2 [4]data3 [5]start1 [6]start2 [7]start3`. |
 | `KeyBits` | multiple of the primitive's native hash width (128 / 256 / 512), in `[512, 2048]`, or `0` = default | Common values `512` / `1024` / `2048`; any intermediate multiple in the range is accepted per the seed factory contract (640 / 768 / 896 / 1152 / 1280 / 1536 / 1792 for width-128 primitives, and the corresponding multiples for width-256 / width-512). Default `1024`. |
@@ -1259,13 +1259,13 @@ The 8 mandatory seeds are drawn as independent CSPRNG components; the API surfac
 | Key space | Up to 2^2048 |
 | Grover resistance | √P × 2^keyBits (Core ITB / MAC + Silent Drop) to √P × 2^(keyBits/2) (MAC + Reveal) |
 | Plausible deniability | Core ITB / MAC + Silent Drop (wrong seed → garbage indistinguishable from valid plaintext) |
-| Encoding ambiguity | Every mode (7^P unverifiable rotation combinations, surviving CCA; CSPRNG residue adds independent ambiguity in data positions) |
+| Encoding ambiguity | Every mode (7^P unverifiable rotation combinations, surviving CCA; DRBG residue adds independent ambiguity in data positions) |
 | Interlocked Barrier | Always on; per-chunk 48-bit keyed permutation over three snakes; per-chunk mask space ≈ 2^70.20 balanced partitions |
 | 8-seed isolation | Every mode (noiseSeed, lockSeed, dataSeed1..3, startSeed1..3 independent) |
 | Oracle-free deniability | Core ITB / MAC + Silent Drop; MAC + Reveal has a CCA oracle bounded to the noise-position channel (Proof 6) |
 | Known-plaintext resistance (Crib / Full / Partial KPA) | Under the PRF assumption and fresh nonces, closed at the instance-formulation layer by the barrier's per-chunk ≈ 2^70.20 mask space + per-chunk PRF independence + 3-snake enumeration dimension + 8-seed isolation (architectural claim) |
 | Chosen-plaintext resistance | Under the PRF assumption and fresh nonces, the always-on keyed permutation plus fresh per-message draws leave ciphertext at the statistical floor (architectural claim) |
-| Noise absorption | Core ITB / MAC + Silent Drop; bypassed via CCA in MAC + Reveal (CSPRNG residue in data positions survives) |
+| Noise absorption | Core ITB / MAC + Silent Drop; bypassed via CCA in MAC + Reveal (DRBG residue in data positions survives) |
 | Hash function requirement | PRF required; PRF and barrier are complementary — neither sufficient alone |
 | Nonce | 128/256/512-bit per-message nonce, drawn internally from `crypto/rand` on every call (default 512-bit) |
 | Nonce reuse | Not architecturally closed by the barrier; closure of the CPA / KPA families is conditional on fresh nonces. The shipped API generates the nonce internally per call, which prevents caller-side reuse |

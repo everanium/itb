@@ -41,7 +41,7 @@ func EncryptAuthenticated3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, d
 	}
 
 	// Interlock split, COBS, payload assembly and wire allocation with
-	// overlapped container + payload-tail CSPRNG fill (see
+	// overlapped container + payload-tail DRBG fill (see
 	// triplepayload.go). part2 COBS length increased by tagSize + 1
 	// for container sizing: the +1 mirrors the Streaming AEAD flag-byte
 	// slot so the single message wire envelope matches the No MAC
@@ -269,7 +269,7 @@ func EncryptStreamAuthenticated3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSe
 	}
 
 	// Interlock split, COBS, payload assembly and wire allocation with
-	// overlapped container + payload-tail CSPRNG fill (see
+	// overlapped container + payload-tail DRBG fill (see
 	// triplepayload.go). part2 COBS length increased by tagSize + 1
 	// (flag byte) for container sizing; part0 and part1 are filled to
 	// full capacity, part2 reserves tagSize + 1 (tag slot + flag) that

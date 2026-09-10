@@ -153,12 +153,12 @@ func Encrypt3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dat
 	}
 
 	// Interlock split, COBS, payload assembly and wire allocation with
-	// overlapped container + payload-tail CSPRNG fill (see
+	// overlapped container + payload-tail DRBG fill (see
 	// triplepayload.go). nomacTagStubSizeCfg(cfg) bytes are reserved in
 	// the third snake's container capacity so a wire observer cannot
 	// distinguish this No MAC chunk from the paired authenticated chunk
 	// (whose third snake carries payload || tag || flag(1)). The
-	// reserved bytes are pure CSPRNG on the No MAC side.
+	// reserved bytes are pure DRBG on the No MAC side.
 	tp, out, container, width, height, err := buildTripleWire3(cfg, data, buildLockBatchPRF48_512Cfg(cfg, lockSeed, ilNonce), nomacTagStubSizeCfg(cfg), true, nonce, ilNonce,
 		func(cobsLens [3]int) (int, int) {
 			return containerSize3_512Cfg(cfg, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, cobsLens)

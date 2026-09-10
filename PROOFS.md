@@ -433,11 +433,11 @@ P > k / 5.807
 
 For any data volume above these thresholds, encoding ambiguity dominates the key space — the number of indistinguishable configurations exceeds the total number of possible keys. The unified MinPixels formula (`MinPixels := MinPixelsAuth = ⌈keyBits / log₂(7)⌉`) guarantees ambiguity dominance at the minimum container size across both streaming modes: 7^P > 2^keyBits at the unified floor. The 56^P bound remains valid for any container above the plain-mode threshold as an additionally tighter statement in the absence of CCA. ∎
 
-## Proof 10: Guaranteed CSPRNG Residue (No Perfect Fill)
+## Proof 10: Guaranteed DRBG Residue (No Perfect Fill)
 
-**Theorem.** With container dimensions (side+1) × (side+1) where side = ⌈√(max(dataPixels, MinPixels))⌉, the container capacity strictly exceeds the maximum payload for any plaintext size. CSPRNG fill bytes are always present in the data bit positions after embedding.
+**Theorem.** With container dimensions (side+1) × (side+1) where side = ⌈√(max(dataPixels, MinPixels))⌉, the container capacity strictly exceeds the maximum payload for any plaintext size. DRBG fill bytes are always present in the data bit positions after embedding.
 
-**Motivation.** Under CCA (MAC + Reveal), the attacker identifies and removes noise bits (12.5% of container). The remaining 87.5% contains data bits: encrypted plaintext + COBS framing + CSPRNG fill. If the container were perfectly filled (zero CSPRNG fill), all data bits would carry known-structure content (COBS-encoded plaintext + null terminator). With CSPRNG fill present, a portion of the data bits carry random fill — indistinguishable from encrypted plaintext even after noise removal. This preserves information-theoretic ambiguity within the data bit positions.
+**Motivation.** Under CCA (MAC + Reveal), the attacker identifies and removes noise bits (12.5% of container). The remaining 87.5% contains data bits: encrypted plaintext + COBS framing + DRBG fill (from `internal/drbg` — AES-CTR or ChaCha20 seeded per call from CSPRNG). If the container were perfectly filled (zero DRBG fill), all data bits would carry known-structure content (COBS-encoded plaintext + null terminator). With DRBG fill present, a portion of the data bits carry random fill — indistinguishable from encrypted plaintext even after noise removal. This preserves information-theoretic ambiguity within the data bit positions.
 
 **Proof.** Let s = ⌈√P_min⌉ where P_min = max(dataPixels, MinPixels). The current container uses P = s² pixels. With the `side++` modification, P' = (s+1)².
 
@@ -455,7 +455,7 @@ The capacity of the (s+1)² container:
 capacity(s+1) = (s+1)² × 7 = (s² + 2s + 1) × 7 bytes
 ```
 
-The guaranteed CSPRNG fill (gap between capacity and maximum payload):
+The guaranteed DRBG fill (gap between capacity and maximum payload):
 
 ```
 gap = capacity(s+1) - max_payload(s)
@@ -470,11 +470,11 @@ Since s ≥ 1: gap ≥ 21 bytes. For practical values (s ≥ 14 at 1024-bit key)
 **Consequence for CCA resistance.** After CCA removes noise bits, the attacker observes 7 data bits per channel. These data bits contain:
 
 1. Encrypted plaintext (COBS-encoded + null terminator)
-2. Encrypted CSPRNG fill (guaranteed present by this theorem)
+2. Encrypted DRBG fill (guaranteed present by this theorem)
 
-Both are encrypted identically by dataSeed (rotation + XOR). The attacker cannot distinguish encrypted plaintext from encrypted CSPRNG fill — both are processed by the same ChainHash-derived configuration. The CSPRNG fill provides information-theoretic ambiguity **within the data bit positions**, independent of and in addition to the rotation barrier (7^P, [Proof 4](#proof-4-rotation-barrier)).
+Both are encrypted identically by dataSeed (rotation + XOR). The attacker cannot distinguish encrypted plaintext from encrypted DRBG fill — both are processed by the same ChainHash-derived configuration. The DRBG fill provides information-theoretic ambiguity **within the data bit positions**, independent of and in addition to the rotation barrier (7^P, [Proof 4](#proof-4-rotation-barrier)).
 
-**Guaranteed minimum CSPRNG fill by data size:**
+**Guaranteed minimum DRBG fill by data size:**
 
 | Data size | Side (s) | Min fill = 7×(2s+1) |
 |---|---|---|
@@ -484,7 +484,7 @@ Both are encrypted identically by dataSeed (rotation + XOR). The attacker cannot
 | 1 MB | 388 | 5,439 bytes |
 | 64 MB | 3,103 | 43,449 bytes |
 
-The CSPRNG residue grows with data size: larger containers have proportionally more guaranteed fill. This is a structural property of the `side++` construction and does not depend on the hash function, key size, or plaintext content.
+The DRBG residue grows with data size: larger containers have proportionally more guaranteed fill. This is a structural property of the `side++` construction and does not depend on the hash function, key size, or plaintext content.
 
 ---
 

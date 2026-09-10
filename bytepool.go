@@ -19,7 +19,7 @@ import (
 //
 // Scope — the pool manages ONLY internal scratch space:
 //   - encrypt-side `payload` / `payloads[i]` (COBS-encoded plaintext +
-//     null terminator + CSPRNG fill, consumed by `process*`)
+//     null terminator + DRBG fill, consumed by `process*`)
 //   - decrypt-side `decoded` / `decoded[i]` (plaintext extracted from
 //     ciphertext, consumed by `cobsDecode`)
 //   - Triple 3-snake split outputs `p0` / `p1` / `p2` (plaintext-derived

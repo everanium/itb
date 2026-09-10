@@ -144,7 +144,7 @@ type Opts struct {
 	// A zero value defers to the profile default.
 	NonceBits int
 
-	// BarrierFill overrides the profile's CSPRNG barrier fill margin.
+	// BarrierFill overrides the profile's DRBG barrier fill margin.
 	// A zero value defers to the profile default.
 	BarrierFill int
 

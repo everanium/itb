@@ -38,12 +38,12 @@
 | startSeed config (per-snake) | ✓ Barrier intact | ✓ Barrier intact | ✓ **Independent** (zero CCA leak) |
 | Data rotation + XOR | ✓ | ✓ | ✓ (rotation barrier) |
 | Interlocked Barrier — Part 1 (per-chunk permutation, non-disableable) | ✓ Intact | ✓ Intact | ✓ Intact (lockSeed independent of noiseSeed) |
-| Interlocked Barrier — Part 2 (per-pixel absorption, non-disableable)† | ✓ Intact | ✓ Intact | Partial — noise position leaked; rotation + XOR + CSPRNG residue intact via dataSeed |
+| Interlocked Barrier — Part 2 (per-pixel absorption, non-disableable)† | ✓ Intact | ✓ Intact | Partial — noise position leaked; rotation + XOR + DRBG residue intact via dataSeed |
 | Brute-force impact of leak | — | — | noiseSeed eliminated¶: P × 2^(2×keyBits) → P × 2^keyBits |
 
 † Software-level property under the random-container model; no guarantees against hardware-level attacks (see Disclaimer). The information-theoretic barrier under passive observation applies to Part 2 (per-pixel absorption, `P(v | h) = 1/2` from [Proof 1](PROOFS.md#proof-1-information-theoretic-barrier)); Part 1's per-chunk mask permutation is a PRF-conditional layer keyed by the lockSeed ([Proof 11](PROOFS.md#proof-11-48-bit-interlocked-barrier-mask-space)), and the two parts always run together as the shipped indivisible barrier composition (see [SCIENCE.md § 1.5 Interlocked Barrier](SCIENCE.md#15-the-48-bit-interlocked-barrier)).
 
-¶ CCA eliminates noise bits (12.5 %), but CSPRNG fill bytes remain encrypted in data bit positions by dataSeed — indistinguishable from plaintext ([Proof 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill)).
+¶ CCA eliminates noise bits (12.5 %), but DRBG fill bytes (from `internal/drbg` — AES-CTR or ChaCha20 seeded per call from CSPRNG) remain encrypted in data bit positions by dataSeed — indistinguishable from plaintext ([Proof 10](PROOFS.md#proof-10-guaranteed-drbg-residue-no-perfect-fill)).
 
 ‡‡ MAC + Silent Drop assumes the attacker is unaware of MAC presence. If the attacker knows MAC is inside (e.g., insider knowledge), the encrypted MAC tag serves as a local verification oracle during brute-force — the attacker decrypts with candidate keys, computes MAC(payload), and checks against the embedded tag without requiring recipient response. Search cost remains P × 2^(2·keyBits) (same as Core ITB — no CCA, noiseSeed not leaked, both seeds must be searched jointly), but the attacker can now verify candidates. Without insider knowledge: no verification → plausible deniability. Grover: √P × 2^keyBits.
 
@@ -55,7 +55,7 @@ For the underlying PRF requirements, 8-seed isolation proof, and multi-factor KP
 |---|---|
 | AES-CBC + MAC-then-Encrypt‡ | Padding oracle → full plaintext (POODLE, Lucky13) |
 | AES-CTR + MAC-then-Encrypt | Bit-flip oracle → data structure |
-| ITB + MAC-Inside (full capacity) | Noise position only (3 bits / pixel, no data); CSPRNG fill persists in data positions ([Proof 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill)) |
+| ITB + MAC-Inside (full capacity) | Noise position only (3 bits / pixel, no data); DRBG fill persists in data positions ([Proof 10](PROOFS.md#proof-10-guaranteed-drbg-residue-no-perfect-fill)) |
 | AES-GCM (AEAD) | None (MAC rejects before decryption) |
 | ChaCha20-Poly1305 (AEAD) | None (MAC rejects before decryption) |
 
@@ -89,7 +89,7 @@ The always-on Interlocked Barrier ([SCIENCE.md § 1.5](SCIENCE.md#15-the-48-bit-
 
 ††† Core ITB and MAC + Silent Drop (no oracle): attacker must jointly search noiseSeed and dataSeed — without dataSeed, noiseSeed output is indistinguishable from random, so independent attack on noiseSeed is impossible. Joint search space: 2^(2·keyBits). startSeed contributes only P (startPixel candidates, enumerated as [0, P)), not 2^keyBits. Total: P × 2^(2·keyBits). Grover: √P × 2^keyBits. At 1024-bit keys under the unified `MinPixels` floor (P = 400): classical ~2^2057, Grover ~2^1028.
 
-§§ CCA removes noise bits (12.5 % of container), but CSPRNG fill bytes encrypted by dataSeed persist in data bit positions, indistinguishable from plaintext. The information-theoretic barrier is reduced, not fully eliminated ([Proof 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill)).
+§§ CCA removes noise bits (12.5 % of container), but DRBG fill bytes encrypted by dataSeed persist in data bit positions, indistinguishable from plaintext. The information-theoretic barrier is reduced, not fully eliminated ([Proof 10](PROOFS.md#proof-10-guaranteed-drbg-residue-no-perfect-fill)).
 
 **Nonce reuse is local.** The shipped wire carries two independent nonces (`main_nonce` and `interlock_nonce`) drawn per encrypt from crypto/rand and enforced pairwise-distinct at the API, so caller-side reuse is not reachable through the shipped surface. Under a lab-forced dual-slot / main-only / interlock-only collision, plaintext recovery is null under every attacker-realistic probe at the tested sample sizes (see [REDTEAM.md § Nonce reuse](REDTEAM.md#nonce-reuse-lab-only)): the barrier's per-chunk PRF-keyed 48-bit mask permutation removes the demask anchor even under the maximum-leverage dual-slot collision (modifier †† below). Seeds remain secret (PRF non-invertibility blocks ChainHash inversion), so future messages with fresh nonces are unaffected — **no key rotation required**. A single nonce collision provides too few observations for Simon, BHT, or quantum structural algebraic attacks. Unlike AES-GCM where nonce reuse leaks the GHASH key H and enables forgery until key rotation (global catastrophe affecting all subsequent messages), ITB nonce collision is **strictly local** — ITB is nonce-misuse-resistant under the PRF assumption. For the usage-precondition framing and the demasking disclaimer, see [ITB.md § 9 Nonce Reuse](ITB.md#9-nonce-reuse-a-usage-precondition-not-an-absorbed-threat).
 
@@ -113,7 +113,7 @@ The always-on Interlocked Barrier ([SCIENCE.md § 1.5](SCIENCE.md#15-the-48-bit-
 | dataSeed (rotation + XOR) | 59 | **0** (independent seed) | **59 (100 %)** |
 | **Total** | **62** | **3 (4.8 %)** | **59 (95.2 %)** |
 
-§ CCA reveals noise bit positions, but does not eliminate all ambiguity: CSPRNG fill bytes in data positions remain encrypted by dataSeed, indistinguishable from plaintext ([Proof 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill)).
+§ CCA reveals noise bit positions, but does not eliminate all ambiguity: DRBG fill bytes in data positions remain encrypted by dataSeed, indistinguishable from plaintext ([Proof 10](PROOFS.md#proof-10-guaranteed-drbg-residue-no-perfect-fill)).
 
 ### Barrier Strength (1024-bit key)
 
@@ -132,7 +132,7 @@ Every entry point applies the CCA-resistant `MinPixels` floor uniformly, so the 
 
 The Landauer row bounds the cost of blind enumeration of the noise-barrier space; it does not bound structural attacks that do not enumerate.
 
-Under CCA (MAC + Reveal) the noise positions are revealed but CSPRNG fill in data positions persists as residual ambiguity ([Proof 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill)); the noise-barrier headline is stated at the unified `MinPixels` floor. For the noise-barrier bound derivation, see [Proof 5](PROOFS.md#proof-5-noise-barrier-bound); for the per-chunk mask-space derivation, see [Proof 11](PROOFS.md#proof-11-48-bit-interlocked-barrier-mask-space).
+Under CCA (MAC + Reveal) the noise positions are revealed but DRBG fill in data positions persists as residual ambiguity ([Proof 10](PROOFS.md#proof-10-guaranteed-drbg-residue-no-perfect-fill)); the noise-barrier headline is stated at the unified `MinPixels` floor. For the noise-barrier bound derivation, see [Proof 5](PROOFS.md#proof-5-noise-barrier-bound); for the per-chunk mask-space derivation, see [Proof 11](PROOFS.md#proof-11-48-bit-interlocked-barrier-mask-space).
 
 ### Practical Value of 4.8 % CCA Leak
 
@@ -145,7 +145,7 @@ Under CCA (MAC + Reveal) the noise positions are revealed but CSPRNG fill in dat
 | Key-space reduction | noiseSeed eliminated: P × 2^(2·keyBits) → P × 2^keyBits |
 | Brute-force speedup | Search space halved in exponent (two seeds → one seed); the barrier's per-chunk mask enumeration (≈ 2^70.20 masks per chunk) stacks on top |
 | Grover reduction | √P × 2^keyBits → √P × 2^(keyBits/2) (noiseSeed eliminated from search); the barrier's per-chunk mask enumeration is not amenable to Grover (no observable anchor to search against) |
-| CSPRNG residue after CCA | Persists: fill bytes in data positions encrypted by dataSeed ([Proof 10](PROOFS.md#proof-10-guaranteed-csprng-residue-no-perfect-fill)) |
+| DRBG residue after CCA | Persists: fill bytes in data positions encrypted by dataSeed ([Proof 10](PROOFS.md#proof-10-guaranteed-drbg-residue-no-perfect-fill)) |
 
 ## 5. Noise-Density Optimality (Why 8/1)
 
@@ -176,7 +176,7 @@ Implemented: Inside (full capacity) — every shipped MAC Authenticated Low-Leve
 | Interlock combinadic unrank index-select timing (DPA/SPA class) | Oscilloscope on CPU die, > 10 GHz, lab access | Same class as DPA on any cipher | Constant-time VPERMT2Q / VPERMD select over precomputed C(p, k) table, no software side-channel |
 | rotateBits7 shift timing (DPA/SPA class) | Oscilloscope on CPU die, > 10 GHz, lab access | Same class as DPA on any cipher | Register-only, no software side-channel |
 | Container size metadata | Network observation | Metadata only | Inherent to all ciphers, no crypto advantage |
-| Non-CSPRNG container | Deployer misconfiguration | Degrades barrier | crypto/rand mandatory, non-CSPRNG unsupported |
+| Non-DRBG container | Deployer misconfiguration | Degrades barrier | `internal/drbg` (CSPRNG-seeded) mandatory, non-DRBG container source unsupported |
 | COBS decode truncation | Wrong seed / tampered data | None | Core ITB: returns raw decoded bytes (plausible deniability, no oracle); Authenticated: MAC rejects before COBS decode |
 | Bit-flip false null (DoS) | Data bit modification | None (with MAC) | MAC verified before null search; noise flips do not affect decrypted data |
 | CGO AVX2 side-channel | Co-located attacker | None (see below) | All AVX2 ops constant-time; identical to Pure Go |

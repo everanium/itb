@@ -128,7 +128,7 @@ func headerSizeCfg(cfg *Config) int { return 2*currentNonceSizeCfg(cfg) + 4 }
 // calcContainerSize3Cfg computes square container dimensions for
 // Triple Ouroboros. Each third must hold its part's COBS data and
 // satisfy MinPixels independently. Consults [currentBarrierFillCfg]
-// for the CSPRNG barrier margin.
+// for the DRBG barrier margin.
 func calcContainerSize3Cfg(cfg *Config, cobsLens [3]int, minPxNoise int, minPxData [3]int, minPxStart [3]int) (width, height int) {
 	maxThirdPixels := 0
 	for i := 0; i < 3; i++ {

@@ -41,7 +41,7 @@ type Config struct {
 	// concatenate-then-MAC path.
 	MACIncremental MACIncrementalFunc
 
-	// TagStubSize governs the CSPRNG dummy stub size the No MAC
+	// TagStubSize governs the DRBG dummy stub size the No MAC
 	// envelope reserves in its third-snake region so the on-wire
 	// envelope shape matches the paired AEAD envelope (whose third
 	// snake carries payload || tag || flag). Zero defaults to 32,
@@ -63,9 +63,9 @@ type Config struct {
 // any realistic deployment volume without the caller having to override.
 const DefaultNonceBits = NonceSize * 8
 
-// DefaultBarrierFill is the CSPRNG barrier fill margin used when
+// DefaultBarrierFill is the DRBG barrier fill margin used when
 // [Config.BarrierFill] is left at zero. The default of 1 pixel is the
-// minimum sufficient margin for the "guaranteed CSPRNG fill" invariant
+// minimum sufficient margin for the "guaranteed DRBG fill" invariant
 // (Proof 10); larger values increase the barrier at wire-size cost.
 const DefaultBarrierFill = 1
 
