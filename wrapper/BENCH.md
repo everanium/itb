@@ -25,7 +25,7 @@ Filter examples:
 
 ```sh
 go test -run='^$' -bench='BenchmarkWrapperOnlyInPlace' -benchtime=5s -count=1 ./wrapper/
-go test -run='^$' -bench='BenchmarkMessageTriple/lowlevel-nomac' -benchtime=5s -count=1 ./wrapper/
+go test -run='^$' -bench='BenchmarkMessageTriple/nomac' -benchtime=5s -count=1 ./wrapper/
 go test -run='^$' -bench='BenchmarkStreamingTriple/.*/aescmac' -benchtime=5s -count=1 ./wrapper/
 ```
 
@@ -41,9 +41,9 @@ go test -run='^$' -bench='BenchmarkStreamingTriple/.*/aescmac' -benchtime=5s -co
 * MAC factory: HMAC-BLAKE3, 32-byte CSPRNG key (where applicable).
 * Single Message plaintext: 16 MiB random.
 * Streaming plaintext: 64 MiB random; chunk size 16 MiB.
-* Decrypt-only sub-benches refresh the working wire from a pristine copy each iteration via `copy()`; the memcpy is included in the timed total. This overhead is small relative to ITB's Decrypt cost on this hardware (~3-5 ms per 16 MiB memcpy vs ~60-90 ms per 16 MiB Facade / Low-Level Decrypt).
+* Full ITB + wrapper benches route through `triple.Pipeline` — a single `triple.Init` before the timed loop, then `Pipeline.EncryptMessage` / `DecryptMessage` / `EncryptStream` / `DecryptStream` per iteration; the pipeline owns the buffer pool across iterations.
 
-Column abbreviations in the Full ITB + wrapper tables: **LL** = Low-Level (`*Cfg` entry points), **Loop** = User-Driven Loop, **IO** = IO-Driven, **MAC** = MAC Authenticated, **Enc** / **Dec** = encrypt / decrypt direction. All throughput is MB/s, rounded.
+Column abbreviations in the Full ITB + wrapper tables: **IO** = IO-Driven (`io.Reader` / `io.Writer` streaming), **MAC** = MAC Authenticated, **Enc** / **Dec** = encrypt / decrypt direction. All throughput is MB/s, rounded.
 
 ### Wrapper only round-trip (16 MiB plaintext, encrypt + decrypt timed together)
 
@@ -65,11 +65,9 @@ Column abbreviations in the Full ITB + wrapper tables: **LL** = Low-Level (`*Cfg
 
 Numbers below route through `triple.Pipeline` (Single Message via `EncryptMessage` / `DecryptMessage`, streaming via `EncryptStream` / `DecryptStream` on `io.Reader` / `io.Writer`). Pipeline owns the buffer lifecycle across iterations, so timing reflects steady-state composition cost rather than per-call heap allocation. Encrypt and decrypt directions are timed separately in each row.
 
-The Non-AEAD Loop columns run the alternative User-Driven Loop path (caller chunks the plaintext and drives `wrapper.NewWrapWriter` + `itb.Encrypt3x512Cfg` per chunk by hand) — the numbers there sit lower because that path allocates a fresh chunk buffer per iteration and cannot amortise Pipeline's internal pools. Included for reference when a caller genuinely needs manual chunk control.
-
 #### Single Message (16 MiB plaintext)
 
-| Cipher | LL No MAC Enc | LL No MAC Dec | LL MAC Enc | LL MAC Dec |
+| Cipher | No MAC Enc | No MAC Dec | MAC Enc | MAC Dec |
 |---|---:|---:|---:|---:|
 | **Areion-SoEM-256** | 461 | 488 | 409 | 439 |
 | **Areion-SoEM-512** | 464 | 492 | 387 | 448 |
@@ -83,7 +81,7 @@ The Non-AEAD Loop columns run the alternative User-Driven Loop path (caller chun
 
 #### Streaming AEAD (64 MiB plaintext, 16 MiB chunk)
 
-| Cipher | AEAD LL IO Enc | AEAD LL IO Dec |
+| Cipher | AEAD IO Enc | AEAD IO Dec |
 |---|---:|---:|
 | **Areion-SoEM-256** | 390 | 446 |
 | **Areion-SoEM-512** | 395 | 426 |
@@ -97,17 +95,17 @@ The Non-AEAD Loop columns run the alternative User-Driven Loop path (caller chun
 
 #### Streaming Non-AEAD (64 MiB plaintext, 16 MiB chunk)
 
-| Cipher | LL IO Enc | LL IO Dec | LL Loop Enc | LL Loop Dec |
-|---|---:|---:|---:|---:|
-| **Areion-SoEM-256** | 469 | 503 | 229 | 221 |
-| **Areion-SoEM-512** | 461 | 486 | 219 | 222 |
-| **BLAKE2b-256** | 370 | 383 | 197 | 195 |
-| **BLAKE2b-512** | 424 | 443 | 213 | 207 |
-| **BLAKE2s** | 369 | 385 | 205 | 199 |
-| **BLAKE3** | 441 | 464 | 219 | 211 |
-| **AES-128-CTR** | 491 | 534 | 228 | 224 |
-| **SipHash-2-4** | 477 | 514 | 227 | 223 |
-| **ChaCha20** | 489 | 522 | 228 | 223 |
+| Cipher | IO Enc | IO Dec |
+|---|---:|---:|
+| **Areion-SoEM-256** | 469 | 503 |
+| **Areion-SoEM-512** | 461 | 486 |
+| **BLAKE2b-256** | 370 | 383 |
+| **BLAKE2b-512** | 424 | 443 |
+| **BLAKE2s** | 369 | 385 |
+| **BLAKE3** | 441 | 464 |
+| **AES-128-CTR** | 491 | 534 |
+| **SipHash-2-4** | 477 | 514 |
+| **ChaCha20** | 489 | 522 |
 
 Decrypt runs 5–15 % faster than encrypt across ciphers (the encrypt path additionally derives per-pixel nonce material and the interlock barrier fill state). ITB's per-pixel hashing dominates the combined cost, so the outer cipher choice moves the totals only at the margin: AES-NI and PRF-counter ciphers span ~20 % top to bottom, with the smaller-state BLAKE variants at the low end and the AES / SipHash / ChaCha families at the high end.
 
