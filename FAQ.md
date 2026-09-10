@@ -90,7 +90,7 @@ observation on wire  →?→  reach jokeHash output  →?→  invert to seed
 
 - `noiseSeed.ChainHash(pixel, N_m)` → `& 7` → `noisePos` → used only as an insertion position, then folded into a container byte
 - `dataSeed_i.ChainHash(pixel, N_m)` → `hLo` low bits → rotation + `channelXOR` → applied to data bits → lane compression / rotation / XOR / noise-bit merge → wire byte
-- `lockSeed.deriveInterLockSeed(N_il)` → `lockKey` → per-chunk `H(0x03 ‖ ⟨i⟩, lockKey)` → 128-bit `rank` → combinadic unrank → mask triple → applied via PEXT inside `chunk48lock` → 3 lane fragments → Part 2 encoding
+- `lockSeed.deriveInterLockSeed(N_il)` → `lockKey` → per-chunk `ChainHash(0x03 ‖ ⟨i⟩, lockKey ‖ lockSeed)` → 128-bit `rank` → combinadic unrank → mask triple → applied via PEXT inside `chunk48lock` → 3 lane fragments → Part 2 encoding
 
 A wire byte at position `(p, ch)` has the shape:
 
@@ -98,7 +98,7 @@ A wire byte at position `(p, ch)` has the shape:
 wire[p, ch] = insert( rotate( lane_bits ⊕ channelXOR, r ),  C[p, ch],  noisePos )
 ```
 
-where `lane_bits`, `r`, `channelXOR`, `noisePos` are all derived from hash outputs — but the hash output itself never appears. Every observable is a composition. Every composition mixes a PRF-derived quantity with an independent CSPRNG-derived quantity (`C[p, ch]`, the random container) via Part 2 absorption.
+where `lane_bits`, `r`, `channelXOR`, `noisePos` are all derived from hash outputs — but the hash output itself never appears. Every observable is a composition. Every composition mixes a PRF-derived quantity with an independent DRBG-derived quantity (`C[p, ch]`, the random container) via Part 2 absorption.
 
 **The demasker gate.** To extract even one hash output the attacker must «demask» — strip Part 2 encoding. Demasker fundamentally requires a Full KPA anchor to choose among 56 candidates per pixel. Without an anchor, [Proof 1](PROOFS.md#proof-1-information-theoretic-barrier) says all 56 are equiprobable, and the algorithm does not converge to a decisive answer.
 
@@ -461,7 +461,7 @@ Every standard «peel one layer while holding others» technique the analysis su
 | Related-key attack | Algebraic relation between keys | 8 CSPRNG-drawn seeds enforced pairwise-distinct at API — no relation |
 | Boomerang | Composable differential paths through intermediate state | No observable intermediate state in the barrier |
 | Integral / square | Balanced property preserved across rounds | Random container destroys balance |
-| Linear cryptanalysis | Linear approximation input ↔ output | Part 2 absorbs primitive output through CSPRNG noise; per-chunk mask permutation removes fixed bit-position anchor |
+| Linear cryptanalysis | Linear approximation input ↔ output | Part 2 absorbs primitive output through DRBG noise; per-chunk mask permutation removes fixed bit-position anchor |
 
 Every standard tool assumes exactly one thing (fixed anchor, observation channel, exploitable primitive weakness, table-lookup side channel). The construction removes that thing at its specific layer while remaining layers work independently. A cryptanalyst attempting a standard workflow encounters: «my tool requires X; this layer removes X. Next layer removes Y, which I also need. Third layer removes Z.»
 

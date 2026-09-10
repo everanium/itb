@@ -86,7 +86,7 @@ The attacker with known plaintext d can compute a valid m for EVERY candidate po
 **Proof.** The 8 seeds are generated independently from crypto/rand and enforced pairwise-distinct at the API surface by byte-level `Components` comparison in addition to pointer identity, so byte-identical seed material reaching the API through blob import or the Low-Level constructors is rejected on the same gate. By construction:
 
 1. **noiseSeed → noisePos**: `noiseHash = ChainHash(counter||nonce, noiseSeed) & 7`
-2. **lockSeed → per-chunk Interlocked Barrier mask triple**: `rank = ChainHash(tag||groupIdx, deriveInterLockSeed(lockSeed, nonce))`; two-step unrank per [Proof 11](#proof-11-48-bit-interlocked-barrier-mask-space).
+2. **lockSeed → per-chunk Interlocked Barrier mask triple**: `rank = ChainHash(tag||groupIdx, deriveInterLockSeed(lockSeed, nonce) ‖ lockSeed)`; two-step unrank per [Proof 11](#proof-11-48-bit-interlocked-barrier-mask-space).
 3. **dataSeed_i → per-snake rotation, XOR** (i ∈ {1,2,3}): `dataHash_i = ChainHash(counter||nonce, dataSeed_i)`
 4. **startSeed_i → per-snake startPixel** (i ∈ {1,2,3}): `startPixel_i = ChainHash(0x02||nonce, startSeed_i) % totalPixels_i`
 
@@ -505,7 +505,7 @@ Under the PRF assumption, the per-chunk mask draws are computationally indisting
 
 **Proof.** Balanced-partition counting. A partition of a 48-bit word into three disjoint 16-bit lanes is fully specified by choosing `m0` (`C(48, 16) = A` ways), then `m1` from the remaining 32 bits (`C(32, 16) = B` ways); `m2` is the complement. The product `A · B` is the cardinality of Ω_chunk.
 
-PRF independence. The barrier derives each chunk's mask triple by consuming a domain tag plus the little-endian group index as the PRF input under `deriveInterLockSeed(lockSeed, nonce)`. Distinct chunks receive distinct PRF inputs and therefore distinct, PRF-independent output ranks. Under the PRF assumption these ranks are computationally indistinguishable from independent uniform selections from `[0, 2^128)`.
+PRF independence. The barrier derives each chunk's mask triple by consuming a domain tag plus the little-endian group index through the ChainHash cascade keyed by `deriveInterLockSeed(lockSeed, nonce) ‖ lockSeed` — a primer round over the derived key followed by `keyBits / width` rounds over the session components. Distinct chunks receive distinct PRF inputs and therefore distinct, PRF-independent output ranks. Under the PRF assumption these ranks are computationally indistinguishable from independent uniform selections from `[0, 2^128)`.
 
 Preimage count. The unrank map `Ω_rank : [0, 2^128) → Ω_chunk` is the two-step `(idx0, idx1) = (⌊rank / B⌋ mod A, rank mod B)` applied to `rank`. Its preimage counts differ by at most 1: the `2^128 mod (A · B)` lowest-indexed pairs receive `⌈2^128 / (A · B)⌉ = ⌊2^128 / (A · B)⌋ + 1 ≈ 2^57.80` preimages, and the remainder receive `⌊2^128 / (A · B)⌋ ≈ 2^57.80` preimages (the two floors are equal at the 2^57.80 order). Every mask triple therefore has at least `⌊2^128 / (A · B)⌋ ≈ 2^57.80` PRF-output preimages, so any candidate mask triple is consistent with any observation.
 
