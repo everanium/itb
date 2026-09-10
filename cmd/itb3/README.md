@@ -56,7 +56,10 @@ itb3 verify  blob.json
 
 `itb3 inspect blob.json` renders the recipe carried inside the blob
 via `triple.Inspect`: `profile`, `mode`, `width`, either `inner_hash`
-or the 8-slot `mixed_hashes` comma list, `key_bits`, `mac_name`
+or the 8-slot `mixed_hashes` comma list, `key_bits`, `nonce_bits`
+and `barrier_fill` (the two Init-time runtime globals — nonce width
+and CSPRNG barrier fill margin — the sender's Pipeline runs with,
+populated from the blob's inner Blob{N} snapshot), `mac_name`
 (`(none)` for a No MAC profile), `tag_stub_size` when set,
 `chunk_size` for streaming modes (`(default)` when the profile
 inherits the compile-in default), `wrapper` / `wrapper_cipher`,

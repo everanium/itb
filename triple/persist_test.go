@@ -280,6 +280,10 @@ func TestLoadCustomProfileRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Inspect: %v", err)
 	}
+	// Inspect populates NonceBits / BarrierFill from the blob's inner
+	// Globals; those two fields are not part of the recipe and Register
+	// rejects them fail-fast. Zero them before handing back to Register.
+	got.NonceBits, got.BarrierFill = 0, 0
 	if err := Register("userns-persist-custom-copy-v1", got); err != nil && !errors.Is(err, ErrProfileExists) {
 		t.Fatalf("Register(Inspect result): %v", err)
 	}
@@ -578,6 +582,75 @@ func TestSaveSemantics(t *testing.T) {
 	}
 }
 
+// TestSaveWireOmitsRuntimeGlobals pins the invariant that the wire
+// recipe (blob wrap-layer profile record) never carries the two
+// runtime-globals keys `nonce_bits` / `barrier_fill`, regardless of
+// whether the caller supplied [Opts.NonceBits] / [Opts.BarrierFill]
+// at Init and regardless of whether the stored Profile was mutated
+// directly before Save. Runtime globals live in the inner
+// Blob{N}.Globals snapshot only. Two-way covers Init and Rekey
+// paths through marshalWrap.
+func TestSaveWireOmitsRuntimeGlobals(t *testing.T) {
+	// Init with explicit non-default runtime globals.
+	pipe, blob, err := Init(ProfileSingleMsgTripleMACV1, Opts{NonceBits: 256, BarrierFill: 8})
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	defer pipe.Close()
+	saved := pipe.Save()
+	if !bytes.Equal(saved, blob) {
+		t.Fatalf("Save after Init differs from Init blob")
+	}
+	// Wire recipe within the wrap-layer must not carry either key.
+	// Inner Blob{N}.Globals is the single source of truth for these
+	// two values; the wrap-layer "p" object is the recipe alone.
+	if bytes.Contains(saved, []byte(`"nonce_bits"`)) || bytes.Contains(saved, []byte(`"barrier_fill"`)) {
+		// Distinguish leak into the recipe vs the legitimate presence
+		// inside the inner blob's "globals" object.
+		var wrap struct {
+			Profile json.RawMessage `json:"p"`
+		}
+		if err := json.Unmarshal(saved, &wrap); err != nil {
+			t.Fatalf("wrap decode: %v", err)
+		}
+		if bytes.Contains(wrap.Profile, []byte(`"nonce_bits"`)) || bytes.Contains(wrap.Profile, []byte(`"barrier_fill"`)) {
+			t.Fatalf("wire recipe carries runtime-globals keys: %s", wrap.Profile)
+		}
+	}
+	// Inspect populates the two fields from inner Globals — verify
+	// the round-trip channel works alongside the recipe-side invariant.
+	prof, err := Inspect(saved)
+	if err != nil {
+		t.Fatalf("Inspect: %v", err)
+	}
+	if prof.NonceBits != 256 || prof.BarrierFill != 8 {
+		t.Fatalf("Inspect NonceBits/BarrierFill = %d/%d, want 256/8", prof.NonceBits, prof.BarrierFill)
+	}
+
+	// Rekey path — marshalWrap runs again under Rekey; verify the
+	// same wire-recipe invariant.
+	rekeyed, err := pipe.Rekey(freshBytes(t, 32), freshBytes(t, 32))
+	if err != nil {
+		t.Fatalf("Rekey: %v", err)
+	}
+	var wrapAfter struct {
+		Profile json.RawMessage `json:"p"`
+	}
+	if err := json.Unmarshal(rekeyed, &wrapAfter); err != nil {
+		t.Fatalf("wrap decode after Rekey: %v", err)
+	}
+	if bytes.Contains(wrapAfter.Profile, []byte(`"nonce_bits"`)) || bytes.Contains(wrapAfter.Profile, []byte(`"barrier_fill"`)) {
+		t.Fatalf("wire recipe after Rekey carries runtime-globals keys: %s", wrapAfter.Profile)
+	}
+	profAfter, err := Inspect(rekeyed)
+	if err != nil {
+		t.Fatalf("Inspect after Rekey: %v", err)
+	}
+	if profAfter.NonceBits != 256 || profAfter.BarrierFill != 8 {
+		t.Fatalf("Inspect after Rekey NonceBits/BarrierFill = %d/%d, want 256/8", profAfter.NonceBits, profAfter.BarrierFill)
+	}
+}
+
 // TestLoadFSaveF covers the file forms: SaveF + LoadF round trip on a
 // temp path, POSIX mode 0600, LoadF equivalence with Load, and the
 // %w-wrapped os errors on a missing file / missing directory.
@@ -685,6 +758,22 @@ func TestInspectShippedEqualsLookup(t *testing.T) {
 			if !want.Parallax {
 				want.ParallaxPalette, want.ParallaxSegmentSize = nil, 0
 			}
+			// Inspect additionally populates NonceBits / BarrierFill
+			// from the blob's inner Blob{N}.Globals snapshot; the
+			// catalogue-side Lookup returns a Register-time Profile
+			// with both fields zero. The two are semantically distinct
+			// (recipe rules vs runtime snapshot); pin the runtime values
+			// against the DefaultNonceBits / DefaultBarrierFill fallback
+			// that Init resolved from the empty Opts, then zero them
+			// on the "got" side so the remaining recipe fields compare
+			// against Lookup verbatim.
+			if got.NonceBits != itb.DefaultNonceBits {
+				t.Fatalf("Inspect NonceBits = %d, want %d (DefaultNonceBits)", got.NonceBits, itb.DefaultNonceBits)
+			}
+			if got.BarrierFill != itb.DefaultBarrierFill {
+				t.Fatalf("Inspect BarrierFill = %d, want %d (DefaultBarrierFill)", got.BarrierFill, itb.DefaultBarrierFill)
+			}
+			got.NonceBits, got.BarrierFill = 0, 0
 			if !reflect.DeepEqual(got, want) {
 				t.Fatalf("Inspect:\n got  %+v\n want %+v", got, want)
 			}
@@ -751,6 +840,10 @@ func TestProfileCodecRoundTrip(t *testing.T) {
 		}
 	}
 	// Strictness: unknown key, hashes of length 3, trailing content.
+	// Future additive fields go into profileWire, so a blob emitted
+	// by a newer sender carrying them decodes fine here (the keys are
+	// known to the decoder); only truly unknown keys — accidental
+	// drift, malformed input, third-party tampering — are refused.
 	for _, bad := range []string{
 		`{"mode":"blob-only","width":128,"keybits":512,"wrapper":false,"parallax":false,"extra":1}`,
 		`{"mode":"blob-only","width":128,"keybits":512,"wrapper":false,"parallax":false,"hashes":["a","b","c"]}`,
@@ -760,6 +853,19 @@ func TestProfileCodecRoundTrip(t *testing.T) {
 		if err := json.Unmarshal([]byte(bad), &p); err == nil {
 			t.Fatalf("codec accepted %s", bad)
 		}
+	}
+	// nonce_bits / barrier_fill are known keys in profileWire even
+	// though they are not part of the recipe; a blob carrying them
+	// (e.g. an Inspect-serialised Profile round-tripped through
+	// json.Marshal) decodes cleanly into a Profile with the two fields
+	// populated.
+	known := `{"mode":"blob-only","width":128,"keybits":512,"wrapper":false,"parallax":false,"nonce_bits":256,"barrier_fill":8}`
+	var probe Profile
+	if err := json.Unmarshal([]byte(known), &probe); err != nil {
+		t.Fatalf("codec rejected input with additive-but-known keys: %v", err)
+	}
+	if probe.NonceBits != 256 || probe.BarrierFill != 8 {
+		t.Fatalf("codec decoded nonce_bits / barrier_fill incorrectly: %+v", probe)
 	}
 	// null leaves the value untouched.
 	keep := Profile{Mode: "x"}

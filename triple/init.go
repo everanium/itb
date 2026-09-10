@@ -57,6 +57,17 @@ func marshalWrap(prof Profile, inner, permMaster, wrapMaster []byte) ([]byte, er
 	if !rec.Parallax {
 		rec.ParallaxPalette, rec.ParallaxSegmentSize = nil, 0
 	}
+	// Recipe is wire-only; runtime globals (NonceBits, BarrierFill)
+	// live in the inner Blob{N}.Globals snapshot and never appear in
+	// the wrap-layer recipe object. The invariant is enforced upstream
+	// (Register + Load fail-fast on non-zero values, resolveProfile
+	// does not carry Opts.NonceBits / Opts.BarrierFill into the stored
+	// Profile), but a caller that mutates a Profile literal directly
+	// before feeding it here would otherwise leak runtime state onto
+	// the wire. Clearing them defensively guarantees byte-identical
+	// wire shape regardless of the upstream Profile provenance.
+	rec.NonceBits = 0
+	rec.BarrierFill = 0
 	wrap := blobWrapV2{
 		Version: blobWrapVersionV2,
 		Profile: rec,

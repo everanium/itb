@@ -184,6 +184,25 @@ type Profile struct {
 	// 2048).
 	KeyBits int
 
+	// NonceBits is the on-wire nonce width in bits (128 / 256 / 512)
+	// this Pipeline runs with. This field is NOT part of the profile
+	// recipe: it is populated by [Inspect] / [Load] from the blob's
+	// inner Blob{N}.Globals snapshot, and is always zero on a
+	// Profile passed to [Register] (a non-zero value at Register
+	// time is rejected as a programmer error — nonce width is set
+	// via [Opts.NonceBits] at [Init], not written into the profile
+	// literal). [itb.DefaultNonceBits] is the fallback when
+	// [Opts.NonceBits] is zero at Init.
+	NonceBits int
+
+	// BarrierFill is the CSPRNG barrier fill margin (1 / 2 / 4 / 8 /
+	// 16 / 32) this Pipeline runs with. Same lifecycle as
+	// [Profile.NonceBits] — populated by [Inspect] / [Load] only;
+	// zero on Register-time Profile; a non-zero value at Register
+	// time is rejected. [itb.DefaultBarrierFill] is the fallback
+	// when [Opts.BarrierFill] is zero at Init.
+	BarrierFill int
+
 	// MacName is the MAC primitive name (e.g. "hmac-blake3"). Empty
 	// for No MAC modes; otherwise must resolve via
 	// [github.com/everanium/itb/macs.Find].
@@ -608,6 +627,8 @@ type profileWire struct {
 	InnerHash           string   `json:"hash,omitempty"`
 	MixedHashes         []string `json:"hashes,omitempty"`
 	KeyBits             int      `json:"keybits"`
+	NonceBits           int      `json:"nonce_bits,omitempty"`
+	BarrierFill         int      `json:"barrier_fill,omitempty"`
 	MacName             string   `json:"mac,omitempty"`
 	TagStubSize         int      `json:"tagstub,omitempty"`
 	ChunkSize           int      `json:"chunk,omitempty"`
@@ -621,21 +642,34 @@ type profileWire struct {
 // MarshalJSON encodes p as the documented recipe object. Key set and
 // presence rules:
 //
-//	name      Name                 omitted when empty
-//	mode      Mode                 always
-//	width     Width                always
-//	hash      InnerHash            omitted when empty (mixed profiles)
-//	hashes    MixedHashes          omitted when every slot is empty;
-//	                               otherwise exactly eight strings
-//	keybits   KeyBits              always
-//	mac       MacName              omitted when empty (No MAC)
-//	tagstub   TagStubSize          omitted when 0
-//	chunk     ChunkSize            omitted when 0
-//	wrapper   Wrapper              always
-//	outer     OuterCipher          omitted when empty
-//	parallax  Parallax             always
-//	palette   ParallaxPalette      omitted when empty
-//	segment   ParallaxSegmentSize  omitted when 0
+//	name         Name                 omitted when empty
+//	mode         Mode                 always
+//	width        Width                always
+//	hash         InnerHash            omitted when empty (mixed profiles)
+//	hashes       MixedHashes          omitted when every slot is empty;
+//	                                  otherwise exactly eight strings
+//	keybits      KeyBits              always
+//	nonce_bits   NonceBits            omitted when 0 (Register-time
+//	                                  profile); present when populated
+//	                                  by Inspect / Load from the blob's
+//	                                  inner Blob{N}.Globals
+//	barrier_fill BarrierFill          same shape as nonce_bits
+//	mac          MacName              omitted when empty (No MAC)
+//	tagstub      TagStubSize          omitted when 0
+//	chunk        ChunkSize            omitted when 0
+//	wrapper      Wrapper              always
+//	outer        OuterCipher          omitted when empty
+//	parallax     Parallax             always
+//	palette      ParallaxPalette      omitted when empty
+//	segment      ParallaxSegmentSize  omitted when 0
+//
+// The nonce_bits / barrier_fill keys are inspection-only (not part of
+// the recipe): [Register] rejects a non-zero value on either field
+// fail-fast, so a wrap-layer recipe emitted from marshalWrap never
+// carries them. [Inspect] populates the two fields from the blob's
+// inner Blob{N}.Globals snapshot, so the JSON output surfaced through
+// the CAPI Inspect entry (and downstream bindings that read that
+// JSON) carries them there.
 //
 // No semantic validation is applied by the codec; the field rules are
 // enforced by [Register] on the registry side and by [Load] on the
@@ -647,6 +681,8 @@ func (p Profile) MarshalJSON() ([]byte, error) {
 		Width:               p.Width,
 		InnerHash:           p.InnerHash,
 		KeyBits:             p.KeyBits,
+		NonceBits:           p.NonceBits,
+		BarrierFill:         p.BarrierFill,
 		MacName:             p.MacName,
 		TagStubSize:         p.TagStubSize,
 		ChunkSize:           p.ChunkSize,
@@ -668,6 +704,13 @@ func (p Profile) MarshalJSON() ([]byte, error) {
 // error. Every other field is a straight copy; no semantic validation
 // runs here (see [Profile.MarshalJSON]). A JSON null leaves p
 // unchanged.
+//
+// Future additive fields (like [Profile.NonceBits] /
+// [Profile.BarrierFill]) are placed in [profileWire] alongside the
+// existing keys, so the decoder knows them and does not reject a blob
+// carrying them; the strictness applies to keys the current build
+// does not know about, catching malformed input rather than silently
+// swallowing it.
 func (p *Profile) UnmarshalJSON(data []byte) error {
 	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
 		return nil
@@ -690,6 +733,8 @@ func (p *Profile) UnmarshalJSON(data []byte) error {
 		Width:               w.Width,
 		InnerHash:           w.InnerHash,
 		KeyBits:             w.KeyBits,
+		NonceBits:           w.NonceBits,
+		BarrierFill:         w.BarrierFill,
 		MacName:             w.MacName,
 		TagStubSize:         w.TagStubSize,
 		ChunkSize:           w.ChunkSize,
