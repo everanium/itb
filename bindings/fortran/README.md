@@ -254,6 +254,17 @@ Wall-clock via `system_clock`; plaintext is CSPRNG-filled via
 `ITB_BENCH_MIN_SEC`) default to the fleet-canonical pin inside
 `run_bench.sh`.
 
+## itb3 CLI
+
+The Go core ships an openssl-style CLI utility
+[`itb3`](../../cmd/itb3/) that generates session blobs on disk
+(`itb3 genblob <mode> <hash> -o blob.json`); this binding reopens
+such blobs via `itb_pipeline_load_f`. `itb3` also encrypts /
+decrypts payloads directly on disk (`-i` / `-o`) or through stdin /
+stdout, rotates outer masters, and inspects stored blobs. See
+[`cmd/itb3/README.md`](../../cmd/itb3/README.md) for the full
+subcommand reference.
+
 ## eitb utility
 
 A small CLI under `bindings/fortran/eitb/` mirrors the shipped Go
@@ -270,13 +281,6 @@ cd bindings/fortran && make eitb
 `decrypt` reopens the session with `itb_pipeline_load` from the blob
 hex; the profile argument only selects the Single Message or
 streaming cipher pair.
-
-## itb3 CLI
-
-The shipped `itb3` binary under `cmd/itb3/` of the main repository
-generates profile files (`.json` on disk) that this binding reopens
-via `itb_pipeline_load_f`; the same utility also encrypts and
-decrypts files directly. See `cmd/itb3/README.md` for full usage.
 
 ## Limitations
 

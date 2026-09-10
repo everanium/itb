@@ -79,6 +79,21 @@
 // [github.com/everanium/itb/hashes] subpackage ships paired factories
 // for the shipped PRF-grade primitives.
 //
+// # Seed key sizes
+//
+// A seed carries its per-primitive key material as an integer number
+// of 64-bit components (n = KeyBits / 64). [NewSeed128] / [NewSeed256]
+// / [NewSeed512] accept any KeyBits value that is a multiple of the
+// primitive's native hash width (128 / 256 / 512) in [512,
+// [MaxKeyBits] = 2048]. The shipping default is 1024. Wider keys fold
+// into more ChainHash rounds per seed (rounds = KeyBits / native
+// width): 2048-bit key at 128-bit width is 16 rounds, 2048-bit at
+// 512-bit width is 4 rounds. Common tunings are 512 / 1024 / 2048;
+// intermediate multiples (640, 768, 896, 1152, 1280, 1536, 1792 for
+// width-128, and the corresponding multiples for width-256 /
+// width-512) are accepted per the same contract and produce a
+// proportional ChainHash round count.
+//
 // # State persistence — Blob
 //
 // [Blob128] / [Blob256] / [Blob512] pack the native-API encryptor

@@ -239,7 +239,7 @@ off, No MAC profiles, 5 s wall-clock per case; see
 `ITB_KEY_BITS`, `ITB_NONCE_BITS`, `ITB_WITH_PARALLAX`,
 `ITB_WITH_WRAPPER`, `ITB_PROFILE`, `ITB_BENCH_MIN_SEC`.
 
-## Related — `itb3` CLI
+## itb3 CLI
 
 The Go core ships an openssl-style CLI utility
 [`itb3`](../../cmd/itb3/) that generates session blobs on disk

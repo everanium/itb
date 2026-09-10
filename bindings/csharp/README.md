@@ -191,7 +191,7 @@ throughput at 1 MiB / 16 MiB / 64 MiB. Shape and budget are driven
 by the `ITB_*` env vars listed in `Itb.Bench/BenchUtil.cs`; defaults
 match the root Go BENCH3.md pin.
 
-## Related — `itb3` CLI
+## itb3 CLI
 
 The Go core ships an openssl-style CLI utility
 [`itb3`](../../cmd/itb3/) that generates session blobs on disk

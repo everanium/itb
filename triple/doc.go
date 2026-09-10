@@ -75,6 +75,14 @@
 // wrapper is false; palette and segment when parallax is false), so
 // the record carries no dead information.
 //
+// [Opts.KeyBits] and [Profile.KeyBits] accept any multiple of the
+// resolved primitive's native hash width in [512,
+// [github.com/everanium/itb.MaxKeyBits] = 2048]; every catalogued
+// profile ships with 1024, and 512 / 1024 / 2048 are the common
+// tunings, but intermediate multiples (640, 768, 896, 1152, 1280,
+// 1536, 1792 for width-128, and the corresponding multiples for
+// width-256 / width-512) are equally valid at the seed factory.
+//
 // The Streaming AEAD IO-Driven surface is the primary use case. The
 // Single Message surface ([Pipeline.EncryptMessage] /
 // [Pipeline.DecryptMessage]) is a thin convenience wrapper around the

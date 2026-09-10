@@ -238,6 +238,17 @@ shape (`ITB_INNER_HASH=areion512`, `ITB_KEY_BITS=1024`,
 `ITB_NONCE_BITS=512`, parallax + wrapper off,
 `ITB_BENCH_MIN_SEC=5`); override via env vars before invocation.
 
+## itb3 CLI
+
+The Go core ships an openssl-style CLI utility
+[`itb3`](../../cmd/itb3/) that generates session blobs on disk
+(`itb3 genblob <mode> <hash> -o blob.json`); this binding reopens
+such blobs via `Load_F`. `itb3` also encrypts / decrypts
+payloads directly on disk (`-i` / `-o`) or through stdin / stdout,
+rotates outer masters, and inspects stored blobs. See
+[`cmd/itb3/README.md`](../../cmd/itb3/README.md) for the full
+subcommand reference.
+
 ## eitb utility
 
 A small CLI under `bindings/ada/eitb/` mirrors the shipped Go
@@ -253,13 +264,6 @@ A small CLI under `bindings/ada/eitb/` mirrors the shipped Go
 `decrypt` reopens the session with `Load` from the blob hex; the
 profile argument only selects the Single Message or streaming cipher
 pair.
-
-## itb3 CLI
-
-The shipped `itb3` binary under `cmd/itb3/` of the main repository
-generates profile files (`.json` on disk) that this binding reopens
-via `Load_F`; the same utility also encrypts and decrypts files
-directly. See `cmd/itb3/README.md` for full usage.
 
 ## Limitations
 

@@ -219,7 +219,7 @@ exports the canonical bench env defaults (`ITB_GOMEMLIMIT=4GiB`,
 `ITB_INNER_HASH=areion512`); override any of them before invocation.
 `ITB_BENCH_MIN_SEC` adjusts the per-case wall-clock budget.
 
-## Related — `itb3` CLI
+## itb3 CLI
 
 The Go core ships an openssl-style CLI utility
 [`itb3`](../../cmd/itb3/) that generates session blobs on disk

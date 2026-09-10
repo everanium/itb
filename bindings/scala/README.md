@@ -207,7 +207,7 @@ by the `ITB_*` env vars listed in
 `bench/src/main/scala/dev/everanium/itb/bench/BenchUtil.scala`;
 defaults match the root Go BENCH3.md pin.
 
-## Related — `itb3` CLI
+## itb3 CLI
 
 The Go core ships an openssl-style CLI utility
 [`itb3`](../../cmd/itb3/) that generates session blobs on disk

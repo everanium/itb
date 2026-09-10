@@ -220,7 +220,7 @@ Micro-benches: `encryptMessageInto` and stream-pump throughput at 1 MiB /
 `ITB_WITH_PARALLAX`, `ITB_WITH_WRAPPER`, `ITB_BENCH_MIN_SEC`); the
 script pins the same defaults as the root Go BENCH3.md table.
 
-## Related — `itb3` CLI
+## itb3 CLI
 
 The Go core ships an openssl-style CLI utility
 [`itb3`](../../cmd/itb3/) that generates session blobs on disk

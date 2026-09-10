@@ -249,6 +249,17 @@ via `setMemoryLimit (4 * 1024 * 1024 * 1024)` and `setGcPercent 100`. See
 `bindings/BENCH.md` for the fleet-wide configuration authority and
 comparison tables.
 
+## itb3 CLI
+
+The Go core ships an openssl-style CLI utility
+[`itb3`](../../cmd/itb3/) that generates session blobs on disk
+(`itb3 genblob <mode> <hash> -o blob.json`); this binding reopens
+such blobs via `loadPipelineF`. `itb3` also encrypts / decrypts
+payloads directly on disk (`-i` / `-o`) or through stdin / stdout,
+rotates outer masters, and inspects stored blobs. See
+[`cmd/itb3/README.md`](../../cmd/itb3/README.md) for the full
+subcommand reference.
+
 ## eitb utility
 
 ```bash
@@ -262,13 +273,6 @@ comparison tables.
 to `decrypt` on the receiving side. `decrypt` reopens the session with
 `loadPipeline` from the blob hex; the profile argument only selects
 the Single Message or streaming cipher pair.
-
-## itb3 CLI
-
-The shipped `itb3` binary under `cmd/itb3/` of the main repository
-generates profile files (`.json` on disk) that this binding reopens
-via `loadPipelineF`; the same utility also encrypts and decrypts
-files directly. See `cmd/itb3/README.md` for full usage.
 
 ## Limitations
 

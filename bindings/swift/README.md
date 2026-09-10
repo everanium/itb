@@ -248,6 +248,17 @@ overrides) and the bench main applies the same caps
 programmatically; the bench shape follows the fleet-canonical
 env-var surface documented in [`bindings/BENCH.md`](../BENCH.md).
 
+## itb3 CLI
+
+The Go core ships an openssl-style CLI utility
+[`itb3`](../../cmd/itb3/) that generates session blobs on disk
+(`itb3 genblob <mode> <hash> -o blob.json`); this binding reopens
+such blobs via `Pipeline(loadFile:)`. `itb3` also encrypts /
+decrypts payloads directly on disk (`-i` / `-o`) or through stdin /
+stdout, rotates outer masters, and inspects stored blobs. See
+[`cmd/itb3/README.md`](../../cmd/itb3/README.md) for the full
+subcommand reference.
+
 ## eitb utility
 
 A small CLI mirrors the shipped Go `tools/eitb` scope for shell
@@ -264,13 +275,6 @@ cd bindings/swift && swift build -c release
 `decrypt` reopens the session with `Pipeline(load:)` from the blob
 hex; the profile argument only selects the Single Message or
 streaming cipher pair.
-
-## itb3 CLI
-
-The shipped `itb3` binary under `cmd/itb3/` of the main repository
-generates profile files (`.json` on disk) that this binding reopens
-via `Pipeline(loadFile:)`; the same utility also encrypts and
-decrypts files directly. See `cmd/itb3/README.md` for full usage.
 
 ## Limitations
 
