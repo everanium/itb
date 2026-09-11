@@ -557,3 +557,46 @@ func arxAbsorbHash512(hashFn Hash512Fn, scratch []byte, fixedKey []byte, data []
 	copy(buf[off:], data)
 	return hashFn(buf)
 }
+
+// ---------------------------------------------------------------------------
+// Semantic aliases — keyed-hash chain-absorb
+// ---------------------------------------------------------------------------
+//
+// BuildHMACChainAbsorb{128,256,512} are semantic aliases of
+// BuildARXChainAbsorb{128,256,512}. Both accept the same
+// Hash{256,512}Fn signature (a keyed one-shot hash closure) and
+// produce the same itb.HashFunc{N} output. The ARX name in the
+// primary form refers to the arithmetic-rotate-XOR family the
+// builder was first designed against (BLAKE / ChaCha / SipHash-shape
+// keyless permutations wrapped with a fixed-key prefix); the HMAC
+// alias is for callers wrapping an HMAC-style keyed hash (HMAC-SHA-256,
+// HMAC-SHA-512, KMAC, keyed BLAKE, keyed SHA-3) whose hashFn closes
+// over the HMAC key.
+//
+// The two are interchangeable — the underlying construction is
+// signature-driven ("a byte input to a fixed-width digest, keyed
+// externally"), not primitive-class-specific. Use whichever name
+// reads more clearly at the call site: BuildARXChainAbsorb256 for a
+// keyed ChaCha-derived one-shot, BuildHMACChainAbsorb256 for an
+// HMAC-SHA-256 closure.
+
+// BuildHMACChainAbsorb128 is a semantic alias of
+// [BuildARXChainAbsorb128]. The hashFn is expected to be an HMAC-style
+// keyed closure that returns a 32-byte digest per call.
+func BuildHMACChainAbsorb128(hashFn Hash256Fn, fixedKey []byte) itb.HashFunc128 {
+	return BuildARXChainAbsorb128(hashFn, fixedKey)
+}
+
+// BuildHMACChainAbsorb256 is a semantic alias of
+// [BuildARXChainAbsorb256]. The hashFn is expected to be an HMAC-style
+// keyed closure that returns a 32-byte digest per call.
+func BuildHMACChainAbsorb256(hashFn Hash256Fn, fixedKey []byte) itb.HashFunc256 {
+	return BuildARXChainAbsorb256(hashFn, fixedKey)
+}
+
+// BuildHMACChainAbsorb512 is a semantic alias of
+// [BuildARXChainAbsorb512]. The hashFn is expected to be an HMAC-style
+// keyed closure that returns a 64-byte digest per call.
+func BuildHMACChainAbsorb512(hashFn Hash512Fn, fixedKey []byte) itb.HashFunc512 {
+	return BuildARXChainAbsorb512(hashFn, fixedKey)
+}

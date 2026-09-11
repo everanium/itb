@@ -2,6 +2,7 @@ package hashes
 
 import (
 	"crypto/aes"
+	"crypto/hmac"
 	"crypto/sha256"
 	"crypto/sha512"
 	"encoding/binary"
@@ -521,4 +522,116 @@ func TestBuildersPanicOnBadParams256_512(t *testing.T) {
 		bigKey := make([]byte, 32)
 		BuildSpongeChainAbsorb512(testPermute32, 16, 16, bigKey)
 	})
+}
+
+// ============================================================================
+// HMAC alias tests — BuildHMACChainAbsorb{N} ≡ BuildARXChainAbsorb{N}
+// ============================================================================
+//
+// The HMAC aliases delegate to the ARX chain-absorb path unchanged, so
+// for any (hashFn, fixedKey) pair the two builders must produce
+// byte-identical output at every width. These tests wrap HMAC-SHA-256
+// and HMAC-SHA-512 (the natural fit for the alias's namesake use case)
+// and exercise the full absorption invariants on top.
+
+// hmacSha256Fn returns a Hash256Fn closure keyed by the supplied hmacKey.
+// Each closure call opens a fresh HMAC state, absorbs the input, and
+// returns the 32-byte tag.
+func hmacSha256Fn(hmacKey []byte) Hash256Fn {
+	return func(data []byte) [32]byte {
+		h := hmac.New(sha256.New, hmacKey)
+		h.Write(data)
+		var out [32]byte
+		copy(out[:], h.Sum(nil))
+		return out
+	}
+}
+
+// hmacSha512Fn returns a Hash512Fn closure keyed by the supplied hmacKey.
+func hmacSha512Fn(hmacKey []byte) Hash512Fn {
+	return func(data []byte) [64]byte {
+		h := hmac.New(sha512.New, hmacKey)
+		h.Write(data)
+		var out [64]byte
+		copy(out[:], h.Sum(nil))
+		return out
+	}
+}
+
+func TestBuildHMACChainAbsorb128_AliasesARX(t *testing.T) {
+	hmacKey := []byte("hmac-alias-test-key-32-bytes--!!")
+	fixedKey := []byte{0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x00}
+	fn := hmacSha256Fn(hmacKey)
+
+	arx := BuildARXChainAbsorb128(fn, fixedKey)
+	alias := BuildHMACChainAbsorb128(fn, fixedKey)
+
+	data := []byte("HMAC alias 128 chain absorb test")
+	for _, seed := range [][2]uint64{{0, 0}, {0x1111, 0x2222}, {^uint64(0), 0x1}} {
+		lo1, hi1 := arx(data, seed[0], seed[1])
+		lo2, hi2 := alias(data, seed[0], seed[1])
+		if lo1 != lo2 || hi1 != hi2 {
+			t.Fatalf("HMAC128 alias diverges from ARX128 at seed=%v: arx=(%x,%x) alias=(%x,%x)",
+				seed, lo1, hi1, lo2, hi2)
+		}
+	}
+
+	checkFullAbsorption128(t, alias, "HMAC128-alias")
+}
+
+func TestBuildHMACChainAbsorb256_AliasesARX(t *testing.T) {
+	hmacKey := []byte("hmac-alias-test-key-32-bytes--!!")
+	fixedKey := []byte{0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x00}
+	fn := hmacSha256Fn(hmacKey)
+
+	arx := BuildARXChainAbsorb256(fn, fixedKey)
+	alias := BuildHMACChainAbsorb256(fn, fixedKey)
+
+	data := []byte("HMAC alias 256 chain absorb test")
+	for _, seed := range [][4]uint64{{0, 0, 0, 0}, {0x1111, 0x2222, 0x3333, 0x4444}, {^uint64(0), 0, 0, 1}} {
+		out1 := arx(data, seed)
+		out2 := alias(data, seed)
+		if out1 != out2 {
+			t.Fatalf("HMAC256 alias diverges from ARX256 at seed=%v: arx=%v alias=%v", seed, out1, out2)
+		}
+	}
+
+	checkFullAbsorption256(t, alias, "HMAC256-alias")
+}
+
+func TestBuildHMACChainAbsorb512_AliasesARX(t *testing.T) {
+	hmacKey := []byte("hmac-alias-test-key-32-bytes--!!")
+	fixedKey := []byte{0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x00}
+	fn := hmacSha512Fn(hmacKey)
+
+	arx := BuildARXChainAbsorb512(fn, fixedKey)
+	alias := BuildHMACChainAbsorb512(fn, fixedKey)
+
+	data := []byte("HMAC alias 512 chain absorb test")
+	seed := [8]uint64{0x1111, 0x2222, 0x3333, 0x4444, 0x5555, 0x6666, 0x7777, 0x8888}
+	out1 := arx(data, seed)
+	out2 := alias(data, seed)
+	if out1 != out2 {
+		t.Fatalf("HMAC512 alias diverges from ARX512: arx=%v alias=%v", out1, out2)
+	}
+}
+
+func TestBuildHMACChainAbsorb_KeyChangePropagates(t *testing.T) {
+	// Distinct HMAC keys must yield distinct closures for the same
+	// (fixedKey, data, seed) triple — confirms the HMAC key participates
+	// via the closure, not silently dropped.
+	fixedKey := []byte{0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x00}
+	kA := []byte("key-A-32-bytes--------------!!!!!!")
+	kB := []byte("key-B-32-bytes--------------!!!!!!")
+
+	hA := BuildHMACChainAbsorb256(hmacSha256Fn(kA), fixedKey)
+	hB := BuildHMACChainAbsorb256(hmacSha256Fn(kB), fixedKey)
+
+	data := []byte("HMAC key-change propagation")
+	seed := [4]uint64{0x1111, 0x2222, 0x3333, 0x4444}
+	outA := hA(data, seed)
+	outB := hB(data, seed)
+	if outA == outB {
+		t.Fatal("HMAC256 alias: distinct HMAC keys produced identical closures — key not participating")
+	}
 }
