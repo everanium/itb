@@ -63,7 +63,7 @@ the four holds a name list of its own.
 
 ## Custom user-primitive builders
 
-Beyond the shipped primitives, the package exposes three builder families that wrap a user-supplied PRF into an `itb.HashFunc{128|256|512}` closure **with correct ITB nonce width preservation by construction**. These are for "I want to plug in SHA-256 / Ascon-PRF / Camellia-CMAC / My Own Custom hash primitive as the ITB PRF" use cases.
+Beyond the shipped primitives, the package exposes builder families that wrap a user-supplied PRF into an `itb.HashFunc{128|256|512}` closure **with correct ITB nonce width preservation by construction**. These are for "I want to plug in SHA-256 / Ascon-PRF / Camellia-CMAC / My Own Custom hash primitive as the ITB PRF" use cases.
 
 | Builder | Wraps | Use when |
 |---|---|---|
@@ -108,7 +108,129 @@ A user primitive **requires** a builder when **at least one** of these holds:
 | Ascon-p / Keccak-f (raw permutation) → `HashFunc{128,256,512}` | **Yes** | Raw permutation has no native variable-length absorb; sponge wrapper needed externally |
 | Camellia / SM4 / ARIA block cipher | **Yes** | Same as AES — raw block cipher needs CBC-MAC chain |
 
-### Example — SHA-256 via the ARX builder
+### Runnable examples — one snippet per builder
+
+The four snippets below share the same 8-seed / `Encrypt3xNNNCfg` scaffold; only the primitive-selection line changes. Each snippet has been round-tripped end-to-end (encrypt then decrypt, byte-exact recovery). Order follows the builders table above: CBC-MAC → Sponge → ARX → HMAC.
+
+#### 1. `BuildCBCMACChainAbsorb256` — Serpent-CBC-MAC
+
+Any `crypto/cipher.Block` implementation plugs in. Serpent (`github.com/aead/serpent`) is used here to keep the example distinct from the shipped `aescmac` registry entry.
+
+```go
+import (
+    "crypto/rand"
+
+    "github.com/aead/serpent"
+    "github.com/everanium/itb"
+    "github.com/everanium/itb/hashes"
+)
+
+func main() {
+    var fixedKey [32]byte // Serpent accepts 128 / 192 / 256-bit keys
+    if _, err := rand.Read(fixedKey[:]); err != nil {
+        panic(err)
+    }
+    block, err := serpent.NewCipher(fixedKey[:])
+    if err != nil {
+        panic(err)
+    }
+    serpentCBCMAC := hashes.BuildCBCMACChainAbsorb256(block)
+
+    cfg := &itb.Config{NonceBits: 512, BarrierFill: 4}
+    noise,  _ := itb.NewSeed256(1024, serpentCBCMAC)
+    lock,   _ := itb.NewSeed256(1024, serpentCBCMAC)
+    data1,  _ := itb.NewSeed256(1024, serpentCBCMAC)
+    data2,  _ := itb.NewSeed256(1024, serpentCBCMAC)
+    data3,  _ := itb.NewSeed256(1024, serpentCBCMAC)
+    start1, _ := itb.NewSeed256(1024, serpentCBCMAC)
+    start2, _ := itb.NewSeed256(1024, serpentCBCMAC)
+    start3, _ := itb.NewSeed256(1024, serpentCBCMAC)
+
+    pt := []byte("Serpent-CBC-MAC via BuildCBCMACChainAbsorb256")
+    ct, _ := itb.Encrypt3x256Cfg(cfg, noise, lock, data1, data2, data3, start1, start2, start3, pt)
+    rt, _ := itb.Decrypt3x256Cfg(cfg, noise, lock, data1, data2, data3, start1, start2, start3, ct)
+    _ = rt // rt is bit-exact equal to pt
+}
+```
+
+Camellia / SM4 / ARIA and every other 128-bit-block cipher exposing `cipher.Block` slot in identically. Wider blocks (Threefish-256, Rijndael-256) work too — CBC-MAC's chain output is truncated to the required `HashFuncN` width inside the builder.
+
+#### 2. `BuildSpongeChainAbsorb256` — Ascon-p over 320-bit state
+
+The builder takes an unkeyed `Permute` callback plus `(rate, capacity, fixedKey)`. Ascon-p's 320-bit state maps cleanly onto `rate=16` + `capacity=24`. The permutation is inlined below (Ascon v1.2 reference, ~20 lines); Keccak-f[1600] or any other sponge permutation drops in the same way behind the closure.
+
+```go
+import (
+    "crypto/rand"
+    "encoding/binary"
+    "math/bits"
+
+    "github.com/everanium/itb"
+    "github.com/everanium/itb/hashes"
+)
+
+var asconRC = []uint64{
+    0xf0, 0xe1, 0xd2, 0xc3, 0xb4, 0xa5,
+    0x96, 0x87, 0x78, 0x69, 0x5a, 0x4b,
+}
+
+func asconP12(s *[5]uint64) {
+    for i := 0; i < 12; i++ {
+        s[2] ^= asconRC[i]
+        s[0] ^= s[4]; s[4] ^= s[3]; s[2] ^= s[1]
+        t0 := (^s[0]) & s[1]
+        t1 := (^s[1]) & s[2]
+        t2 := (^s[2]) & s[3]
+        t3 := (^s[3]) & s[4]
+        t4 := (^s[4]) & s[0]
+        s[0] ^= t1; s[1] ^= t2; s[2] ^= t3; s[3] ^= t4; s[4] ^= t0
+        s[1] ^= s[0]; s[0] ^= s[4]; s[3] ^= s[2]; s[2] = ^s[2]
+        s[0] ^= bits.RotateLeft64(s[0], -19) ^ bits.RotateLeft64(s[0], -28)
+        s[1] ^= bits.RotateLeft64(s[1], -61) ^ bits.RotateLeft64(s[1], -39)
+        s[2] ^= bits.RotateLeft64(s[2], -1)  ^ bits.RotateLeft64(s[2], -6)
+        s[3] ^= bits.RotateLeft64(s[3], -10) ^ bits.RotateLeft64(s[3], -17)
+        s[4] ^= bits.RotateLeft64(s[4], -7)  ^ bits.RotateLeft64(s[4], -41)
+    }
+}
+
+func main() {
+    permute := func(state []byte) {
+        var s [5]uint64
+        for i := 0; i < 5; i++ {
+            s[i] = binary.LittleEndian.Uint64(state[i*8 : i*8+8])
+        }
+        asconP12(&s)
+        for i := 0; i < 5; i++ {
+            binary.LittleEndian.PutUint64(state[i*8:i*8+8], s[i])
+        }
+    }
+
+    var fixedKey [16]byte
+    if _, err := rand.Read(fixedKey[:]); err != nil {
+        panic(err)
+    }
+    asconSponge := hashes.BuildSpongeChainAbsorb256(permute, 16, 24, fixedKey[:])
+
+    cfg := &itb.Config{NonceBits: 512, BarrierFill: 4}
+    noise,  _ := itb.NewSeed256(1024, asconSponge)
+    lock,   _ := itb.NewSeed256(1024, asconSponge)
+    data1,  _ := itb.NewSeed256(1024, asconSponge)
+    data2,  _ := itb.NewSeed256(1024, asconSponge)
+    data3,  _ := itb.NewSeed256(1024, asconSponge)
+    start1, _ := itb.NewSeed256(1024, asconSponge)
+    start2, _ := itb.NewSeed256(1024, asconSponge)
+    start3, _ := itb.NewSeed256(1024, asconSponge)
+
+    pt := []byte("Ascon-p sponge via BuildSpongeChainAbsorb256")
+    ct, _ := itb.Encrypt3x256Cfg(cfg, noise, lock, data1, data2, data3, start1, start2, start3, pt)
+    rt, _ := itb.Decrypt3x256Cfg(cfg, noise, lock, data1, data2, data3, start1, start2, start3, ct)
+    _ = rt
+}
+```
+
+#### 3. `BuildARXChainAbsorb{256,512}` — SHA-256 and SHA-512
+
+`Hash256Fn` / `Hash512Fn` match any `func([]byte) [N]byte` full-hash one-shot signature. `crypto/sha256.Sum256` and `crypto/sha512.Sum512` slot in directly.
 
 ```go
 import (
@@ -131,30 +253,71 @@ func main() {
     // (up to 64 bytes for Config.NonceBits=512) reaches the digest.
     sha256Hash := hashes.BuildARXChainAbsorb256(sha256.Sum256, fixedKey[:])
 
-    // Build the 8-seed constellation. Each seed uses the same wrapped
-    // SHA-256 closure here for brevity; in production the 8 seeds
-    // may use independent primitives from the hashes registry.
     cfg := &itb.Config{NonceBits: 512, BarrierFill: 4}
-    noise, _ := itb.NewSeed256(1024, sha256Hash)
-    lock,  _ := itb.NewSeed256(1024, sha256Hash)
-    data1, _ := itb.NewSeed256(1024, sha256Hash)
-    data2, _ := itb.NewSeed256(1024, sha256Hash)
-    data3, _ := itb.NewSeed256(1024, sha256Hash)
+    noise,  _ := itb.NewSeed256(1024, sha256Hash)
+    lock,   _ := itb.NewSeed256(1024, sha256Hash)
+    data1,  _ := itb.NewSeed256(1024, sha256Hash)
+    data2,  _ := itb.NewSeed256(1024, sha256Hash)
+    data3,  _ := itb.NewSeed256(1024, sha256Hash)
     start1, _ := itb.NewSeed256(1024, sha256Hash)
     start2, _ := itb.NewSeed256(1024, sha256Hash)
     start3, _ := itb.NewSeed256(1024, sha256Hash)
 
-    plaintext := []byte("hello SHA-256 via ITB builder")
-    ct, _ := itb.Encrypt3x256Cfg(cfg, noise, lock, data1, data2, data3, start1, start2, start3, plaintext)
-    pt, _ := itb.Decrypt3x256Cfg(cfg, noise, lock, data1, data2, data3, start1, start2, start3, ct)
-
-    _ = pt // round-trip; bit-exact recovery of plaintext.
+    pt := []byte("SHA-256 via BuildARXChainAbsorb256")
+    ct, _ := itb.Encrypt3x256Cfg(cfg, noise, lock, data1, data2, data3, start1, start2, start3, pt)
+    rt, _ := itb.Decrypt3x256Cfg(cfg, noise, lock, data1, data2, data3, start1, start2, start3, ct)
+    _ = rt
 }
 ```
 
-The same pattern works for any 32-byte hash. `SM3` swap-in: substitute `sha256.Sum256` with `func(d []byte) [32]byte { return sm3.Sum(d) }` (using any SM3 implementation that exposes a one-shot 32-byte digest). For 64-byte digests like SHA-512, use `BuildARXChainAbsorb512(sha512.Sum512, fixedKey[:])`.
+For 64-byte digests, swap `crypto/sha256` for `crypto/sha512`, use `BuildARXChainAbsorb512(sha512.Sum512, fixedKey[:])` with a `[64]byte` fixed key, and switch the seed constructors to `itb.NewSeed512(2048, sha512Hash)` and the entry points to `itb.Encrypt3x512Cfg` / `itb.Decrypt3x512Cfg`. `SM3` and other 32-byte one-shot digests slot into the 256-bit path identically; wrap them in `func(d []byte) [32]byte { return sm3.Sum(d) }`.
 
-**HMAC-shape aliases.** `BuildHMACChainAbsorb{128,256,512}` are semantic aliases of `BuildARXChainAbsorb{128,256,512}` — the signature (`Hash256Fn` / `Hash512Fn` = `func([]byte) [N]byte`) matches any keyed hash construction that exposes a one-shot fixed-width digest, so callers who instantiate `hmac.New(sha256.New, key)` behind a closure returning `[32]byte` reach the same absorb path under a name that reads naturally at the call site. There is one code path per width; the alias names are wiring, not two independent implementations.
+#### 4. `BuildHMACChainAbsorb256` — HMAC-SHA-256
+
+`BuildHMACChainAbsorb{128,256,512}` are signature-driven semantic aliases of `BuildARXChainAbsorb{128,256,512}` — the shared `Hash256Fn` / `Hash512Fn` shape matches any keyed one-shot digest, so an `hmac.New(hashFn, key)` closure returning `[N]byte` reaches the same absorb path. One code path per width; the alias names are wiring, not two independent implementations. Use the HMAC name at the call site whenever the wrapped construction is HMAC — the resulting closure reads self-documenting.
+
+```go
+import (
+    "crypto/hmac"
+    "crypto/rand"
+    "crypto/sha256"
+
+    "github.com/everanium/itb"
+    "github.com/everanium/itb/hashes"
+)
+
+func main() {
+    var fixedKey [32]byte
+    if _, err := rand.Read(fixedKey[:]); err != nil {
+        panic(err)
+    }
+    hashFn := func(data []byte) [32]byte {
+        m := hmac.New(sha256.New, fixedKey[:])
+        m.Write(data)
+        var out [32]byte
+        copy(out[:], m.Sum(nil))
+        return out
+    }
+    hmacHash := hashes.BuildHMACChainAbsorb256(hashFn, fixedKey[:])
+
+    cfg := &itb.Config{NonceBits: 512, BarrierFill: 4}
+    noise,  _ := itb.NewSeed256(1024, hmacHash)
+    lock,   _ := itb.NewSeed256(1024, hmacHash)
+    data1,  _ := itb.NewSeed256(1024, hmacHash)
+    data2,  _ := itb.NewSeed256(1024, hmacHash)
+    data3,  _ := itb.NewSeed256(1024, hmacHash)
+    start1, _ := itb.NewSeed256(1024, hmacHash)
+    start2, _ := itb.NewSeed256(1024, hmacHash)
+    start3, _ := itb.NewSeed256(1024, hmacHash)
+
+    pt := []byte("HMAC-SHA-256 via BuildHMACChainAbsorb256")
+    ct, _ := itb.Encrypt3x256Cfg(cfg, noise, lock, data1, data2, data3, start1, start2, start3, pt)
+    rt, _ := itb.Decrypt3x256Cfg(cfg, noise, lock, data1, data2, data3, start1, start2, start3, ct)
+    _ = rt
+}
+```
+
+HMAC-SHA-512 uses `BuildHMACChainAbsorb512` with a `func([]byte) [64]byte` closure over `hmac.New(sha512.New, key)`, a `[64]byte` fixed key, and the `NewSeed512` / `Encrypt3x512Cfg` entry points — the width switch parallels the ARX variant above.
 
 ### Performance note for builders
 
