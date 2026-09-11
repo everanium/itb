@@ -55,11 +55,70 @@ Default output directory is `$HOME/scratch/redteam/nullhash/` per the shared red
 
 `nullHash` violates the entropy-floor reduction target: the barrier absorbs a primitive's algebraic weakness (T-function structure, GF(2)-linearity, poor multiplier diffusion) **when the primitive's cascade output does not collapse to a per-seed constant**. Once the primitive collapses, the barrier's per-chunk mask independence collapses with it and the attack surface reduces to the observable-bit budget on the wire (~42 bits out of 80 nominal for the shipped constellation), which is trivially brute-forceable under any KPA. The positive residual under pure content-agnostic ciphertext-only — an irreducible ~8-bit structural ambiguity on the `lockSeed` low byte — is what the barrier layers still architecturally contribute even at the entropy floor.
 
-The `nullHash` attack path is structurally closed under `jokeHash`: `jokeHash`'s multiply-add fold retains full 64-bit accumulated state per invocation, `ChainHash128` does not collapse under it, per-pixel decisions vary per pixel and per nonce, per-chunk masks vary across chunks. See [Question 2](#question-2--what-if-i-write-a-three-line-jokehash) below for the empirical closure of every reduction step the `nullHash` attack used.
+The `nullHash` attack path is structurally closed under stronger primitives whose cascade output stays per-pixel varying. See [Question 2](#question-2--what-if-the-primitive-is-trainhash-an-8-bit-per-lane-multiply-add) below for the intermediate-degeneracy case (`trainHash`, 8-bit-per-lane multiply-add — retains per-pixel variation but collapses to a 16-bit unrank input space) and [Question 3](#question-3--what-if-i-write-a-three-line-jokehash) for the empirical closure of every reduction step the `nullHash` attack used under `jokeHash` (64-bit-per-lane multiply-add — no collapse).
 
 ---
 
-## Question 2 — What if I write a three-line `jokeHash`?
+## Question 2 — What if the primitive is `trainHash`, an 8-bit-per-lane multiply-add?
+
+**Reader's setup.** «`nullHash` collapses via XOR⁴ = identity into a per-seed 16-bit constant. `jokeHash` retains full 64-bit accumulated state per invocation. What sits between them — an 8-bit-per-lane multiply-add fold that DOES vary the output per pixel but keeps the cascade output narrow enough that Interlock's mask-triple derivation might be tractable? Two independent 8-bit lanes:
+
+```
+trainHash(data, seed0, seed1):
+    lo = seed0 & 0xFF
+    hi = seed1 & 0xFF
+    for b in data:
+        lo = ((lo + b) * 3 + 1) & 0xFF
+        hi = ((hi + b) * 5 + 7) & 0xFF
+    return (lo, hi)
+```
+
+Non-cancelling multiply-add per lane, so the `nullHash` XOR-cancellation collapse is absent — per-pixel output varies. But 8-bit output width per lane collapses the `splitRank48(prf_lo, prf_hi)` divmod input to 2¹⁶ effective states across all chunks, versus the full C(48,16) × C(32,16) ≈ 2⁷⁰·² mask-triple space at 128-bit hash width. An attacker enumerating 2¹⁶ candidate `(lo, hi)` byte pairs takes under 10 seconds on i7-11700K. Does the 16-bit rank-space collapse empirically break the wire?»
+
+### Current analytical picture
+
+`trainHash`'s cascade output IS 16-bit collapsed at the divmod input to `splitRank48`, so per-chunk mask triple enumeration IS laptop-tractable. But the `ChainHash128` cascade over 8 Components words plus the 1-round primer over `deriveInterLockSeed(ilNonce)` output makes each real chunk's mask triple depend on the full Components state, not just the visible `(lo, hi)` byte pair. An attacker's synthetic candidate space via `trainHashSeedConst(lo, hi)` (Components[0..1] = `(lo, hi)`, Components[2..7] = 0) does not reach the real cascade path even at the correct `(lo, hi)` byte pair — its cascade output at any per-chunk buffer differs from the real seed's cascade output.
+
+### The full picture
+
+Two structural blocks close the attack:
+
+- **Cascade over Components blocks the synthetic-candidate space.** Real `lockSeed`'s cascade at each per-chunk buffer `[0x03 | LE64(groupIdx) | 4×0]` depends on the composition of the primer round output `(derive_lo, derive_hi) = f(ilNonce, all Components)` with 4 further rounds folding `Components[0..7]`. The attacker's synthetic 2¹⁶ space (Components[2..7] = 0) covers 2⁻⁵⁶ of the real 2⁷² effective cascade-path space per seed. Empirically none of the 65536 synthetic candidates matches real seed's cascade at any tested chunk.
+
+- **Interlock consumes both lanes monolithically.** `splitRank48(prf_lo, prf_hi)` requires the full 128-bit `(lo || hi)` cascade output. External Barrier consumes `lo(hLo)` alone (`process_generic.go blockHash128`); Interlock consumes both. The 7-of-8 unmask leak (channels 1..7 receive `channelXOR = 0` under 8-bit primitives, since the 5-bit xorMask fits entirely in channel 0's shift-slot) recovers per-pixel `(rotation, noisePos)` under `lockSeed`-peek debug conditions. Attacker-realistic recovery requires observing the Interlock mask triple, which requires either `lockSeed` cascade knowledge or a joint enumeration of `(rank_per_chunk, cobs_position, Barrier_per_pixel)` that explodes exponentially through COBS non-locality.
+
+The asymmetric cascade design in Interlock fill — **5 / 9 / 17 rounds** at `keyBits = 512 / 1024 / 2048` (1 primer round + `keyBits / 128` component rounds), versus the external Barrier's symmetric **4 / 8 / 16 rounds** without primer — is the specific architectural response that closes the attack. The primer round takes `deriveInterLockSeed(ilNonce)` output `(derive_lo, derive_hi)` and prepends it to `Components[0..N-1]` in the cascade input list. The attacker's synthetic candidates, restricted to varying Components[0..1], cannot reproduce the real primer-round input without simultaneously guessing every Components entry.
+
+### Empirical measurement
+
+Attack code: `redteam_trainhash_leak_test.go`, `TestRedTeamTrainHashLeak7of8` (Go build tag `redteam`). Measured on i7-11700K, same 512-byte plaintext / 25×25 = 625-pixel container as Question 1 for direct comparability.
+
+| Step | Threat model | Wall-clock | Recovery |
+|---|---|---|---|
+| **Step 1** — 7-of-8 unmask leak measurement | Full KPA + startPixels given + `lockSeed` peek (debug hint only) | ~10 ms | 74 / 75 pixels unique `(rotation, noisePos)` |
+| **Step 2** — 2¹⁶ `lockSeed` enumeration | Full KPA + startPixels given, no `lockSeed` peek | ~5 s | **0 / 75 match at any candidate, including at the real `(lo, hi)`** |
+
+**Step 1** validates the 7-of-8 unmask leak: channels 1..7 receive `channelXOR = 0` under an 8-bit primitive (the 5-bit xorMask fits entirely in channel 0's shift-slot; channels 1..7 read `xorMask >> (ch × 7) = 0`), so reverse-rotate against expected COBS-encoded lane bytes recovers per-pixel `(rotation, noisePos)` uniquely on 74 of 75 pixels tested. The one ambiguous case is a rare collision where two hypotheses pass 7-channel match — 98.67 % unique overall.
+
+**Step 2** demonstrates the cascade block: for each of the 2¹⁶ candidate `lockSeed` synthesised via `trainHashSeedConst(lo, hi)`, run the same 7-of-8 leak measurement. No candidate — including at the real `(lo, hi)` byte pair — matches even one of 75 pixels across three snakes. The attacker's synthetic candidate space (Components[2..7] = 0) never intersects the real cascade path (Components[2..7] non-zero) under `trainHash`'s non-cancelling multiply-add fold.
+
+### Reproduction
+
+```
+go test -tags redteam -run TestRedTeamTrainHashLeak7of8 ./ -v
+```
+
+Default output directory is `$HOME/scratch/redteam/trainhash_leak/`. The test emits a fresh victim (`ct.bin` + `kpa.bin` + `cell.meta.json`) and runs both Step 1 leak measurement and Step 2 2¹⁶ `lockSeed` enumeration in sequence.
+
+### Conclusion
+
+`trainHash` surfaces one specific ITB architectural property: **the asymmetric Interlock-fill cascade design** (primer round over `deriveInterLockSeed` output plus full Components cascade) closes the T-function bit-plane inversion path that a symmetric external-Barrier cascade shape would open. Even the 2¹⁶ rank-space collapse under `trainHash`'s 8-bit output width does not admit the attack: the compound defence — external Barrier's `lo`-lane-only consumption + Interlock's dual-lane consumption through combinadic unrank + Interlock cascade's primer round + full-Components cascade over 4 / 8 / 16 rounds — blocks the attacker's chicken-egg loop between observing mask triples and observing per-pixel Barrier params.
+
+The `nullHash` attack path is structurally closed under `trainHash` for the same reasons it is closed under `jokeHash` in [Question 3](#question-3--what-if-i-write-a-three-line-jokehash) below (which is the strictly-stronger 64-bit-per-lane variant where the 16-bit collapse itself disappears): non-cancelling per-invocation state, per-pixel varying output, per-chunk varying mask triples, and cascade over full Components. `trainHash` is the intermediate degeneracy case where the rank-space collapse is present but Interlock's primer-round asymmetric cascade still blocks the attack empirically at 2¹⁶ candidates.
+
+---
+
+## Question 3 — What if I write a three-line `jokeHash`?
 
 **Reader's setup.** «Suppose I plug into all eight ITB seed roles this three-line primitive — initialise the accumulator from `seed0`, mix each data byte via a small odd multiplier plus add, complement for the second lane:
 
@@ -193,7 +252,7 @@ go test -tags redteam -run TestRedTeamJokeHashFullKPA ./ -v
 
 ---
 
-## Question 3 — CRC128 is GF(2)-linear. Can I use compound-key linear algebra to break ITB?
+## Question 4 — CRC128 is GF(2)-linear. Can I use compound-key linear algebra to break ITB?
 
 **Reader's setup.** «CRC128 admits full total inversion in polynomial time — one Gaussian elimination on a GF(2) system. The public script `scripts/redteam/itb/theory/crc128/compound_key_crc128.py` recovers a compound key `K` without any crib KPA on Single Ouroboros. Why does that path not carry into the shipped construction?»
 
@@ -329,7 +388,7 @@ Exactly this aspect makes the barrier «structurally unmeasurable at attacker-re
 
 ---
 
-## Question 4 — FNV-1a has the T-function property. Doesn't that break the barrier?
+## Question 5 — FNV-1a has the T-function property. Doesn't that break the barrier?
 
 **Reader's setup.** «FNV-1a's round is `h = (h XOR byte) * FNV_PRIME`. Multiplication modulo `2^64` is not GF(2)-linear (carry chain), but it has the T-function property (Klimov & Shamir 2002) — output bit `t` depends only on input bits `0..t`, invertible plane-by-plane in `O(n^2)`. Under Single Ouroboros the archived Phase 2g SAT recovered `dataSeed` lo-lane in `~8h` single-core on 4 cribs + disclosed `startPixel` at `keyBits = 512`. Does that path carry into the shipped construction?»
 
