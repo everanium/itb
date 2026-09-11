@@ -60,9 +60,9 @@ The Core API and the Go C ABI are consolidated around the `triple/` facade and t
 
 Full matrix:
 - 34 × 34 (Go Core + 33 bindings) = 1156 pairs
-- 9 shipped profiles (4 Single Message, 4 Streaming, 1 blob-only)
+- 13 shipped profiles (6 Single Message, 6 Streaming, 1 blob-only)
 - 1 sample file (`tools/eitb/in-file.txt`, 4 KiB, deterministic)
-- **9248 cells PASS** (8 cipher-carrying profiles × 34 × 34); 1156 cells N/A (blob-only profile intentionally exposes no cipher surface)
+- **13872 cells PASS** (12 cipher-carrying profiles × 34 × 34); 1156 cells N/A (blob-only profile intentionally exposes no cipher surface); 0 FAIL across the full 15028-cell matrix
 
 **All features fully implemented.** Every binding is a thin proxy over the same `ITB_Triple_*` FFI surface and exposes both shapes uniformly — Single Message and Streaming, AEAD and Non-AEAD — with the stream pump adapted to each language's native IO idiom (`io.Reader` / `io.Writer` in Go, the equivalent stream abstraction per language).
 
@@ -158,7 +158,7 @@ go test -coverprofile=coverage.out $(go list ./... | grep -vE 'tools/eitb|cmd/cs
 
 Full benchmark results across ITB key sizes, hash primitives, and CPUs: **[BENCH3.md](BENCH3.md)**.
 
-Throughput scales with data size due to goroutine parallelism across CPU cores. CGO mode uses the C pixel kernel on top of the fused ChainHash cascade kernels of every PRF-grade primitive (`hashes/internal/<primitive>asm` plus `internal/areionasm` for Areion-SoEM); `CGO_ENABLED=0` swaps only the C pixel kernel for the portable Go pipeline, while the cascade kernels stay engaged via Go assembly. Decrypt does not require `crypto/rand` and scales further on high-core-count CPUs.
+Throughput scales with data size due to goroutine parallelism across CPU cores. CGO mode uses the C pixel kernel on top of the fused ChainHash cascade kernels of every PRF-grade primitive (`hashes/internal/<primitive>asm` plus `internal/aesitbasm` and `internal/areionasm` for AES-ITB-128 and Areion-SoEM-256/512); `CGO_ENABLED=0` swaps only the C pixel kernel for the portable Go pipeline, while the cascade kernels stay engaged via Go assembly. Decrypt does not require `crypto/rand` and scales further on high-core-count CPUs.
 
 ### Concurrency
 
@@ -923,7 +923,10 @@ The registered path composes with the `triple.Pipeline` facade: `triple.Init(pro
 
 ```go
 import (
+    "crypto/hmac"
+    "crypto/rand"
     "crypto/sha256"
+    "errors"
 
     "github.com/everanium/itb"
     "github.com/everanium/itb/hashes"
@@ -932,26 +935,44 @@ import (
 func init() {
     factory := func(key ...[]byte) (itb.HashFunc256, itb.BatchHashFunc256, []byte, error) {
         var fixedKey [32]byte
-        if len(key) > 0 {
+        switch {
+        case len(key) == 0:
+            if _, err := rand.Read(fixedKey[:]); err != nil {
+                return nil, nil, nil, err
+            }
+        case len(key[0]) == 32:
             copy(fixedKey[:], key[0])
-        } // else fill from crypto/rand.Read(fixedKey[:])
-        h := hashes.BuildARXChainAbsorb256(sha256.Sum256, fixedKey[:])
+        default:
+            return nil, nil, nil, errors.New("sha256_hmac: key must be exactly 32 bytes")
+        }
+        hashFn := func(data []byte) [32]byte {
+            h := hmac.New(sha256.New, fixedKey[:])
+            h.Write(data)
+            var out [32]byte
+            copy(out[:], h.Sum(nil))
+            return out
+        }
+        h := hashes.BuildHMACChainAbsorb256(hashFn, fixedKey[:])
         return h, nil, fixedKey[:], nil
     }
-    _ = hashes.Register(hashes.Spec{
-        Name:        "sha256_arx",
+    if err := hashes.Register(hashes.Spec{
+        Name:        "sha256_hmac",
         Width:       hashes.W256,
         Make256Pair: factory,
-    })
+    }); err != nil {
+        panic(err)
+    }
 }
 ```
+
+`BuildHMACChainAbsorb{128,256,512}` and `BuildARXChainAbsorb{128,256,512}` are semantic aliases of the same signature-driven chain-absorb path; either name accepts any keyed one-shot hash closure matching `Hash{256,512}Fn` (HMAC families, KMAC, keyed BLAKE, keyed SHA-3). Alongside `Make{N}Pair`, `hashes.Spec` accepts user-supplied fused hooks — `FusedChainHash{N}`, `FusedChainHash{N}x8`, `InterlockFillBatch16x{W}`, `InterlockFillBatch32x{W}` — for a primitive with its own SIMD tier-1 kernels; `hashes.Register` smoke-validates each supplied hook against the single-arm closure and rejects a hook whose output diverges.
 
 ### Custom user-supplied macs
 
 The MAC surface is pluggable in the same two shapes.
 
 - **Closure-directly-passed.** Construct an `itb.MACFunc` closure (and optionally the matching `itb.MACIncrementalFunc` arm) and pass it directly to the MAC Authenticated Low-Level entry points. The closure owns its keying and pooling; it stays local to the constructing call site — `macs.Find` does not resolve it.
-- **Registered by name via `macs.Register(spec macs.Spec) error`.** The custom MAC gains a canonical name that `macs.Find` / `macs.Make` / `macs.MakeIncremental` / `macs.MakeMACPair` resolve alongside shipped entries. The Spec carries `Name` (lowercase letters, digits, underscores; capped at `macs.MaxNameLen = 12`), `KeySize` ≥ `MinKeyBytes` ≥ 16, `TagSize` ≥ 16, a required `MakeMAC` factory, and an optional `MakeIncrementalMAC` factory — when nil, `Register` synthesizes a concatenate-then-MAC arm equivalent by construction. `Register` smoke-validates the factories with a throwaway key (constant tag length, determinism, incremental / one-shot equivalence) before accepting the Spec. Registration is process-wide and immutable — a second `Register` for the same name returns `macs.ErrMACExists`. The shipped `macs.Registry` itself is untouched, so the FFI iteration surface (`ITB_MACCount` / `ITB_MACName`) is unaffected. `macs.Register` is a Go-native API only; bindings are triple-only and do not expose custom-MAC plug.
+- **Registered by name via `macs.Register(spec macs.Spec) error`.** The custom MAC gains a canonical name that `macs.Find` / `macs.Make` / `macs.MakeIncremental` / `macs.MakeMACPair` resolve alongside shipped entries. The Spec carries `Name` (lowercase letters, digits, underscores; capped at `macs.MaxNameLen = 12`), `KeySize` ≥ `MinKeyBytes` ≥ 16, `TagSize` ∈ [16, 64], a required `MakeMAC` factory, and an optional `MakeIncrementalMAC` factory — when nil, `Register` synthesizes a concatenate-then-MAC arm equivalent by construction. `Register` smoke-validates the factories with a throwaway key (constant tag length, determinism, incremental / one-shot equivalence) before accepting the Spec. Registration is process-wide and immutable — a second `Register` for the same name returns `macs.ErrMACExists`. The shipped `macs.Registry` itself is untouched, so the FFI iteration surface (`ITB_MACCount` / `ITB_MACName`) is unaffected. `macs.Register` is a Go-native API only; bindings are triple-only and do not expose custom-MAC plug.
 
 Two builder helpers produce a `macs.Spec` ready for `Register` from a hash-registry primitive name, honouring every closure contract by construction: `macs.BuildHMAC(hashName, macs.HMACSpec)` wraps a primitive's unkeyed `hash.Hash` form in the HMAC construction (RFC 2104), and `macs.BuildKeyedHash(hashName, macs.KeyedHashSpec)` uses a primitive's native keyed mode directly where that keyed form is itself a sound PRF. The name resolves through `hashes.Find`, so a user-registered custom hash composes the same way as a shipped one — `BuildHMAC` requires the source primitive to expose its `hash.Hash` form via the optional `hashes.Spec.HashHash` field, and `BuildKeyedHash` its native keyed mode via `hashes.Spec.KeyedHash`; a primitive without the matching field (Areion, AES-CMAC, ChaCha20, custom hashes registered without one) is rejected with a clear error and registers through the fully hand-rolled `macs.Register` path instead. `macs.MakeMACPair(name, key)` resolves both arms plus the Spec in one call.
 
@@ -974,11 +995,19 @@ func init() {
 }
 
 // "b2b512_mac" now resolves by name through the facade:
-_ = triple.Register("team-b2b512-v1", triple.Profile{
-    Mode: "singlemsg-mac", Width: 512, InnerHash: "areion512",
-    KeyBits: 1024, MacName: "b2b512_mac",
-})
-p, blob, _ := triple.Init("team-b2b512-v1", triple.Opts{})
+func example() {
+    if err := triple.Register("team-b2b512-v1", triple.Profile{
+        Mode: "singlemsg-mac", Width: 512, InnerHash: "areion512",
+        KeyBits: 1024, MacName: "b2b512_mac",
+    }); err != nil {
+        panic(err)
+    }
+    p, blob, err := triple.Init("team-b2b512-v1", triple.Opts{})
+    if err != nil {
+        panic(err)
+    }
+    _, _ = p, blob
+}
 ```
 
 A fully hand-rolled `macs.Spec` — the parallel of the hand-rolled custom-primitive path on the hashes side — registers a caller-written construction with no builder involved. This is the path for any keyed PRF the builders do not cover: a primitive without a `hash.Hash` form, a national-standard MAC, an HSM-backed keyed transform.
@@ -986,8 +1015,7 @@ A fully hand-rolled `macs.Spec` — the parallel of the hand-rolled custom-primi
 ```go
 import (
     "crypto/hmac"
-
-    "golang.org/x/crypto/sha3"
+    "crypto/sha3"
 
     "github.com/everanium/itb"
     "github.com/everanium/itb/macs"

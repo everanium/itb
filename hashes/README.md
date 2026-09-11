@@ -33,17 +33,18 @@ In FFI-stable index order:
 
 | # | Name (FFI) | Native width | itb type |
 |---|---|---|---|
-| 0 | `areion256` | 256 | `HashFunc256` (paired with `BatchHashFunc256`) |
-| 1 | `areion512` | 512 | `HashFunc512` (paired with `BatchHashFunc512`) |
-| 2 | `blake2b256` | 256 | `HashFunc256` |
-| 3 | `blake2b512` | 512 | `HashFunc512` |
-| 4 | `blake2s` | 256 | `HashFunc256` |
-| 5 | `blake3` | 256 | `HashFunc256` |
-| 6 | `aescmac` | 128 | `HashFunc128` (cached AES-NI block) |
-| 7 | `siphash24` | 128 | `HashFunc128` (uncached — pure function) |
-| 8 | `chacha20` | 256 | `HashFunc256` |
+| 0 | `aesitb128` | 128 | `HashFunc128` (paired with `BatchHashFunc128`) — ITB-native inner-role only (Non-PRF standalone, safe under the compound defence stack) |
+| 1 | `areion256` | 256 | `HashFunc256` (paired with `BatchHashFunc256`) |
+| 2 | `areion512` | 512 | `HashFunc512` (paired with `BatchHashFunc512`) |
+| 3 | `blake2b256` | 256 | `HashFunc256` |
+| 4 | `blake2b512` | 512 | `HashFunc512` |
+| 5 | `blake2s` | 256 | `HashFunc256` |
+| 6 | `blake3` | 256 | `HashFunc256` |
+| 7 | `aescmac` | 128 | `HashFunc128` (cached AES-NI block) |
+| 8 | `siphash24` | 128 | `HashFunc128` (uncached — pure function) |
+| 9 | `chacha20` | 256 | `HashFunc256` |
 
-The order is FFI-stable; index 0..8 is exposed through
+The order is FFI-stable; index 0..9 is exposed through
 `ITB_HashName(idx)` in the shared library and re-ordering would
 break the ABI.
 
@@ -69,6 +70,7 @@ Beyond the shipped primitives, the package exposes three builder families that w
 | `BuildCBCMACChainAbsorb{128,256,512}` | `crypto/cipher.Block` (caller-keyed) | Caller has a block cipher (AES, Camellia, ARIA, SM4, ...) and wants CBC-MAC chain-absorb |
 | `BuildSpongeChainAbsorb{128,256,512}` | `Permute` + `(rate, capacity, fixedKey)` | Caller has an unkeyed permutation (Keccak-f, Ascon-PRF, ...) and wants a keyed sponge |
 | `BuildARXChainAbsorb{128,256,512}` | `Hash256Fn` / `Hash512Fn` (full hash one-shot) | Caller has a full hash function (SHA-256, SM3, SHA-512, ...) and wants safe absorption |
+| `BuildHMACChainAbsorb{128,256,512}` | `Hash256Fn` / `Hash512Fn` (full hash one-shot) | Signature-driven semantic alias of `BuildARXChainAbsorb{128,256,512}` — reads naturally at the call site when the closure wraps `hmac.New(hashFn, key)` |
 
 **Why these matter for ITB security.** ITB supports nonce widths of 128, 256 or 512 bits via `Config.NonceBits` (threaded through any Cfg-suffixed entry point). The per-call buffer presented to a `HashFunc` closure carries a domain-tag byte plus the configured nonce material — 20, 36, or 68 bytes for the three nonce widths respectively. Every byte of the `data` parameter must reach the digest for ITB's advertised nonce strength to hold.
 
@@ -152,6 +154,8 @@ func main() {
 
 The same pattern works for any 32-byte hash. `SM3` swap-in: substitute `sha256.Sum256` with `func(d []byte) [32]byte { return sm3.Sum(d) }` (using any SM3 implementation that exposes a one-shot 32-byte digest). For 64-byte digests like SHA-512, use `BuildARXChainAbsorb512(sha512.Sum512, fixedKey[:])`.
 
+**HMAC-shape aliases.** `BuildHMACChainAbsorb{128,256,512}` are semantic aliases of `BuildARXChainAbsorb{128,256,512}` — the signature (`Hash256Fn` / `Hash512Fn` = `func([]byte) [N]byte`) matches any keyed hash construction that exposes a one-shot fixed-width digest, so callers who instantiate `hmac.New(sha256.New, key)` behind a closure returning `[32]byte` reach the same absorb path under a name that reads naturally at the call site. There is one code path per width; the alias names are wiring, not two independent implementations.
+
 ### Performance note for builders
 
 Builders dispatch through interface callbacks (`cipher.Block.Encrypt`) and `[]byte` state buffers, costing 5-15% throughput vs the inline per-primitive closures shipped here (`aescmac.go`, `chacha20.go`, ...). The built-in closures use stack-allocated fixed-size state arrays (`var state [32]byte`), inlined permutation calls, and `unsafe.Pointer` escape-analysis tricks. The builders are intentionally simpler — they target correctness-by-construction for user primitives, not peak throughput. Callers who need both correctness **and** peak throughput for a specific primitive write a dedicated closure following the `hashes/*.go` patterns.
@@ -167,7 +171,10 @@ A user primitive is pluggable at the Low-Level surface in two shapes:
 
 ```go
 import (
+    "crypto/hmac"
+    "crypto/rand"
     "crypto/sha256"
+    "fmt"
 
     "github.com/everanium/itb"
     "github.com/everanium/itb/hashes"
@@ -181,24 +188,42 @@ func init() {
     factory := func(key ...[]byte) (itb.HashFunc256, itb.BatchHashFunc256, []byte, error) {
         var fixedKey [32]byte
         if len(key) > 0 {
+            if len(key[0]) != 32 {
+                return nil, nil, nil, fmt.Errorf("hmac_sha256: key must be 32 bytes, got %d", len(key[0]))
+            }
             copy(fixedKey[:], key[0])
-        } // else fill from crypto/rand.Read(fixedKey[:])
-        h := hashes.BuildARXChainAbsorb256(sha256.Sum256, fixedKey[:])
+        } else {
+            if _, err := rand.Read(fixedKey[:]); err != nil {
+                return nil, nil, nil, fmt.Errorf("hmac_sha256: rand.Read: %w", err)
+            }
+        }
+        hashFn := func(data []byte) [32]byte {
+            m := hmac.New(sha256.New, fixedKey[:])
+            m.Write(data)
+            var out [32]byte
+            copy(out[:], m.Sum(nil))
+            return out
+        }
+        h := hashes.BuildHMACChainAbsorb256(hashFn, fixedKey[:])
         return h, nil, fixedKey[:], nil
     }
-    _ = hashes.Register(hashes.Spec{
-        Name:        "sha256_arx",
+    if err := hashes.Register(hashes.Spec{
+        Name:        "hmac_sha256",
         Width:       hashes.W256,
         Make256Pair: factory,
-    })
+    }); err != nil {
+        panic(err)
+    }
 }
 
 // Elsewhere — the registered name resolves through the standard
 // name-keyed dispatcher exactly like a shipped primitive.
-seed, keyBytes, _ := hashes.NewSeed256("sha256_arx", 1024)
+seed, keyBytes, _ := hashes.NewSeed256("hmac_sha256", 1024)
 _ = keyBytes // persist alongside seed.Components for cross-process restore
 _ = seed
 ```
+
+**Fused-hook fields on the Spec are user-settable.** Beyond `Make{N}Pair`, `hashes.Spec` exposes optional fast-path fields — `FusedChainHash{N}` and `FusedChainHash{N}x8` (four- / eight-lane ChainAbsorb cascades for `hashes.NewSeed{N}` construction speed), `InterlockFillBatch16x{W}` and `InterlockFillBatch32x{W}` (batched Interlocked Barrier fill kernels on the per-pixel hot path). The factory above declares none of them, and the seed built from the closures alone produces and decrypts the same wire — the hooks are performance paths only. A registered primitive that ships alongside a hand-tuned AVX-512 / VAES / SHA-NI kernel populates these fields at Register time; the shipped registry entries all do this, which is what buys tier-1 throughput on their target microarchitectures. Users who care about throughput on a custom primitive follow the same pattern: write the batched kernel, stash the callback in the Spec at Register time.
 
 The shipped `Registry` itself is immutable — user entries live in a separate mutex-guarded slice — so the FFI iteration surface (`ITB_HashName` / `ITB_HashWidth`) is unaffected by runtime registrations. `hashes.Register` is a Go-native API only. Bindings are triple-only and do not expose custom-primitive plug; a binding caller who needs a custom PRF wires the Go-native surface directly.
 
@@ -294,6 +319,7 @@ closure (no key tuple element):
 
 | variadic-short                | explicit `WithKey`              |
 |-------------------------------|---------------------------------|
+| `AESITB128Pair(...key)`       | `AESITB128PairWithKey(key)`     |
 | `Areion256Pair(...key)`       | `Areion256PairWithKey(key)`     |
 | `Areion512Pair(...key)`       | `Areion512PairWithKey(key)`     |
 | `BLAKE2s(...key)`             | `BLAKE2sWithKey(key)`           |
@@ -302,6 +328,8 @@ closure (no key tuple element):
 | `BLAKE3(...key)`              | `BLAKE3WithKey(key)`            |
 | `AESCMAC(...key)`             | `AESCMACWithKey(key)`           |
 | `ChaCha20(...key)`            | `ChaCha20WithKey(key)`          |
+
+`AESITB128Pair` takes a `[16]byte` fixed key (128-bit, matching AES key size), the rest take `[32]byte`. `SipHash24Pair()` is not in the table — it is keyed by seed components alone with no fixed-key element (`SipHash24Pair()` takes no argument and returns a 2-tuple without a key), so both the variadic and WithKey forms would be no-ops.
 
 The variadic short form delegates to `WithKey` (Go inliner removes
 the wrapper at compile time), so semantics are identical. Either
