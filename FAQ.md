@@ -55,7 +55,62 @@ Default output directory is `$HOME/scratch/redteam/nullhash/` per the shared red
 
 `nullHash` violates the entropy-floor reduction target: the barrier absorbs a primitive's algebraic weakness (T-function structure, GF(2)-linearity, poor multiplier diffusion) **when the primitive's cascade output does not collapse to a per-seed constant**. Once the primitive collapses, the barrier's per-chunk mask independence collapses with it and the attack surface reduces to the observable-bit budget on the wire (~42 bits out of 80 nominal for the shipped constellation), which is trivially brute-forceable under any KPA. The positive residual under pure content-agnostic ciphertext-only — an irreducible ~8-bit structural ambiguity on the `lockSeed` low byte — is what the barrier layers still architecturally contribute even at the entropy floor.
 
-The `nullHash` attack path is structurally closed under stronger primitives whose cascade output stays per-pixel varying. See [Question 2](#question-2--what-if-the-primitive-is-trainhash-an-8-bit-per-lane-multiply-add) below for the intermediate-degeneracy case (`trainHash`, 8-bit-per-lane multiply-add — retains per-pixel variation but collapses to a 16-bit unrank input space) and [Question 3](#question-3--what-if-i-write-a-three-line-jokehash) for the empirical closure of every reduction step the `nullHash` attack used under `jokeHash` (64-bit-per-lane multiply-add — no collapse).
+The `nullHash` attack path is structurally closed under stronger primitives whose cascade output stays per-pixel varying and whose per-round iteration preserves entropy relative to initial state (bijective per-iteration). See [Question 1a](#question-1a--what-if-the-primitive-is-quadhash-a-squaring-t-function) below for a parallel collapse mechanism — non-bijective iteration `x²` induces an attractor-collapse variant of `nullHash`'s linear identity collapse — and [Question 2](#question-2--what-if-the-primitive-is-trainhash-an-8-bit-per-lane-multiply-add) / [Question 3](#question-3--what-if-i-write-a-three-line-jokehash) for the bijective non-collapsing cases (`trainHash` at 8-bit-per-lane, `jokeHash` at 64-bit-per-lane).
+
+---
+
+## Question 1a — What if the primitive is `quadHash`, a squaring T-function?
+
+**Reader's setup.** «`nullHash` collapses via linear XOR⁴ = identity into a per-seed constant. What if I use a non-linear squaring fold — same 8-bit-per-lane width as `trainHash`, T-function class, but non-bijective per iteration because `x² mod 256` has collisions on `±x`? Two-lane squaring:
+
+```
+quadHash(data, seed0, seed1):
+    lo = seed0 & 0xFF
+    hi = seed1 & 0xFF
+    for b in data:
+        lo = ((lo + b) * (lo + b))          & 0xFF   # x²
+        hi = ((hi + b) * (hi + b) + 1)      & 0xFF   # x² + 1
+    return (lo, hi)
+```
+
+`x²` is T-function (bit t depends only on bits ≤ t of input), so recovery is polynomial per bit-plane. `x² mod 256` produces only ~44 unique output values from a 256-value domain, versus `trainHash`'s bijective 256 values — one iteration loses ~2.5 bits of entropy on average. Repeated iteration converges to an attractor set (fixed points at `l = 0` and `l = 1`, orbits of length ≤ 8 elsewhere). Does this cascade attractor collapse open the wire the way `nullHash`'s linear collapse does?»
+
+### Current analytical picture
+
+`quadHash`'s cascade collapses through a **buffer-length-dependent attractor mechanism** distinct from `nullHash`'s linear XOR cancellation. Under a 13-byte Interlock chunk buffer `[0x03 | LE64(groupIdx) | 4×0]`, 13 non-bijective iterations of `l = (l + b)² & 0xFF` drive the state fully into the attractor set — `Components[1..7]` effect on cascade output vanishes into the attractor, and the mask triples become effectively a function of the buffer alone. Under the shorter 4-byte external-Barrier per-pixel buffer `[LE32(pixel_idx)]`, only 4 iterations run — the attractor is partially reached and `Components[0]` still dominates per-pixel `(rotation, noisePos)` derivation. Both stages give the attacker a foothold: mask triples via `Components[1..7] = 0` synthetic seed, `Components[0]` via a 256-brute per seed under Full KPA byte-match feedback.
+
+### Empirical measurement
+
+Attack code: `redteam_quadhash_leak_test.go`, `TestRedTeamQuadHashLeak7of8` and `TestRedTeamQuadHashFullAttack` (Go build tag `redteam`). Measured on i7-11700K, 512-byte plaintext, 25×25 = 625-pixel container.
+
+| Threat model | Wall-clock | Recovery |
+|---|---|---|
+| Full KPA + startPixels (via synthetic-seed cascade collapse — no lab peek needed) | ~660 ms, 3984 Decrypt trials | **512 / 512 bytes bit-exact** |
+| Step 1 leak measurement (7-of-8 unmask, under lab lockSeed peek for debug) | ~10 ms | 74 / 75 pixels unique |
+| Step 2 mask triple recovery (2¹⁶ lockSeed enumeration, no lockSeed peek) | ~3.5 s | **75 / 75 match at synthetic `Components 0` candidates** — Interlock cascade broken |
+
+**Sequential brute converges in 2 greedy passes.** Baseline (`Components[0] = 1..8`, `Components[1..7] = 0`, distinct-to-satisfy-8-seed-isolation): 0 / 512 byte match. Pass 1 (per-slot 256-brute maximising byte-match): 17 / 512 (3.32%). Pass 2: **512 / 512 bit-exact recovery**. Recovered synthetic `Components[0]` per seed: `[3, 2, 7, 4, 0, 5, 12, 1]`, `Components[1..7] = 0` for all 8 slots. Shipped `Decrypt3x128Cfg` with the recovered synthetic constellation reproduces plaintext byte-identical.
+
+### Mechanism — attractor collapse ≠ linear collapse
+
+`nullHash`'s cascade collapses because `nullHash⁴(s, d) = s ⊕ d ⊕ d ⊕ d ⊕ d = s` — the data term algebraically cancels, and ChainHash output degenerates to a per-seed constant independent of buffer. `quadHash`'s cascade collapses because `x² mod 256` is many-to-one — repeated iteration loses entropy relative to initial state, and after enough rounds the state converges to a buffer-only function independent of `Components[1..7]`. The two mechanisms compose the same architectural break — mask triples become predictable — through opposite algebraic properties (`nullHash` cancels the data term keeping the seed term; `quadHash` cancels the seed term keeping the data term).
+
+The **buffer-length asymmetry** between Interlock (13 bytes → full attractor) and external Barrier (4 bytes → partial attractor) is what makes `quadHash` slightly less trivial than `nullHash`: attacker needs 256 sequential brutes per non-lockSeed slot for the residual `Components[0]` dependence, versus `nullHash`'s single-shot recovery. Both attacks resolve in under a second on commodity hardware.
+
+### Reproduction
+
+```
+go test -tags redteam -run TestRedTeamQuadHashLeak7of8 ./ -v
+go test -tags redteam -run TestRedTeamQuadHashFullAttack ./ -v
+```
+
+Default output directory is `$HOME/scratch/redteam/quadhash_leak/`. The two tests run independently — `Leak7of8` characterises Interlock cascade collapse via 2¹⁶ candidate matching; `FullAttack` demonstrates end-to-end plaintext recovery via sequential `Components[0]` brute across 8 seed slots.
+
+### Conclusion
+
+`quadHash` — a squaring T-function — sits alongside `nullHash` as a **cascade-collapsing primitive** that breaks ITB architecturally, through the non-bijective attractor variant of `nullHash`'s linear identity collapse. Any primitive whose per-round iteration loses entropy relative to initial state (non-bijective under fixed data byte) is disqualified for the same architectural reason: the barrier's per-pixel and per-chunk decisions become predictable from buffer content alone, regardless of `Components` state.
+
+The distinction between the cascade-collapsing family (`nullHash`, `quadHash`) and the bijective non-collapsing family (`trainHash`, `jokeHash`, all shipped registry primitives) is the load-bearing invariant. See [Question 2](#question-2--what-if-the-primitive-is-trainhash-an-8-bit-per-lane-multiply-add) for the empirical closure of the same attack path under `trainHash` (8-bit-per-lane bijective multiply-add) — where the per-round `× 3` bijection over 256 prevents attractor collapse and `Components[1..7]` effect propagates unhindered through the cascade, defeating the sequential-brute attack that succeeds here.
 
 ---
 
