@@ -171,6 +171,8 @@ Default output directory is `$HOME/scratch/redteam/trainhash_leak/`. The test em
 
 The `nullHash` attack path is structurally closed under `trainHash` for the same reasons it is closed under `jokeHash` in [Question 3](#question-3--what-if-i-write-a-three-line-jokehash) below (which is the strictly-stronger 64-bit-per-lane variant where the 16-bit collapse itself disappears): non-cancelling per-invocation state, per-pixel varying output, per-chunk varying mask triples, and cascade over full Components. `trainHash` is the intermediate degeneracy case where the rank-space collapse is present but Interlock's primer-round asymmetric cascade still blocks the attack empirically at 2¹⁶ candidates.
 
+Note that `trainHash`'s combined criterion failures — narrow 8-bit lane output (7-of-8 external-Barrier unmask leak), 2¹⁶ rank-space collapse, T-function class — create a theoretically SAT-attackable surface under a full dedicated solver; the naive 2¹⁶ synthetic-space brute empirically blocks under the compound cascade + primer + unrank stack, and no full solver was written for a below-spec test-only primitive whose break carries no shipping consequence (every shipped primitive breaks at least one criterion of this failure combination).
+
 ---
 
 ## Question 3 — What if I write a three-line `jokeHash`?
