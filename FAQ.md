@@ -46,7 +46,7 @@ Under pure ciphertext-only attack the low byte of `lockSeed` retains an irreduci
 ### Reproduction
 
 ```
-go test -tags redteam -run TestRedTeamNullHashAttack ./ -v
+go test -tags redteam -run TestRedTeamNullHashAttack ./ -v -count=1
 ```
 
 Default output directory is `$HOME/scratch/redteam/nullhash/` per the shared red-team probe layout; override via `REDTEAM_NULLHASH_OUTPUT_DIR`. Per-stage entry points: `TestRedTeamNullHashAttack` (Full KPA), `TestRedTeamNullHashAttackCrib` (Crib + startPixels given), `TestRedTeamNullHashAttackCribNoStartPixels` (Crib + startPixels brute), `TestRedTeamNullHashAttackNoKPA` (ciphertext-only, 2 wires). Each attack test regenerates its own expose files at start, so ordering under `go test -tags redteam ./` is irrelevant.
@@ -100,8 +100,8 @@ The **buffer-length asymmetry** between Interlock (13 bytes → full attractor) 
 ### Reproduction
 
 ```
-go test -tags redteam -run TestRedTeamQuadHashLeak7of8 ./ -v
-go test -tags redteam -run TestRedTeamQuadHashFullAttack ./ -v
+go test -tags redteam -run TestRedTeamQuadHashLeak7of8 ./ -v -count=1
+go test -tags redteam -run TestRedTeamQuadHashFullAttack ./ -v -count=1
 ```
 
 Default output directory is `$HOME/scratch/redteam/quadhash_leak/`. The two tests run independently — `Leak7of8` characterises Interlock cascade collapse via 2¹⁶ candidate matching; `FullAttack` demonstrates end-to-end plaintext recovery via sequential `Components[0]` brute across 8 seed slots.
@@ -160,7 +160,7 @@ Attack code: `redteam_trainhash_leak_test.go`, `TestRedTeamTrainHashLeak7of8` (G
 ### Reproduction
 
 ```
-go test -tags redteam -run TestRedTeamTrainHashLeak7of8 ./ -v
+go test -tags redteam -run TestRedTeamTrainHashLeak7of8 ./ -v -count=1
 ```
 
 Default output directory is `$HOME/scratch/redteam/trainhash_leak/`. The test emits a fresh victim (`ct.bin` + `kpa.bin` + `cell.meta.json`) and runs both Step 1 leak measurement and Step 2 2¹⁶ `lockSeed` enumeration in sequence.
@@ -302,7 +302,7 @@ All four paths closed simultaneously. The attack does not converge because every
 **Reproduction:**
 
 ```
-go test -tags redteam -run TestRedTeamJokeHashFullKPA ./ -v
+go test -tags redteam -run TestRedTeamJokeHashFullKPA ./ -v -count=1
 ```
 
 ---

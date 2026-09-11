@@ -36,6 +36,7 @@ package itb
 // made.
 
 import (
+	"crypto/rand"
 	"encoding/binary"
 	"testing"
 )
@@ -58,8 +59,14 @@ func TestRedTeamJokeHashFullKPA(t *testing.T) {
 	// ---- Lab victim setup (seeds are lab-only; used post-hoc only) ----
 	ns, ls, d1, d2, d3, s1, s2, s3 := makeJokeSeeds(t, keyBits)
 	plaintext := make([]byte, 512)
+	// Random ASCII fill — realistic KPA target, fresh per run.
+	const asciiAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 ,.:;-!?"
+	tmp := make([]byte, len(plaintext))
+	if _, err := rand.Read(tmp); err != nil {
+		t.Fatalf("crypto/rand.Read plaintext seed: %v", err)
+	}
 	for i := range plaintext {
-		plaintext[i] = byte('A' + (i % 26))
+		plaintext[i] = asciiAlphabet[int(tmp[i])%len(asciiAlphabet)]
 	}
 	ct, err := Encrypt3x128Cfg(cfg, ns, ls, d1, d2, d3, s1, s2, s3, plaintext)
 	if err != nil {

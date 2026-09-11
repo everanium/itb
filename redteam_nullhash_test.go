@@ -104,9 +104,21 @@ func generateNullHashPlaintext(n int) []byte {
 	padLen := n - len(prefix) - len(suffix)
 	buf := make([]byte, 0, n)
 	buf = append(buf, prefix...)
-	// Deterministic printable-ASCII pad: cycle 'a'..'z' for reproducibility.
-	for i := 0; i < padLen; i++ {
-		buf = append(buf, byte('a'+(i%26)))
+	// Random printable-ASCII pad — fresh per invocation via crypto/rand.
+	// Wire body varies across runs while remaining a realistic
+	// printable-ASCII plaintext shape (matches typical KPA target).
+	const asciiAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 ,.:;-!?"
+	tmp := make([]byte, padLen)
+	if _, err := rand.Read(tmp); err != nil {
+		// Fall back to deterministic pad only if crypto/rand fails
+		// (essentially never; keeps helper non-erroring for callers).
+		for i := 0; i < padLen; i++ {
+			buf = append(buf, byte('a'+(i%26)))
+		}
+	} else {
+		for i := 0; i < padLen; i++ {
+			buf = append(buf, asciiAlphabet[int(tmp[i])%len(asciiAlphabet)])
+		}
 	}
 	buf = append(buf, suffix...)
 	return buf

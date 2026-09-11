@@ -18,6 +18,7 @@ package itb
 
 import (
 	"bytes"
+	"crypto/rand"
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
@@ -54,8 +55,17 @@ func writeQuadHashLeakVictim(t *testing.T, outDir string, keyBits, ptSize, barri
 	}
 	cfg := &Config{NonceBits: 128, BarrierFill: barrierFill}
 	plaintext := make([]byte, ptSize)
+	// Random ASCII fill — more honest test victim than uniform byte
+	// garbage (matches realistic KPA: text, JSON, protocol messages).
+	// Fresh sample per run via crypto/rand → wire body varies across
+	// runs while remaining a realistic printable-ASCII plaintext shape.
+	const asciiAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 ,.:;-!?"
+	tmp := make([]byte, ptSize)
+	if _, err := rand.Read(tmp); err != nil {
+		t.Fatalf("crypto/rand.Read plaintext seed: %v", err)
+	}
 	for i := range plaintext {
-		plaintext[i] = byte('A' + (i % 26))
+		plaintext[i] = asciiAlphabet[int(tmp[i])%len(asciiAlphabet)]
 	}
 	mk := func() *Seed128 {
 		s, err := NewSeed128(keyBits, thLeak_quadHash)
