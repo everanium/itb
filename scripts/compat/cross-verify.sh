@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # cross-verify.sh -- ITB fleet cross-binding wire-compat matrix.
 #
-# For each of the 9 shipped triple/ profiles, encrypts the shared
+# For each of the 13 shipped triple/ profiles, encrypts the shared
 # sample file with every eitb utility (33 language bindings + the Go
 # native tool = 34 encrypters) and then decrypts every produced
 # ciphertext with every eitb utility. Verifies SHA-256(decrypted) ==
@@ -12,7 +12,7 @@
 #   tmp/eitb/enc/<profile>/<encrypter>.blob          session-blob hex
 #   tmp/eitb/dec/<profile>/<encrypter>__<decrypter>  decrypter's back.bin (only on FAIL)
 #   tmp/eitb/results.tsv                             profile\tencrypter\tdecrypter\tPASS|FAIL[\tdiag]
-#   tmp/eitb/compat-matrix.md                        rendered 9 tables + summary
+#   tmp/eitb/compat-matrix.md                        rendered 13 tables + summary
 #
 # The Go native eitb is (re)built from tools/eitb before the run.
 # All other eitb utilities are assumed pre-built (each binding's
@@ -62,11 +62,15 @@ PROFILES=(
     singlemsg-triple-nomac-v1
     singlemsg-triple-mac-mixed-v1
     singlemsg-triple-nomac-mixed-v1
+    singlemsg-aesitb-mac-v1
+    singlemsg-aesitb-nomac-v1
     blob-triple-mac-v1
     streaming-aead-triple-mac-v1
     streaming-noaead-triple-v1
     streaming-aead-triple-mac-mixed-v1
     streaming-noaead-triple-mixed-v1
+    streaming-aead-aesitb-mac-v1
+    streaming-noaead-aesitb-v1
 )
 
 # LANGS listed in a canonical order (Go native first, then each
@@ -313,8 +317,8 @@ MATRIX="$EITB_DIR/compat-matrix.md"
     echo
     echo "Sample: \`tools/eitb/in-file.txt\` (4096 bytes, SHA-256 \`$SOURCE_SHA\`)."
     echo "Fleet: 34 eitb (33 language bindings + Go core)."
-    echo "Profiles: 9 shipped."
-    echo "Total cross-checks: $TOTAL (34 x 34 x 9 = 10404 nominal)."
+    echo "Profiles: 13 shipped."
+    echo "Total cross-checks: $TOTAL (34 x 34 x 13 = 15028 nominal)."
     echo
     echo "## Summary"
     echo
