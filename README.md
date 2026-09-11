@@ -33,7 +33,7 @@ A parameterized symmetric cipher construction library for Go that makes hash out
 
 **[How the barrier works — accessible explanation](ITB.md)**
 
-**[Empirical Red-Team validation](REDTEAM.md)** — the shipping registry's PRF-grade primitives plus lab-only accidentally-weak controls exercised across an attacker-realistic distinguisher matrix (body-byte statistics indistinguishable from CSPRNG at 1σ over the tested plaintext-size × barrier-fill envelope), a dual-nonce related-nonce differential decomposition (three scenarios × six Δ patterns × two plaintext kinds), Crib / Full / Partial KPA under the always-on 48-bit Interlocked Barrier (anchor protection empirically confirmed on below-spec primitives, PRF-conditional throughout), a nonce-reuse decomposition (simultaneous collision requires a CSPRNG hardware fault; single-slot collision closes on the un-collided axis a fortiori), a COBS-alignment probe across the full Barrier Fill range, a direct pathological-input recovery probe (0 per-byte recoveries across the tested decoder family at 10⁶+ trial-position pairs), and structural / FFT / Markov statistical surfaces. The ChainHash construction empirically absorbs multiple trapdoor mechanism classes (structural partition, chosen-constants collision, round-reduced, accidentally-weak) via two absorption mechanisms — feedforward-depth and input-XOR keying. **SAT-based lockSeed recovery is structurally unmeasurable at attacker-realism.** All closures are instance-formulation-bounded and sample-bounded; where they invoke primitive strength, PRF-conditional.
+**[Empirical Red-Team validation](REDTEAM.md)**
 
 **[Why KPA and advanced attacks are addressed by the barrier](SCIENCE.md)**
 
@@ -56,7 +56,7 @@ The Core API and the Go C ABI are consolidated around the `triple/` facade and t
 
 **Cross-platform verified.** Encrypt / Decrypt round-trip validated between x86_64 (Intel / AMD) and AArch64 (Graviton 4).
 
-**Cross-binding interop verified.** All 34 implementations (Go Core + 33 bindings) produce byte-identical wire format and decrypt every other implementation's output.
+**Cross-binding interop verified.** All implementations (Go Core + 33 bindings) produce byte-identical wire format and decrypt every other implementation's output.
 
 Full matrix:
 - 34 × 34 (Go Core + 33 bindings) = 1156 pairs
@@ -70,35 +70,6 @@ Full matrix:
 
 <!-- /preserved-verbatim -->
 
-## Why ITB
-
-Traditional symmetric ciphers (AES, ChaCha20) place all security burden on the mathematical strength of their core primitive. The keystream is XOR'd directly with plaintext — any weakness in the primitive that surfaces on its output is immediately observable, because the attacker sees the primitive's output directly.
-
-ITB inverts this approach. The construction interposes a **random container** (generated from `crypto/rand`) between the hash output and the observer, then re-maps each 48-bit chunk of the interleaved payload through a per-chunk PRF-keyed permutation drawn from a space of roughly 2^70.20 balanced partitions. The hash output is consumed by modifying random bytes that the attacker never sees; the mapping from plaintext bit to observed lane is itself a per-chunk secret. Two structural facts follow, both conditional on the PRF assumption and fresh per-message nonces:
-
-- **A known-plaintext crib does not fix any bit-position-to-lane mapping for a solver to anchor on.**
-- **Because the mask of each chunk is keyed independently of every other chunk, additional crib chunks multiply the attacker's enumeration rather than contributing constraints that couple chunks — the known-plaintext instance stays under-determined regardless of how much plaintext the attacker holds.** This turns known-plaintext cryptanalysis from a computational-hardness problem into an instance-formulation one: under the PRF assumption there is no unique solution for a faster solver to discover.
-
-**Why the math is simple.** The construction uses only elementary operations: XOR, bitwise AND, modulo, bit shifts, and the per-chunk rank-unrank pair that produces the mask triple. There are no Galois fields, no S-boxes, no polynomial multiplication. The security comes from the **architecture**, not from the complexity of the math. Each architectural layer addresses a specific attack vector:
-
-- **Random container** — hash output unobservable under passive observation (COA, KPA).
-- **Per-bit XOR (1:1)** — 56 independent mask bits per pixel; every observation consistent with any plaintext.
-- **Interlocked Barrier** — always-on; per-chunk PRF-keyed 48-bit permutation over three snakes; ≈ 2^70.20 mask space per chunk.
-- **8-seed isolation** — noiseSeed, lockSeed, dataSeed1..3, startSeed1..3 drawn as independent CSPRNG components and keyed into separate channels, so a structural shortcut against one primitive channel cannot leak into another's derivation.
-- **Noise bit embedding** — no bit position is deterministically data from the public format.
-
-**Why the barrier and the PRF are complementary.** The PRF closes the candidate-verification step; the barrier and the surrounding architectural layers deny the point of application. Neither is sufficient alone: the architectural layers cannot resist total inversion of the primitive, and without the barrier the attacker would observe the keystream directly.
-
-**The two-step reduction and the gcd anti-collapse trap.** The two-step reduction that draws each mask triple reaches the full partition space; the rejected same-rank alternative would have confined the draw to 1 / 66861 of that space, so full-space coverage is a deliberate property of the construction, not an accident. The reduction is deterministic and constant-time, carrying a fixed, publicly-known per-chunk deviation of about 2^-57.8 that accumulates to about 2^-34.4 over a maximum-size message; distinguishing this granularity would require on the order of 2^115.6 chunk samples, well beyond any attainable budget.
-
-**Triple Ouroboros 3-snake split.** The plaintext is split across three interleaved snakes with independent per-snake offsets and configurations, so a single known crib maps onto three unknown-offset streams whose per-snake boundaries are not recoverable from the interleaved container. This is a distinct, composable barrier from the per-chunk mask space: the split raises the enumeration dimension while the mask space raises the per-chunk floor.
-
-**Empirical footing.** Across a broad primitive spectrum spanning deliberately broken lab controls through paper-grade PRFs, the underlying pixel construction produced ciphertext with no distinguishable signal at the tested sample sizes on every statistical surface measured — evidence for the barrier's absorption of primitive weakness on the shared pixel construction, not a proof that no distinguisher exists.
-
-**Threat model boundary.** The closure of the known-plaintext and chosen-plaintext families is conditional on the configured primitive behaving as a secure PRF and on fresh per-message nonces; total inversion of the primitive, or a reused nonce, is outside what the barrier is designed to close. The security properties described here are architectural arguments and self-audit evidence, not independent cryptanalysis: ITB has had no external review or formal certification, and the strong claims are stated conditionally for that reason. See [PROOFS.md](PROOFS.md), [SCIENCE.md](SCIENCE.md), and [SECURITY.md](SECURITY.md) for the full treatment.
-
-> **Important.** ITB is an experimental construction without peer review or independent cryptanalysis. The information-theoretic barrier is a **software-level property**, reinforced by the noise absorption channel, the always-on Interlocked Barrier, and the encoding-ambiguity channel; the CCA leak surface is bounded to the noise-position channel under MAC + Reveal (see [Proof 6](PROOFS.md)). It provides no guarantees against hardware-level attacks. All security claims have not been independently verified.
-
 ## Installation
 
 ```bash
@@ -111,78 +82,13 @@ ITB ships two pixel-processing backends selected automatically at compile time, 
 
 | Mode | Command | Pixel Processing | Requirements |
 |---|---|---|---|
-| **CGO (default)** | <code>-buildmode=c-shared</code> | C with runtime-dispatched SIMD tiers | C compiler (GCC/Clang); no minimum SIMD requirement — Tier A (AVX-512F + AVX-512BW + AVX-512VL + GFNI + AVX-512VBMI, 8-pixel batch), Tier A′ (AVX-512F + AVX-512BW + AVX-512VL without GFNI / VBMI, 8-pixel batch — Cascade Lake class), Tier B (AVX2 + GFNI, 4-pixel batch), and Tier B′ (AVX2 only, 4-pixel batch — Zen 3 / Haswell class) are selected via `__builtin_cpu_supports` at first call; hosts below all four SIMD tiers fall through to the portable scalar C path (Tier C). Leftover 4–7-pixel batches at the end of a Tier A / A′ loop route through the applicable Tier B / B′ / C helper, so a Cascade Lake host completes end-to-end as A′ + B′ + C |
-| **No ITB ASM** (CGO) | <code>-buildmode=c-shared&nbsp;-tags=noitbasm</code> | C with SIMD auto-vectorization; ITB fused ChainHash cascade / Interlocked Barrier / Areion permutation ASM disabled; upstream stdlib ASM (`zeebo/blake3`, `golang.org/x/crypto`, `jedisct1/go-aes`) stays engaged | C compiler (GCC/Clang) |
+| **CGO (default)** | <code>-buildmode=c-shared</code> | C with runtime-dispatched SIMD tiers | C compiler (GCC/Clang); runtime SIMD auto-dispatch (AVX-512 / AVX2 / scalar), any x86-64 host, no minimum |
+| **No ITB ASM** (CGO) | <code>-buildmode=c-shared&nbsp;-tags=noitbasm</code> | C with SIMD auto-vectorization; ITB-native ASM off, upstream stdlib ASM on | C compiler (GCC/Clang) |
 | **Pure Go** | `CGO_ENABLED=0 ...` | Portable Go pipeline (`process_generic.go`) | None (any GOOS / GOARCH the Go compiler supports) |
 
 ### CPU baseline for the shipped assembly kernels
 
-The shipped `_amd64.s` kernels target a modern x86_64 baseline. The exact CPU feature each kernel needs is detected once at package init via `golang.org/x/sys/cpu` and dispatched from there:
-
-| Kernel | Required CPU feature | Runtime capability flag |
-|---|---|---|
-| Interlocked Barrier — scalar apply (per-chunk `Chunk48Lock` / `Unchunk48Lock`) | BMI2 (PEXTQ / PDEPQ) | `interlock.HasBMI2` |
-| Interlocked Barrier — batched scalar apply (n consecutive chunks per call, mask taken as a memory operand; bit-exact with n per-chunk calls, amortises the Go-loop overhead) | BMI2 (PEXTQ / PDEPQ) | `interlock.HasChunk48Batch` |
-| Interlocked Barrier — AVX-512F rank-unrank | AVX-512F (VPERMT2Q, VPCMPUQ, VPTESTMQ, mask-merged VPSUBQ / VPORQ, VPTERNLOGQ / VPSLLQ / VPSRLQ constant synthesis on ZMM) | `interlock.HasAVX512RankMask` |
-| Interlocked Barrier — AVX-512F 16-lane rank-unrank (the 8-lane kernel run as two interleaved batches for the batch-16 PRF fill; two 8-lane passes via `ITB_FORCE_INTERLOCK_TIER=avx512x8`) | AVX-512F (VPERMI2Q row select, VPTESTMQ predicate; scalar PDEPQ remap tail) | `interlock.HasAVX512RankMask` + `interlock.UseUnrank16` |
-| Interlocked Barrier — AVX2 rank-unrank | AVX2 + BMI2 (VPERMD, VPCMPEQQ, VPCMPGTQ predicated ops on YMM; scalar PDEPQ remap tail) | `interlock.HasAVX2RankMask` |
-| AES-ITB-128 — VAES ZMM 4-lane fused chain (auto-selected on VAES + AVX-512F hosts) | VAES + AVX-512F | `aesitbasm.FusedHasVAESAVX512` |
-| AES-ITB-128 — VAES ZMM 8-lane fused chain (two four-lane state groups per call with interleaved cascade rounds; auto-selected on VAES + AVX-512F hosts for the 128 / 256 / 512-bit nonce-buf shapes and driven by the pixel pipeline's eight-pixel stride; the four-lane ZMM kernels and four-pixel stride via `ITB_FORCE_CHAINHASH_X4=1`) | VAES + AVX-512F | `aesitbasm.FusedHasVAESAVX512X8` (with `aesitbasm.FusedHasVAESAVX512`) |
-| AES-ITB-128 — VAES YMM 2-lane-per-register fused chain (auto-selected on VAES + AVX2 hosts without AVX-512F) | VAES + AVX2 | `aesitbasm.FusedHasVAESAVX2` |
-| AES-ITB-128 — VEX AES-NI XMM 4-lane fused chain (auto-selected on AES-NI + AVX hosts without VAES) | AES-NI + AVX2 | `aesitbasm.FusedHasAVXAESNI` |
-| AES-ITB-128 — legacy-SSE AES-NI XMM 4-lane fused chain (auto-selected on AES-NI hosts without AVX) | AES-NI (AESENC / AESENCLAST on XMM) | `aesitbasm.FusedHasAESNI` |
-| AES-ITB-128 — batch-16 Interlocked Barrier PRF fill cascade (VAES ZMM auto-selected on VAES + AVX-512F hosts, VAES YMM on VAES + AVX2 hosts without AVX-512F, VEX / legacy-SSE XMM on the remaining AES-NI hosts; overridable via `ITB_FORCE_INTERLOCK_PRF_FILL_TIER`) | as per tier above | `aesitbasm.HasVAESAVX512X16` / `HasVAESAVX2X16` / `HasAVXAESNIX16` / `HasAESNIX16` |
-| AES-ITB-128 — NEON 4-lane fused chain + batch-16 fill (arm64, auto-selected on ARM Crypto Extension hosts) | ARMv8 Crypto Extension (AESE / AESMC) | `aesitbasm.FusedHasARMAES` / `aesitbasm.HasARMAESX16` |
-| Areion-SoEM — top-tier batched permute (the four-lane SoEM of the arms' batched permutation path: lengths outside the fused kernel shapes, and the `ITB_FORCE_HASH_TIER=avx2` arms-only probe) | VAES + AVX-512 | `areionasm.HasVAESAVX512` |
-| Areion-SoEM — mid-tier per-half permute (same role on VAES + AVX2 hosts without AVX-512F) | VAES + AVX2 | `areionasm.HasVAESAVX2NoAVX512` |
-| Areion-SoEM-256 / -512 — VAES ZMM 4-lane / 8-lane fused chain (the whole component cascade per call, eight pixels per call at the nonce-buf shapes; auto-selected on VAES + AVX-512F hosts) | VAES + AVX-512F | `areionasm.FusedHasVAESAVX512` / `areionasm.FusedHasVAESAVX512X8` |
-| Areion-SoEM-256 / -512 — VAES YMM 2-lane-per-pass fused chain (auto-selected on VAES + AVX2 hosts without AVX-512F) | VAES + AVX2 | `areionasm.FusedHasVAESAVX2` |
-| Areion-SoEM-256 / -512 — AES-NI XMM fused chain (two lanes per pass at width 256, one at width 512; auto-selected on AES-NI hosts without VAES, and the single-lane arm of every tier) | AES-NI (AESENC / AESENCLAST on XMM) | `areionasm.FusedHasAESNI` |
-| Areion-SoEM-256 / -512 — batch-16 / batch-32 Interlocked Barrier PRF fill cascade (dedicated eight-lane ZMM kernels — the batch-16 hook at width 256, the batch-32 hook at width 512 — on the VAES + AVX-512F tier; four-lane kernel calls over Go-synthesised fill blocks elsewhere; overridable via `ITB_FORCE_INTERLOCK_PRF_FILL_TIER`) | as per tier above | `areionasm.HasVAESAVX512X16` / `HasVAESAVX2X16` / `HasAESNIX16` |
-| Areion-SoEM-256 / -512 — NEON fused chain + eight-lane fill kernels (the batch-16 hook at width 256, the batch-32 hook at width 512; arm64, auto-selected on ARM Crypto Extension hosts) | ARMv8 Crypto Extension (AESE / AESMC) | `areionasm.FusedHasARMAES` / `areionasm.HasARMAESX16` |
-| BLAKE2b-256 / -512 — EVEX YMM 4-lane / ZMM 8-lane fused chain (the whole component cascade per call, one qword lane per pixel, eight pixels per call at the nonce-buf shapes; auto-selected on AVX-512F hosts) | AVX-512F | `blake2basm.FusedHasAVX512` / `blake2basm.FusedHasAVX512X8` |
-| BLAKE2b-256 / -512 — AVX2 YMM 4-lane fused chain (synthesised rotates, message words as memory operands; auto-selected on AVX2 hosts without AVX-512F) | AVX2 (no AVX-512F) | `blake2basm.FusedHasAVX2` |
-| BLAKE2b-256 / -512 — batch-16 / batch-32 Interlocked Barrier PRF fill cascade (dedicated eight-lane ZMM kernels — the batch-16 hook at width 256, the batch-32 hook at width 512 — on the AVX-512F tier; four-lane kernel calls over Go-synthesised fill blocks elsewhere; overridable via `ITB_FORCE_INTERLOCK_PRF_FILL_TIER`) | as per tier above | `blake2basm.HasAVX512X16` / `HasAVX2X16` |
-| BLAKE2b-256 / -512 — GPR single-lane fused chain (the single-lane arm of every tier; the four-lane and batch-16 entry points run single-lane calls where no SIMD tier is selected) | x86-64 baseline | `blake2basm.FusedHasGPR` / `blake2basm.HasGPRX16` |
-| BLAKE2b-256 / -512 — NEON fused chain + GPR single-lane fused chain + batch-16 / batch-32 fill through four-lane NEON calls (arm64, two lanes per pass; auto-selected on every ARMv8-A host) | Advanced SIMD | `blake2basm.FusedHasNEON` / `blake2basm.HasNEONX16` |
-| BLAKE2s — EVEX XMM 4-lane / YMM 8-lane fused chain (the whole component cascade per call, one dword lane per pixel, eight pixels per call at the nonce-buf shapes; auto-selected on AVX-512F hosts) | AVX-512F | `blake2sasm.FusedHasAVX512` / `blake2sasm.FusedHasAVX512X8` |
-| BLAKE2s — AVX2 XMM 4-lane fused chain (synthesised rotates, message words as memory operands; auto-selected on AVX2 hosts without AVX-512F) | AVX2 (no AVX-512F) | `blake2sasm.FusedHasAVX2` |
-| BLAKE2s — batch-16 Interlocked Barrier PRF fill cascade (dedicated eight-lane YMM kernel on the AVX-512F tier; two four-lane kernel calls over Go-synthesised fill blocks elsewhere; overridable via `ITB_FORCE_INTERLOCK_PRF_FILL_TIER`) | as per tier above | `blake2sasm.HasAVX512X16` / `HasAVX2X16` |
-| BLAKE2s — GPR single-lane fused chain (the single-lane arm of every tier; the four-lane and batch-16 entry points run single-lane calls where no SIMD tier is selected) | x86-64 baseline | `blake2sasm.FusedHasGPR` / `blake2sasm.HasGPRX16` |
-| BLAKE2s — NEON fused chain + GPR single-lane fused chain + batch-16 fill through four-lane NEON calls (arm64, four dword lanes per register; auto-selected on every ARMv8-A host) | Advanced SIMD | `blake2sasm.FusedHasNEON` / `blake2sasm.HasNEONX16` |
-| BLAKE3 — EVEX XMM 4-lane / YMM 8-lane fused chain (the whole component cascade per call, one dword lane per pixel, eight pixels per call at the nonce-buf shapes; auto-selected on AVX-512F hosts) | AVX-512F | `blake3asm.FusedHasAVX512` / `blake3asm.FusedHasAVX512X8` |
-| BLAKE3 — AVX2 XMM 4-lane fused chain (synthesised rotates, message words as memory operands; auto-selected on AVX2 hosts without AVX-512F) | AVX2 (no AVX-512F) | `blake3asm.FusedHasAVX2` |
-| BLAKE3 — batch-16 Interlocked Barrier PRF fill cascade (dedicated eight-lane YMM kernel on the AVX-512F tier; two four-lane kernel calls over Go-synthesised fill blocks elsewhere; overridable via `ITB_FORCE_INTERLOCK_PRF_FILL_TIER`) | as per tier above | `blake3asm.HasAVX512X16` / `HasAVX2X16` |
-| BLAKE3 — GPR single-lane fused chain (the single-lane arm of every tier; the four-lane and batch-16 entry points run single-lane calls where no SIMD tier is selected) | x86-64 baseline | `blake3asm.FusedHasGPR` / `blake3asm.HasGPRX16` |
-| BLAKE3 — NEON fused chain + GPR single-lane fused chain + batch-16 fill through four-lane NEON calls (arm64, four dword lanes per register; auto-selected on every ARMv8-A host) | Advanced SIMD | `blake3asm.FusedHasNEON` / `blake3asm.HasNEONX16` |
-| AES-CMAC — VAES ZMM 4-lane fused chain (auto-selected on VAES + AVX-512F hosts) | VAES + AVX-512F | `aescmacasm.FusedHasVAESAVX512` |
-| AES-CMAC — VAES ZMM 8-lane fused chain (two four-lane state groups per call with interleaved cascade rounds; auto-selected on VAES + AVX-512F hosts for the 128 / 256 / 512-bit nonce-buf shapes; the four-lane ZMM kernels and four-pixel stride via `ITB_FORCE_CHAINHASH_X4=1`) | VAES + AVX-512F | `aescmacasm.FusedHasVAESAVX512X8` (with `aescmacasm.FusedHasVAESAVX512`) |
-| AES-CMAC — VAES YMM 2-lane-per-register fused chain (auto-selected on VAES + AVX2 hosts without AVX-512F) | VAES + AVX2 | `aescmacasm.FusedHasVAESAVX2` |
-| AES-CMAC — VEX AES-NI XMM 4-lane fused chain (auto-selected on AES-NI + AVX hosts without VAES) | AES-NI + AVX2 | `aescmacasm.FusedHasAVXAESNI` |
-| AES-CMAC — legacy-SSE AES-NI XMM 4-lane fused chain (auto-selected on AES-NI hosts without AVX) | AES-NI (AESENC / AESENCLAST on XMM) | `aescmacasm.FusedHasAESNI` |
-| AES-CMAC — batch-16 Interlocked Barrier PRF fill cascade (same tier ladder as AES-ITB-128; overridable via `ITB_FORCE_INTERLOCK_PRF_FILL_TIER`) | as per tier above | `aescmacasm.HasVAESAVX512X16` / `HasVAESAVX2X16` / `HasAVXAESNIX16` / `HasAESNIX16` |
-| AES-CMAC — NEON 4-lane fused chain + batch-16 fill (arm64, auto-selected on ARM Crypto Extension hosts) | ARMv8 Crypto Extension (AESE / AESMC) | `aescmacasm.FusedHasARMAES` / `aescmacasm.HasARMAESX16` |
-| SipHash-2-4 — AVX-512 EVEX YMM 4-lane fused chain (auto-selected on AVX-512F hosts) | AVX-512F | `siphashasm.FusedHasAVX512` |
-| SipHash-2-4 — AVX-512 ZMM 8-lane fused chain (eight lanes per register; auto-selected on AVX-512F hosts for the 128 / 256 / 512-bit nonce-buf shapes; the four-lane kernels and four-pixel stride via `ITB_FORCE_CHAINHASH_X4=1`) | AVX-512F | `siphashasm.FusedHasAVX512X8` (with `siphashasm.FusedHasAVX512`) |
-| SipHash-2-4 — AVX2 VEX YMM 4-lane fused chain (synthesised rotates; auto-selected on AVX2 hosts without AVX-512F) | AVX2 | `siphashasm.FusedHasAVX2` |
-| SipHash-2-4 — GPR single-lane fused chain (the single-lane arm of every tier; the four-lane and batch-16 entry points run single-lane calls where no SIMD tier is selected) | x86-64 baseline | `siphashasm.FusedHasGPR` / `siphashasm.HasGPRX16` |
-| SipHash-2-4 — batch-16 Interlocked Barrier PRF fill cascade (sixteen-lane ZMM kernel on the AVX-512 tier, two calls of an eight-lane YMM kernel on the AVX2 tier; overridable via `ITB_FORCE_INTERLOCK_PRF_FILL_TIER`) | as per tier above | `siphashasm.HasAVX512X16` / `HasAVX2X16` |
-| SipHash-2-4 — NEON 4-lane fused chain + GPR single-lane fused chain + batch-16 fill through an eight-lane NEON kernel (arm64, NEON baseline) | ARMv8-A NEON | `siphashasm.FusedHasNEON` / `siphashasm.HasNEONX16` |
-| ChaCha20 — EVEX XMM 4-lane / YMM 8-lane fused chain (the whole component cascade per call, one dword lane per pixel, eight pixels per call at the nonce-buf shapes; auto-selected on AVX-512F hosts) | AVX-512F | `chacha20asm.FusedHasAVX512` / `chacha20asm.FusedHasAVX512X8` |
-| ChaCha20 — AVX2 XMM 4-lane fused chain (synthesised rotates, key words and accumulator as memory operands; auto-selected on AVX2 hosts without AVX-512F) | AVX2 (no AVX-512F) | `chacha20asm.FusedHasAVX2` |
-| ChaCha20 — batch-16 Interlocked Barrier PRF fill cascade (dedicated eight-lane YMM kernel on the AVX-512F tier; two four-lane kernel calls over Go-synthesised fill blocks elsewhere; overridable via `ITB_FORCE_INTERLOCK_PRF_FILL_TIER`) | as per tier above | `chacha20asm.HasAVX512X16` / `HasAVX2X16` |
-| ChaCha20 — GPR single-lane fused chain (the single-lane arm of every tier; the four-lane and batch-16 entry points run single-lane calls where no SIMD tier is selected) | x86-64 baseline | `chacha20asm.FusedHasGPR` / `chacha20asm.HasGPRX16` |
-| ChaCha20 — NEON fused chain + GPR single-lane fused chain + batch-16 fill through four-lane NEON calls (arm64, four dword lanes per register; auto-selected on every ARMv8-A host) | Advanced SIMD | `chacha20asm.FusedHasNEON` / `chacha20asm.HasNEONX16` |
-
-Every shipped primitive fills the Interlocked Barrier through its batch-16 fused cascade kernels; the four-lane and single-lane arms of the same kernel families serve the fill below the batch-16 hook.
-
-Cross-referenced to shipping x86 microarchitectures:
-
-- **Intel** — top-tier fused ZMM chain kernels are exercised end-to-end from **Rocket Lake (11th-gen, e.g. i7-11700K)** onward. Ice Lake mobile parts carry the required flags but are not the reference host. **Cascade Lake / Cooper Lake and other AVX-512-without-VAES / VBMI SKUs** engage the AVX-512F ARX chain kernels for the BLAKE / ChaCha20 / SipHash family plus the XMM AES-NI 4-lane batched kernels for Areion-SoEM and AES-CMAC, and select pixel-encoder Tier A′ (AVX-512F+BW+VL without GFNI/VBMI). **Haswell through Comet Lake** engage the AVX2 4-lane chain kernels, the AVX2 4-lane interlock rank-mask kernel, the XMM AES-NI 4-lane batched kernels, and pixel-encoder Tier B′ (AVX2 no GFNI).
-- **AMD** — top-tier fused ZMM chain kernels engage from **Zen 4 onward** (server-class Zen 4 / Zen 5); pixel encoder runs Tier A (GFNI present). **Zen 3** engages the mid-tier VAES-on-YMM per-half Areion permute, the VAES YMM fused ChainHash cascade kernels for AES-CMAC, the XMM AES-NI fused ChainHash cascade kernels for Areion-SoEM (in tandem with the VAES YMM permute), the AVX2 four-lane BLAKE / ChaCha20 / SipHash fused ChainHash cascade kernels, the AVX2 4-lane interlock rank-mask kernel, and pixel-encoder Tier B′. **Zen 1 / Zen 2** carry AES-NI but `PEXT` / `PDEP` are microcode-emulated with data-dependent latency, so those hosts skip the Interlocked Barrier BMI2 apply kernels and take the `softPEXT48` / `softPDEP48` Go fallback there; the AVX2 and AES-NI fused ChainHash cascade kernels still engage.
-- **Older or narrower x86_64 hosts** — build with `-tags noitbasm` to skip the ITB-native assembly entirely; the upstream primitive libraries' own ASM (`crypto/aes`, `dchest/siphash`, `golang.org/x/crypto`, `zeebo/blake3`) stays engaged.
-- **ARM64** — the Areion-SoEM permutation runs through `AESE`/`AESMC` on hosts with the ARM Crypto Extension (`internal/areionasm/areion_arm64.s`), and AES-ITB-128's fused ChainHash cascade + batch-16 Interlocked Barrier fill kernels engage the same extension (`internal/aesitbasm/aesitb_fusedchain128_*_neon_arm64.s`) — Graviton 4 has been the reference validation host. Every other ChainHash instantiation on AArch64 runs its portable Go path, and the Interlocked Barrier rank-mask and per-chunk apply kernels run the `softPEXT48` / `softPDEP48` fallbacks; the upstream primitive libraries' own ARM Crypto Extension assembly also stays engaged where present.
-- **Every other Go target** — the pure-Go pipeline via `CGO_ENABLED=0` runs on any GOOS / GOARCH the Go compiler supports; throughput drops but correctness is preserved.
+See [HASHES.md](HASHES.md) for the full per-kernel CPU feature matrix and the cross-referenced shipping-microarchitecture map (Intel Rocket Lake / Cascade Lake / Haswell-Comet Lake, AMD Zen 4-5 / Zen 3 / Zen 1-2, ARM64 Neoverse V2 / other, older x86 with `-tags noitbasm`, and every other Go target through the pure-Go pipeline).
 
 ### Usage
 
@@ -1326,7 +1232,7 @@ Docs describe the fleet at the architectural level while the per-binding rework 
 
 ### Fleet listing
 
-The complete per-language fleet listing — 34 rows with directory paths, tiers, target package registries, and future install commands — lives in [`bindings/README.md#fleet-listing`](bindings/README.md#fleet-listing) to keep the root README compact.
+The complete per-language fleet listing with directory paths, tiers, target package registries, and future install commands — lives in [`bindings/README.md#fleet-listing`](bindings/README.md#fleet-listing) to keep the root README compact.
 
 ## See also
 

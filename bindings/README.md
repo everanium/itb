@@ -83,8 +83,6 @@ per-language naming variations:
 | Haskell | [`haskell/`](haskell/) | 1 native (`foreign import ccall`) |
 | R | [`r/`](r/) | 1 native (`.Call` C shim) |
 
-34 rows total (Go core + 33 language bindings).
-
 Each binding ships as source in this repository; build via the
 per-binding `build.sh` script under its directory. No binding is
 published to a package registry yet — that is a future milestone.
