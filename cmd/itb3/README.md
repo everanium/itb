@@ -58,7 +58,7 @@ itb3 verify  blob.json
 via `triple.Inspect`: `profile`, `mode`, `width`, either `inner_hash`
 or the 8-slot `mixed_hashes` comma list, `key_bits`, `nonce_bits`
 and `barrier_fill` (the two Init-time runtime globals — nonce width
-and CSPRNG barrier fill margin — the sender's Pipeline runs with,
+and DRBG barrier fill margin — the sender's Pipeline runs with,
 populated from the blob's inner Blob{N} snapshot), `mac_name`
 (`(none)` for a No MAC profile), `tag_stub_size` when set,
 `chunk_size` for streaming modes (`(default)` when the profile

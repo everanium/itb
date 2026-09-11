@@ -1,14 +1,15 @@
-// Package drbg provides a bulk-fill CSPRNG for the ITB encrypt hot path.
+// Package drbg provides a CSPRNG-seeded bulk-fill DRBG for the ITB
+// encrypt hot path.
 //
 // The two production consumers are the container fill in buildTripleWire3
 // (three parallel goroutines each filling roughly a third of the wire
-// container with noise bytes) and the CSPRNG tail fill of every
+// container with noise bytes) and the DRBG tail fill of every
 // Interlocked lane in the same fused function. The bytes produced are
-// consumed as ciphertext-carrier noise or as CSPRNG residue trimmed
+// consumed as ciphertext-carrier noise or as DRBG residue trimmed
 // against the plaintext-derived payload — they never re-appear as key
 // material, seed components, or any output that survives beyond the
 // encrypt call as an entropy source. Key / nonce / seed derivation
-// stays on crypto/rand.Read.
+// stays on crypto/rand.Read (natural CSPRNG, not this DRBG expansion).
 //
 // Fill acquires a fresh 48-byte seed from crypto/rand.Read on every call
 // (32-byte AES-256 key + 16-byte AES-CTR IV, or 32-byte key + 12-byte
