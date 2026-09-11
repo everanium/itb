@@ -788,8 +788,8 @@ func TestConcurrentEncryptSameSeed(t *testing.T) {
 // plaintext.
 //
 // Encrypt-side ciphertext equality across two independent calls is
-// not testable: every Triple encrypt injects fresh crypto/rand into
-// the container background and the payload tail-fill (the CSPRNG
+// not testable: every Triple encrypt injects fresh DRBG-derived bytes into
+// the container background and the payload tail-fill (the DRBG
 // residue is Proof 10 material, not a worker-count artefact). The
 // test asserts the meaningful invariance instead — decrypt-side
 // bit-identical plaintext recovery under a MaxWorkers sweep against

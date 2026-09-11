@@ -296,14 +296,14 @@ type rnRun struct {
 // ---------------------------------------------------------------------------
 // No-Δ architectural floor — reference against which every Δ cell is
 // compared. Two Encrypt3x128Cfg calls with identical seeds and IDENTICAL
-// forced nonce; produces the same architectural CSPRNG-noise-bit + fill
+// forced nonce; produces the same architectural DRBG-noise-bit + fill
 // artefact Rank 2 measured (CRC128 ~41.9M / FNV-1a ~56.3M).
 // ---------------------------------------------------------------------------
 
 // TestRedTeamRelatedNonceNoDeltaFloor establishes the χ² floor under
 // shipped Encrypt3x128Cfg with identical seeds + IDENTICAL forced nonce
 // + same plaintext. The Rank 2 methodology-check identifies this as the
-// "CSPRNG-noise-bit + fill" architectural artefact of two independent
+// "DRBG-noise-bit + fill" architectural artefact of two independent
 // encrypts. Values here should reproduce Rank 2's floor within
 // primitive-conditional noise.
 func TestRedTeamRelatedNonceNoDeltaFloor(t *testing.T) {

@@ -245,7 +245,7 @@ func TestRedTeamNonceReuseLayerAHistogram(t *testing.T) {
 
 	// Fixed session seeds; N nonce-reuse pairs per plaintext-shape cell.
 	// Small N + several plaintext shapes stresses whether structured
-	// XORs surface any signal above the CSPRNG tail-fill floor.
+	// XORs surface any signal above the DRBG tail-fill floor.
 	const N = 40
 	sizes := []int{128, 256, 512}
 	shapes := []string{"random", "structured", "near_identical"}
@@ -902,8 +902,8 @@ func TestRedTeamNonceReuseLayerBMaskOraclePeek(t *testing.T) {
 	//   snake_i_payload_XOR = cobs(splitlane_i(P1)) XOR cobs(splitlane_i(P2))
 	// However Under the shipped snake payload layout, the payload byte
 	// stream INSIDE each snake is:
-	//   payload_i = cobs(lane_i) || 0x00 || CSPRNG_tail_fill
-	// The CSPRNG tail-fill differs per encryption, so the XOR beyond the
+	//   payload_i = cobs(lane_i) || 0x00 || DRBG_tail_fill
+	// The DRBG tail-fill differs per encryption, so the XOR beyond the
 	// COBS terminator is uncorrelated between messages. Restrict the
 	// recovery pass to the payload prefix where both encryptions
 	// share deterministic bytes.
@@ -924,7 +924,7 @@ func TestRedTeamNonceReuseLayerBMaskOraclePeek(t *testing.T) {
 	// The deterministic prefix per snake is min(len(cobs1), len(cobs2))
 	// (the terminator sits at position max(...) actually but the safer
 	// bound is min). Beyond that byte, snake payload includes the 0x00
-	// terminator or CSPRNG fill; recovery there is undefined.
+	// terminator or DRBG fill; recovery there is undefined.
 	// Prefix bit length constrains how many pixel channels we probe.
 	prefixBits := [3]int{
 		min3(len(snakeCobs1[0]), len(snakeCobs2[0])) * 8,
@@ -1030,7 +1030,7 @@ func min3(a, b int) int {
 // pixel positions have a "sticky" pattern across pairs, that leaks
 // per-pixel PRF structure (channelXOR + noisePos + rotation are
 // deterministic per pixel under nonce reuse, so this probe tests
-// whether the CSPRNG noise bit + CSPRNG tail-fill effectively neutralise
+// whether the DRBG noise bit + DRBG tail-fill effectively neutralise
 // the deterministic pipeline).
 // ---------------------------------------------------------------------------
 
@@ -1071,7 +1071,7 @@ func TestRedTeamNonceReuseLayerDMultiPair(t *testing.T) {
 
 	// Alternative more meaningful measure at N=30: per byte position,
 	// count distinct byte values observed. If per-position pipeline is
-	// deterministic and CSPRNG-whitened, distinct count should be
+	// deterministic and DRBG-whitened, distinct count should be
 	// binomially distributed around 1 - (1 - 1/256)^N ≈ 0.111 * 256 ≈
 	// 28.5 per position for N=30 (near-perfectly random). If pipeline
 	// leaks a fixed bit, distinct count drops sharply on the leaked bit.

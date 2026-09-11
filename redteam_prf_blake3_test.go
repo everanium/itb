@@ -190,7 +190,7 @@ func TestRedteamPRF_Probe1_CribKPAFreshNonce(t *testing.T) {
 // archived suite saw any signal. Two different plaintexts are
 // encrypted under identical seeds AND an identical nonce; the
 // ciphertext-level byte-equal rate and Pearson correlation are
-// reported. The container's CSPRNG tail fill is drawn independently of
+// reported. The container's DRBG tail fill is drawn independently of
 // the nonce, so even under reuse the ciphertext-level correlation
 // stays near the independent-stream floor; a full demask of the
 // colliding pair additionally requires Full KPA (archived Phase 2d).
@@ -230,7 +230,7 @@ func TestRedteamPRF_Probe2_NonceReuseCorrelation(t *testing.T) {
 	t.Logf("  NOTE: nonce reuse is a lab-only assumption; the shipped API draws the nonce from crypto/rand per call")
 
 	// Even under the lab-only reuse condition the ciphertext-level
-	// correlation stays near the floor because the CSPRNG tail fill is
+	// correlation stays near the floor because the DRBG tail fill is
 	// nonce-independent. Bound generously to record, not over-claim.
 	if eqRate > 0.05 {
 		t.Errorf("reused-nonce ct byte-equal rate %.5f exceeds recorded bound 0.05", eqRate)

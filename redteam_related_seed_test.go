@@ -415,12 +415,12 @@ func TestRedTeamRelatedSeedControl(t *testing.T) {
 // architectural floor probe — reveals what the ciphertext-XOR χ²
 // looks like under the SHIPPED barrier + same-nonce with NO seed Δ
 // applied. This is the floor every axis is measured against: because
-// each Encrypt3x128Cfg call draws independent CSPRNG for the container
+// each Encrypt3x128Cfg call draws independent DRBG bytes for the container
 // background AND for the payload-fill tail, D under identical seeds is
 // NOT zero — it carries the "7 data-bits identical + 1 noise-bit
-// CSPRNG XOR at noisePos" signal on touched pixels plus a uniform
+// DRBG XOR at noisePos" signal on touched pixels plus a uniform
 // contribution from the fill region. The resulting floor χ² is the
-// per-encrypt architectural artefact of the barrier's noisePos + CSPRNG
+// per-encrypt architectural artefact of the barrier's noisePos + DRBG
 // fill design, independent of any primitive.
 // ---------------------------------------------------------------------------
 
@@ -429,7 +429,7 @@ func TestRedTeamRelatedSeedControl(t *testing.T) {
 // plaintext. Emits per-primitive floor values so the matrix's per-axis
 // χ² can be quoted "over floor" — a Δ that ONLY raises χ² to the
 // floor level (~architectural constant) is NOT a primitive-attributable
-// leak, it is the same CSPRNG-XOR artefact any two encrypt calls
+// leak, it is the same DRBG-XOR artefact any two encrypt calls
 // produce.
 func TestRedTeamRelatedSeedNoDeltaFloor(t *testing.T) {
 	if testing.Short() {
@@ -499,7 +499,7 @@ func TestRedTeamRelatedSeedNoDeltaFloor(t *testing.T) {
 			"bit_bal_mean_abs": meanAbs,
 			"bit_bal_max_abs":  maxAbs,
 			"body_bytes":       len(diff),
-			"note":             "two encrypts, identical seeds, same nonce; CSPRNG-XOR artefact of noise-bit + fill",
+			"note":             "two encrypts, identical seeds, same nonce; DRBG-XOR artefact of noise-bit + fill",
 		})
 	}
 

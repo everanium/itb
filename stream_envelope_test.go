@@ -491,7 +491,7 @@ func TestStreamEnvelopeChunkSizes(t *testing.T) {
 // of the corresponding Single Message No MAC ciphertext for the same
 // plaintext, seeds and nonce. Both paths reserve tagSize + 1 bytes in
 // the third snake's container capacity (AEAD: real tag + fixed 0x00
-// dummy flag; No MAC: pure CSPRNG stub via nomacTagStubSizeCfg), so
+// dummy flag; No MAC: pure DRBG stub via nomacTagStubSizeCfg), so
 // the two containers round to the identical square and the resulting
 // wire byte counts are equal.
 func TestSingleMessageEnvelopeParityAEADvsNoMAC(t *testing.T) {
