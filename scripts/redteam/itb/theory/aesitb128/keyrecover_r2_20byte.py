@@ -61,7 +61,7 @@ rounds per call and are outside either order-1 engine's regime; the classical
 texts) to restore balance and is not run here. No claim is made about
 those shapes.
 
-Compound-stack framing: `aesitb128` ships as `Class = ClassNone` in
+Compound-stack framing: `aesitb128` ships as `Class = ClassNPRF` in
 `hashes/registry.go` — intentionally weak standalone and safe only under
 ITB's compound inner-PRF defence stack (ChainHash cascade + Rank Barrier
 + Pixel Barrier absorption). The measurement here quantifies the
