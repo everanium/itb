@@ -229,7 +229,8 @@ type Spec struct {
 
 // Canonical shipped primitive names. Every registry consumer (ctr, kdf,
 // wrapper, parallax, triple, cmd/itb3) refers to these identifiers; the
-// string values are the FFI-stable names exposed through ITB_HashName.
+// string values are the FFI-stable names exposed through
+// ITB_Triple_HashNames.
 const (
 	// CipherAESITB128 names the AES-ITB primitive — an ITB-native
 	// short-input keyed hash built from reduced-round AES (one AES round
@@ -260,9 +261,9 @@ const (
 // see [ClassNone]). Entries with Class == ClassNone are safe only
 // within ITB's compound inner-PRF stack — see the [ClassNone]
 // docstring for the taxonomy.
-// The same order is used by the FFI iteration surface (ITB_HashName,
-// ITB_HashWidth) — callers iterating the registry receive primitives in
-// this order.
+// The same order is used by the FFI iteration surface
+// (ITB_Triple_HashNames) — bindings that expose the registry roster
+// receive primitives in this order.
 //
 // Registry is immutable after package init. User-registered custom
 // primitives added via [Register] live in a separate mutex-guarded
@@ -307,7 +308,7 @@ var (
 // [Make128] / [Make256] / [Make512] / Pair name-keyed dispatchers.
 // [Registry] itself is not extended — user entries live in a
 // separate mutex-guarded slice — so the FFI iteration surface
-// (ITB_HashName / ITB_HashWidth) is unaffected.
+// (ITB_Triple_HashNames) is unaffected.
 //
 // Errors:
 //

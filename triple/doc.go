@@ -21,7 +21,8 @@
 // The blob [Init] returns (and [Pipeline.Save] / [Pipeline.Rekey]
 // re-emit) is self-describing: its wrap-layer carries the resolved
 // [Profile] record — profile defaults with the [Opts] overrides folded
-// in — alongside the inner Low-Level blob and the two masters. [Load]
+// in — alongside the inner Blob{N} state bundle and the two masters.
+// [Load]
 // (bytes) and [LoadF] (file path) rebuild a Pipeline from that record
 // alone; the profile registry is never consulted on the reopen path,
 // no Opts are taken, and the record's Name is the sender's label,
@@ -87,7 +88,7 @@
 // Single Message surface ([Pipeline.EncryptMessage] /
 // [Pipeline.DecryptMessage]) is a thin convenience wrapper around the
 // streaming surface plus a [bytes.Buffer]. Users who want the direct
-// Low-Level surface consume the corresponding *Cfg-bearing free
+// per-call cipher surface consume the corresponding *Cfg-bearing free
 // functions in the itb root package.
 //
 // The shipped catalogue covers both single-primitive and

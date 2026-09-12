@@ -30,8 +30,9 @@ func DefaultNonceBits() int { return itb.DefaultNonceBits }
 //
 // The 2*nonceBytes+4 formula must remain in sync with itb.headerSizeCfg;
 // the FFI-adapter's copy is intentional (its C-ABI stability contract
-// is decoupled from itb-internal helpers), drift is guarded by the
-// stream_test.go Encrypt3 → ParseChunkLen → Decrypt3 round-trip test.
+// is decoupled from itb-internal helpers). Drift is guarded by
+// [TestHeaderSize] in capi_test.go, which pins the literal header
+// sizes 36 / 68 / 132 for nonceBytes 16 / 32 / 64.
 func HeaderSize(nonceBytes int) (int, Status) {
 	switch nonceBytes {
 	case 16, 32, 64:

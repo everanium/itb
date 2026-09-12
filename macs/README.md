@@ -190,9 +190,9 @@ resolves through `Find` / `Make` / `MakeIncremental` / `MakeMACPair`
 exactly like a shipped one and — transitively — through every consumer
 that resolves MACs by name, including `triple.Profile.MacName` and the
 `triple.Opts.MacName` override. The shipped `Registry` array is not
-extended — user entries live in a separate mutex-guarded store — so
-the FFI iteration surface (`ITB_MACCount` / `ITB_MACName`) is
-unaffected.
+extended — user entries live in a separate mutex-guarded store. The
+FFI shim has no MAC enumeration surface of its own; every
+`ITB_Triple_Init` call resolves the MAC through the profile.
 
 ### Spec fields and validation
 
@@ -581,7 +581,8 @@ failure at decrypt — indistinguishable from tampering by design.
 ### Scope
 
 Runtime MAC registration is a **Go-native API only**. The bindings
-surface is triple-only over the frozen FFI shim: `ITB_MACCount` /
-`ITB_MACName` iterate the shipped `Registry` exclusively, and no
-binding exposes custom-primitive plug. Custom MACs are therefore
-invisible to every binding by construction.
+surface is triple-only over the frozen FFI shim: the shipped
+`Registry` reaches bindings only through `triple.Profile.MacName` (and
+the per-call `triple.Opts.MacName` override) resolved by
+`ITB_Triple_Init`, and no binding exposes custom-primitive plug.
+Custom MACs are therefore invisible to every binding by construction.

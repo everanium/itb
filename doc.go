@@ -62,7 +62,10 @@
 // [ParseChunkLenCfg] inspects the first 20 bytes of a chunk header
 // and reports the chunk's total length on the wire, letting external
 // streaming consumers walk a concatenated chunk stream one chunk at a
-// time. Also exposed through the C ABI as ITB_ParseChunkLen.
+// time. The FFI shim reaches ITB streaming through the Triple family
+// (see the [github.com/everanium/itb/triple] package); external
+// tooling built directly against libitb reads chunk sizes via
+// [HeaderSize] combined with the width / height inline in the header.
 //
 // Empty input (nil or zero-length plaintext / wire) is rejected
 // uniformly with [ErrEmptyInput] across every Low-Level Cfg entry

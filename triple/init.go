@@ -19,7 +19,7 @@ import (
 //	p   the recipe — the resolved [Profile] record (see
 //	    [Profile.MarshalJSON] for its key set); its name is the
 //	    sender's label
-//	ib  the inner Low-Level Blob{N} JSON, embedded verbatim as an
+//	ib  the inner Blob{N} JSON, embedded verbatim as an
 //	    object (the only carrier of seed / PRF-key / MAC-key material)
 //	pm  32-byte parallax master, base64; present iff p.parallax
 //	wm  32-byte wrapper master, base64; present iff p.wrapper

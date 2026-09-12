@@ -175,9 +175,9 @@ func newSeed512(name string, keyBits int) (*itb.Seed512, error) {
 }
 
 // TestRegistryStable verifies that Registry ordering matches the
-// canonical FFI contract. The order is stable because index
-// is exposed through ITB_HashName and any reordering is an
-// ABI-breaking change.
+// canonical FFI contract. The order is stable because the roster is
+// exposed through ITB_Triple_HashNames in this exact sequence and
+// any reordering is an ABI-breaking change.
 func TestRegistryStable(t *testing.T) {
 	want := []string{
 		"aesitb128",

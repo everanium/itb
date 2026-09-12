@@ -44,8 +44,8 @@ In FFI-stable index order:
 | 8 | `siphash24` | 128 | `HashFunc128` (uncached — pure function) |
 | 9 | `chacha20` | 256 | `HashFunc256` |
 
-The order is FFI-stable; index 0..9 is exposed through
-`ITB_HashName(idx)` in the shared library and re-ordering would
+The order is FFI-stable; the shipped roster is exposed through
+`ITB_Triple_HashNames` in the shared library and re-ordering would
 break the ABI.
 
 Each shipped name is also exported as a `hashes.Cipher*` constant
@@ -388,7 +388,7 @@ _ = seed
 
 **Fused-hook fields on the Spec are user-settable.** Beyond `Make{N}Pair`, `hashes.Spec` exposes optional fast-path fields — `FusedChainHash{N}` and `FusedChainHash{N}x8` (four- / eight-lane ChainAbsorb cascades for `hashes.NewSeed{N}` construction speed), `InterlockFillBatch16x{W}` and `InterlockFillBatch32x{W}` (batched Interlocked Barrier fill kernels on the per-pixel hot path). The factory above declares none of them, and the seed built from the closures alone produces and decrypts the same wire — the hooks are performance paths only. A registered primitive that ships alongside a hand-tuned AVX-512 / VAES / SHA-NI kernel populates these fields at Register time; the shipped registry entries all do this, which is what buys tier-1 throughput on their target microarchitectures. Users who care about throughput on a custom primitive follow the same pattern: write the batched kernel, stash the callback in the Spec at Register time.
 
-The shipped `Registry` itself is immutable — user entries live in a separate mutex-guarded slice — so the FFI iteration surface (`ITB_HashName` / `ITB_HashWidth`) is unaffected by runtime registrations. `hashes.Register` is a Go-native API only. Bindings are triple-only and do not expose custom-primitive plug; a binding caller who needs a custom PRF wires the Go-native surface directly.
+The shipped `Registry` itself is immutable — user entries live in a separate mutex-guarded slice — so the FFI iteration surface (`ITB_Triple_HashNames`) is unaffected by runtime registrations. `hashes.Register` is a Go-native API only. Bindings are triple-only and do not expose custom-primitive plug; a binding caller who needs a custom PRF wires the Go-native surface directly.
 
 The `triple.Pipeline` facade selects primitives by name from `hashes.Find`, so a registered primitive is reachable through `triple.Init(profile, opts)` provided the profile's chosen inner-hash name resolves to the registered Spec. Custom primitives supplied directly as closures do not appear in `Find` and are not reachable through the Pipeline facade; use either the Register path or the Low-Level `*Cfg` entry points depending on which shape the surrounding call site prefers.
 

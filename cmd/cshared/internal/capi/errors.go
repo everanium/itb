@@ -84,7 +84,7 @@ func (s Status) String() string {
 	case StatusBadKeyBits:
 		return "invalid key bits (must be 512..2048, multiple of width)"
 	case StatusBadHandle:
-		return "invalid seed handle"
+		return "invalid handle"
 	case StatusBadInput:
 		return "invalid input"
 	case StatusBufferTooSmall:

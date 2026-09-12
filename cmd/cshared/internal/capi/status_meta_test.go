@@ -1,16 +1,12 @@
 package capi
 
 import (
-	"encoding/binary"
 	"strings"
 	"testing"
-
-	"github.com/everanium/itb"
 )
 
-// Scope: status-code label surface, ParseChunkLen header validation
-// branches, and the parseTripleOpts / parseBoolOpt option-string
-// parsing branches.
+// Scope: status-code label surface and the parseTripleOpts /
+// parseBoolOpt option-string parsing branches.
 
 // TestStatusStringAllCodes verifies every defined status code carries
 // a non-empty distinct-from-unknown label, and that an out-of-range
@@ -56,46 +52,6 @@ func TestStatusStringAllCodes(t *testing.T) {
 	}
 	if int(StatusBlobMalformedRecipe) != 11 || int(StatusRecipePrimitiveUnknown) != 12 || int(StatusUnknownProfile) != 13 {
 		t.Errorf("numeric assignment drifted: %d / %d / %d", StatusBlobMalformedRecipe, StatusRecipePrimitiveUnknown, StatusUnknownProfile)
-	}
-}
-
-// TestParseChunkLenHeaderValidation walks the ParseChunkLen rejection
-// branches: unsupported nonce size, truncated header, zero dimensions,
-// and an announced pixel count above the container cap — then confirms
-// the accept path at every supported nonce size.
-func TestParseChunkLenHeaderValidation(t *testing.T) {
-	mkHeader := func(nonceBytes int, width, height uint16) []byte {
-		h := make([]byte, 2*nonceBytes+4)
-		binary.BigEndian.PutUint16(h[2*nonceBytes:], width)
-		binary.BigEndian.PutUint16(h[2*nonceBytes+2:], height)
-		return h
-	}
-
-	if _, st := ParseChunkLen(make([]byte, 64), 24); st != StatusBadInput {
-		t.Fatalf("nonceBytes=24: %v, want StatusBadInput", st)
-	}
-	if _, st := ParseChunkLen(make([]byte, 2*16+3), 16); st != StatusBadInput {
-		t.Fatalf("short header: %v, want StatusBadInput", st)
-	}
-	if _, st := ParseChunkLen(mkHeader(16, 0, 7), 16); st != StatusBadInput {
-		t.Fatalf("zero width: %v, want StatusBadInput", st)
-	}
-	if _, st := ParseChunkLen(mkHeader(16, 7, 0), 16); st != StatusBadInput {
-		t.Fatalf("zero height: %v, want StatusBadInput", st)
-	}
-	// 65535 * 65535 pixels overflows the container pixel cap.
-	if _, st := ParseChunkLen(mkHeader(16, 65535, 65535), 16); st != StatusBadInput {
-		t.Fatalf("pixel cap: %v, want StatusBadInput", st)
-	}
-	for _, nonceBytes := range []int{16, 32, 64} {
-		n, st := ParseChunkLen(mkHeader(nonceBytes, 12, 34), nonceBytes)
-		if st != StatusOK {
-			t.Fatalf("nonceBytes=%d: %v, want ok", nonceBytes, st)
-		}
-		want := 2*nonceBytes + 4 + 12*34*itb.Channels
-		if n != want {
-			t.Fatalf("nonceBytes=%d: chunk len %d, want %d", nonceBytes, n, want)
-		}
 	}
 }
 

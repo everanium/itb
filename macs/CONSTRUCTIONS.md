@@ -22,7 +22,7 @@ The primitive-math layer is the upstream libraries' (and the stdlib's) responsib
 
 ## Table of constructions
 
-Listed in canonical registry order (the FFI iteration order exposed via `ITB_MACName` / `ITB_MACTagSize`, stable across releases). All three produce a **32-byte tag** and accept a 32-byte key.
+Listed in canonical registry order (referenced by `triple.Profile.MacName` and the per-call `triple.Opts.MacName` override, stable across releases). All three produce a **32-byte tag** and accept a 32-byte key.
 
 | # | Registry name | Underlying primitive | Construction shape | Key (min / recommended) | Tag |
 |---|---|---|---|---|---|
@@ -81,7 +81,7 @@ The `left_encode` / `right_encode` / `encode_string` / `bytepad` helpers in `kma
 
 **Why this is not RFC 2104 HMAC.** The name `hmac-blake3` is a **deliberate misnomer**, not a claim of the nested `H(K ⊕ opad ‖ H(K ⊕ ipad ‖ M))` HMAC construction. BLAKE3-keyed mode is chosen here **precisely because the BLAKE3 authors recommend it instead of HMAC**: BLAKE3's keyed mode is itself a sound keyed PRF (BLAKE3 spec §6), so the nested HMAC wrapper RFC 2104 builds around an unkeyed Merkle-Damgård hash is unnecessary with BLAKE3 — and would only add cost without adding security. Wrapping BLAKE3 in literal RFC 2104 HMAC would be the wrong construction for this primitive, not the right one.
 
-The registry name is nonetheless kept as `hmac-blake3` for two reasons. First, **user familiarity and registry symmetry**: alongside `hmac-sha256`, the `hmac-` prefix marks the MAC role ("a keyed authentication tag") that integrators recognise and scan for, where a bare `blake3-keyed` would read as something unrelated to the MAC slot. Second, **FFI stability**: the name is exposed at a frozen index through `ITB_MACName`, so renaming would churn every binding, example, and test that references it. The standard-conformant name would be `blake3-keyed`; this section is where the divergence is stated rather than implied, so an auditor reads what is actually computed regardless of the label.
+The registry name is nonetheless kept as `hmac-blake3` for two reasons. First, **user familiarity and registry symmetry**: alongside `hmac-sha256`, the `hmac-` prefix marks the MAC role ("a keyed authentication tag") that integrators recognise and scan for, where a bare `blake3-keyed` would read as something unrelated to the MAC slot. Second, **wire-level stability**: the name is embedded in every `triple.Profile` and travels on the wire through `MacName`, so renaming would churn every binding, example, and test that references it. The standard-conformant name would be `blake3-keyed`; this section is where the divergence is stated rather than implied, so an auditor reads what is actually computed regardless of the label.
 
 **Key length.** Exactly 32 bytes — BLAKE3's keyed mode is defined only for a 256-bit key. Shorter or longer keys are rejected.
 
@@ -89,7 +89,7 @@ The registry name is nonetheless kept as `hmac-blake3` for two reasons. First, *
 
 ## Cross-cutting design properties
 
-**Uniform 32-byte tag.** Every shipped primitive emits exactly 32 bytes regardless of key length, so a consumer does not vary its authenticated-payload layout based on which MAC was selected — a binding-friendly invariant the FFI surface (`ITB_MACTagSize`) relies on.
+**Uniform 32-byte tag.** Every shipped primitive emits exactly 32 bytes regardless of key length, so a consumer does not vary its authenticated-payload layout based on which MAC was selected — a binding-friendly invariant every `triple.Profile` fixed-tag consumer relies on.
 
 **Pre-key once, clone / pool per call.** Each factory absorbs its key into a long-lived template once, then reuses it per call with no key-derivation overhead: KMAC256 clones a cSHAKE256 template pre-absorbed up through `bytepad(encode_string(K), 136)`; HMAC-SHA-256 draws a pre-keyed `hmac.Hash` from a `sync.Pool` and `Reset()`s it to the post-ipad state; HMAC-BLAKE3 clones a `blake3.NewKeyed` template. Every shipped closure is safe for concurrent invocation across goroutines.
 

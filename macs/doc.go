@@ -9,8 +9,9 @@
 // layout based on which MAC was selected — a binding-friendly
 // invariant.
 //
-// Canonical names (FFI-stable iteration order, exposed via the
-// shared library's ITB_MACName entry point):
+// Canonical names (referenced by [triple.Profile.MacName] and the
+// per-call [triple.Opts.MacName] override; the FFI shim reaches the
+// shipped MAC set only through the profile-facing Triple family):
 //
 //	kmac256, hmac-sha256, hmac-blake3
 //
@@ -84,10 +85,9 @@
 // MacName references the custom primitive initialises, encrypts,
 // decrypts, and round-trips seed blobs with no further plumbing.
 // [Registry] itself is not extended — user entries live in a
-// separate mutex-guarded store — so the FFI iteration surface
-// (ITB_MACCount / ITB_MACName) is unaffected. Runtime registration
-// is a Go-native API only; bindings are triple-only and do not
-// expose custom-MAC plug.
+// separate mutex-guarded store. Runtime registration is a Go-native
+// API only; bindings are triple-only and do not expose custom-MAC
+// plug.
 //
 // A seed blob exported under a custom MAC name records the name, not
 // the construction: the name is a promise. Loading such a blob in

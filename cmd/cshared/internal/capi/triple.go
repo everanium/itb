@@ -266,10 +266,11 @@ func FreeTriple(id TripleHandleID) (st Status) {
 // pass across the Pipeline's full chain: parallax encrypt-Reader → itb
 // Triple 8-seed Streaming AEAD (or Non-AEAD) → wrapper wrap-Writer.
 //
-// Buffer convention mirrors the low-level ITB_EncryptStream* family:
-// the caller supplies a plaintext src slice + a wire destination
-// buffer with capacity; the returned n reports bytes written on
-// success or the required capacity on StatusBufferTooSmall.
+// Buffer convention is the standard caller-allocated one used across
+// every cipher entry: the caller supplies a plaintext src slice + a
+// wire destination buffer with capacity; the returned n reports bytes
+// written on success or the required capacity on
+// StatusBufferTooSmall.
 //
 // The whole plaintext is available up front on this surface, so the
 // call routes through [triple.Pipeline.EncryptStreamBytes] — the
