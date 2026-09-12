@@ -207,14 +207,23 @@
         (is-equal 'ok (itb-lfe:free sender))))))
 
 (deftest inspect-lookup-profiles
+  ;; inspect carries the registry recipe plus the blob-only
+  ;; nonce_bits / barrier_fill inspection fields; lookup returns just
+  ;; the recipe.
   (let* ((`#(ok ,pipe) (itb-lfe:init #"singlemsg-triple-mac-v1"))
          (`#(ok ,blob) (itb-lfe:save pipe)))
     (is-equal 'ok (itb-lfe:free pipe))
-    (let ((`#(ok ,record) (itb-lfe:inspect blob)))
+    (let ((`#(ok ,record) (itb-lfe:inspect blob))
+          (`#(ok ,looked) (itb-lfe:lookup #"singlemsg-triple-mac-v1")))
       (is-equal #"singlemsg-triple-mac-v1" (maps:get #"name" record))
       (is-equal #"singlemsg-mac" (maps:get #"mode" record))
       (is (> (maps:get #"keybits" record) 0))
-      (is-equal `#(ok ,record) (itb-lfe:lookup #"singlemsg-triple-mac-v1")))
+      (is (maps:is_key #"nonce_bits" record))
+      (is (maps:is_key #"barrier_fill" record))
+      (is (not (maps:is_key #"nonce_bits" looked)))
+      (is (not (maps:is_key #"barrier_fill" looked)))
+      (is-equal looked
+                (maps:without (list #"nonce_bits" #"barrier_fill") record)))
     (let ((`#(error #(bad_input ,_)) (itb-lfe:inspect #"not a blob")))
       'ok)
     (let ((`#(error #(unknown_profile ,_)) (itb-lfe:lookup #"no-such-profile")))

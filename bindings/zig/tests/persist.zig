@@ -52,7 +52,10 @@ test "load with master overrides equals a sender rekey" {
     try roundTrip(gpa, &sender, &receiver);
 }
 
-test "inspect equals lookup for a shipped profile; garbage is BadInput" {
+test "inspect carries recipe plus inspection-only fields; garbage is BadInput" {
+    // inspect carries the registry recipe plus the blob-only
+    // nonce_bits / barrier_fill inspection fields; lookup returns
+    // just the recipe.
     const gpa = std.testing.allocator;
     var sender = try itb.Pipeline.init(gpa, "singlemsg-triple-mac-v1", null);
     defer sender.deinit();
@@ -63,9 +66,13 @@ test "inspect equals lookup for a shipped profile; garbage is BadInput" {
     defer gpa.free(inspected);
     const looked = try itb.lookup(gpa, "singlemsg-triple-mac-v1");
     defer gpa.free(looked);
-    try std.testing.expectEqualStrings(looked, inspected);
     try std.testing.expect(std.mem.indexOf(u8, inspected, "\"name\":\"singlemsg-triple-mac-v1\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, inspected, "\"mode\":\"singlemsg-mac\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, inspected, "\"nonce_bits\":") != null);
+    try std.testing.expect(std.mem.indexOf(u8, inspected, "\"barrier_fill\":") != null);
+    try std.testing.expect(std.mem.indexOf(u8, looked, "\"name\":\"singlemsg-triple-mac-v1\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, looked, "\"nonce_bits\":") == null);
+    try std.testing.expect(std.mem.indexOf(u8, looked, "\"barrier_fill\":") == null);
     try std.testing.expectError(error.BadInput, itb.inspect(gpa, "not a blob"));
 }
 

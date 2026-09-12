@@ -85,6 +85,9 @@ load_with_master_override_test_() ->
     end}.
 
 inspect_lookup_profiles_test() ->
+    %% inspect carries the registry recipe plus the blob-only
+    %% nonce_bits / barrier_fill inspection fields; lookup returns
+    %% just the recipe.
     {ok, Pipe} = itb:init(<<"singlemsg-triple-mac-v1">>, #{}),
     {ok, Blob} = itb:save(Pipe),
     ok = itb:free(Pipe),
@@ -92,7 +95,13 @@ inspect_lookup_profiles_test() ->
     ?assertEqual(<<"singlemsg-triple-mac-v1">>, maps:get(<<"name">>, Record)),
     ?assertEqual(<<"singlemsg-mac">>, maps:get(<<"mode">>, Record)),
     ?assert(maps:get(<<"keybits">>, Record) > 0),
-    ?assertEqual({ok, Record}, itb:lookup(<<"singlemsg-triple-mac-v1">>)),
+    ?assert(maps:is_key(<<"nonce_bits">>, Record)),
+    ?assert(maps:is_key(<<"barrier_fill">>, Record)),
+    {ok, Looked} = itb:lookup(<<"singlemsg-triple-mac-v1">>),
+    ?assertNot(maps:is_key(<<"nonce_bits">>, Looked)),
+    ?assertNot(maps:is_key(<<"barrier_fill">>, Looked)),
+    ?assertEqual(Looked,
+                 maps:without([<<"nonce_bits">>, <<"barrier_fill">>], Record)),
     ?assertMatch({error, {bad_input, _}}, itb:inspect(<<"not a blob">>)),
     ?assertMatch({error, {unknown_profile, _}}, itb:lookup(<<"no-such-profile">>)),
     Names = itb:profiles(),

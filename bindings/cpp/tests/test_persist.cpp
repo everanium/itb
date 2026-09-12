@@ -48,15 +48,26 @@ static int run()
         }
     }
 
-    /* inspect == lookup for a shipped profile; garbage throws BadInput. */
+    /* inspect carries the registry recipe plus the blob-only
+     * nonce_bits / barrier_fill inspection fields; lookup returns just
+     * the recipe. Assert the two inspection-only fields appear only in
+     * inspect. Garbage throws BadInput. */
     const std::string inspected = itb::inspect(itb::as_bytes(blob));
     const std::string looked = itb::lookup("singlemsg-triple-mac-v1");
-    TEST_ASSERT(inspected == looked, "inspect / lookup mismatch:\n  %s\n  %s",
-                inspected.c_str(), looked.c_str());
     TEST_ASSERT(inspected.find("\"name\":\"singlemsg-triple-mac-v1\"") != std::string::npos,
                 "inspect must carry the name");
     TEST_ASSERT(inspected.find("\"mode\":\"singlemsg-mac\"") != std::string::npos,
                 "inspect must carry the mode");
+    TEST_ASSERT(looked.find("\"name\":\"singlemsg-triple-mac-v1\"") != std::string::npos,
+                "lookup must carry the name");
+    TEST_ASSERT(inspected.find("\"nonce_bits\":") != std::string::npos,
+                "inspect must carry the inspection-only nonce_bits field");
+    TEST_ASSERT(inspected.find("\"barrier_fill\":") != std::string::npos,
+                "inspect must carry the inspection-only barrier_fill field");
+    TEST_ASSERT(looked.find("\"nonce_bits\":") == std::string::npos,
+                "lookup must not carry the inspection-only nonce_bits field");
+    TEST_ASSERT(looked.find("\"barrier_fill\":") == std::string::npos,
+                "lookup must not carry the inspection-only barrier_fill field");
     try {
         (void)itb::inspect(itb::as_bytes("not a blob"));
         TEST_ASSERT(false, "inspect garbage must throw");

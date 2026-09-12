@@ -51,12 +51,22 @@ class PersistTest(unittest.TestCase):
                 self.assertEqual(receiver.decrypt_message(wire), b"master override")
 
     def test_inspect_matches_lookup(self) -> None:
+        # inspect carries the registry recipe plus the blob-only
+        # nonce_bits / barrier_fill inspection fields; lookup returns
+        # just the recipe.
         with itb.Pipeline.init(PROFILE) as pipe:
             record = itb.inspect(pipe.save())
         self.assertEqual(record["name"], PROFILE)
         self.assertEqual(record["mode"], "singlemsg-mac")
         self.assertIn("keybits", record)
-        self.assertEqual(record, itb.lookup(PROFILE))
+        self.assertIn("nonce_bits", record)
+        self.assertIn("barrier_fill", record)
+        looked = itb.lookup(PROFILE)
+        self.assertNotIn("nonce_bits", looked)
+        self.assertNotIn("barrier_fill", looked)
+        recipe = {k: v for k, v in record.items()
+                  if k not in ("nonce_bits", "barrier_fill")}
+        self.assertEqual(recipe, looked)
 
     def test_inspect_rejects_garbage(self) -> None:
         with self.assertRaises(itb.ItbError) as ctx:

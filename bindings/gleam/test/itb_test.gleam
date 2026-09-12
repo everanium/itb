@@ -114,7 +114,14 @@ pub fn inspect_lookup_profiles_test() {
   let assert Ok(record) = itb_gleam.inspect(blob)
   assert string.contains(record, "\"name\":\"singlemsg-triple-mac-v1\"")
   assert string.contains(record, "\"mode\":\"singlemsg-mac\"")
-  assert itb_gleam.lookup("singlemsg-triple-mac-v1") == Ok(record)
+  // inspect carries the registry recipe plus the blob-only nonce_bits
+  // / barrier_fill inspection fields; lookup returns just the recipe.
+  let assert Ok(looked) = itb_gleam.lookup("singlemsg-triple-mac-v1")
+  assert string.contains(record, "\"nonce_bits\":")
+  assert string.contains(record, "\"barrier_fill\":")
+  assert !string.contains(looked, "\"nonce_bits\":")
+  assert !string.contains(looked, "\"barrier_fill\":")
+  assert string.contains(looked, "\"name\":\"singlemsg-triple-mac-v1\"")
   let assert Error(ItbError("bad_input", _)) =
     itb_gleam.inspect(<<"not a blob":utf8>>)
   let assert Error(ItbError("unknown_profile", _)) =

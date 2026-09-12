@@ -284,7 +284,15 @@ run("inspect / lookup / profiles", function()
     local record = itb.inspect(pipe:save())
     assert(record:find('"name":"singlemsg-triple-mac-v1"', 1, true), record)
     assert(record:find('"mode":"singlemsg-mac"', 1, true), record)
-    assert(record == itb.lookup("singlemsg-triple-mac-v1"), "inspect differs from lookup")
+    -- inspect carries the registry recipe plus the blob-only
+    -- nonce_bits / barrier_fill inspection fields; lookup returns
+    -- just the recipe.
+    local looked = itb.lookup("singlemsg-triple-mac-v1")
+    assert(record:find('"nonce_bits":', 1, true), "inspect must carry nonce_bits")
+    assert(record:find('"barrier_fill":', 1, true), "inspect must carry barrier_fill")
+    assert(looked:find('"name":"singlemsg-triple-mac-v1"', 1, true), looked)
+    assert(not looked:find('"nonce_bits":', 1, true), "lookup must not carry nonce_bits")
+    assert(not looked:find('"barrier_fill":', 1, true), "lookup must not carry barrier_fill")
     assert_status({ itb.status.BAD_INPUT }, function() itb.inspect("not a blob") end)
     assert_status({ itb.status.UNKNOWN_PROFILE }, function() itb.lookup("no-such-profile") end)
     local names = itb.profiles()

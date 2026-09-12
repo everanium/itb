@@ -228,14 +228,27 @@ let test_save_load_round_trip () =
   Itb.close receiver;
   Itb.close sender
 
-let test_inspect_equals_lookup () =
+let test_inspect_carries_recipe_and_inspection_fields () =
+  (* inspect carries the registry recipe plus the blob-only
+     nonce_bits / barrier_fill inspection fields; lookup returns just
+     the recipe. *)
   let sender = Itb.create "singlemsg-triple-mac-v1" () in
   let inspected = Itb.inspect (Itb.save sender) in
-  Alcotest.(check string) "inspect = lookup" (Itb.lookup "singlemsg-triple-mac-v1") inspected;
+  let looked = Itb.lookup "singlemsg-triple-mac-v1" in
   Alcotest.(check bool) "inspect carries the name" true
     (contains inspected "\"name\":\"singlemsg-triple-mac-v1\"");
   Alcotest.(check bool) "inspect carries the mode" true
     (contains inspected "\"mode\":\"singlemsg-mac\"");
+  Alcotest.(check bool) "inspect carries nonce_bits" true
+    (contains inspected "\"nonce_bits\":");
+  Alcotest.(check bool) "inspect carries barrier_fill" true
+    (contains inspected "\"barrier_fill\":");
+  Alcotest.(check bool) "lookup carries the name" true
+    (contains looked "\"name\":\"singlemsg-triple-mac-v1\"");
+  Alcotest.(check bool) "lookup omits nonce_bits" false
+    (contains looked "\"nonce_bits\":");
+  Alcotest.(check bool) "lookup omits barrier_fill" false
+    (contains looked "\"barrier_fill\":");
   (* Status 4 = BAD_INPUT. *)
   check_status 4 (fun () -> Itb.inspect (Bytes.of_string "not a blob"));
   Itb.close sender
@@ -403,7 +416,8 @@ let () =
       ( "persist",
         [
           case "save / load round trip" (fun () -> test_save_load_round_trip ());
-          case "inspect equals lookup" (fun () -> test_inspect_equals_lookup ());
+          case "inspect carries recipe + inspection fields"
+            (fun () -> test_inspect_carries_recipe_and_inspection_fields ());
           case "save_f / load_f round trip" (fun () -> test_save_f_load_f_round_trip ());
           case "max_workers clamps" (fun () -> test_max_workers_clamps ());
         ] );

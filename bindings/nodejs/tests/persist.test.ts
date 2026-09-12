@@ -66,14 +66,24 @@ test('load with master override', () => {
   receiver.free();
 });
 
-test('inspect matches lookup', () => {
+test('inspect carries the recipe plus inspection-only fields', () => {
+  // inspect carries the registry recipe plus the blob-only nonce_bits
+  // / barrier_fill inspection fields; lookup returns just the recipe.
   const pipe = Pipeline.init(PROFILE);
-  const record = inspect(pipe.save());
+  const record = inspect(pipe.save()) as unknown as Record<string, unknown>;
   pipe.free();
   assert.equal(record.name, PROFILE);
   assert.equal(record.mode, 'singlemsg-mac');
-  assert.ok(record.keybits > 0);
-  assert.deepEqual(record, lookup(PROFILE));
+  assert.ok((record.keybits as number) > 0);
+  assert.ok('nonce_bits' in record);
+  assert.ok('barrier_fill' in record);
+  const looked = lookup(PROFILE) as unknown as Record<string, unknown>;
+  assert.ok(!('nonce_bits' in looked));
+  assert.ok(!('barrier_fill' in looked));
+  const { nonce_bits: _nb, barrier_fill: _bf, ...recipe } = record;
+  void _nb;
+  void _bf;
+  assert.deepEqual(recipe, looked);
   assert.equal(statusOf(() => inspect(Buffer.from('not a blob'))), Status.BadInput);
   assert.equal(statusOf(() => lookup('no-such-profile')), Status.UnknownProfile);
 });

@@ -254,14 +254,21 @@ main = hspec $ do
       freePipeline receiver
       freePipeline sender
 
-    it "inspect equals lookupProfile; garbage is statusBadInput" $ do
+    it "inspect carries the recipe plus inspection-only fields; garbage is statusBadInput" $ do
       sender <- newPipeline "singlemsg-triple-mac-v1"
       b <- save sender
       inspected <- inspect b
       looked <- lookupProfile "singlemsg-triple-mac-v1"
-      inspected `shouldBe` looked
+      -- inspect carries the registry recipe plus the blob-only
+      -- nonce_bits / barrier_fill inspection fields; lookup returns
+      -- just the recipe.
       inspected `shouldSatisfy` isInfixOf "\"name\":\"singlemsg-triple-mac-v1\""
       inspected `shouldSatisfy` isInfixOf "\"mode\":\"singlemsg-mac\""
+      inspected `shouldSatisfy` isInfixOf "\"nonce_bits\":"
+      inspected `shouldSatisfy` isInfixOf "\"barrier_fill\":"
+      looked `shouldSatisfy` isInfixOf "\"name\":\"singlemsg-triple-mac-v1\""
+      looked `shouldSatisfy` (not . isInfixOf "\"nonce_bits\":")
+      looked `shouldSatisfy` (not . isInfixOf "\"barrier_fill\":")
       inspect (BC.pack "not a blob") `shouldFailWithStatus` [statusBadInput]
       freePipeline sender
 

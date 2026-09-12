@@ -302,12 +302,20 @@ end
         free!(receiver)
     end
 
-    @testset "inspect matches lookup" begin
+    @testset "inspect carries the recipe plus inspection-only fields" begin
         pipe = Pipeline("singlemsg-triple-mac-v1")
         record = inspect(save(pipe))
+        # inspect carries the registry recipe plus the blob-only
+        # nonce_bits / barrier_fill inspection fields; lookup returns
+        # just the recipe.
+        looked = lookup("singlemsg-triple-mac-v1")
         @test occursin("\"name\":\"singlemsg-triple-mac-v1\"", record)
         @test occursin("\"mode\":\"singlemsg-mac\"", record)
-        @test record == lookup("singlemsg-triple-mac-v1")
+        @test occursin("\"nonce_bits\":", record)
+        @test occursin("\"barrier_fill\":", record)
+        @test occursin("\"name\":\"singlemsg-triple-mac-v1\"", looked)
+        @test !occursin("\"nonce_bits\":", looked)
+        @test !occursin("\"barrier_fill\":", looked)
         err = capture_itberror(() -> inspect(Vector{UInt8}("not a blob")))
         @test err.status_code == ITB.STATUS_BAD_INPUT
         free!(pipe)

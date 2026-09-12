@@ -241,11 +241,19 @@ class ItbTest < Minitest::Test
   end
 
   def test_inspect_blob_matches_lookup
+    # inspect_blob carries the registry recipe plus the blob-only
+    # nonce_bits / barrier_fill inspection fields; lookup returns just
+    # the recipe.
     pipe = ITB.create("singlemsg-triple-mac-v1")
     record = ITB.inspect_blob(pipe.save)
     assert_equal "singlemsg-triple-mac-v1", record["name"]
     assert_equal "singlemsg-mac", record["mode"]
-    assert_equal ITB.lookup("singlemsg-triple-mac-v1"), record
+    assert_includes record, "nonce_bits"
+    assert_includes record, "barrier_fill"
+    looked = ITB.lookup("singlemsg-triple-mac-v1")
+    refute_includes looked, "nonce_bits"
+    refute_includes looked, "barrier_fill"
+    assert_equal looked, record.reject { |k, _| %w[nonce_bits barrier_fill].include?(k) }
     err = assert_raises(ITB::Error) { ITB.inspect_blob("not a blob") }
     assert_equal ITB::Status::BAD_INPUT, err.status_code
   ensure

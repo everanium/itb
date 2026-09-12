@@ -831,19 +831,31 @@ package body Test_Cases is
                Plain, "override round trip");
          end;
 
-         --  Inspect equals Lookup for a shipped profile.
+         --  Inspect carries the registry recipe plus the blob-only
+         --  nonce_bits / barrier_fill inspection fields; Lookup
+         --  returns just the recipe.
          declare
             Inspected : constant String := Itb.Pipeline.Inspect (Blob);
             Looked    : constant String :=
               Itb.Pipeline.Lookup ("singlemsg-triple-mac-v1");
          begin
-            Check (Inspected = Looked, "inspect / lookup mismatch");
             Check (Ada.Strings.Fixed.Index
                      (Inspected, """name"":""singlemsg-triple-mac-v1""") > 0,
                    "inspect must carry the name");
             Check (Ada.Strings.Fixed.Index
                      (Inspected, """mode"":""singlemsg-mac""") > 0,
                    "inspect must carry the mode");
+            Check (Ada.Strings.Fixed.Index (Inspected, """nonce_bits"":") > 0,
+                   "inspect must carry the inspection-only nonce_bits");
+            Check (Ada.Strings.Fixed.Index (Inspected, """barrier_fill"":") > 0,
+                   "inspect must carry the inspection-only barrier_fill");
+            Check (Ada.Strings.Fixed.Index
+                     (Looked, """name"":""singlemsg-triple-mac-v1""") > 0,
+                   "lookup must carry the name");
+            Check (Ada.Strings.Fixed.Index (Looked, """nonce_bits"":") = 0,
+                   "lookup must omit the inspection-only nonce_bits");
+            Check (Ada.Strings.Fixed.Index (Looked, """barrier_fill"":") = 0,
+                   "lookup must omit the inspection-only barrier_fill");
          end;
       end;
 

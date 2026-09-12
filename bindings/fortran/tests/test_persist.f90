@@ -51,16 +51,27 @@ program test_persist
   call round_trip("overrides")
   call itb_pipeline_free(receiver)
 
-  ! inspect == lookup for a shipped profile; garbage is BAD_INPUT.
+  ! inspect carries the registry recipe plus the blob-only nonce_bits
+  ! / barrier_fill inspection fields; lookup returns just the recipe.
+  ! Garbage is BAD_INPUT.
   call itb_inspect(blob, inspected, err)
   call expect_ok(err, "inspect")
   call itb_lookup("singlemsg-triple-mac-v1", looked, err)
   call expect_ok(err, "lookup")
-  call check(inspected == looked, "inspect / lookup mismatch")
   call check(index(inspected, '"name":"singlemsg-triple-mac-v1"') > 0, &
       "inspect carries the name")
   call check(index(inspected, '"mode":"singlemsg-mac"') > 0, &
       "inspect carries the mode")
+  call check(index(looked, '"name":"singlemsg-triple-mac-v1"') > 0, &
+      "lookup carries the name")
+  call check(index(inspected, '"nonce_bits":') > 0, &
+      "inspect carries the inspection-only nonce_bits field")
+  call check(index(inspected, '"barrier_fill":') > 0, &
+      "inspect carries the inspection-only barrier_fill field")
+  call check(index(looked, '"nonce_bits":') == 0, &
+      "lookup does not carry the inspection-only nonce_bits field")
+  call check(index(looked, '"barrier_fill":') == 0, &
+      "lookup does not carry the inspection-only barrier_fill field")
   call itb_inspect(plain, inspected, err)
   call expect_status(err, ITB_STATUS_BAD_INPUT, "inspect garbage")
 
