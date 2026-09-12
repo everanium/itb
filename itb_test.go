@@ -160,9 +160,9 @@ func TestTriplePixelBoundary(t *testing.T) {
 
 // TestTripleExactMinContainer exercises a payload that fits
 // approximately in the minimum container for the seed's PRF ambiguity
-// requirement (56^MinPixels > 2^bits). The size is chosen so the
-// container sits right at the min-container branch of
-// calcContainerSize3.
+// requirement (7^MinPixels > 2^bits, unified CCA floor via
+// MinPixels := MinPixelsAuth). The size is chosen so the container
+// sits right at the min-container branch of calcContainerSize3.
 func TestTripleExactMinContainer(t *testing.T) {
 	n, l, d1, d2, d3, s1, s2, s3 := makeEightSeeds128(512, sipHash128)
 	data := genTestPlaintext(t, 560)

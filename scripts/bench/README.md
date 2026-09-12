@@ -16,7 +16,7 @@ between runs.
 
 A comma-separated list of `upper:batch` pairs read left to right. The
 first tier whose `upper` matches (or the `-1` fallback) picks the batch
-stride. `upper` is compared against the **per-snake** payload length —
+stride. `upper` is compared against the **per-region** payload length —
 under Triple Ouroboros the low-level entry receives one third of the
 user-visible plaintext.
 
@@ -190,7 +190,7 @@ The aggregator prints a Markdown table with the policy knobs, encrypt /
 decrypt throughput, allocation per iteration, GC rate and cost, and the
 per-pool miss rates. The figures are steady-state Streaming AEAD
 numbers and are not comparable with the cold-start Single Message rows
-`sweep.sh` produces; the tier thresholds are per-snake byte counts, so
+`sweep.sh` produces; the tier thresholds are per-region byte counts, so
 under the default 16 MiB chunk budget a stream never reaches the
 shipped ladder's third tier — probing it takes an explicit
 `--chunk-size` above three times the second tier's upper bound.

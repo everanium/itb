@@ -21,12 +21,12 @@ package itb
 //	                   → dataHash(pixel).lo >> 3
 //
 // which held under Single Ouroboros. Under the plaintext is
-// first prepended with a 4-byte length, then split into three snake
+// first prepended with a 4-byte length, then split into three region
 // streams by the 48-bit interlock (a per-chunk PRF-keyed 16-of-48
 // balanced partition, ≈ 2^70.20 mask space). Lane i's bytes are then
-// COBS-wrapped and encoded into snake i's own container, at a
-// snake-i-owned `startPixel_i`. The naive attacker guessing "byte K
-// lives at snake K%3, snake pixel (sp_i + (K/3)/7)" is wrong at
+// COBS-wrapped and encoded into region i's own container, at a
+// region-i-owned `startPixel_i`. The naive attacker guessing "byte K
+// lives at region K%3, region pixel (sp_i + (K/3)/7)" is wrong at
 // essentially every position once the barrier has permuted the chunk
 // bits.
 //
@@ -34,7 +34,7 @@ package itb
 //
 //   - Attacker-realistic (F1, F4): only public wire bytes + the
 //     public-schema crib. Reports the achievable per-pixel candidate
-//     set structure and the per-snake displacement fraction.
+//     set structure and the per-region displacement fraction.
 //   - Lab-peek diagnostic (F2, F3, F5): consumes true seed material
 //     in the decision path to establish the upper bound the SAT would
 //     have to reach. Ground-truth values are used as the DIRECT
@@ -101,17 +101,17 @@ func buildEightFNV1aSeeds128FNV(t *testing.T, keyBits int) (ns, ls, d1, d2, d3, 
 		mk("s1"), mk("s2"), mk("s3")
 }
 
-// snakeGeometryFNV describes the wire slicing of a Triple ciphertext.
+// regionGeometryFNV describes the wire slicing of a Triple ciphertext.
 // Populated from the public wire header (attacker-visible bytes only).
-type snakeGeometryFNV struct {
+type regionGeometryFNV struct {
 	nonce         []byte
 	totalPixels   int
-	snakePixels   [3]int
-	snakeBodies   [3][]byte
-	snakePixStart [3]int
+	regionPixels   [3]int
+	regionBodies   [3][]byte
+	regionPixStart [3]int
 }
 
-func decodeWireFNV(ct []byte) snakeGeometryFNV {
+func decodeWireFNV(ct []byte) regionGeometryFNV {
 	nonce := ct[:NonceSize]
 	w := int(binary.BigEndian.Uint16(ct[2*NonceSize : 2*NonceSize+2]))
 	h := int(binary.BigEndian.Uint16(ct[2*NonceSize+2 : 2*NonceSize+4]))
@@ -119,16 +119,16 @@ func decodeWireFNV(ct []byte) snakeGeometryFNV {
 	third := total / 3
 	third3 := total - 2*third
 	body := ct[2*NonceSize+4:]
-	return snakeGeometryFNV{
+	return regionGeometryFNV{
 		nonce:       nonce,
 		totalPixels: total,
-		snakePixels: [3]int{third, third, third3},
-		snakeBodies: [3][]byte{
+		regionPixels: [3]int{third, third, third3},
+		regionBodies: [3][]byte{
 			body[0 : third*Channels],
 			body[third*Channels : 2*third*Channels],
 			body[2*third*Channels : total*Channels],
 		},
-		snakePixStart: [3]int{0, third, 2 * third},
+		regionPixStart: [3]int{0, third, 2 * third},
 	}
 }
 
@@ -150,18 +150,18 @@ func recoverXorMask56FNV(pixelBytes [Channels]byte, np uint, r uint, cribBits [C
 	return xorMask56
 }
 
-// naiveSnakeCribBits returns the assumed 7-bit-per-channel crib payload
-// for snake i at snake-pixel p under the archived anchoring
-// assumption "plaintext byte K lives at snake K%3, snake-pixel (K/3)/7,
+// naiveRegionCribBits returns the assumed 7-bit-per-channel crib payload
+// for region i at region-pixel p under the archived anchoring
+// assumption "plaintext byte K lives at region K%3, region-pixel (K/3)/7,
 // channel (K/3)%7". Returns false when the assumed byte range falls
 // outside the raw plaintext (short crib).
-func naiveSnakeCribBits(plain []byte, snakeIdx, snakePixel int) (bits [Channels]byte, ok bool) {
+func naiveRegionCribBits(plain []byte, regionIdx, regionPixel int) (bits [Channels]byte, ok bool) {
 	for ch := 0; ch < Channels; ch++ {
-		bitIdx := snakePixel*DataBitsPerPixel + ch*DataBitsPerChannel
+		bitIdx := regionPixel*DataBitsPerPixel + ch*DataBitsPerChannel
 		byteIdx := bitIdx / 8
 		bitOff := uint(bitIdx % 8)
-		absIdx0 := snakeIdx + 3*byteIdx
-		absIdx1 := snakeIdx + 3*(byteIdx+1)
+		absIdx0 := regionIdx + 3*byteIdx
+		absIdx1 := regionIdx + 3*(byteIdx+1)
 		if absIdx0 >= len(plain) {
 			return bits, false
 		}
@@ -174,12 +174,12 @@ func naiveSnakeCribBits(plain []byte, snakeIdx, snakePixel int) (bits [Channels]
 	return bits, true
 }
 
-// pixelBytesAt returns a [Channels]byte snapshot of snake i's container
-// at snake-pixel p — attacker-visible bytes only.
-func pixelBytesAt(geom snakeGeometryFNV, snakeIdx, snakePixel int) [Channels]byte {
+// pixelBytesAt returns a [Channels]byte snapshot of region i's container
+// at region-pixel p — attacker-visible bytes only.
+func pixelBytesAt(geom regionGeometryFNV, regionIdx, regionPixel int) [Channels]byte {
 	var out [Channels]byte
-	body := geom.snakeBodies[snakeIdx]
-	base := snakePixel * Channels
+	body := geom.regionBodies[regionIdx]
+	base := regionPixel * Channels
 	if base+Channels > len(body) {
 		return out
 	}
@@ -198,7 +198,7 @@ func pixelBytesAt(geom snakeGeometryFNV, snakeIdx, snakePixel int) [Channels]byt
 // linearIdx = (startPixel + p) mod totalPixels. Callers must pass the
 // stream index the naive-crib-alignment attacker assumes for the
 // corresponding crib byte — for the SAT-anchoring premise "crib byte K
-// lives at snake K%3 stream position (K/3)/7", that stream index is
+// lives at region K%3 stream position (K/3)/7", that stream index is
 // (K/3)/7 counted from 0 at the crib prefix.
 func trueXorMask56FNV(dataSeed *Seed128, nonce []byte, streamIdx int) uint64 {
 	buf := make([]byte, 4+len(nonce))
@@ -246,10 +246,10 @@ var jsonCribPlaintext = []byte(`[{"identifier_of_record_in_system":"0000000000",
 //
 // The probe reports:
 //
-//   - per snake: min, max, mean |achievable xor_mask56 set| per pixel
+//   - per region: min, max, mean |achievable xor_mask56 set| per pixel
 //     across all candidate startPixels (expected ≤ 56 — the number of
 //     (np, r) tuples per pixel);
-//   - per snake: the intersection size of the achievable sets across
+//   - per region: the intersection size of the achievable sets across
 //     6 crib pixels, taken as the max over all startPixel candidates
 //     (expected ≈ 0 because the sets are functionally independent).
 //
@@ -273,7 +273,7 @@ func TestRedTeamBrokenFNV1aCribKPA(t *testing.T) {
 
 	const keyBits = 512
 	plain := jsonCribPlaintext
-	const cribPixelsPerSnake = 6
+	const cribPixelsPerRegion = 6
 
 	ns, ls, d1, d2, d3, s1, s2, s3 := buildEightFNV1aSeeds128FNV(t, keyBits)
 
@@ -289,30 +289,30 @@ func TestRedTeamBrokenFNV1aCribKPA(t *testing.T) {
 
 	geom := decodeWireFNV(ct)
 
-	type snakeReport struct {
-		Snake                  int     `json:"snake"`
-		SnakePixels            int     `json:"snake_pixels"`
+	type regionReport struct {
+		Region                  int     `json:"region"`
+		RegionPixels            int     `json:"region_pixels"`
 		PerPixelSetSizeMean    float64 `json:"per_pixel_set_size_mean"`
 		PerPixelSetSizeMin     int     `json:"per_pixel_set_size_min"`
 		PerPixelSetSizeMax     int     `json:"per_pixel_set_size_max"`
 		MaxIntersectionOverSPs int     `json:"max_intersection_over_startpixel"`
 	}
-	reports := make([]snakeReport, 3)
+	reports := make([]regionReport, 3)
 	for si := 0; si < 3; si++ {
-		snakePixels := geom.snakePixels[si]
+		regionPixels := geom.regionPixels[si]
 		perPixelSizes := []int{}
 		maxInter := 0
-		for sp := 0; sp < snakePixels; sp++ {
+		for sp := 0; sp < regionPixels; sp++ {
 			var chainInter map[uint64]struct{}
 			ok := true
-			for p := 0; p < cribPixelsPerSnake; p++ {
-				snakePix := (sp + p) % snakePixels
-				cribBits, cribOk := naiveSnakeCribBits(plain, si, p)
+			for p := 0; p < cribPixelsPerRegion; p++ {
+				regionPix := (sp + p) % regionPixels
+				cribBits, cribOk := naiveRegionCribBits(plain, si, p)
 				if !cribOk {
 					ok = false
 					break
 				}
-				pix := pixelBytesAt(geom, si, snakePix)
+				pix := pixelBytesAt(geom, si, regionPix)
 				set := make(map[uint64]struct{}, 56)
 				for np := uint(0); np < 8; np++ {
 					for r := uint(0); r < 7; r++ {
@@ -355,16 +355,16 @@ func TestRedTeamBrokenFNV1aCribKPA(t *testing.T) {
 		if len(perPixelSizes) > 0 {
 			mean = float64(sum) / float64(len(perPixelSizes))
 		}
-		reports[si] = snakeReport{
-			Snake:                  si,
-			SnakePixels:            snakePixels,
+		reports[si] = regionReport{
+			Region:                  si,
+			RegionPixels:            regionPixels,
 			PerPixelSetSizeMean:    mean,
 			PerPixelSetSizeMin:     minS,
 			PerPixelSetSizeMax:     maxS,
 			MaxIntersectionOverSPs: maxInter,
 		}
-		t.Logf("Snake %d: snake_pixels=%d per_pixel_set_size mean=%.2f min=%d max=%d max_intersection_over_sp=%d",
-			si, snakePixels, mean, minS, maxS, maxInter)
+		t.Logf("Region %d: region_pixels=%d per_pixel_set_size mean=%.2f min=%d max=%d max_intersection_over_sp=%d",
+			si, regionPixels, mean, minS, maxS, maxInter)
 	}
 	if reports[0].MaxIntersectionOverSPs > 8 || reports[1].MaxIntersectionOverSPs > 8 ||
 		reports[2].MaxIntersectionOverSPs > 8 {
@@ -373,15 +373,15 @@ func TestRedTeamBrokenFNV1aCribKPA(t *testing.T) {
 	emitJSONFNV(t, "f1_pre_anchor_structure", map[string]any{
 		"probe":                 "F1_pre_anchor_structure",
 		"plaintext_len":         len(plain),
-		"crib_pixels_per_snake": cribPixelsPerSnake,
+		"crib_pixels_per_region": cribPixelsPerRegion,
 		"note":                  "attacker-realistic — per-pixel achievable-set sizes are ≤56 with essentially zero cross-pixel intersection under any FNV-1a shift (pixel-independent K does not exist for non-affine ChainHash); discriminator moves to SAT Layer 2",
-		"per_snake":             reports,
+		"per_region":             reports,
 	})
 }
 
 // ---------------------------------------------------------------------------
 // Probe F2 — LAB-PEEK true-anchor upper bound. For each candidate
-// startPixel per snake, count how many crib channel bytes match the
+// startPixel per region, count how many crib channel bytes match the
 // TRUE recovered xor_mask56 (using true noiseSeed for np and true
 // dataSeed for r + xor_mask56) under the naive-crib alignment.
 //
@@ -406,7 +406,7 @@ func TestRedTeamBrokenFNV1aCribKPATrueAnchor(t *testing.T) {
 
 	const keyBits = 512
 	plain := jsonCribPlaintext
-	const cribPixelsPerSnake = 6
+	const cribPixelsPerRegion = 6
 
 	ns, ls, d1, d2, d3, s1, s2, s3 := buildEightFNV1aSeeds128FNV(t, keyBits)
 	dataSeeds := [3]*Seed128{d1, d2, d3}
@@ -417,9 +417,9 @@ func TestRedTeamBrokenFNV1aCribKPATrueAnchor(t *testing.T) {
 	}
 	geom := decodeWireFNV(ct)
 
-	type snakeReport struct {
-		Snake                    int     `json:"snake"`
-		SnakePixels              int     `json:"snake_pixels"`
+	type regionReport struct {
+		Region                    int     `json:"region"`
+		RegionPixels              int     `json:"region_pixels"`
 		ChannelBudget            int     `json:"crib_channels_budget"`
 		FullChainAnchoringShifts int     `json:"full_true_anchor_shifts"`
 		MaxChannelMatches        int     `json:"max_channel_matches"`
@@ -431,26 +431,26 @@ func TestRedTeamBrokenFNV1aCribKPATrueAnchor(t *testing.T) {
 	// 48/128 = 0.375.
 	const chanceFloor = 1.0 / 128.0
 
-	reports := make([]snakeReport, 3)
+	reports := make([]regionReport, 3)
 	for si := 0; si < 3; si++ {
-		snakePixels := geom.snakePixels[si]
+		regionPixels := geom.regionPixels[si]
 		fullAnchoring := 0
 		var sum int
 		maxM := 0
-		for sp := 0; sp < snakePixels; sp++ {
+		for sp := 0; sp < regionPixels; sp++ {
 			matches := 0
-			for p := 0; p < cribPixelsPerSnake; p++ {
-				snakePix := (sp + p) % snakePixels
-				cribBits, ok := naiveSnakeCribBits(plain, si, p)
+			for p := 0; p < cribPixelsPerRegion; p++ {
+				regionPix := (sp + p) % regionPixels
+				cribBits, ok := naiveRegionCribBits(plain, si, p)
 				if !ok {
 					break
 				}
-				pix := pixelBytesAt(geom, si, snakePix)
+				pix := pixelBytesAt(geom, si, regionPix)
 				// SAT-anchoring premise assumes crib byte K sits at
-				// snake stream index p (naive every-3rd-byte guess);
+				// region stream index p (naive every-3rd-byte guess);
 				// per encoder convention, dataHash and noiseHash are
 				// keyed by stream index p, not the absolute container
-				// position (sp + p) mod snakePixels.
+				// position (sp + p) mod regionPixels.
 				trueNP := trueNoisePosFNV(ns, geom.nonce, p)
 				trueR := trueRotationFNV(dataSeeds[si], geom.nonce, p)
 				trueXor := trueXorMask56FNV(dataSeeds[si], geom.nonce, p)
@@ -467,36 +467,36 @@ func TestRedTeamBrokenFNV1aCribKPATrueAnchor(t *testing.T) {
 			if matches > maxM {
 				maxM = matches
 			}
-			if matches == cribPixelsPerSnake*Channels {
+			if matches == cribPixelsPerRegion*Channels {
 				fullAnchoring++
 			}
 		}
-		avg := float64(sum) / float64(snakePixels)
-		reports[si] = snakeReport{
-			Snake:                    si,
-			SnakePixels:              snakePixels,
-			ChannelBudget:            cribPixelsPerSnake * Channels,
+		avg := float64(sum) / float64(regionPixels)
+		reports[si] = regionReport{
+			Region:                    si,
+			RegionPixels:              regionPixels,
+			ChannelBudget:            cribPixelsPerRegion * Channels,
 			FullChainAnchoringShifts: fullAnchoring,
 			MaxChannelMatches:        maxM,
 			AvgChannelMatches:        avg,
 			ChanceFloor:              chanceFloor,
 		}
-		t.Logf("Snake %d (true-seed peek): sp∈[0,%d) full_true_anchor=%d/%d max_ch_matches=%d/%d avg=%.3f floor≈%.3f",
-			si, snakePixels, fullAnchoring, snakePixels, maxM, cribPixelsPerSnake*Channels, avg, float64(cribPixelsPerSnake*Channels)*chanceFloor)
+		t.Logf("Region %d (true-seed peek): sp∈[0,%d) full_true_anchor=%d/%d max_ch_matches=%d/%d avg=%.3f floor≈%.3f",
+			si, regionPixels, fullAnchoring, regionPixels, maxM, cribPixelsPerRegion*Channels, avg, float64(cribPixelsPerRegion*Channels)*chanceFloor)
 	}
 	// Under barrier, no shift should achieve the full-channel anchor.
 	for _, r := range reports {
 		if r.FullChainAnchoringShifts > 0 {
-			t.Fatalf("Snake %d has %d full-anchor shifts under barrier — regression",
-				r.Snake, r.FullChainAnchoringShifts)
+			t.Fatalf("Region %d has %d full-anchor shifts under barrier — regression",
+				r.Region, r.FullChainAnchoringShifts)
 		}
 	}
 	emitJSONFNV(t, "f2_true_anchor", map[string]any{
 		"probe":                 "F2_true_anchor_lab_peek",
 		"plaintext_len":         len(plain),
-		"crib_pixels_per_snake": cribPixelsPerSnake,
+		"crib_pixels_per_region": cribPixelsPerRegion,
 		"note":                  "[lab-peek: true_seeds] definitive negative — recovered xor_mask56 from naive-crib alignment does not equal true dataHash even under true (np, r); match rate at chance floor",
-		"per_snake":             reports,
+		"per_region":             reports,
 	})
 }
 
@@ -581,12 +581,12 @@ func TestRedTeamBrokenFNV1aCribKPAControl(t *testing.T) {
 
 // ---------------------------------------------------------------------------
 // Probe F4 — startPixel-peek (Layer 3 scoped bonus). Under the barrier,
-// even disclosing the three snake startPixels does not restore the
+// even disclosing the three region startPixels does not restore the
 // naive-crib SAT anchor: the crib bytes are still moved off the
 // sp-anchored positions by the per-chunk interlock.
 //
 // Reports the true-anchor channel match count AT the disclosed sp_i
-// versus averaged across all snake shifts. If disclosing sp_i restored
+// versus averaged across all region shifts. If disclosing sp_i restored
 // the anchor, the count at sp_i would be significantly above the
 // shift-averaged floor. Under barrier: count at sp_i is at the same
 // floor as every other shift, refuting the "would knowing startPixel
@@ -602,7 +602,7 @@ func TestRedTeamBrokenFNV1aCribKPAStartPixelPeek(t *testing.T) {
 
 	const keyBits = 512
 	plain := jsonCribPlaintext
-	const cribPixelsPerSnake = 6
+	const cribPixelsPerRegion = 6
 
 	ns, ls, d1, d2, d3, s1, s2, s3 := buildEightFNV1aSeeds128FNV(t, keyBits)
 	startSeeds := [3]*Seed128{s1, s2, s3}
@@ -614,29 +614,29 @@ func TestRedTeamBrokenFNV1aCribKPAStartPixelPeek(t *testing.T) {
 	}
 	geom := decodeWireFNV(ct)
 
-	type snakeReport struct {
-		Snake                int     `json:"snake"`
-		SnakePixels          int     `json:"snake_pixels"`
+	type regionReport struct {
+		Region                int     `json:"region"`
+		RegionPixels          int     `json:"region_pixels"`
 		StartPixelDisclosed  int     `json:"startpixel_disclosed"`
 		ChannelMatchesAtSP   int     `json:"channel_matches_at_sp"`
 		AvgChannelMatchesAll float64 `json:"avg_channel_matches_all_shifts"`
 		ChannelsBudget       int     `json:"crib_channels_budget"`
 	}
-	reports := make([]snakeReport, 3)
+	reports := make([]regionReport, 3)
 	for si := 0; si < 3; si++ {
-		snakePixels := geom.snakePixels[si]
-		sp := startSeeds[si].deriveStartPixel(geom.nonce, snakePixels)
+		regionPixels := geom.regionPixels[si]
+		sp := startSeeds[si].deriveStartPixel(geom.nonce, regionPixels)
 		var atSP int
 		var allSum int
-		for shift := 0; shift < snakePixels; shift++ {
+		for shift := 0; shift < regionPixels; shift++ {
 			var matches int
-			for p := 0; p < cribPixelsPerSnake; p++ {
-				snakePix := (shift + p) % snakePixels
-				cribBits, ok := naiveSnakeCribBits(plain, si, p)
+			for p := 0; p < cribPixelsPerRegion; p++ {
+				regionPix := (shift + p) % regionPixels
+				cribBits, ok := naiveRegionCribBits(plain, si, p)
 				if !ok {
 					break
 				}
-				pix := pixelBytesAt(geom, si, snakePix)
+				pix := pixelBytesAt(geom, si, regionPix)
 				// SAT-anchoring premise assumes stream index p for
 				// crib pixel p (see F2 docstring for the encoder
 				// stream-vs-container distinction).
@@ -657,33 +657,33 @@ func TestRedTeamBrokenFNV1aCribKPAStartPixelPeek(t *testing.T) {
 			}
 			allSum += matches
 		}
-		avg := float64(allSum) / float64(snakePixels)
-		reports[si] = snakeReport{
-			Snake:                si,
-			SnakePixels:          snakePixels,
+		avg := float64(allSum) / float64(regionPixels)
+		reports[si] = regionReport{
+			Region:                si,
+			RegionPixels:          regionPixels,
 			StartPixelDisclosed:  sp,
 			ChannelMatchesAtSP:   atSP,
 			AvgChannelMatchesAll: avg,
-			ChannelsBudget:       cribPixelsPerSnake * Channels,
+			ChannelsBudget:       cribPixelsPerRegion * Channels,
 		}
-		t.Logf("Snake %d [lab-peek: sp_i]: sp=%d ch_matches_at_sp=%d/%d avg_ch_matches_all=%.3f",
-			si, sp, atSP, cribPixelsPerSnake*Channels, avg)
+		t.Logf("Region %d [lab-peek: sp_i]: sp=%d ch_matches_at_sp=%d/%d avg_ch_matches_all=%.3f",
+			si, sp, atSP, cribPixelsPerRegion*Channels, avg)
 	}
 	// Under barrier the true-sp count is not statistically above the
-	// shift-averaged floor. Fail if any snake shows a > 4x elevation
+	// shift-averaged floor. Fail if any region shows a > 4x elevation
 	// (indicative that disclosing sp DID restore the anchor).
 	for _, r := range reports {
 		if float64(r.ChannelMatchesAtSP) > 4.0*r.AvgChannelMatchesAll+8 {
-			t.Fatalf("Snake %d shows %d matches at sp vs %.3f avg — sp peek unexpectedly powerful",
-				r.Snake, r.ChannelMatchesAtSP, r.AvgChannelMatchesAll)
+			t.Fatalf("Region %d shows %d matches at sp vs %.3f avg — sp peek unexpectedly powerful",
+				r.Region, r.ChannelMatchesAtSP, r.AvgChannelMatchesAll)
 		}
 	}
 	emitJSONFNV(t, "f4_startpixel_peek", map[string]any{
 		"probe":                 "F4_startpixel_peek",
 		"plaintext_len":         len(plain),
-		"crib_pixels_per_snake": cribPixelsPerSnake,
-		"note":                  "[lab-peek: sp_i] — disclosing per-snake startPixel does not restore the naive-crib SAT anchor; sp-column match count is at the same floor as any other shift",
-		"per_snake":             reports,
+		"crib_pixels_per_region": cribPixelsPerRegion,
+		"note":                  "[lab-peek: sp_i] — disclosing per-region startPixel does not restore the naive-crib SAT anchor; sp-column match count is at the same floor as any other shift",
+		"per_region":             reports,
 	})
 }
 
@@ -715,22 +715,22 @@ func TestRedTeamBrokenFNV1aCribKPADisplacement(t *testing.T) {
 		t.Fatalf("shipped ciphertext did not round-trip: %v", err)
 	}
 	// [lab-peek: barrier_split] — splitForTriple48LockedInto with the
-	// true lockSeed reveals the per-snake lane bytes. Used for the
+	// true lockSeed reveals the per-region lane bytes. Used for the
 	// displacement measurement only.
 	n := tripleLaneLen(len(plain))
-	snakes := [3][]byte{make([]byte, n), make([]byte, n), make([]byte, n)}
-	splitForTriple48LockedInto(nil, plain, buildLockBatchPRF48_128Cfg(nil, ls, ct[:NonceSize]), snakes[0], snakes[1], snakes[2])
+	regions := [3][]byte{make([]byte, n), make([]byte, n), make([]byte, n)}
+	splitForTriple48LockedInto(nil, plain, buildLockBatchPRF48_128Cfg(nil, ls, ct[:NonceSize]), regions[0], regions[1], regions[2])
 
-	type snakeDisp struct {
-		Snake            int     `json:"snake"`
+	type regionDisp struct {
+		Region            int     `json:"region"`
 		Compared         int     `json:"compared"`
 		Matched          int     `json:"matched"`
 		Fraction         float64 `json:"fraction"`
 		ChanceForSymbols float64 `json:"chance_at_alphabet"`
 	}
 	const chanceAlphabet = 1.0 / 40.0
-	reps := make([]snakeDisp, 3)
-	for si, sn := range snakes {
+	reps := make([]regionDisp, 3)
+	for si, sn := range regions {
 		checked, matched := 0, 0
 		for j := 0; j < len(sn) && j < 60; j++ {
 			assumedIdx := si + j*3
@@ -746,21 +746,21 @@ func TestRedTeamBrokenFNV1aCribKPADisplacement(t *testing.T) {
 		if checked > 0 {
 			frac = float64(matched) / float64(checked)
 		}
-		reps[si] = snakeDisp{
-			Snake:            si,
+		reps[si] = regionDisp{
+			Region:            si,
 			Compared:         checked,
 			Matched:          matched,
 			Fraction:         frac,
 			ChanceForSymbols: chanceAlphabet,
 		}
-		t.Logf("Snake %d displacement: %d/%d (%.4f) crib bytes remain at attacker-predicted post-split position (chance ≈ %.4f for 40-symbol JSON)",
+		t.Logf("Region %d displacement: %d/%d (%.4f) crib bytes remain at attacker-predicted post-split position (chance ≈ %.4f for 40-symbol JSON)",
 			si, matched, checked, frac, chanceAlphabet)
 	}
 	emitJSONFNV(t, "f5_displacement", map[string]any{
 		"probe":              "F5_displacement_json_crib",
 		"plaintext_len":      len(plain),
 		"chance_at_alphabet": chanceAlphabet,
-		"per_snake":          reps,
+		"per_region":          reps,
 	})
 }
 
@@ -798,7 +798,7 @@ func TestRedTeamBrokenFNV1aCribKPAEmitCorpus(t *testing.T) {
 	}
 	// Also emit a control ciphertext for the Python SAT probe's
 	// positive-control assertion: same seeds routed through the
-	// single-snake process128Cfg (no barrier, no interleave). Bitwuzla
+	// single-region process128Cfg (no barrier, no interleave). Bitwuzla
 	// on this control instance must return SAT (recovering the seed);
 	// on the barrier ciphertext it must return UNSAT.
 	totalCtrlPixels := (len(plain)*8+DataBitsPerPixel-1)/DataBitsPerPixel + 8
@@ -824,7 +824,7 @@ func TestRedTeamBrokenFNV1aCribKPAEmitCorpus(t *testing.T) {
 	}
 
 	bundle := map[string]any{
-		"description":    "FNV-1a on all 8 seeds; shipped Triple/barrier + single-snake control",
+		"description":    "FNV-1a on all 8 seeds; shipped Triple/barrier + single-region control",
 		"key_bits":       keyBits,
 		"nonce_hex":      hexOf(nonce),
 		"plaintext_utf8": string(plain),

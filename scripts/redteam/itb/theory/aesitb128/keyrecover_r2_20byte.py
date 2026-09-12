@@ -63,11 +63,11 @@ those shapes.
 
 Compound-stack framing: `aesitb128` ships as `Class = ClassNone` in
 `hashes/registry.go` — intentionally weak standalone and safe only under
-ITB's compound inner-PRF defence stack (ChainHash cascade + Interlocked
-Barrier + Part 2 absorption). The measurement here quantifies the
+ITB's compound inner-PRF defence stack (ChainHash cascade + Rank Barrier
++ Pixel Barrier absorption). The measurement here quantifies the
 standalone half of that classification at the shipped per-pixel shape;
 the pipeline half — lockSeed cryptographic domain separation, the
-combinadic-unrank barrier fill, and the Part 2 absorption layers — sits
+combinadic-unrank barrier fill, and the Pixel Barrier absorption layers — sits
 above every ChainHash call and is not what this harness measures.
 
 Shipped-observable mode (`--model realistic`): the same shape and cascade

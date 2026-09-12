@@ -42,9 +42,9 @@ type Config struct {
 	MACIncremental MACIncrementalFunc
 
 	// TagStubSize governs the DRBG dummy stub size the No MAC
-	// envelope reserves in its third-snake region so the on-wire
+	// envelope reserves in its third region so the on-wire
 	// envelope shape matches the paired AEAD envelope (whose third
-	// snake carries payload || tag || flag). Zero defaults to 32,
+	// region carries payload || tag || flag). Zero defaults to 32,
 	// which matches every shipped MAC's tag length. Low-Level No MAC
 	// callers pairing with a custom-tag-size AEAD peer set this to
 	// the peer's MAC tag length; a MAC-carrying triple.Pipeline

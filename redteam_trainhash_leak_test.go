@@ -6,8 +6,8 @@ package itb
 //
 // Correct pipeline understanding (from itb128.go:133 Encrypt3x128Cfg):
 //   1. buildTripleWire3 → payloads[0..3] via splitForTriple48LockedInto.
-//   2. tripleThirdCaps(totalPixels) → third, thirdPixels2 (per-snake widths).
-//   3. 3× process128Cfg per snake:
+//   2. tripleThirdCaps(totalPixels) → third, thirdPixels2 (per-region widths).
+//   3. 3× process128Cfg per region:
 //        process128Cfg(cfg, noiseSeed, dataSeed_i, startSeed_i, nonce,
 //                      container[offset..], WIDTH_i, height=1, payloads[i], true, ...)
 //   4. Inside process128Cfg (itb128.go:24-27):
@@ -90,7 +90,7 @@ func writeTrainHashLeakVictim(t *testing.T, outDir string, keyBits, ptSize, barr
 	headerSize := 2*nonceLen + 4
 	third, thirdPixels2, _ := tripleThirdCaps(totalPixels)
 
-	// CORRECT startPixel derivation: per-snake width (not full totalPixels).
+	// CORRECT startPixel derivation: per-region width (not full totalPixels).
 	sp1 := s1.deriveStartPixel(mainNonce, third)
 	sp2 := s2.deriveStartPixel(mainNonce, third)
 	sp3 := s3.deriveStartPixel(mainNonce, thirdPixels2)
@@ -192,7 +192,7 @@ func TestRedTeamTrainHashLeak7of8(t *testing.T) {
 	}
 	t.Logf("lane lengths: raw=%d cobs+term=[%d %d %d]", laneLen, len(lanes[0]), len(lanes[1]), len(lanes[2]))
 
-	// Per-pixel 7-of-8 leak measurement per snake.
+	// Per-pixel 7-of-8 leak measurement per region.
 	stats := [3]struct{ unique, ambiguous, miss int }{}
 	for i := 0; i < 3; i++ {
 		region := regions[i]
@@ -260,7 +260,7 @@ func TestRedTeamTrainHashLeak7of8(t *testing.T) {
 		if tot == 0 {
 			continue
 		}
-		t.Logf("snake %d: total=%d unique=%d (%.1f%%) ambiguous=%d miss=%d",
+		t.Logf("region %d: total=%d unique=%d (%.1f%%) ambiguous=%d miss=%d",
 			i+1, tot, stats[i].unique, 100.0*float64(stats[i].unique)/float64(tot),
 			stats[i].ambiguous, stats[i].miss)
 		total += tot

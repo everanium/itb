@@ -21,7 +21,7 @@ package itb
 //     terminal-stage audit printouts (t.Logf lines flagged "[audit]").
 //   - The single documented lab exception: the Layer B probes below
 //     invoke `startSeed_i.deriveStartPixel(nonce, third_i)` to grant the
-//     attacker per-snake `startPixel`. This is a single narrowly-scoped
+//     attacker per-region `startPixel`. This is a single narrowly-scoped
 //     lab peek used only inside Layer B tests, tagged "[lab-peek: sp_i]"
 //     at the call site.
 //   - Every recovery-decision statistic is computed from attacker-visible
@@ -96,7 +96,7 @@ func buildEightFNV1aSeeds128(t *testing.T, keyBits int) (ns, ls, d1, d2, d3, s1,
 		mk("s1"), mk("s2"), mk("s3")
 }
 
-// wireLayoutNR describes the per-snake byte offsets inside a
+// wireLayoutNR describes the per-region byte offsets inside a
 // Triple ciphertext body. Populated from the wire header (attacker-visible).
 type wireLayoutNR struct {
 	nonce            []byte
@@ -105,14 +105,14 @@ type wireLayoutNR struct {
 	third2Pixels     int
 	third3Pixels     int
 	body             []byte
-	snakeBodyOffsets [3]int // channel-byte start offsets
-	snakeBodyEnds    [3]int // channel-byte end offsets (exclusive)
-	snakePixelStarts [3]int // pixel start indices (0, third, 2*third)
-	snakePixels      [3]int // pixel counts per snake
+	regionBodyOffsets [3]int // channel-byte start offsets
+	regionBodyEnds    [3]int // channel-byte end offsets (exclusive)
+	regionPixelStarts [3]int // pixel start indices (0, third, 2*third)
+	regionPixels      [3]int // pixel counts per region
 }
 
 // decodeWireNR parses the public wire header (main_nonce,
-// interlock_nonce, W, H) and slices the container body into 3 snake
+// interlock_nonce, W, H) and slices the container body into 3 region
 // regions. `nonce` in the returned layout is the main nonce (first
 // NonceSize bytes); the interlock nonce is not surfaced here because
 // the historical single-nonce probes downstream consult only the main
@@ -134,10 +134,10 @@ func decodeWireNR(ct []byte) wireLayoutNR {
 		third2Pixels:     third,
 		third3Pixels:     third3,
 		body:             body,
-		snakeBodyOffsets: [3]int{0, third * Channels, 2 * third * Channels},
-		snakeBodyEnds:    [3]int{third * Channels, 2 * third * Channels, total * Channels},
-		snakePixelStarts: [3]int{0, third, 2 * third},
-		snakePixels:      [3]int{third, third, third3},
+		regionBodyOffsets: [3]int{0, third * Channels, 2 * third * Channels},
+		regionBodyEnds:    [3]int{third * Channels, 2 * third * Channels, total * Channels},
+		regionPixelStarts: [3]int{0, third, 2 * third},
+		regionPixels:      [3]int{third, third, third3},
 	}
 }
 
@@ -220,11 +220,11 @@ func xorBytes(a, b []byte) []byte {
 // XOR C2 concentrated recoverable structure into a narrow ~5.4x-floor
 // byte-histogram tilt that the demasker could exploit. Under 's
 // always-on 48-bit interlock, per-chunk mask triples permute plaintext
-// bits into 3 lane-scrambled snake payloads BEFORE cobs + pixel encode,
+// bits into 3 lane-scrambled region payloads BEFORE cobs + pixel encode,
 // so the C1 XOR C2 pixel bytes should carry no residual histogram tilt
 // against a uniform 256-bin expectation.
 //
-// This probe measures three statistics on C1 XOR C2's snake regions:
+// This probe measures three statistics on C1 XOR C2's regions:
 //   - byte-value chi-square against uniform (df = 255)
 //   - KL divergence from uniform, in bits
 //   - byte-equal rate against the ideal 1/256 floor
@@ -362,16 +362,16 @@ func TestRedTeamNonceReuseLayerAHistogram(t *testing.T) {
 // The archived Single-Ouroboros nonce-reuse demasker enumerated 56
 // (noisePos, rotation) candidates per pixel; the correct pair extracts 7
 // data bits per channel matching the KNOWN plaintext XOR at (pixel,
-// channel). Under the shipped 3-snake interlock split, the "known plaintext
+// channel). Under the shipped 3-region interlock split, the "known plaintext
 // XOR at (pixel, channel)" is NOT the raw plaintext-XOR byte — the
 // intervening 48-bit interlock permutation redistributes plaintext bits
 // across 3 lane-payloads under a per-chunk mask the attacker cannot
 // enumerate.
 //
 // This probe runs the naive Crib-KPA anyway (assuming — incorrectly —
-// that plaintext byte b appears at snake-payload-byte b, i.e. as if no
-// barrier were present). For each ciphertext pair, for each snake, for
-// each candidate startPixel in [0, snake_pixel_count) and each pixel of a
+// that plaintext byte b appears at region-payload-byte b, i.e. as if no
+// barrier were present). For each ciphertext pair, for each region, for
+// each candidate startPixel in [0, region_pixel_count) and each pixel of a
 // short probe, count how many pixels yield ANY consistent (noisePos,
 // rotation) pair against the assumed plaintext XOR bits. A working
 // demasker would produce a distinct startPixel plateau; a broken one
@@ -385,22 +385,22 @@ func TestRedTeamNonceReuseLayerAHistogram(t *testing.T) {
 // naiveKPAAnchorRate counts, per candidate startPixel, the number of
 // probe pixels that admit AT LEAST ONE (np, r) pair matching the
 // attacker's assumed plaintext-XOR at (pixel, channel). The assumption
-// is deliberately naive — attacker treats snake payload byte b as
+// is deliberately naive — attacker treats region payload byte b as
 // plaintext byte b (i.e., ignores the interlock split). Returns the max
 // pixel-match count achieved by any startPixel and the anchoring rate.
-func naiveKPAAnchorRate(bodyXor []byte, snakePixels int, snakeBodyOffset int, plainXor []byte, probePixels int) (bestMatches int, distinct int) {
-	if probePixels > snakePixels {
-		probePixels = snakePixels
+func naiveKPAAnchorRate(bodyXor []byte, regionPixels int, regionBodyOffset int, plainXor []byte, probePixels int) (bestMatches int, distinct int) {
+	if probePixels > regionPixels {
+		probePixels = regionPixels
 	}
 	best := 0
 	distinctFullyAnchoring := 0
-	for sp := 0; sp < snakePixels; sp++ {
+	for sp := 0; sp < regionPixels; sp++ {
 		matches := 0
 		for pp := 0; pp < probePixels; pp++ {
-			ci := (sp + pp) % snakePixels
-			pixelOff := snakeBodyOffset + ci*Channels
+			ci := (sp + pp) % regionPixels
+			pixelOff := regionBodyOffset + ci*Channels
 			// Assume plaintext byte b at (pp*7 + ch) — naive attacker
-			// treats snake payload byte b as plaintext byte b.
+			// treats region payload byte b as plaintext byte b.
 			anyCandidate := false
 			for np := uint(0); np < 8; np++ {
 				for r := uint(0); r < 7; r++ {
@@ -460,7 +460,7 @@ func TestRedTeamNonceReuseLayerANaiveKPA(t *testing.T) {
 		Shape         string  `json:"shape"`
 		Pairs         int     `json:"pairs"`
 		ProbePixels   int     `json:"probe_pixels"`
-		Snake         int     `json:"snake"`
+		Region         int     `json:"region"`
 		BestMatchesMx int     `json:"max_matches_across_startPixels"`
 		AvgFullAnchor float64 `json:"avg_startPixels_fully_anchoring"`
 	}
@@ -505,12 +505,12 @@ func TestRedTeamNonceReuseLayerANaiveKPA(t *testing.T) {
 
 				for si := 0; si < 3; si++ {
 					// bestMatches: max pixel-match count over all startPixels
-					// for this snake. distinct: number of startPixels achieving
+					// for this region. distinct: number of startPixels achieving
 					// full match on the probe.
 					bm, distinct := naiveKPAAnchorRate(
 						bodyXor,
-						layout.snakePixels[si],
-						layout.snakeBodyOffsets[si],
+						layout.regionPixels[si],
+						layout.regionBodyOffsets[si],
 						plainXor,
 						probePixels,
 					)
@@ -526,11 +526,11 @@ func TestRedTeamNonceReuseLayerANaiveKPA(t *testing.T) {
 					Shape:         shape,
 					Pairs:         pairs,
 					ProbePixels:   probePixels,
-					Snake:         si,
+					Region:         si,
 					BestMatchesMx: maxAcrossPairs[si],
 					AvgFullAnchor: float64(sumFullAnchor[si]) / float64(pairs),
 				})
-				t.Logf("Layer A-KPA: size=%4d shape=%-14s snake=%d pairs=%d probe=%d max_matches=%d full_anchor_avg=%.2f",
+				t.Logf("Layer A-KPA: size=%4d shape=%-14s region=%d pairs=%d probe=%d max_matches=%d full_anchor_avg=%.2f",
 					size, shape, si, pairs, probePixels, maxAcrossPairs[si],
 					float64(sumFullAnchor[si])/float64(pairs))
 			}
@@ -542,7 +542,7 @@ func TestRedTeamNonceReuseLayerANaiveKPA(t *testing.T) {
 		"key_bits":        keyBits,
 		"probe_pixels":    probePixels,
 		"pairs_per_shape": pairs,
-		"note":            "Attacker uses NAIVE assumption: snake_payload_byte[b] == plaintext_byte[b]. Under Triple + Interlocked Barrier this is wrong.",
+		"note":            "Attacker uses NAIVE assumption: region_payload_byte[b] == plaintext_byte[b]. Under Triple + Interlocked Barrier this is wrong.",
 		"cells":           cells,
 	})
 }
@@ -551,7 +551,7 @@ func TestRedTeamNonceReuseLayerANaiveKPA(t *testing.T) {
 // Layer B — Startpixel-known constraint match (documented lab peek).
 //
 // Layer B grants the attacker the single documented lab exception: the
-// three snake startPixels. The peek at `startSeed_i.deriveStartPixel(
+// three region startPixels. The peek at `startSeed_i.deriveStartPixel(
 // nonce, third_i)` is tagged "[lab-peek: sp_i]" at the call site, in
 // keeping with the "primary attack result must run under standard
 // attacker-visible inputs" scoping. The point of Layer B is not to
@@ -561,7 +561,7 @@ func TestRedTeamNonceReuseLayerANaiveKPA(t *testing.T) {
 // Two variants:
 //
 //  B.i — Random plaintext pair. The attacker still lacks the per-chunk
-//        mask triples, so per snake pixel the "expected snake payload
+//        mask triples, so per region pixel the "expected region payload
 //        XOR bits" are unknown; the (noisePos, rotation) constraint
 //        cannot be anchored via the classical XOR-of-known-XOR match.
 //        Measure: max pixel-match count over startPixels (should trend
@@ -569,7 +569,7 @@ func TestRedTeamNonceReuseLayerANaiveKPA(t *testing.T) {
 //
 //  B.ii — Quiet-chunk plaintext pair. P1 == P2 except in one 6-byte
 //         chunk near the end. All plaintext chunks that are IDENTICAL
-//         produce all-zero snake-payload XOR regardless of the per-chunk
+//         produce all-zero region-payload XOR regardless of the per-chunk
 //         mask triple. For the corresponding "quiet" pixels the attacker
 //         can constrain (np, r): the extracted 7 bits per channel MUST
 //         equal zero. Measure: fraction of quiet pixels where a unique
@@ -581,14 +581,14 @@ func TestRedTeamNonceReuseLayerANaiveKPA(t *testing.T) {
 
 // grantStartPixelsLabPeek is the documented single lab peek used by
 // Layer B probes below. It reads `startSeed_i.deriveStartPixel(nonce,
-// snakePixels[i])` for i in [0..3) and returns the three offsets.
+// regionPixels[i])` for i in [0..3) and returns the three offsets.
 // EVERY caller is tagged as an attacker-realism lab exception in its
 // docstring; the peek is not consumed by Layer A / C / D probes.
-func grantStartPixelsLabPeek(nonce []byte, snakePixels [3]int, ss1, ss2, ss3 *Seed128) [3]int {
+func grantStartPixelsLabPeek(nonce []byte, regionPixels [3]int, ss1, ss2, ss3 *Seed128) [3]int {
 	return [3]int{
-		ss1.deriveStartPixel(nonce, snakePixels[0]),
-		ss2.deriveStartPixel(nonce, snakePixels[1]),
-		ss3.deriveStartPixel(nonce, snakePixels[2]),
+		ss1.deriveStartPixel(nonce, regionPixels[0]),
+		ss2.deriveStartPixel(nonce, regionPixels[1]),
+		ss3.deriveStartPixel(nonce, regionPixels[2]),
 	}
 }
 
@@ -611,7 +611,7 @@ func pixelExtractIsAllZero(bodyXor []byte, pixelOff int, np, r uint) bool {
 
 // countAllZeroCandidates enumerates the 56 (np, r) pairs and returns the
 // count consistent with all-zero extract at the given pixel. If the
-// pixel is truly "quiet" (all snake payload bits are 0), then this
+// pixel is truly "quiet" (all region payload bits are 0), then this
 // count equals the number of (np, r) pairs consistent with a random
 // noise bit at each channel — which is ALL 56 pairs (since np pinpoints
 // the random bit, and r doesn't affect a zero rotation). If the pixel
@@ -640,7 +640,7 @@ func TestRedTeamNonceReuseLayerBQuietChunk(t *testing.T) {
 
 	// Build P1, P2 identical except for the middle 6-byte chunk. Every
 	// OTHER 48-bit plaintext chunk is "quiet" (P1_chunk == P2_chunk),
-	// yielding all-zero snake payload XOR at those chunks regardless of
+	// yielding all-zero region payload XOR at those chunks regardless of
 	// the interlock mask.
 	const size = 384 // 64 chunks of 6 bytes each after len prefix
 	rng := rand.New(rand.NewSource(0xC0DE))
@@ -667,11 +667,11 @@ func TestRedTeamNonceReuseLayerBQuietChunk(t *testing.T) {
 		c2[2*NonceSize+4:2*NonceSize+4+layout.totalPixels*Channels])
 
 	// [lab-peek: sp_i] — documented single lab exception for Layer B.
-	sp := grantStartPixelsLabPeek(layout.nonce, layout.snakePixels, s1, s2, s3)
-	t.Logf("[lab-peek] snake startPixels: sp1=%d sp2=%d sp3=%d (each of %d/%d/%d snake pixels)",
-		sp[0], sp[1], sp[2], layout.snakePixels[0], layout.snakePixels[1], layout.snakePixels[2])
+	sp := grantStartPixelsLabPeek(layout.nonce, layout.regionPixels, s1, s2, s3)
+	t.Logf("[lab-peek] region startPixels: sp1=%d sp2=%d sp3=%d (each of %d/%d/%d region pixels)",
+		sp[0], sp[1], sp[2], layout.regionPixels[0], layout.regionPixels[1], layout.regionPixels[2])
 
-	// For each snake, walk pixels in payload order (starting at sp_i)
+	// For each region, walk pixels in payload order (starting at sp_i)
 	// and count how many are "candidate quiet" — i.e. bodyXor's 8
 	// channel bytes admit at least one (np, r) making the extract
 	// all-zero. Compare against a uniform-random-XOR baseline expectation.
@@ -680,23 +680,23 @@ func TestRedTeamNonceReuseLayerBQuietChunk(t *testing.T) {
 	// mask peek, no dataSeed peek, no plaintext-byte peek (P1 XOR P2 is
 	// used only in the terminal-stage validation printout at the end,
 	// tagged [audit]).
-	type snakeResult struct {
-		Snake              int     `json:"snake"`
-		Pixels             int     `json:"snake_pixels"`
+	type regionResult struct {
+		Region              int     `json:"region"`
+		Pixels             int     `json:"region_pixels"`
 		StartPixel         int     `json:"start_pixel"`
 		QuietCandidateNumr int     `json:"quiet_candidate_pixels"`
 		FullyQuietPixels   int     `json:"fully_quiet_pixels_all56_np_r_admit"`
 		AmbiguityBits      float64 `json:"avg_log2_np_r_candidates_on_quiet_pixels"`
 	}
-	results := []snakeResult{}
+	results := []regionResult{}
 	for si := 0; si < 3; si++ {
 		quietCandidates := 0
 		fullyQuiet := 0
 		sumLog2 := 0.0
 		quietCount := 0
-		for pp := 0; pp < layout.snakePixels[si]; pp++ {
-			ci := (sp[si] + pp) % layout.snakePixels[si]
-			pixelOff := layout.snakeBodyOffsets[si] + ci*Channels
+		for pp := 0; pp < layout.regionPixels[si]; pp++ {
+			ci := (sp[si] + pp) % layout.regionPixels[si]
+			pixelOff := layout.regionBodyOffsets[si] + ci*Channels
 			cnt := countAllZeroCandidates(bodyXor, pixelOff)
 			if cnt >= 1 {
 				quietCandidates++
@@ -713,25 +713,25 @@ func TestRedTeamNonceReuseLayerBQuietChunk(t *testing.T) {
 		if quietCount > 0 {
 			avgLog2 = sumLog2 / float64(quietCount)
 		}
-		results = append(results, snakeResult{
-			Snake:              si,
-			Pixels:             layout.snakePixels[si],
+		results = append(results, regionResult{
+			Region:              si,
+			Pixels:             layout.regionPixels[si],
 			StartPixel:         sp[si],
 			QuietCandidateNumr: quietCandidates,
 			FullyQuietPixels:   fullyQuiet,
 			AmbiguityBits:      avgLog2,
 		})
-		t.Logf("Layer B (quiet-chunk): snake=%d pixels=%d sp=%d quiet-candidates=%d fully-quiet=%d avg log2 candidates=%.2f",
-			si, layout.snakePixels[si], sp[si], quietCandidates, fullyQuiet, avgLog2)
+		t.Logf("Layer B (quiet-chunk): region=%d pixels=%d sp=%d quiet-candidates=%d fully-quiet=%d avg log2 candidates=%.2f",
+			si, layout.regionPixels[si], sp[si], quietCandidates, fullyQuiet, avgLog2)
 	}
 
 	// [audit] terminal-stage ground-truth compare: what fraction of the
 	// pixels should be "quiet" if the attacker could see the mask?
 	// Under a P1/P2 differing in one 48-bit chunk, every other chunk is
-	// quiet (all snake_i_XOR bits at that chunk are 0). The snake pixel
+	// quiet (all region_i_XOR bits at that chunk are 0). The region pixel
 	// count carrying quiet chunks is (chunks_quiet * 16 bits) / 56 bits
 	// per pixel, so audit expectation ≈ (num_chunks - 1) * 16 / 56
-	// approximated by fraction of quiet snake payload bytes per snake.
+	// approximated by fraction of quiet region payload bytes per region.
 	plainXor := xorBytes(p1, p2)
 	xorHW := 0
 	for _, b := range plainXor {
@@ -746,9 +746,9 @@ func TestRedTeamNonceReuseLayerBQuietChunk(t *testing.T) {
 		"plaintext_size":      size,
 		"differing_chunk":     midChunkOff,
 		"plain_xor_HW_bits":   xorHW,
-		"per_snake":           results,
+		"per_region":           results,
 		"quiet_expectation":   "if all pixels were quiet, per pixel np is pinned (8 candidates) since noise bit at np is random and always the only nonzero bit; r is unconstrained → per pixel candidates = 8 (log2 = 3)",
-		"barrier_expectation": "under the interlock, 'quiet snake XOR' at a chunk is guaranteed for chunks where P1_chunk==P2_chunk regardless of masks — but the plaintext-chunk-to-snake-payload-byte alignment is byte-boundary-aware. A snake pixel spans ~7 snake payload bytes ≈ 3.5 plaintext chunks worth of split bits, so 'fully quiet' pixel count is fewer than 'candidate quiet' pixel count.",
+		"barrier_expectation": "under the interlock, 'quiet region XOR' at a chunk is guaranteed for chunks where P1_chunk==P2_chunk regardless of masks — but the plaintext-chunk-to-region-payload-byte alignment is byte-boundary-aware. A region pixel spans ~7 region payload bytes ≈ 3.5 plaintext chunks worth of split bits, so 'fully quiet' pixel count is fewer than 'candidate quiet' pixel count.",
 	})
 }
 
@@ -789,26 +789,26 @@ func TestRedTeamNonceReuseLayerBRandomPair(t *testing.T) {
 
 	// [lab-peek: sp_i] — documented single lab exception, matches the
 	// Quiet-Chunk probe's peek.
-	sp := grantStartPixelsLabPeek(layout.nonce, layout.snakePixels, s1, s2, s3)
+	sp := grantStartPixelsLabPeek(layout.nonce, layout.regionPixels, s1, s2, s3)
 	_ = sp
 
 	// Random-pair floor: count of (np, r) admitting all-zero extract per
-	// pixel across the whole snake region (payload-order irrelevant here
+	// pixel across the whole region (payload-order irrelevant here
 	// because we are measuring the floor, not the recovery rate).
-	type snakeResult struct {
-		Snake              int     `json:"snake"`
-		Pixels             int     `json:"snake_pixels"`
+	type regionResult struct {
+		Region              int     `json:"region"`
+		Pixels             int     `json:"region_pixels"`
 		AnyCandidatePixels int     `json:"pixels_with_at_least_1_np_r_admitting_allzero"`
 		AllCandidatePixels int     `json:"pixels_with_all_56_admitting_allzero"`
 		MeanCandidates     float64 `json:"mean_np_r_candidates_per_pixel"`
 	}
-	results := []snakeResult{}
+	results := []regionResult{}
 	for si := 0; si < 3; si++ {
 		anyC := 0
 		allC := 0
 		sumC := 0
-		for pp := 0; pp < layout.snakePixels[si]; pp++ {
-			pixelOff := layout.snakeBodyOffsets[si] + pp*Channels
+		for pp := 0; pp < layout.regionPixels[si]; pp++ {
+			pixelOff := layout.regionBodyOffsets[si] + pp*Channels
 			cnt := countAllZeroCandidates(bodyXor, pixelOff)
 			if cnt >= 1 {
 				anyC++
@@ -818,22 +818,22 @@ func TestRedTeamNonceReuseLayerBRandomPair(t *testing.T) {
 			}
 			sumC += cnt
 		}
-		results = append(results, snakeResult{
-			Snake:              si,
-			Pixels:             layout.snakePixels[si],
+		results = append(results, regionResult{
+			Region:              si,
+			Pixels:             layout.regionPixels[si],
 			AnyCandidatePixels: anyC,
 			AllCandidatePixels: allC,
-			MeanCandidates:     float64(sumC) / float64(layout.snakePixels[si]),
+			MeanCandidates:     float64(sumC) / float64(layout.regionPixels[si]),
 		})
-		t.Logf("Layer B (random floor): snake=%d pixels=%d any=%d all=%d mean_candidates_per_pixel=%.4f",
-			si, layout.snakePixels[si], anyC, allC, float64(sumC)/float64(layout.snakePixels[si]))
+		t.Logf("Layer B (random floor): region=%d pixels=%d any=%d all=%d mean_candidates_per_pixel=%.4f",
+			si, layout.regionPixels[si], anyC, allC, float64(sumC)/float64(layout.regionPixels[si]))
 	}
 
 	emitJSONNR(t, "layer_b_random_floor", map[string]any{
 		"threat_model": "nonce_reuse+full_kpa+startPixel_labpeek",
 		"primitive":    "fnv1a128BrokenLab",
 		"key_bits":     keyBits,
-		"per_snake":    results,
+		"per_region":    results,
 	})
 }
 
@@ -894,14 +894,14 @@ func TestRedTeamNonceReuseLayerBMaskOraclePeek(t *testing.T) {
 	// upper-bound probe. The revelation is documented in the test
 	// docstring and is NOT attacker-realistic. Results here are upper
 	// bounds, not achievable capability.
-	sp := grantStartPixelsLabPeek(layout.nonce, layout.snakePixels, s1, s2, s3)
+	sp := grantStartPixelsLabPeek(layout.nonce, layout.regionPixels, s1, s2, s3)
 
-	// Compute snake payload XORs exactly as the encoder does — this uses
-	// the true lockSeed (lab peek). The "expected snake payload XOR"
-	// stream per snake is:
-	//   snake_i_payload_XOR = cobs(splitlane_i(P1)) XOR cobs(splitlane_i(P2))
-	// However Under the shipped snake payload layout, the payload byte
-	// stream INSIDE each snake is:
+	// Compute region payload XORs exactly as the encoder does — this uses
+	// the true lockSeed (lab peek). The "expected region payload XOR"
+	// stream per region is:
+	//   region_i_payload_XOR = cobs(splitlane_i(P1)) XOR cobs(splitlane_i(P2))
+	// However Under the shipped region payload layout, the payload byte
+	// stream INSIDE each region is:
 	//   payload_i = cobs(lane_i) || 0x00 || DRBG_tail_fill
 	// The DRBG tail-fill differs per encryption, so the XOR beyond the
 	// COBS terminator is uncorrelated between messages. Restrict the
@@ -915,51 +915,51 @@ func TestRedTeamNonceReuseLayerBMaskOraclePeek(t *testing.T) {
 	l0b, l1b, l2b := make([]byte, n2), make([]byte, n2), make([]byte, n2)
 	splitForTriple48LockedInto(nil, p1, bp, l0a, l1a, l2a)
 	splitForTriple48LockedInto(nil, p2, bp, l0b, l1b, l2b)
-	// COBS-encode per snake lane to get the deterministic byte prefix.
+	// COBS-encode per region lane to get the deterministic byte prefix.
 	cobsLane := func(lane []byte) []byte {
 		return cobsEncodeInto(make([]byte, cobsEncodeBound(len(lane))), lane)
 	}
-	snakeCobs1 := [3][]byte{cobsLane(l0a), cobsLane(l1a), cobsLane(l2a)}
-	snakeCobs2 := [3][]byte{cobsLane(l0b), cobsLane(l1b), cobsLane(l2b)}
-	// The deterministic prefix per snake is min(len(cobs1), len(cobs2))
+	regionCobs1 := [3][]byte{cobsLane(l0a), cobsLane(l1a), cobsLane(l2a)}
+	regionCobs2 := [3][]byte{cobsLane(l0b), cobsLane(l1b), cobsLane(l2b)}
+	// The deterministic prefix per region is min(len(cobs1), len(cobs2))
 	// (the terminator sits at position max(...) actually but the safer
-	// bound is min). Beyond that byte, snake payload includes the 0x00
+	// bound is min). Beyond that byte, region payload includes the 0x00
 	// terminator or DRBG fill; recovery there is undefined.
 	// Prefix bit length constrains how many pixel channels we probe.
 	prefixBits := [3]int{
-		min3(len(snakeCobs1[0]), len(snakeCobs2[0])) * 8,
-		min3(len(snakeCobs1[1]), len(snakeCobs2[1])) * 8,
-		min3(len(snakeCobs1[2]), len(snakeCobs2[2])) * 8,
+		min3(len(regionCobs1[0]), len(regionCobs2[0])) * 8,
+		min3(len(regionCobs1[1]), len(regionCobs2[1])) * 8,
+		min3(len(regionCobs1[2]), len(regionCobs2[2])) * 8,
 	}
-	// snake payload XOR at bit offset b within the prefix range:
+	// region payload XOR at bit offset b within the prefix range:
 	//   xorPayload_i[b] = cobs1_i[b/8] XOR cobs2_i[b/8], extracted at (b%8)
-	snakePayloadXor := [3][]byte{
-		xorBytes(snakeCobs1[0][:min3(len(snakeCobs1[0]), len(snakeCobs2[0]))], snakeCobs2[0]),
-		xorBytes(snakeCobs1[1][:min3(len(snakeCobs1[1]), len(snakeCobs2[1]))], snakeCobs2[1]),
-		xorBytes(snakeCobs1[2][:min3(len(snakeCobs1[2]), len(snakeCobs2[2]))], snakeCobs2[2]),
+	regionPayloadXor := [3][]byte{
+		xorBytes(regionCobs1[0][:min3(len(regionCobs1[0]), len(regionCobs2[0]))], regionCobs2[0]),
+		xorBytes(regionCobs1[1][:min3(len(regionCobs1[1]), len(regionCobs2[1]))], regionCobs2[1]),
+		xorBytes(regionCobs1[2][:min3(len(regionCobs1[2]), len(regionCobs2[2]))], regionCobs2[2]),
 	}
 
-	type snakeResult struct {
-		Snake              int `json:"snake"`
-		Pixels             int `json:"snake_pixels"`
+	type regionResult struct {
+		Region              int `json:"region"`
+		Pixels             int `json:"region_pixels"`
 		StartPixel         int `json:"start_pixel"`
 		ProbedPixels       int `json:"pixels_probed_within_deterministic_prefix"`
 		UniqueNpR          int `json:"pixels_with_unique_np_r"`
 		MultipleCandidates int `json:"pixels_with_multiple_np_r_candidates"`
 		ZeroCandidates     int `json:"pixels_with_zero_np_r_candidates"`
 	}
-	results := []snakeResult{}
+	results := []regionResult{}
 	for si := 0; si < 3; si++ {
 		unique, multi, zero := 0, 0, 0
 		probed := 0
-		for pp := 0; pp < layout.snakePixels[si]; pp++ {
-			// The pixel's payload bits sit at snake bit-offset [pp*56, (pp+1)*56).
+		for pp := 0; pp < layout.regionPixels[si]; pp++ {
+			// The pixel's payload bits sit at region bit-offset [pp*56, (pp+1)*56).
 			bitStart := pp * DataBitsPerPixel
 			if bitStart+DataBitsPerPixel > prefixBits[si] {
 				break
 			}
-			ci := (sp[si] + pp) % layout.snakePixels[si]
-			pixelOff := layout.snakeBodyOffsets[si] + ci*Channels
+			ci := (sp[si] + pp) % layout.regionPixels[si]
+			pixelOff := layout.regionBodyOffsets[si] + ci*Channels
 
 			candidates := 0
 			for np := uint(0); np < 8; np++ {
@@ -968,8 +968,8 @@ func TestRedTeamNonceReuseLayerBMaskOraclePeek(t *testing.T) {
 					for ch := 0; ch < Channels; ch++ {
 						ext := extract7Broken(bodyXor[pixelOff+ch], np)
 						unrot := rotateBits7(ext, 7-r)
-						// Expected snake-payload XOR 7 bits at (pp, ch).
-						expected := getBits7Broken(snakePayloadXor[si], pp, ch)
+						// Expected region-payload XOR 7 bits at (pp, ch).
+						expected := getBits7Broken(regionPayloadXor[si], pp, ch)
 						if unrot != expected {
 							ok = false
 							break
@@ -990,23 +990,23 @@ func TestRedTeamNonceReuseLayerBMaskOraclePeek(t *testing.T) {
 			}
 			probed++
 		}
-		results = append(results, snakeResult{
-			Snake:              si,
-			Pixels:             layout.snakePixels[si],
+		results = append(results, regionResult{
+			Region:              si,
+			Pixels:             layout.regionPixels[si],
 			StartPixel:         sp[si],
 			ProbedPixels:       probed,
 			UniqueNpR:          unique,
 			MultipleCandidates: multi,
 			ZeroCandidates:     zero,
 		})
-		t.Logf("Layer B' (mask oracle upper bound): snake=%d probed=%d unique(np,r)=%d multi=%d zero=%d",
+		t.Logf("Layer B' (mask oracle upper bound): region=%d probed=%d unique(np,r)=%d multi=%d zero=%d",
 			si, probed, unique, multi, zero)
 	}
 	emitJSONNR(t, "layer_b_mask_oracle_peek", map[string]any{
 		"threat_model": "nonce_reuse+full_kpa+startPixel_peek+MASK_ORACLE_PEEK (upper bound, NOT attacker-realistic)",
 		"primitive":    "fnv1a128BrokenLab",
 		"key_bits":     keyBits,
-		"per_snake":    results,
+		"per_region":    results,
 		"note":         "This probe reveals BOTH the startPixels and the interlock mask triples to the attacker. Results are the upper bound of what the archived demasker Layer 1 can recover IF a hypothetical primitive break gave the attacker the lockSeed. Under attacker-realistic inputs (no mask peek), the recovery rate drops to the Layer B random floor.",
 	})
 }
@@ -1065,7 +1065,7 @@ func TestRedTeamNonceReuseLayerDMultiPair(t *testing.T) {
 	// measure the chi-square vs uniform (expected each of 256 values
 	// appears N/256 times — with N=30 the expected is 30/256 ≈ 0.117
 	// so cell chi-square is very high by definition unless we aggregate
-	// across many positions). Aggregate all bytes across the snake
+	// across many positions). Aggregate all bytes across the region
 	// body — statistics of the "always deterministic PRF pipeline" is
 	// what we test for leakage.
 
@@ -1077,14 +1077,14 @@ func TestRedTeamNonceReuseLayerDMultiPair(t *testing.T) {
 	// leaks a fixed bit, distinct count drops sharply on the leaked bit.
 
 	type posStat struct {
-		Snake        int `json:"snake"`
-		PosInSnake   int `json:"pos_in_snake"`
+		Region        int `json:"region"`
+		PosInRegion   int `json:"pos_in_region"`
 		DistinctVals int `json:"distinct_byte_values"`
 	}
-	// Aggregate distinct-values across the whole snake body.
-	type snakeStat struct {
-		Snake              int     `json:"snake"`
-		SnakeBytes         int     `json:"snake_body_bytes"`
+	// Aggregate distinct-values across the whole region body.
+	type regionStat struct {
+		Region              int     `json:"region"`
+		RegionBytes         int     `json:"region_body_bytes"`
 		Ns                 int     `json:"pairs_N"`
 		MeanDistinctPerPos float64 `json:"mean_distinct_byte_values_per_position"`
 		MinDistinctPerPos  int     `json:"min_distinct_byte_values_per_position"`
@@ -1095,7 +1095,7 @@ func TestRedTeamNonceReuseLayerDMultiPair(t *testing.T) {
 		BucketLE16         int     `json:"positions_distinct_le_16"`
 		BucketGE17         int     `json:"positions_distinct_ge_17"`
 	}
-	sstats := []snakeStat{}
+	sstats := []regionStat{}
 
 	// posStat is retained (currently unused as summary output) — future
 	// per-position emission would use it. Reference to prevent unused-decl.
@@ -1106,7 +1106,7 @@ func TestRedTeamNonceReuseLayerDMultiPair(t *testing.T) {
 	// public 4-byte length prefix + any other structurally-constant
 	// channel bits) is separable from the uniform floor.
 	for si := 0; si < 3; si++ {
-		off, end := layout.snakeBodyOffsets[si], layout.snakeBodyEnds[si]
+		off, end := layout.regionBodyOffsets[si], layout.regionBodyEnds[si]
 		npos := end - off
 		distinctCounts := make([]int, npos)
 		for pos := 0; pos < npos; pos++ {
@@ -1136,9 +1136,9 @@ func TestRedTeamNonceReuseLayerDMultiPair(t *testing.T) {
 			}
 		}
 		mean /= float64(len(distinctCounts))
-		sstats = append(sstats, snakeStat{
-			Snake:              si,
-			SnakeBytes:         npos,
+		sstats = append(sstats, regionStat{
+			Region:              si,
+			RegionBytes:         npos,
 			Ns:                 N,
 			MeanDistinctPerPos: mean,
 			MinDistinctPerPos:  distinctCounts[0],
@@ -1150,7 +1150,7 @@ func TestRedTeamNonceReuseLayerDMultiPair(t *testing.T) {
 			BucketGE17:         buckets[4],
 		})
 		expectedMean := 256.0 * (1.0 - math.Pow(255.0/256.0, float64(N)))
-		t.Logf("Layer D (multi-pair): snake=%d pos=%d N=%d mean_distinct=%.2f (expected %.2f under uniform) min=%d max=%d buckets(<=2/<=4/<=8/<=16/>=17)=%d/%d/%d/%d/%d",
+		t.Logf("Layer D (multi-pair): region=%d pos=%d N=%d mean_distinct=%.2f (expected %.2f under uniform) min=%d max=%d buckets(<=2/<=4/<=8/<=16/>=17)=%d/%d/%d/%d/%d",
 			si, npos, N, mean, expectedMean, distinctCounts[0], distinctCounts[len(distinctCounts)-1],
 			buckets[0], buckets[1], buckets[2], buckets[3], buckets[4])
 	}
@@ -1159,7 +1159,7 @@ func TestRedTeamNonceReuseLayerDMultiPair(t *testing.T) {
 		"primitive":     "fnv1a128BrokenLab",
 		"key_bits":      keyBits,
 		"pairs_N":       N,
-		"per_snake":     sstats,
+		"per_region":     sstats,
 		"floor_formula": "under uniform per-position bytes, expected distinct at N draws = 256*(1 - (255/256)^N)",
 	})
 }
@@ -1216,30 +1216,30 @@ func TestRedTeamNonceReuseLayerCFNVAlgebraic(t *testing.T) {
 	// [lab-peek: sp_i] — same documented Layer B lab exception. Even with
 	// this peek granted, Layer C's precondition (recovered channelXOR
 	// stream) requires Layer 1 succeeding under NO mask peek, which
-	// itself requires knowing the expected snake payload XOR bits —
+	// itself requires knowing the expected region payload XOR bits —
 	// which requires the mask. This attempt therefore uses the naive
 	// (mask == identity) assumption and measures how many pixels admit
 	// a unique (np, r) under that wrong assumption.
-	sp := grantStartPixelsLabPeek(layout.nonce, layout.snakePixels, s1, s2, s3)
+	sp := grantStartPixelsLabPeek(layout.nonce, layout.regionPixels, s1, s2, s3)
 
-	// For each snake, try to recover a unique (np, r) per pixel using
-	// the NAIVE mask assumption (attacker treats snake_payload_byte[b]
+	// For each region, try to recover a unique (np, r) per pixel using
+	// the NAIVE mask assumption (attacker treats region_payload_byte[b]
 	// == plaintext_XOR_byte[b]). No lockSeed peek.
 	plainXor := xorBytes(p1, p2)
-	type snakeResult struct {
-		Snake             int     `json:"snake"`
-		Pixels            int     `json:"snake_pixels"`
+	type regionResult struct {
+		Region             int     `json:"region"`
+		Pixels            int     `json:"region_pixels"`
 		StartPixel        int     `json:"start_pixel"`
 		UniqueRecovered   int     `json:"pixels_with_unique_np_r"`
 		AnyRecovered      int     `json:"pixels_with_at_least_1_np_r"`
 		AvgCandidateCount float64 `json:"avg_np_r_candidates_over_admitted_pixels"`
 	}
-	results := []snakeResult{}
+	results := []regionResult{}
 	for si := 0; si < 3; si++ {
 		unique, any, sumC, admC := 0, 0, 0, 0
-		for pp := 0; pp < layout.snakePixels[si]; pp++ {
-			ci := (sp[si] + pp) % layout.snakePixels[si]
-			pixelOff := layout.snakeBodyOffsets[si] + ci*Channels
+		for pp := 0; pp < layout.regionPixels[si]; pp++ {
+			ci := (sp[si] + pp) % layout.regionPixels[si]
+			pixelOff := layout.regionBodyOffsets[si] + ci*Channels
 			candidates := 0
 			for np := uint(0); np < 8; np++ {
 				for r := uint(0); r < 7; r++ {
@@ -1271,22 +1271,22 @@ func TestRedTeamNonceReuseLayerCFNVAlgebraic(t *testing.T) {
 		if admC > 0 {
 			avgC = float64(sumC) / float64(admC)
 		}
-		results = append(results, snakeResult{
-			Snake:             si,
-			Pixels:            layout.snakePixels[si],
+		results = append(results, regionResult{
+			Region:             si,
+			Pixels:            layout.regionPixels[si],
 			StartPixel:        sp[si],
 			UniqueRecovered:   unique,
 			AnyRecovered:      any,
 			AvgCandidateCount: avgC,
 		})
-		t.Logf("Layer C (FNV algebraic precondition): snake=%d pixels=%d sp=%d unique=%d any=%d avg_candidates=%.3f",
-			si, layout.snakePixels[si], sp[si], unique, any, avgC)
+		t.Logf("Layer C (FNV algebraic precondition): region=%d pixels=%d sp=%d unique=%d any=%d avg_candidates=%.3f",
+			si, layout.regionPixels[si], sp[si], unique, any, avgC)
 	}
 	emitJSONNR(t, "layer_c_fnv_algebraic_precondition", map[string]any{
 		"threat_model": "nonce_reuse+full_kpa+startPixel_labpeek+NAIVE_mask_assumption (no mask peek)",
 		"primitive":    "fnv1a128BrokenLab",
 		"key_bits":     keyBits,
-		"per_snake":    results,
+		"per_region":    results,
 		"conclusion":   "Layer C (FNV-1a algebraic seed recovery from reconstructed ChainHash stream) is architecturally foreclosed by Layer 1 failure under the attacker-realistic no-mask-peek assumption. Under the mask-oracle upper-bound peek (Layer B'), Layer C is not further neutralised by the barrier — the closure lives in the mask, not in the pixel layer.",
 	})
 	_ = fmt.Sprintf // keep import if pruning
@@ -1317,12 +1317,12 @@ func TestRedTeamNonceReuseLayerCFNVAlgebraic(t *testing.T) {
 // while confirming the attacker-realistic (A) verdict.
 // ---------------------------------------------------------------------------
 
-// recoverPerPixelNpRUnderMaskOracle demasks one snake's pixel stream
-// using the known snake payload XOR bits (lab peek — mask oracle) and
+// recoverPerPixelNpRUnderMaskOracle demasks one region's pixel stream
+// using the known region payload XOR bits (lab peek — mask oracle) and
 // returns the recovered per-pixel (noisePos, rotation, chanXOR56)
 // triple. Attacker-realistic reference implementation of the
 // archived Phase 2d Layer 1 constraint match, ported to a
-// snake region. Returns per-pixel (np, r, chanXOR56) only for pixels
+// single region. Returns per-pixel (np, r, chanXOR56) only for pixels
 // where the constraint uniquely anchors; unresolved pixels report
 // np=r=chanXOR56=0 with a false ok.
 type demaskedPixel struct {
@@ -1331,19 +1331,19 @@ type demaskedPixel struct {
 	Ok        bool
 }
 
-func recoverPerPixelNpRUnderMaskOracle(bodyXor []byte, snakePixels int, snakeBodyOffset int, startPixel int, snakePayloadXor []byte, maxPixels int) []demaskedPixel {
-	if maxPixels > snakePixels {
-		maxPixels = snakePixels
+func recoverPerPixelNpRUnderMaskOracle(bodyXor []byte, regionPixels int, regionBodyOffset int, startPixel int, regionPayloadXor []byte, maxPixels int) []demaskedPixel {
+	if maxPixels > regionPixels {
+		maxPixels = regionPixels
 	}
 	out := make([]demaskedPixel, maxPixels)
 	for pp := 0; pp < maxPixels; pp++ {
 		bitStart := pp * DataBitsPerPixel
-		// Give up if snake payload XOR prefix does not cover this pixel.
-		if (bitStart+DataBitsPerPixel+7)/8 > len(snakePayloadXor) {
+		// Give up if region payload XOR prefix does not cover this pixel.
+		if (bitStart+DataBitsPerPixel+7)/8 > len(regionPayloadXor) {
 			break
 		}
-		ci := (startPixel + pp) % snakePixels
-		pixelOff := snakeBodyOffset + ci*Channels
+		ci := (startPixel + pp) % regionPixels
+		pixelOff := regionBodyOffset + ci*Channels
 		var found demaskedPixel
 		count := 0
 		for np := uint(0); np < 8; np++ {
@@ -1352,7 +1352,7 @@ func recoverPerPixelNpRUnderMaskOracle(bodyXor []byte, snakePixels int, snakeBod
 				for ch := 0; ch < Channels; ch++ {
 					ext := extract7Broken(bodyXor[pixelOff+ch], np)
 					unrot := rotateBits7(ext, 7-r)
-					expected := getBits7Broken(snakePayloadXor, pp, ch)
+					expected := getBits7Broken(regionPayloadXor, pp, ch)
 					if unrot != expected {
 						ok = false
 						break
@@ -1372,63 +1372,63 @@ func recoverPerPixelNpRUnderMaskOracle(bodyXor []byte, snakePixels int, snakeBod
 }
 
 // applyDemaskerToThirdMsg uses recovered per-pixel (np, r) to strip the
-// per-pixel PRF pipeline from C3's snake region, yielding the pure
-// snake-payload byte stream for that snake. Because the barrier's
+// per-pixel PRF pipeline from C3's region, yielding the pure
+// region-payload byte stream for that region. Because the barrier's
 // interlock mask is REVEALED under Layer B', the attacker also inverts
 // the split-lane XOR to reconstruct the plaintext byte stream. Returns
-// the recovered snake payload byte stream for pixel index range
+// the recovered region payload byte stream for pixel index range
 // [startPixel .. startPixel + maxPixels).
-func applyDemaskerToThirdMsg(c3Body []byte, snakePixels, snakeBodyOffset, startPixel int, demask []demaskedPixel, snakePayloadC1 []byte) []byte {
-	// c3Body is the full container body; snakePayloadC1 is the *known*
-	// snake payload of C1 (from the mask-oracle peek's forward
+func applyDemaskerToThirdMsg(c3Body []byte, regionPixels, regionBodyOffset, startPixel int, demask []demaskedPixel, regionPayloadC1 []byte) []byte {
+	// c3Body is the full container body; regionPayloadC1 is the *known*
+	// region payload of C1 (from the mask-oracle peek's forward
 	// splitTriple+cobsEncode step). Given demask[p] = (np, r, chanXOR56),
-	// derived from C1 XOR C2 and the C1/C2 snake payload XORs, we can
-	// convert C3's per-pixel channel bytes → C3's snake payload bytes:
+	// derived from C1 XOR C2 and the C1/C2 region payload XORs, we can
+	// convert C3's per-pixel channel bytes → C3's region payload bytes:
 	//   extract7(C3[c], np) → 7-bit rotated + chanXOR value
 	//   unrotate(..., r) → 7 bits of dataBits XOR chanXOR
-	//   XOR with chanXOR → 7 bits of dataBits (== C3 snake payload bits)
+	//   XOR with chanXOR → 7 bits of dataBits (== C3 region payload bits)
 	// This is the "classical keystream-reuse" recovery — the (np, r,
 	// chanXOR56) triple IS the per-pixel keystream, and it applies to
 	// any message encrypted under the same (all seeds, same nonce).
 	//
 	// Note: chanXOR56 is derived within this function from a known-XOR
 	// crib on C1: chanXOR56[ch] = unrotate(extract7(C1[c], np), r) XOR
-	// snake_payload_C1_bits(pp, ch). We use snakePayloadC1 for the
+	// region_payload_C1_bits(pp, ch). We use regionPayloadC1 for the
 	// canonical crib.
-	_ = snakePayloadC1 // computed from mask peek at caller; retained for
+	_ = regionPayloadC1 // computed from mask peek at caller; retained for
 	// contract clarity — the per-pixel chanXOR reveal happens on the
 	// C1↔C1_payload side of the peek, not on C3.
 	out := make([]byte, 0, len(demask)*7)
 	for pp, dp := range demask {
 		if !dp.Ok {
 			// unrecovered pixel — emit garbage bytes so byte offsets
-			// remain aligned with the ground-truth snake payload.
+			// remain aligned with the ground-truth region payload.
 			for k := 0; k < 7; k++ {
 				out = append(out, 0)
 			}
 			continue
 		}
-		ci := (startPixel + pp) % snakePixels
-		pixelOff := snakeBodyOffset + ci*Channels
-		// Recover per-pixel chanXOR from C1 and snakePayloadC1 crib.
+		ci := (startPixel + pp) % regionPixels
+		pixelOff := regionBodyOffset + ci*Channels
+		// Recover per-pixel chanXOR from C1 and regionPayloadC1 crib.
 		var packed uint64
 		for ch := 0; ch < Channels; ch++ {
 			ext := extract7Broken(c3Body[pixelOff+ch], dp.Np)
 			unrot := rotateBits7(ext, 7-dp.R)
 			// unrot = dataBits_C3[ch] XOR chanXOR[ch]
-			// chanXOR[ch] = unrotate(extract7(C1[c], np), r) XOR C1_snakePayload_bits(pp, ch)
+			// chanXOR[ch] = unrotate(extract7(C1[c], np), r) XOR C1_regionPayload_bits(pp, ch)
 			// (we ARE the caller's lab-peek pipeline so we can plumb this
-			// via snakePayloadC1). Instead of recomputing here, we
+			// via regionPayloadC1). Instead of recomputing here, we
 			// require the caller to hand `chanXORPerPixel` in — but since
 			// the caller has both C1 body and C1 payload, the simplest
 			// wire is to compute chanXOR inline.
 			// For clarity: chanXOR_bits = extract7(C1[c], dp.Np) after
-			// un-rotate, XOR with snakePayloadC1's 7 bits at (pp, ch).
+			// un-rotate, XOR with regionPayloadC1's 7 bits at (pp, ch).
 			// Access to the C1 body is via c3Body arg — but c3Body IS C3;
 			// the caller passes C3 here. So we need a separate
 			// chanXORPerPixel slice from the caller. For simplicity we
 			// swap the interface: the caller computes chanXOR56[pp] from
-			// C1 + snakePayloadC1 and passes it in the demask slice.
+			// C1 + regionPayloadC1 and passes it in the demask slice.
 			// See dp.ChanXOR56 field.
 			raw7 := unrot ^ byte((dp.ChanXOR56>>uint(ch*DataBitsPerChannel))&0x7F)
 			packed |= uint64(raw7) << uint(ch*DataBitsPerChannel)
@@ -1480,20 +1480,20 @@ func TestRedTeamNonceReuseCrossMessageDecrypt(t *testing.T) {
 	// Regime A — attacker-realistic (no lab peek). Attacker has C1, C2,
 	// C3, P1, P2 and tries to decrypt P3 by first recovering the
 	// per-pixel (np, r) from (C1, C2, P1, P2). The naive assumption
-	// (snake payload byte == plaintext byte) is required — no mask,
+	// (region payload byte == plaintext byte) is required — no mask,
 	// no startPixel. Report: recovered bytes of P3 that match ground
-	// truth (should be at chance ~1/256 across snake data pixels).
+	// truth (should be at chance ~1/256 across region data pixels).
 	plainXor := xorBytes(p1, p2)
 	regimeA := func() (matchBytes, totalBytes int) {
-		// For each snake, walk pixels in body order (no startPixel peek —
+		// For each region, walk pixels in body order (no startPixel peek —
 		// attacker must guess ordering; naive assumes body position ==
-		// snake pixel position). Attempt to recover unique (np, r) per
+		// region pixel position). Attempt to recover unique (np, r) per
 		// pixel via the naive constraint. Under Triple + Interlocked, no
 		// startPixel gives unique anchoring across probe pixels; no
 		// unique (np, r) is produced.
 		for si := 0; si < 3; si++ {
-			for pp := 0; pp < layout.snakePixels[si]; pp++ {
-				pixelOff := layout.snakeBodyOffsets[si] + pp*Channels
+			for pp := 0; pp < layout.regionPixels[si]; pp++ {
+				pixelOff := layout.regionBodyOffsets[si] + pp*Channels
 				var recoveredNp, recoveredR uint
 				count := 0
 				for np := uint(0); np < 8; np++ {
@@ -1518,7 +1518,7 @@ func TestRedTeamNonceReuseCrossMessageDecrypt(t *testing.T) {
 					// unresolved — cannot decrypt this pixel of P3.
 					continue
 				}
-				// Recover chanXOR56 from C1 + P1 (naive: snake payload ==
+				// Recover chanXOR56 from C1 + P1 (naive: region payload ==
 				// plaintext), then apply to C3 to yield "P3 bytes".
 				var chanXOR56 uint64
 				for ch := 0; ch < Channels; ch++ {
@@ -1561,16 +1561,16 @@ func TestRedTeamNonceReuseCrossMessageDecrypt(t *testing.T) {
 	}
 
 	// Regime B — startPixel peek only (no mask peek). Uses the naive
-	// mask assumption but with the correct startPixel per snake. Under
+	// mask assumption but with the correct startPixel per region. Under
 	// the barrier this still cannot uniquely anchor (np, r) because the
-	// naive "snake payload byte == plaintext byte" is wrong.
+	// naive "region payload byte == plaintext byte" is wrong.
 	regimeB := func() (matchBytes, totalBytes int) {
 		// [lab-peek: sp_i]
-		sp := grantStartPixelsLabPeek(layout.nonce, layout.snakePixels, s1, s2, s3)
+		sp := grantStartPixelsLabPeek(layout.nonce, layout.regionPixels, s1, s2, s3)
 		for si := 0; si < 3; si++ {
-			for pp := 0; pp < layout.snakePixels[si]; pp++ {
-				ci := (sp[si] + pp) % layout.snakePixels[si]
-				pixelOff := layout.snakeBodyOffsets[si] + ci*Channels
+			for pp := 0; pp < layout.regionPixels[si]; pp++ {
+				ci := (sp[si] + pp) % layout.regionPixels[si]
+				pixelOff := layout.regionBodyOffsets[si] + ci*Channels
 				var recoveredNp, recoveredR uint
 				count := 0
 				for np := uint(0); np < 8; np++ {
@@ -1623,18 +1623,18 @@ func TestRedTeamNonceReuseCrossMessageDecrypt(t *testing.T) {
 	}
 
 	// Regime B' — startPixel peek + mask-oracle peek (upper bound). The
-	// attacker gets the true snake payload XOR bits per snake and can
+	// attacker gets the true region payload XOR bits per region and can
 	// uniquely anchor (np, r) per pixel; the recovered chanXOR56 is
-	// derived from C1 + true snake_payload_C1 (via mask peek); the
-	// pipeline applies to C3 and decrypts snake payload → interleaves
-	// the 3 recovered snake payloads through the mask-oracle inverse to
+	// derived from C1 + true region_payload_C1 (via mask peek); the
+	// pipeline applies to C3 and decrypts region payload → interleaves
+	// the 3 recovered region payloads through the mask-oracle inverse to
 	// yield P3.
 	regimeBPrime := func() (matchBytes, totalBytes int) {
 		// [lab-peek: sp_i] + [lab-peek: masks]
-		sp := grantStartPixelsLabPeek(layout.nonce, layout.snakePixels, s1, s2, s3)
+		sp := grantStartPixelsLabPeek(layout.nonce, layout.regionPixels, s1, s2, s3)
 		bp := buildLockBatchPRF48_128Cfg(nil, ls, layout.nonce)
 
-		// Snake payload XOR bits (for anchoring) come from cobs of the
+		// Region payload XOR bits (for anchoring) come from cobs of the
 		// splitTriple lanes of P1 and P2.
 		n1, n2 := tripleLaneLen(len(p1)), tripleLaneLen(len(p2))
 		p1Lanes := [3][]byte{make([]byte, n1), make([]byte, n1), make([]byte, n1)}
@@ -1644,49 +1644,49 @@ func TestRedTeamNonceReuseCrossMessageDecrypt(t *testing.T) {
 		cobsLane := func(lane []byte) []byte {
 			return cobsEncodeInto(make([]byte, cobsEncodeBound(len(lane))), lane)
 		}
-		snakeCobs1 := [3][]byte{cobsLane(p1Lanes[0]), cobsLane(p1Lanes[1]), cobsLane(p1Lanes[2])}
-		snakeCobs2 := [3][]byte{cobsLane(p2Lanes[0]), cobsLane(p2Lanes[1]), cobsLane(p2Lanes[2])}
-		snakePayloadXor := [3][]byte{}
+		regionCobs1 := [3][]byte{cobsLane(p1Lanes[0]), cobsLane(p1Lanes[1]), cobsLane(p1Lanes[2])}
+		regionCobs2 := [3][]byte{cobsLane(p2Lanes[0]), cobsLane(p2Lanes[1]), cobsLane(p2Lanes[2])}
+		regionPayloadXor := [3][]byte{}
 		for i := 0; i < 3; i++ {
-			n := min3(len(snakeCobs1[i]), len(snakeCobs2[i]))
-			snakePayloadXor[i] = xorBytes(snakeCobs1[i][:n], snakeCobs2[i][:n])
+			n := min3(len(regionCobs1[i]), len(regionCobs2[i]))
+			regionPayloadXor[i] = xorBytes(regionCobs1[i][:n], regionCobs2[i][:n])
 		}
 
-		// Recover per-pixel (np, r, chanXOR56) per snake by anchoring
-		// against snake payload XOR.
-		recoveredSnakeBytes := [3][]byte{}
+		// Recover per-pixel (np, r, chanXOR56) per region by anchoring
+		// against region payload XOR.
+		recoveredRegionBytes := [3][]byte{}
 		for si := 0; si < 3; si++ {
-			pxls := recoverPerPixelNpRUnderMaskOracle(bodyXor12, layout.snakePixels[si], layout.snakeBodyOffsets[si], sp[si], snakePayloadXor[si], layout.snakePixels[si])
-			// Add chanXOR56 from C1 + true snake payload C1 crib.
+			pxls := recoverPerPixelNpRUnderMaskOracle(bodyXor12, layout.regionPixels[si], layout.regionBodyOffsets[si], sp[si], regionPayloadXor[si], layout.regionPixels[si])
+			// Add chanXOR56 from C1 + true region payload C1 crib.
 			for pp := range pxls {
 				if !pxls[pp].Ok {
 					continue
 				}
-				ci := (sp[si] + pp) % layout.snakePixels[si]
-				pixelOff := layout.snakeBodyOffsets[si] + ci*Channels
+				ci := (sp[si] + pp) % layout.regionPixels[si]
+				pixelOff := layout.regionBodyOffsets[si] + ci*Channels
 				var chanXOR56 uint64
 				for ch := 0; ch < Channels; ch++ {
 					c1b := layout.body[pixelOff+ch]
 					ext := extract7Broken(c1b, pxls[pp].Np)
 					unrot := rotateBits7(ext, 7-pxls[pp].R)
-					// Snake_payload_C1_bits(pp, ch) from mask peek.
-					plainBits := getBits7Broken(snakeCobs1[si], pp, ch)
+					// Region_payload_C1_bits(pp, ch) from mask peek.
+					plainBits := getBits7Broken(regionCobs1[si], pp, ch)
 					chanXOR56 |= uint64(unrot^plainBits) << uint(ch*DataBitsPerChannel)
 				}
 				pxls[pp].ChanXOR56 = chanXOR56
 			}
-			// Apply the demasker to C3's snake region.
-			recoveredSnakeBytes[si] = applyDemaskerToThirdMsg(c3Body, layout.snakePixels[si], layout.snakeBodyOffsets[si], sp[si], pxls, snakeCobs1[si])
+			// Apply the demasker to C3's region.
+			recoveredRegionBytes[si] = applyDemaskerToThirdMsg(c3Body, layout.regionPixels[si], layout.regionBodyOffsets[si], sp[si], pxls, regionCobs1[si])
 		}
 
-		// Interleave the recovered snake payload bytes through the mask
+		// Interleave the recovered region payload bytes through the mask
 		// oracle to yield the framed plaintext. First need to peel COBS,
 		// then interleaveForTriple48LockedCfg. Because tail-fill differs
 		// per encryption and our recovered bytes past the COBS terminator
 		// are garbage, restrict interleave to the C3 lane bytes' known
 		// deterministic prefix range.
 		//
-		// Compute the true C3 snake payload lengths (via forward encode
+		// Compute the true C3 region payload lengths (via forward encode
 		// under mask peek) so we know where COBS terminates.
 		n3 := tripleLaneLen(len(p3))
 		p3Lanes := [3][]byte{make([]byte, n3), make([]byte, n3), make([]byte, n3)}
@@ -1695,12 +1695,12 @@ func TestRedTeamNonceReuseCrossMessageDecrypt(t *testing.T) {
 
 		// Attacker uses lab peek to sizeknow, but doesn't know exact
 		// content — that IS the decrypt problem. Compare the recovered
-		// snake payload bytes to the true snake payload bytes (cobs,
+		// region payload bytes to the true region payload bytes (cobs,
 		// pre-terminator) — the length is known via the lab peek here.
 		for si := 0; si < 3; si++ {
 			trueLen := len(p3Cobs[si])
-			for k := 0; k < trueLen && k < len(recoveredSnakeBytes[si]); k++ {
-				if recoveredSnakeBytes[si][k] == p3Cobs[si][k] {
+			for k := 0; k < trueLen && k < len(recoveredRegionBytes[si]); k++ {
+				if recoveredRegionBytes[si][k] == p3Cobs[si][k] {
 					matchBytes++
 				}
 				totalBytes++

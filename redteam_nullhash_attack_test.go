@@ -6,7 +6,7 @@ package itb
 // primitive. This is the attacker-realistic companion to
 // TestRedTeamNullHashExpose: it consumes ONLY attacker-visible inputs
 // (the Full-KPA plaintext, the wire ciphertext, the two public nonces
-// read from the dual-nonce header, the three per-snake startPixels
+// read from the dual-nonce header, the three per-region startPixels
 // granted as a lab concession, and the container geometry) and recovers
 // the observable seed-role constants, then measures wall-clock.
 //
@@ -34,18 +34,18 @@ package itb
 //     - noiseSeed  -> noisePos = lo & 7            (3 bits)
 //     - dataSeed_i -> (lo % 7, lo >> 3)            (the full 8-bit lo)
 //     - lockSeed   -> deriveInterLockSeed = (lo,hi) (16 bits)
-//   The three snakes occupy disjoint container thirds and are decoded
-//   independently. Part 1 (the lock) is the only shared coupling and is
+//   The three regions occupy disjoint container thirds and are decoded
+//   independently. Rank Barrier (the lock) is the only shared coupling and is
 //   a pure function of (lockSeed, interlock_nonce, plaintext).
 //
 //   Phase A: for every 16-bit lockSeed constant, compute the three
 //   expected COBS-framed lane payloads via the shipped split, and index
 //   lockSeed by each lane's COBS bytes. 2^16 splits — the dominant cost.
 //
-//   Phase B: for every noisePos (8) and every snake (3) and every 8-bit
-//   dataSeed lo constant (256), run the shipped decode over that snake's
+//   Phase B: for every noisePos (8) and every region (3) and every 8-bit
+//   dataSeed lo constant (256), run the shipped decode over that region's
 //   container third and look the produced COBS prefix up in Phase A's
-//   index. A lockSeed that appears for all three snakes under one
+//   index. A lockSeed that appears for all three regions under one
 //   noisePos is the joint solution. 8*3*256 = 6144 decodes.
 //
 // Effective explored keyspace: 2^16 + 6144 ~= 2^16, versus the 5*2^16 =
@@ -188,9 +188,9 @@ func TestRedTeamNullHashAttack(t *testing.T) {
 		TotalPixels    int    `json:"total_pixels"`
 		HeaderSize     int    `json:"header_size"`
 		StartPixels    struct {
-			S1 int `json:"snake_1"`
-			S2 int `json:"snake_2"`
-			S3 int `json:"snake_3"`
+			S1 int `json:"region_1"`
+			S2 int `json:"region_2"`
+			S3 int `json:"region_3"`
 		} `json:"start_pixels"`
 		Truth map[string]string `json:"truth_labonly"`
 	}
@@ -235,7 +235,7 @@ func TestRedTeamNullHashAttack(t *testing.T) {
 	// constant — different lanes constrain different bits, and one lane's
 	// bytes can be shared by many lock constants — so the index maps each
 	// lane key to the SET of lock constants that produce it. The join in
-	// Phase B intersects those sets across the three snakes.
+	// Phase B intersects those sets across the three regions.
 	type laneKey struct {
 		s   string
 		val uint16
@@ -288,12 +288,12 @@ func TestRedTeamNullHashAttack(t *testing.T) {
 	}
 	phaseA := time.Now()
 
-	// ---------- Phase B: decode each snake third, join on lockSeed ----------
-	// For each noisePos and each snake, decode the region under every
+	// ---------- Phase B: decode each region third, join on lockSeed ----------
+	// For each noisePos and each region, decode the region under every
 	// 8-bit dataSeed lo constant and look the COBS prefix up in Phase A's
-	// index. Collect, per noisePos, the set of lock constants each snake
+	// index. Collect, per noisePos, the set of lock constants each region
 	// can satisfy (with the dataSeed lo that satisfied it). A lock
-	// constant present for all three snakes under one noisePos is the
+	// constant present for all three regions under one noisePos is the
 	// solution.
 	var (
 		foundNoisePos = -1
@@ -304,11 +304,11 @@ func TestRedTeamNullHashAttack(t *testing.T) {
 	for noisePos := 0; noisePos < 8 && foundNoisePos < 0; noisePos++ {
 		// A noiseSeed lo constant with (lo & 7) == noisePos: lo = noisePos.
 		noiseSeed := seedConst(byte(noisePos), 0)
-		// Per-snake: admissible lockConst -> a witness dataLo. A snake
+		// Per-region: admissible lockConst -> a witness dataLo. A region
 		// admits a whole SET of lock constants (its lane cannot pin all
 		// 16 bits); the witness records which dataSeed lo produced the
 		// matching lane so the solution's dataSeeds can be read off.
-		snakeHits := [3]map[uint16]byte{{}, {}, {}}
+		regionHits := [3]map[uint16]byte{{}, {}, {}}
 		for i := 0; i < 3; i++ {
 			startSeed := seedConst(startPixelConst[i], 0)
 			decoded := make([]byte, caps[i])
@@ -317,24 +317,24 @@ func TestRedTeamNullHashAttack(t *testing.T) {
 				for k := range decoded {
 					decoded[k] = 0
 				}
-				// Shipped decode over this snake's container third.
+				// Shipped decode over this region's container third.
 				process128Cfg(cfg, noiseSeed, dataSeed, startSeed, mainNonce,
 					regions[i], widths[i], 1, decoded, false, 1)
 				decodeCount++
 				key := decoded[:firstNull(decoded)]
 				if lcs, ok := lockIdx[i][string(key)]; ok {
 					for _, lc := range lcs {
-						if _, dup := snakeHits[i][lc]; !dup {
-							snakeHits[i][lc] = byte(d)
+						if _, dup := regionHits[i][lc]; !dup {
+							regionHits[i][lc] = byte(d)
 						}
 					}
 				}
 			}
 		}
-		// Intersect the three snakes' admissible lock-constant sets.
-		for lc, d0 := range snakeHits[0] {
-			d1, ok1 := snakeHits[1][lc]
-			d2, ok2 := snakeHits[2][lc]
+		// Intersect the three regions' admissible lock-constant sets.
+		for lc, d0 := range regionHits[0] {
+			d1, ok1 := regionHits[1][lc]
+			d2, ok2 := regionHits[2][lc]
 			if ok1 && ok2 {
 				foundNoisePos = noisePos
 				foundLock = lc
@@ -505,9 +505,9 @@ func TestRedTeamNullHashAttackCrib(t *testing.T) {
 		TotalPixels    int    `json:"total_pixels"`
 		HeaderSize     int    `json:"header_size"`
 		StartPixels    struct {
-			S1 int `json:"snake_1"`
-			S2 int `json:"snake_2"`
-			S3 int `json:"snake_3"`
+			S1 int `json:"region_1"`
+			S2 int `json:"region_2"`
+			S3 int `json:"region_3"`
 		} `json:"start_pixels"`
 		Truth map[string]string `json:"truth_labonly"`
 	}
@@ -628,8 +628,8 @@ func TestRedTeamNullHashAttackCrib(t *testing.T) {
 	)
 	for noisePos := 0; noisePos < 8; noisePos++ {
 		noiseSeed := seedConst(byte(noisePos), 0)
-		// Per snake: lockConst -> witness dataSeed lo values.
-		snakeHits := [3]map[uint16][]byte{{}, {}, {}}
+		// Per region: lockConst -> witness dataSeed lo values.
+		regionHits := [3]map[uint16][]byte{{}, {}, {}}
 		for i := 0; i < 3; i++ {
 			startSeed := seedConst(startPixelConst[i], 0)
 			decoded := make([]byte, caps[i])
@@ -656,16 +656,16 @@ func TestRedTeamNullHashAttackCrib(t *testing.T) {
 				}
 				if lcs, ok := lockIdx[i][string(p[:lanePrefixLen])]; ok {
 					for _, lc := range lcs {
-						snakeHits[i][lc] = append(snakeHits[i][lc], byte(d))
+						regionHits[i][lc] = append(regionHits[i][lc], byte(d))
 					}
 				}
 			}
 		}
 		// Intersect and enumerate candidate tuples (cartesian over the
 		// benign dataSeed low-bit ambiguity witnesses).
-		for lc, d0s := range snakeHits[0] {
-			d1s, ok1 := snakeHits[1][lc]
-			d2s, ok2 := snakeHits[2][lc]
+		for lc, d0s := range regionHits[0] {
+			d1s, ok1 := regionHits[1][lc]
+			d2s, ok2 := regionHits[2][lc]
 			if !ok1 || !ok2 {
 				continue
 			}
@@ -772,13 +772,13 @@ func TestRedTeamNullHashAttackCrib(t *testing.T) {
 // scenario: a direct ciphertext-only attack (COA). The attacker holds
 // only the wire ciphertexts and their parsed public dual-nonce headers
 // (main + interlock nonce, container dimensions). There is NO plaintext,
-// NO crib, and NO startPixel concession — the three per-snake startPixels
+// NO crib, and NO startPixel concession — the three per-region startPixels
 // are brute-forced. The only structural knowledge used is the public COBS
 // framing convention; no content-type assumption (printable-ASCII, JSON,
 // etc.) is made — the plaintext may be arbitrary binary.
 //
 // The attack is content-agnostic and multi-ciphertext. Under nullHash
-// every derivation (the observable constants, the per-snake startPixel
+// every derivation (the observable constants, the per-region startPixel
 // walk offset, and the whole-message 48-bit lock mask triple) is
 // nonce-independent, so one recovered candidate applies identically to
 // every message from the same 8-seed sender. A single ciphertext leaves
@@ -789,12 +789,12 @@ func TestRedTeamNullHashAttackCrib(t *testing.T) {
 //
 // Decomposition:
 //
-//   Phase 1 (per-snake cross-ciphertext COBS gate): each snake occupies a
+//   Phase 1 (per-region cross-ciphertext COBS gate): each region occupies a
 //   disjoint container third and is decoded independently. For every
 //   (noisePos, dataSeed lo, startPixel in [0,third)) every wire's third is
 //   decoded and gated through the public COBS structural invariant; a
 //   survivor must validate ALL wires and produce equal lane lengths on
-//   each. This collapses ~2900 single-wire COBS coincidences per snake to
+//   each. This collapses ~2900 single-wire COBS coincidences per region to
 //   a few dozen.
 //
 //   Phase 2 (mask table + length-prefix join): under nullHash the lock
@@ -845,9 +845,9 @@ func TestRedTeamNullHashAttackNoKPA(t *testing.T) {
 			CtFile            string `json:"ct_file"`
 		} `json:"messages"`
 		StartPixels struct {
-			S1 int `json:"snake_1"`
-			S2 int `json:"snake_2"`
-			S3 int `json:"snake_3"`
+			S1 int `json:"region_1"`
+			S2 int `json:"region_2"`
+			S3 int `json:"region_3"`
 		} `json:"start_pixels"`
 		Truth map[string]string `json:"truth_labonly"`
 	}
@@ -892,16 +892,16 @@ func TestRedTeamNullHashAttackNoKPA(t *testing.T) {
 
 	start := time.Now()
 
-	// ---------- Phase 1: per-snake cross-ciphertext COBS gate ----------
+	// ---------- Phase 1: per-region cross-ciphertext COBS gate ----------
 	type surv struct {
 		noisePos byte
 		d        byte
 		sp       int
 		laneLen  int
-		chunk0   []uint16 // this snake's chunk-0 lane value per wire
-		lane0    []byte   // this snake's full wire-0 lane (for padding gate)
+		chunk0   []uint16 // this region's chunk-0 lane value per wire
+		lane0    []byte   // this region's full wire-0 lane (for padding gate)
 	}
-	var snakeSurv [3][8][]surv
+	var regionSurv [3][8][]surv
 	var mu sync.Mutex
 
 	numCPU := runtime.NumCPU()
@@ -963,7 +963,7 @@ func TestRedTeamNullHashAttackNoKPA(t *testing.T) {
 				}
 				if len(local) > 0 {
 					mu.Lock()
-					snakeSurv[i][np] = append(snakeSurv[i][np], local...)
+					regionSurv[i][np] = append(regionSurv[i][np], local...)
 					mu.Unlock()
 				}
 			}(i, np)
@@ -975,7 +975,7 @@ func TestRedTeamNullHashAttackNoKPA(t *testing.T) {
 	total1 := 0
 	for i := 0; i < 3; i++ {
 		for np := 0; np < 8; np++ {
-			total1 += len(snakeSurv[i][np])
+			total1 += len(regionSurv[i][np])
 		}
 	}
 
@@ -1019,7 +1019,7 @@ func TestRedTeamNullHashAttackNoKPA(t *testing.T) {
 		var byLen [3]map[int][]surv
 		for i := 0; i < 3; i++ {
 			byLen[i] = map[int][]surv{}
-			for _, s := range snakeSurv[i][np] {
+			for _, s := range regionSurv[i][np] {
 				byLen[i][s.laneLen] = append(byLen[i][s.laneLen], s)
 			}
 		}
@@ -1149,9 +1149,9 @@ func TestRedTeamNullHashAttackNoKPA(t *testing.T) {
 	t.Logf("  Phase 1 (COBS gate):  %v", phase1.Sub(start))
 	t.Logf("  Phase 2 (join):       %v", phase2.Sub(phase1))
 	t.Logf("  Phase 3 (verify):     %v", elapsed-phase2.Sub(start))
-	t.Logf("per-snake decodes enumerated: %d (%d wires x 8 noisePos x 256 dataSeed x [0,third) startPixel)",
+	t.Logf("per-region decodes enumerated: %d (%d wires x 8 noisePos x 256 dataSeed x [0,third) startPixel)",
 		W*(8*256*(third+third+thirdPixels2)), W)
-	t.Logf("Phase 1 cross-ct COBS survivors (all snakes/noisePos): %d", total1)
+	t.Logf("Phase 1 cross-ct COBS survivors (all regions/noisePos): %d", total1)
 	t.Logf("Phase 2 length-join candidates: %d", len(candidates))
 	t.Logf("survivors after full verification: %d raw, %d functionally distinct, %d distinct lock constants",
 		len(confirmed), len(funcSet), len(lockSet))
@@ -1238,8 +1238,8 @@ func TestRedTeamNullHashAttackNoKPA(t *testing.T) {
 // (crib + startPixels granted) and Stage 3 (no crib + startPixels brute).
 // Threat model: a 48-byte crib (first 48 plaintext bytes), one wire, fresh
 // nonce, and — unlike Stage 2 — NO startPixel concession. The three
-// per-snake startPixels are brute-forced over [0,third) alongside the
-// per-snake dataSeed lo, joined by the crib-derived 16-byte lane-prefix
+// per-region startPixels are brute-forced over [0,third) alongside the
+// per-region dataSeed lo, joined by the crib-derived 16-byte lane-prefix
 // anchor (Phase A', identical to Stage 2). The hypothesis under test: a
 // 48-byte crib is a strong enough anchor to resolve the lock low-byte
 // ambiguity that a content-agnostic Stage 3 attack could not, yielding
@@ -1273,9 +1273,9 @@ func TestRedTeamNullHashAttackCribNoStartPixels(t *testing.T) {
 		TotalPixels    int    `json:"total_pixels"`
 		HeaderSize     int    `json:"header_size"`
 		StartPixels    struct {
-			S1 int `json:"snake_1"`
-			S2 int `json:"snake_2"`
-			S3 int `json:"snake_3"`
+			S1 int `json:"region_1"`
+			S2 int `json:"region_2"`
+			S3 int `json:"region_3"`
 		} `json:"start_pixels"`
 		Truth map[string]string `json:"truth_labonly"`
 	}
@@ -1370,15 +1370,15 @@ func TestRedTeamNullHashAttackCribNoStartPixels(t *testing.T) {
 	phaseA := time.Now()
 
 	// ---------- Phase B: brute (noisePos, dataSeed lo, startPixel) ----------
-	// Per (noisePos, snake): lockConst -> witnesses (dataLo, startPixel).
+	// Per (noisePos, region): lockConst -> witnesses (dataLo, startPixel).
 	type witness struct {
 		dLo byte
 		sp  int
 	}
-	var snakeHits [8][3]map[uint16][]witness
+	var regionHits [8][3]map[uint16][]witness
 	for np := 0; np < 8; np++ {
 		for i := 0; i < 3; i++ {
-			snakeHits[np][i] = map[uint16][]witness{}
+			regionHits[np][i] = map[uint16][]witness{}
 		}
 	}
 	var mu sync.Mutex
@@ -1422,7 +1422,7 @@ func TestRedTeamNullHashAttackCribNoStartPixels(t *testing.T) {
 				}
 				mu.Lock()
 				for lc, ws := range local {
-					snakeHits[np][i][lc] = append(snakeHits[np][i][lc], ws...)
+					regionHits[np][i][lc] = append(regionHits[np][i][lc], ws...)
 				}
 				decodeCount += dc
 				mu.Unlock()
@@ -1431,7 +1431,7 @@ func TestRedTeamNullHashAttackCribNoStartPixels(t *testing.T) {
 	}
 	wgB.Wait()
 
-	// ---------- Join across snakes on consistent (noisePos, lockConst) ----------
+	// ---------- Join across regions on consistent (noisePos, lockConst) ----------
 	type cand struct {
 		noisePos byte
 		lock     uint16
@@ -1440,9 +1440,9 @@ func TestRedTeamNullHashAttackCribNoStartPixels(t *testing.T) {
 	}
 	var preJoin []cand
 	for np := 0; np < 8; np++ {
-		for lc, w0 := range snakeHits[np][0] {
-			w1, ok1 := snakeHits[np][1][lc]
-			w2, ok2 := snakeHits[np][2][lc]
+		for lc, w0 := range regionHits[np][0] {
+			w1, ok1 := regionHits[np][1][lc]
+			w2, ok2 := regionHits[np][2][lc]
 			if !ok1 || !ok2 {
 				continue
 			}
@@ -1492,7 +1492,7 @@ func TestRedTeamNullHashAttackCribNoStartPixels(t *testing.T) {
 	t.Logf("wall-clock total:       %v", elapsed)
 	t.Logf("  Phase A' (2^16 splits): %v", phaseA.Sub(start))
 	t.Logf("  Phase B + verify:       %v", elapsed-phaseA.Sub(start))
-	t.Logf("per-snake decodes: %d (8 noisePos x 256 dataSeed x [0,third) startPixel x 3 snakes)", decodeCount)
+	t.Logf("per-region decodes: %d (8 noisePos x 256 dataSeed x [0,third) startPixel x 3 regions)", decodeCount)
 	t.Logf("pre-join candidates: %d", len(preJoin))
 	t.Logf("survivors after full verification: %d raw, %d functionally distinct", len(survivors), len(funcSet))
 	if len(funcSet) == 0 {

@@ -22,8 +22,8 @@ import (
 //     null terminator + DRBG fill, consumed by `process*`)
 //   - decrypt-side `decoded` / `decoded[i]` (plaintext extracted from
 //     ciphertext, consumed by `cobsDecode`)
-//   - Triple 3-snake split outputs `p0` / `p1` / `p2` (plaintext-derived
-//     per-snake byte streams, consumed by `cobsEncode`)
+//   - Triple 3-region split outputs `p0` / `p1` / `p2` (plaintext-derived
+//     per-region byte streams, consumed by `cobsEncode`)
 //
 // The ciphertext output buffer returned to the caller is NOT pooled. It
 // is allocated separately and its lifetime extends past the encrypt

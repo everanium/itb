@@ -14,8 +14,8 @@ package itb
 // these standalone breaks alongside the aes2r control of § 3.7). The
 // construction is safe only under ITB's compound defence stack — the
 // ChainHash cascade over 4–16 rounds (8–32 seed components) extends the
-// effective key beyond primitive brute range, and the Interlocked
-// Barrier / Part 2 absorption layers close the observation gap the
+// effective key beyond primitive brute range, and the Rank Barrier /
+// Pixel Barrier absorption layers close the observation gap the
 // primitive's own weakness would otherwise expose. HARNESS.md § 3.10
 // records the empirical validation: the integral and the structured
 // recoveries measured at rounds = 1 (raw primitive) sit at the floor on

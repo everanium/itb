@@ -9,7 +9,7 @@ import (
 	"sync"
 )
 
-// process128Cfg is the per-snake encode/decode engine (128-bit variant).
+// process128Cfg is the per-region encode/decode engine (128-bit variant).
 //
 // Three independent 128-bit seeds provide separate configuration domains:
 //
@@ -155,9 +155,9 @@ func Encrypt3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dat
 	// Interlock split, COBS, payload assembly and wire allocation with
 	// overlapped container + payload-tail DRBG fill (see
 	// triplepayload.go). nomacTagStubSizeCfg(cfg) bytes are reserved in
-	// the third snake's container capacity so a wire observer cannot
+	// the third region's container capacity so a wire observer cannot
 	// distinguish this No MAC chunk from the paired authenticated chunk
-	// (whose third snake carries payload || tag || flag(1)). The
+	// (whose third region carries payload || tag || flag(1)). The
 	// reserved bytes are pure DRBG on the No MAC side.
 	tp, out, container, width, height, err := buildTripleWire3(cfg, data, buildLockBatchPRF48_128Cfg(cfg, lockSeed, ilNonce), nomacTagStubSizeCfg(cfg), true, nonce, ilNonce,
 		func(cobsLens [3]int) (int, int) {

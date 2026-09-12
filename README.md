@@ -25,7 +25,7 @@
 
 ---
 
-A parameterized symmetric cipher construction library for Go that makes hash output unobservable under passive observation through independent barrier mechanisms: **noise absorption** (a random container filled by `internal/drbg` — AES-CTR or ChaCha20 seeded per call from CSPRNG — makes hash output unobservable), **encoding ambiguity** (secret rotation yields 7^P unverifiable configurations that survive CCA), and the **Interlocked Barrier** (a per-chunk PRF-keyed 48-bit permutation over three snakes, with a per-chunk mask space of ≈ 2^70.20 balanced partitions). 8-Seed isolation ensures compromise of any one domain provides zero information about the others.
+A parameterized symmetric cipher construction library for Go that makes hash output unobservable under passive observation through independent barrier mechanisms: **noise absorption** (a random container filled by `internal/drbg` — AES-CTR or ChaCha20 seeded per call from CSPRNG — makes hash output unobservable), **encoding ambiguity** (secret rotation yields 7^P unverifiable configurations that survive CCA), and the **Interlocked Barrier** (a per-chunk PRF-keyed 48-bit permutation over three regions, with a per-chunk mask space of ≈ 2^70.20 balanced partitions). 8-Seed isolation ensures compromise of any one domain provides zero information about the others.
 
 **Ambiguity-Based Security.** The number of observation-consistent **configurations** grows with data size — a property orthogonal to Shannon's key-entropy bound (distinct from Shannon's perfect-secrecy relationship on plaintext entropy; not a violation of it). The Interlocked Barrier converts known-plaintext cryptanalysis from a computational-hardness problem into an instance-formulation one under the PRF assumption: a known-plaintext crib does not fix any bit-position-to-lane mapping for a solver to anchor on.
 
@@ -1138,7 +1138,7 @@ This is best read as **local key evolution** — each round derives a fresh effe
 
 ITB encrypts data into raw RGBWYOPA pixel containers (8 channels per pixel: Red, Green, Blue, White, Yellow, Orange, Purple, Alpha — mnemonic labels for an 8-byte unit; the format is not tied to image processing) generated from `crypto/rand`. Each 8-bit channel carries 7 data bits and 1 noise bit, yielding 56 data bits per pixel at 1.14× overhead. Each pixel's bit-plane selection and per-channel XOR masks are derived from a ChainHash of the seed and a per-message nonce.
 
-The data is embedded starting at a seed-dependent pixel offset with wrap-around — the physical layout in the container is completely non-sequential. The interleaved payload is then routed through the Interlocked Barrier: every 48-bit (6-byte) chunk of the payload is re-mapped into three 16-of-48 lanes by a per-chunk mask triple drawn from the ≈ 2^70.20 balanced-partition space, keyed by the lockSeed and the nonce. An observer sees uniformly random pixel values with no way to determine which pixels carry data, in what order, what bit-plane is used, or which bits of a given chunk feed which snake.
+The data is embedded starting at a seed-dependent pixel offset with wrap-around — the physical layout in the container is completely non-sequential. The interleaved payload is then routed through the Interlocked Barrier: every 48-bit (6-byte) chunk of the payload is re-mapped into three 16-of-48 lanes by a per-chunk mask triple drawn from the ≈ 2^70.20 balanced-partition space, keyed by the lockSeed and the nonce. An observer sees uniformly random pixel values with no way to determine which pixels carry data, in what order, what bit-plane is used, or which bits of a given chunk feed which region.
 
 ## Hash width variants
 
@@ -1168,13 +1168,13 @@ Default nonce size is 512 bits (64 bytes) — chosen so the birthday-bound on co
 
 ## Minimum container size
 
-The unified CCA-resistant envelope floor `MinPixels := MinPixelsAuth` applies across both the authenticated and non-authenticated surfaces: the minimum container is `ceil(keyBits / log₂(7))` pixels, so the 7^P encoding-ambiguity floor exceeds the key space at the smallest container size, and envelope length does not distinguish the authenticated from the non-authenticated surface at the floor.
+The unified CCA-resistant envelope floor `MinPixels := MinPixelsAuth` applies across both the authenticated and non-authenticated surfaces: each of the three regions independently reaches `ceil(keyBits / log₂(7))` pixels, so the 7^P encoding-ambiguity floor exceeds the key space per region, and envelope length does not distinguish the authenticated from the non-authenticated surface at the floor. Total container pixels equal `3 × per-region floor`, rounded up to the smallest perfect square by side length; the side is then incremented by the DRBG barrier margin (`DefaultBarrierFill = 1`) — for 1024-bit keys `3 × 365 = 1095`, `⌈√1095⌉ = 34`, `34 + 1 = 35`, `35 × 35 = 1225` pixels.
 
-| Key size | Min pixels → container | Noise barrier |
-|---|---|---|
-| 512 bits  | 183 → 196 (14×14) | 2^1568 ≥ 2^512 |
-| 1024 bits | 365 → 400 (20×20) | 2^3200 ≥ 2^1024 |
-| 2048 bits | 730 → 784 (28×28) | 2^6272 ≥ 2^2048 |
+| Key size | Per-region floor | Total pixels (3×) | Container (side²) | Noise barrier |
+|---|---|---|---|---|
+| 512 bits  | 183 | 549  | 25×25 = 625  | 2^5000  ≥ 2^512  |
+| 1024 bits | 365 | 1095 | 35×35 = 1225 | 2^9800  ≥ 2^1024 |
+| 2048 bits | 730 | 2190 | 48×48 = 2304 | 2^18432 ≥ 2^2048 |
 
 ## Integrity (MAC-Inside-Encrypt)
 
@@ -1194,10 +1194,10 @@ The 8 mandatory seeds are drawn as independent CSPRNG components; the API surfac
 | Grover resistance | √P × 2^keyBits (Core ITB / MAC + Silent Drop) to √P × 2^(keyBits/2) (MAC + Reveal) |
 | Plausible deniability | Core ITB / MAC + Silent Drop (wrong seed → garbage indistinguishable from valid plaintext) |
 | Encoding ambiguity | Every mode (7^P unverifiable rotation combinations, surviving CCA; DRBG residue adds independent ambiguity in data positions) |
-| Interlocked Barrier | Always on; per-chunk 48-bit keyed permutation over three snakes; per-chunk mask space ≈ 2^70.20 balanced partitions |
+| Interlocked Barrier | Always on; per-chunk 48-bit keyed permutation over three regions; per-chunk mask space ≈ 2^70.20 balanced partitions |
 | 8-seed isolation | Every mode (noiseSeed, lockSeed, dataSeed1..3, startSeed1..3 independent) |
 | Oracle-free deniability | Core ITB / MAC + Silent Drop; MAC + Reveal has a CCA oracle bounded to the noise-position channel (Proof 6) |
-| Known-plaintext resistance (Crib / Full / Partial KPA) | Under the PRF assumption and fresh nonces, closed at the instance-formulation layer by the barrier's per-chunk ≈ 2^70.20 mask space + per-chunk PRF independence + 3-snake enumeration dimension + 8-seed isolation (architectural claim) |
+| Known-plaintext resistance (Crib / Full / Partial KPA) | Under the PRF assumption and fresh nonces, closed at the instance-formulation layer by the barrier's per-chunk ≈ 2^70.20 mask space + per-chunk PRF independence + 3-region enumeration dimension + 8-seed isolation (architectural claim) |
 | Chosen-plaintext resistance | Under the PRF assumption and fresh nonces, the always-on keyed permutation plus fresh per-message draws leave ciphertext at the statistical floor (architectural claim) |
 | Noise absorption | Core ITB / MAC + Silent Drop; bypassed via CCA in MAC + Reveal (DRBG residue in data positions survives) |
 | Hash function requirement | PRF required; PRF and barrier are complementary — neither sufficient alone |
@@ -1207,11 +1207,11 @@ The 8 mandatory seeds are drawn as independent CSPRNG components; the API surfac
 
 ### Interlocked Barrier — combinadic unrank routing layer
 
-The always-on Interlocked Barrier is driven by a **combinadic unrank** step: a public, deterministic combinatorial algorithm that transforms one 128-bit PRF output (from the per-group `lockSeed` cascade under domain tag `0x03`, keyed by the per-container `0x04` derivation) into a pairwise-disjoint balanced three-lane bit-permutation over each 48-bit input chunk. Every snake receives exactly 16 bits from each 48-bit chunk via its assigned mask; the three masks together cover the full 48 bits with no overlap.
+The always-on Interlocked Barrier is driven by a **combinadic unrank** step: a public, deterministic combinatorial algorithm that transforms one 128-bit PRF output (from the per-group `lockSeed` cascade under domain tag `0x03`, keyed by the per-container `0x04` derivation) into a pairwise-disjoint balanced three-lane bit-permutation over each 48-bit input chunk. Every region receives exactly 16 bits from each 48-bit chunk via its assigned mask; the three masks together cover the full 48 bits with no overlap.
 
 Four architectural properties emerge simultaneously from the same layer:
 
-- **Diffusion.** 48 input bits are dispersed across 3 × 16-bit output lanes, distributing every plaintext bit at 1-bit granularity across the three snakes.
+- **Diffusion.** 48 input bits are dispersed across 3 × 16-bit output lanes, distributing every plaintext bit at 1-bit granularity across the three regions.
 - **Confusion.** The rank → mask mapping is non-linear over GF(2) — integer arithmetic through binomial-coefficient tables produces bit-plane dependencies that neither linear cryptanalysis nor T-function DFS can decompose.
 - **Balance.** Every mask carries exactly 16 set bits; a rank-space anti-collapse rejection at derivation time prevents same-index mask-triple degeneracies.
 - **Key-dependency.** A fresh mask triple is derived per chunk from the `lockSeed` cascade output, so attacker-guessed masks never amortise across chunks.
@@ -1219,7 +1219,7 @@ Four architectural properties emerge simultaneously from the same layer:
 Neither the combinadic unrank routing layer nor the surrounding composition layers of ITB are cryptographic primitives:
 
 - **ChainHash** composes PRF invocations with XOR feedforward between rounds — a pure composition over the underlying PRF's output, adding no cryptographic content of its own.
-- **Interlock** applies the unrank-derived three-lane bit-permutation over each 48-bit input chunk, routing plaintext bits across the three snakes via PRF-derived masks.
+- **Interlock** applies the unrank-derived three-lane bit-permutation over each 48-bit input chunk, routing plaintext bits across the three regions via PRF-derived masks.
 - **Per-pixel channel encoding** applies channel XOR + 7-bit rotation + noise-bit insertion per pixel under PRF-derived per-channel parameters — bit-level routing over PRF-derived material.
 
 None of these layers create entropy; they consume the entropy delivered by the underlying PRF primitive and route it through the ITB construction. As pure combinatorial and bit-routing algorithms with no secret material of their own, they fall outside cryptographic certification regimes (Wassenaar 5A002 and national equivalents) — those regimes cover primitives and the modules built on them, not routing / composition layers over PRF output.

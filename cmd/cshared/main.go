@@ -384,7 +384,7 @@ func ITB_GetSeedComponents(
 
 // Triple Ouroboros encrypt: takes 8 seed handles (one shared
 // noise + one lockSeed + three data + three start) and produces one
-// ciphertext that interleaves three snake payloads. Wire format:
+// ciphertext that interleaves three region payloads. Wire format:
 // [nonce || width(2) || height(2) || pixels]. All 8 handles
 // must share the same native hash width (mixing 128/256/512 returns
 // ITB_ERR_SEED_WIDTH_MIX). Caller-allocated output buffer; on

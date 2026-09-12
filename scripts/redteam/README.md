@@ -155,7 +155,7 @@ Python environment:
 - `harness_test.go` (root package) — construction-level creative probes:
   mask-space uniformity, lane decorrelation, cumulative-bias floor.
 - `triple/harness_wire_test.go` — wire-shaped probes: mode ambiguity,
-  tail-fill positional χ², cross-snake wire correlation, cumulative-bias
+  tail-fill positional χ², cross-region wire correlation, cumulative-bias
   wire floor, nonce-freshness smoke test.
 
 The narrative record of these Go probes is in

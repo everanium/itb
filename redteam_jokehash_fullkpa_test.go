@@ -6,7 +6,7 @@ package itb
 // + always-on 48-bit Interlocked Barrier. This is the harder-primitive
 // counterpart to the nullHash Stage 1 attack (redteam_nullhash_attack_test.go):
 // same threat model (Full KPA — all 512 plaintext bytes known — plus the
-// three per-snake startPixels as a lab concession, fresh nonce, one
+// three per-region startPixels as a lab concession, fresh nonce, one
 // message), but jokeHash instead of nullHash.
 //
 // jokeHash is a T-function multiply-add fold (multiplier 257). Unlike
@@ -213,12 +213,12 @@ func TestRedTeamJokeHashFullKPA(t *testing.T) {
 	}
 
 	// ---------------------------------------------------------------
-	// M4. Barrier severance of Full KPA. Part 2 encodes the LOCKED lanes
+	// M4. Barrier severance of Full KPA. Pixel Barrier encodes the LOCKED lanes
 	// p_i = chunk48lock(framed_chunk, mask_chunk), not the plaintext. The
 	// attacker knows framed (= len||plaintext), but each lane bit is a
 	// bit of framed selected by an UNKNOWN per-chunk 16-of-48 mask. So
 	// Full KPA at the plaintext level provides no known-plaintext at the
-	// Part-2 level without the 256-bit lockSeed. Quantify the per-chunk
+	// Pixel Barrier level without the 256-bit lockSeed. Quantify the per-chunk
 	// mask space the attacker would have to brute even to reconstruct one
 	// lane, independent of the seed coupling.
 	// ---------------------------------------------------------------
@@ -230,7 +230,7 @@ func TestRedTeamJokeHashFullKPA(t *testing.T) {
 		copy(framed[4:], plaintext)
 
 		// ... but the barrier OUTPUT (lanes) needs the masks. Compute the
-		// true lanes lab-side to display that Part-2 input is seed-locked.
+		// true lanes lab-side to display that Pixel Barrier input is seed-locked.
 		bp := buildLockBatchPRF48_128Cfg(cfg, ls, ilNonce)
 		n := tripleLaneLen(len(plaintext))
 		p0, p1, p2 := make([]byte, n), make([]byte, n), make([]byte, n)
@@ -244,9 +244,9 @@ func TestRedTeamJokeHashFullKPA(t *testing.T) {
 		// chunk, reduced by the 128-bit rank domain to <= 2^128 but derived
 		// from the 256-bit even key. The point: it is not the 2^16 the
 		// nullHash attack enumerated.
-		t.Logf("M4 barrier severance: attacker knows framed (KPA lever): %v; Part-2 input lanes are seed-locked: %v", framedKnown, lanesSeedLocked)
-		t.Logf("M4 => Full KPA at plaintext does NOT yield known-plaintext at Part 2; lanes depend on the 256-bit lockSeed via per-chunk combinadic-unrank masks (non-T-function, non-GF(2)-linear)")
-		t.Logf("M4 => the FNV-1a-style T-function bit-plane recovery (which needs barrier-free known Part-2 input, i.e. Single Ouroboros) has no foothold here")
+		t.Logf("M4 barrier severance: attacker knows framed (KPA lever): %v; Pixel Barrier input lanes are seed-locked: %v", framedKnown, lanesSeedLocked)
+		t.Logf("M4 => Full KPA at plaintext does NOT yield known-plaintext at Pixel Barrier; lanes depend on the 256-bit lockSeed via per-chunk combinadic-unrank masks (non-T-function, non-GF(2)-linear)")
+		t.Logf("M4 => the FNV-1a-style T-function bit-plane recovery (which needs barrier-free known Pixel Barrier input, i.e. Single Ouroboros) has no foothold here")
 
 		// Sanity: the true lanes decode back (pipeline correctness, lab-side).
 		back, derr := Decrypt3x128Cfg(cfg, ns, ls, d1, d2, d3, s1, s2, s3, ct)

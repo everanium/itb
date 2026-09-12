@@ -103,13 +103,17 @@ func writeMultiNullHashExpose(t *testing.T, outDir string, nMsg, keyBits, ptSize
 	}
 
 	// Shared startPixels (nonce-independent under nullHash) and truth.
-	sp1 := s1.deriveStartPixel(nil, totalPixels)
+	// The encoder invokes process128Cfg(cfg, ..., third, 1, ...) per region,
+	// so each region's deriveStartPixel receives its own per-region width
+	// (third for regions 1 and 2, thirdPixels2 for region 3), NOT the full
+	// container's totalPixels.
+	third, thirdPixels2, _ := tripleThirdCaps(totalPixels)
 	// deriveStartPixel needs a nonce buffer; under nullHash content is
 	// ignored, but pass a zero nonce of the right length for the call.
 	zeroNonce := make([]byte, nonceLen)
-	sp1 = s1.deriveStartPixel(zeroNonce, totalPixels)
-	sp2 := s2.deriveStartPixel(zeroNonce, totalPixels)
-	sp3 := s3.deriveStartPixel(zeroNonce, totalPixels)
+	sp1 := s1.deriveStartPixel(zeroNonce, third)
+	sp2 := s2.deriveStartPixel(zeroNonce, third)
+	sp3 := s3.deriveStartPixel(zeroNonce, thirdPixels2)
 
 	truth := map[string]string{
 		"K_noiseSeed":   fmt.Sprintf("0x%04x", nullHashConstant(ns.Components)),
@@ -135,7 +139,7 @@ func writeMultiNullHashExpose(t *testing.T, outDir string, nMsg, keyBits, ptSize
 		"header_size":     headerSize,
 		"messages":        msgs,
 		"start_pixels": map[string]int{
-			"snake_1": sp1, "snake_2": sp2, "snake_3": sp3,
+			"region_1": sp1, "region_2": sp2, "region_3": sp3,
 		},
 		"truth_labonly": truth,
 	}

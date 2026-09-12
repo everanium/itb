@@ -1473,7 +1473,7 @@ func benchExtProductionStreamDecrypt(b *testing.B, dataSize int) {
 // The 10-size payload ladder (4 KiB → 64 MiB) is the sweep-testing
 // surface for the adaptive microBatch switch (see microbatch.go and
 // scripts/bench/sweep.sh); every microBatch tier boundary (16 KiB and
-// 8 MiB per snake) and every hashPool starter tier (512 and 262144
+// 8 MiB per region) and every hashPool starter tier (512 and 262144
 // elements) lands inside this ladder.
 
 func BenchmarkExtProductionMessage_Encrypt_4KB(b *testing.B) {

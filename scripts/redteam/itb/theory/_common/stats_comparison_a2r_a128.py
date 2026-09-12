@@ -9,8 +9,8 @@ cell instead of across the differently-configured screens that produced the
 numbers already on file.
 
 Question answered: which primitive's raw output reads cleaner as an entropy
-source for the downstream ITB consumers (Interlocked Barrier fill, Barrier
-Part 2, rotate7 + xor-mask ciphertext derivation) — bounded to the measures,
+source for the downstream ITB consumers (Interlocked Barrier fill, Pixel
+Barrier, rotate7 + xor-mask ciphertext derivation) — bounded to the measures,
 sample sizes and shapes below. Marginal statistics are necessary, not
 sufficient: a primitive can read uniform on every column here and still be
 one-pair invertible (aesitb128 standalone) or integral-broken (aes2r).

@@ -292,7 +292,7 @@ type rsRun struct {
 
 // ---------------------------------------------------------------------------
 // Positive control — archived axis-hit reproduction via process128Cfg
-// (Single Ouroboros, no interlock overlay, no 3-snake split). Confirms
+// (Single Ouroboros, no interlock overlay, no 3-region split). Confirms
 // the probe methodology matches the archived 42M / 57M axis-hit
 // records to within a small multiplier — proves the probe is sensitive
 // and the neutralised-cluster comparison below is real.
@@ -519,7 +519,7 @@ func TestRedTeamRelatedSeedNoDeltaFloor(t *testing.T) {
 
 // rsAxes is the 8-seed axis list matching the Encrypt3x128Cfg
 // signature. `noise` and `lock` share the noiseSeed/lockSeed roles; the
-// three data/start axes correspond to the three parallel snake tracks.
+// three data/start axes correspond to the three parallel region tracks.
 var rsAxes = []string{
 	"noiseSeed", "lockSeed",
 	"dataSeed1", "dataSeed2", "dataSeed3",

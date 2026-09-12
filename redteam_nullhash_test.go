@@ -22,7 +22,7 @@ package itb
 // (uniform Ω_chunk coverage requires ≥128-bit non-collapsing PRF
 // output; nullHash gives 16 bits of static constant per seed role).
 // Exists strictly to empirically demonstrate the entropy-floor break
-// point of the tandem Part 1 + Part 2 barrier — under Full KPA + given
+// point of the tandem Rank Barrier + Pixel Barrier — under Full KPA + given
 // startPixels the joint enumeration reduces to five 16-bit unknowns
 // (K_noiseSeed, K_lockSeed, K_dataSeed_1/2/3), each brute-forceable
 // in seconds.
@@ -154,7 +154,7 @@ func TestRedTeamNullHashRoundtrip(t *testing.T) {
 //
 //	ct.bin           — the wire ciphertext (attacker input)
 //	kpa.bin          — the Full KPA plaintext (attacker input)
-//	cell.meta.json   — nonce, container dims, three snake startPixels,
+//	cell.meta.json   — nonce, container dims, three region startPixels,
 //	                   plus a `truth:` block with the ground-truth
 //	                   16-bit seed constants for post-attack validation
 //
@@ -216,13 +216,16 @@ func writeSingleNullHashExpose(t *testing.T, outDir string, keyBits, ptSize, bar
 	totalPixels := width * height
 	headerSize := 2*nonceLen + 4
 
-	// Per-snake startPixels — lab concession granted to the attacker.
-	// deriveStartPixel(mainNonce, totalPixels) reproduces the encoder's
-	// own call site (Encrypt3x128Cfg uses total container pixels, not
-	// per-snake subdivisions, for each start).
-	sp1 := s1.deriveStartPixel(mainNonce, totalPixels)
-	sp2 := s2.deriveStartPixel(mainNonce, totalPixels)
-	sp3 := s3.deriveStartPixel(mainNonce, totalPixels)
+	// Per-region startPixels — lab concession granted to the attacker.
+	// The encoder splits the container into three per-region strips via
+	// tripleThirdCaps and invokes process128Cfg(cfg, ..., third, 1, ...) —
+	// so each region's deriveStartPixel receives its own per-region width
+	// (third for regions 1 and 2, thirdPixels2 for region 3), NOT the full
+	// container's totalPixels.
+	third, thirdPixels2, _ := tripleThirdCaps(totalPixels)
+	sp1 := s1.deriveStartPixel(mainNonce, third)
+	sp2 := s2.deriveStartPixel(mainNonce, third)
+	sp3 := s3.deriveStartPixel(mainNonce, thirdPixels2)
 
 	// Truth block: post-attack validation data. NOT for decision-path
 	// consumption in the attacker script.
@@ -254,9 +257,9 @@ func writeSingleNullHashExpose(t *testing.T, outDir string, keyBits, ptSize, bar
 		"total_pixels":        totalPixels,
 		"header_size":         headerSize,
 		"start_pixels": map[string]int{
-			"snake_1": sp1,
-			"snake_2": sp2,
-			"snake_3": sp3,
+			"region_1": sp1,
+			"region_2": sp2,
+			"region_3": sp3,
 		},
 		"truth_labonly": truth,
 	}
@@ -298,7 +301,7 @@ func writeSingleNullHashExpose(t *testing.T, outDir string, keyBits, ptSize, bar
 	t.Logf("Wrote ct.bin (%d bytes), kpa.bin (%d bytes), cell.meta.json under %s",
 		len(ct), len(plaintext), outDir)
 	t.Logf("  width=%d height=%d totalPixels=%d headerSize=%d", width, height, totalPixels, headerSize)
-	t.Logf("  startPixels: snake1=%d snake2=%d snake3=%d", sp1, sp2, sp3)
+	t.Logf("  startPixels: region1=%d region2=%d region3=%d", sp1, sp2, sp3)
 	t.Logf("  truth constants: noiseSeed=%s lockSeed=%s d1=%s d2=%s d3=%s",
 		truth["K_noiseSeed"], truth["K_lockSeed"], truth["K_dataSeed_1"], truth["K_dataSeed_2"], truth["K_dataSeed_3"])
 }

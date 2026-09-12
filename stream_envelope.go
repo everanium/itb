@@ -19,7 +19,7 @@ func nomacStreamPrefix() ([]byte, error) {
 }
 
 // nomacTagStubSizeCfg returns the number of bytes the No MAC Encrypt3x
-// pipeline reserves at the tail of the third snake's container capacity
+// pipeline reserves at the tail of the third region's container capacity
 // so its on-wire envelope matches the paired authenticated envelope
 // (payload || MAC tag || 1-byte flag) bit-for-bit in shape, across
 // both the Single Message and Streaming pipelines. The bytes carry

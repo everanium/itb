@@ -19,8 +19,8 @@ import (
 // Merkle–Damgård absorption) intentionally weak standalone — HARNESS.md
 // § 3.10 records its standalone breaks and their dissolution through
 // the cascade, alongside the aes2r control of § 3.7. Safe only under
-// ITB's compound defence stack (ChainHash cascade + Interlocked Barrier
-// + Part 2 absorption); do not use as a general-purpose hash outside ITB.
+// ITB's compound defence stack (ChainHash cascade + Rank Barrier
+// + Pixel Barrier absorption); do not use as a general-purpose hash outside ITB.
 //
 // The returned (HashFunc128, BatchHashFunc128) pair is the standard
 // shipped factory shape used by every AES-ITB-128 seed-plumbing path:

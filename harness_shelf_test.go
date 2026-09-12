@@ -21,7 +21,7 @@ package itb
 //     an oracle the downstream probe consumes.
 //   - `cell.meta.json` carries `main_nonce_hex` and `interlock_nonce_hex`
 //     (the current dual-nonce header schema) plus attacker-visible container
-//     dimensions. `start_pixel` is the first-snake `deriveStartPixel`
+//     dimensions. `start_pixel` is the first-region `deriveStartPixel`
 //     result, kept as a lab-visible convenience so the probe's terminal
 //     rank-of-true-shift printout has a target to compare against; the
 //     |Δ50| metric never consumes it.
@@ -542,11 +542,11 @@ func runShelfCorpus(t *testing.T, p shelfParams) {
 	totalPixels := width * height
 	headerSize := 2*nonceLen + 4
 
-	// Representative per-snake startPixel. Uses the same
+	// Representative per-region startPixel. Uses the same
 	// `deriveStartPixel(nonce, totalPixels)` call the encrypt path used,
-	// but on the first snake only — the probe consumes this exclusively
+	// but on the first region only — the probe consumes this exclusively
 	// for the terminal "true shift rank" printout and never in the |Δ50|
-	// metric, so the coarse single-snake stand-in is sufficient.
+	// metric, so the coarse single-region stand-in is sufficient.
 	startPixel := s1.deriveStartPixel(mainNonce, totalPixels)
 
 	meta := map[string]any{

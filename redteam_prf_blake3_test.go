@@ -20,7 +20,7 @@ package itb
 // never "no signal exists". Closure of the KPA / CPA families is
 // architectural under the PRF assumption and fresh per-message nonces
 // (mask-space cardinality per chunk ~= 2^70.20, per-chunk PRF
-// independence, 3-snake enumeration, 8-seed isolation); the empirical
+// independence, 3-region enumeration, 8-seed isolation); the empirical
 // probes corroborate the architecture, they do not prove it.
 //
 // TestRedteamPRF_BLAKE3_NullResult is the asserting landed test. The
@@ -246,11 +246,11 @@ func TestRedteamPRF_Probe2_NonceReuseCorrelation(t *testing.T) {
 // effect — otherwise fresh masks would swamp it). The ciphertext
 // bit-diff fraction is measured for two channels:
 //
-//   - dataSeed1 — keys one snake's ChainHash render. Its 1-bit delta is
-//     structurally scoped to that snake's third of the payload, then
+//   - dataSeed1 — keys one region's ChainHash render. Its 1-bit delta is
+//     structurally scoped to that region's third of the payload, then
 //     diffused across a broader ciphertext region by the barrier
 //     permutation and the COBS/interleave, landing well above the
-//     one-snake floor. This diffusion is the 8-seed isolation made
+//     one-region floor. This diffusion is the 8-seed isolation made
 //     observable: the delta does not stay in a few predictable bytes a
 //     differential trace could follow.
 //   - lockSeed — keys the 48-bit barrier permutation for every chunk.
@@ -316,11 +316,11 @@ func TestRedteamPRF_Probe3_RelatedSeedDifferential(t *testing.T) {
 	lockAval := sumLock / trials
 
 	t.Logf("Probe 3 Related-seed differential (1-bit delta, BLAKE3, Triple, barrier): N=%d bodyLen=%d", trials, bodyLen)
-	t.Logf("  dataSeed1 1-bit delta ct bit-diff fraction = %.5f (snake-scoped, barrier-diffused; one-snake floor ~0.167)", dataAval)
+	t.Logf("  dataSeed1 1-bit delta ct bit-diff fraction = %.5f (region-scoped, barrier-diffused; one-region floor ~0.167)", dataAval)
 	t.Logf("  lockSeed  1-bit delta ct bit-diff fraction = %.5f (global barrier re-draw; full-avalanche 0.5)", lockAval)
 
-	// dataSeed1's delta is structurally scoped to one snake but the
-	// barrier diffuses it well above the one-snake floor; lockSeed's
+	// dataSeed1's delta is structurally scoped to one region but the
+	// barrier diffuses it well above the one-region floor; lockSeed's
 	// delta re-draws every mask and approaches full avalanche. Neither
 	// leaves a low-weight followable differential.
 	if dataAval < 0.12 || dataAval > 0.42 {

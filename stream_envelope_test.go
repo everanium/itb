@@ -51,7 +51,7 @@ func installNonceBits(t *testing.T, bits int) {
 // The envelope-parity tests use this so the on-wire byte counts are
 // determined only by the chunk sizing arithmetic, not by any MAC
 // primitive's own state. The AEAD path uses tag length to size the
-// container's third snake — a 32-byte tag matches
+// container's third region — a 32-byte tag matches
 // nomacTagStubSizeCfg's zero-value default and makes AEAD vs No MAC
 // chunk widths align.
 func dummy32MAC(data []byte) []byte { return make([]byte, 32) }
@@ -164,7 +164,7 @@ func randomPlaintext(t *testing.T, n int) []byte {
 // mode-ambiguity invariant. The dummy32MAC yields 32-byte tags,
 // matching the No MAC nomacTagStubSizeCfg default. A fixed nonce is
 // injected via testNonceOverride so the mask-driven byte
-// distribution across the three snakes is identical on both paths,
+// distribution across the three regions is identical on both paths,
 // which in turn makes COBS-encoded lengths and container sizes
 // identical.
 func TestStreamEnvelopeParityAEADvsNoMAC(t *testing.T) {
@@ -490,7 +490,7 @@ func TestStreamEnvelopeChunkSizes(t *testing.T) {
 // length of a Single Message AEAD ciphertext equals the byte length
 // of the corresponding Single Message No MAC ciphertext for the same
 // plaintext, seeds and nonce. Both paths reserve tagSize + 1 bytes in
-// the third snake's container capacity (AEAD: real tag + fixed 0x00
+// the third region's container capacity (AEAD: real tag + fixed 0x00
 // dummy flag; No MAC: pure DRBG stub via nomacTagStubSizeCfg), so
 // the two containers round to the identical square and the resulting
 // wire byte counts are equal.
@@ -625,7 +625,7 @@ func TestSingleMessageAEADRoundTripAfterStubReservation(t *testing.T) {
 // The dummy32MAC yields 32-byte tags, matching the No MAC
 // nomacTagStubSizeCfg default; a fixed nonce is injected via
 // testNonceOverride so the mask-driven byte distribution across the
-// three snakes is identical on both paths, which in turn makes
+// three regions is identical on both paths, which in turn makes
 // COBS-encoded lengths and container sizes identical.
 func TestStreamCfgEnvelopeParity_NoMACvsAEAD(t *testing.T) {
 	sizes := []int{1, 6, 63, 64, 65, 1024, 8192, 1 << 20}

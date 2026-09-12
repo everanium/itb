@@ -136,7 +136,7 @@
 // empty signal is meaningful send a marker byte instead.
 //
 // Reader notice — the Interlocked Barrier is always on and
-// non-disableable; the Triple 3-snake payload split is the only
+// non-disableable; the Triple 3-region payload split is the only
 // cipher mode. There are no runtime overlay toggles and no
 // engage/disengage knobs — the package exposes one lifecycle
 // (Init/Load/Save/Rekey/Close) plus one cipher pair per shape

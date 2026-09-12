@@ -17,8 +17,8 @@ package itb
 //
 //   Scenario B — main-only Δ. Applies the Δ to `main_nonce` only;
 //     `interlock_nonce` matches across the pair. Isolates the seven
-//     main-nonce-keyed derivation slots (per-pixel `noisePos`, per-snake
-//     `rotation` + `channelXOR`, per-snake `startPixel`) — the interlock
+//     main-nonce-keyed derivation slots (per-pixel `noisePos`, per-region
+//     `rotation` + `channelXOR`, per-region `startPixel`) — the interlock
 //     `lockSeed` slot receives the same nonce byte value on both sides
 //     of the pair.
 //

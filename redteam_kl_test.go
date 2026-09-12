@@ -17,7 +17,7 @@ package itb
 //     invocations produces an independent ciphertext). No `setBrokenTestNonce`.
 //   - `<hash>.pixel` sidecar carries `main_nonce_hex`, `interlock_nonce_hex`,
 //     `total_pixels`, `width`, `height`, `barrier_fill`, `header_size`,
-//     `start_pixel` (first-snake `deriveStartPixel`, lab-only decorative
+//     `start_pixel` (first-region `deriveStartPixel`, lab-only decorative
 //     value never consumed by the |Δ50| / χ² metric). Matches the field
 //     schema `raw_mode_bias_probe.py` consumes.
 //   - No ground-truth peek into any Mode B decision path — this is a pure
@@ -254,7 +254,7 @@ func TestRedTeamGenerateTripleMassive(t *testing.T) {
 	totalPixels := width * height
 	headerSize := 2*nonceLen + 4
 
-	// Representative per-snake startPixel — first-snake `deriveStartPixel`
+	// Representative per-region startPixel — first-region `deriveStartPixel`
 	// value on the main nonce. Written to the sidecar as a lab-only
 	// decorative value; the Mode B distinguisher never consumes it.
 	startPixel := s1.deriveStartPixel(mainNonce, totalPixels)

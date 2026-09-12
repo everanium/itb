@@ -25,7 +25,7 @@ Each Go test emits one JSON record to `~/scratch/redteam/related_seed/`.
 
 - `TestRedTeamRelatedSeedControl` — **positive control**: reproduces
   the archived Phase 2e axis-hit (CRC128 42.5M / FNV-1a 56.7M) via
-  `process128Cfg` (Single Ouroboros, no interlock overlay, no 3-snake
+  `process128Cfg` (Single Ouroboros, no interlock overlay, no 3-region
   split). Confirms the ported χ² probe is sensitive at the archived
   measurement angle and matches the archive numbers to within 0.3 %.
 - `TestRedTeamRelatedSeedNoDeltaFloor` — **architectural floor**:
@@ -64,13 +64,13 @@ the lockSeed axis**:
 - **lockSeed axis, both primitives**: χ² ≈ 200-635 across every Δ
   pattern and plaintext kind — inside the df=255 uniform band. A 1-bit
   Δ on lockSeed re-derives the interlock's per-chunk permutation
-  entirely, avalanching the plaintext-byte-to-snake split and
+  entirely, avalanching the plaintext-byte-to-region split and
   randomising every touched pixel byte's 7 data bits.
 - **Every other seed axis** (noiseSeed / dataSeed_i / startSeed_i):
   χ² 19-56M range. **The no-Δ architectural floor** measured by
   `TestRedTeamRelatedSeedNoDeltaFloor` under identical seeds is
   CRC128 41.9M / FNV-1a 56.3M. The per-axis peak does NOT exceed the
-  floor; Δ patterns that randomise the touched-snake data bits
+  floor; Δ patterns that randomise the touched-region data bits
   (bit0 / bit_mid) drop χ² BELOW the floor by diluting the noiseMask
   signal. No excess-over-floor signal on any non-lockSeed axis for
   either primitive.

@@ -23,7 +23,7 @@ package itb
 //     fixed across the compared pair; the interlock nonce is drawn
 //     from crypto/rand per encrypt. Reproduces a buggy caller who
 //     reuses the seven main-nonce-keyed derivation slots (per-pixel
-//     noisePos, per-snake rotation / channelXOR, per-snake startPixel)
+//     noisePos, per-region rotation / channelXOR, per-region startPixel)
 //     but leaves the eighth (lockSeed-keyed per-chunk mask draw)
 //     PRF-parameterised.
 //
@@ -626,7 +626,7 @@ func TestRedTeamNonceReuseDualNonceHeadlineBLAKE3(t *testing.T) {
 // produces a container-body length mismatch between the two encrypts
 // under Scenario A (dual-slot nonce reuse) at each of the three
 // plaintext sizes appearing in the near-identical residue matrix
-// (512 B, 4 KB, 16 KB). Rationale: container size depends on per-snake
+// (512 B, 4 KB, 16 KB). Rationale: container size depends on per-region
 // COBS-encoded lengths (`containerSizeAuth3_128Cfg(..., cobsLens)` in
 // `auth128.go`); a 1-bit flip that transitions the flipped byte to /
 // from `0x00` shifts the COBS overhead by one byte and can shift the

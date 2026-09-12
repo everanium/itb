@@ -287,7 +287,7 @@ func TestRedTeamBrokenCRC128CribKPA(t *testing.T) {
 	plain := []byte(`[{"identifier_of_record_in_system":"0000000000","event_timestamp_iso":"2026-08-24T00:00:00Z","payload":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}]`)
 	const cribPixels = 4 // 28 crib bytes — 4 pixels of 7 data bytes each.
 
-	// ---- Positive control: Single-snake, overlay-off encode via the
+	// ---- Positive control: Single-region, overlay-off encode via the
 	// low-level process128Cfg path (NOT reachable through the shipped
 	// API — used only to confirm the ported filter is sensitive
 	// and recovers the true key when the barrier is absent). ----
@@ -312,7 +312,7 @@ func TestRedTeamBrokenCRC128CribKPA(t *testing.T) {
 	totalPixels := (len(plain)*8+DataBitsPerPixel-1)/DataBitsPerPixel + 8
 	ctrl := make([]byte, totalPixels*Channels)
 	// process128Cfg encodes raw plaintext bytes (no COBS, no barrier, one
-	// snake) — the exact shape the archived Crib KPA targeted.
+	// region) — the exact shape the archived Crib KPA targeted.
 	process128Cfg(nil, noiseSeed, dataSeed, startSeed, nonce, ctrl, totalPixels, 1, plain, true, 1)
 
 	// Audit: the CRC128 compound is pixel-independent (affine ChainHash).
@@ -437,21 +437,21 @@ func TestRedTeamBrokenBarrierDisplacement(t *testing.T) {
 			t.Fatalf("%s round-trip failed: %v", prim.name, err)
 		}
 
-		// Recover the barrier-permuted snake payloads that the pixel layer
+		// Recover the barrier-permuted region payloads that the pixel layer
 		// actually carries (holding the true seeds — this is an invariant
 		// probe of what the barrier did, NOT an attack path). Compare each
-		// snake's leading bytes against the raw-order crib the archived
+		// region's leading bytes against the raw-order crib the archived
 		// attacker would assume. A raw-order match fraction near chance
 		// (1/256) means the crib is not where the attacker predicts.
 		n := tripleLaneLen(len(plain))
-		snakes := [3][]byte{make([]byte, n), make([]byte, n), make([]byte, n)}
-		splitForTriple48LockedInto(nil, plain, buildLockBatchPRF48_128Cfg(nil, ls, nonce), snakes[0], snakes[1], snakes[2])
+		regions := [3][]byte{make([]byte, n), make([]byte, n), make([]byte, n)}
+		splitForTriple48LockedInto(nil, plain, buildLockBatchPRF48_128Cfg(nil, ls, nonce), regions[0], regions[1], regions[2])
 		// The naive attacker assumes NO barrier: plaintext byte i sits at
 		// stream position i. Measure how many of the first N plaintext
 		// bytes survive at their assumed post-split position.
 		matched, checked := 0, 0
-		for si, sn := range snakes {
-			// Under a no-barrier every-3rd-byte split, snake si would hold
+		for si, sn := range regions {
+			// Under a no-barrier every-3rd-byte split, region si would hold
 			// plain[si], plain[si+3], plain[si+6], ... The barrier permutes
 			// within 48-bit chunks, so compare the assumed vs actual.
 			for j := 0; j < len(sn) && j < 60; j++ {

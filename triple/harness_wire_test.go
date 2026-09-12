@@ -332,13 +332,13 @@ func TestHarnessC3TailFillResidue(t *testing.T) {
 }
 
 // ============================================================================
-// Probe C4a — cross-position (cross-snake) wire correlation
+// Probe C4a — cross-position (cross-region) wire correlation
 // ============================================================================
 
 // TestHarnessC4aWireColumnCorrelation collects N wires of a fixed-size random
 // plaintext, aligns them column-wise, and measures the maximum absolute
 // Pearson correlation between wire byte-columns at short lags spanning the
-// 6-byte chunk period. Under 3-snake independence the columns carry no linear
+// 6-byte chunk period. Under 3-region independence the columns carry no linear
 // cross-structure beyond the sampling floor — the marginal container signature
 // is a per-byte-value bias, not an inter-column coupling.
 func TestHarnessC4aWireColumnCorrelation(t *testing.T) {

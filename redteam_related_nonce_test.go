@@ -15,10 +15,10 @@ package itb
 //
 //     * noiseSeed  → per-pixel  noisePos       (via processChunk's
 //                                              noiseBuf = pixIdx || nonce)
-//     * dataSeed_i → per-pixel  dataRotation + channelXOR (per snake,
+//     * dataSeed_i → per-pixel  dataRotation + channelXOR (per region,
 //                                              via processChunk's dataBuf
 //                                              = pixIdx || nonce)
-//     * startSeed_i→ per-snake  startPixel     (via deriveStartPixel's
+//     * startSeed_i→ per-region  startPixel     (via deriveStartPixel's
 //                                              buf = 0x02 || nonce)
 //     * lockSeed   → per-chunk  Interlocked Barrier bit-permutation key
 //                                              (via deriveInterLockSeed's

@@ -46,7 +46,7 @@ const (
 	//     AES-ITB is the canonical example — a reduced-round AES
 	//     construction that is intentionally weak standalone and safe
 	//     only under ITB's compound inner-PRF defence stack
-	//     (ChainHash cascade + Interlocked Barrier + Part 2
+	//     (ChainHash cascade + Rank Barrier + Pixel Barrier
 	//     absorption). Wiring such a primitive as a wrapper outer
 	//     cipher or parallax palette entry would expose the raw
 	//     2-round core as user-selectable keystream material.
@@ -237,8 +237,8 @@ const (
 	// at the one-block shapes, 4 / 5 / 7 at the 20 / 36 / 68-byte per-pixel
 	// shapes). Standalone-weak by design (see HARNESS.md § 3.10 for the
 	// shipped primitive and § 3.7 for the reduced-AES pattern); safe only
-	// under ITB's compound defence stack (ChainHash cascade + Interlocked
-	// Barrier + Part 2 absorption). Ships first in the canonical order to
+	// under ITB's compound defence stack (ChainHash cascade + Rank Barrier
+	// + Pixel Barrier absorption). Ships first in the canonical order to
 	// signal its ITB-native status.
 	CipherAESITB128  = "aesitb128"
 	CipherAreion256  = "areion256"

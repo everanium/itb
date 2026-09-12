@@ -8,9 +8,9 @@
 
 ## Abstract
 
-ITB (Information-Theoretic Barrier) is a parameterized symmetric cipher construction that renders the hash output unreconstructible from ciphertext-only observation. **Noise absorption** interposes a random container — filled by `internal/drbg` (AES-CTR or ChaCha20, seeded per call from CSPRNG) — between the PRF hash output and the observer; each byte retains one random noise bit at an unknown position. Under known-plaintext, chosen-plaintext, and chosen-ciphertext attacks the closure is computational and PRF-conditional; the information-theoretic property scopes to the noise-absorption layer under passive observation (Theorem 1). **Encoding ambiguity** applies a secret rotation (0–6) from an independent per-snake dataSeed to each pixel's data bits, creating 7^P unverifiable configurations across P pixels. A mandatory, always-on **48-bit Interlocked Barrier** forms a second architectural layer: each 48-bit chunk of the payload is partitioned into three disjoint 16-of-48 lane payloads by a PRF-keyed balanced mask triple drawn from a space of cardinality ≈ 2^70.20 per chunk, unobservable without the dedicated lockSeed. Even if the noise mechanism is bypassed via CCA (which reveals noise positions), the rotation barrier, the per-chunk mask permutation, and DRBG residue in data positions survive through 8-seed isolation.
+ITB (Information-Theoretic Barrier) is a parameterized symmetric cipher construction that renders the hash output unreconstructible from ciphertext-only observation. **Noise absorption** interposes a random container — filled by `internal/drbg` (AES-CTR or ChaCha20, seeded per call from CSPRNG) — between the PRF hash output and the observer; each byte retains one random noise bit at an unknown position. Under known-plaintext, chosen-plaintext, and chosen-ciphertext attacks the closure is computational and PRF-conditional; the information-theoretic property scopes to the noise-absorption layer under passive observation (Theorem 1). **Encoding ambiguity** applies a secret rotation (0–6) from an independent per-region dataSeed to each pixel's data bits, creating 7^P unverifiable configurations across P pixels. A mandatory, always-on **48-bit Interlocked Barrier** forms a second architectural layer: each 48-bit chunk of the payload is partitioned into three disjoint 16-of-48 lane payloads by a PRF-keyed balanced mask triple drawn from a space of cardinality ≈ 2^70.20 per chunk, unobservable without the dedicated lockSeed. Even if the noise mechanism is bypassed via CCA (which reveals noise positions), the rotation barrier, the per-chunk mask permutation, and DRBG residue in data positions survive through 8-seed isolation.
 
-The 8-seed architecture (noiseSeed, lockSeed, three per-snake dataSeeds, three per-snake startSeeds) ensures that compromise of any single configuration domain provides zero information about the remaining domains; the lockSeed → per-chunk mask path is bound to the primitive through cascade PRF binding (two consecutive live PRF cascades). A dual-nonce wire format carries two independently CSPRNG-drawn nonces per message, producing independent configurations per encryption with no caller-addressable override.
+The 8-seed architecture (noiseSeed, lockSeed, three per-region dataSeeds, three per-region startSeeds) ensures that compromise of any single configuration domain provides zero information about the remaining domains; the lockSeed → per-chunk mask path is bound to the primitive through cascade PRF binding (two consecutive live PRF cascades). A dual-nonce wire format carries two independently CSPRNG-drawn nonces per message, producing independent configurations per encryption with no caller-addressable override.
 
 The construction exhibits **ambiguity-based security**: the number of observation-consistent **configurations** grows exponentially with data size. This property is orthogonal to Shannon's key-entropy bound and distinct from Shannon's perfect-secrecy relationship on plaintext entropy. Above a threshold P_th = ⌈k / log₂ C⌉ (C = 56 without CCA, C = 7 under CCA), encoding ambiguity exceeds the 2^k key space. At 64 KB plaintext, ambiguity reaches 2^26,414; its exponent is 25.8× the 1024-bit key-space exponent. An attacker-realistic audit suite in the reference implementation confirms the barrier's absorption across multiple trapdoor mechanism classes at the tested sample sizes (see [REDTEAM.md](REDTEAM.md)).
 
@@ -36,11 +36,11 @@ Each round consumes one component and the previous round's output. The XOR mixin
 
 ### 1.2 Per-Pixel Configuration
 
-The 8-seed constellation comprises one **noiseSeed**, one **lockSeed**, three per-snake **dataSeeds** (`dataSeed_i`, `i ∈ {1,2,3}`), and three per-snake **startSeeds** (`startSeed_i`, `i ∈ {1,2,3}`). Independent ChainHash calls derive the configuration:
+The 8-seed constellation comprises one **noiseSeed**, one **lockSeed**, three per-region **dataSeeds** (`dataSeed_i`, `i ∈ {1,2,3}`), and three per-region **startSeeds** (`startSeed_i`, `i ∈ {1,2,3}`). Independent ChainHash calls derive the configuration:
 
 - From **noiseSeed** (3 config bits): `noisePos = noiseHash & 7`, with `noiseHash = ChainHash(counter ‖ N_m, noiseSeed)` — which bit position (0–7) in each channel is the noise bit.
-- From **dataSeed_i** (~59 config bits per pixel): `rotation_i = dataHash_i mod 7` (values 0–6, log₂(7) ≈ 2.807 bits of entropy); `xorMask_i = dataHash_i >> 3` (56 independent XOR mask bits, 7 per channel). Each snake's `dataSeed_i` drives its own snake's per-pixel configuration independently.
-- From **startSeed_i** (one per snake per message): each snake's starting pixel offset within its payload region, `startPixel_i = ChainHash(0x02 ‖ N_m, startSeed_i) mod P`.
+- From **dataSeed_i** (~59 config bits per pixel): `rotation_i = dataHash_i mod 7` (values 0–6, log₂(7) ≈ 2.807 bits of entropy); `xorMask_i = dataHash_i >> 3` (56 independent XOR mask bits, 7 per channel). Each region's `dataSeed_i` drives its own region's per-pixel configuration independently.
+- From **startSeed_i** (one per region per message): each region's starting pixel offset within its payload region, `startPixel_i = ChainHash(0x02 ‖ N_m, startSeed_i) mod P`.
 - From **lockSeed**: the per-chunk mask triple of the 48-bit Interlocked Barrier (§1.5).
 
 Total: ~62 config bits per pixel (exact: log₂(8 × 7 × 2^56) = 61.807), plus the per-chunk mask contribution of §1.5.
@@ -51,16 +51,16 @@ Total: ~62 config bits per pixel (exact: log₂(8 × 7 × 2^56) = 61.807), plus 
 
 ### 1.3 Embedding
 
-The split of the plaintext into the three snake payloads happens in parallel with the per-chunk permutation, not sequentially after a byte round-robin. For each 48-bit chunk, the composite operation `chunk48lock` applies three simultaneous PEXT operations under the PRF-keyed mask triple `(m_0, m_1, m_2)`, producing the three 16-bit lane payloads `(l_0, l_1, l_2)` in one step. There is no intermediate byte round-robin step an attacker can pre-address; each snake's payload is a stream of PRF-permuted 16-bit lane fragments, not plaintext bytes at any offset.
+The split of the plaintext into the three region payloads happens in parallel with the per-chunk permutation, not sequentially after a byte round-robin. For each 48-bit chunk, the composite operation `chunk48lock` applies three simultaneous PEXT operations under the PRF-keyed mask triple `(m_0, m_1, m_2)`, producing the three 16-bit lane payloads `(l_0, l_1, l_2)` in one step. There is no intermediate byte round-robin step an attacker can pre-address; each region's payload is a stream of PRF-permuted 16-bit lane fragments, not plaintext bytes at any offset.
 
 For each channel of each pixel:
 
-1. Extract 7 plaintext data bits from the snake_i payload emitted by `chunk48lock`.
+1. Extract 7 plaintext data bits from the region_i payload emitted by `chunk48lock`.
 2. XOR with the 7-bit channel mask from `dataSeed_i`.
 3. Rotate by `r` positions (from `dataSeed_i`).
 4. Insert into the DRBG-generated container byte, preserving the noise bit at position `noisePos`.
 
-The dual-nonce wire header carries two nonces, `N_m` (main) and `N_il` (interlock), drawn independently from CSPRNG per encryption. `N_m` feeds the seven per-pixel derivation slots (noisePos, per-snake rotation and channelXOR, per-snake startPixel); `N_il` feeds the eighth — the lockSeed-keyed per-chunk mask draw. Neither slot is caller-addressable.
+The dual-nonce wire header carries two nonces, `N_m` (main) and `N_il` (interlock), drawn independently from CSPRNG per encryption. `N_m` feeds the seven per-pixel derivation slots (noisePos, per-region rotation and channelXOR, per-region startPixel); `N_il` feeds the eighth — the lockSeed-keyed per-chunk mask draw. Neither slot is caller-addressable.
 
 ### 1.4 Message Framing
 
@@ -93,7 +93,7 @@ where `ChainHash` is the primitive's component cascade over `H`, the primitive's
 
 followed by combinadic unrank of `idx_0` (yielding `m_0`) and of `idx_1` over the remaining 32 bits (yielding `m_1`); `m_2` is the complement.
 
-**One composite operation.** `chunk48lock` applies three simultaneous PEXT operations under `(m_0, m_1, m_2)` to the 48-bit chunk word, producing three 16-bit lane payloads in one step (§1.3): split into 3 snakes and per-chunk permutation are one operation, not two. The mapping from a plaintext bit to the lane it lands in is a hidden per-chunk secret. The permutation layer alone is a keyed permutation (it re-orders bits without XOR of key material); the per-pixel stage (channelXOR, rotation, noise-bit insertion at noisePos) applies to each snake's permuted payload independently under its own `dataSeed_i` / `noiseSeed` / `startSeed_i`.
+**One composite operation.** `chunk48lock` applies three simultaneous PEXT operations under `(m_0, m_1, m_2)` to the 48-bit chunk word, producing three 16-bit lane payloads in one step (§1.3): split into 3 regions and per-chunk permutation are one operation, not two. The mapping from a plaintext bit to the lane it lands in is a hidden per-chunk secret. The permutation layer alone is a keyed permutation (it re-orders bits without XOR of key material); the per-pixel stage (channelXOR, rotation, noise-bit insertion at noisePos) applies to each region's permuted payload independently under its own `dataSeed_i` / `noiseSeed` / `startSeed_i`.
 
 **Indivisibility.** The lockSeed → per-chunk mask path runs through two consecutive live PRF cascades before the combinadic unrank produces the mask triple. Consequently, isolating the permutation layer's unrank hardness from the per-pixel configuration hardness requires either (a) granting seven of eight seeds via lab peek (not attacker-realistic under any threat model) or (b) trivializing the PRF (which destroys the cross-chunk coupling the mask hardness rides). The barrier is indivisible by construction at attacker-realism.
 
@@ -111,9 +111,9 @@ The core observation: `P(C'[p, ch] = v | h) = 1/2` for any observed value `v` an
 ∀v, ∀h : ∃c : embed(c, h, d) = v
 ```
 
-For any observed value, any hash output, there exists a container byte that produces this observation. This is the information-theoretic core of the barrier and applies to the noise-absorption layer (Part 2 of the Interlocked Barrier composition) under passive observation. Full derivation: [PROOFS.md § Proof 1](PROOFS.md#proof-1-information-theoretic-barrier).
+For any observed value, any hash output, there exists a container byte that produces this observation. This is the information-theoretic core of the barrier and applies to the noise-absorption layer (Pixel Barrier of the Interlocked Barrier composition) under passive observation. Full derivation: [PROOFS.md § Proof 1](PROOFS.md#proof-1-information-theoretic-barrier).
 
-**Scope.** The IT property scopes to the noise-absorption layer under passive observation (COA / KPA). Under CCA the noise-position channel is revealed via oracle interaction (§2.8, Theorem 6); the closure of KPA / CPA / CCA is computational and PRF-conditional through the multi-factor defense of §2.6 (Theorem 4a). Part 1 of the barrier (the per-chunk permutation) is PRF-conditional throughout — its mask-space cardinality bound is Theorem 11 (§2.15).
+**Scope.** The IT property scopes to the noise-absorption layer under passive observation (COA / KPA). Under CCA the noise-position channel is revealed via oracle interaction (§2.8, Theorem 6); the closure of KPA / CPA / CCA is computational and PRF-conditional through the multi-factor defense of §2.6 (Theorem 4a). The Rank Barrier of the compound (the per-chunk permutation) is PRF-conditional throughout — its mask-space cardinality bound is Theorem 11 (§2.15).
 
 ### 2.2 Per-Bit XOR KPA Resistance (Theorem 2)
 
@@ -131,9 +131,9 @@ The 8 seeds are drawn independently from CSPRNG. Each seed's ChainHash uses only
 
 The lockSeed → per-chunk mask path is bound to the primitive via two consecutive live PRF cascades (`deriveInterLockSeed`, then the per-chunk cascade over `lockKey ‖ lockSeed`), so any attempt to isolate the permutation layer's unrank hardness from the primitive's PRF hardness reduces the instance to PRF preimage recovery — dominated by the primitive's SAT-hardness, not by the interlock structure.
 
-**Theorem 3a (Minimality).** **Eight seeds are the minimum configuration where every leak in the 3-snake construction is architecturally isolated. Fewer seeds would create cross-domain leakage in at least one snake pair or between the barrier layer and one per-snake role.**
+**Theorem 3a (Minimality).** **Eight seeds are the minimum configuration where every leak in the 3-region construction is architecturally isolated. Fewer seeds would create cross-domain leakage in at least one region pair or between the barrier layer and one per-region role.**
 
-Pigeonhole argument on 8 disjoint derivation domains (N, L, D₁..D₃, S₁..S₃) with distinct attack surfaces: any layout with at most 7 seeds merges at least two domains, and every merger creates at least one cross-domain leakage pattern (observable + unobservable, snake collapse, or noise/mask coupling). 8 CSPRNG-independent seeds achieve the pairwise independence of Theorem 3. Full derivation: [PROOFS.md § Proof 3a](PROOFS.md#proof-3a-8-seed-isolation-minimality).
+Pigeonhole argument on 8 disjoint derivation domains (N, L, D₁..D₃, S₁..S₃) with distinct attack surfaces: any layout with at most 7 seeds merges at least two domains, and every merger creates at least one cross-domain leakage pattern (observable + unobservable, region collapse, or noise/mask coupling). 8 CSPRNG-independent seeds achieve the pairwise independence of Theorem 3. Full derivation: [PROOFS.md § Proof 3a](PROOFS.md#proof-3a-8-seed-isolation-minimality).
 
 ### 2.4 ChainHash Full Component Utilization (Theorem 3b)
 
@@ -145,7 +145,7 @@ By contradiction plus the PRF property: any component change avalanches through 
 
 **Theorem 4.** **With unknown rotation `r ∈ {0, …, 6}` from `dataSeed_i`, the attacker faces `7^P` indistinguishable configurations for `P` pixels when using a non-invertible hash.**
 
-For `P = 400` (minimum container at a 1024-bit key): `7^400 ≈ 2^1123`, which exceeds the Landauer bound on irreversible enumeration cost (~2^306); this bounds the cost of blind enumeration of the ambiguity space, not resistance to structural attacks. See [PROOFS.md § Proof 4](PROOFS.md#proof-4-rotation-barrier).
+For `P = 1225` (minimum container at a 1024-bit key — per-region floor `MinPixels = 365`, `3 × 365 = 1095` total pixels, square-rounded to `35 × 35 = 1225` with `DefaultBarrierFill = 1`): `7^1225 ≈ 2^3439`, which exceeds the Landauer bound on irreversible enumeration cost (~2^306); this bounds the cost of blind enumeration of the ambiguity space, not resistance to structural attacks. See [PROOFS.md § Proof 4](PROOFS.md#proof-4-rotation-barrier).
 
 ### 2.6 Multi-Factor Full KPA Resistance (Theorem 4a)
 
@@ -155,13 +155,13 @@ The attacker must simultaneously succeed on four independent obstacles whose ent
 
 1. **PRF inversion.** Recovering a `dataSeed_i` from a verified candidate hash `h' = H(counter ‖ N_m, dataSeed_i)` is infeasible under the PRF assumption (which implies one-wayness).
 2. **Per-chunk mask-triple isolation.** Each chunk observation admits ≈ 2^57.80 mask preimages (Theorem 11, §2.15); collapsing that ambiguity requires coupling many chunks through the shared lockSeed chain against the SAT-hostile combinadic unrank arithmetic. The mapping from a plaintext bit to the lane it lands in is unobservable without lockSeed.
-3. **startPixel_i isolation.** `startPixel_i = f(startSeed_i, N_m)` is never transmitted; each snake presents its own candidate offset space with no feedback to narrow it, and no snake's recovery reveals another's.
+3. **startPixel_i isolation.** `startPixel_i = f(startSeed_i, N_m)` is never transmitted; each region presents its own candidate offset space with no feedback to narrow it, and no region's recovery reveals another's.
 4. **Per-pixel ambiguity at 1:1 signal/noise.** By Theorems 1 and 4, 56 per-pixel candidates (without CCA) or 7 (under CCA) are equally consistent with the observation. Formally, `sup_{c,c'} Pr[c | obs] / Pr[c' | obs] = 1`: all candidates are equiprobable conditional on the observation.
 5. **Byte-splitting non-alignability (Partial KPA defense).** `gcd(7, 8) = 1` guarantees every plaintext byte is split across 2 channels. Under Partial KPA, per-channel candidate formulation is blocked because each channel depends on two bytes — missing one prevents candidate computation. Under Full KPA this shortcut is not available anyway (brute force enumerates seeds directly), so obstacle (5) has no additional defensive effect.
 
 Obstacles (1)–(4) jointly determine the Full KPA brute-force cost; `gcd(7,8)=1` byte-splitting is a 5th factor effective only under Partial KPA. The obstacles are not sub-problems defeated sequentially but interlocking constraints. Full derivation: [PROOFS.md § Proof 4a](PROOFS.md#proof-4a-multi-factor-full-kpa-resistance).
 
-**SAT recovery.** SAT-based lockSeed recovery is **structurally unmeasurable at attacker-realism**. Any formulable SAT instance under the barrier requires granting seven of eight seeds via lab peek to strip the per-pixel stage (noiseSeed strips the noise bit, per-snake `dataSeed_i` strips per-pixel rotation and channelXOR, per-snake `startSeed_i` strips the per-snake pixel-to-chunk mapping). A granted-7/8 attacker is not the attacker-realistic attacker (the attacker-realistic attacker holds only the ciphertext pair and public nonces). Without stripping the per-pixel stage, the lockSeed → mask path runs through two live PRF cascades and the instance reduces to PRF preimage recovery on the primitive, dominated by the primitive's SAT-hardness rather than the interlock's. The measurable instance and the attacker-realistic instance are disjoint by construction; the closure is PRF-conditional by construction. Empirically confirmed: naive-crib Bitwuzla returns UNSAT on FNV-1a keyed to every one of the 8 seed roles under the maximum-peek attacker regime (see [REDTEAM.md § FNV-1a lo-lane SAT — architecturally foreclosed](REDTEAM.md#fnv-1a-lo-lane-sat--architecturally-foreclosed)).
+**SAT recovery.** SAT-based lockSeed recovery is **structurally unmeasurable at attacker-realism**. Any formulable SAT instance under the barrier requires granting seven of eight seeds via lab peek to strip the per-pixel stage (noiseSeed strips the noise bit, per-region `dataSeed_i` strips per-pixel rotation and channelXOR, per-region `startSeed_i` strips the per-region pixel-to-chunk mapping). A granted-7/8 attacker is not the attacker-realistic attacker (the attacker-realistic attacker holds only the ciphertext pair and public nonces). Without stripping the per-pixel stage, the lockSeed → mask path runs through two live PRF cascades and the instance reduces to PRF preimage recovery on the primitive, dominated by the primitive's SAT-hardness rather than the interlock's. The measurable instance and the attacker-realistic instance are disjoint by construction; the closure is PRF-conditional by construction. Empirically confirmed: naive-crib Bitwuzla returns UNSAT on FNV-1a keyed to every one of the 8 seed roles under the maximum-peek attacker regime (see [REDTEAM.md § FNV-1a lo-lane SAT — architecturally foreclosed](REDTEAM.md#fnv-1a-lo-lane-sat--architecturally-foreclosed)).
 
 **Dual-nonce carve-out.** Under the shipped dual-nonce wire format, simultaneous collision of both nonces across two messages is a degeneracy a production caller cannot reach: both nonces are drawn independently from CSPRNG per encryption with no caller-addressable override, so simultaneous collision requires a **CSPRNG hardware fault**. Under any partial-collision scenario (main-only or interlock-only), the un-collided axis provides fresh-nonce closure and the barrier's plaintext-recovery closure holds a fortiori.
 
@@ -169,13 +169,13 @@ Obstacles (1)–(4) jointly determine the Full KPA brute-force cost; `gcd(7,8)=1
 
 **Asymmetry note.** Obstacle (1) is asymmetrically privileged: a total PRF inversion algorithmically resolves obstacles (2)–(5) via recovered seeds; the per-chunk mask permutation collapses via lockSeed recovery through cascade PRF inversion of the mask-derivation chain, or via direct Full KPA observation of mask triples from plaintext-chunk to permuted-wire correspondence. Failure of any architectural layer leaves PRF non-invertibility intact. Theorem 4a protects against **partial** PRF weakness and **any degree** of architectural weakness, but not against total PRF inversion.
 
-**Why KPA candidates do not break the barrier.** Under KPA, the attacker can compute 56 candidate dataHash values per pixel — but these are **calculated** from the combination of (known plaintext + observed byte + candidate config), not extracted from the observation. All 56 are equally consistent; the attacker does not learn which is real. Across P pixels, the pixel-layer ambiguity is `56^P` (or `7^P` with CCA); across `C = ⌈(4 + payload_bytes) × 8 / 48⌉` barrier chunks, Part 1 stacks an additional `≈ 2^(70.20 × C)` mask-enumeration multiplier. Without ChainHash inversion the attacker cannot verify any candidate combination; without lockSeed the attacker cannot even write down the per-bit constraint the candidate would satisfy. Under an invertible primitive on the shipped construction the attacker's naive «candidate → invert primitive → verify on another pixel» path is closed one step earlier by Part 1: the second pixel's mapping is a different per-chunk secret drawn from ≈ 2^70.20 balanced partitions — instance-formulation impossibility, not solver-throughput bound.
+**Why KPA candidates do not break the barrier.** Under KPA, the attacker can compute 56 candidate dataHash values per pixel — but these are **calculated** from the combination of (known plaintext + observed byte + candidate config), not extracted from the observation. All 56 are equally consistent; the attacker does not learn which is real. Across P pixels, the pixel-layer ambiguity is `56^P` (or `7^P` with CCA); across `C = ⌈(4 + payload_bytes) × 8 / 48⌉` barrier chunks, the Rank Barrier stacks an additional `≈ 2^(70.20 × C)` mask-enumeration multiplier. Without ChainHash inversion the attacker cannot verify any candidate combination; without lockSeed the attacker cannot even write down the per-bit constraint the candidate would satisfy. Under an invertible primitive on the shipped construction the attacker's naive «candidate → invert primitive → verify on another pixel» path is closed one step earlier by the Rank Barrier: the second pixel's mapping is a different per-chunk secret drawn from ≈ 2^70.20 balanced partitions — instance-formulation impossibility, not solver-throughput bound.
 
 ### 2.7 Noise Barrier Bound (Theorem 5)
 
-**Theorem 5.** **With 8 channels and the unified container floor `MinPixels = ⌈keyBits / log₂(7)⌉` (shared by plain and MAC Authenticated surfaces), the noise barrier `2^(8P)` strictly exceeds the key space `2^keyBits`.**
+**Theorem 5.** **With 8 channels and the unified per-region floor `MinPixels = ⌈keyBits / log₂(7)⌉` (shared by plain and MAC Authenticated surfaces, applied independently to each of three regions), the noise barrier `2^(8P)` strictly exceeds the key space `2^keyBits`.**
 
-For `keyBits = 1024`: `MinPixels = 365`, giving `P = 400` after square rounding (20 × 20). Noise barrier = `2^3200 ≫ 2^1024`. The unified floor is mode-independent, so the minimum-message container size does not betray whether the MAC Authenticated or plain surface produced a given wire. See [PROOFS.md § Proof 5](PROOFS.md#proof-5-noise-barrier-bound).
+For `keyBits = 1024`: per-region floor `MinPixels = 365`, total `3 × 365 = 1095`, square-rounded to `35 × 35 = 1225` with `DefaultBarrierFill = 1`; `P = 1225`. Noise barrier = `2^9800 ≫ 2^1024`. The unified floor is mode-independent, so the minimum-message container size does not betray whether the MAC Authenticated or plain surface produced a given wire. See [PROOFS.md § Proof 5](PROOFS.md#proof-5-noise-barrier-bound).
 
 ### 2.8 CCA Leak Upper Bound (Theorem 6)
 
@@ -209,7 +209,7 @@ The attacker cannot observe dataSeed's hash output (Theorem 3, 8-seed isolation)
 
 **Theorem 8.** **For any container `C` encrypted with the 8-seed tuple and any wrong 8-seed tuple, decryption produces output computationally indistinguishable from uniform random bytes.**
 
-No magic bytes, no checksums. The COBS null terminator is encrypted inside the container. A wrong lockSeed inverts a wrong per-chunk permutation, so the pre-COBS byte stream is a scrambled reordering of the true post-barrier bits; wrong per-snake seeds extract, un-rotate, and XOR-decrypt with incorrect configurations. Wrong seeds produce random-looking output at a random-length boundary. See [ITB.md § 16 Oracle-Free Deniability](ITB.md#16-oracle-free-deniability) for the accessible property list.
+No magic bytes, no checksums. The COBS null terminator is encrypted inside the container. A wrong lockSeed inverts a wrong per-chunk permutation, so the pre-COBS byte stream is a scrambled reordering of the true post-barrier bits; wrong per-region seeds extract, un-rotate, and XOR-decrypt with incorrect configurations. Wrong seeds produce random-looking output at a random-length boundary. See [ITB.md § 16 Oracle-Free Deniability](ITB.md#16-oracle-free-deniability) for the accessible property list.
 
 ### 2.13 MAC-Inside-Encrypt Composition
 
@@ -221,7 +221,7 @@ If the attacker has insider knowledge that a MAC tag is present (MAC + Silent Dr
 
 The dual-nonce wire header carries two independently drawn CSPRNG nonces. Birthday collision on either single slot reaches ~50 % after `2^(N/2)` messages (`N` = the configured nonce width in bits, default `DefaultNonceBits = 512`); simultaneous collision on both slots is the product probability, requiring on the order of `2^N` messages. Simultaneous collision is not reachable through the shipped API: both nonces are drawn independently from CSPRNG per encryption, neither slot is caller-addressable, so simultaneous collision requires a **CSPRNG hardware fault**. Under single-slot collision, the un-collided axis provides fresh-nonce closure and the barrier's confidentiality closure holds a fortiori. Each dual-nonce pair creates an independent configuration map; a collision affects only the colliding pair.
 
-**Empirical verdict — plaintext recovery is null under every attacker-realistic dual-slot / main-only / interlock-only collision scenario at the tested sample sizes** (see [REDTEAM.md § Nonce reuse](REDTEAM.md#nonce-reuse-lab-only)). Under the maximum-leverage dual-slot collision the lab can force (both nonces overridden through test-only setters — impossible through the shipped API), the container XOR carries `rotate7(snake_XOR_bits, r)` at every non-noise bit position plus a fresh DRBG noise bit, but only up to the barrier's Part 1 permutation of the plaintext bits into three lane-scrambled snake payloads. The lane assignment a two-time-pad demasker would need to anchor on is a per-chunk PRF secret keyed by lockSeed and unobservable without it. Empirical null holds across BLAKE3 as a PRF-grade reference and FNV-1a as a below-spec stress control on every one of the 8 seed roles.
+**Empirical verdict — plaintext recovery is null under every attacker-realistic dual-slot / main-only / interlock-only collision scenario at the tested sample sizes** (see [REDTEAM.md § Nonce reuse](REDTEAM.md#nonce-reuse-lab-only)). Under the maximum-leverage dual-slot collision the lab can force (both nonces overridden through test-only setters — impossible through the shipped API), the container XOR carries `rotate7(region_XOR_bits, r)` at every non-noise bit position plus a fresh DRBG noise bit, but only up to the Rank Barrier's permutation of the plaintext bits into three lane-scrambled region payloads. The lane assignment a two-time-pad demasker would need to anchor on is a per-chunk PRF secret keyed by lockSeed and unobservable without it. Empirical null holds across BLAKE3 as a PRF-grade reference and FNV-1a as a below-spec stress control on every one of the 8 seed roles.
 
 **Nonce-misuse resistance is strictly local.** Even the two lab-forced colliding messages recover zero plaintext bytes under attacker-realistic probes at the tested sample sizes. Seeds remain secret because a single collision provides one ChainHash output for one (pixelIndex, nonce) input — insufficient to invert ChainHash (PRF non-invertibility). All 8 seeds retain full entropy; future messages with fresh nonces are unaffected, so **no key rotation is required** after a collision. A single collision also provides too few observations for Simon's periodicity detection, BHT collision-finding, or quantum structural algebraic attacks. This contrasts with AES-GCM where a single nonce reuse leaks the GHASH authentication key `H`, enabling **permanent forgery** of arbitrary messages under the same key until key rotation — a global catastrophe. ITB achieves nonce-misuse resistance through PRF architecture plus the barrier's per-chunk permutation, rather than dedicated misuse-resistant construction (as in AES-GCM-SIV).
 
@@ -241,11 +241,11 @@ Balanced-partition counting: `A` ways to choose `m_0`, then `B` ways for `m_1` f
 
 | Metric | Value |
 |---|---|
-| MinPixels (unified floor, all modes) | 365 → 400 (20 × 20) |
-| Noise barrier (P = 400) | 2^3200 |
-| Encoding ambiguity `56^P` (P = 400) | 2^2323 |
-| Encoding ambiguity `7^P` (P = 400) | 2^1123 |
-| DRBG residue (P = 400) | ≥ 287 bytes (Theorem 10) |
+| MinPixels (per-region floor, all modes) | 365 → 1225 (35 × 35 total, `3 × 365 = 1095` square-rounded + `DefaultBarrierFill = 1`) |
+| Noise barrier (P = 1225) | 2^9800 |
+| Encoding ambiguity `56^P` (P = 1225) | 2^7114 |
+| Encoding ambiguity `7^P` (P = 1225) | 2^3439 |
+| DRBG residue (P = 1225, s = 34) | ≥ 483 bytes (Theorem 10) |
 | Mask-space cardinality per chunk (A · B) | ≈ 2^70.20 |
 | PRF-preimage count per mask triple | ≈ 2^57.80 |
 | Distinguisher sample budget | ≈ 2^115.6 chunks |
@@ -285,11 +285,11 @@ The reference implementation ships an attacker-realistic audit suite (see [REDTE
 
 **Related-nonce differential.** Three scenarios × six Δ patterns × two plaintext kinds. Null-plaintext-recovery across all cells; χ² inside the df = 255 uniform band on both slots — main-nonce Δ perturbs 7 of 8 seed-derivation slots, interlock-nonce Δ perturbs the `lockSeed`-keyed per-chunk mask draw.
 
-**COBS-alignment probe.** Container size depends on per-snake COBS-encoded lengths, so a 1-bit flip transitioning the flipped plaintext byte to / from `0x00` shifts the COBS overhead by one byte. The alignment probe sweeps Barrier Fill ∈ {1, 4, 8, 16, 32} × plaintext ∈ {512 B, 4 KB, 16 KB} = 15 cells at N = 200 pairs per cell under Scenario A. **0 / 200 container-body length mismatch at every cell** — the container is pixel-quantized and the ±1-byte COBS overhead perturbation sits below the pixel-boundary step across the full BF range.
+**COBS-alignment probe.** Container size depends on per-region COBS-encoded lengths, so a 1-bit flip transitioning the flipped plaintext byte to / from `0x00` shifts the COBS overhead by one byte. The alignment probe sweeps Barrier Fill ∈ {1, 4, 8, 16, 32} × plaintext ∈ {512 B, 4 KB, 16 KB} = 15 cells at N = 200 pairs per cell under Scenario A. **0 / 200 container-body length mismatch at every cell** — the container is pixel-quantized and the ±1-byte COBS overhead perturbation sits below the pixel-boundary step across the full BF range.
 
 **Direct pathological-input recovery.** Per-byte plaintext-recovery probe on pathological low-entropy input under lab-only Scenario A: **0 recoveries** across the tested decoder family at 10⁶+ trial-position pairs.
 
-**Broken-primitive stress (FNV-1a lo-lane SAT — architecturally foreclosed).** Under fresh-nonce Full KPA with FNV-1a on every one of the 8 seed roles, naive-crib Bitwuzla returns **UNSAT** on all 3 snakes at N = 2 crib pixels in ≈ 7–10 s per snake under the maximum-peek attacker regime (true `(np, r)` granted via lab peek — 5 of 8 chains inverted for free — and true `sp_i` disclosed). The full coupled-8-chain SAT (all 8 chains unknown plus the ≈ 2^70.20 per-chunk mask triples symbolic) is trivially harder; the isolated-chain UNSAT is a strict upper bound. Positive control (`TestRedTeamBrokenFNV1aCribKPAControl`) drives the same 8-seed FNV-1a configuration through the low-level `process128Cfg` encoder (Single Ouroboros, barrier off — not reachable through the shipped API) and confirms the anchor logic recovers the true `xor_mask56` at every one of the first 6 crib pixels under true `(sp, np, r)`, matching the archived SAT anchoring premise bit-exact. The barrier null is contrasted against a filter that IS sensitive on the retired configuration. See [REDTEAM.md § FNV-1a lo-lane SAT — architecturally foreclosed](REDTEAM.md#fnv-1a-lo-lane-sat--architecturally-foreclosed).
+**Broken-primitive stress (FNV-1a lo-lane SAT — architecturally foreclosed).** Under fresh-nonce Full KPA with FNV-1a on every one of the 8 seed roles, naive-crib Bitwuzla returns **UNSAT** on all 3 regions at N = 2 crib pixels in ≈ 7–10 s per region under the maximum-peek attacker regime (true `(np, r)` granted via lab peek — 5 of 8 chains inverted for free — and true `sp_i` disclosed). The full coupled-8-chain SAT (all 8 chains unknown plus the ≈ 2^70.20 per-chunk mask triples symbolic) is trivially harder; the isolated-chain UNSAT is a strict upper bound. Positive control (`TestRedTeamBrokenFNV1aCribKPAControl`) drives the same 8-seed FNV-1a configuration through the low-level `process128Cfg` encoder (Single Ouroboros, barrier off — not reachable through the shipped API) and confirms the anchor logic recovers the true `xor_mask56` at every one of the first 6 crib pixels under true `(sp, np, r)`, matching the archived SAT anchoring premise bit-exact. The barrier null is contrasted against a filter that IS sensitive on the retired configuration. See [REDTEAM.md § FNV-1a lo-lane SAT — architecturally foreclosed](REDTEAM.md#fnv-1a-lo-lane-sat--architecturally-foreclosed).
 
 **Fresh-nonce CPA under FNV-1a on every seed role.** Chosen-plaintext against `Encrypt3x128Cfg` with FNV-1a on all 8 seed roles, N = 2000 queries per (arm, plaintext-kind) cell across 7 chosen-plaintext kinds; reference arm keys with BLAKE3-128. Homogeneity χ² between FNV-1a and BLAKE3 arms per plaintext kind: 214.8 – 265.8 (df = 255, one-sided 3σ uniform band top ≈ 323) — **every cell inside the uniform band**. No plaintext kind surfaces a primitive-attributable channel; the crib-anchored `structured_json` and `structured_html` cells sit at χ² 214.8 and 224.8, comparable to the trivial `zeros` cell at 244.1. Under fresh nonces each Encrypt call redraws every nonce-bound derivation, so no chosen plaintext byte lands at an attacker-predictable wire position.
 
@@ -311,7 +311,7 @@ All verdicts are sample-bounded and, where they invoke primitive strength, PRF-c
 
 The noise-absorption layer under passive observation is computation-model-independent: a quantum computer cannot extract information absent from the observation (the Theorem 1 property is not conditional on the computation model). Under active seed-recovery attacks the closure is computational and admits Grover speedup; the bounds below assume the standard Grover-oracle model applied to seed-space brute-force.
 
-- **Grover**: no oracle (Core ITB) or expensive oracle (MAC-Inside: full decryption per query). Core ITB: `√P × 2^keyBits` (~2^1028 at 1024-bit). MAC + Reveal: `√P × 2^(keyBits/2)` (~2^516 at 1024-bit, P = 400), with `O(P)` per-query decryption cost.
+- **Grover**: no oracle (Core ITB) or expensive oracle (MAC-Inside: full decryption per query). Core ITB: `√P × 2^keyBits` (~2^1029 at 1024-bit). MAC + Reveal: `√P × 2^(keyBits/2)` (~2^517 at 1024-bit, P = 1225), with `O(P)` per-query decryption cost.
 - **Simon**: needs periodicity; config map is aperiodic (dual-nonce per message).
 - **BHT**: needs observable collisions; random container absorbs them.
 - **Q2 superposition queries**: MAC oracle is inherently classical.
@@ -326,7 +326,7 @@ Shannon (1949) established that perfect secrecy requires key entropy ≥ message
 
 Unlike AES and ChaCha20, which expose the primitive's output directly to the observer (keystream ⊕ plaintext), ITB absorbs the PRF output into a random container before the observer can see it. This is an architectural difference, not a mathematical one. Beyond that distinction, ITB's mandatory 48-bit Interlocked Barrier introduces a per-chunk PRF-keyed permutation over a space of cardinality ≈ 2^70.20 that removes the fixed byte-position anchor a Crib KPA attacker requires.
 
-At the minimum container size, blind enumeration of the ambiguity space at ITB's parameters already exceeds the Landauer bound on irreversible computation: the 2^3200 noise-barrier at 1024-bit keys (P = 400) is `2^2894×` the ~2^306 Landauer bound. This bounds **blind enumeration cost**, not resistance to structural attacks — structural attacks that do not enumerate (e.g., algebraic recovery through a compromised primitive) are not bounded by Landauer. Reversible-computing adversaries are additionally unbounded on the enumeration axis; the physics-layer argument is therefore a conditional positioning of enumeration cost, not an unconditional security guarantee.
+At the minimum container size, blind enumeration of the ambiguity space at ITB's parameters already exceeds the Landauer bound on irreversible computation: the 2^9800 noise-barrier at 1024-bit keys (P = 1225) is `2^9494×` the ~2^306 Landauer bound. This bounds **blind enumeration cost**, not resistance to structural attacks — structural attacks that do not enumerate (e.g., algebraic recovery through a compromised primitive) are not bounded by Landauer. Reversible-computing adversaries are additionally unbounded on the enumeration axis; the physics-layer argument is therefore a conditional positioning of enumeration cost, not an unconditional security guarantee.
 
 **Maximum key size comparison:**
 
@@ -353,30 +353,30 @@ The per-chunk mask permutation (§1.5, §2.15) additionally multiplies the ambig
 
 **Definition (Ambiguity-Based Security).** Fix key size `k` bits and a container of `P` pixels. The construction has `(k, P)`-ambiguity-based security if the number of observation-consistent configurations exceeds `2^k` for all `P > P_threshold`.
 
-**Theorem 9 (Ambiguity Dominance).** **For ITB with key size `k` bits:**
+**Theorem 9 (Ambiguity Dominance).** **For ITB with key size `k` bits, the per-region ambiguity threshold is:**
 
-- **Without CCA (Core ITB / Silent Drop): `P_threshold = ⌈k / log₂ 56⌉ ≈ ⌈k / 5.807⌉`.**
-- **Under CCA (MAC + Reveal): `P_threshold = ⌈k / log₂ 7⌉ ≈ ⌈k / 2.807⌉`.**
+- **Without CCA (Core ITB / Silent Drop): `P_region_threshold = ⌈k / log₂ 56⌉ ≈ ⌈k / 5.807⌉`.**
+- **Under CCA (MAC + Reveal): `P_region_threshold = ⌈k / log₂ 7⌉ ≈ ⌈k / 2.807⌉`.**
 
-**Above `P_threshold`, encoding ambiguity exceeds the key space in the exponent.**
+**When each of three regions independently exceeds `P_region_threshold`, per-region encoding ambiguity exceeds the key space in the exponent; joint 3-region ambiguity is strictly stronger.**
 
-Direct from candidate arithmetic: `56^P > 2^k ⇔ P > k / log₂(56)`; under CCA `7^P > 2^k ⇔ P > k / log₂(7)`. Full derivation: [PROOFS.md § Proof 9](PROOFS.md#proof-9-ambiguity-dominance-threshold).
+Direct from candidate arithmetic: `56^P_region > 2^k ⇔ P_region > k / log₂(56)`; under CCA `7^P_region > 2^k ⇔ P_region > k / log₂(7)`. Full derivation: [PROOFS.md § Proof 9](PROOFS.md#proof-9-ambiguity-dominance-threshold).
 
-**Ambiguity dominance thresholds:**
+**Per-region ambiguity dominance thresholds:**
 
-| Key size | No CCA: `56^P > 2^k` | CCA: `7^P > 2^k` |
+| Key size | No CCA: `56^P_region > 2^k` | CCA: `7^P_region > 2^k` |
 |---|---|---|
-| 512-bit | P > 89 (~0.6 KB) | P > 183 (~1.3 KB) |
-| 1024-bit | P > 177 (~1.2 KB) | P > 365 (~2.5 KB) |
-| 2048-bit | P > 353 (~2.4 KB) | P > 730 (~5.0 KB) |
+| 512-bit | P_region > 89 | P_region > 183 |
+| 1024-bit | P_region > 177 | P_region > 365 |
+| 2048-bit | P_region > 353 | P_region > 730 |
 
-The reference implementation sets the unified floor `MinPixels = ⌈k / log₂(7)⌉` for all modes (plain and authenticated), guaranteeing ambiguity dominance in all composition modes at the stricter CCA threshold.
+The reference implementation sets the unified per-region floor `MinPixels = ⌈k / log₂(7)⌉` for all modes (plain and authenticated), applied to each of three regions by `calcContainerSize3Cfg`, so per-region ambiguity dominance holds in all composition modes at the stricter CCA threshold.
 
 **Encoding ambiguity by data size (1024-bit key, CCA case `7^P`):**
 
 | Data size | P | `7^P` | vs `2^1024` key space |
 |---|---|---|---|
-| MinPixels (~2.5 KB) | 400 | `2^1,123` | 1.1× |
+| MinPixels floor (payload ≤ ~7.5 KB, 1024-bit key) | 1,225 | `2^3,439` | 3.4× |
 | 8 KB | 1,225 | `2^3,439` | 3.4× |
 | 64 KB | 9,409 | `2^26,414` | 25.8× |
 | 1 MB | 150,544 | `2^422,630` | 413× |
@@ -385,7 +385,7 @@ The reference implementation sets the unified floor `MinPixels = ⌈k / log₂(7
 
 | Data size | P | `56^P` | vs `2^1024` |
 |---|---|---|---|
-| MinPixels | 400 | `2^2,323` | 2.3× |
+| MinPixels floor (payload ≤ ~7.5 KB, 1024-bit key) | 1,225 | `2^7,114` | 6.9× |
 | 8 KB | 1,225 | `2^7,114` | 6.9× |
 | 64 KB | 9,409 | `2^54,641` | 53.4× |
 | 1 MB | 150,544 | `2^874,262` | 854× |
@@ -427,7 +427,7 @@ The author does not claim that ITB is the most secure symmetric cipher construct
 
 **2. Implementational (correctable).** Edge cases in COBS framing, off-by-one errors in bit indexing, timing side-channels in constant-time operations, or insufficient secure-wiping coverage. These are correctable without redesigning the construction. The library includes mitigation for known side-channels (constant-iteration null search, `secureWipe` with `runtime.KeepAlive`, register-only dataSeed operations), but the mitigations themselves have not been independently audited.
 
-**Minimum container caveat.** The information-theoretic barrier strength depends on container size: `2^(8P)` for P pixels. At the unified minimum container (400 pixels for 1024-bit; `MinPixels = MinPixelsAuth`), the barrier is `2^3200` — well above the key space. However, for very small payloads where the container is only slightly larger than the minimum, the security margin above the key space is at its lowest. The construction does not provide security guarantees for containers smaller than `MinPixels`.
+**Minimum container caveat.** The information-theoretic barrier strength depends on container size: `2^(8P)` for P pixels. At the minimum container (1225 pixels for 1024-bit; per-region floor `MinPixels = MinPixelsAuth = 365` applied to each of three regions, `3 × 365 = 1095` square-rounded to `35 × 35 = 1225` with `DefaultBarrierFill = 1`), the barrier is `2^9800` — well above the key space. For very small payloads the shipped floor over-provisions substantially: each of three regions independently satisfies per-region ambiguity dominance, and square-rounding plus the DRBG barrier margin add further pixels on top, so the margin over the key space is at its **largest** in this floor-dominated regime (`≥ 2^8776` at 1024-bit). For large payloads the payload volume dominates the pixel count and the floor becomes irrelevant; the intrinsic noise-bit overhead settles at `8/56 ≈ 14%` of the container. The construction does not provide security guarantees for containers below the shipped floor — this floor is enforced by `calcContainerSize3Cfg` and cannot be lowered through the shipped API.
 
 **Areas for reviewer scrutiny:**
 

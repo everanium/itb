@@ -87,8 +87,8 @@ The attacker with known plaintext d can compute a valid m for EVERY candidate po
 
 1. **noiseSeed → noisePos**: `noiseHash = ChainHash(counter||nonce, noiseSeed) & 7`
 2. **lockSeed → per-chunk Interlocked Barrier mask triple**: `rank = ChainHash(tag||groupIdx, deriveInterLockSeed(lockSeed, nonce) ‖ lockSeed)`; two-step unrank per [Proof 11](#proof-11-48-bit-interlocked-barrier-mask-space).
-3. **dataSeed_i → per-snake rotation, XOR** (i ∈ {1,2,3}): `dataHash_i = ChainHash(counter||nonce, dataSeed_i)`
-4. **startSeed_i → per-snake startPixel** (i ∈ {1,2,3}): `startPixel_i = ChainHash(0x02||nonce, startSeed_i) % totalPixels_i`
+3. **dataSeed_i → per-region rotation, XOR** (i ∈ {1,2,3}): `dataHash_i = ChainHash(counter||nonce, dataSeed_i)`
+4. **startSeed_i → per-region startPixel** (i ∈ {1,2,3}): `startPixel_i = ChainHash(0x02||nonce, startSeed_i) % totalPixels_i`
 
 Each seed's ChainHash uses only its own components. No seed's components participate in another seed's computation.
 
@@ -115,7 +115,7 @@ I(startSeed_j ; startPixel_i) = 0   for every j ≠ i
 I(seed ∈ ({all 8} \ S) ; S) = 0
 ```
 
-because all 8 are independently generated (the pairwise independence between seeds is information-theoretic). The attacker knows whatever channels S controls but the remaining seeds' rotation, XOR masks, per-snake pixel offsets, and per-chunk barrier permutation remain unrecoverable — computationally so under the PRF assumption via cascade PRF binding, not information-theoretically (total PRF inversion recovers them via the [Asymmetry note](#proof-4a-multi-factor-full-kpa-resistance) of Proof 4a). Seed pairwise independence is information-theoretic; individual seed unrecoverability under Full KPA is PRF-conditional.
+because all 8 are independently generated (the pairwise independence between seeds is information-theoretic). The attacker knows whatever channels S controls but the remaining seeds' rotation, XOR masks, per-region pixel offsets, and per-chunk barrier permutation remain unrecoverable — computationally so under the PRF assumption via cascade PRF binding, not information-theoretically (total PRF inversion recovers them via the [Asymmetry note](#proof-4a-multi-factor-full-kpa-resistance) of Proof 4a). Seed pairwise independence is information-theoretic; individual seed unrecoverability under Full KPA is PRF-conditional.
 
 **dataSeed_i side-channel:** each dataSeed's hash output is consumed only by:
 - `dataRotation = dataHash % 7` — register operation
@@ -130,7 +130,7 @@ No memory access depends on dataSeed's values. No cache line, no memory pattern,
 <a name="proof-3a-8-seed-isolation-minimality"></a>
 ## Proof 3a: 8-Seed Isolation Minimality
 
-**Theorem.** 8 independent seeds — one per derivation domain — are the minimum configuration such that compromise of any single domain provides zero information about the remaining domains, under the documented attack surfaces (CCA for noise positions, cache side-channel for start pixels). Any layout with fewer seeds merges at least two domains onto one seed and creates cross-domain or cross-snake leakage. This has not been independently verified.
+**Theorem.** 8 independent seeds — one per derivation domain — are the minimum configuration such that compromise of any single domain provides zero information about the remaining domains, under the documented attack surfaces (CCA for noise positions, cache side-channel for start pixels). Any layout with fewer seeds merges at least two domains onto one seed and creates cross-domain or cross-region leakage. This has not been independently verified.
 
 **Proof.**
 
@@ -139,8 +139,8 @@ No memory access depends on dataSeed's values. No cache line, no memory pattern,
 The construction defines 8 disjoint derivation domains, each keyed by its own seed:
 - **N** (noise): noise bit position per pixel (3 bits/pixel), derived from noiseSeed
 - **L** (lock): per-chunk Interlocked Barrier mask triple, derived from lockSeed
-- **D₁, D₂, D₃** (data): rotation (3 bits) + per-bit XOR masks (56 bits) per pixel, derived from the per-snake dataSeed_i
-- **S₁, S₂, S₃** (start): per-snake pixel embedding offset (one per message), derived from the per-snake startSeed_i
+- **D₁, D₂, D₃** (data): rotation (3 bits) + per-bit XOR masks (56 bits) per pixel, derived from the per-region dataSeed_i
+- **S₁, S₂, S₃** (start): per-region pixel embedding offset (one per message), derived from the per-region startSeed_i
 
 Each domain has a documented attack surface (see [Proof 3](#proof-3-8-seed-isolation)):
 - N is recoverable via CCA with MAC Reveal (bit-flip → accept = noise bit)
@@ -148,7 +148,7 @@ Each domain has a documented attack surface (see [Proof 3](#proof-3-8-seed-isola
 - each D_i has zero software-observable side-channel (register-only operations)
 - L has zero software-observable side-channel (fixed-pattern table lookups, constant-time kernels)
 
-Parts 2–4 establish minimality for the pixel-layer domain types (N, D, S) on one snake; Part 5 lifts the argument to the full 8-domain layout.
+Parts 2–4 establish minimality for the pixel-layer domain types (N, D, S) on one region; Part 5 lifts the argument to the full 8-domain layout.
 
 **Part 2: Single seed — complete break.**
 
@@ -187,13 +187,13 @@ Within the pixel-layer domain types, three independent seeds are therefore minim
 
 **Part 5: Lifting to the 8-domain layout.**
 
-The shipped construction instantiates the D and S domain types once per snake and adds the barrier domain L. Merging any two of the 8 domains onto one seed reproduces one of the Part 3 leakage patterns:
+The shipped construction instantiates the D and S domain types once per region and adds the barrier domain L. Merging any two of the 8 domains onto one seed reproduces one of the Part 3 leakage patterns:
 
 - **Observable + unobservable** (N or any S_i merged with L or any D_j): the observable domain's attack surface (CCA for N, cache for S_i) constrains the shared seed, leaking information about the unobservable domain — the pattern of pairings (a) and (c).
-- **Observable + observable** (N merged with an S_i, or S_i with S_j): two attack surfaces target one seed, and observations from one surface reduce the search space for the other domain — the pattern of pairing (b). For S_i + S_j the leak is additionally cross-snake: one snake's observed startPixel constrains another snake's offset.
-- **Unobservable + unobservable** (L with a D_i, or D_i with D_j): no direct software-observable surface exists, but the merged domains lose statistical independence — under KPA, candidate constraints formulated against one snake's rotation/XOR channel (or against the barrier's mask channel) would constrain the other domain derived from the same seed, defeating the independence that [Proof 3](#proof-3-8-seed-isolation) establishes and that the Full KPA composition ([Proof 4a](#proof-4a-multi-factor-full-kpa-resistance)) and the per-chunk mask-space argument ([Proof 11](#proof-11-48-bit-interlocked-barrier-mask-space)) treat as disjoint entropy sources.
+- **Observable + observable** (N merged with an S_i, or S_i with S_j): two attack surfaces target one seed, and observations from one surface reduce the search space for the other domain — the pattern of pairing (b). For S_i + S_j the leak is additionally cross-region: one region's observed startPixel constrains another region's offset.
+- **Unobservable + unobservable** (L with a D_i, or D_i with D_j): no direct software-observable surface exists, but the merged domains lose statistical independence — under KPA, candidate constraints formulated against one region's rotation/XOR channel (or against the barrier's mask channel) would constrain the other domain derived from the same seed, defeating the independence that [Proof 3](#proof-3-8-seed-isolation) establishes and that the Full KPA composition ([Proof 4a](#proof-4a-multi-factor-full-kpa-resistance)) and the per-chunk mask-space argument ([Proof 11](#proof-11-48-bit-interlocked-barrier-mask-space)) treat as disjoint entropy sources.
 
-Every layout with at most 7 seeds merges at least two of the 8 domains (pigeonhole) and therefore contains at least one of the three patterns. 8 independent seeds are the minimum: any merge creates cross-domain or cross-snake leakage, while 8 CSPRNG-generated independent keys achieve the pairwise independence of [Proof 3](#proof-3-8-seed-isolation). ∎
+Every layout with at most 7 seeds merges at least two of the 8 domains (pigeonhole) and therefore contains at least one of the three patterns. 8 independent seeds are the minimum: any merge creates cross-domain or cross-region leakage, while 8 CSPRNG-generated independent keys achieve the pairwise independence of [Proof 3](#proof-3-8-seed-isolation). ∎
 
 ## Proof 3b: ChainHash Full Component Utilization
 
@@ -248,7 +248,7 @@ The attacker cannot verify individual pixel rotations independently. The total c
 |{(r₁, r₂, ..., r_P) : rᵢ ∈ {0,...,6}}| = 7^P
 ```
 
-For P = 196 (the ⌈1024 / log₂(56)⌉-derived container at a 1024-bit key — a looser worked bound below the shipped floor; see the MinPixels unification note in [Proof 5](#proof-5-noise-barrier-bound)): 7^196 ≈ 10^166 ≈ 2^550 — exceeds the Landauer bound on irreversible enumeration cost (~2^306 ≈ 10^92), and each of the 10^166 rotation configurations requires independent ChainHash evaluation to verify. The Landauer bound scopes to the cost of blind enumeration of the configuration space; it does not bound structural attacks that do not enumerate. For P = 400 (the unified shipped floor `MinPixels := MinPixelsAuth`, 1024-bit key): 7^400 ≈ 2^1123. The noise barrier (2^1568 for 196 pixels, [Proof 5](#proof-5-noise-barrier-bound)) independently exceeds the Landauer enumeration-cost bound. ∎
+For P = 1225 (the shipped container at a 1024-bit key — per-region floor `MinPixels := MinPixelsAuth = 365` applied to each of three regions, `3 × 365 = 1095`, square-rounded to `35 × 35 = 1225` with `DefaultBarrierFill = 1`): `7^1225 ≈ 2^3439` — exceeds the Landauer bound on irreversible enumeration cost (~2^306 ≈ 10^92), and each of the `2^3439` rotation configurations requires independent ChainHash evaluation to verify. The Landauer bound scopes to the cost of blind enumeration of the configuration space; it does not bound structural attacks that do not enumerate. The noise barrier (2^9800 for 1225 pixels, [Proof 5](#proof-5-noise-barrier-bound)) independently exceeds the Landauer enumeration-cost bound. ∎
 
 This proof covers one layer (rotation barrier). For the complete multi-factor Full KPA defense, see [Proof 4a](#proof-4a-multi-factor-full-kpa-resistance).
 
@@ -284,38 +284,30 @@ with 7^P (or 56^P without CCA) per-pixel encoding ambiguity as an additional fac
 
 **Note on MinPixels unification.** The shipped construction unifies the container floor: `MinPixels := MinPixelsAuth = ⌈keyBits / log₂(7)⌉` applies to both plain and MAC Authenticated surfaces (the code aliases `MinPixels()` to `MinPixelsAuth()` for every width). One floor for both modes closes an Auth-vs-Non-AEAD distinguisher: the minimum-message container size is mode-independent, so the length envelope does not betray which mode is in use.
 
-**Theorem.** With Channels = 8 and the unified shipped floor `MinPixels = MinPixelsAuth = ⌈keyBits / log₂(7)⌉` (both plain and Auth surfaces), the noise barrier 2^(Channels × P) strictly exceeds the key space 2^keyBits. The looser `⌈keyBits / log₂(56)⌉` quantity — the no-CCA ambiguity-dominance count of [Proof 9](#proof-9-ambiguity-dominance-threshold), which sits below the shipped floor and never ships as a container minimum — gives a second, weaker worked bound and is retained only for illustration.
+**Theorem.** With Channels = 8 and the unified shipped floor `MinPixels = MinPixelsAuth = ⌈keyBits / log₂(7)⌉` (both plain and Auth surfaces), the noise barrier 2^(Channels × P) strictly exceeds the key space 2^keyBits.
 
-**Proof.** For keyBits = 1024, the shipped unified floor (both modes):
+**Proof.** For keyBits = 1024, the shipped per-region floor (both modes):
 
 ```
-MinPixels = MinPixelsAuth = ⌈1024 / log₂(7)⌉ = ⌈1024 / 2.807⌉ = 365
+MinPixels = MinPixelsAuth = ⌈1024 / log₂(7)⌉ = ⌈1024 / 2.807⌉ = 365 per region
 ```
 
-Square container: side = ⌈√365⌉ = 20, P = 400.
+Total pixels = 3 × per-region floor = 1095; square container side = ⌈√1095⌉ = 34; with default barrier margin (`DefaultBarrierFill = 1`) side = 35; P = 35 × 35 = 1225.
 
 Noise barrier:
 ```
-2^(8 × 400) = 2^3200
+2^(8 × 1225) = 2^9800
 ```
 
 Key space: 2^1024.
 
 ```
-3200 > 1024  ⟹  2^3200 > 2^1024  ✓
+9800 > 1024  ⟹  2^9800 > 2^1024  ✓
 ```
 
-The barrier strictly exceeds the key space by a factor of 2^2176.
+The barrier strictly exceeds the key space by a factor of 2^8776.
 
-For keyBits = 1024, the looser no-CCA bound (below the shipped floor, illustrative only):
-
-```
-P_noCCA = ⌈1024 / log₂(56)⌉ = ⌈1024 / 5.807⌉ = 177
-```
-
-Square container: side = ⌈√177⌉ = 14, P = 196; noise barrier 2^(8 × 196) = 2^1568 > 2^1024, exceeding the key space by 2^544. This bound is weaker than the shipped floor and is never instantiated as a container minimum.
-
-**General:** For the shipped floor (both modes), P ≥ ⌈keyBits / log₂(7)⌉; since 8 / log₂(7) = 8 / 2.807 ≈ 2.850 > 1, 8P > keyBits follows. The looser no-CCA quantity P ≥ ⌈keyBits / log₂(56)⌉ satisfies 8 / log₂(56) = 8 / 5.807 ≈ 1.378 > 1, so 8P > keyBits there too. ∎
+**General:** For the shipped floor (both modes), `P ≥ 3 × ⌈keyBits / log₂(7)⌉` (per-region floor applied to each of three regions); since `8 / log₂(7) ≈ 2.850 > 1`, `8P > keyBits` follows even at the per-region floor, and shipped's 3× overhead only widens the margin. ∎
 
 ## Proof 6: CCA Leak Upper Bound
 
@@ -374,19 +366,19 @@ Without the ability to evaluate P(observed | r = r') (requires dataSeed), the Ba
 **Theorem.** For any container C encrypted with the 8-seed tuple (noiseSeed, lockSeed, dataSeed1..3, startSeed1..3) and any candidate 8-seed tuple that differs on at least one component, the output of `itb.Decrypt3x{128,256,512}Cfg` on C under the candidate tuple is computationally indistinguishable from uniform random bytes.
 
 **Proof.** `Decrypt3x*Cfg` extracts a byte sequence by:
-1. Computing each snake's startPixel from its startSeed' (deterministic, different from the true startPixels).
+1. Computing each region's startPixel from its startSeed' (deterministic, different from the true startPixels).
 2. Computing noisePos from noiseSeed' for each pixel (deterministic, different from true).
-3. Computing rotation and XOR from each dataSeed_i' for each pixel of snake i (deterministic, different from true).
+3. Computing rotation and XOR from each dataSeed_i' for each pixel of region i (deterministic, different from true).
 4. Reversing the 48-bit Interlocked Barrier per-chunk mask triple derived from lockSeed' (deterministic, different from the true per-chunk permutation).
 5. Extracting, un-rotating, and XOR-decrypting 56 data bits per pixel.
-6. Interleaving the three snake outputs back into a byte stream.
+6. Interleaving the three region outputs back into a byte stream.
 
 Since C was generated from crypto/rand (uniform bytes) and embedded using the true seeds, the bits extracted with wrong seeds correspond to:
 - Wrong noise positions → extracting a mix of true noise and true data bits.
 - Wrong rotation → un-rotating with incorrect r.
 - Wrong XOR → XOR-decrypting with incorrect mask.
 - Wrong lockSeed → inverting a wrong per-chunk permutation, so the pre-COBS byte stream is a scrambled reordering of the true post-barrier bits.
-- Wrong startPixel_i → reading each snake's data out of a wrong position.
+- Wrong startPixel_i → reading each region's data out of a wrong position.
 
 The extracted bytes are a deterministic but pseudorandom function of the wrong seeds applied to a random container. Without knowledge of the true seeds, the output is indistinguishable from uniform random.
 
@@ -400,38 +392,38 @@ Under the random-container model, the construction provides indistinguishability
 
 ## Proof 9: Ambiguity Dominance Threshold
 
-**Definition (Ambiguity-Based Security).** A construction has (k, P)-ambiguity-based security if, for key size k bits and container of P pixels, the number of observation-consistent configurations exceeds 2^k for P > P_threshold.
+**Definition (Ambiguity-Based Security).** A construction has (k, P)-ambiguity-based security if, for key size k bits and a region of P pixels, the number of observation-consistent configurations in that region exceeds 2^k for P > P_threshold. The shipped construction partitions the container into three regions and applies the threshold per region.
 
-**Theorem.** For ITB with key size k bits:
-- Under CCA (MAC + Reveal): P_threshold = ⌈k / log₂(7)⌉ ≈ ⌈k / 2.807⌉
-- Without CCA (Core ITB / MAC + Silent Drop): P_threshold = ⌈k / log₂(56)⌉ ≈ ⌈k / 5.807⌉
+**Theorem.** For ITB with key size k bits, the per-region ambiguity threshold is:
+- Under CCA (MAC + Reveal): `P_region_threshold = ⌈k / log₂(7)⌉ ≈ ⌈k / 2.807⌉`
+- Without CCA (Core ITB / MAC + Silent Drop): `P_region_threshold = ⌈k / log₂(56)⌉ ≈ ⌈k / 5.807⌉`
 
-Above P_threshold, encoding ambiguity exceeds the key space in the exponent.
+When each of three regions independently exceeds `P_region_threshold`, per-region ambiguity satisfies the corresponding bound; joint ambiguity across all three regions is `7^(3·P_region)` (or `56^(3·P_region)`) — a strictly stronger property.
 
-**Proof.** Under CCA, each pixel has 7 rotation candidates ([Proof 4](#proof-4-rotation-barrier)). The total ambiguity is 7^P. The condition 7^P > 2^k is equivalent to:
-
-```
-P × log₂(7) > k
-P > k / log₂(7)
-P > k / 2.807
-```
-
-Without CCA, each pixel has 56 candidates (8 noisePos × 7 rotation). The condition 56^P > 2^k:
+**Proof.** Under CCA, each pixel has 7 rotation candidates ([Proof 4](#proof-4-rotation-barrier)). Per-region ambiguity across `P_region` pixels is `7^P_region`. The condition `7^P_region > 2^k` is equivalent to:
 
 ```
-P × log₂(56) > k
-P > k / log₂(56)
-P > k / 5.807
+P_region × log₂(7) > k
+P_region > k / log₂(7)
+P_region > k / 2.807
 ```
 
-**Concrete thresholds:**
+Without CCA, each pixel has 56 candidates (8 noisePos × 7 rotation). The condition `56^P_region > 2^k`:
 
-| Key size | CCA (7^P > 2^k) | No CCA (56^P > 2^k) |
+```
+P_region × log₂(56) > k
+P_region > k / log₂(56)
+P_region > k / 5.807
+```
+
+**Concrete per-region thresholds:**
+
+| Key size | CCA (`7^P_region > 2^k`) | No CCA (`56^P_region > 2^k`) |
 |---|---|---|
-| 1024-bit | P > 365 pixels (~2.5 KB) | P > 177 pixels (~1.2 KB) |
-| 2048-bit | P > 730 pixels (~5.0 KB) | P > 353 pixels (~2.4 KB) |
+| 1024-bit | `P_region > 365 pixels` | `P_region > 177 pixels` |
+| 2048-bit | `P_region > 730 pixels` | `P_region > 353 pixels` |
 
-For any data volume above these thresholds, encoding ambiguity dominates the key space — the number of indistinguishable configurations exceeds the total number of possible keys. The unified MinPixels formula (`MinPixels := MinPixelsAuth = ⌈keyBits / log₂(7)⌉`) guarantees ambiguity dominance at the minimum container size across both streaming modes: 7^P > 2^keyBits at the unified floor. The 56^P bound remains valid for any container above the plain-mode threshold as an additionally tighter statement in the absence of CCA. ∎
+For any per-region pixel count above these thresholds, encoding ambiguity dominates the key space in that region — the number of indistinguishable configurations exceeds the total number of possible keys. The unified `MinPixels := MinPixelsAuth = ⌈keyBits / log₂(7)⌉` formula is applied by `calcContainerSize3Cfg` per region (each of three regions holds at least `MinPixelsAuth` pixels), guaranteeing per-region ambiguity dominance at the shipped minimum container across both streaming modes. Joint 3-region ambiguity `7^(3·MinPixelsAuth) ≫ 2^keyBits` is strictly stronger; the `56^P_region` bound remains valid for any per-region pixel count above the plain-mode threshold as an additionally tighter statement in the absence of CCA. ∎
 
 ## Proof 10: Guaranteed DRBG Residue (No Perfect Fill)
 
@@ -463,7 +455,7 @@ gap = capacity(s+1) - max_payload(s)
     = (2s + 1) × 7 bytes
 ```
 
-Since s ≥ 1: gap ≥ 21 bytes. For practical values (s ≥ 14 at 1024-bit key): gap ≥ 203 bytes.
+Since s ≥ 1: gap ≥ 21 bytes. For shipped values at 1024-bit key (per-region floor `MinPixels = 365` × 3 regions = 1095 total, `s = ⌈√1095⌉ = 34`): gap ≥ 483 bytes.
 
 **This gap is strictly positive for all s ≥ 1.** Perfect fill (gap = 0) is mathematically impossible. ∎
 
@@ -478,8 +470,7 @@ Both are encrypted identically by dataSeed (rotation + XOR). The attacker cannot
 
 | Data size | Side (s) | Min fill = 7×(2s+1) |
 |---|---|---|
-| no-CCA bound 1024-bit (illustrative, below shipped floor) | 14 | 203 bytes |
-| shipped floor 1024-bit (MinPixels = MinPixelsAuth) | 20 | 287 bytes |
+| shipped floor 1024-bit (per-region `MinPixels = 365` × 3 regions = 1095 total pixels floor) | 34 | 483 bytes |
 | 16 KB | 49 | 693 bytes |
 | 1 MB | 388 | 5,439 bytes |
 | 64 MB | 3,103 | 43,449 bytes |
@@ -584,13 +575,13 @@ P(collision) ≈ 1 - e^(-n²/2^(w+1)) ≈ n²/2^(w+1)
 
 At w = 512 (the shipped default): P reaches ~1/2 only at n ≈ 2^256, mathematically unreachable on foreseeable hardware. At w = 128 (the shortest supported width): P reaches ~1/2 at n ≈ 2^64.
 
-**Impact of collision:** The wire carries two independent per-message CSPRNG nonces — a main nonce `N_main` (bound to per-pixel noiseSeed / dataSeed_i derivations and per-snake startSeed_i derivations) and an interlock nonce `N_il` (bound to the lockSeed's per-chunk mask draw through the `0x04` domain tag). A collision on one axis leaves the other axis re-parametrised. Under joint collision of both nonces with the same 8-seed tuple:
+**Impact of collision:** The wire carries two independent per-message CSPRNG nonces — a main nonce `N_main` (bound to per-pixel noiseSeed / dataSeed_i derivations and per-region startSeed_i derivations) and an interlock nonce `N_il` (bound to the lockSeed's per-chunk mask draw through the `0x04` domain tag). A collision on one axis leaves the other axis re-parametrised. Under joint collision of both nonces with the same 8-seed tuple:
 - Same noiseSeed + `N_main` → identical noise positions for both messages.
 - Same lockSeed + `N_il` → identical per-chunk Interlocked Barrier permutations for both messages.
-- Same dataSeed_i + `N_main` → identical rotation and XOR masks per snake.
-- Same startSeed_i + `N_main` → identical per-snake startPixels.
+- Same dataSeed_i + `N_main` → identical rotation and XOR masks per region.
+- Same startSeed_i + `N_main` → identical per-region startPixels.
 - Different crypto/rand containers (generated independently).
 
-The attacker with two containers C₁, C₂ sharing the same configuration can extract corresponding data bits and XOR them: `data₁ ⊕ data₂` (two-time-pad structure at the bit level, after per-snake reversal). This affects ONLY the colliding pair — all other messages with unique nonces remain secure.
+The attacker with two containers C₁, C₂ sharing the same configuration can extract corresponding data bits and XOR them: `data₁ ⊕ data₂` (two-time-pad structure at the bit level, after per-region reversal). This affects ONLY the colliding pair — all other messages with unique nonces remain secure.
 
 **Mitigation:** The nonce is mandatory and internally generated from crypto/rand on every `itb.Encrypt3x{128,256,512}Cfg` / `itb.EncryptStream*3xCfg` / `triple.Pipeline.Encrypt*` call. The caller cannot reuse nonces by design. ∎

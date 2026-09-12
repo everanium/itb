@@ -17,7 +17,7 @@ func (e capiError) Error() string { return string(e) }
 // Encrypt3 is the Triple Ouroboros encrypt entry. It takes
 // 8 seed handles (1 shared noise + 1 lockSeed + 3 data + 3 start)
 // and produces one ciphertext that splits the plaintext into three
-// interleaved snake payloads. The on-wire format is the same shape
+// interleaved region payloads. The on-wire format is the same shape
 // as the non-Triple ciphertext (same nonce + dimensions header +
 // raw container) — only the internal split / interleave differs.
 //
