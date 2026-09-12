@@ -5,7 +5,7 @@ package hashes
 // cipher consumers (ctr, kdf, wrapper, parallax) construct keystreams for
 // shipped names only.
 //
-// Names includes inner-PRF-only entries (Class = ClassNone) — the return
+// Names includes inner-PRF-only entries (Class = ClassNPRF) — the return
 // value is the full FFI-iteration surface. Consumers that want the outer-
 // cipher-eligible subset should call [KeystreamNames] instead.
 func Names() []string {
@@ -18,7 +18,7 @@ func Names() []string {
 
 // KeystreamNames returns a fresh slice of every shipped Registry primitive
 // name eligible for use as an outer cipher keystream (ClassNativeStream or
-// ClassPRFCounter), in canonical order. Inner-PRF-only entries (ClassNone)
+// ClassPRFCounter), in canonical order. Inner-PRF-only entries (ClassNPRF)
 // are excluded — those primitives are safe only under ITB's compound inner-
 // PRF defence stack and MUST NOT surface as user-selectable outer ciphers
 // or parallax palette entries. Consumed by [wrapper.CipherNames] and the
@@ -26,7 +26,7 @@ func Names() []string {
 func KeystreamNames() []string {
 	out := make([]string, 0, len(Registry))
 	for i := range Registry {
-		if Registry[i].Class == ClassNone {
+		if Registry[i].Class == ClassNPRF {
 			continue
 		}
 		out = append(out, Registry[i].Name)
@@ -35,14 +35,14 @@ func KeystreamNames() []string {
 }
 
 // ClassOf returns the dispatch Class of a shipped Registry primitive, or
-// ClassNone when name is not a shipped primitive.
+// ClassNPRF when name is not a shipped primitive.
 func ClassOf(name string) Class {
 	for i := range Registry {
 		if Registry[i].Name == name {
 			return Registry[i].Class
 		}
 	}
-	return ClassNone
+	return ClassNPRF
 }
 
 // Info is the plain-data view of one shipped Registry primitive — the

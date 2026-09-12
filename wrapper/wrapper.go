@@ -24,7 +24,7 @@ const MaxMasterKeySize = 128
 // project's canonical primitive order. It is a snapshot of the outer-cipher-
 // eligible shipped hashes.Registry names (hashes.KeystreamNames);
 // hashes.Registry is the single source of truth for the shipped primitive
-// name list. Inner-PRF-only Registry entries (hashes.ClassNone — e.g.
+// name list. Inner-PRF-only Registry entries (hashes.ClassNPRF — e.g.
 // AES-ITB, which is a reduced-round construction safe only under ITB's
 // compound inner-PRF stack) are deliberately excluded — routing them
 // through ctr.New / kdf.Derive would surface a raw reduced-round core as

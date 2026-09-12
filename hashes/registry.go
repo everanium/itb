@@ -37,27 +37,42 @@ const MaxNameLen = 12
 type Class uint8
 
 const (
-	// ClassNone is the zero value: the primitive carries no outer
-	// cipher dispatch class and MUST NOT be routed through the
-	// ctr / kdf / wrapper / parallax keystream path. Two populations
-	// carry this value:
+	// ClassNPRF is the zero value: the primitive's standalone raw form
+	// is Non-PRF (Non-PRF-counter-source, in this dispatch context),
+	// meaning it MUST NOT be routed through the ctr / kdf / wrapper /
+	// parallax keystream path. The name refers to standalone
+	// (raw-primitive) security: the primitive fails a standalone PRF
+	// definition under a suitable attacker model (e.g. one-pair
+	// inversion under known-plaintext, Square integral distinguisher).
+	// It does NOT assert the primitive is not a PRF in every context —
+	// the shipped canonical example, AES-ITB, is empirically
+	// indistinguishable from a PRF at every measured axis once wrapped
+	// in the ITB compound inner-PRF defence stack (ChainHash cascade +
+	// Rank Barrier + Pixel Barrier absorption). The standalone-Non-PRF
+	// / effectively-PRF-under-composition asymmetry is the whole reason
+	// the outer-cipher paths refuse to expose such a primitive as
+	// user-selectable keystream material.
+	//
+	// Two populations carry this value:
 	//
 	//   - Shipped Registry entries that are inner-PRF-only by design.
 	//     AES-ITB is the canonical example — a reduced-round AES
 	//     construction that is intentionally weak standalone and safe
-	//     only under ITB's compound inner-PRF defence stack
-	//     (ChainHash cascade + Rank Barrier + Pixel Barrier
-	//     absorption). Wiring such a primitive as a wrapper outer
-	//     cipher or parallax palette entry would expose the raw
-	//     2-round core as user-selectable keystream material.
-	//   - User-registered Specs, which carry this value by default.
+	//     only under ITB's compound inner-PRF defence stack. Wiring
+	//     such a primitive as a wrapper outer cipher or parallax palette
+	//     entry would expose the raw core as user-selectable keystream
+	//     material with no compound stack over it.
+	//   - User-registered Specs, which carry this value by default. The
+	//     conservative default rejects the primitive from outer-cipher
+	//     dispatch until the registrar explicitly opts in by setting
+	//     Class to ClassNativeStream or ClassPRFCounter.
 	//
 	// The outer-cipher consumers (ctr, kdf, wrapper, parallax) treat
-	// ClassNone as "not a keystream candidate": [KeystreamNames]
+	// ClassNPRF as "not a keystream candidate": [KeystreamNames]
 	// filters these entries out of the canonical outer-cipher name
 	// list, and the ctr / kdf dispatch tables reject them at the
 	// switch level with an unknown-cipher error.
-	ClassNone Class = 0
+	ClassNPRF Class = 0
 
 	// ClassNativeStream marks a primitive that owns a native
 	// keystream mode (AES-128-CTR, SipHash-2-4 CTR, ChaCha20).
@@ -258,8 +273,8 @@ const (
 
 // Registry lists every shippable PRF-grade primitive in canonical
 // order (with AES-ITB-128 as the ITB-native inner-PRF-only exception —
-// see [ClassNone]). Entries with Class == ClassNone are safe only
-// within ITB's compound inner-PRF stack — see the [ClassNone]
+// see [ClassNPRF]). Entries with Class == ClassNPRF are safe only
+// within ITB's compound inner-PRF stack — see the [ClassNPRF]
 // docstring for the taxonomy.
 // The same order is used by the FFI iteration surface
 // (ITB_Triple_HashNames) — bindings that expose the registry roster
@@ -272,7 +287,7 @@ const (
 // bindings — which are triple-only and cannot themselves call Register
 // — see a stable primitive set.
 var Registry = [10]Spec{
-	{Name: CipherAESITB128, Width: W128, Class: ClassNone, FusedChainHash128: aesITB128FusedChainHash, FusedChainHash128x8: aesITB128FusedChainHash128x8, InterlockFillBatch16: aesITB128InterlockFillBatch16},
+	{Name: CipherAESITB128, Width: W128, Class: ClassNPRF, FusedChainHash128: aesITB128FusedChainHash, FusedChainHash128x8: aesITB128FusedChainHash128x8, InterlockFillBatch16: aesITB128InterlockFillBatch16},
 	{Name: CipherAreion256, Width: W256, Class: ClassPRFCounter, FusedChainHash256: areion256FusedChainHash, FusedChainHash256x8: areion256FusedChainHash8, InterlockFillBatch16x256: areion256InterlockFillBatch16},
 	{Name: CipherAreion512, Width: W512, Class: ClassPRFCounter, FusedChainHash512: areion512FusedChainHash, FusedChainHash512x8: areion512FusedChainHash8, InterlockFillBatch16x512: areion512InterlockFillBatch16, InterlockFillBatch32x512: areion512InterlockFillBatch32},
 	{Name: CipherBLAKE2b256, Width: W256, Class: ClassPRFCounter, HashHash: blake2b256HashHash, KeyedHash: blake2b256KeyedHash, FusedChainHash256: blake2b256FusedChainHash, FusedChainHash256x8: blake2b256FusedChainHash8, InterlockFillBatch16x256: blake2b256InterlockFillBatch16},

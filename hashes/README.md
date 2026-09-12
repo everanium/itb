@@ -55,7 +55,7 @@ shipped entry carries an outer cipher dispatch `Class`
 (`ClassNativeStream` for primitives with a native keystream mode,
 `ClassPRFCounter` for hash primitives run as PRF-counter cores).
 `Names()` returns the shipped name list in this order, `ClassOf(name)`
-the class of a shipped name (`ClassNone` otherwise), and `FullView()`
+the class of a shipped name (`ClassNPRF` otherwise), and `FullView()`
 the plain-data `Info` snapshot (name / width / class) without the
 factory hooks. The `ctr` and `kdf` packages dispatch on these
 constants; `wrapper` and `parallax` delegate to `ctr` by name. None of
