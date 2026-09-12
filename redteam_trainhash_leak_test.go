@@ -22,8 +22,11 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"testing"
 )
 
@@ -297,7 +300,16 @@ func TestRedTeamTrainHashLeak7of8(t *testing.T) {
 		lo, hi byte
 		match  int
 	}
-	best := lcScore{}
+	// Sentinel init: maxMatch = -1 so first tested candidate always
+	// registers as firstAtMax. tiedCount tracks how many candidates
+	// hit the running max — a large tie count under a broken cascade
+	// indicates structural collapse (many synthetic seeds equally
+	// consistent with the observation). scoreHist bins by match count
+	// for the full-distribution readout.
+	maxMatch := -1
+	firstAtMax := lcScore{}
+	tiedCount := 0
+	scoreHist := make(map[int]int, 76) // 0..75 possible match counts
 	// Real lockSeed's rawLo/rawHi (from Debug — used only for the
 	// terminal-stage validation printout, NOT for candidate ranking).
 	realLo := byte(meta.Debug.Lock[0])
@@ -372,19 +384,51 @@ func TestRedTeamTrainHashLeak7of8(t *testing.T) {
 					bitIndex += 56
 				}
 			}
-			if totalMatch > best.match {
-				best = lcScore{byte(lo), byte(hi), totalMatch}
+			scoreHist[totalMatch]++
+			switch {
+			case totalMatch > maxMatch:
+				maxMatch = totalMatch
+				firstAtMax = lcScore{byte(lo), byte(hi), totalMatch}
+				tiedCount = 1
+			case totalMatch == maxMatch:
+				tiedCount++
 			}
 			if byte(lo) == realLo && byte(hi) == realHi {
 				realMatch = totalMatch
 			}
 		}
 	}
-	t.Logf("best candidate: lo=0x%02x hi=0x%02x match=%d/75", best.lo, best.hi, best.match)
-	t.Logf("real (labonly): lo=0x%02x hi=0x%02x match=%d/75", realLo, realHi, realMatch)
-	if best.match > 60 {
-		t.Logf("Step 2 CONVERGED: cascade defence broken (top candidate matches ≥ 60/75)")
-	} else {
-		t.Logf("Step 2 BLOCKED: top candidate at %d/75 (~random floor); cascade defence holds", best.match)
+	// Histogram summary: sorted ascending by score.
+	var histKeys []int
+	for k := range scoreHist {
+		histKeys = append(histKeys, k)
+	}
+	sort.Ints(histKeys)
+	var histParts []string
+	for _, k := range histKeys {
+		histParts = append(histParts, fmt.Sprintf("%d/75: %d", k, scoreHist[k]))
+	}
+	t.Logf("score distribution across 65,536 candidates: %s", strings.Join(histParts, ", "))
+	realIsMax := realMatch == maxMatch
+	switch {
+	case maxMatch == 0:
+		t.Logf("Step 2 BLOCKED: all 65,536 candidates at 0/75 — cascade defence holds structurally")
+		t.Logf("real (labonly): lo=0x%02x hi=0x%02x match=%d/75", realLo, realHi, realMatch)
+	case tiedCount == 1:
+		t.Logf("unique winner: lo=0x%02x hi=0x%02x match=%d/75", firstAtMax.lo, firstAtMax.hi, firstAtMax.match)
+		t.Logf("real (labonly): lo=0x%02x hi=0x%02x match=%d/75 (real is winner: %v)", realLo, realHi, realMatch, realIsMax)
+		if maxMatch > 60 {
+			t.Logf("Step 2 CONVERGED: cascade defence broken (unique top candidate matches ≥ 60/75)")
+		} else {
+			t.Logf("Step 2 BLOCKED: unique top candidate at %d/75 (~random floor); cascade defence holds", maxMatch)
+		}
+	default:
+		t.Logf("collapse detected: %d candidates tied at max=%d/75 (first: lo=0x%02x hi=0x%02x)", tiedCount, maxMatch, firstAtMax.lo, firstAtMax.hi)
+		t.Logf("real (labonly): lo=0x%02x hi=0x%02x match=%d/75 (real also at max: %v)", realLo, realHi, realMatch, realIsMax)
+		if maxMatch > 60 {
+			t.Logf("Step 2 CONVERGED: cascade defence broken (top score ≥ 60/75 across %d tied candidates — synthetic space structurally collapses to accepting subgroup)", tiedCount)
+		} else {
+			t.Logf("Step 2 BLOCKED: top score at %d/75 (~random floor) despite %d ties; cascade defence holds", maxMatch, tiedCount)
+		}
 	}
 }
