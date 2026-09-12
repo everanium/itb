@@ -46,7 +46,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from screens_common import R_SET, depth_label, prim, random_comps  # noqa: E402
 from chainhashes.aes2r import _gmul  # noqa: E402
 
-TR = 5
+TR_DEFAULT = 5
 DATA_LEN = 15
 
 # MixColumns matrix: out[j] = XOR_i M[j][i] · in[i]
@@ -122,14 +122,15 @@ def attack_inversion(query):
     return cand, verified
 
 
-def main():
+def main(tr: int = TR_DEFAULT):
     print("=" * 74)
     print("Inversion KEY-RECOVERY through ChainHash<AES-ITB-128>, discard off")
+    print(f"(trials per depth: {tr})")
     print("=" * 74)
     for rounds in R_SET:
         hits = 0
         verified_n = 0
-        for _ in range(TR):
+        for _ in range(tr):
             comps = random_comps(rounds)
             query = oracle_full(comps, rounds)
             cand, verified = attack_inversion(query)
@@ -137,9 +138,9 @@ def main():
             # ground truth (report only): at r = 1 the candidate must equal
             # the seed block (seed_0 || seed_1)
             hits += verified and cand == prim.seed_block(comps[0], comps[1])
-        tag = "RECOVERS key block" if hits >= TR - 1 else "fails (no key recovery)"
-        print(f"  rounds={rounds:>2} {depth_label(rounds):>9}: verified {verified_n}/{TR}, "
-              f"ground-truth match {hits}/{TR}  -> {tag}")
+        tag = "RECOVERS key block" if hits >= tr - 1 else "fails (no key recovery)"
+        print(f"  rounds={rounds:>2} {depth_label(rounds):>9}: verified {verified_n}/{tr}, "
+              f"ground-truth match {hits}/{tr}  -> {tag}")
     print("-" * 74)
     print("discard on: no peel (hi lane hidden) -> 2^64 enumeration at every r; not run.")
     print("r=1 control recovers; r>=2 tests whether the feed-forward blocks the")
@@ -152,16 +153,16 @@ def main():
     for rounds in (2, 3, 4):
         hits = 0
         verified_n = 0
-        for _ in range(TR):
+        for _ in range(tr):
             comps = random_comps(rounds)
             query = oracle_full(comps, rounds)
             cand, ok = square_recover_r2(query, query)
             verified_n += (ok == 4)
             # ground truth (report only): at r = 2 the candidate must equal comps[0:4]
             hits += (ok == 4) and cand == comps[:4]
-        tag = "RECOVERS both seed blocks" if hits >= TR - 1 else "fails (no consistent candidate)"
-        print(f"  rounds={rounds:>2} {depth_label(rounds):>9}: verified {verified_n}/{TR}, "
-              f"ground-truth match {hits}/{TR}  -> {tag}")
+        tag = "RECOVERS both seed blocks" if hits >= tr - 1 else "fails (no consistent candidate)"
+        print(f"  rounds={rounds:>2} {depth_label(rounds):>9}: verified {verified_n}/{tr}, "
+              f"ground-truth match {hits}/{tr}  -> {tag}")
     print("-" * 74)
     print("r=2: the peel leaves 3-round AES between two unknown whitenings and the")
     print("Λ-set survives to the last round (Square). r>=3: no Λ-set enters the peeled")
@@ -169,4 +170,10 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    import argparse
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--trials", type=int, default=TR_DEFAULT,
+                    help=f"trials per depth (default {TR_DEFAULT})")
+    args = ap.parse_args()
+    main(tr=args.trials)

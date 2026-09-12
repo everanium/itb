@@ -105,7 +105,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from screens_common import depth_label, prim  # noqa: E402
 from chainhashes.aes2r import _gmul  # noqa: E402
 
-TR = 5
+TR_DEFAULT = 5
+TR = TR_DEFAULT  # overridable via --trials on the CLI
 DATA_LEN = 20                     # shipped per-pixel shape: LE32(idx) ‖ 128-bit nonce
 RC_LAST = np.frombuffer(prim.RC[1], dtype=np.uint8)   # shipped 2-round finaliser: RC[0], RC[1]
 
@@ -372,7 +373,10 @@ if __name__ == "__main__":
     ap.add_argument("--rounds", type=int, nargs="*", default=[1, 2, 3, 4],
                     help="cascade depths for --model realistic")
     ap.add_argument("--sets", type=int, default=3, help="Λ-sets per trial for --model realistic")
+    ap.add_argument("--trials", type=int, default=TR_DEFAULT,
+                    help=f"trials per depth (default {TR_DEFAULT})")
     args = ap.parse_args()
+    TR = args.trials
     if args.model == "realistic":
         run_realistic(tuple(args.rounds), args.sets)
     else:

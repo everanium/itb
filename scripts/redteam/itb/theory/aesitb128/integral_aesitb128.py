@@ -30,6 +30,7 @@ With the discard on (lo lane only) the same inversion is a 2^64 enumeration
 of the hidden hi lane (guess hi, invert, check against a second pair); it
 is not executed — the measured P^-1 throughput gives the extrapolated cost.
 """
+import argparse
 import os
 import sys
 import time
@@ -43,10 +44,11 @@ from screens_common import (  # noqa: E402
 )
 
 SHAPES = (15, 20, 36, 68)   # one-block lab shape, then the shipped per-pixel shapes
-REPS = 8
+REPS_DEFAULT = 8
+TRIALS_DEFAULT = 5
 
 
-def screen_integral():
+def screen_integral(reps_default: int = REPS_DEFAULT):
     print("=" * 78)
     print("Screen A — Λ-set integral on RAW AES-ITB-128 (r = 1, no ChainHash)")
     print("=" * 78)
@@ -57,7 +59,7 @@ def screen_integral():
         rounds = (L // 16 + 1) + 2
         for order in (1, 2, 3):
             n = 256 ** order
-            reps = REPS if order < 3 else 1
+            reps = reps_default if order < 3 else 1
             tot = {"lo": [0, 0], "full": [0, 0]}
             for _ in range(reps):
                 comps = random_comps(1)
@@ -81,16 +83,16 @@ def screen_integral():
                 print(f"{L:>8} {rounds:>6} {order:>5} {n:>9} {lane:>10} "
                       f"{avg_a:>8.1f} {avg_b:>10.1f} {rexp:>9.3f}  {verdict}")
     print("-" * 78)
-    print(f"{REPS} random seeds per cell at orders 1-2, one set at order 3; "
+    print(f"{reps_default} random seeds per cell at orders 1-2, one set at order 3; "
           "random-fn expects #active = lane bytes, #balanced ~= lane bytes / 256.")
 
 
-def screen_inversion():
+def screen_inversion(trials: int = TRIALS_DEFAULT):
     print()
     print("=" * 78)
     print("Screen B — one-pair inversion on RAW AES-ITB-128 (r = 1, discard off)")
     print("=" * 78)
-    TRIALS = 5
+    TRIALS = trials
     ok = 0
     for t in range(TRIALS):
         s0 = int.from_bytes(os.urandom(8), "little")
@@ -123,5 +125,12 @@ def screen_inversion():
 
 
 if __name__ == "__main__":
-    screen_integral()
-    screen_inversion()
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--reps", type=int, default=REPS_DEFAULT,
+                    help=f"random seeds per cell in Screen A orders 1-2 (default {REPS_DEFAULT})")
+    ap.add_argument("--trials", type=int, default=TRIALS_DEFAULT,
+                    help=f"one-pair-inversion trials in Screen B (default {TRIALS_DEFAULT})")
+    args = ap.parse_args()
+    screen_integral(reps_default=args.reps)
+    screen_inversion(trials=args.trials)

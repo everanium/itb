@@ -58,11 +58,14 @@ def main():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--data-len", type=int, default=15)
     ap.add_argument("--samples", type=int, default=N)
+    ap.add_argument("--reps", type=int, default=1,
+                    help="random-comps replicates per (rounds, Δ) cell; best (worst-case) "
+                         "aggregate is reported (default 1, matching the documented run)")
     args = ap.parse_args()
 
     print("=" * 88)
     print(f"DATA-differential through ChainHash<AES-ITB-128>  (N={args.samples} bases/Δ, "
-          f"single active byte, data_len={args.data_len})")
+          f"single active byte, data_len={args.data_len}, {args.reps} rep(s)/cell)")
     print("=" * 88)
     print(f"{'rounds':>6} {'depth':>9} {'observable':>20} {'out_b':>6} {'max_dp':>9} "
           f"{'rand':>8} {'zero_bytes':>11}  verdict")
@@ -70,13 +73,14 @@ def main():
     rand = 1 / 256
     for rounds in R_SET:
         best = {k: [0.0, 99, 0] for k in OBSERVABLES}
-        for delta in DELTAS:
-            comps = random_comps(rounds)
-            res = diff_probe(comps, rounds, delta, args.samples, args.data_len)
-            for k, (dp, zb, nb) in res.items():
-                best[k][0] = max(best[k][0], dp)
-                best[k][1] = min(best[k][1], zb)
-                best[k][2] = nb
+        for _ in range(args.reps):
+            for delta in DELTAS:
+                comps = random_comps(rounds)
+                res = diff_probe(comps, rounds, delta, args.samples, args.data_len)
+                for k, (dp, zb, nb) in res.items():
+                    best[k][0] = max(best[k][0], dp)
+                    best[k][1] = min(best[k][1], zb)
+                    best[k][2] = nb
         for k in OBSERVABLES:
             dp, zb, nb = best[k]
             if rounds == 1 and k == "discard off, peeled":
