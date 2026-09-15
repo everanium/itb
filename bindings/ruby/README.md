@@ -275,4 +275,4 @@ A small CLI under `bindings/ruby/eitb/` mirrors the shipped Go
 
 ## License
 
-Apache-2.0 — see [LICENSE](../../LICENSE).
+Apache-2.0 — see [LICENSE](https://github.com/everanium/itb/blob/main/LICENSE).

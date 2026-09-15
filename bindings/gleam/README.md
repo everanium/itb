@@ -336,4 +336,4 @@ cd bindings/gleam
 
 ## License
 
-Apache-2.0 — see [LICENSE](../../LICENSE).
+Apache-2.0 — see [LICENSE](https://github.com/everanium/itb/blob/main/LICENSE).

@@ -35,9 +35,6 @@ esac
 # libitb3_c.a / libitb3_c.so under bindings/c/build/, which the make
 # invocation below brings up to date through the C binding's own
 # build rules.
-# These sit at the repository root, not beside this script: the
-# SwiftPM manifest lives at the root so the package is resolvable as a
-# Git dependency, and SwiftPM puts its build tree next to the manifest.
 CLEAN_TARGETS=(
     .build                # SwiftPM build tree (debug + release)
     .swiftpm              # SwiftPM per-package state
@@ -59,10 +56,10 @@ clean_artefacts() {
     fi
 
     for rel in "${CLEAN_TARGETS[@]}"; do
-        abs="$(readlink -m -- "$REPO_ROOT/$rel")"
+        abs="$(readlink -m -- "$SCRIPT_DIR/$rel")"
         case "$abs" in
-            "$REPO_ROOT"/?*) ;;
-            *) echo "clean: '$rel' escapes $REPO_ROOT ($abs)" >&2; exit 1;;
+            "$SCRIPT_DIR"/?*) ;;
+            *) echo "clean: '$rel' escapes $SCRIPT_DIR ($abs)" >&2; exit 1;;
         esac
         [ -e "$abs" ] || continue
         echo "[clean] rm -rf $abs"
@@ -85,7 +82,8 @@ go build -trimpath "${TAGS[@]}" -buildmode=c-shared \
 echo "==> building the C binding library (libitb3_c)"
 make -C bindings/c build/libitb3_c.a build/libitb3_c.so
 
+cd "$SCRIPT_DIR"
 echo "==> building Swift package (swift build -c release)"
-swift build --package-path "$REPO_ROOT" -c release
+swift build -c release
 
 echo "==> ready: ./run_tests.sh"

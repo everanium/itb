@@ -254,4 +254,4 @@ python3 bindings/python/eitb/eitb.py decrypt singlemsg-triple-mac-v1 <blob-hex> 
 
 ## License
 
-Apache-2.0 — see [LICENSE](../../LICENSE).
+Apache-2.0 — see [LICENSE](https://github.com/everanium/itb/blob/main/LICENSE).
