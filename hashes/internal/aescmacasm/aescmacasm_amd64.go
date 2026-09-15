@@ -1,64 +1,26 @@
 //go:build amd64 && !purego && !noitbasm
 
-// Package aescmacasm holds the AVX-512 + VAES fused chain-absorb
-// kernel implementation of AES-CMAC for the parent hashes/ package.
-// The chain kernels are specialised at four input widths
-// (13 / 20 / 36 / 68 bytes — the 13-byte Interlocked Barrier PRF
-// fill shape plus the ITB 128 / 256 / 512-bit nonce buf shapes)
-// and hold the AES-CMAC state in a single ZMM register
-// (4 lanes × 16-byte AES blocks per ZMM) across the absorb rounds,
-// eliminating the per-round memory round-trip taken by the upstream
-// crypto/aes.cipher.Block.Encrypt path.
-//
-// VAESENC on ZMM operates on four independent AES blocks per
-// instruction — a perfect match for ITB's 4-pixel-batched lane
-// layout. The 11 AES-128 round keys are pre-expanded at Pair-factory
-// time (ExpandKeyAES128 above) and broadcast to all 4 lanes via
-// VBROADCASTI32X4 at function entry; per-pixel work then runs as
-// state ⊕= K0; (9 × VAESENC); VAESENCLAST per AES round, with the
-// CBC-MAC absorb XOR happening between rounds at the cost of one
-// VPXORD on a stack-staged data block.
-//
-// Below the AVX-512 + VAES tier the parent package falls through to
-// the existing AESCMACWithKey closure (which uses crypto/aes — itself
-// AES-NI accelerated on amd64 hosts that expose the AES round
-// instructions). The 4-pixel-batched arm wins primarily through
-// 4-lane parallelism — four independent AES-CMAC chains advance
-// through one VAESENC instruction per round instead of four serial
-// cipher.Block.Encrypt interface dispatches — combined with
-// collapsing Go's interface-method dispatch on cipher.Block.Encrypt
-// across the lanes.
-//
-// VAES + AVX-2 (no AVX-512) hosts dispatch to the same scalar
-// fallback rather than a YMM-tiered kernel: the AVX-2 fallback is
-// only kept on Areion-SoEM (where VAES is the headline win and
-// halved per-VAES throughput still beats serial scalar); for AES-CMAC
-// the existing AES-NI scalar path is already fast enough that a
-// dedicated YMM tier would add code mass for negligible uplift.
 package aescmacasm
 
-import "github.com/jedisct1/go-aes"
+import aes "github.com/jedisct1/go-aes"
 
-// HasVAESAVX512 reports whether the runtime CPU supports the fused
-// AVX-512 + VAES chain-absorb kernels. Resolved once at init time
-// from the upstream github.com/jedisct1/go-aes capability bits, the
-// same source areionasm uses (see internal/areionasm/areionasm_amd64.go
-// for the prior-art rationale on why this single bit covers every
-// AVX-512 sub-feature the kernels touch — VAES requires AVX-512+VL
-// on every shipping silicon where AVX-512F is present, and the only
-// AVX-512F-without-VL chips, Knights Landing / Knights Mill, lack
-// VAES entirely and are excluded by the HasVAES clause).
-var HasVAESAVX512 = aes.CPU.HasVAES && aes.CPU.HasAVX512
+// Batch-16 tier flags: auto-select the widest VAES tier the host offers.
+// The flags are package variables so the forcetier init and the
+// in-package dispatch tests can override the auto-selection. Only one
+// flag is true; the cascade keeps the "one consistent set" invariant the
+// forcetier init relies on. The flags select the arm of FusedChain13x16
+// (aescmacasm_fused_amd64.go), the Interlocked Barrier fill kernel.
+var (
+	HasVAESAVX512X16 = aes.CPU.HasVAES && aes.CPU.HasAVX512
+	HasVAESAVX2X16   = aes.CPU.HasVAES && aes.CPU.HasAVX2 && !HasVAESAVX512X16
 
-// HasAESNIBatched reports whether the runtime CPU exposes AES-NI
-// (AESENC / AESENCLAST on XMM) but none of the wider batched-AES
-// paths the higher tiers require (VAES + AVX-512). On these hosts the
-// AES-CMAC-128 chain-absorb dispatch routes to the XMM AES-NI kernels
-// (aescmac_chain128_*_aesni_amd64.s): four independent per-lane
-// 128-bit AES-CMAC chains advance under a shared round-key stream, the
-// four disjoint dependency chains hiding the ~4-cycle AESENC latency
-// on a single AES issue port. It gates on !HasVAESAVX512 so that hosts
-// carrying the wider tier keep their ZMM kernel — the AES-NI XMM path
-// is strictly the fallback for AES-NI-only silicon (e.g. Cascade Lake
-// Xeon Gold, AMD Zen 3, and every AVX2-no-VAES cloud VM).
-var HasAESNIBatched = aes.CPU.HasAESNI && !HasVAESAVX512
+	// HasAVXAESNIX16 selects the VEX-encoded XMM batch-16 kernel on
+	// AES-NI + AVX hosts without VAES (AVX2 is used as the detection
+	// superset); HasAESNIX16 selects the legacy-SSE-encoded XMM batch-16
+	// kernel on AES-NI hosts without AVX.
+	HasAVXAESNIX16 = aes.CPU.HasAESNI && aes.CPU.HasAVX2 && !HasVAESAVX512X16 && !HasVAESAVX2X16
+	HasAESNIX16    = aes.CPU.HasAESNI && !aes.CPU.HasAVX2
+
+	// HasARMAESX16 is always false on amd64 builds.
+	HasARMAESX16 = false
+)

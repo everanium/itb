@@ -22,7 +22,7 @@ pub fn set_gc_percent(pct: i32) -> ItbResult<i32> {
     Ok(unsafe { (s.ITB_SetGCPercent)(pct) })
 }
 
-/// Returns the libitb library version string.
+/// Returns the libitb3 library version string.
 pub fn version() -> ItbResult<String> {
     let s = ffi::syms()?;
     // SAFETY (both calls): standard probe-then-read over the

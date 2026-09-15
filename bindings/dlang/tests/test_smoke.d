@@ -3,7 +3,7 @@ module test_smoke;
 
 import std.stdio : writeln;
 
-import itb;
+import itb3;
 
 void main()
 {

@@ -1,12 +1,12 @@
-// Runtime binding to the libitb shared library (dart:ffi).
+// Runtime binding to the libitb3 shared library (dart:ffi).
 //
 // Every `ITB_*` symbol used by the package is looked up once, lazily,
 // from a process-wide [DynamicLibrary]. The library file is resolved
 // in this order:
 //
-//   1. `ITB_LIBITB_PATH` environment variable (path to the shared
+//   1. `ITB_LIBITB3_PATH` environment variable (path to the shared
 //      library file).
-//   2. `<repo>/dist/<os>-<arch>/libitb.<ext>` found by walking up
+//   2. `<repo>/dist/<os>-<arch>/libitb3.<ext>` found by walking up
 //      from the current working directory (in-repo builds).
 //   3. The OS default loader path (`LD_LIBRARY_PATH`, `ld.so.cache`,
 //      `DYLD_LIBRARY_PATH`, `PATH`).
@@ -23,9 +23,9 @@ import 'package:ffi/ffi.dart';
 // ---------------------------------------------------------------------------
 
 String _libFileName() {
-  if (Platform.isMacOS) return 'libitb.dylib';
-  if (Platform.isWindows) return 'libitb.dll';
-  return 'libitb.so';
+  if (Platform.isMacOS) return 'libitb3.dylib';
+  if (Platform.isWindows) return 'libitb3.dll';
+  return 'libitb3.so';
 }
 
 String _distDirName() {
@@ -44,7 +44,7 @@ String _distDirName() {
 }
 
 DynamicLibrary _openLibrary() {
-  final env = Platform.environment['ITB_LIBITB_PATH'];
+  final env = Platform.environment['ITB_LIBITB3_PATH'];
   if (env != null && env.isNotEmpty) {
     return DynamicLibrary.open(env);
   }
@@ -208,7 +208,7 @@ typedef StreamReadDart = int Function(int stream, Pointer<Uint8> out,
 // Bridge singleton
 // ---------------------------------------------------------------------------
 
-/// Lazily-initialized bindings to every libitb symbol the package
+/// Lazily-initialized bindings to every libitb3 symbol the package
 /// dispatches. Internal to the package.
 class FfiBridge {
   FfiBridge._(DynamicLibrary lib)
@@ -303,7 +303,7 @@ class FfiBridge {
 // ---------------------------------------------------------------------------
 
 /// Copies [data] into a fresh malloc'd native buffer. Returns
-/// [nullptr] for an empty input (libitb accepts a null pointer with a
+/// [nullptr] for an empty input (libitb3 accepts a null pointer with a
 /// zero length). The caller frees a non-null result.
 Pointer<Uint8> copyIn(Uint8List data) {
   if (data.isEmpty) return nullptr;
@@ -394,7 +394,7 @@ class NativeScratch {
 final Finalizer<NativeScratch> scratchFinalizer =
     Finalizer<NativeScratch>((s) => s.release());
 
-/// Reads a NUL-terminated string out of a length-reporting libitb
+/// Reads a NUL-terminated string out of a length-reporting libitb3
 /// call (`ITB_Version` / `ITB_LastError` shape): first a capacity
 /// query with a null buffer, then the actual read. Returns the empty
 /// string when nothing is recorded or the read fails.

@@ -22,10 +22,10 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-Import-Module (Join-Path $PSScriptRoot '../Itb/Itb.psd1') -Force
+Import-Module (Join-Path $PSScriptRoot '../Everanium.LibItb3/Everanium.LibItb3.psd1') -Force
 
-[void](Set-ItbMemoryLimit -Bytes (512MB))
-[void](Set-ItbGCPercent -Percent 20)
+[void](Set-ItbMemoryLimit -Bytes (4GB))
+[void](Set-ItbGCPercent -Percent 100)
 
 function Show-Usage {
     [Console]::Error.WriteLine(@'
@@ -39,7 +39,7 @@ usage: eitb.ps1 version
 
 function Invoke-CmdVersion {
     $v = Get-ItbVersion
-    Write-Output "libitb $($v.Library)"
+    Write-Output "libitb3 $($v.Library)"
     Write-Output "itb-csharp $($v.CSharpBinding)"
     Write-Output "itb-powershell $($v.Module)"
 }

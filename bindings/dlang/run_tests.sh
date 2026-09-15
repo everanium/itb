@@ -4,7 +4,7 @@
 #
 # Each tests/test_*.d is compiled to its own standalone executable in
 # tests/build/, then run in turn. Per-process isolation gives every
-# test a fresh libitb global state (profile registry, last-error slot)
+# test a fresh libitb3 global state (profile registry, last-error slot)
 # without needing an in-process serial lock. Test binaries are built
 # with -unittest and run with --DRT-testmode=run-main so the library
 # modules' unittest blocks (e.g. the opts query-encoding checks) run
@@ -14,7 +14,7 @@
 #   - DMD (default). Override via COMPILER=ldc2 ./run_tests.sh.
 #
 # Library lookup:
-#   - libitb.so is linked from <repo>/dist/linux-amd64/ at compile
+#   - libitb3.so is linked from <repo>/dist/linux-amd64/ at compile
 #     time; the same directory is baked into the binaries' rpath, so
 #     no LD_LIBRARY_PATH is needed at run time.
 #
@@ -67,8 +67,8 @@ for src in "${TEST_SOURCES[@]}"; do
     bin="$BUILD_DIR/$name"
 
     printf "[compile] %-28s" "$name"
-    if "$COMPILER" -w -unittest -I=source -of="$bin" "$src" source/itb/*.d \
-        -L-L"$DIST_DIR" -L-litb "-L-rpath=$DIST_DIR" >/dev/null; then
+    if "$COMPILER" -w -unittest -I=source -of="$bin" "$src" source/itb3/*.d \
+        -L-L"$DIST_DIR" -L-litb3 "-L-rpath=$DIST_DIR" >/dev/null; then
         echo " ok"
     else
         echo " COMPILE FAILED"

@@ -48,6 +48,36 @@ type Seed512 struct {
 	// single-call code path; non-nil routes processChunk512 through
 	// BatchChainHash512 four pixels at a time.
 	BatchHash BatchHashFunc512
+
+	// FusedChain and BatchFusedChain optionally evaluate the whole
+	// ChainHash512 cascade inside the primitive (see
+	// [FusedChainHashFunc512]). When non-nil and the implementation
+	// reports ok for the input shape, ChainHash512 / BatchChainHash512
+	// return the fused result; otherwise they run the sequential loop
+	// over Hash / BatchHash. Both paths are bit-exact by contract; the
+	// fields are performance hooks, nil disables them.
+	FusedChain      FusedChainHashFunc512
+	BatchFusedChain BatchFusedChainHashFunc512
+
+	// interlockFillX16 is the batch-16 Interlocked Barrier fill hook for
+	// the 13-byte fill shape (the sole shape the overlay uses): 4 groups
+	// (16 chunks) per kernel call, see [InterlockFillFunc16x512]. A
+	// performance hook only — the cascade fill is the wire with or
+	// without it. Populated via SetInterlockBatch16.
+	interlockFillX16 InterlockFillFunc16x512
+
+	// interlockFillX32 is the batch-32 counterpart of interlockFillX16:
+	// 8 groups (32 chunks) per kernel call, see [InterlockFillFunc32x512].
+	// The fill ladder tries it ahead of the batch-16 hook. Populated via
+	// SetInterlockBatch32.
+	interlockFillX32 InterlockFillFunc32x512
+
+	// batchFusedChainX8 is the eight-lane fused cascade hook of the pixel
+	// pipeline (see [BatchFusedChainHashFunc512x8]). When non-nil on both
+	// seeds of a call, processChunk512 hashes eight pixels per call ahead
+	// of the four-pixel stride. A performance hook only: the wire is
+	// identical with and without it. Populated via SetBatchFusedChain8.
+	batchFusedChainX8 BatchFusedChainHashFunc512x8
 }
 
 // NewSeed512 creates a new 512-bit seed with cryptographically random components.
@@ -127,6 +157,11 @@ func (s *Seed512) MinPixelsAuth() int {
 //	h = Hash512(data, [s[8]^h[0], s[9]^h[1], ..., s[15]^h[7]])
 //	...
 func (s *Seed512) ChainHash512(buf []byte) [8]uint64 {
+	if s.FusedChain != nil {
+		if out, ok := s.FusedChain(s.Components, buf); ok {
+			return out
+		}
+	}
 	var seed [8]uint64
 	copy(seed[:], s.Components[0:8])
 	h := s.Hash(buf, seed)

@@ -14,7 +14,7 @@
 %%
 %% Invocation (from bindings/erlang, after ./build.sh):
 %%   erlc -o bench bench/bench_message.erl
-%%   erl -noshell -pa _build/default/lib/itb/ebin -pa bench \
+%%   erl -noshell -pa _build/default/lib/libitb3/ebin -pa bench \
 %%       -run bench_message main run -run init stop
 
 -module(bench_message).
@@ -27,11 +27,11 @@ main(_Args) ->
     %% Bench-scale allocation churn leaks Go scratch heap unboundedly
     %% without a soft memory cap + aggressive GC; the return values
     %% report the previous settings, not an error.
-    _ = itb:set_memory_limit(512 bsl 20), %% 512 MiB soft cap
-    _ = itb:set_gc_percent(20),           %% aggressive GC
+    _ = itb3:set_memory_limit(4 bsl 30), %% 4 GiB soft cap
+    _ = itb3:set_gc_percent(100),         %% balanced GC
 
     Profile = env("ITB_PROFILE", "singlemsg-triple-nomac-v1"),
-    {ok, Pipe} = itb:init(Profile, bench_opts()),
+    {ok, Pipe} = itb3:init(Profile, bench_opts()),
     io:format("~-17s ~-8s ~s~n", ["bench", "size", "mb_per_sec"]),
     lists:foreach(
       fun(Size) ->
@@ -39,19 +39,19 @@ main(_Args) ->
               %% bench (crypto/rand). Not in the timing loop.
               Plain = crypto:strong_rand_bytes(Size),
               Run = fun() ->
-                            {ok, _Wire} = itb:encrypt_message(Pipe, Plain),
+                            {ok, _Wire} = itb3:encrypt_message(Pipe, Plain),
                             ok
                     end,
               bench_case("message", Size, Run),
               %% Pre-encrypt one wire outside the decrypt timing loop.
-              {ok, DecWire} = itb:encrypt_message(Pipe, Plain),
+              {ok, DecWire} = itb3:encrypt_message(Pipe, Plain),
               RunDec = fun() ->
-                               {ok, _Plain} = itb:decrypt_message(Pipe, DecWire),
+                               {ok, _Plain} = itb3:decrypt_message(Pipe, DecWire),
                                ok
                        end,
               bench_case("message-dec", Size, RunDec)
       end, [1 bsl 20, 16 bsl 20, 64 bsl 20]),
-    ok = itb:free(Pipe).
+    ok = itb3:free(Pipe).
 
 %% ------------------------------------------------------------------
 %% Timing loop: one untimed warm-up, then iterate until the wall-clock

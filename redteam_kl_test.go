@@ -6,7 +6,7 @@ package itb
 // driven by `scripts/redteam/itb/theory/_common/kl/kl_matrix.py`. Emits one massive
 // ITB ciphertext per invocation on the shipped Triple + always-on 48-bit
 // Interlocked Barrier wire, together with a `.pixel` KEY=VALUE sidecar
-// carrying container dimensions and the dual-nonce header layout the two
+// carrying container dimensions and the dual-nonce layout the two
 // Python sub-scripts (`kl_massive_full.py`, `kl_urandom.py`) consume
 // through `kl_matrix.py`.
 //
@@ -17,7 +17,7 @@ package itb
 //     invocations produces an independent ciphertext). No `setBrokenTestNonce`.
 //   - `<hash>.pixel` sidecar carries `main_nonce_hex`, `interlock_nonce_hex`,
 //     `total_pixels`, `width`, `height`, `barrier_fill`, `header_size`,
-//     `start_pixel` (first-snake `deriveStartPixel`, lab-only decorative
+//     `start_pixel` (first-region `deriveStartPixel`, lab-only decorative
 //     value never consumed by the |Δ50| / χ² metric). Matches the field
 //     schema `raw_mode_bias_probe.py` consumes.
 //   - No ground-truth peek into any Mode B decision path — this is a pure
@@ -233,6 +233,12 @@ func TestRedTeamGenerateTripleMassive(t *testing.T) {
 	}
 
 	cfg := &Config{BarrierFill: bf}
+	// The interlock nonce is not a wire field — it travels split across
+	// the interlocked lanes — so the lab fixture installs a value drawn
+	// from the corpus RNG and records the one the encrypt consumed.
+	interlockNonce := make([]byte, currentNonceSizeCfg(cfg))
+	plainRng.Read(interlockNonce)
+	setBrokenTestInterlockNonceOnly(t, interlockNonce)
 	ct, err := Encrypt3x128Cfg(cfg, ns, ls, d1, d2, d3, s1, s2, s3, plaintext)
 	if err != nil {
 		t.Fatalf("Encrypt3x128Cfg: %v", err)
@@ -245,16 +251,15 @@ func TestRedTeamGenerateTripleMassive(t *testing.T) {
 		t.Fatal("round-trip mismatch")
 	}
 
-	// Parse shipped dual-nonce header off the ciphertext.
+	// Parse the shipped wire header off the ciphertext.
 	nonceLen := currentNonceSizeCfg(cfg)
 	mainNonce := ct[:nonceLen]
-	interlockNonce := ct[nonceLen : 2*nonceLen]
-	width := int(binary.BigEndian.Uint16(ct[2*nonceLen:]))
-	height := int(binary.BigEndian.Uint16(ct[2*nonceLen+2:]))
+	width := int(binary.BigEndian.Uint16(ct[nonceLen:]))
+	height := int(binary.BigEndian.Uint16(ct[nonceLen+2:]))
 	totalPixels := width * height
-	headerSize := 2*nonceLen + 4
+	headerSize := nonceLen + 4
 
-	// Representative per-snake startPixel — first-snake `deriveStartPixel`
+	// Representative per-region startPixel — first-region `deriveStartPixel`
 	// value on the main nonce. Written to the sidecar as a lab-only
 	// decorative value; the Mode B distinguisher never consumes it.
 	startPixel := s1.deriveStartPixel(mainNonce, totalPixels)

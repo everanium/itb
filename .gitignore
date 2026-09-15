@@ -61,13 +61,12 @@ __pycache__/
 
 # Shared library / FFI build artefacts (cmd/cshared)
 /dist/
-libitb.so
-libitb.dll
-libitb.dylib
-libitb.h
-libitb.a
-cmd/cshared/libitb.*
-cmd/cshared/itb.h
+libitb3.so
+libitb3.dll
+libitb3.dylib
+libitb3.h
+libitb3.a
+cmd/cshared/libitb3.*
 cmd/cshared/cshared
 cmd/cshared/cshared.h
 bindings/rust/target
@@ -83,6 +82,14 @@ bindings/rust/Cargo.lock
 **/*.egg-info/
 bindings/python/build/
 bindings/python/dist/
+
+# SwiftPM artefacts — the manifest sits at the repository root so the
+# package is resolvable as a Git dependency, and the build tree lands
+# beside it.
+/.build/
+/.swiftpm/
+/.index-build/
+/Package.resolved
 
 # Fortran cache
 *.mod

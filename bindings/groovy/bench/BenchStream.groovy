@@ -1,11 +1,11 @@
 // Stream-pump throughput vs plaintext size (Streaming Non-AEAD
 // profile) at 1 MiB / 16 MiB / 64 MiB.
 
-package dev.everanium.itb.groovy.bench
+package io.github.everanium.itb3.groovy.bench
 
 import groovy.transform.CompileStatic
 
-import dev.everanium.itb.groovy.Pipeline
+import io.github.everanium.itb3.groovy.Pipeline
 
 @CompileStatic
 final class BenchStream {

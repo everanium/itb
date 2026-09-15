@@ -3,11 +3,19 @@
 #
 # Runs a short single-thread bench (default: 4 MiB payload, 300 ms
 # per direction) at natural dispatch and then under every documented
-# forced-tier value for the three dispatch axes:
+# forced-tier value for the four dispatch axes:
 #
-#   ITB_FORCE_INTERLOCK_TIER = avx512 | avx2 | scalar
-#   ITB_FORCE_HASH_TIER      = avx512 | vaesavx2 | avx2 | aesni | scalar
-#   ITB_FORCE_PIXEL_TIER     = A | A_NOGFNI | B | B_NOGFNI | C
+#   ITB_FORCE_INTERLOCK_TIER          = avx512 | avx512x8 | avx2 | sve2 | sve | neon | scalar
+#   ITB_FORCE_HASH_TIER               = avx512 | vaesavx2 | avx2 | vex | aesni | gpr | sve2 | sve | neon | scalar
+#   ITB_FORCE_INTERLOCK_PRF_FILL_TIER = avx512 | vaesavx2 | avx2 | vex | aesni | gpr | neon | scalar
+#   ITB_FORCE_PIXEL_TIER              = A | A_NOGFNI | B | B_NOGFNI | C
+#
+# The arm64-only tokens (neon / sve / sve2) are swept below on the
+# arm64 branch; the amd64-only tokens (avx512 / vaesavx2 / avx2 / vex /
+# aesni) are swept on the amd64 branch. A token that names a tier the
+# host cannot execute (or a package does not implement) is rejected
+# with a stderr note and the auto-dispatch cell is skipped rather than
+# reported under the wrong label.
 #
 # Purpose: identify a slow tier on a given CPU by comparison — natural
 # dispatch throughput vs each forced arm. When natural dispatch is
@@ -46,7 +54,7 @@ echo "  payload=$PAYLOAD  bench_time=$BENCH_TIME  bench_count=$BENCH_COUNT"
 echo ""
 
 BENCH_REGEX="^BenchmarkExtProductionMessage_(Encrypt|Decrypt)_${PAYLOAD}\$"
-COMMON_ENV="ITB_INNER_HASH=areion512 ITB_KEY_BITS=512 ITB_NONCE_BITS=512 ITB_WITH_MAC=false ITB_WITH_PARALLAX=false ITB_WITH_WRAPPER=false ITB_GOMEMLIMIT=1GiB ITB_GOGC=20"
+COMMON_ENV="ITB_INNER_HASH=areion512 ITB_KEY_BITS=512 ITB_NONCE_BITS=512 ITB_WITH_MAC=false ITB_WITH_PARALLAX=false ITB_WITH_WRAPPER=false ITB_GOMEMLIMIT=4GiB ITB_GOGC=100"
 
 run_bench() {
     local label="$1"
@@ -62,19 +70,39 @@ run_bench() {
     printf "  E=%8s MB/s  D=%8s MB/s\n" "${enc:-N/A}" "${dec:-N/A}"
 }
 
+ARCH=$(uname -m)
+case "$ARCH" in
+    aarch64|arm64)
+        interlock_tiers=(sve2 sve neon scalar)
+        hash_tiers=(gpr neon scalar)
+        prf_fill_tiers=(neon gpr scalar)
+        ;;
+    *)
+        interlock_tiers=(avx512 avx512x8 avx2 scalar)
+        hash_tiers=(avx512 vaesavx2 avx2 vex aesni gpr scalar)
+        prf_fill_tiers=(avx512 vaesavx2 avx2 vex aesni gpr scalar)
+        ;;
+esac
+
 echo "=== Natural dispatch ==="
 run_bench "natural"
 echo ""
 
 echo "=== Forced interlock tier ==="
-for t in avx512 avx2 scalar; do
+for t in "${interlock_tiers[@]}"; do
     run_bench "INTERLOCK=$t" ITB_FORCE_INTERLOCK_TIER=$t
 done
 echo ""
 
 echo "=== Forced hash tier ==="
-for t in avx512 vaesavx2 avx2 aesni scalar; do
+for t in "${hash_tiers[@]}"; do
     run_bench "HASH=$t" ITB_FORCE_HASH_TIER=$t
+done
+echo ""
+
+echo "=== Forced interlock PRF fill tier ==="
+for t in "${prf_fill_tiers[@]}"; do
+    run_bench "PRF_FILL=$t" ITB_FORCE_INTERLOCK_PRF_FILL_TIER=$t
 done
 echo ""
 

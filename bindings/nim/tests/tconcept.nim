@@ -2,7 +2,8 @@
 ## Go under the shipped tree.
 
 import std/[algorithm, os, unittest]
-import ../src/itb
+import std/strutils
+import ../src/itb3
 
 proc payload(n: int, seed: uint64): seq[byte] =
   ## Deterministic non-trivial payload (xorshift fill).
@@ -243,13 +244,43 @@ suite "itb nim binding":
     check prof.innerHash == "areion512"
     check prof.macName == "hmac-blake3"
     check prof.wrapper and prof.parallax
-    check prof == lookup("singlemsg-triple-mac-v1")
+    # The recipe fields match the registry entry; the two
+    # inspection-only fields separate the two records.
+    var recipe = prof
+    recipe.nonceBits = none(int)
+    recipe.barrierFill = none(int)
+    check recipe == lookup("singlemsg-triple-mac-v1")
     try:
       discard inspect("not a blob".toOpenArrayByte(0, 9))
       check false
     except ItbError as e:
       check e.status == stBadInput
     sender.free()
+
+  test "inspect carries the runtime globals; lookup does not":
+    # Defaults: the blob records the compile-in nonce width and
+    # barrier fill margin, and inspect surfaces both.
+    let sender = initPipeline("singlemsg-triple-mac-v1")
+    let prof = inspect(sender.save)
+    check prof.nonceBits == some(512)
+    check prof.barrierFill == some(1)
+    sender.free()
+    # Per-Pipeline overrides travel through the blob into inspect.
+    let tuned = initPipeline("singlemsg-triple-mac-v1",
+                             Opts().withNonceBits(256).withBarrierFill(4))
+    let tunedProf = inspect(tuned.save)
+    check tunedProf.nonceBits == some(256)
+    check tunedProf.barrierFill == some(4)
+    check tunedProf.toJson.contains("\"nonce_bits\":256")
+    check tunedProf.toJson.contains("\"barrier_fill\":4")
+    tuned.free()
+    # The registry entry is the recipe alone — neither field is part
+    # of it, so both read as absent rather than as zero.
+    let registry = lookup("singlemsg-triple-mac-v1")
+    check registry.nonceBits.isNone
+    check registry.barrierFill.isNone
+    check not registry.toJson.contains("nonce_bits")
+    check not registry.toJson.contains("barrier_fill")
 
   test "saveF then loadPipelineF round trip; missing file is bad input":
     let path = getTempDir() / ("itb-nim-persist-" & $getCurrentProcessId() & ".blob")

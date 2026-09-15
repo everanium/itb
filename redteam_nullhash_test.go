@@ -22,7 +22,7 @@ package itb
 // (uniform Ω_chunk coverage requires ≥128-bit non-collapsing PRF
 // output; nullHash gives 16 bits of static constant per seed role).
 // Exists strictly to empirically demonstrate the entropy-floor break
-// point of the tandem Part 1 + Part 2 barrier — under Full KPA + given
+// point of the tandem Rank Barrier + Pixel Barrier — under Full KPA + given
 // startPixels the joint enumeration reduces to five 16-bit unknowns
 // (K_noiseSeed, K_lockSeed, K_dataSeed_1/2/3), each brute-forceable
 // in seconds.
@@ -104,9 +104,21 @@ func generateNullHashPlaintext(n int) []byte {
 	padLen := n - len(prefix) - len(suffix)
 	buf := make([]byte, 0, n)
 	buf = append(buf, prefix...)
-	// Deterministic printable-ASCII pad: cycle 'a'..'z' for reproducibility.
-	for i := 0; i < padLen; i++ {
-		buf = append(buf, byte('a'+(i%26)))
+	// Random printable-ASCII pad — fresh per invocation via crypto/rand.
+	// Wire body varies across runs while remaining a realistic
+	// printable-ASCII plaintext shape (matches typical KPA target).
+	const asciiAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 ,.:;-!?"
+	tmp := make([]byte, padLen)
+	if _, err := rand.Read(tmp); err != nil {
+		// Fall back to deterministic pad only if crypto/rand fails
+		// (essentially never; keeps helper non-erroring for callers).
+		for i := 0; i < padLen; i++ {
+			buf = append(buf, byte('a'+(i%26)))
+		}
+	} else {
+		for i := 0; i < padLen; i++ {
+			buf = append(buf, asciiAlphabet[int(tmp[i])%len(asciiAlphabet)])
+		}
 	}
 	buf = append(buf, suffix...)
 	return buf
@@ -142,7 +154,7 @@ func TestRedTeamNullHashRoundtrip(t *testing.T) {
 //
 //	ct.bin           — the wire ciphertext (attacker input)
 //	kpa.bin          — the Full KPA plaintext (attacker input)
-//	cell.meta.json   — nonce, container dims, three snake startPixels,
+//	cell.meta.json   — nonce, container dims, three region startPixels,
 //	                   plus a `truth:` block with the ground-truth
 //	                   16-bit seed constants for post-attack validation
 //
@@ -181,6 +193,14 @@ func writeSingleNullHashExpose(t *testing.T, outDir string, keyBits, ptSize, bar
 
 	ns, ls, d1, d2, d3, s1, s2, s3 := makeNullHashSeeds(t, keyBits)
 
+	// The interlock nonce is not a wire field — it travels split across
+	// the interlocked lanes — so the lab fixture installs a
+	// CSPRNG-fresh value and records the one the encrypt consumed.
+	interlockNonce := make([]byte, currentNonceSizeCfg(cfg))
+	if _, rerr := rand.Read(interlockNonce); rerr != nil {
+		t.Fatalf("crypto/rand interlock nonce: %v", rerr)
+	}
+	setBrokenTestInterlockNonceOnly(t, interlockNonce)
 	ct, err := Encrypt3x128Cfg(cfg, ns, ls, d1, d2, d3, s1, s2, s3, plaintext)
 	if err != nil {
 		t.Fatalf("Encrypt3x128Cfg: %v", err)
@@ -194,23 +214,25 @@ func writeSingleNullHashExpose(t *testing.T, outDir string, keyBits, ptSize, bar
 	}
 
 	nonceLen := currentNonceSizeCfg(cfg)
-	if len(ct) < 2*nonceLen+4 {
-		t.Fatalf("ciphertext too short for dual-nonce header: %d", len(ct))
+	if len(ct) < nonceLen+4 {
+		t.Fatalf("ciphertext too short for the wire header: %d", len(ct))
 	}
 	mainNonce := ct[:nonceLen]
-	interlockNonce := ct[nonceLen : 2*nonceLen]
-	width := int(binary.BigEndian.Uint16(ct[2*nonceLen:]))
-	height := int(binary.BigEndian.Uint16(ct[2*nonceLen+2:]))
+	width := int(binary.BigEndian.Uint16(ct[nonceLen:]))
+	height := int(binary.BigEndian.Uint16(ct[nonceLen+2:]))
 	totalPixels := width * height
-	headerSize := 2*nonceLen + 4
+	headerSize := nonceLen + 4
 
-	// Per-snake startPixels — lab concession granted to the attacker.
-	// deriveStartPixel(mainNonce, totalPixels) reproduces the encoder's
-	// own call site (Encrypt3x128Cfg uses total container pixels, not
-	// per-snake subdivisions, for each start).
-	sp1 := s1.deriveStartPixel(mainNonce, totalPixels)
-	sp2 := s2.deriveStartPixel(mainNonce, totalPixels)
-	sp3 := s3.deriveStartPixel(mainNonce, totalPixels)
+	// Per-region startPixels — lab concession granted to the attacker.
+	// The encoder splits the container into three per-region strips via
+	// tripleThirdCaps and invokes process128Cfg(cfg, ..., third, 1, ...) —
+	// so each region's deriveStartPixel receives its own per-region width
+	// (third for regions 1 and 2, thirdPixels2 for region 3), NOT the full
+	// container's totalPixels.
+	third, thirdPixels2, _ := tripleThirdCaps(totalPixels)
+	sp1 := s1.deriveStartPixel(mainNonce, third)
+	sp2 := s2.deriveStartPixel(mainNonce, third)
+	sp3 := s3.deriveStartPixel(mainNonce, thirdPixels2)
 
 	// Truth block: post-attack validation data. NOT for decision-path
 	// consumption in the attacker script.
@@ -242,9 +264,9 @@ func writeSingleNullHashExpose(t *testing.T, outDir string, keyBits, ptSize, bar
 		"total_pixels":        totalPixels,
 		"header_size":         headerSize,
 		"start_pixels": map[string]int{
-			"snake_1": sp1,
-			"snake_2": sp2,
-			"snake_3": sp3,
+			"region_1": sp1,
+			"region_2": sp2,
+			"region_3": sp3,
 		},
 		"truth_labonly": truth,
 	}
@@ -286,7 +308,7 @@ func writeSingleNullHashExpose(t *testing.T, outDir string, keyBits, ptSize, bar
 	t.Logf("Wrote ct.bin (%d bytes), kpa.bin (%d bytes), cell.meta.json under %s",
 		len(ct), len(plaintext), outDir)
 	t.Logf("  width=%d height=%d totalPixels=%d headerSize=%d", width, height, totalPixels, headerSize)
-	t.Logf("  startPixels: snake1=%d snake2=%d snake3=%d", sp1, sp2, sp3)
+	t.Logf("  startPixels: region1=%d region2=%d region3=%d", sp1, sp2, sp3)
 	t.Logf("  truth constants: noiseSeed=%s lockSeed=%s d1=%s d2=%s d3=%s",
 		truth["K_noiseSeed"], truth["K_lockSeed"], truth["K_dataSeed_1"], truth["K_dataSeed_2"], truth["K_dataSeed_3"])
 }

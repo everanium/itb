@@ -19,11 +19,11 @@ func nomacStreamPrefix() ([]byte, error) {
 }
 
 // nomacTagStubSizeCfg returns the number of bytes the No MAC Encrypt3x
-// pipeline reserves at the tail of the third snake's container capacity
+// pipeline reserves at the tail of the third region's container capacity
 // so its on-wire envelope matches the paired authenticated envelope
 // (payload || MAC tag || 1-byte flag) bit-for-bit in shape, across
 // both the Single Message and Streaming pipelines. The bytes carry
-// pure CSPRNG dummy content on the No MAC path; the decrypt side
+// pure DRBG dummy content on the No MAC path; the decrypt side
 // ignores them (the COBS terminator lands strictly before this region,
 // so the null-search stops well ahead of the stub).
 //
@@ -76,7 +76,7 @@ func validateTagStubSizeCfg(cfg *Config) error {
 //   - NonceBits: 0 (defer to [DefaultNonceBits]) or 128 / 256 / 512.
 //     Any other value would let a sender emit a nonce width the
 //     receiver's Blob-import decoder rejects with [ErrBlobMalformed],
-//     silently corrupting the on-wire dual-nonce header.
+//     silently corrupting the on-wire nonce material.
 //   - BarrierFill: 0 (defer to [DefaultBarrierFill]) or one of
 //     {1, 2, 4, 8, 16, 32}. Off-schedule values produce the same
 //     Blob-import mismatch; huge positive values would overflow the

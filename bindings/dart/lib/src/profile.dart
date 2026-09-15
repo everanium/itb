@@ -6,21 +6,25 @@ import 'dart:convert';
 
 /// A Triple Pipeline profile record.
 ///
-/// The record is a plain data holder plus a JSON codec over the
-/// fourteen keys of the wire object (`name`, `mode`, `width`, `hash`,
-/// `hashes`, `keybits`, `mac`, `tagstub`, `chunk`, `wrapper`,
-/// `outer`, `parallax`, `palette`, `segment`). No semantic
-/// validation happens on the Dart side — every field rule (mode
-/// names, width / hash agreement, key sizes, palette shape, reserved
-/// name prefixes) is enforced by Go at [register] / [Pipeline.load]
-/// time and surfaces as an `ItbException`. Primitive / MAC / cipher
-/// names are opaque strings.
+/// The record is a plain data holder plus a JSON codec over the keys
+/// of the wire object. No semantic validation happens on the Dart
+/// side — every field rule (mode names, width / hash agreement, key
+/// sizes, palette shape, reserved name prefixes) is enforced by Go at
+/// [register] / [Pipeline.load] time and surfaces as an
+/// `ItbException`. Primitive / MAC / cipher names are opaque strings.
 ///
 /// Encoding mirrors the Go codec: `mode`, `width`, `keybits`,
 /// `wrapper`, `parallax` are always emitted; an empty string, zero
 /// integer, or empty list is omitted. [hashes] carries either nothing
 /// or exactly eight slot names in the order `[noise, lock, data1,
 /// data2, data3, start1, start2, start3]`.
+///
+/// [nonceBits] and [barrierFill] are inspection-only. They are not
+/// part of the profile recipe: `inspect` reads them from the blob's
+/// runtime globals snapshot, while `lookup` leaves both null because
+/// the registry entry never carries them. libitb3 rejects a `register`
+/// payload that carries either key, so clear both before registering
+/// an inspected record.
 class Profile {
   Profile({
     this.name = '',
@@ -37,6 +41,8 @@ class Profile {
     this.parallax = false,
     this.palette = const [],
     this.segment = 0,
+    this.nonceBits,
+    this.barrierFill,
   });
 
   /// Registry handle (`name`); empty on an anonymous record.
@@ -57,6 +63,16 @@ class Profile {
 
   /// Key material size in bits (`keybits`).
   int keyBits;
+
+  /// On-wire nonce width in bits (`nonce_bits`), read from the blob's
+  /// runtime globals. Inspection-only: non-null on a record from
+  /// [Itb.inspect], null on one from [Itb.lookup] and on one built by
+  /// hand. libitb3 rejects a register payload carrying the key.
+  int? nonceBits;
+
+  /// DRBG barrier fill margin (`barrier_fill`), read from the blob's
+  /// runtime globals. Same inspection-only lifecycle as [nonceBits].
+  int? barrierFill;
 
   /// MAC name (`mac`); empty on a No MAC profile.
   String mac;
@@ -90,6 +106,8 @@ class Profile {
         if (hash.isNotEmpty) 'hash': hash,
         if (hashes.isNotEmpty) 'hashes': List<String>.of(hashes),
         'keybits': keyBits,
+        if (nonceBits != null) 'nonce_bits': nonceBits!,
+        if (barrierFill != null) 'barrier_fill': barrierFill!,
         if (mac.isNotEmpty) 'mac': mac,
         if (tagStub != 0) 'tagstub': tagStub,
         if (chunk != 0) 'chunk': chunk,
@@ -116,6 +134,8 @@ class Profile {
         hash: (m['hash'] as String?) ?? '',
         hashes: _strings(m['hashes']),
         keyBits: (m['keybits'] as int?) ?? 0,
+        nonceBits: m['nonce_bits'] as int?,
+        barrierFill: m['barrier_fill'] as int?,
         mac: (m['mac'] as String?) ?? '',
         tagStub: (m['tagstub'] as int?) ?? 0,
         chunk: (m['chunk'] as int?) ?? 0,

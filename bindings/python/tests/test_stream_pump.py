@@ -5,7 +5,7 @@ from __future__ import annotations
 import io
 import unittest
 
-import itb
+import itb3 as itb
 
 
 class StreamPumpTest(unittest.TestCase):

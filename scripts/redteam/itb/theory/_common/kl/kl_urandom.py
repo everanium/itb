@@ -15,12 +15,11 @@ itself — the difference between the two observed KLs is below what any
 measurement at this N can resolve.
 
 `size_bytes` is the container BODY size (post-header). The caller passes
-`ciphertext_bytes - header_size`, where `header_size = 2 * NonceSize + 4`
-on the shipped dual-nonce wire; `kl_matrix.py`'s
-`container_bytes_from_ciphertext` computes this from the shipped
-ciphertext file size. The header layout is not consumed here — this probe
-is a pure /dev/urandom control, so the shipped wire evolution does not
-touch its logic.
+`ciphertext_bytes - header_size`, where `header_size = NonceSize + 4`
+on the shipped wire; `kl_matrix.py`'s `container_bytes_from_ciphertext`
+computes this from the shipped ciphertext file size. The header layout is
+not consumed here — this probe is a pure /dev/urandom control, so the
+shipped wire evolution does not touch its logic.
 
 Usage:
     python3 kl_urandom.py <size_bytes>

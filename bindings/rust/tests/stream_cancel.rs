@@ -1,7 +1,7 @@
 //! Dropping an encrypt session mid-flight cleans up and leaves the
 //! Pipeline usable.
 
-use itb::{OptsBuilder, Pipeline};
+use itb3::{OptsBuilder, Pipeline};
 
 #[test]
 fn drop_mid_flight_then_reuse_pipeline() {

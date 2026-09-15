@@ -21,7 +21,8 @@
 // The blob [Init] returns (and [Pipeline.Save] / [Pipeline.Rekey]
 // re-emit) is self-describing: its wrap-layer carries the resolved
 // [Profile] record — profile defaults with the [Opts] overrides folded
-// in — alongside the inner Low-Level blob and the two masters. [Load]
+// in — alongside the inner Blob{N} state bundle and the two masters.
+// [Load]
 // (bytes) and [LoadF] (file path) rebuild a Pipeline from that record
 // alone; the profile registry is never consulted on the reopen path,
 // no Opts are taken, and the record's Name is the sender's label,
@@ -75,11 +76,19 @@
 // wrapper is false; palette and segment when parallax is false), so
 // the record carries no dead information.
 //
+// [Opts.KeyBits] and [Profile.KeyBits] accept any multiple of the
+// resolved primitive's native hash width in [512,
+// [github.com/everanium/itb.MaxKeyBits] = 2048]; every catalogued
+// profile ships with 1024, and 512 / 1024 / 2048 are the common
+// tunings, but intermediate multiples (640, 768, 896, 1152, 1280,
+// 1536, 1792 for width-128, and the corresponding multiples for
+// width-256 / width-512) are equally valid at the seed factory.
+//
 // The Streaming AEAD IO-Driven surface is the primary use case. The
 // Single Message surface ([Pipeline.EncryptMessage] /
 // [Pipeline.DecryptMessage]) is a thin convenience wrapper around the
 // streaming surface plus a [bytes.Buffer]. Users who want the direct
-// Low-Level surface consume the corresponding *Cfg-bearing free
+// per-call cipher surface consume the corresponding *Cfg-bearing free
 // functions in the itb root package.
 //
 // The shipped catalogue covers both single-primitive and
@@ -128,7 +137,7 @@
 // empty signal is meaningful send a marker byte instead.
 //
 // Reader notice — the Interlocked Barrier is always on and
-// non-disableable; the Triple 3-snake payload split is the only
+// non-disableable; the Triple 3-region payload split is the only
 // cipher mode. There are no runtime overlay toggles and no
 // engage/disengage knobs — the package exposes one lifecycle
 // (Init/Load/Save/Rekey/Close) plus one cipher pair per shape

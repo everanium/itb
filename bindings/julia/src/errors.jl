@@ -1,4 +1,4 @@
-# Status codes mirrored from the libitb C ABI
+# Status codes mirrored from the libitb3 C ABI
 # (cmd/cshared/internal/capi/errors.go). Numeric values are stable
 # across releases.
 
@@ -56,7 +56,7 @@ const _STATUS_LABELS = Dict{Int,String}(
 """
     status_label(code::Integer) -> String
 
-Short human-readable label for a libitb status code; unknown codes
+Short human-readable label for a libitb3 status code; unknown codes
 collapse to `"unknown status"`.
 """
 status_label(code::Integer) = get(_STATUS_LABELS, Int(code), "unknown status")
@@ -64,9 +64,9 @@ status_label(code::Integer) = get(_STATUS_LABELS, Int(code), "unknown status")
 """
     ITBError <: Exception
 
-Raised on every failed libitb call.
+Raised on every failed libitb3 call.
 
-`status_code` carries the libitb status integer when the failure came
+`status_code` carries the libitb3 status integer when the failure came
 from the shared library (`-1` for binding-side failures such as a
 library-load error). `last_error` carries the `ITB_LastError`
 diagnostic captured immediately after the failing call
@@ -79,7 +79,7 @@ struct ITBError <: Exception
     last_error::String
 end
 
-# Binding-side failure (no libitb status available).
+# Binding-side failure (no libitb3 status available).
 ITBError(message::AbstractString) = ITBError(-1, String(message))
 
 function Base.showerror(io::IO, e::ITBError)

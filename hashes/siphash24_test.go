@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/everanium/itb"
-	"github.com/everanium/itb/hashes/internal/siphashasm"
 )
 
 // TestSipHash24BatchedParityWithSingle confirms that the 4-way
@@ -19,9 +18,6 @@ import (
 // different finalization XOR sequence) would surface here.
 func TestSipHash24BatchedParityWithSingle(t *testing.T) {
 	single, batched := SipHash24Pair()
-	if batched == nil {
-		t.Skip("batched arm unavailable")
-	}
 
 	seeds := [4][2]uint64{
 		{1, 2},
@@ -51,25 +47,18 @@ func TestSipHash24BatchedParityWithSingle(t *testing.T) {
 	}
 }
 
-// TestSipHash24MakePairBatchedFollowsAsmEngagement verifies the
-// asm-conditional contract of Make128Pair for siphash24 — non-nil
-// batched when AVX-512 fused chain-absorb is engaged, nil batched
-// when the asm path is not reachable so process_cgo's nil-fallback
-// drives 4 single-call dispatches through dchest/siphash's
-// already-fast scalar implementation directly.
-func TestSipHash24MakePairBatchedFollowsAsmEngagement(t *testing.T) {
+// TestSipHash24MakePairBatchedAlwaysPresent pins that Make128Pair for
+// siphash24 returns a batched arm on every build and tier: the arm
+// evaluates the four lanes through the single arm, and the assembly
+// kernels are reached through the fused hooks instead, so the pixel
+// pipeline never falls back to per-pixel dispatch.
+func TestSipHash24MakePairBatchedAlwaysPresent(t *testing.T) {
 	_, b, _, err := Make128Pair("siphash24")
 	if err != nil {
 		t.Fatalf("Make128Pair(siphash24): %v", err)
 	}
-	if siphashasm.HasAVX512Fused {
-		if b == nil {
-			t.Fatal("Make128Pair(siphash24) returned nil batched arm despite asm engaged — FFI will fall back to per-pixel dispatch")
-		}
-	} else {
-		if b != nil {
-			t.Fatal("Make128Pair(siphash24) returned non-nil batched arm without asm engaged — the scalar 4-lane wrapper is slower than process_cgo's nil-fallback")
-		}
+	if b == nil {
+		t.Fatal("Make128Pair(siphash24) returned a nil batched arm")
 	}
 }
 

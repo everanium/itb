@@ -119,7 +119,7 @@ sample size across every plaintext kind. The two-sample homogeneity chi²
 lands inside the df=255 uniform band on every (kind) cell. Chosen
 plaintext gives no observable handle on any of the 8 seed-derivation
 slots because each Encrypt call redraws mask / noise / rotation /
-startPixel per fresh nonce, and the barrier's Part 1 permutation moves
+startPixel per fresh nonce, and the Rank Barrier's permutation moves
 the chosen bytes to lane positions the attacker cannot pin.
 
 Concrete per-cell numeric values are the output of `aggregate.py`

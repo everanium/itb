@@ -8,7 +8,7 @@ import std.file : exists, getAttributes, remove;
 import std.process : thisProcessID;
 import std.stdio : writeln;
 
-import itb;
+import itb3;
 
 void roundTrip(ref Pipeline sender, ref Pipeline receiver, string what)
 {
@@ -48,7 +48,38 @@ void main()
     assert(prof.innerHash == "areion512");
     assert(prof.macName == "hmac-blake3");
     assert(prof.wrapper && prof.parallax);
-    assert(prof == lookup("singlemsg-triple-mac-v1"));
+    // The recipe fields match the registry entry; the two
+    // inspection-only fields separate the two records.
+    {
+        auto recipe = prof;
+        recipe.nonceBits.nullify();
+        recipe.barrierFill.nullify();
+        assert(recipe == lookup("singlemsg-triple-mac-v1"));
+    }
+
+    // inspect carries the blob's runtime globals; lookup does not.
+    // Defaults first: the compile-in nonce width and fill margin.
+    assert(!prof.nonceBits.isNull && prof.nonceBits.get == 512);
+    assert(!prof.barrierFill.isNull && prof.barrierFill.get == 1);
+    {
+        // Per-Pipeline overrides travel through the blob into inspect.
+        auto tuned = Pipeline.create("singlemsg-triple-mac-v1",
+                Opts().withNonceBits(256).withBarrierFill(4));
+        auto tunedProf = inspect(tuned.save());
+        assert(tunedProf.nonceBits.get == 256);
+        assert(tunedProf.barrierFill.get == 4);
+        assert(tunedProf.toJson().canFind(`"nonce_bits":256`));
+        assert(tunedProf.toJson().canFind(`"barrier_fill":4`));
+    }
+    {
+        // The registry entry is the recipe alone — neither field is
+        // part of it, so both read as absent rather than as zero.
+        auto registry = lookup("singlemsg-triple-mac-v1");
+        assert(registry.nonceBits.isNull);
+        assert(registry.barrierFill.isNull);
+        assert(!registry.toJson().canFind("nonce_bits"));
+        assert(!registry.toJson().canFind("barrier_fill"));
+    }
     try
     {
         cast(void) inspect(cast(const(ubyte)[]) "not a blob");

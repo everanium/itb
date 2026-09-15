@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # run_tests.sh -- one-step test runner for the Crystal binding.
-# Builds libitb.so + the eitb binary via build.sh, then runs the spec
+# Builds libitb3.so + the eitb binary via build.sh, then runs the spec
 # suite under the Crystal compiler.
 #
 # Usage:

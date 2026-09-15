@@ -1,8 +1,8 @@
 %% bench_stream_one_shot — whole-buffer stream throughput vs plaintext
 %% size (Streaming Non-AEAD profile) at 1 MiB / 16 MiB / 64 MiB. Each
-%% iteration issues one itb:encrypt_stream_one_shot/2 or
-%% itb:decrypt_stream_one_shot/2 call for callers holding the full
-%% payload in memory — the whole-buffer fast path through libitb.
+%% iteration issues one itb3:encrypt_stream_one_shot/2 or
+%% itb3:decrypt_stream_one_shot/2 call for callers holding the full
+%% payload in memory — the whole-buffer fast path through libitb3.
 %%
 %% Env-var overrides identical to bench_message (defaults match the
 %% root Go BENCH3.md pin):
@@ -17,7 +17,7 @@
 %%
 %% Invocation (from bindings/erlang, after ./build.sh):
 %%   erlc -o bench bench/bench_stream_one_shot.erl
-%%   erl -noshell -pa _build/default/lib/itb/ebin -pa bench \
+%%   erl -noshell -pa _build/default/lib/libitb3/ebin -pa bench \
 %%       -run bench_stream_one_shot main run -run init stop
 
 -module(bench_stream_one_shot).
@@ -30,11 +30,11 @@ main(_Args) ->
     %% Bench-scale allocation churn leaks Go scratch heap unboundedly
     %% without a soft memory cap + aggressive GC; the return values
     %% report the previous settings, not an error.
-    _ = itb:set_memory_limit(512 bsl 20), %% 512 MiB soft cap
-    _ = itb:set_gc_percent(20),           %% aggressive GC
+    _ = itb3:set_memory_limit(4 bsl 30), %% 4 GiB soft cap
+    _ = itb3:set_gc_percent(100),         %% balanced GC
 
     Profile = env("ITB_PROFILE", "streaming-noaead-triple-v1"),
-    {ok, Pipe} = itb:init(Profile, bench_opts()),
+    {ok, Pipe} = itb3:init(Profile, bench_opts()),
     io:format("~-17s ~-8s ~s~n", ["bench", "size", "mb_per_sec"]),
     lists:foreach(
       fun(Size) ->
@@ -43,20 +43,20 @@ main(_Args) ->
               Plain = crypto:strong_rand_bytes(Size),
               Run = fun() ->
                             {ok, _Wire} =
-                                itb:encrypt_stream_one_shot(Pipe, Plain),
+                                itb3:encrypt_stream_one_shot(Pipe, Plain),
                             ok
                     end,
               bench_case("stream_one_shot", Size, Run),
               %% Pre-encrypt one wire outside the decrypt timing loop.
-              {ok, DecWire} = itb:encrypt_stream_one_shot(Pipe, Plain),
+              {ok, DecWire} = itb3:encrypt_stream_one_shot(Pipe, Plain),
               RunDec = fun() ->
                                {ok, _Plain} =
-                                   itb:decrypt_stream_one_shot(Pipe, DecWire),
+                                   itb3:decrypt_stream_one_shot(Pipe, DecWire),
                                ok
                        end,
               bench_case("stream_one_shot-dec", Size, RunDec)
       end, [1 bsl 20, 16 bsl 20, 64 bsl 20]),
-    ok = itb:free(Pipe).
+    ok = itb3:free(Pipe).
 
 %% ------------------------------------------------------------------
 %% Timing loop: one untimed warm-up, then iterate until the wall-clock

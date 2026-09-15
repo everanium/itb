@@ -26,19 +26,57 @@ The primitive-math layer is the upstream libraries' responsibility. This documen
 
 Listed in canonical primitive order. Below-spec lab helpers (CRC128, FNV-1a, MD5) are **not** registered as PRF-grade and are absent from this table — they live in the test stress harness, not in `hashes/registry.go`.
 
+`aesitb128` is the sole registry entry classified as **Non-PRF** (inner-role primitive only, `Class = ClassNPRF` in [`registry.go`](registry.go)): a reduced-round AES cascade purpose-built for two distinct ITB inner surfaces, each with its own load-bearing two-stage defence composition. **In both compositions the ChainHash cascade is the full shipped construction — not a reduced variant — and only its depth parameter differs by site; the second stage is what differs in kind.** At the **Interlocked Barrier**, defence = the ChainHash cascade fill **plus** the **divmod-then-combinadic-unrank** absorption of the full `(lo, hi)` output (both lanes, no truncation, into a 16-of-48 mask triple — `[HARNESS.md § 3.10.3](../HARNESS.md#3103-interlocked-barrier-fill-consumption-chain)`). At the **Pixel Barrier**, defence = the ChainHash cascade fill **plus** the `lo`-lane-only consumption pattern the byte conveyor enforces (upper 8 bytes discarded — the `lo`-only projection is the second half of the defence, not a downstream artefact; there is no divmod stage at this site). The primitive is deliberately weak standalone and safe only under those two compound stacks. External integrators reaching for a general-purpose PRF-grade hash must pick from rows 2–10; row 1 is not appropriate outside the ITB inner-Barrier roles. Standalone breaks and their dissolution through the cascade are measured in [`HARNESS.md` § 3.10](../HARNESS.md#310-aes-itb-128-standalone-breaks-and-cascade-dissolution).
+
 | # | Registry name | Native width | Underlying primitive | Construction shape |
 |---|---|---|---|---|
-| 1 | `areion256` | 256 | AreionSoEM-256 (`jedisct1/go-aes` building blocks) | CBC-MAC with SoEM-256 as keyed round function |
-| 2 | `areion512` | 512 | AreionSoEM-512 (`jedisct1/go-aes` building blocks) | CBC-MAC with SoEM-512 as keyed round function |
-| 3 | `blake2b256` | 256 | BLAKE2b-256 unkeyed (`x/crypto/blake2b`) | Prepend-key MAC with seed XOR into data prefix |
-| 4 | `blake2b512` | 512 | BLAKE2b-512 unkeyed (`x/crypto/blake2b`) | Prepend-key MAC, scaled to 64-byte key + 512-bit output |
-| 5 | `blake2s` | 256 | BLAKE2s-256 unkeyed (`x/crypto/blake2s`) | Prepend-key MAC with seed XOR into data prefix |
-| 6 | `blake3` | 256 | BLAKE3 keyed (`zeebo/blake3.NewKeyed`) | Native RFC keyed BLAKE3 + seed XOR mix |
-| 7 | `aescmac` | 128 | AES-128 (`crypto/aes`) | AES-128-CBC-MAC with length-tag fold into seed prefix |
-| 8 | `siphash24` | 128 | SipHash-2-4 (`dchest/siphash`) | Direct call — seed components are the SipHash key |
-| 9 | `chacha20` | 256 | ChaCha20 stream (`x/crypto/chacha20`) | Custom keystream-MAC over a 32-byte accumulator state |
+| 1 | `aesitb128` | 128 | AES-ITB-128 (ITB-native reduced-round AES cascade, `aesitb.go` + `internal/aesitbasm`) | Chain-absorb Merkle–Damgård over one AES round per block + two finalising rounds; NUMS round constants (SHA-2 IVs); intentionally Non-PRF, inner-role only (Interlocked Barrier fill + Pixel Barrier) |
+| 2 | `areion256` | 256 | AreionSoEM-256 (`jedisct1/go-aes` building blocks) | CBC-MAC with SoEM-256 as keyed round function |
+| 3 | `areion512` | 512 | AreionSoEM-512 (`jedisct1/go-aes` building blocks) | CBC-MAC with SoEM-512 as keyed round function |
+| 4 | `blake2b256` | 256 | BLAKE2b-256 unkeyed (`x/crypto/blake2b`) | Prepend-key MAC with seed XOR into data prefix |
+| 5 | `blake2b512` | 512 | BLAKE2b-512 unkeyed (`x/crypto/blake2b`) | Prepend-key MAC, scaled to 64-byte key + 512-bit output |
+| 6 | `blake2s` | 256 | BLAKE2s-256 unkeyed (`x/crypto/blake2s`) | Prepend-key MAC with seed XOR into data prefix |
+| 7 | `blake3` | 256 | BLAKE3 keyed (`zeebo/blake3.NewKeyed`) | Native RFC keyed BLAKE3 + seed XOR mix |
+| 8 | `aescmac` | 128 | AES-128 (`crypto/aes`) | AES-128-CBC-MAC with length-tag fold into seed prefix |
+| 9 | `siphash24` | 128 | SipHash-2-4 (`dchest/siphash`) | Direct call — seed components are the SipHash key |
+| 10 | `chacha20` | 256 | ChaCha20 stream (`x/crypto/chacha20`) | Custom keystream-MAC over a 32-byte accumulator state |
 
 ## Detailed constructions
+
+### AES-ITB-128 (registry: `aesitb128`)
+
+**Underlying primitive.** AES-ITB-128 — an ITB-native reduced-round AES cascade over a 128-bit state. One AES round per absorbed 16-byte block plus two finalising rounds; eight public round constants are Nothing-Up-My-Sleeve big-endian packings of FIPS 180-4 initial-hash-value words (BLAKE3 / SHA-256 IV, SHA-512 IV, SHA-384 IV — fractional bits of square roots of small primes). Defined in [`aesitb.go`](../aesitb.go) with the batched cascade kernels in [`internal/aesitbasm`](../internal/aesitbasm).
+
+**Construction.** Chain-absorb Merkle–Damgård over a keyed AES-round permutation. The 16-byte fixed key XORs the state ahead of every AES round; the per-call seed enters once via XOR at the state-init step before the first public permutation. Defined in [`aesitb.go`](../aesitb.go)`::MakeAESITB128Hash` (re-exported via `hashes/aesitb.go::AESITB128Pair`).
+
+**Per-call flow** (data of length `L`):
+
+1. Initialise 16-byte state from the seed pair: `state[0..8) = uint64_le(seed0)`, `state[8..16) = uint64_le(seed1)`. XOR the 16-byte fixed key into `state`.
+2. For each 16-byte chunk of data (partial trailing chunk XORs only its available bytes, no `10*` padding): `state ^= chunk`; `state = AESRound(state, RC[i mod 8])` where `RC[i]` is the round-constant slot for absorb index `i`.
+3. Two finalising rounds over the final round-constant slots: `state = AESRound(state, RC[final_a])`; `state = AESRound(state, RC[final_b])`.
+4. Output: `(uint64_le(state[0..8)), uint64_le(state[8..16)))`.
+
+At ITB's three shipped per-pixel buffer widths (20 / 36 / 68 bytes = 20 / 36 / 68-byte shapes), the total primitive round count works out to `T = 4 / 5 / 7` respectively (`ceil(L / 16)` absorb rounds + 2 finalising).
+
+**Why this is deliberately Non-PRF.** `aesitb128` carries `Class = ClassNPRF` in [`registry.go`](registry.go), the shipped **inner-role-only** tier — the primitive is used at two inner surfaces, each with its own two-stage defence (Interlocked Barrier: divmod-then-combinadic-unrank of `(lo, hi)` plus ChainHash cascade fill; Pixel Barrier: ChainHash cascade fill plus `lo`-lane-only consumption), but never as a standalone user-visible PRF. HARNESS.md § 3.10 records the standalone breaks measured on the raw primitive:
+
+- **One-pair inversion** — under the lab grant of the full 16-byte primitive output, a single (plaintext, digest) pair recovers `K = fixedKey ⊕ seed` in `≈ 2⁰` work (state is invertible in one direction given the public round constants).
+- **Structured lo-lane recovery `≈ 2²⁰`** — under 15 chosen Λ-sets on plaintext bytes 0..14 at the raw-primitive one-block shape, a per-byte `2¹⁶` constancy search over `(k_b, c)` recovers `K` from the lo lane alone (3840 chosen texts, `keyrecover_r1_2p20.py`; 5 / 5 at the one-block lab shape).
+- **Probability-1 Square integral** — order-1 Λ-set balances the lo lane 8 / 8 at the one-block lab shape (raw 3-round AES property).
+
+None of these reach the shipped wire. Two closures apply, one per inner-Barrier site:
+
+- **Pixel Barrier site.** Two-stage defence — **ChainHash cascade fill plus `lo`-lane-only consumption**. The byte conveyor reads only `lo(h_r)` (upper 8 bytes discarded outright — this alone closes the one-pair-inversion path), and the shipped per-pixel shapes 20 / 36 / 68 confine the attacker's active bytes to LE32(idx) bytes 0..3 (the ≈ 2²⁰ engine is out of regime at every shipped shape as measured — 0 / 0 score at every position at r = 1 and r = 4, `keyrecover_r1_2p20.py --shape-probe --data-len 20 / --data-len 36 / --data-len 68`, 3 trials each). No divmod / unrank stage here; the `lo`-lane restriction is itself the second half of the defence.
+- **Interlocked Barrier fill site.** Two-stage defence — **divmod-then-combinadic-unrank plus ChainHash cascade fill**. The full `(lo, hi)` output is absorbed monolithically through the 128-bit divmod-then-combinadic-unrank chain (`[§3.10.3](../HARNESS.md#3103-interlocked-barrier-fill-consumption-chain)`), which maps `(lo, hi)` into a 16-of-48 mask triple with an ≈ 2⁵⁷·⁸ preimage ambiguity per triple even under a full-mask read. Both lanes participate; neither is truncated.
+
+**Why AES-ITB and not one of the PRF-grade primitives.** `aesitb128` is engineered for both inner-Barrier roles. At the 48-bit Interlocked Barrier fill (`[§3.10.3](../HARNESS.md#3103-interlocked-barrier-fill-consumption-chain)`), a round-based bijection over 128-bit state gives the near-uniform `(lo, hi)` output distribution the combinadic unrank (Exact-B reduction into `C(48, 16) · C(32, 16)` mask space) consumes optimally. At the Pixel Barrier, the site restricts consumption to the `lo` lane as a load-bearing half of its defence and what it demands of the primitive is a fast keyed 128-bit permutation whose `lo` output the ChainHash cascade fill can drive through the AES silicon path (VAES / GFNI / ARM Crypto Extension) that the shipping cascade kernels — [`internal/aesitbasm/`](../internal/aesitbasm) — exploit. The primitive's public-round-constant, single-seed-XOR shape is what enables the 4-lane fused cascade kernels the pipeline hot-path relies on at both sites; a PRF-grade primitive at the same width (`aescmac`, `siphash24`) does not admit the same fused-kernel fusion at the same throughput, and the two-stage defence composition around each use — divmod-unrank + cascade at the fill site; cascade + `lo`-lane-only consumption at the conveyor site — closes the observation gap the primitive's own standalone weakness would otherwise expose.
+
+**Security claim.** **NOT PRF-grade standalone.** The primitive is safe **only** under the ITB compound defence composition at whichever inner-Barrier site it is used. **The ChainHash cascade is the full shipped construction at both sites — never a reduced variant — differing only in the depth parameter each site drives it at. The second stage of the defence is where the two sites diverge in kind:**
+
+- **Interlocked Barrier fill.** Defence = the ChainHash cascade with feed-forward at fill depth `r = 1 + keyBits / width` **plus** the **divmod-then-combinadic-unrank** absorption of the full `(lo, hi)` output into a 16-of-48 mask triple. The extra primer round comes from the fill closure prepending `K = deriveInterLockSeed(nonce)` — itself the output of a full separate `ChainHash128` cascade over `[0x04 ‖ nonce]` under the same lockSeed — to the session-component slice, so round 1 seeds the state with `K` cleanly before rounds 2..1 + keyBits/width mix in the session components. Both stages are load-bearing; neither alone suffices, and the primitive's `(lo, hi)` never surfaces to the wire — it exits only as the mask triple.
+- **Pixel Barrier.** Defence = the ChainHash cascade at the shipped conveyor depths (`r ∈ {4, 8, 16}` for 512- / 1024- / 2048-bit key widths) **plus** the `lo`-lane-only consumption pattern of the byte conveyor itself (upper 8 bytes never leave the primitive; the site has no divmod / unrank stage — the `lo`-lane restriction is the second half of the defence, not a downstream artefact). Both stages are load-bearing here too.
+
+Empirical validation of the cascade dissolving every standalone break at `r ≥ 2` on the shipped observable is [`HARNESS.md` § 3.10.2](../HARNESS.md#3102-dissolution-mode--cost-versus-cascade-depth), and the fill-site absorption bound is [§ 3.10.3](../HARNESS.md#3103-interlocked-barrier-fill-consumption-chain). Do not use as a general-purpose PRF outside ITB.
 
 ### Areion-SoEM-256 (registry: `areion256`)
 
@@ -219,19 +257,20 @@ Every closure in this registry sidesteps that trap. The table below names the sp
 
 | # | Closure | File | Mechanism |
 |---|---------|------|-----------|
-| 1 | `areion256` | `areion256.go` → `areion.go` | CBC-MAC chain, 24-byte chunks via SoEM-256 keyed permutation; 64-byte nonce = 3 rounds |
-| 2 | `areion512` | `areion512.go` → `areion.go` | CBC-MAC chain, 56-byte chunks via SoEM-512 keyed permutation; 64-byte nonce = 2 rounds |
-| 3 | `blake2b256` | `blake2b256.go` | Prepend-key buffer `fixedKey(32) ‖ data ‖ zero-pad`; full nonce in data region, one `Sum256` |
-| 4 | `blake2b512` | `blake2b512.go` | Same shape scaled — 64-byte fixed-key prefix; seed XOR overlays full 64-byte nonce region |
-| 5 | `blake2s` | `blake2s.go` | Prepend-key buffer scaled to 32-byte widths, identical shape to `blake2b256` |
-| 6 | `blake3` | `blake3.go` | Native RFC keyed mode (`blake3.NewKeyed`) + `h.Write(mixed)` streams full 64-byte buffer |
-| 7 | `aescmac` | `aescmac.go` | CBC-MAC chain, 16-byte AES blocks; 65-byte input (1 domain tag + 64 nonce) = 5 AES rounds |
-| 8 | `siphash24` | `siphash24.go` | Native variable-length SipHash absorb, 8-byte SipRound blocks; 64-byte nonce = 8 rounds |
-| 9 | `chacha20` | `chacha20.go` | Native 12-byte nonce zeroed; freshness from `key = fixedKey ⊕ seed`; CBC-MAC-style chain over 24-byte data chunks |
+| 1 | `aesitb128` | `aesitb.go` | Chain-absorb over 128-bit state, 16-byte AES blocks + two finalising rounds; 65-byte input (1 domain tag + 64 nonce) = 5 AES rounds; full buffer XORed into state, no primitive-internal nonce slot |
+| 2 | `areion256` | `areion256.go` → `areion.go` | CBC-MAC chain, 24-byte chunks via SoEM-256 keyed permutation; 64-byte nonce = 3 rounds |
+| 3 | `areion512` | `areion512.go` → `areion.go` | CBC-MAC chain, 56-byte chunks via SoEM-512 keyed permutation; 64-byte nonce = 2 rounds |
+| 4 | `blake2b256` | `blake2b256.go` | Prepend-key buffer `fixedKey(32) ‖ data ‖ zero-pad`; full nonce in data region, one `Sum256` |
+| 5 | `blake2b512` | `blake2b512.go` | Same shape scaled — 64-byte fixed-key prefix; seed XOR overlays full 64-byte nonce region |
+| 6 | `blake2s` | `blake2s.go` | Prepend-key buffer scaled to 32-byte widths, identical shape to `blake2b256` |
+| 7 | `blake3` | `blake3.go` | Native RFC keyed mode (`blake3.NewKeyed`) + `h.Write(mixed)` streams full 64-byte buffer |
+| 8 | `aescmac` | `aescmac.go` | CBC-MAC chain, 16-byte AES blocks; 65-byte input (1 domain tag + 64 nonce) = 5 AES rounds |
+| 9 | `siphash24` | `siphash24.go` | Native variable-length SipHash absorb, 8-byte SipRound blocks; 64-byte nonce = 8 rounds |
+| 10 | `chacha20` | `chacha20.go` | Native 12-byte nonce zeroed; freshness from `key = fixedKey ⊕ seed`; CBC-MAC-style chain over 24-byte data chunks |
 
 **Four architectural patterns** account for the table:
 
-1. **CBC-MAC chain over a keyed permutation** — `areion256`, `areion512`, `aescmac`, `chacha20`. The ITB nonce never lands in the primitive's native nonce or IV slot; it enters through the `data` parameter and absorbs iteratively. `chacha20` zeros ChaCha20's native 12-byte nonce explicitly (`var nonce [12]byte` in `chacha20.go`); freshness comes from the per-call `key = fixedKey ⊕ seed` derivation, not from the disabled nonce slot.
+1. **CBC-MAC chain over a keyed permutation** — `aesitb128`, `areion256`, `areion512`, `aescmac`, `chacha20`. The ITB nonce never lands in the primitive's native nonce or IV slot; it enters through the `data` parameter and absorbs iteratively. `chacha20` zeros ChaCha20's native 12-byte nonce explicitly (`var nonce [12]byte` in `chacha20.go`); freshness comes from the per-call `key = fixedKey ⊕ seed` derivation, not from the disabled nonce slot. `aesitb128` is the sole Non-PRF entry in this group — the chain-absorb shape is identical to `aescmac` but the primitive runs at reduced round count (one AES round per absorbed block + two finalising rounds) and ships strictly for the inner-Barrier role, not as a user-selectable PRF.
 2. **Prepend-key concatenation buffer** — `blake2b256`, `blake2b512`, `blake2s`. The closure builds `buf = fixedKey ‖ data ‖ zero-pad`, XORs the seed into the data prefix, and submits the whole buffer to BLAKE2's one-shot `Sum256` / `Sum512` path. For a 512-bit nonce: the full 64-byte nonce lives in the buffer's data region (seed XOR overlays the leading 32 bytes for `blake2b256` / `blake2s`; the trailing 32 bytes pass through verbatim into the compression). For `blake2b512` the seed-XOR region covers the entire 64-byte nonce. No primitive-internal slot is consumed by the ITB nonce.
 3. **Native keyed mode plus streaming write** — `blake3`. The fixed key is bound via `blake3.NewKeyed(fixedKey)` (RFC keyed mode); the ITB nonce flows in through `h.Write(mixed)` where `mixed` is the data buffer with seed XOR mixed into the leading 32 bytes. BLAKE3's chunk-tree streams the full 64-byte buffer through the keyed compression — no fixed-width slot intervenes.
 4. **Native variable-length absorb** — `siphash24`. SipHash-2-4 by design accepts arbitrary-length data through unlimited 8-byte SipRound blocks; the closure is a direct passthrough to `siphash.Hash128(seed0, seed1, data)`. There is no nonce slot to misuse. A 64-byte ITB nonce absorbs through 8 SipRound blocks; the SipHash spec encodes `len(data)` in the final block's padding byte, so length disambiguation is structural.

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
 # run_tests.sh -- one-step test runner for the Node.js / TypeScript
-# binding. Builds libitb.so + the binding via build.sh, points
-# ITB_LIBITB_PATH at the freshly-built shared library, then invokes
+# binding. Builds libitb3.so + the binding via build.sh, points
+# ITB_LIBITB3_PATH at the freshly-built shared library, then invokes
 # `npm test`. Positional arguments are forwarded through to the npm
 # test script (e.g. a single compiled test file path).
 #
@@ -19,7 +19,7 @@ DIST_DIR="$REPO_ROOT/dist/linux-amd64"
 
 ./build.sh
 
-export ITB_LIBITB_PATH="$DIST_DIR/libitb.so"
+export ITB_LIBITB3_PATH="$DIST_DIR/libitb3.so"
 
 if [[ $# -gt 0 ]]; then
     exec npm test -- "$@"

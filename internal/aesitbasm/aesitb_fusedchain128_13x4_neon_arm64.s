@@ -1,0 +1,109 @@
+//go:build arm64 && !purego && !noitbasm
+
+// ARM64 NEON crypto-extension fused ChainHash cascade kernel for AES-ITB-128 at the
+// 13-byte shape, 4 lanes (1 PKCS#7 block, 3 AES rounds per
+// cascade round). The padded data blocks are staged once and every
+// cascade round runs from registers; see aesitbasm_fused.go for the
+// construction and the in-package parity tests for the bit-exact pin
+// against the pure-Go cascade.
+
+#include "textflag.h"
+
+// func aesITB128FusedChain13x4NeonAsm(key *[16]byte, comps *uint64, nPairs int, dataPtrs *[4]*byte, out *[4][2]uint64)
+TEXT ·aesITB128FusedChain13x4NeonAsm(SB), NOSPLIT, $0-40
+	MOVD key+0(FP), R0
+	MOVD comps+8(FP), R6
+	MOVD nPairs+16(FP), R7
+	MOVD dataPtrs+24(FP), R2
+	MOVD out+32(FP), R3
+	VLD1 (R0), [V4.B16]
+	MOVD $·RC(SB), R4
+	VLD1.P 64(R4), [V16.B16, V17.B16, V18.B16, V19.B16]
+	VLD1 (R4), [V20.B16, V21.B16, V22.B16, V23.B16]
+	MOVD 0(R2), R8
+	MOVD 8(R2), R9
+	MOVD 16(R2), R10
+	MOVD 24(R2), R11
+	MOVD $·pad13Tail(SB), R4
+	VLD1 (R4), [V5.B16]
+	VMOV V5.B16, V24.B16
+	MOVD (R8), R12
+	VMOV R12, V24.D[0]
+	MOVWU 8(R8), R12
+	VMOV R12, V24.S[2]
+	MOVBU 12(R8), R12
+	VMOV R12, V24.B[12]
+	VMOV V5.B16, V25.B16
+	MOVD (R9), R12
+	VMOV R12, V25.D[0]
+	MOVWU 8(R9), R12
+	VMOV R12, V25.S[2]
+	MOVBU 12(R9), R12
+	VMOV R12, V25.B[12]
+	VMOV V5.B16, V26.B16
+	MOVD (R10), R12
+	VMOV R12, V26.D[0]
+	MOVWU 8(R10), R12
+	VMOV R12, V26.S[2]
+	MOVBU 12(R10), R12
+	VMOV R12, V26.B[12]
+	VMOV V5.B16, V27.B16
+	MOVD (R11), R12
+	VMOV R12, V27.D[0]
+	MOVWU 8(R11), R12
+	VMOV R12, V27.S[2]
+	MOVBU 12(R11), R12
+	VMOV R12, V27.B[12]
+	VEOR V0.B16, V0.B16, V0.B16
+	VEOR V1.B16, V1.B16, V1.B16
+	VEOR V2.B16, V2.B16, V2.B16
+	VEOR V3.B16, V3.B16, V3.B16
+
+loop:
+	VLD1.P 16(R6), [V5.B16]
+	VEOR V4.B16, V5.B16, V6.B16
+	VEOR V6.B16, V0.B16, V0.B16
+	VEOR V6.B16, V1.B16, V1.B16
+	VEOR V6.B16, V2.B16, V2.B16
+	VEOR V6.B16, V3.B16, V3.B16
+	MOVD 0(R2), R8
+	MOVD 8(R2), R9
+	MOVD 16(R2), R10
+	MOVD 24(R2), R11
+	VMOV V24.B16, V8.B16
+	VMOV V25.B16, V9.B16
+	VMOV V26.B16, V10.B16
+	VMOV V27.B16, V11.B16
+	AESE V8.B16, V0.B16
+	AESE V9.B16, V1.B16
+	AESE V10.B16, V2.B16
+	AESE V11.B16, V3.B16
+	AESMC V0.B16, V0.B16
+	AESMC V1.B16, V1.B16
+	AESMC V2.B16, V2.B16
+	AESMC V3.B16, V3.B16
+	AESE V16.B16, V0.B16
+	AESE V16.B16, V1.B16
+	AESE V16.B16, V2.B16
+	AESE V16.B16, V3.B16
+	AESMC V0.B16, V0.B16
+	AESMC V1.B16, V1.B16
+	AESMC V2.B16, V2.B16
+	AESMC V3.B16, V3.B16
+	AESE V16.B16, V0.B16
+	AESE V16.B16, V1.B16
+	AESE V16.B16, V2.B16
+	AESE V16.B16, V3.B16
+	AESMC V0.B16, V0.B16
+	AESMC V1.B16, V1.B16
+	AESMC V2.B16, V2.B16
+	AESMC V3.B16, V3.B16
+	VEOR V17.B16, V0.B16, V0.B16
+	VEOR V17.B16, V1.B16, V1.B16
+	VEOR V17.B16, V2.B16, V2.B16
+	VEOR V17.B16, V3.B16, V3.B16
+	SUBS $1, R7, R7
+	BNE loop
+
+	VST1 [V0.B16, V1.B16, V2.B16, V3.B16], (R3)
+	RET

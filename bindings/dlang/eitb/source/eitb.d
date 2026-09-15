@@ -19,14 +19,14 @@ import std.format : format;
 import std.path : dirName;
 import std.stdio : stderr, writefln, writeln;
 
-import itb;
+import itb3;
 
 int main(string[] args)
 {
     // Go-runtime pacing caps applied up front so ad-hoc shell use of
     // large files stays under a bounded heap.
-    cast(void) setMemoryLimit(512L * 1024 * 1024);
-    cast(void) setGCPercent(20);
+    cast(void) setMemoryLimit(4L * 1024 * 1024 * 1024);
+    cast(void) setGCPercent(100);
 
     try
     {
@@ -69,7 +69,7 @@ int main(string[] args)
 
 int cmdVersion()
 {
-    writeln("libitb ", libitbVersion());
+    writeln("libitb3 ", libitb3Version());
     writeln("itb-d ", bindingVersion);
     return 0;
 }

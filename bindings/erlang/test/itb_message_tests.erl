@@ -20,24 +20,24 @@ round_trips(Profile) ->
                 crypto:strong_rand_bytes(100000)],
     lists:foreach(
       fun(Plain) ->
-              {ok, Wire} = itb:encrypt_message(Sender, Plain),
+              {ok, Wire} = itb3:encrypt_message(Sender, Plain),
               ?assert(Wire =/= Plain),
-              {ok, Back} = itb:decrypt_message(Receiver, Wire),
+              {ok, Back} = itb3:decrypt_message(Receiver, Wire),
               ?assertEqual(Plain, Back)
       end, Payloads),
-    ok = itb:free(Receiver),
-    ok = itb:free(Sender).
+    ok = itb3:free(Receiver),
+    ok = itb3:free(Sender).
 
 %% Two encryptions of the same plaintext must produce different wires
 %% (fresh nonce per message).
 wire_uniqueness_test_() ->
     {timeout, 120, fun() ->
-        {ok, Sender} = itb:init(<<"singlemsg-triple-nomac-v1">>, #{}),
+        {ok, Sender} = itb3:init(<<"singlemsg-triple-nomac-v1">>, #{}),
         Plain = crypto:strong_rand_bytes(4096),
-        {ok, Wire1} = itb:encrypt_message(Sender, Plain),
-        {ok, Wire2} = itb:encrypt_message(Sender, Plain),
+        {ok, Wire1} = itb3:encrypt_message(Sender, Plain),
+        {ok, Wire2} = itb3:encrypt_message(Sender, Plain),
         ?assertNotEqual(Wire1, Wire2),
-        ok = itb:free(Sender)
+        ok = itb3:free(Sender)
     end}.
 
 %% Opts pass-through: an explicit keyBits / nonceBits pair reaches Go
@@ -48,11 +48,11 @@ opts_pass_through_test_() ->
         {Sender, Receiver} =
             itb_test_util:pair(<<"singlemsg-triple-mac-v1">>, Opts),
         Plain = crypto:strong_rand_bytes(8192),
-        {ok, Wire} = itb:encrypt_message(Sender, Plain),
-        {ok, Back} = itb:decrypt_message(Receiver, Wire),
+        {ok, Wire} = itb3:encrypt_message(Sender, Plain),
+        {ok, Back} = itb3:decrypt_message(Receiver, Wire),
         ?assertEqual(Plain, Back),
-        ok = itb:free(Receiver),
-        ok = itb:free(Sender)
+        ok = itb3:free(Receiver),
+        ok = itb3:free(Sender)
     end}.
 
 %% Go core rejects zero-length plaintext uniformly with ErrEmptyInput
@@ -64,10 +64,10 @@ empty_payload_test_() ->
     {timeout, 60, fun() ->
         lists:foreach(
           fun(Profile) ->
-                  {ok, Sender} = itb:init(Profile, #{}),
+                  {ok, Sender} = itb3:init(Profile, #{}),
                   ?assertMatch({error, {bad_input, _}},
-                               itb:encrypt_message(Sender, <<>>)),
-                  ok = itb:free(Sender)
+                               itb3:encrypt_message(Sender, <<>>)),
+                  ok = itb3:free(Sender)
           end,
           [<<"singlemsg-triple-mac-v1">>, <<"singlemsg-triple-nomac-v1">>])
     end}.

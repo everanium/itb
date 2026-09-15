@@ -7,7 +7,7 @@ For any pluggable chainhash implementation and a structured-plaintext
 corpus, the probe:
 
   1. Parses the raw ciphertext (header derived from meta —
-     `2 * len(main_nonce) + 4` on the shipped dual-nonce wire — then
+     `len(main_nonce) + 4` on the shipped wire — then
      8 bytes per pixel).
   2. Precomputes `const(p) = ChainHash(p_le || main_nonce, seed=0)` for
      every container pixel via the pluggable hash module.
@@ -121,18 +121,17 @@ def main() -> int:
 
     meta = json.loads((args.cell_dir / "cell.meta.json").read_text())
     total_pixels = int(meta["total_pixels"])
-    # corpora carry the dual-nonce header — read the main nonce
-    # (noise / data / start ChainHash input) as `main_nonce_hex` and fall
-    # back to the legacy single-nonce `nonce_hex` field for archived
-    # corpus artefacts.
+    # corpora key the main nonce (noise / data / start ChainHash input) as
+    # `main_nonce_hex` and fall back to the legacy single-nonce `nonce_hex`
+    # field for archived corpus artefacts.
     nonce_hex = meta.get("main_nonce_hex") or meta["nonce_hex"]
     nonce = bytes.fromhex(nonce_hex)
-    header_size = int(meta.get("header_size", 2 * len(nonce) + 4))
+    header_size = int(meta.get("header_size", len(nonce) + 4))
     # The "correct" pixel_shift the solver should converge to is
     # -start_pixel mod total_pixels; attacker cannot compute this because
     # startPixel is startSeed-derived, but the lab audit prints it for
     # interpretation. On shipped Triple corpora `start_pixel` is a
-    # representative per-snake value (the probe uses it only for the
+    # representative per-region value (the probe uses it only for the
     # decorative "true shift" rank line, never for the |Δ50| metric).
     true_sp = int(meta["start_pixel"])
     correct_shift = (-true_sp) % total_pixels
@@ -217,8 +216,22 @@ def main() -> int:
     # correct shift; PRF / carry-chain primitives hover at the random
     # baseline (~1/128 per channel, ~50 % per bit) at every shift.
     # --------------------------------------------------------------------
+    # Axis-2 scores the probe's chosen shift against the per-pixel
+    # configuration the encoder actually used, so it needs a
+    # `config.truth.json` beside the corpus. No shipped-tree generator
+    # writes one — the Go shelf drivers emit `cell.meta.json` and the
+    # ciphertext and nothing else — so on any corpus produced from the
+    # current tree this block does not run and the two `pred_*` columns
+    # stay null. That is the expected state, not a corpus that failed to
+    # generate: the file comes from the archived harness shape. The
+    # warning exists so a null column is read as "not measured here"
+    # rather than "measured and found nothing".
     truth_path = args.cell_dir / "config.truth.json"
     axis2_available = truth_path.exists()
+    if not axis2_available:
+        print(f"axis-2 skipped: no {truth_path.name} beside the corpus — "
+              f"pred_min_bits_pct / pred_true_bits_pct will be null",
+              file=sys.stderr)
     if axis2_available:
         config_truth = json.loads(truth_path.read_text())
         per_pixel_truth = config_truth.get("per_pixel", [])

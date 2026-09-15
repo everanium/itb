@@ -15,9 +15,16 @@ target CPU without side effects.
 Runs a short single-thread bench at natural dispatch and then under
 every documented forced-tier value, one axis at a time:
 
-- `ITB_FORCE_INTERLOCK_TIER` ∈ {`avx512`, `avx2`, `scalar`}
-- `ITB_FORCE_HASH_TIER` ∈ {`avx512`, `vaesavx2`, `avx2`, `aesni`, `scalar`}
+- `ITB_FORCE_INTERLOCK_TIER` ∈ {`avx512`, `avx512x8`, `avx2`, `sve2`, `sve`, `neon`, `scalar`}
+- `ITB_FORCE_HASH_TIER` ∈ {`avx512`, `vaesavx2`, `avx2`, `vex`, `aesni`, `gpr`, `sve2`, `sve`, `neon`, `scalar`}
+- `ITB_FORCE_INTERLOCK_PRF_FILL_TIER` ∈ {`avx512`, `vaesavx2`, `avx2`, `vex`, `aesni`, `gpr`, `neon`, `scalar`}
 - `ITB_FORCE_PIXEL_TIER` ∈ {`A`, `A_NOGFNI`, `B`, `B_NOGFNI`, `C`}
+
+`tier_matrix_bench.sh` (the AES-ITB-128 hash-tier × batch-16 fill-tier
+matrix) additionally carries the `avx512x4` row — `ITB_FORCE_HASH_TIER=avx512`
+with `ITB_FORCE_CHAINHASH_X4=1`, the ZMM tier with the eight-lane fused
+ChainHash kernels disarmed — so the `avx512` / `avx512x4` pair isolates the
+eight-lane arm on hosts that select it.
 
 The purpose is to identify a slow tier by comparison. When natural
 dispatch throughput is significantly below one of the forced arms,
@@ -33,11 +40,10 @@ PAYLOAD=1MB BENCH_TIME=1s bash scripts/diag/tier_diag.sh
 
 ## hash_diag.sh
 
-Renders a 9-hash x 3-nonce-width throughput matrix (27 cells for
-encrypt, 27 for decrypt) at a fixed tier configuration. The nine
-canonical hashes and three nonce widths cover every shipped
-chain-absorb kernel width (13 / 20 / 36 / 68) across every registered
-inner primitive.
+Renders a per-registry-hash × three-nonce-width throughput matrix at
+a fixed tier configuration. The canonical hash set and three nonce
+widths cover every shipped fused-cascade kernel width (13 / 20 / 36 /
+68) across every registered inner primitive.
 
 A uniform host-vs-host ratio across all 27 cells signals general
 silicon performance difference; an outlier cell signals a
@@ -65,7 +71,7 @@ INTERLOCK_TIER=natural bash scripts/diag/hash_diag.sh      # observe natural dis
 | `ITB_KEY_BITS`      | `512`          | Key width                                          |
 
 The bench profile is fixed: `singlemsg-triple-nomac-v1` with
-`GOMEMLIMIT=1GiB GOGC=20` so the numbers stay comparable across
+`GOMEMLIMIT=4GiB GOGC=100` so the numbers stay comparable across
 runs. Change these only if you understand the profile matters.
 
 ## Typical investigation flow
@@ -76,7 +82,7 @@ runs. Change these only if you understand the profile matters.
    problem to that axis.
 2. Once localised, run `hash_diag.sh` under the identified healthy
    arm (e.g. `INTERLOCK_TIER=avx2`) to check whether the other axes
-   have any secondary regressions across the 9-hash × 3-nonce
+   have any secondary regressions across the per-hash × per-nonce-width
    surface, or whether they are uniformly healthy on this silicon.
 3. If confirmed narrow (one tier axis, one CPU family), first attempt
    to fix the offending kernel — rewrite so the affected silicon runs

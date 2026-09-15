@@ -1,7 +1,7 @@
 //! Persistence surface: save / save_f / load / load_f round trips,
 //! inspect, lookup / profiles, max_workers.
 
-use itb::{ItbStatus, OptsBuilder, Pipeline, inspect, lookup, profiles};
+use itb3::{ItbStatus, OptsBuilder, Pipeline, Profile, inspect, lookup, profiles};
 
 fn temp_path(tag: &str) -> std::path::PathBuf {
     let mut p = std::env::temp_dir();
@@ -70,9 +70,53 @@ fn inspect_reads_the_embedded_profile() {
     assert_eq!(prof.inner_hash, "areion512");
     assert_eq!(prof.mac_name, "hmac-blake3");
     assert!(prof.wrapper && prof.parallax);
-    assert_eq!(prof, lookup("singlemsg-triple-mac-v1").unwrap());
+    // The recipe fields match the registry entry; the two
+    // inspection-only fields separate the two records.
+    let registry = lookup("singlemsg-triple-mac-v1").unwrap();
+    assert_eq!(
+        Profile {
+            nonce_bits: None,
+            barrier_fill: None,
+            ..prof.clone()
+        },
+        registry,
+        "inspect matches lookup on the recipe fields"
+    );
     let err = inspect(b"not a blob").unwrap_err();
     assert_eq!(err.status(), Some(ItbStatus::BadInput));
+}
+
+#[test]
+fn inspect_carries_the_runtime_globals_lookup_does_not() {
+    // Defaults: the blob records the compile-in nonce width and
+    // barrier fill margin, and inspect surfaces both.
+    let sender = Pipeline::init("singlemsg-triple-mac-v1", &OptsBuilder::new()).unwrap();
+    let prof = inspect(&sender.save().unwrap()).unwrap();
+    assert_eq!(prof.nonce_bits, Some(512));
+    assert_eq!(prof.barrier_fill, Some(1));
+
+    // Per-Pipeline overrides travel through the blob into inspect.
+    let tuned = Pipeline::init(
+        "singlemsg-triple-mac-v1",
+        &OptsBuilder::new().with_nonce_bits(256).with_barrier_fill(4),
+    )
+    .unwrap();
+    let tuned_prof = inspect(&tuned.save().unwrap()).unwrap();
+    assert_eq!(tuned_prof.nonce_bits, Some(256));
+    assert_eq!(tuned_prof.barrier_fill, Some(4));
+
+    // The registry entry is the recipe alone — neither field is part
+    // of it, so both read as absent rather than as zero.
+    let registry = lookup("singlemsg-triple-mac-v1").unwrap();
+    assert_eq!(registry.nonce_bits, None);
+    assert_eq!(registry.barrier_fill, None);
+
+    // A lookup record still serialises without the two keys, so it
+    // remains a valid register payload; an inspected one carries them.
+    assert!(!registry.to_json().contains("nonce_bits"));
+    assert!(!registry.to_json().contains("barrier_fill"));
+    assert!(tuned_prof.to_json().contains("\"nonce_bits\":256"));
+    assert!(tuned_prof.to_json().contains("\"barrier_fill\":4"));
 }
 
 #[test]

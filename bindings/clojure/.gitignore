@@ -2,4 +2,3 @@ target/
 .cpcache/
 .nrepl-port
 *.class
-pom.xml

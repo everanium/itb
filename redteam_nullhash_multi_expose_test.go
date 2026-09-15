@@ -33,6 +33,7 @@ package itb
 
 import (
 	"bytes"
+	"crypto/rand"
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
@@ -72,6 +73,15 @@ func writeMultiNullHashExpose(t *testing.T, outDir string, nMsg, keyBits, ptSize
 		for k := 0; k < len(pt) && k < 8; k++ {
 			pt[k] ^= byte(m * 37) // small per-message perturbation
 		}
+		// The interlock nonce is not a wire field — it travels split
+		// across the interlocked lanes — so the lab fixture installs a
+		// CSPRNG-fresh value per message and records the one the
+		// encrypt consumed.
+		ilNonce := make([]byte, currentNonceSizeCfg(cfg))
+		if _, rerr := rand.Read(ilNonce); rerr != nil {
+			t.Fatalf("crypto/rand interlock nonce msg %d: %v", m, rerr)
+		}
+		setBrokenTestInterlockNonceOnly(t, ilNonce)
 		ct, err := Encrypt3x128Cfg(cfg, ns, ls, d1, d2, d3, s1, s2, s3, pt)
 		if err != nil {
 			t.Fatalf("Encrypt msg %d: %v", m, err)
@@ -82,11 +92,10 @@ func writeMultiNullHashExpose(t *testing.T, outDir string, nMsg, keyBits, ptSize
 		}
 		nonceLen = currentNonceSizeCfg(cfg)
 		mainNonce := ct[:nonceLen]
-		ilNonce := ct[nonceLen : 2*nonceLen]
-		width = int(binary.BigEndian.Uint16(ct[2*nonceLen:]))
-		height = int(binary.BigEndian.Uint16(ct[2*nonceLen+2:]))
+		width = int(binary.BigEndian.Uint16(ct[nonceLen:]))
+		height = int(binary.BigEndian.Uint16(ct[nonceLen+2:]))
 		totalPixels = width * height
-		headerSize = 2*nonceLen + 4
+		headerSize = nonceLen + 4
 
 		ctFile := fmt.Sprintf("ct_%d.bin", m)
 		if err := os.WriteFile(filepath.Join(outDir, ctFile), ct, 0o644); err != nil {
@@ -103,13 +112,17 @@ func writeMultiNullHashExpose(t *testing.T, outDir string, nMsg, keyBits, ptSize
 	}
 
 	// Shared startPixels (nonce-independent under nullHash) and truth.
-	sp1 := s1.deriveStartPixel(nil, totalPixels)
+	// The encoder invokes process128Cfg(cfg, ..., third, 1, ...) per region,
+	// so each region's deriveStartPixel receives its own per-region width
+	// (third for regions 1 and 2, thirdPixels2 for region 3), NOT the full
+	// container's totalPixels.
+	third, thirdPixels2, _ := tripleThirdCaps(totalPixels)
 	// deriveStartPixel needs a nonce buffer; under nullHash content is
 	// ignored, but pass a zero nonce of the right length for the call.
 	zeroNonce := make([]byte, nonceLen)
-	sp1 = s1.deriveStartPixel(zeroNonce, totalPixels)
-	sp2 := s2.deriveStartPixel(zeroNonce, totalPixels)
-	sp3 := s3.deriveStartPixel(zeroNonce, totalPixels)
+	sp1 := s1.deriveStartPixel(zeroNonce, third)
+	sp2 := s2.deriveStartPixel(zeroNonce, third)
+	sp3 := s3.deriveStartPixel(zeroNonce, thirdPixels2)
 
 	truth := map[string]string{
 		"K_noiseSeed":   fmt.Sprintf("0x%04x", nullHashConstant(ns.Components)),
@@ -135,7 +148,7 @@ func writeMultiNullHashExpose(t *testing.T, outDir string, nMsg, keyBits, ptSize
 		"header_size":     headerSize,
 		"messages":        msgs,
 		"start_pixels": map[string]int{
-			"snake_1": sp1, "snake_2": sp2, "snake_3": sp3,
+			"region_1": sp1, "region_2": sp2, "region_3": sp3,
 		},
 		"truth_labonly": truth,
 	}

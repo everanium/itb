@@ -11,7 +11,7 @@
 --      alr exec -- gprbuild -P itb_tests.gpr
 --      ./run_tests.sh
 
-with "itb";
+with "libitb3";
 
 project Itb_Tests is
 
@@ -20,9 +20,9 @@ project Itb_Tests is
    for Exec_Dir use "obj-tests";
    for Main use ("test_driver.adb");
 
-   package Compiler renames Itb.Compiler;
+   package Compiler renames Libitb3.Compiler;
 
-   package Linker renames Itb.Linker;
+   package Linker renames Libitb3.Linker;
 
    package Builder is
       for Default_Switches ("Ada") use ("-j0");

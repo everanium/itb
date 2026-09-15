@@ -1,9 +1,9 @@
 ! itb_ffi.f90 -- raw bind(C) interface declarations for the
-! ITB_Triple_* surface of libitb.so, plus the introspection / runtime
+! ITB_Triple_* surface of libitb3.so, plus the introspection / runtime
 ! entry points the binding consumes, plus the C-string marshalling
 ! helpers shared by every higher-level module.
 !
-! Conventions (matching libitb.h):
+! Conventions (matching libitb3.h):
 !
 !   * `int` (status, scalar)      -> integer(c_int)
 !   * `size_t`                    -> integer(c_size_t)
@@ -304,7 +304,7 @@ contains
   ! Build a NUL-terminated c_char array from a Fortran string. Bytes
   ! 1..len(s) carry the source characters, byte len(s)+1 is the NUL.
   ! An empty source maps to a one-byte buffer holding only the
-  ! terminator, keeping c_loc(buf) valid (libitb treats an empty
+  ! terminator, keeping c_loc(buf) valid (libitb3 treats an empty
   ! string and NULL alike on every string parameter it accepts).
   subroutine itb_to_cstr(s, buf)
     character(*), intent(in)                                 :: s
@@ -319,8 +319,8 @@ contains
     buf(n + 1) = c_null_char
   end subroutine
 
-  ! Convert a libitb-output (buf, len) pair to a Fortran allocatable
-  ! string. libitb reports out_len INCLUDING the trailing NUL; the
+  ! Convert a libitb3-output (buf, len) pair to a Fortran allocatable
+  ! string. libitb3 reports out_len INCLUDING the trailing NUL; the
   ! NUL is stripped here.
   subroutine itb_from_cstr(buf, n_bytes, s)
     character(kind=c_char), intent(in)     :: buf(*)

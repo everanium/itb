@@ -11,7 +11,7 @@ import (
 // Superblock parity + golden lane digests for the batched 48-bit lock path.
 // ============================================================================
 //
-// The production worker loops in splitTriple48LockedBatch /
+// The production worker loops in splitTriple48LockedBatchInto /
 // interleaveTriple48LockedBatch accumulate the 128-bit rank pairs of up
 // to superChunks48 chunks and derive their mask triples in one
 // fillLockMasksTriple48Super pass. The mask derivation is a pure
@@ -29,7 +29,7 @@ import (
 //     wire contribution against any derivation-order or kernel change.
 
 // refSplitPerGroup48 is the sequential per-group reference for
-// [splitTriple48LockedBatch]: identical padding, group indexing, and
+// [splitTriple48LockedBatchInto]: identical padding, group indexing, and
 // lane serialisation, with one bp.fill mask-derivation per group and no
 // superblock accumulation and no parallelism.
 func refSplitPerGroup48(data []byte, bp lockBatchPRF48) (p0, p1, p2 []byte) {
@@ -174,13 +174,16 @@ func TestSuperblockVsPerGroupParity(t *testing.T) {
 					framed := superTestFixedData(sz)
 
 					refP0, refP1, refP2 := refSplitPerGroup48(framed, wc.bp)
-					gotP0, gotP1, gotP2 := splitTriple48LockedBatch(framed, wc.bp)
+					src := framedSrc48{body: framed}
+					M := src.chunkCount()
+					gotP0, gotP1, gotP2 := make([]byte, 2*M), make([]byte, 2*M), make([]byte, 2*M)
+					splitTriple48LockedBatchInto(src, gotP0, gotP1, gotP2, wc.bp, nil)
 					if !bytes.Equal(refP0, gotP0) || !bytes.Equal(refP1, gotP1) || !bytes.Equal(refP2, gotP2) {
 						t.Fatalf("M=%d size=%d: superblock split lane bytes diverge from per-group reference", m, sz)
 					}
 
 					refOut := refInterleavePerGroup48(refP0, refP1, refP2, wc.bp)
-					gotOut := interleaveTriple48LockedBatch(gotP0, gotP1, gotP2, wc.bp)
+					gotOut := interleaveTriple48LockedBatch(gotP0, gotP1, gotP2, wc.bp, nil)
 					if !bytes.Equal(refOut, gotOut) {
 						t.Fatalf("M=%d size=%d: superblock interleave diverges from per-group reference", m, sz)
 					}
@@ -202,16 +205,16 @@ func TestSuperblockVsPerGroupParity(t *testing.T) {
 func TestInterlock48LockedLaneGolden(t *testing.T) {
 	golden := map[string]map[int]string{
 		"128-factor1": {
-			144:  "ae946fabd42e89159d4f28d390c098d33f0dfef920d78b9a15ce22f681356c50",
-			1000: "8bb7458ad7ca9ad4ad7243277cc5366b8f797c7faa6db476793d0b49d1d98198",
+			144:  "d73a343a6ed9b92f35677afe98ede3a00b98b08ec284a7ba0d91c756be07a07b",
+			1000: "af8ff890ace80cb334a736c4a89da102139b0652aac6c4c5a96a174c862390d0",
 		},
 		"256-factor2": {
-			144:  "2c835b87ec8835716f7578f542c01c7d93ebc437389e21684ac174170c592e15",
-			1000: "8bd1a32af335e88e1e1e3800b3f0159c5bc7099369f3c326b5804548d5cdf83f",
+			144:  "233f41c8911a60f8a18dad4aace7e762b16905c37ccfa48ce3873324554959b9",
+			1000: "81af7eec8de327ea762506ffb82ec271e4a01583d2d01574f1c662b76d0f8290",
 		},
 		"512-factor4": {
-			144:  "70a7463fd8fdf4ea415247e0eb3f3f55b544e2ba659d2c485088e9f93d4bafe1",
-			1000: "df6a2f64090e2d5b9e6cf2a8dfee97f9377f04e03ccff584118d6c14c43ed300",
+			144:  "9f8533db28e32bd292b57e4eb047325227c32a800f2b6078372e96db3bfa811c",
+			1000: "d38d2f1ba459d4f6124f89075bbcc282c9319c8c7968186632ef63c238200285",
 		},
 	}
 	for _, wc := range superTestBuilders(t) {
@@ -219,7 +222,10 @@ func TestInterlock48LockedLaneGolden(t *testing.T) {
 		t.Run(wc.label, func(t *testing.T) {
 			for sz, want := range golden[wc.label] {
 				framed := superTestFixedData(sz)
-				p0, p1, p2 := splitTriple48LockedBatch(framed, wc.bp)
+				src := framedSrc48{body: framed}
+				M := src.chunkCount()
+				p0, p1, p2 := make([]byte, 2*M), make([]byte, 2*M), make([]byte, 2*M)
+				splitTriple48LockedBatchInto(src, p0, p1, p2, wc.bp, nil)
 				h := sha256.New()
 				h.Write(p0)
 				h.Write(p1)
@@ -228,7 +234,7 @@ func TestInterlock48LockedLaneGolden(t *testing.T) {
 				if got != want {
 					t.Fatalf("size=%d: lane digest %s, want %s", sz, got, want)
 				}
-				out := interleaveTriple48LockedBatch(p0, p1, p2, wc.bp)
+				out := interleaveTriple48LockedBatch(p0, p1, p2, wc.bp, nil)
 				if !bytes.Equal(out[:sz], framed) {
 					t.Fatalf("size=%d: golden lanes do not round-trip", sz)
 				}

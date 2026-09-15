@@ -1,20 +1,24 @@
 #!/usr/bin/env bash
 #
-# build.sh -- one-step build for the Swift binding: libitb.so + the C
+# build.sh -- one-step build for the Swift binding: libitb3.so + the C
 # binding library (the bridged layer) + the Swift package in release
 # configuration. Prerequisites (Go, a C11 compiler, GNU make, Swift
 # 6+) must be installed separately; see README.md "Prerequisites".
 #
+# Every artefact this binding owns is removed first, so nothing the
+# build produces can be a leftover from an earlier invocation.
+#
 # Usage:
 #   ./build.sh             # default build (full asm stack)
-#   ./build.sh --noitbasm  # opt out of ITB's chain-absorb asm
+#   ./build.sh --noitbasm  # opt out of ITB's SIMD asm kernels
+#   ITB_SKIP_CLEAN=1 ./build.sh   # keep the SwiftPM build tree
 
 set -eu
 set -o pipefail
 
 cd "$(dirname "$0")"
-SCRIPT_DIR="$(pwd)"
-REPO_ROOT="$(cd ../.. && pwd)"
+SCRIPT_DIR="$(pwd -P)"
+REPO_ROOT="$(cd ../.. && pwd -P)"
 
 TAGS=()
 case "${1:-}" in
@@ -24,16 +28,64 @@ case "${1:-}" in
     *)          echo "unknown option: $1" >&2; exit 2;;
 esac
 
+# ---- Clean ----------------------------------------------------------
+# Artefacts this binding owns. Two inputs are deliberately out of
+# scope because this binding consumes rather than produces them: the
+# Go shared library under dist/linux-amd64/, and the C binding's
+# libitb3_c.a / libitb3_c.so under bindings/c/build/, which the make
+# invocation below brings up to date through the C binding's own
+# build rules.
+# These sit at the repository root, not beside this script: the
+# SwiftPM manifest lives at the root so the package is resolvable as a
+# Git dependency, and SwiftPM puts its build tree next to the manifest.
+CLEAN_TARGETS=(
+    .build                # SwiftPM build tree (debug + release)
+    .swiftpm              # SwiftPM per-package state
+    .index-build          # background indexing tree
+)
+
+clean_artefacts() {
+    local rel abs tracked
+
+    # A build artefact is never tracked, so a hit here means the list
+    # above is wrong. Abort rather than delete a source file.
+    if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        tracked="$(git ls-files -- "${CLEAN_TARGETS[@]}")"
+        if [ -n "$tracked" ]; then
+            echo "clean: tracked files inside the clean scope:" >&2
+            printf '%s\n' "$tracked" | sed 's/^/    /' >&2
+            exit 1
+        fi
+    fi
+
+    for rel in "${CLEAN_TARGETS[@]}"; do
+        abs="$(readlink -m -- "$REPO_ROOT/$rel")"
+        case "$abs" in
+            "$REPO_ROOT"/?*) ;;
+            *) echo "clean: '$rel' escapes $REPO_ROOT ($abs)" >&2; exit 1;;
+        esac
+        [ -e "$abs" ] || continue
+        echo "[clean] rm -rf $abs"
+        rm -rf -- "$abs"
+    done
+}
+
+if [ "${ITB_SKIP_CLEAN:-0}" = "1" ]; then
+    echo "==> ITB_SKIP_CLEAN=1 -- keeping existing artefacts"
+else
+    echo "==> cleaning previous artefacts"
+    clean_artefacts
+fi
+
 cd "$REPO_ROOT"
-echo "==> building libitb.so${TAGS:+ (with ${TAGS[*]})}"
+echo "==> building libitb3.so${TAGS:+ (with ${TAGS[*]})}"
 go build -trimpath "${TAGS[@]}" -buildmode=c-shared \
-    -o dist/linux-amd64/libitb.so ./cmd/cshared
+    -o dist/linux-amd64/libitb3.so ./cmd/cshared
 
-echo "==> building the C binding library (libitb_c)"
-make -C bindings/c build/libitb_c.a build/libitb_c.so
+echo "==> building the C binding library (libitb3_c)"
+make -C bindings/c build/libitb3_c.a build/libitb3_c.so
 
-cd "$SCRIPT_DIR"
 echo "==> building Swift package (swift build -c release)"
-swift build -c release
+swift build --package-path "$REPO_ROOT" -c release
 
 echo "==> ready: ./run_tests.sh"

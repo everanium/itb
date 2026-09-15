@@ -1,7 +1,7 @@
 // Gradle build for the ITB Kotlin binding — a Tier 1 Thin proxy
 // over the Java binding (JVM bytecode interop, no FFI hop of its
 // own). The Java binding's library jar is consumed straight from the
-// sibling build's output directory; libitb.so + the JNI shim are
+// sibling build's output directory; libitb3.so + the JNI shim are
 // built and resolved by the Java layer (ITB_JNI_PATH, exported by
 // the driver scripts and defaulted below for in-repo runs).
 
@@ -9,10 +9,11 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     kotlin("jvm") version "2.4.10"
+    `maven-publish`
 }
 
-group = "com.everanium"
-version = "0.4.1"
+group = "io.github.everanium"
+version = "0.5.1"
 
 repositories {
     mavenCentral()
@@ -21,13 +22,13 @@ repositories {
 // bindings/kotlin -> <repo root>
 val repoRoot: File = layout.projectDirectory.asFile.parentFile.parentFile
 val javaBindingDir = File(repoRoot, "bindings/java")
-val jniShim = File(javaBindingDir, "build/jni/libitb_jni.so")
+val jniShim = File(javaBindingDir, "build/jni/libitb3_jni.so")
 
 // The sibling Java binding's library jar (not its eitb/bench tool
 // jars, which bundle duplicate copies of the main classes).
 // `./build.sh` builds it before Gradle runs, so the tree is present.
 val javaBindingJars = fileTree(File(javaBindingDir, "build/libs")) {
-    include("itb-java-*.jar")
+    include("libitb3-java-*.jar")
 }
 
 dependencies {
@@ -90,7 +91,7 @@ tasks.register<JavaExec>("runBench") {
     description =
         "Runs the throughput micro-benchmarks (--args=\"message|stream|all\")."
     classpath = bench.runtimeClasspath
-    mainClass = "com.everanium.itb.kotlin.bench.MainKt"
+    mainClass = "io.github.everanium.itb3.kotlin.bench.MainKt"
     defaultJniPath()
 }
 
@@ -98,7 +99,7 @@ tasks.register<JavaExec>("runEitb") {
     group = "application"
     description = "Runs the eitb command-line demonstrator."
     classpath = eitb.runtimeClasspath
-    mainClass = "com.everanium.itb.kotlin.eitb.MainKt"
+    mainClass = "io.github.everanium.itb3.kotlin.eitb.MainKt"
     defaultJniPath()
 }
 
@@ -106,7 +107,7 @@ val eitbJar = tasks.register<Jar>("eitbJar") {
     description = "Self-contained eitb CLI jar"
     archiveFileName = "eitb.jar"
     manifest {
-        attributes("Main-Class" to "com.everanium.itb.kotlin.eitb.MainKt")
+        attributes("Main-Class" to "io.github.everanium.itb3.kotlin.eitb.MainKt")
     }
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     from(eitb.output)
@@ -117,4 +118,43 @@ val eitbJar = tasks.register<Jar>("eitbJar") {
 
 tasks.assemble {
     dependsOn("benchClasses", "eitbClasses", eitbJar)
+}
+
+// Maven publication metadata. No sources / javadoc jar is attached:
+// the Kotlin, Groovy, Scala and Clojure bindings resolve the library
+// through a `libitb3-java-*.jar` glob, and an extra classified jar in
+// build/libs would match it.
+publishing {
+    publications {
+        create<MavenPublication>("maven") {
+            from(components["java"])
+            pom {
+                name.set("libitb3-kotlin")
+                description.set("ITB Symmetric Cipher Construction with Ambiguity-Based Security - Kotlin")
+                url.set("https://github.com/everanium/itb")
+                licenses {
+                    license {
+                        name.set("Apache License, Version 2.0")
+                        url.set("https://www.apache.org/licenses/LICENSE-2.0")
+                    }
+                }
+                developers {
+                    developer {
+                        id.set("everanium")
+                        name.set("Andrey Kuvshinov")
+                        email.set("andrew@encloud.blue")
+                    }
+                }
+                scm {
+                    connection.set("scm:git:https://github.com/everanium/itb.git")
+                    developerConnection.set("scm:git:ssh://git@github.com/everanium/itb.git")
+                    url.set("https://github.com/everanium/itb")
+                }
+                issueManagement {
+                    system.set("GitHub Issues")
+                    url.set("https://github.com/everanium/itb/issues")
+                }
+            }
+        }
+    }
 }

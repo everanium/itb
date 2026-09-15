@@ -1,5 +1,5 @@
-# itb.R — public R API over the itb C shim (src/itb_r.c), which in
-# turn proxies the libitb shared library's Triple Pipeline surface
+# itb.R — public R API over the itb C shim (src/libitb3r.c), which in
+# turn proxies the libitb3 shared library's Triple Pipeline surface
 # (ITB_Triple_*, cmd/cshared).
 #
 # The binding is a thin proxy: every hash-name / MAC-name /
@@ -22,7 +22,7 @@
 # Pipeline's external pointer in its protected slot, pinning at the C
 # level as well.
 
-ITB_R_VERSION <- "0.4.1"
+ITB_R_VERSION <- "0.5.1"
 
 # ---- internal helpers -------------------------------------------------
 
@@ -65,7 +65,7 @@ ITB_R_VERSION <- "0.4.1"
 
 # ---- library-level functions ------------------------------------------
 
-#' libitb library version string.
+#' libitb3 library version string.
 #' @export
 version <- function() {
   .Call(C_r_version)
@@ -79,11 +79,9 @@ profiles <- function() {
 }
 
 #' Decodes the blob's embedded profile record without opening a
-#' Pipeline and returns it as the JSON text libitb emits (keys `name`,
-#' `mode`, `width`, `hash`, `hashes`, `keybits`, `mac`, `tagstub`,
-#' `chunk`, `wrapper`, `outer`, `parallax`, `palette`, `segment`;
-#' absent keys are optional fields at their zero value). No registry
-#' read, no primitive probe.
+#' Pipeline and returns it as the JSON text libitb3 emits; absent keys
+#' are optional fields at their zero value. No registry read, no
+#' primitive probe.
 #' @export
 inspect <- function(blob) {
   .Call(C_r_inspect, .as_bytes(blob, "blob"))
@@ -93,7 +91,7 @@ inspect <- function(blob) {
 #' `pipeline_create` / `lookup` calls resolve it. `profile_json` is the
 #' record as JSON text (the shape `inspect` / `lookup` return); a
 #' `name` key inside it, if present, must be empty or equal to `name`.
-#' Validation is performed by libitb; raises `itb_error` with status
+#' Validation is performed by libitb3; raises `itb_error` with status
 #' PROFILE_EXISTS when the name is already registered.
 #' @export
 register <- function(name, profile_json) {
@@ -177,7 +175,7 @@ itb_now <- function() {
 #' Builds the URL-query opts string consumed by `pipeline_create` from
 #' named arguments (or a single named list). (Profile registration
 #' takes a JSON record — see `register` — not an opts string.) No validation is performed here — every key and
-#' value passes through to Go verbatim (percent-encoded); libitb
+#' value passes through to Go verbatim (percent-encoded); libitb3
 #' rejects unknown keys or bad values with a diagnostic surfaced
 #' through the `itb_error` condition. Keys are emitted in sorted order
 #' so the rendered string is deterministic.

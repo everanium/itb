@@ -4,7 +4,7 @@
 # through `write!` and yields wire through `read!` / `drain_all!`;
 # `StreamDecryptor` is the mirror (wire in, plaintext out). All
 # chunking, MAC, envelope, and wire-format decisions stay inside
-# libitb. `free!` (or garbage collection) cancels the session and
+# libitb3. `free!` (or garbage collection) cancels the session and
 # frees the Go-side state.
 
 "Feed / drain slice size used by the pump loops."

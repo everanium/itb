@@ -12,9 +12,9 @@ module itb_runtime
 
   public :: itb_set_memory_limit, itb_set_gc_percent, itb_version
 
-  ! Binding release; printed by `eitb version` next to the libitb
+  ! Binding release; printed by `eitb version` next to the libitb3
   ! version reported by ITB_Version.
-  character(*), parameter, public :: ITB_BINDING_VERSION = "0.4.1"
+  character(*), parameter, public :: ITB_BINDING_VERSION = "0.5.1"
 
 contains
 
@@ -34,7 +34,7 @@ contains
     prev = c_itb_set_gc_percent(pct)
   end function
 
-  ! The libitb library version string.
+  ! The libitb3 library version string.
   subroutine itb_version(version, err)
     character(:), allocatable, intent(out) :: version
     type(itb_error_t), intent(out)         :: err

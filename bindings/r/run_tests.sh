@@ -16,4 +16,4 @@ cd "$(dirname "$0")"
 
 export R_LIBS="$PWD/.local${R_LIBS:+:$R_LIBS}"
 
-exec Rscript -e 'library(itb); testthat::test_dir("tests/testthat", stop_on_failure = TRUE)'
+exec Rscript -e 'library(libitb3r); testthat::test_dir("tests/testthat", stop_on_failure = TRUE)'

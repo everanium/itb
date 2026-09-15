@@ -100,7 +100,7 @@ export interface Masters {
  * feeds to [Pipeline.load]; [Pipeline.rekey] refreshes it. Release
  * the handle deterministically via [Symbol.dispose] (`using`
  * declarations) or `free()`; a FinalizationRegistry backstop frees
- * on GC (libitb zeroes key material internally).
+ * on GC (libitb3 zeroes key material internally).
  *
  * Streaming-decrypt caveat: chunked Streaming AEAD verifies per
  * chunk, so plaintext of verified chunks is released before a later
@@ -119,7 +119,7 @@ export class Pipeline implements Disposable {
    * Constructs a fresh Pipeline against the named profile. The
    * session blob is available through [Pipeline.save]. On a
    * blob-buffer retry the Init re-runs and yields a fresh session
-   * (the undersized attempt is closed by libitb before returning).
+   * (the undersized attempt is closed by libitb3 before returning).
    */
   static init(profile: string, opts: Opts = new Opts()): Pipeline {
     const optsStr = opts.build();
@@ -292,7 +292,7 @@ export class Pipeline implements Disposable {
   }
 
   /**
-   * Releases the handle (libitb closes the Pipeline first, zeroing
+   * Releases the handle (libitb3 closes the Pipeline first, zeroing
    * key material). Safe to call more than once.
    */
   free(): void {
@@ -317,11 +317,16 @@ export class Pipeline implements Disposable {
 }
 
 /**
- * Profile record — the JSON object libitb emits from [inspect] /
- * [lookup] and accepts in [register]. Keys: `name`, `mode`, `width`,
- * `hash`, `hashes`, `keybits`, `mac`, `tagstub`, `chunk`, `wrapper`,
- * `outer`, `parallax`, `palette`, `segment`; absent keys are optional
- * fields at their zero value.
+ * Profile record — the JSON object libitb3 emits from [inspect] /
+ * [lookup] and accepts in [register]; absent keys are optional fields
+ * at their zero value.
+ *
+ * `nonce_bits` and `barrier_fill` are inspection-only. They are not
+ * part of the profile recipe: [inspect] reads them from the blob's
+ * runtime globals snapshot, while [lookup] omits both because the
+ * registry entry never carries them. libitb3 rejects a [register]
+ * payload that carries either key, so drop both before registering
+ * an inspected record.
  */
 export interface Profile {
   name?: string;
@@ -330,6 +335,10 @@ export interface Profile {
   hash?: string;
   hashes?: string[];
   keybits: number;
+  /** On-wire nonce width in bits; present only on an [inspect] record. */
+  nonce_bits?: number;
+  /** DRBG barrier fill margin; present only on an [inspect] record. */
+  barrier_fill?: number;
   mac?: string;
   tagstub?: number;
   chunk?: number;
@@ -362,7 +371,7 @@ export function inspect(blob: Uint8Array): Profile {
  * record object (the shape [inspect] returns) or an already-encoded
  * JSON string; a `name` key inside it, if present, must be empty or
  * equal to `name`. Validation (name pattern, reserved prefixes, field
- * rules) is performed by libitb; a duplicate name fails with
+ * rules) is performed by libitb3; a duplicate name fails with
  * [Status.ProfileExists].
  */
 export function register(name: string, profile: Profile | string): void {

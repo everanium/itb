@@ -13,8 +13,8 @@
 ## carry a cipher surface are the ones `encrypt` / `decrypt` accept.
 
 import std/[os, strformat, strutils]
-import ../src/itb
-import ../src/itb/stream
+import ../src/itb3
+import ../src/itb3/stream
 
 const Usage = """usage: eitb version
        eitb profiles
@@ -46,7 +46,7 @@ proc fromHexStr(s: string): seq[byte] =
     result[i] = byte(parseHexInt(s[2 * i .. 2 * i + 1]))
 
 proc cmdVersion() =
-  echo "libitb " & version()
+  echo "libitb3 " & version()
   echo "itb-nim " & ItbNimVersion
 
 proc cmdProfiles() =
@@ -113,8 +113,8 @@ proc main(): int =
     return 2
   try:
     # Go-runtime pacing caps applied before any cipher work.
-    discard setMemoryLimit(512 * 1024 * 1024)
-    discard setGcPercent(20)
+    discard setMemoryLimit(4 * 1024 * 1024 * 1024)
+    discard setGcPercent(100)
     case argv[0]
     of "version": cmdVersion()
     of "profiles": cmdProfiles()

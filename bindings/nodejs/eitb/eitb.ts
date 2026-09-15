@@ -30,8 +30,8 @@ import {
   version,
 } from '../src/index.js';
 
-setMemoryLimit(512n * 1024n * 1024n);
-setGCPercent(20);
+setMemoryLimit(4n * 1024n * 1024n * 1024n);
+setGCPercent(100);
 
 function usage(): never {
   console.error(
@@ -45,7 +45,7 @@ function usage(): never {
 }
 
 function cmdVersion(): void {
-  console.log(`libitb ${version()}`);
+  console.log(`libitb3 ${version()}`);
   console.log(`itb-nodejs ${bindingVersion}`);
 }
 

@@ -4,15 +4,25 @@ package itb
 
 // Full-KPA brute-force recovery against the below-floor nullHash
 // primitive. This is the attacker-realistic companion to
-// TestRedTeamNullHashExpose: it consumes ONLY attacker-visible inputs
-// (the Full-KPA plaintext, the wire ciphertext, the two public nonces
-// read from the dual-nonce header, the three per-snake startPixels
-// granted as a lab concession, and the container geometry) and recovers
-// the observable seed-role constants, then measures wall-clock.
+// TestRedTeamNullHashExpose: it consumes the Full-KPA plaintext, the
+// wire ciphertext, the main nonce read from the wire header, the
+// container geometry, and one lab concession — the three per-region
+// startPixels — then recovers the observable seed-role constants and
+// measures wall-clock.
 //
-// The truth_labonly block in cell.meta.json is read ONLY at the very end
-// for a validation printout. It never feeds a branch in the decision
-// path. Removing that final block leaves the recovery byte-identical.
+// The interlock nonce is not among the inputs. It is not a wire field:
+// it travels split across the three interlocked lanes, inside the Pixel
+// Barrier's coverage, so reading it out of the fixture metadata would be
+// a lab peek of the same class as reading a true seed component. Under
+// nullHash the attack does not need it — the barrier lanes do not depend
+// on it, the per-lane fragment is stepped over by its public length, and
+// the fragment bytes come back as an output of the recovery rather than
+// as one of its inputs. See redteam_interlock_nonce_recovery_test.go.
+//
+// The truth_labonly block in cell.meta.json, and the recorded interlock
+// nonce, are read ONLY at the very end for a validation printout. They
+// never feed a branch in the decision path. Removing that final block
+// leaves the recovery byte-identical.
 //
 // Why this links the shipped internals directly. A real attacker holding
 // the public ITB source reimplements the decode and the Part-1 lock from
@@ -20,7 +30,7 @@ package itb
 // terminator handling, the 7/8 noise-bit insertion, the 7-bit rotation
 // reversal, and the combinadic unrank — every one a known correctness
 // hazard. Linking the shipped process128Cfg (decode), the shipped
-// splitForTriple48LockedCfg (Part-1 lock), and cobsEncode is the same
+// splitForTriple48LockedInto (Part-1 lock), and cobsEncodeInto is the same
 // computation with zero reimplementation risk, so the measured number
 // reflects the search cost, not a reimplementation bug. Candidate seeds
 // are constructed with attacker-chosen constants; no lab-only seed
@@ -34,18 +44,18 @@ package itb
 //     - noiseSeed  -> noisePos = lo & 7            (3 bits)
 //     - dataSeed_i -> (lo % 7, lo >> 3)            (the full 8-bit lo)
 //     - lockSeed   -> deriveInterLockSeed = (lo,hi) (16 bits)
-//   The three snakes occupy disjoint container thirds and are decoded
-//   independently. Part 1 (the lock) is the only shared coupling and is
+//   The three regions occupy disjoint container thirds and are decoded
+//   independently. Rank Barrier (the lock) is the only shared coupling and is
 //   a pure function of (lockSeed, interlock_nonce, plaintext).
 //
 //   Phase A: for every 16-bit lockSeed constant, compute the three
 //   expected COBS-framed lane payloads via the shipped split, and index
 //   lockSeed by each lane's COBS bytes. 2^16 splits — the dominant cost.
 //
-//   Phase B: for every noisePos (8) and every snake (3) and every 8-bit
-//   dataSeed lo constant (256), run the shipped decode over that snake's
+//   Phase B: for every noisePos (8) and every region (3) and every 8-bit
+//   dataSeed lo constant (256), run the shipped decode over that region's
 //   container third and look the produced COBS prefix up in Phase A's
-//   index. A lockSeed that appears for all three snakes under one
+//   index. A lockSeed that appears for all three regions under one
 //   noisePos is the joint solution. 8*3*256 = 6144 decodes.
 //
 // Effective explored keyspace: 2^16 + 6144 ~= 2^16, versus the 5*2^16 =
@@ -188,9 +198,9 @@ func TestRedTeamNullHashAttack(t *testing.T) {
 		TotalPixels    int    `json:"total_pixels"`
 		HeaderSize     int    `json:"header_size"`
 		StartPixels    struct {
-			S1 int `json:"snake_1"`
-			S2 int `json:"snake_2"`
-			S3 int `json:"snake_3"`
+			S1 int `json:"region_1"`
+			S2 int `json:"region_2"`
+			S3 int `json:"region_3"`
 		} `json:"start_pixels"`
 		Truth map[string]string `json:"truth_labonly"`
 	}
@@ -201,7 +211,24 @@ func TestRedTeamNullHashAttack(t *testing.T) {
 	// ---- Attacker inputs only from here on ----
 	cfg := &Config{NonceBits: 128, BarrierFill: 1}
 	mainNonce, _ := hex.DecodeString(meta.MainNonceHex)
-	ilNonce, _ := hex.DecodeString(meta.InterlockNonce)
+	// The interlock nonce is neither on the wire nor granted. Two public
+	// facts stand in for it. First, the per-lane fragment length follows
+	// from the configured nonce width alone, so the fragment can be
+	// stepped over without knowing a byte of it. Second, under nullHash
+	// every ChainHash128 call reads only data[0], so deriveInterLockSeed
+	// returns one fixed pair whatever the nonce is and the cascade fill
+	// consuming it is fixed with it — the barrier lanes carry no nonce
+	// dependence for a candidate reconstruction to miss. The probe
+	// establishes that on attacker-chosen seeds and nonces; the candidate
+	// lanes below are then built under an attacker-chosen zero nonce.
+	lens, offs := nonceSplit(currentNonceSizeCfg(cfg))
+	inv := probeInterlockNonceInvariance128(cfg, nullHash, 512, 8, 8)
+	t.Logf("interlock-nonce probe (attacker-side, %d seeds x %d nonces): barrier lanes byte-identical in %d/%d comparisons, distinct derived keys %d",
+		inv.seeds, inv.nonces, inv.laneMatches, inv.laneTrials, inv.distinctKeys)
+	if !inv.invariant {
+		t.Fatalf("interlock nonce reaches the barrier lanes under nullHash; the nonce-free reconstruction does not apply")
+	}
+	attackerNonce := make([]byte, currentNonceSizeCfg(cfg))
 
 	container := ct[meta.HeaderSize:]
 	totalPixels := meta.TotalPixels
@@ -228,14 +255,17 @@ func TestRedTeamNullHashAttack(t *testing.T) {
 
 	start := time.Now()
 
-	// ---------- Phase A: index lockSeed by its lane COBS bytes ----------
-	// For every 16-bit lock constant, compute the three expected COBS-
-	// framed lane payloads and index the lock constant by each lane's COBS
-	// bytes. A single lane does NOT determine the whole 16-bit lock
-	// constant — different lanes constrain different bits, and one lane's
-	// bytes can be shared by many lock constants — so the index maps each
-	// lane key to the SET of lock constants that produce it. The join in
-	// Phase B intersects those sets across the three snakes.
+	// ---------- Phase A: index lockSeed by its barrier lane bytes ----------
+	// For every 16-bit lock constant, compute the three expected barrier
+	// lane payloads and index the lock constant by each lane's bytes. The
+	// interlock-nonce fragment the encoder prepends is NOT part of the
+	// key: Phase B strips it off the wire side by its public length, so
+	// both sides meet on the barrier output alone. A single lane does NOT
+	// determine the whole 16-bit lock constant — different lanes constrain
+	// different bits, and one lane's bytes can be shared by many lock
+	// constants — so the index maps each lane key to the SET of lock
+	// constants that produce it. The join in Phase B intersects those sets
+	// across the three regions.
 	type laneKey struct {
 		s   string
 		val uint16
@@ -264,12 +294,16 @@ func TestRedTeamNullHashAttack(t *testing.T) {
 				lo := byte(c >> 8)
 				hi := byte(c & 0xFF)
 				ls := seedConst(lo, hi)
-				bp := buildLockBatchPRF48_128Cfg(cfg, ls, ilNonce)
-				p0, p1, p2 := splitForTriple48LockedCfg(cfg, kpa, bp)
-				ps := [3][]byte{p0, p1, p2}
+				bp := buildLockBatchPRF48_128Cfg(cfg, ls, attackerNonce)
+				n := tripleLaneLen(len(kpa))
+				ps := [3][]byte{
+					make([]byte, n),
+					make([]byte, n),
+					make([]byte, n),
+				}
+				splitForTriple48LockedInto(cfg, kpa, bp, ps[0], ps[1], ps[2])
 				for i := 0; i < 3; i++ {
-					enc := cobsEncode(ps[i])
-					local[i] = append(local[i], laneKey{string(enc), uint16(c)})
+					local[i] = append(local[i], laneKey{string(ps[i]), uint16(c)})
 				}
 			}
 			shardResults[w] = local
@@ -286,28 +320,43 @@ func TestRedTeamNullHashAttack(t *testing.T) {
 		}
 	}
 	phaseA := time.Now()
+	// How much lock information the index actually carries: the number of
+	// DISTINCT barrier lanes the 65,536 lock constants produce. One
+	// distinct lane per region means the enumeration explores a
+	// one-element space and the join below can return no lock information
+	// at all — the recovered constant is then an arbitrary representative
+	// of a functional equivalence class, not a recovered key byte.
+	t.Logf("Phase A index: distinct barrier lanes across 65536 lock constants = [%d %d %d]",
+		len(lockIdx[0]), len(lockIdx[1]), len(lockIdx[2]))
 
-	// ---------- Phase B: decode each snake third, join on lockSeed ----------
-	// For each noisePos and each snake, decode the region under every
-	// 8-bit dataSeed lo constant and look the COBS prefix up in Phase A's
-	// index. Collect, per noisePos, the set of lock constants each snake
-	// can satisfy (with the dataSeed lo that satisfied it). A lock
-	// constant present for all three snakes under one noisePos is the
-	// solution.
+	// ---------- Phase B: decode each region third, join on lockSeed ----------
+	// For each noisePos and each region, decode the region under every
+	// 8-bit dataSeed lo constant, COBS-decode the framed lane the decode
+	// produced, strip the interlock-nonce fragment off its front by the
+	// public fragment length, and look the remaining barrier bytes up in
+	// Phase A's index. Collect, per noisePos, the set of lock constants
+	// each region can satisfy (with the dataSeed lo that satisfied it, and
+	// the fragment bytes that came off that lane). A lock constant present
+	// for all three regions under one noisePos is the solution, and its
+	// three stripped fragments reassemble into the interlock nonce — an
+	// output of the recovery, never an input to it.
 	var (
 		foundNoisePos = -1
 		foundLock     = uint16(0)
 		foundData     [3]byte
+		foundFrag     [3][]byte
 		decodeCount   int
+		cobsGatePass  int
 	)
 	for noisePos := 0; noisePos < 8 && foundNoisePos < 0; noisePos++ {
 		// A noiseSeed lo constant with (lo & 7) == noisePos: lo = noisePos.
 		noiseSeed := seedConst(byte(noisePos), 0)
-		// Per-snake: admissible lockConst -> a witness dataLo. A snake
+		// Per-region: admissible lockConst -> a witness dataLo. A region
 		// admits a whole SET of lock constants (its lane cannot pin all
 		// 16 bits); the witness records which dataSeed lo produced the
 		// matching lane so the solution's dataSeeds can be read off.
-		snakeHits := [3]map[uint16]byte{{}, {}, {}}
+		regionHits := [3]map[uint16]byte{{}, {}, {}}
+		fragHits := [3]map[uint16][]byte{{}, {}, {}}
 		for i := 0; i < 3; i++ {
 			startSeed := seedConst(startPixelConst[i], 0)
 			decoded := make([]byte, caps[i])
@@ -316,28 +365,42 @@ func TestRedTeamNullHashAttack(t *testing.T) {
 				for k := range decoded {
 					decoded[k] = 0
 				}
-				// Shipped decode over this snake's container third.
+				// Shipped decode over this region's container third.
 				process128Cfg(cfg, noiseSeed, dataSeed, startSeed, mainNonce,
 					regions[i], widths[i], 1, decoded, false, 1)
 				decodeCount++
-				key := decoded[:firstNull(decoded)]
-				if lcs, ok := lockIdx[i][string(key)]; ok {
+				fn := firstNull(decoded)
+				if fn == len(decoded) {
+					continue // no COBS terminator -> not a framed lane
+				}
+				stream := decoded[:fn]
+				if !cobsStructurallyValid(stream) {
+					continue // fails the public COBS structural invariant
+				}
+				cobsGatePass++
+				p := cobsDecodeInto(make([]byte, fn), stream)
+				if len(p) < lens[i] {
+					continue
+				}
+				if lcs, ok := lockIdx[i][string(p[lens[i]:])]; ok {
 					for _, lc := range lcs {
-						if _, dup := snakeHits[i][lc]; !dup {
-							snakeHits[i][lc] = byte(d)
+						if _, dup := regionHits[i][lc]; !dup {
+							regionHits[i][lc] = byte(d)
+							fragHits[i][lc] = append([]byte(nil), p[:lens[i]]...)
 						}
 					}
 				}
 			}
 		}
-		// Intersect the three snakes' admissible lock-constant sets.
-		for lc, d0 := range snakeHits[0] {
-			d1, ok1 := snakeHits[1][lc]
-			d2, ok2 := snakeHits[2][lc]
+		// Intersect the three regions' admissible lock-constant sets.
+		for lc, d0 := range regionHits[0] {
+			d1, ok1 := regionHits[1][lc]
+			d2, ok2 := regionHits[2][lc]
 			if ok1 && ok2 {
 				foundNoisePos = noisePos
 				foundLock = lc
 				foundData = [3]byte{d0, d1, d2}
+				foundFrag = [3][]byte{fragHits[0][lc], fragHits[1][lc], fragHits[2][lc]}
 				break
 			}
 		}
@@ -365,14 +428,23 @@ func TestRedTeamNullHashAttack(t *testing.T) {
 	kpaMatch, recovered := verifyRecovered(cfg, cand, ct, kpa, len(kpa), nil)
 	_ = recovered
 
+	// The three fragments the join stripped off the solution's lanes
+	// reassemble into the interlock nonce.
+	recoveredIl := make([]byte, currentNonceSizeCfg(cfg))
+	for i := 0; i < 3; i++ {
+		copy(recoveredIl[offs[i]:offs[i]+lens[i]], foundFrag[i])
+	}
+
 	t.Logf("=== nullHash Full-KPA brute-force recovery ===")
 	t.Logf("wall-clock total:        %v", elapsed)
 	t.Logf("  Phase A (2^16 splits):  %v", phaseA.Sub(start))
 	t.Logf("  Phase B (%d decodes):  %v", decodeCount, elapsed-phaseA.Sub(start))
-	t.Logf("candidates enumerated:   lockSeed=65536, decodes=%d", decodeCount)
+	t.Logf("candidates enumerated:   lockSeed=65536, decodes=%d, COBS-gate-pass=%d", decodeCount, cobsGatePass)
 	t.Logf("recovered noisePos:      %d (noiseSeed lo &7)", foundNoisePos)
 	t.Logf("recovered lockSeed:      0x%04x", foundLock)
 	t.Logf("recovered dataSeed lo:   d1=0x%02x d2=0x%02x d3=0x%02x", foundData[0], foundData[1], foundData[2])
+	t.Logf("recovered interlock nonce (off the lane fronts, fragment lens %v): %s",
+		lens, hex.EncodeToString(recoveredIl))
 	t.Logf("attacker KPA-replay decrypt matches wire plaintext: %v", kpaMatch)
 
 	// ---------- Lab-only validation (post-hoc, decorative) ----------
@@ -412,6 +484,13 @@ func TestRedTeamNullHashAttack(t *testing.T) {
 	okD3 := foundData[2] == byte(truthD3>>8)
 	t.Logf("match: noisePos=%v lock=%v d1=%v d2=%v d3=%v",
 		okNoise, okLock, okD1, okD2, okD3)
+	// The recorded interlock nonce is read HERE and nowhere above: the
+	// recovery produced recoveredIl from wire bytes alone, and this line
+	// only says whether it landed.
+	truthIlNonceHex := meta.InterlockNonce
+	t.Logf("interlock nonce: recovered=%s truth=%s match=%v",
+		hex.EncodeToString(recoveredIl), truthIlNonceHex,
+		hex.EncodeToString(recoveredIl) == truthIlNonceHex)
 
 	if !kpaMatch {
 		t.Errorf("attacker-realistic KPA replay did NOT reproduce the plaintext")
@@ -440,7 +519,8 @@ func cobsStructurallyValid(stream []byte) bool {
 			return false // no interior null before the terminator
 		}
 	}
-	return string(cobsEncode(cobsDecode(stream))) == string(stream)
+	dec := cobsDecodeInto(make([]byte, len(stream)), stream)
+	return string(cobsEncodeInto(make([]byte, cobsEncodeBound(len(dec))), dec)) == string(stream)
 }
 
 // printableASCII reports whether every byte is in the printable ASCII
@@ -503,9 +583,9 @@ func TestRedTeamNullHashAttackCrib(t *testing.T) {
 		TotalPixels    int    `json:"total_pixels"`
 		HeaderSize     int    `json:"header_size"`
 		StartPixels    struct {
-			S1 int `json:"snake_1"`
-			S2 int `json:"snake_2"`
-			S3 int `json:"snake_3"`
+			S1 int `json:"region_1"`
+			S2 int `json:"region_2"`
+			S3 int `json:"region_3"`
 		} `json:"start_pixels"`
 		Truth map[string]string `json:"truth_labonly"`
 	}
@@ -522,7 +602,18 @@ func TestRedTeamNullHashAttackCrib(t *testing.T) {
 
 	cfg := &Config{NonceBits: 128, BarrierFill: 1}
 	mainNonce, _ := hex.DecodeString(meta.MainNonceHex)
-	ilNonce, _ := hex.DecodeString(meta.InterlockNonce)
+	// The interlock nonce is neither on the wire nor granted; see the
+	// note on TestRedTeamNullHashAttack. The per-lane fragment length is
+	// public, and under nullHash the barrier lanes carry no nonce
+	// dependence — the probe measures that on attacker-chosen material.
+	lens, offs := nonceSplit(currentNonceSizeCfg(cfg))
+	inv := probeInterlockNonceInvariance128(cfg, nullHash, 512, 8, 8)
+	t.Logf("interlock-nonce probe (attacker-side, %d seeds x %d nonces): barrier lanes byte-identical in %d/%d comparisons, distinct derived keys %d",
+		inv.seeds, inv.nonces, inv.laneMatches, inv.laneTrials, inv.distinctKeys)
+	if !inv.invariant {
+		t.Fatalf("interlock nonce reaches the barrier lanes under nullHash; the nonce-free reconstruction does not apply")
+	}
+	attackerNonce := make([]byte, currentNonceSizeCfg(cfg))
 
 	container := ct[meta.HeaderSize:]
 	totalPixels := meta.TotalPixels
@@ -553,7 +644,9 @@ func TestRedTeamNullHashAttackCrib(t *testing.T) {
 	// bytes per lane, derivable from the crib alone under any lock
 	// candidate. A probe plaintext of (crib || zero fill) of the true
 	// length reproduces those chunks exactly; higher chunks (which the
-	// zero fill corrupts) are never consulted.
+	// zero fill corrupts) are never consulted. The anchor is measured on
+	// the BARRIER lane, past the interlock-nonce fragment the encoder
+	// prepends, so all lanePrefixLen bytes are crib-derived.
 	const lanePrefixLen = 16
 	probe := make([]byte, ptLen)
 	copy(probe, crib) // remainder stays zero; only chunks 0..7 are used
@@ -587,9 +680,14 @@ func TestRedTeamNullHashAttackCrib(t *testing.T) {
 			var local [3][]laneKey
 			for c := lo0; c < hi0; c++ {
 				ls := seedConst(byte(c>>8), byte(c&0xFF))
-				bp := buildLockBatchPRF48_128Cfg(cfg, ls, ilNonce)
-				p0, p1, p2 := splitForTriple48LockedCfg(cfg, probe, bp)
-				ps := [3][]byte{p0, p1, p2}
+				bp := buildLockBatchPRF48_128Cfg(cfg, ls, attackerNonce)
+				n := tripleLaneLen(len(probe))
+				ps := [3][]byte{
+					make([]byte, n),
+					make([]byte, n),
+					make([]byte, n),
+				}
+				splitForTriple48LockedInto(cfg, probe, bp, ps[0], ps[1], ps[2])
 				for i := 0; i < 3; i++ {
 					if len(ps[i]) < lanePrefixLen {
 						continue
@@ -613,20 +711,25 @@ func TestRedTeamNullHashAttackCrib(t *testing.T) {
 	phaseA := time.Now()
 
 	// ---------- Phase B: decode + COBS gate + prefix join ----------
+	// The COBS-decoded lane opens with this region's interlock-nonce
+	// fragment. Its length is public, so the anchor is taken past it and
+	// the fragment bytes are kept as a recovery output.
 	type tuple struct {
 		noisePos byte
 		lock     uint16
 		d        [3]byte
 	}
 	var (
-		preJoin     []tuple
-		decodeCount int
-		cobsPass    int
+		preJoin      []tuple
+		decodeCount  int
+		cobsPass     int
+		fragWitness  [3][]byte
+		fragObserved int
 	)
 	for noisePos := 0; noisePos < 8; noisePos++ {
 		noiseSeed := seedConst(byte(noisePos), 0)
-		// Per snake: lockConst -> witness dataSeed lo values.
-		snakeHits := [3]map[uint16][]byte{{}, {}, {}}
+		// Per region: lockConst -> witness dataSeed lo values.
+		regionHits := [3]map[uint16][]byte{{}, {}, {}}
 		for i := 0; i < 3; i++ {
 			startSeed := seedConst(startPixelConst[i], 0)
 			decoded := make([]byte, caps[i])
@@ -647,22 +750,26 @@ func TestRedTeamNullHashAttackCrib(t *testing.T) {
 					continue // fails the public COBS structural invariant
 				}
 				cobsPass++
-				p := cobsDecode(stream)
-				if len(p) < lanePrefixLen {
+				p := cobsDecodeInto(make([]byte, len(stream)), stream)
+				if len(p) < lens[i]+lanePrefixLen {
 					continue
 				}
-				if lcs, ok := lockIdx[i][string(p[:lanePrefixLen])]; ok {
+				if lcs, ok := lockIdx[i][string(p[lens[i]:lens[i]+lanePrefixLen])]; ok {
 					for _, lc := range lcs {
-						snakeHits[i][lc] = append(snakeHits[i][lc], byte(d))
+						regionHits[i][lc] = append(regionHits[i][lc], byte(d))
+					}
+					if fragWitness[i] == nil {
+						fragWitness[i] = append([]byte(nil), p[:lens[i]]...)
+						fragObserved++
 					}
 				}
 			}
 		}
 		// Intersect and enumerate candidate tuples (cartesian over the
 		// benign dataSeed low-bit ambiguity witnesses).
-		for lc, d0s := range snakeHits[0] {
-			d1s, ok1 := snakeHits[1][lc]
-			d2s, ok2 := snakeHits[2][lc]
+		for lc, d0s := range regionHits[0] {
+			d1s, ok1 := regionHits[1][lc]
+			d2s, ok2 := regionHits[2][lc]
 			if !ok1 || !ok2 {
 				continue
 			}
@@ -715,6 +822,14 @@ func TestRedTeamNullHashAttackCrib(t *testing.T) {
 	t.Logf("survivors after full structural verification: %d raw, %d functionally distinct",
 		len(survivors), len(funcSet))
 
+	// The fragments stripped off the anchored lanes reassemble into the
+	// interlock nonce — a recovery output, never an input.
+	recoveredIl := make([]byte, currentNonceSizeCfg(cfg))
+	for i := 0; i < 3; i++ {
+		copy(recoveredIl[offs[i]:offs[i]+lens[i]], fragWitness[i])
+	}
+	t.Logf("interlock-nonce fragments read off %d/3 anchored lanes: %s", fragObserved, hex.EncodeToString(recoveredIl))
+
 	if len(survivors) == 0 {
 		t.Fatalf("Crib-KPA attack failed: no survivor passed structural verification")
 	}
@@ -756,6 +871,11 @@ func TestRedTeamNullHashAttackCrib(t *testing.T) {
 		}
 	}
 	t.Logf("a survivor reproduces the FULL original plaintext beyond crib: %v", beyondCribMatch)
+	// The recorded interlock nonce is read HERE and nowhere above.
+	truthIlNonceHex := meta.InterlockNonce
+	t.Logf("interlock nonce: recovered=%s truth=%s match=%v",
+		hex.EncodeToString(recoveredIl), truthIlNonceHex,
+		hex.EncodeToString(recoveredIl) == truthIlNonceHex)
 	if !beyondCribMatch {
 		t.Errorf("no survivor reproduced the original plaintext beyond the crib")
 	}
@@ -767,15 +887,17 @@ func TestRedTeamNullHashAttackCrib(t *testing.T) {
 
 // TestRedTeamNullHashAttackNoKPA is the strictest attacker-realism
 // scenario: a direct ciphertext-only attack (COA). The attacker holds
-// only the wire ciphertexts and their parsed public dual-nonce headers
-// (main + interlock nonce, container dimensions). There is NO plaintext,
-// NO crib, and NO startPixel concession — the three per-snake startPixels
-// are brute-forced. The only structural knowledge used is the public COBS
-// framing convention; no content-type assumption (printable-ASCII, JSON,
-// etc.) is made — the plaintext may be arbitrary binary.
+// the wire ciphertexts and their parsed public headers (main nonce,
+// container dimensions). There is NO plaintext, NO crib, NO interlock
+// nonce and NO startPixel concession — the three per-region startPixels
+// are brute-forced, and each lane's interlock-nonce fragment is stepped
+// over by the length the public nonce width implies. The only structural
+// knowledge used is the public COBS framing convention; no content-type
+// assumption (printable-ASCII, JSON, etc.) is made — the plaintext may be
+// arbitrary binary.
 //
 // The attack is content-agnostic and multi-ciphertext. Under nullHash
-// every derivation (the observable constants, the per-snake startPixel
+// every derivation (the observable constants, the per-region startPixel
 // walk offset, and the whole-message 48-bit lock mask triple) is
 // nonce-independent, so one recovered candidate applies identically to
 // every message from the same 8-seed sender. A single ciphertext leaves
@@ -786,12 +908,12 @@ func TestRedTeamNullHashAttackCrib(t *testing.T) {
 //
 // Decomposition:
 //
-//   Phase 1 (per-snake cross-ciphertext COBS gate): each snake occupies a
+//   Phase 1 (per-region cross-ciphertext COBS gate): each region occupies a
 //   disjoint container third and is decoded independently. For every
 //   (noisePos, dataSeed lo, startPixel in [0,third)) every wire's third is
 //   decoded and gated through the public COBS structural invariant; a
 //   survivor must validate ALL wires and produce equal lane lengths on
-//   each. This collapses ~2900 single-wire COBS coincidences per snake to
+//   each. This collapses ~2900 single-wire COBS coincidences per region to
 //   a few dozen.
 //
 //   Phase 2 (mask table + length-prefix join): under nullHash the lock
@@ -842,9 +964,9 @@ func TestRedTeamNullHashAttackNoKPA(t *testing.T) {
 			CtFile            string `json:"ct_file"`
 		} `json:"messages"`
 		StartPixels struct {
-			S1 int `json:"snake_1"`
-			S2 int `json:"snake_2"`
-			S3 int `json:"snake_3"`
+			S1 int `json:"region_1"`
+			S2 int `json:"region_2"`
+			S3 int `json:"region_3"`
 		} `json:"start_pixels"`
 		Truth map[string]string `json:"truth_labonly"`
 	}
@@ -857,6 +979,10 @@ func TestRedTeamNullHashAttackNoKPA(t *testing.T) {
 	W := len(meta.Messages)
 
 	cfg := &Config{NonceBits: 128, BarrierFill: 1}
+	// Each lane opens with its fragment of the interlock nonce. Its
+	// length follows from the public nonce width alone, so the fragment
+	// can be skipped without knowing the nonce value.
+	lens, _ := nonceSplit(currentNonceSizeCfg(cfg))
 	cts := make([][]byte, W)
 	mainNonce := make([][]byte, W)
 	for w := 0; w < W; w++ {
@@ -889,16 +1015,16 @@ func TestRedTeamNullHashAttackNoKPA(t *testing.T) {
 
 	start := time.Now()
 
-	// ---------- Phase 1: per-snake cross-ciphertext COBS gate ----------
+	// ---------- Phase 1: per-region cross-ciphertext COBS gate ----------
 	type surv struct {
 		noisePos byte
 		d        byte
 		sp       int
 		laneLen  int
-		chunk0   []uint16 // this snake's chunk-0 lane value per wire
-		lane0    []byte   // this snake's full wire-0 lane (for padding gate)
+		chunk0   []uint16 // this region's chunk-0 lane value per wire
+		lane0    []byte   // this region's full wire-0 lane (for padding gate)
 	}
-	var snakeSurv [3][8][]surv
+	var regionSurv [3][8][]surv
 	var mu sync.Mutex
 
 	numCPU := runtime.NumCPU()
@@ -939,7 +1065,12 @@ func TestRedTeamNullHashAttackNoKPA(t *testing.T) {
 								ok = false
 								break
 							}
-							p := cobsDecode(b[:fn])
+							p := cobsDecodeInto(make([]byte, fn), b[:fn])
+							if len(p) < lens[i] {
+								ok = false
+								break
+							}
+							p = p[lens[i]:]
 							if len(p) < 2 || len(p)%2 != 0 {
 								ok = false
 								break
@@ -960,7 +1091,7 @@ func TestRedTeamNullHashAttackNoKPA(t *testing.T) {
 				}
 				if len(local) > 0 {
 					mu.Lock()
-					snakeSurv[i][np] = append(snakeSurv[i][np], local...)
+					regionSurv[i][np] = append(regionSurv[i][np], local...)
 					mu.Unlock()
 				}
 			}(i, np)
@@ -972,7 +1103,7 @@ func TestRedTeamNullHashAttackNoKPA(t *testing.T) {
 	total1 := 0
 	for i := 0; i < 3; i++ {
 		for np := 0; np < 8; np++ {
-			total1 += len(snakeSurv[i][np])
+			total1 += len(regionSurv[i][np])
 		}
 	}
 
@@ -1016,7 +1147,7 @@ func TestRedTeamNullHashAttackNoKPA(t *testing.T) {
 		var byLen [3]map[int][]surv
 		for i := 0; i < 3; i++ {
 			byLen[i] = map[int][]surv{}
-			for _, s := range snakeSurv[i][np] {
+			for _, s := range regionSurv[i][np] {
 				byLen[i][s.laneLen] = append(byLen[i][s.laneLen], s)
 			}
 		}
@@ -1146,9 +1277,9 @@ func TestRedTeamNullHashAttackNoKPA(t *testing.T) {
 	t.Logf("  Phase 1 (COBS gate):  %v", phase1.Sub(start))
 	t.Logf("  Phase 2 (join):       %v", phase2.Sub(phase1))
 	t.Logf("  Phase 3 (verify):     %v", elapsed-phase2.Sub(start))
-	t.Logf("per-snake decodes enumerated: %d (%d wires x 8 noisePos x 256 dataSeed x [0,third) startPixel)",
+	t.Logf("per-region decodes enumerated: %d (%d wires x 8 noisePos x 256 dataSeed x [0,third) startPixel)",
 		W*(8*256*(third+third+thirdPixels2)), W)
-	t.Logf("Phase 1 cross-ct COBS survivors (all snakes/noisePos): %d", total1)
+	t.Logf("Phase 1 cross-ct COBS survivors (all regions/noisePos): %d", total1)
 	t.Logf("Phase 2 length-join candidates: %d", len(candidates))
 	t.Logf("survivors after full verification: %d raw, %d functionally distinct, %d distinct lock constants",
 		len(confirmed), len(funcSet), len(lockSet))
@@ -1235,8 +1366,8 @@ func TestRedTeamNullHashAttackNoKPA(t *testing.T) {
 // (crib + startPixels granted) and Stage 3 (no crib + startPixels brute).
 // Threat model: a 48-byte crib (first 48 plaintext bytes), one wire, fresh
 // nonce, and — unlike Stage 2 — NO startPixel concession. The three
-// per-snake startPixels are brute-forced over [0,third) alongside the
-// per-snake dataSeed lo, joined by the crib-derived 16-byte lane-prefix
+// per-region startPixels are brute-forced over [0,third) alongside the
+// per-region dataSeed lo, joined by the crib-derived 16-byte lane-prefix
 // anchor (Phase A', identical to Stage 2). The hypothesis under test: a
 // 48-byte crib is a strong enough anchor to resolve the lock low-byte
 // ambiguity that a content-agnostic Stage 3 attack could not, yielding
@@ -1270,9 +1401,9 @@ func TestRedTeamNullHashAttackCribNoStartPixels(t *testing.T) {
 		TotalPixels    int    `json:"total_pixels"`
 		HeaderSize     int    `json:"header_size"`
 		StartPixels    struct {
-			S1 int `json:"snake_1"`
-			S2 int `json:"snake_2"`
-			S3 int `json:"snake_3"`
+			S1 int `json:"region_1"`
+			S2 int `json:"region_2"`
+			S3 int `json:"region_3"`
 		} `json:"start_pixels"`
 		Truth map[string]string `json:"truth_labonly"`
 	}
@@ -1287,7 +1418,16 @@ func TestRedTeamNullHashAttackCribNoStartPixels(t *testing.T) {
 
 	cfg := &Config{NonceBits: 128, BarrierFill: 1}
 	mainNonce, _ := hex.DecodeString(meta.MainNonceHex)
-	ilNonce, _ := hex.DecodeString(meta.InterlockNonce)
+	// The interlock nonce is neither on the wire nor granted; see the
+	// note on TestRedTeamNullHashAttack.
+	lens, offs := nonceSplit(currentNonceSizeCfg(cfg))
+	inv := probeInterlockNonceInvariance128(cfg, nullHash, 512, 8, 8)
+	t.Logf("interlock-nonce probe (attacker-side, %d seeds x %d nonces): barrier lanes byte-identical in %d/%d comparisons, distinct derived keys %d",
+		inv.seeds, inv.nonces, inv.laneMatches, inv.laneTrials, inv.distinctKeys)
+	if !inv.invariant {
+		t.Fatalf("interlock nonce reaches the barrier lanes under nullHash; the nonce-free reconstruction does not apply")
+	}
+	attackerNonce := make([]byte, currentNonceSizeCfg(cfg))
 
 	container := ct[meta.HeaderSize:]
 	totalPixels := meta.TotalPixels
@@ -1341,9 +1481,14 @@ func TestRedTeamNullHashAttackCribNoStartPixels(t *testing.T) {
 			var local [3][]laneKey
 			for c := lo0; c < hi0; c++ {
 				ls := seedConst(byte(c>>8), byte(c&0xFF))
-				bp := buildLockBatchPRF48_128Cfg(cfg, ls, ilNonce)
-				p0, p1, p2 := splitForTriple48LockedCfg(cfg, probe, bp)
-				ps := [3][]byte{p0, p1, p2}
+				bp := buildLockBatchPRF48_128Cfg(cfg, ls, attackerNonce)
+				n := tripleLaneLen(len(probe))
+				ps := [3][]byte{
+					make([]byte, n),
+					make([]byte, n),
+					make([]byte, n),
+				}
+				splitForTriple48LockedInto(cfg, probe, bp, ps[0], ps[1], ps[2])
 				for i := 0; i < 3; i++ {
 					if len(ps[i]) < lanePrefixLen {
 						continue
@@ -1366,19 +1511,21 @@ func TestRedTeamNullHashAttackCribNoStartPixels(t *testing.T) {
 	phaseA := time.Now()
 
 	// ---------- Phase B: brute (noisePos, dataSeed lo, startPixel) ----------
-	// Per (noisePos, snake): lockConst -> witnesses (dataLo, startPixel).
+	// Per (noisePos, region): lockConst -> witnesses (dataLo, startPixel).
 	type witness struct {
 		dLo byte
 		sp  int
 	}
-	var snakeHits [8][3]map[uint16][]witness
+	var regionHits [8][3]map[uint16][]witness
 	for np := 0; np < 8; np++ {
 		for i := 0; i < 3; i++ {
-			snakeHits[np][i] = map[uint16][]witness{}
+			regionHits[np][i] = map[uint16][]witness{}
 		}
 	}
 	var mu sync.Mutex
 	var decodeCount int64
+	var fragWitness [3][]byte
+	var fragObserved int
 	var wgB sync.WaitGroup
 	for np := 0; np < 8; np++ {
 		for i := 0; i < 3; i++ {
@@ -1390,6 +1537,7 @@ func TestRedTeamNullHashAttackCribNoStartPixels(t *testing.T) {
 				startSeed := seedConst(0, 0)
 				decoded := make([]byte, caps[i])
 				local := map[uint16][]witness{}
+				var localFrag []byte
 				var dc int64
 				for d := 0; d < 256; d++ {
 					dataSeed := seedConst(byte(d), 0)
@@ -1405,20 +1553,31 @@ func TestRedTeamNullHashAttackCribNoStartPixels(t *testing.T) {
 						if fn == len(decoded) || !cobsStructurallyValid(decoded[:fn]) {
 							continue
 						}
-						p := cobsDecode(decoded[:fn])
-						if len(p) < lanePrefixLen {
+						p := cobsDecodeInto(make([]byte, fn), decoded[:fn])
+						if len(p) < lens[i]+lanePrefixLen {
 							continue
 						}
-						if lcs, ok := lockIdx[i][string(p[:lanePrefixLen])]; ok {
+						// The lane opens with this region's interlock-nonce
+						// fragment; its length is public, so the crib anchor
+						// is taken past it and the fragment is kept as an
+						// output of the recovery.
+						if lcs, ok := lockIdx[i][string(p[lens[i]:lens[i]+lanePrefixLen])]; ok {
 							for _, lc := range lcs {
 								local[lc] = append(local[lc], witness{byte(d), sp})
+							}
+							if localFrag == nil {
+								localFrag = append([]byte(nil), p[:lens[i]]...)
 							}
 						}
 					}
 				}
 				mu.Lock()
 				for lc, ws := range local {
-					snakeHits[np][i][lc] = append(snakeHits[np][i][lc], ws...)
+					regionHits[np][i][lc] = append(regionHits[np][i][lc], ws...)
+				}
+				if localFrag != nil && fragWitness[i] == nil {
+					fragWitness[i] = localFrag
+					fragObserved++
 				}
 				decodeCount += dc
 				mu.Unlock()
@@ -1427,7 +1586,7 @@ func TestRedTeamNullHashAttackCribNoStartPixels(t *testing.T) {
 	}
 	wgB.Wait()
 
-	// ---------- Join across snakes on consistent (noisePos, lockConst) ----------
+	// ---------- Join across regions on consistent (noisePos, lockConst) ----------
 	type cand struct {
 		noisePos byte
 		lock     uint16
@@ -1436,9 +1595,9 @@ func TestRedTeamNullHashAttackCribNoStartPixels(t *testing.T) {
 	}
 	var preJoin []cand
 	for np := 0; np < 8; np++ {
-		for lc, w0 := range snakeHits[np][0] {
-			w1, ok1 := snakeHits[np][1][lc]
-			w2, ok2 := snakeHits[np][2][lc]
+		for lc, w0 := range regionHits[np][0] {
+			w1, ok1 := regionHits[np][1][lc]
+			w2, ok2 := regionHits[np][2][lc]
 			if !ok1 || !ok2 {
 				continue
 			}
@@ -1488,9 +1647,14 @@ func TestRedTeamNullHashAttackCribNoStartPixels(t *testing.T) {
 	t.Logf("wall-clock total:       %v", elapsed)
 	t.Logf("  Phase A' (2^16 splits): %v", phaseA.Sub(start))
 	t.Logf("  Phase B + verify:       %v", elapsed-phaseA.Sub(start))
-	t.Logf("per-snake decodes: %d (8 noisePos x 256 dataSeed x [0,third) startPixel x 3 snakes)", decodeCount)
+	t.Logf("per-region decodes: %d (8 noisePos x 256 dataSeed x [0,third) startPixel x 3 regions)", decodeCount)
 	t.Logf("pre-join candidates: %d", len(preJoin))
 	t.Logf("survivors after full verification: %d raw, %d functionally distinct", len(survivors), len(funcSet))
+	recoveredIl := make([]byte, currentNonceSizeCfg(cfg))
+	for i := 0; i < 3; i++ {
+		copy(recoveredIl[offs[i]:offs[i]+lens[i]], fragWitness[i])
+	}
+	t.Logf("interlock-nonce fragments read off %d/3 anchored lanes: %s", fragObserved, hex.EncodeToString(recoveredIl))
 	if len(funcSet) == 0 {
 		t.Fatalf("Stage 2.5 attack failed: no survivor")
 	}
@@ -1532,6 +1696,11 @@ func TestRedTeamNullHashAttackCribNoStartPixels(t *testing.T) {
 		}
 	}
 	t.Logf("a survivor reproduces the FULL original plaintext beyond crib: %v", fullMatch)
+	// The recorded interlock nonce is read HERE and nowhere above.
+	truthIlNonceHex := meta.InterlockNonce
+	t.Logf("interlock nonce: recovered=%s truth=%s match=%v",
+		hex.EncodeToString(recoveredIl), truthIlNonceHex,
+		hex.EncodeToString(recoveredIl) == truthIlNonceHex)
 	if !fullMatch {
 		t.Errorf("no survivor reproduced the original plaintext beyond the crib")
 	}

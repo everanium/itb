@@ -70,11 +70,10 @@ type KeyedHashSpec struct {
 // [hashes.Register] qualify uniformly. The resolved [hashes.Spec]
 // must carry a non-nil HashHash field — the primitive's
 // general-purpose unkeyed hash.Hash form the HMAC envelope wraps;
-// when the field is nil (no such form exists — the Areion SoEM
-// constructions, AES-CMAC, SipHash-2-4, ChaCha20, and any custom
-// primitive registered without it), BuildHMAC returns an error and
-// the hand-rolled [Register] path with a caller-written MakeMAC
-// factory applies instead.
+// when the field is nil (no such form exists on the resolved
+// registry entry), BuildHMAC returns an error and the hand-rolled
+// [Register] path with a caller-written MakeMAC factory applies
+// instead.
 //
 // The produced factories honour every [Register] closure contract by
 // construction: both arms share one pre-keyed construction (a
@@ -130,10 +129,10 @@ func BuildHMAC(hashName string, spec HMACSpec) (Spec, error) {
 // when the field is nil (no native keyed mode exists, or a custom
 // primitive was registered without it), BuildKeyedHash returns an
 // error and the hand-rolled [Register] path applies instead. For the
-// shipped keyed-form primitives (the BLAKE2 variants, BLAKE3,
-// SipHash-2-4) the keyed mode is itself a sound PRF, so the
-// double-invocation HMAC envelope is unnecessary; the keyed-mode
-// soundness of a custom primitive is the registrant's responsibility.
+// shipped keyed-form primitives the keyed mode is itself a sound
+// PRF, so the double-invocation HMAC envelope is unnecessary; the
+// keyed-mode soundness of a custom primitive is the registrant's
+// responsibility.
 //
 // Explicit KeySize required — implicit ladder discovery removed to
 // avoid hidden key-size selection in a cryptographic construction.

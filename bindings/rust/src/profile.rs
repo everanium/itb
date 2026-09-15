@@ -1,20 +1,26 @@
-//! The profile record — the JSON object libitb accepts in
+//! The profile record — the JSON object libitb3 accepts in
 //! [`crate::register`], returns from [`crate::lookup`] and
 //! [`crate::inspect`], and embeds in every blob.
 //!
 //! The record is a plain data carrier: no field is validated on the
 //! Rust side. Field rules (mode / width / hash-width agreement, MAC
-//! name, palette contents, …) are enforced by libitb at `register`
+//! name, palette contents, …) are enforced by libitb3 at `register`
 //! and `load`; a rejected record surfaces as [`crate::ItbError`]
 //! carrying the status code plus the `ITB_LastError` diagnostic.
 
 use serde::{Deserialize, Serialize};
 
-/// Resolved shape of a Triple Pipeline. Serialises to the libitb
-/// profile JSON object (`name`, `mode`, `width`, `hash`, `hashes`,
-/// `keybits`, `mac`, `tagstub`, `chunk`, `wrapper`, `outer`,
-/// `parallax`, `palette`, `segment`); optional keys are omitted when
-/// empty / zero and decode as their defaults when absent.
+/// Resolved shape of a Triple Pipeline. Serialises to the libitb3
+/// profile JSON object; optional keys are omitted when empty / zero
+/// and decode as their defaults when absent.
+///
+/// `nonce_bits` and `barrier_fill` are inspection-only: they are not
+/// part of the profile recipe, carry `None` on a record from
+/// [`crate::lookup`] or built by hand, and are populated only on a
+/// record from [`crate::inspect`], where libitb3 reads them from the
+/// blob's runtime globals snapshot. libitb3 rejects a `register`
+/// payload that carries either key, so clear both before handing an
+/// inspected record to [`crate::register`].
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Profile {
     /// Registry label. Empty on a record built by hand; filled by
@@ -39,6 +45,15 @@ pub struct Profile {
     /// Session key width in bits.
     #[serde(default, rename = "keybits")]
     pub key_bits: i64,
+    /// On-wire nonce width in bits, read from the blob's runtime
+    /// globals. Inspection-only: `Some` on an `inspect` record,
+    /// `None` on a `lookup` record and on one built by hand.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub nonce_bits: Option<i64>,
+    /// DRBG barrier fill margin, read from the blob's runtime
+    /// globals. Same inspection-only lifecycle as [`Profile::nonce_bits`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub barrier_fill: Option<i64>,
     /// MAC name; empty for No MAC modes.
     #[serde(default, rename = "mac", skip_serializing_if = "String::is_empty")]
     pub mac_name: String,
@@ -70,12 +85,12 @@ fn is_zero(v: &i64) -> bool {
 }
 
 impl Profile {
-    /// Decodes a profile JSON object as returned by libitb.
+    /// Decodes a profile JSON object as returned by libitb3.
     pub fn from_json(json: &str) -> Result<Self, serde_json::Error> {
         serde_json::from_str(json)
     }
 
-    /// Encodes the record as the profile JSON object libitb accepts.
+    /// Encodes the record as the profile JSON object libitb3 accepts.
     pub fn to_json(&self) -> String {
         serde_json::to_string(self).expect("Profile serialises without error")
     }

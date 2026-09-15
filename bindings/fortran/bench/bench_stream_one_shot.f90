@@ -5,7 +5,7 @@
 program bench_stream_one_shot
   use, intrinsic :: iso_c_binding, only: c_int64_t, c_int, c_size_t
   use, intrinsic :: iso_fortran_env, only: error_unit, int64, real64
-  use itb
+  use itb3
   use bench_common
   implicit none
 
@@ -27,8 +27,8 @@ program bench_stream_one_shot
   ! Bench-scale allocation churn leaks Go scratch heap unboundedly
   ! without a soft memory cap + aggressive GC; the return values
   ! report the previous settings, not an error.
-  prev_limit = itb_set_memory_limit(int(512, c_int64_t) * 1024 * 1024)
-  prev_gc = itb_set_gc_percent(20_c_int)
+  prev_limit = itb_set_memory_limit(int(4, c_int64_t) * 1024 * 1024 * 1024)
+  prev_gc = itb_set_gc_percent(100_c_int)
 
   call bench_build_opts(opts)
   call itb_pipeline_init(pipe, &

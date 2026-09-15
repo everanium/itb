@@ -1,10 +1,16 @@
 #!/usr/bin/env bash
 #
 # run_bench.sh -- micro-benchmark runner for the PowerShell binding.
-# Builds the C# peer via build.sh, points ITB_LIBITB_PATH at the
+# Builds the C# peer via build.sh, points ITB_LIBITB3_PATH at the
 # freshly-built shared library, then runs the bench scripts:
 # EncryptMessage and stream-pump throughput at 1 MiB / 16 MiB /
 # 64 MiB.
+#
+# The bench scripts are not compiled, so what has to be current is the
+# C# assembly they bind. build.sh delegates that to ../csharp/build.sh,
+# which cleans and rebuilds its own tree, so the assembly measured here
+# is always the one this invocation produced. Set ITB_SKIP_CLEAN=1 to
+# keep the existing artefacts and build incrementally instead.
 #
 # Usage:
 #   ./run_bench.sh             # both shapes
@@ -20,13 +26,13 @@ DIST_DIR="$REPO_ROOT/dist/linux-amd64"
 
 ./build.sh
 
-export ITB_LIBITB_PATH="$DIST_DIR/libitb.so"
+export ITB_LIBITB3_PATH="$DIST_DIR/libitb3.so"
 
 # Go-runtime pacing defaults for bench-scale allocation churn; the
 # `:-` form respects any override set by the caller. The bench
 # scripts apply the same caps programmatically.
-export ITB_GOMEMLIMIT="${ITB_GOMEMLIMIT:-512MiB}"
-export ITB_GOGC="${ITB_GOGC:-20}"
+export ITB_GOMEMLIMIT="${ITB_GOMEMLIMIT:-4GiB}"
+export ITB_GOGC="${ITB_GOGC:-100}"
 
 # Bench-shape defaults — match the root Go BENCH3.md pin so the
 # throughput numbers are directly comparable to the shipped Go

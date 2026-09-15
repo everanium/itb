@@ -38,10 +38,10 @@ import (
 	"github.com/everanium/itb/triple"
 )
 
-// eitbGoVersion matches the shipped libitb ABI version reported by
+// eitbGoVersion matches the shipped libitb3 ABI version reported by
 // [github.com/everanium/itb/cmd/cshared] so the Go native tool prints
-// the same "libitb X.Y.Z" line as every binding's eitb.
-const eitbGoVersion = "0.4.1"
+// the same "libitb3 X.Y.Z" line as every binding's eitb.
+const eitbGoVersion = "0.5.1"
 
 const usage = `usage: eitb version
        eitb profiles
@@ -101,7 +101,7 @@ func dispatch(args []string) int {
 }
 
 func cmdVersion() {
-	fmt.Printf("libitb %s\n", eitbGoVersion)
+	fmt.Printf("libitb3 %s\n", eitbGoVersion)
 	fmt.Printf("itb-go %s\n", eitbGoVersion)
 }
 

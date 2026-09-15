@@ -86,13 +86,13 @@ func TestInterlockDomainTagDecorrelated(t *testing.T) {
 	})
 }
 
-// TestDualNonceWireFormat confirms the dual-nonce header layout:
-// header is exactly 2N+4 bytes, both nonces sit at their fixed offsets
-// and are byte-distinct, the payload begins at 2N+4, and the No MAC and
-// MAC single-message wire envelopes remain equal in size (the shipped
-// AEAD/No MAC indistinguishability invariant, preserved because both
-// grow by the same 2N).
-func TestDualNonceWireFormat(t *testing.T) {
+// TestWireHeaderFormat confirms the wire header layout: the header is
+// exactly N+4 bytes (main nonce, width, height), the payload begins at
+// N+4, and the No MAC and MAC single-message wire envelopes remain
+// equal in size (the shipped AEAD/No MAC indistinguishability
+// invariant, preserved because both carry the same header and the same
+// per-lane interlock-nonce fragments).
+func TestWireHeaderFormat(t *testing.T) {
 	n := currentNonceSizeCfg(nil)
 	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeeds512(512, makeBlake2bHash512())
 	data := bytes.Repeat([]byte{0x42}, 777)
@@ -104,21 +104,16 @@ func TestDualNonceWireFormat(t *testing.T) {
 	if len(ct) < headerSizeCfg(nil)+Channels {
 		t.Fatalf("ciphertext shorter than header: %d", len(ct))
 	}
-	if headerSizeCfg(nil) != 2*n+4 {
-		t.Fatalf("headerSizeCfg = %d, want %d", headerSizeCfg(nil), 2*n+4)
+	if headerSizeCfg(nil) != n+4 {
+		t.Fatalf("headerSizeCfg = %d, want %d", headerSizeCfg(nil), n+4)
 	}
-	mainNonce := ct[:n]
-	ilNonce := ct[n : 2*n]
-	if bytes.Equal(mainNonce, ilNonce) {
-		t.Fatal("main nonce and interlock nonce are byte-identical on the wire")
-	}
-	// Round-trip still succeeds with the dual-nonce header.
+	// Round-trip still succeeds with the single-nonce header.
 	pt, err := Decrypt3x512Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, ct)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !bytes.Equal(pt, data) {
-		t.Fatal("round-trip mismatch under dual-nonce header")
+		t.Fatal("round-trip mismatch under the wire header")
 	}
 
 	// AEAD / No MAC single-message envelope sizes must match. Small

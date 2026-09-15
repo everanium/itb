@@ -5,7 +5,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:itb/itb.dart';
+import 'package:libitb3/itb.dart';
 import 'package:test/test.dart';
 
 /// Deterministic non-trivial payload (xorshift64 fill).
@@ -403,8 +403,43 @@ void main() {
       expect(prof.name, 'streaming-aead-triple-mac-v1');
       expect(prof.mode, 'streaming-aead');
       expect(prof.width, 512);
-      expect(prof, Itb.lookup('streaming-aead-triple-mac-v1'));
+      // The recipe fields match the registry entry; the two
+      // inspection-only fields separate the two records.
+      final recipe = prof.copy()
+        ..nonceBits = null
+        ..barrierFill = null;
+      expect(recipe, Itb.lookup('streaming-aead-triple-mac-v1'));
       pipe.free();
+    });
+
+    test('inspect carries the runtime globals, lookup does not', () {
+      // Defaults: the blob records the compile-in nonce width and
+      // barrier fill margin, and inspect surfaces both.
+      final pipe = Itb.create('streaming-aead-triple-mac-v1');
+      final prof = Itb.inspect(pipe.save());
+      expect(prof.nonceBits, 512);
+      expect(prof.barrierFill, 1);
+      pipe.free();
+
+      // Per-Pipeline overrides travel through the blob into inspect.
+      final tuned = Itb.create('streaming-aead-triple-mac-v1',
+          Opts().withNonceBits(256).withBarrierFill(4));
+      final tunedProf = Itb.inspect(tuned.save());
+      expect(tunedProf.nonceBits, 256);
+      expect(tunedProf.barrierFill, 4);
+      expect(tunedProf.toJson(), contains('"nonce_bits":256'));
+      expect(tunedProf.toJson(), contains('"barrier_fill":4'));
+      // copy() round-trips the two fields rather than dropping them.
+      expect(tunedProf.copy().nonceBits, 256);
+      tuned.free();
+
+      // The registry entry is the recipe alone — neither field is
+      // part of it, so both read as absent rather than as zero.
+      final registry = Itb.lookup('streaming-aead-triple-mac-v1');
+      expect(registry.nonceBits, isNull);
+      expect(registry.barrierFill, isNull);
+      expect(registry.toJson(), isNot(contains('nonce_bits')));
+      expect(registry.toJson(), isNot(contains('barrier_fill')));
     });
 
     test('lookup of an unknown name is UnknownProfile', () {

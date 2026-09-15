@@ -14,7 +14,7 @@
 
 use std::process::ExitCode;
 
-use itb::{OptsBuilder, Pipeline};
+use itb3::{OptsBuilder, Pipeline};
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -42,15 +42,15 @@ fn main() -> ExitCode {
 }
 
 fn cmd_version() -> Result<(), Box<dyn std::error::Error>> {
-    println!("libitb {}", itb::version()?);
+    println!("libitb3 {}", itb3::version()?);
     println!("itb-rust {}", env!("CARGO_PKG_VERSION"));
     Ok(())
 }
 
 /// Prints the registered profile catalogue one name per line in the
-/// sorted order `itb::profiles` returns.
+/// sorted order `itb3::profiles` returns.
 fn cmd_profiles() -> Result<(), Box<dyn std::error::Error>> {
-    for name in itb::profiles()? {
+    for name in itb3::profiles()? {
         println!("{name}");
     }
     Ok(())

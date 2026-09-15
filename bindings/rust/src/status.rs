@@ -1,10 +1,10 @@
-//! Status codes mirrored from the libitb C ABI
+//! Status codes mirrored from the libitb3 C ABI
 //! (`cmd/cshared/internal/capi/errors.go`). Numeric values are stable
 //! across releases.
 
 use std::fmt;
 
-/// Integer status code returned by every libitb entry point.
+/// Integer status code returned by every libitb3 entry point.
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ItbStatus {

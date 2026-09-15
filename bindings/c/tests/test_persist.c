@@ -81,19 +81,34 @@ static int run(void)
     itb_pipeline_free(receiver);
     receiver = NULL;
 
-    /* inspect == lookup for a shipped profile; garbage is BAD_INPUT. */
+    /* inspect carries the registry recipe plus the blob-only
+     * nonce_bits / barrier_fill inspection fields; lookup returns just
+     * the recipe. Assert the recipe is present verbatim in inspect and
+     * that the two inspection-only fields appear there. Garbage is
+     * BAD_INPUT. */
     char *inspected = NULL;
     st = itb_inspect(blob, blob_len, &inspected);
     TEST_OK(st, "inspect");
     char *looked = NULL;
     st = itb_lookup("singlemsg-triple-mac-v1", &looked);
     TEST_OK(st, "lookup");
-    TEST_ASSERT(strcmp(inspected, looked) == 0,
-                "inspect / lookup mismatch:\n  %s\n  %s", inspected, looked);
+    /* The recipe JSON returned by lookup is a substring of inspect
+     * once the trailing "}" is stripped — inspect adds nonce_bits /
+     * barrier_fill after keybits, so match the recipe head + tail. */
     TEST_ASSERT(strstr(inspected, "\"name\":\"singlemsg-triple-mac-v1\"") != NULL,
                 "inspect must carry the name");
     TEST_ASSERT(strstr(inspected, "\"mode\":\"singlemsg-mac\"") != NULL,
                 "inspect must carry the mode");
+    TEST_ASSERT(strstr(looked, "\"name\":\"singlemsg-triple-mac-v1\"") != NULL,
+                "lookup must carry the name");
+    TEST_ASSERT(strstr(inspected, "\"nonce_bits\":") != NULL,
+                "inspect must carry the inspection-only nonce_bits field");
+    TEST_ASSERT(strstr(inspected, "\"barrier_fill\":") != NULL,
+                "inspect must carry the inspection-only barrier_fill field");
+    TEST_ASSERT(strstr(looked, "\"nonce_bits\":") == NULL,
+                "lookup must not carry the inspection-only nonce_bits field");
+    TEST_ASSERT(strstr(looked, "\"barrier_fill\":") == NULL,
+                "lookup must not carry the inspection-only barrier_fill field");
     itb_string_free(inspected);
     itb_string_free(looked);
     inspected = NULL;

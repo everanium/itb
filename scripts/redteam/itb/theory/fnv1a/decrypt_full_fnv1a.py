@@ -455,6 +455,9 @@ def main() -> int:
     nonce_hex = meta.get("main_nonce_hex") or meta["nonce_hex"]
     nonce = bytes.fromhex(nonce_hex)
     total_pixels = int(meta["total_pixels"])
+    # Prefer the corpus-emitted field so a wire-format change needs no edit
+    # here; falls back to deriving from the already-parsed nonce length.
+    header_size = int(meta.get("header_size", len(nonce) + 4))
 
     if args.lab_k_from_summary is not None:
         summary = json.loads(args.lab_k_from_summary.read_text())
@@ -466,6 +469,7 @@ def main() -> int:
         result = decrypt_full(
             ciphertext=ciphertext, K_lo=K_lo, nonce=nonce,
             total_pixels=total_pixels, rounds=args.rounds,
+            header_size=header_size,
             plaintext_format=args.plaintext_format,
             start_pixel_override=args.start_pixel,
         )
@@ -520,6 +524,7 @@ def main() -> int:
     result = decrypt_full(
         ciphertext=ciphertext, K_lo=K_lo, nonce=nonce,
         total_pixels=total_pixels, rounds=args.rounds,
+        header_size=header_size,
         plaintext_format=args.plaintext_format,
         start_pixel_override=args.start_pixel,
     )

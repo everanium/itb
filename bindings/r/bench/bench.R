@@ -21,7 +21,7 @@
 #     ITB_STREAM_PROFILE  (fallback ITB_PROFILE, then streaming-noaead-triple-v1)
 #     ITB_BENCH_MIN_SEC   5           per-case wall-clock budget (seconds)
 
-library(itb)
+library(libitb3r)
 
 SIZES <- c(1L * 2^20, 16L * 2^20, 64L * 2^20)
 BENCH_MIN_ITERS <- 3L
@@ -152,8 +152,8 @@ main <- function() {
   # Bench-scale allocation churn leaks Go scratch heap unboundedly
   # without a soft memory cap + aggressive GC; the return values
   # report the previous settings, not an error.
-  set_memory_limit(512 * 1024 * 1024)
-  set_gc_percent(20)
+  set_memory_limit(4 * 1024 * 1024 * 1024)
+  set_gc_percent(100)
 
   opts <- build_opts()
   cat(sprintf("%-17s %-8s mb_per_sec\n", "bench", "size"))

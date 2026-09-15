@@ -1,12 +1,11 @@
 //! Profile records (inspect / register / lookup / profiles), Go
 //! runtime knobs, and registry diagnostics.
 //!
-//! A profile record is the JSON object libitb accepts in `register`,
-//! returns from `lookup` / `inspect`, and embeds in every blob: keys
-//! name / mode / width / hash / hashes / keybits / mac / tagstub /
-//! chunk / wrapper / outer / parallax / palette / segment. Optional
-//! keys are omitted when empty / zero. The binding treats the record
-//! as an opaque string; every field rule is enforced by libitb.
+//! A profile record is the JSON object libitb3 accepts in `register`,
+//! returns from `lookup` / `inspect`, and embeds in every blob.
+//! Optional keys are omitted when empty / zero. The binding treats
+//! the record as an opaque string; every field rule is enforced by
+//! libitb3.
 
 const std = @import("std");
 const ffi = @import("ffi.zig").c;
@@ -53,7 +52,7 @@ pub fn profiles(allocator: Allocator) err.Error![]u8 {
     return allocator.dupe(u8, std.mem.span(out));
 }
 
-/// The libitb library version string ("" if libitb misbehaves).
+/// The libitb3 library version string ("" if libitb3 misbehaves).
 /// Thread-local C-side buffer — copy before the next call if kept.
 pub fn version() [:0]const u8 {
     const v = ffi.itb_version();

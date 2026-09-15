@@ -15,15 +15,16 @@ set -o pipefail
 
 cd "$(dirname "$0")"
 
-# Always invoke build.sh so bench binaries pick up any source changes
-# (build.sh itself no-ops when the Alire cache is fresh).
+# Invoke build.sh so the bench binaries are always a product of this
+# invocation. ITB_SKIP_CLEAN=1 is honoured by build.sh for fast
+# iteration.
 ./build.sh
 
 # Go-runtime pacing defaults for bench-scale allocation churn; the
 # `:-` form respects any override set by the caller. The bench mains
 # apply the same caps programmatically.
-export ITB_GOMEMLIMIT="${ITB_GOMEMLIMIT:-512MiB}"
-export ITB_GOGC="${ITB_GOGC:-20}"
+export ITB_GOMEMLIMIT="${ITB_GOMEMLIMIT:-4GiB}"
+export ITB_GOGC="${ITB_GOGC:-100}"
 
 # Bench-shape defaults — match the root Go BENCH3.md pin so the
 # throughput numbers are directly comparable to the shipped Go

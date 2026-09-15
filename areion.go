@@ -50,8 +50,6 @@ import (
 	"unsafe"
 
 	"github.com/jedisct1/go-aes"
-
-	"github.com/everanium/itb/internal/areionasm"
 )
 
 // Areion round constants (digits of pi, little-endian) — must match
@@ -469,9 +467,11 @@ func AreionSoEM512x4(keys *[4][128]byte, inputs *[4][64]byte) [4][64]byte {
 //	hashFn, batchFn, _ := itb.MakeAreionSoEM256Hash(savedKey)
 //	ns.Hash, ns.BatchHash = hashFn, batchFn
 //
-// On x86_64 hardware with VAES + AVX-512 the BatchHash path routes
-// per-pixel hashing four pixels per call through AreionSoEM256x4,
-// yielding ~2× throughput over the single-call path on this primitive.
+// On hosts with an Areion assembly tier (VAES ZMM / YMM, AES-NI XMM,
+// or the ARM Crypto Extension) the BatchHash path runs each of the
+// four pixels of a call through the fused ChainHash cascade kernel of
+// its tier for the ITB buf shapes; other lengths, and hosts without
+// such a tier, route four pixels per call through AreionSoEM256x4.
 func MakeAreionSoEM256Hash(key ...[32]byte) (HashFunc256, BatchHashFunc256, [32]byte) {
 	var fixedKey [32]byte
 	if len(key) > 0 {
@@ -552,44 +552,34 @@ func MakeAreionSoEM256HashWithKey(fixedKey [32]byte) (HashFunc256, BatchHashFunc
 			binary.LittleEndian.Uint64(state[24:]),
 		}
 	}
-	// On hosts without any VAES-capable asm path (purego / non-amd64
-	// / no-AESNI) the batched closure's AreionSoEM256x4 dispatch falls
-	// through to the package's portable Go SoEM scalar path, which
-	// pays the 4-lane wrapper cost on top of work the single arm
-	// already does through its own dispatcher. Returning nil here
-	// lets process_cgo.go's nil-fallback drive per-pixel hashing
-	// through the single arm directly. The check covers both AVX-512
-	// + VAES (HasVAESAVX512) and AVX-2 + VAES (HasVAESAVX2NoAVX512);
-	// either flag is enough to keep the batched path engaged because
-	// the AVX-2 4-way permutation still SIMD-parallelises across
-	// lanes.
-	if !areionasm.HasVAESAVX512 && !areionasm.HasVAESAVX2NoAVX512 &&
-		!areionasm.HasARMAESBatched && !areionasm.HasAESNIBatched {
-		return single, nil
-	}
-	// Batched chain: 4 lanes run their CBC-MAC chain in lock-step,
-	// each round dispatching one AreionSoEM256x4 call so the AVX-512
-	// 4-way SIMD parallelism is preserved. ITB feeds equal-length
-	// data per batched call (one ChainHash round across 4 pixels);
-	// the inner XOR loops clamp at each lane's own length boundary
-	// to stay safe if a future caller violates the equal-length
-	// invariant.
+	// The batched arm is returned on every build: on hosts with an
+	// Areion assembly tier the ITB buf shapes run the single-lane
+	// fused cascade kernel per lane; everywhere else, and for other
+	// lengths, the 4 lanes run their CBC-MAC chain in lock-step, each
+	// round dispatching one AreionSoEM256x4 call (VAES ZMM / YMM, the
+	// ARM Crypto Extension, or the portable Go permutation). ITB
+	// feeds equal-length data per batched call (one ChainHash round
+	// across 4 pixels), the contract the batched arm requires.
 	batched := func(data *[4][]byte, seeds [4][4]uint64) [4][4]uint64 {
 		commonLen := len(data[0])
+		for lane := 1; lane < 4; lane++ {
+			if len(data[lane]) != commonLen {
+				panic("areion: batched arm requires equal lane lengths (ITB contract)")
+			}
+		}
 
-		// Hot-path fast track: ITB feeds 20-, 36-, or 68-byte buf shapes
-		// per batched call (one of the three per-pixel buf shapes).
-		// Specialised AVX-512 kernels for each length keep the SoEM
-		// state in ZMM registers across all CBC-MAC absorb rounds and
-		// skip the keys[4][64] / states[4][32] memory roundtrips that
-		// the general path emits. The dispatcher returns ok=false on
-		// non-amd64 hosts and on lengths outside {20, 36, 68}, in
-		// which case the general path below runs.
-		if out, ok := areionSoEM256ChainAbsorbHot(&fixedKey, &seeds, data, commonLen); ok {
+		if out, ok := areionSoEM256BatchedFused(&fixedKey, &seeds, data, commonLen); ok {
 			return out
 		}
 
-		// General path: arbitrary equal-length data, or non-AVX-512 host.
+		// The fused route above serves the ITB buf shapes (13, 20,
+		// 36, 68 bytes) whenever an Areion assembly tier is active:
+		// each lane runs the single-lane fused cascade kernel with
+		// its own seed as the one component group. Other lengths,
+		// and builds without an Areion assembly tier, take the
+		// general path below.
+
+		// General path: arbitrary equal-length data, or no fused kernel.
 		var keys [4][64]byte
 		var states [4][32]byte
 		for lane := 0; lane < 4; lane++ {
@@ -717,25 +707,26 @@ func MakeAreionSoEM512HashWithKey(fixedKey [64]byte) (HashFunc512, BatchHashFunc
 		}
 		return out
 	}
-	// On hosts without any VAES-capable asm path the batched
-	// AreionSoEM512x4 dispatch falls through to the portable Go
-	// scalar SoEM path; nil-out the batched arm so process_cgo.go's
-	// nil-fallback drives per-pixel hashing through the single arm
-	// directly. See the SoEM-256 counterpart above for the rationale.
-	if !areionasm.HasVAESAVX512 && !areionasm.HasVAESAVX2NoAVX512 &&
-		!areionasm.HasARMAESBatched && !areionasm.HasAESNIBatched {
-		return single, nil
-	}
+	// The batched arm is returned on every build, with the same two
+	// routes as the SoEM-256 counterpart above: the single-lane fused
+	// cascade kernel per lane for the ITB buf shapes on hosts with an
+	// Areion assembly tier, the lock-step AreionSoEM512x4 chain
+	// otherwise.
 	batched := func(data *[4][]byte, seeds [4][8]uint64) [4][8]uint64 {
 		commonLen := len(data[0])
+		for lane := 1; lane < 4; lane++ {
+			if len(data[lane]) != commonLen {
+				panic("areion: batched arm requires equal lane lengths (ITB contract)")
+			}
+		}
 
-		// Hot-path fast track for ITB's three per-pixel buf shapes.
-		// Mirrors the Areion-SoEM-256 dispatch — specialised AVX-512
-		// kernels per length keep the SoEM state in ZMM across all
-		// CBC-MAC absorb rounds.
-		if out, ok := areionSoEM512ChainAbsorbHot(&fixedKey, &seeds, data, commonLen); ok {
+		if out, ok := areionSoEM512BatchedFused(&fixedKey, &seeds, data, commonLen); ok {
 			return out
 		}
+
+		// The fused route above mirrors the Areion-SoEM-256 dispatch:
+		// the ITB buf shapes run the single-lane fused cascade kernel
+		// per lane whenever an Areion assembly tier is active.
 
 		// General path.
 		var keys [4][128]byte

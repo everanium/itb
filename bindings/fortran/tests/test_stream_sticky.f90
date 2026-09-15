@@ -10,7 +10,7 @@
 
 program test_stream_sticky
   use, intrinsic :: iso_fortran_env, only: error_unit
-  use itb
+  use itb3
   use itb_test_helpers
   implicit none
 

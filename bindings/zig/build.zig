@@ -7,10 +7,10 @@
 //!   zig build bench    — runs bench_message + bench_stream +
 //!                        bench_stream_one_shot
 //!
-//! Prerequisites (built by build.sh): dist/linux-amd64/libitb.so
-//! (Go c-shared) and bindings/c/build/libitb_c.a (the C binding
+//! Prerequisites (built by build.sh): dist/linux-amd64/libitb3.so
+//! (Go c-shared) and bindings/c/build/libitb3_c.a (the C binding
 //! static archive this binding links). Link inputs are compile-time:
-//! libitb_c.a as an object plus `-litb` with an absolute RPATH into
+//! libitb3_c.a as an object plus `-litb3` with an absolute RPATH into
 //! dist/, so no loader environment is needed at runtime.
 
 const std = @import("std");
@@ -38,24 +38,24 @@ pub fn build(b: *std.Build) void {
     // library. The RPATH must be absolute so the produced binaries
     // run from any directory.
     const c_include = b.path("../c/include");
-    const libitb_c_a = b.path("../c/build/libitb_c.a");
+    const libitb3_c_a = b.path("../c/build/libitb3_c.a");
     const dist_abs = b.pathFromRoot("../../dist/linux-amd64");
     const dist: std.Build.LazyPath = .{ .cwd_relative = dist_abs };
 
     // Library module: the single @cImport site lives here, so the C
     // include path and every link input attach to this module and
     // propagate to each compilation that imports it.
-    const itb_mod = b.addModule("itb", .{
+    const itb_mod = b.addModule("itb3", .{
         .root_source_file = b.path("src/itb.zig"),
         .target = target,
         .optimize = optimize,
         .link_libc = true,
     });
     itb_mod.addIncludePath(c_include);
-    itb_mod.addObjectFile(libitb_c_a);
+    itb_mod.addObjectFile(libitb3_c_a);
     itb_mod.addLibraryPath(dist);
     itb_mod.addRPath(dist);
-    itb_mod.linkSystemLibrary("itb", .{});
+    itb_mod.linkSystemLibrary("itb3", .{});
 
     // eitb CLI.
     const eitb = b.addExecutable(.{
@@ -64,13 +64,13 @@ pub fn build(b: *std.Build) void {
             .root_source_file = b.path("eitb/main.zig"),
             .target = target,
             .optimize = optimize,
-            .imports = &.{.{ .name = "itb", .module = itb_mod }},
+            .imports = &.{.{ .name = "itb3", .module = itb_mod }},
         }),
     });
     b.installArtifact(eitb);
 
     // Integration tests: one binary per tests/<name>.zig, run
-    // sequentially so every file gets a fresh libitb global state
+    // sequentially so every file gets a fresh libitb3 global state
     // and deterministic output ordering.
     const test_step = b.step("test", "Run the integration test suite");
     var prev_test: ?*std.Build.Step = null;
@@ -81,7 +81,7 @@ pub fn build(b: *std.Build) void {
                 .root_source_file = b.path(b.fmt("tests/{s}.zig", .{name})),
                 .target = target,
                 .optimize = optimize,
-                .imports = &.{.{ .name = "itb", .module = itb_mod }},
+                .imports = &.{.{ .name = "itb3", .module = itb_mod }},
             }),
         });
         const run = b.addRunArtifact(t);
@@ -101,7 +101,7 @@ pub fn build(b: *std.Build) void {
                 .root_source_file = b.path(b.fmt("benches/{s}.zig", .{name})),
                 .target = target,
                 .optimize = .ReleaseFast,
-                .imports = &.{.{ .name = "itb", .module = itb_mod }},
+                .imports = &.{.{ .name = "itb3", .module = itb_mod }},
             }),
         });
         b.installArtifact(exe);

@@ -76,8 +76,8 @@ done < "$RESULTS"
     echo
     echo "Sample: \`tools/eitb/in-file.txt\` (4096 bytes, SHA-256 \`$SOURCE_SHA\`)."
     echo "Fleet: 34 eitb (33 language bindings + Go core)."
-    echo "Profiles: 9 shipped."
-    echo "Total cross-checks: $TOTAL (34 x 34 x 9 = 10404 nominal)."
+    echo "Profiles: 13 shipped."
+    echo "Total cross-checks: $TOTAL (34 x 34 x 13 = 15028 nominal)."
     echo
     echo "## Summary"
     echo

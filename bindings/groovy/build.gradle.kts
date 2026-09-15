@@ -1,17 +1,18 @@
 // Gradle build for the ITB Groovy binding — a Tier 2 thin proxy
 // over the Java binding (JVM bytecode interop, no FFI hop of its
 // own). The Java binding's library jar is consumed straight from the
-// sibling build's output directory; libitb.so + the JNI shim are
+// sibling build's output directory; libitb3.so + the JNI shim are
 // built and resolved by the Java layer (ITB_JNI_PATH, exported by
 // the driver scripts and defaulted below for in-repo runs).
 
 plugins {
     groovy
     `java-library`
+    `maven-publish`
 }
 
-group = "dev.everanium"
-version = "0.4.1"
+group = "io.github.everanium"
+version = "0.5.1"
 
 repositories {
     mavenCentral()
@@ -20,13 +21,13 @@ repositories {
 // bindings/groovy -> <repo root>
 val repoRoot: File = layout.projectDirectory.asFile.parentFile.parentFile
 val javaBindingDir = File(repoRoot, "bindings/java")
-val jniShim = File(javaBindingDir, "build/jni/libitb_jni.so")
+val jniShim = File(javaBindingDir, "build/jni/libitb3_jni.so")
 
 // The sibling Java binding's library jar (not its eitb/bench tool
 // jars, which bundle duplicate copies of the main classes).
 // `./build.sh` builds it before Gradle runs, so the tree is present.
 val javaBindingJars = fileTree(File(javaBindingDir, "build/libs")) {
-    include("itb-java-*.jar")
+    include("libitb3-java-*.jar")
 }
 
 dependencies {
@@ -84,7 +85,7 @@ tasks.register<JavaExec>("runBench") {
     description =
         "Runs the throughput micro-benchmarks (--args=\"message|stream|all\")."
     classpath = bench.runtimeClasspath
-    mainClass = "dev.everanium.itb.groovy.bench.Main"
+    mainClass = "io.github.everanium.itb3.groovy.bench.Main"
     defaultJniPath()
 }
 
@@ -92,7 +93,7 @@ tasks.register<JavaExec>("runEitb") {
     group = "application"
     description = "Runs the eitb command-line demonstrator."
     classpath = eitb.runtimeClasspath
-    mainClass = "dev.everanium.itb.groovy.eitb.Main"
+    mainClass = "io.github.everanium.itb3.groovy.eitb.Main"
     defaultJniPath()
 }
 
@@ -100,7 +101,7 @@ val eitbJar = tasks.register<Jar>("eitbJar") {
     description = "Self-contained eitb CLI jar"
     archiveFileName = "eitb.jar"
     manifest {
-        attributes("Main-Class" to "dev.everanium.itb.groovy.eitb.Main")
+        attributes("Main-Class" to "io.github.everanium.itb3.groovy.eitb.Main")
     }
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     from(eitb.output)
@@ -111,4 +112,43 @@ val eitbJar = tasks.register<Jar>("eitbJar") {
 
 tasks.assemble {
     dependsOn("benchClasses", "eitbClasses", eitbJar)
+}
+
+// Maven publication metadata. No sources / javadoc jar is attached:
+// the Kotlin, Groovy, Scala and Clojure bindings resolve the library
+// through a `libitb3-java-*.jar` glob, and an extra classified jar in
+// build/libs would match it.
+publishing {
+    publications {
+        create<MavenPublication>("maven") {
+            from(components["java"])
+            pom {
+                name.set("libitb3-groovy")
+                description.set("ITB Symmetric Cipher Construction with Ambiguity-Based Security - Groovy")
+                url.set("https://github.com/everanium/itb")
+                licenses {
+                    license {
+                        name.set("Apache License, Version 2.0")
+                        url.set("https://www.apache.org/licenses/LICENSE-2.0")
+                    }
+                }
+                developers {
+                    developer {
+                        id.set("everanium")
+                        name.set("Andrey Kuvshinov")
+                        email.set("andrew@encloud.blue")
+                    }
+                }
+                scm {
+                    connection.set("scm:git:https://github.com/everanium/itb.git")
+                    developerConnection.set("scm:git:ssh://git@github.com/everanium/itb.git")
+                    url.set("https://github.com/everanium/itb")
+                }
+                issueManagement {
+                    system.set("GitHub Issues")
+                    url.set("https://github.com/everanium/itb/issues")
+                }
+            }
+        }
+    }
 }

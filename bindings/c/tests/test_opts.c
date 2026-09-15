@@ -1,5 +1,5 @@
 /* Opts builder: rendered query string, percent-encoding, separator
- * placement, NULL handling. Pure builder-surface test — no libitb
+ * placement, NULL handling. Pure builder-surface test — no libitb3
  * calls. */
 
 #include "test_util.h"

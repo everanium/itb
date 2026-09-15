@@ -4,9 +4,9 @@
 // round-trip surface for callers holding the whole payload in
 // memory.
 
-package com.everanium.itb.kotlin.bench
+package io.github.everanium.itb3.kotlin.bench
 
-import com.everanium.itb.kotlin.Pipeline
+import io.github.everanium.itb3.kotlin.Pipeline
 
 internal object BenchStreamOneShot {
 

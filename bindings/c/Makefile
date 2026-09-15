@@ -1,8 +1,8 @@
 # Makefile — build for the ITB C binding (thin Triple Pipeline proxy).
 #
 # Targets:
-#   all (default):  build/libitb_c.a + build/libitb_c.so + every test binary.
-#   libitb.so:      rebuilds the underlying Go shared library into ITB_DIST.
+#   all (default):  build/libitb3_c.a + build/libitb3_c.so + every test binary.
+#   libitb3.so:      rebuilds the underlying Go shared library into ITB_DIST.
 #   test:           builds + runs every tests/test_*.c binary (sequential).
 #   test-asan:      the test suite under AddressSanitizer (separate build dir).
 #   test-ubsan:     the test suite under UndefinedBehaviorSanitizer.
@@ -13,7 +13,7 @@
 #
 # Variables (override on the command line):
 #   CC        C compiler                  (default: cc)
-#   ITB_DIST  path to libitb.so + .h dir  (default: ../../dist/linux-amd64)
+#   ITB_DIST  path to libitb3.so + .h dir  (default: ../../dist/linux-amd64)
 
 CC         ?= cc
 ITB_DIST   ?= ../../dist/linux-amd64
@@ -31,42 +31,42 @@ CFLAGS  = -std=c11 -O2 -g $(WARN) $(FORTIFY) -fstack-protector-strong -fPIC \
           -Iinclude -Isrc -isystem $(ITB_DIST) $(SANFLAGS)
 RPATH   = $(abspath $(ITB_DIST))
 LDFLAGS = -L$(ITB_DIST) -Wl,-rpath,$(RPATH) $(SANFLAGS)
-LIBITB  = -litb
+LIBITB3  = -litb3
 
 # ---- Library ---------------------------------------------------------
 LIB_SRCS = src/itb_status.c src/itb_opts.c src/itb_pipeline.c src/itb_stream.c
 LIB_OBJS = $(patsubst src/%.c,$(BUILD)/%.o,$(LIB_SRCS))
-LIB_HDRS = include/itb.h src/internal.h
+LIB_HDRS = include/itb3.h src/internal.h $(ITB_DIST)/libitb3.h
 
-all: $(BUILD)/libitb_c.a $(BUILD)/libitb_c.so tests
+all: $(BUILD)/libitb3_c.a $(BUILD)/libitb3_c.so tests
 
 $(BUILD)/%.o: src/%.c $(LIB_HDRS)
 	@mkdir -p $(BUILD)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-$(BUILD)/libitb_c.a: $(LIB_OBJS)
+$(BUILD)/libitb3_c.a: $(LIB_OBJS)
 	$(AR) rcs $@ $(LIB_OBJS)
 
-$(BUILD)/libitb_c.so: $(LIB_OBJS)
-	$(CC) -shared $(LIB_OBJS) -o $@ $(LDFLAGS) $(LIBITB)
+$(BUILD)/libitb3_c.so: $(LIB_OBJS)
+	$(CC) -shared $(LIB_OBJS) -o $@ $(LDFLAGS) $(LIBITB3)
 
 # ---- Underlying Go shared library -----------------------------------
-libitb.so:
+libitb3.so:
 	cd ../.. && go build -trimpath -buildmode=c-shared \
-	    -o dist/linux-amd64/libitb.so ./cmd/cshared
+	    -o dist/linux-amd64/libitb3.so ./cmd/cshared
 
 # ---- Tests -----------------------------------------------------------
 # Each tests/test_*.c becomes its own binary linked against the static
 # library (explicit archive path so the .so next to it is not picked)
-# plus libitb.so via embedded RPATH.
+# plus libitb3.so via embedded RPATH.
 TEST_SRCS := $(wildcard tests/test_*.c)
 TEST_BINS := $(patsubst tests/test_%.c,$(TESTBUILD)/test_%,$(TEST_SRCS))
 
-tests: $(BUILD)/libitb_c.a $(TEST_BINS)
+tests: $(BUILD)/libitb3_c.a $(TEST_BINS)
 
-$(TESTBUILD)/test_%: tests/test_%.c tests/test_util.h $(BUILD)/libitb_c.a
+$(TESTBUILD)/test_%: tests/test_%.c tests/test_util.h $(BUILD)/libitb3_c.a
 	@mkdir -p $(TESTBUILD)
-	$(CC) $(CFLAGS) -Itests $< $(BUILD)/libitb_c.a -o $@ $(LDFLAGS) $(LIBITB)
+	$(CC) $(CFLAGS) -Itests $< $(BUILD)/libitb3_c.a -o $@ $(LDFLAGS) $(LIBITB3)
 
 test: tests
 	@fail=0; \
@@ -88,7 +88,7 @@ test-ubsan:
 	    SANFLAGS="-fsanitize=undefined -fno-sanitize-recover=all" test
 
 # The suppression file silences memcheck noise whose faulting frame
-# lies inside libitb.so (Go-runtime stack/heap management memcheck
+# lies inside libitb3.so (Go-runtime stack/heap management memcheck
 # cannot model); binding-side C frames are never suppressed.
 test-valgrind: tests
 	@for t in $(TEST_BINS); do \
@@ -101,16 +101,16 @@ test-valgrind: tests
 # ---- Eitb CLI --------------------------------------------------------
 eitb: eitb/eitb
 
-eitb/eitb: eitb/eitb.c $(BUILD)/libitb_c.a
-	$(CC) $(CFLAGS) eitb/eitb.c $(BUILD)/libitb_c.a -o $@ $(LDFLAGS) $(LIBITB)
+eitb/eitb: eitb/eitb.c $(BUILD)/libitb3_c.a
+	$(CC) $(CFLAGS) eitb/eitb.c $(BUILD)/libitb3_c.a -o $@ $(LDFLAGS) $(LIBITB3)
 
 # ---- Benches ---------------------------------------------------------
 BENCH_SRCS := $(wildcard benches/bench_*.c)
 BENCH_BINS := $(patsubst benches/bench_%.c,$(BENCHBUILD)/bench_%,$(BENCH_SRCS))
 
-$(BENCHBUILD)/bench_%: benches/bench_%.c benches/bench_util.h $(BUILD)/libitb_c.a
+$(BENCHBUILD)/bench_%: benches/bench_%.c benches/bench_util.h $(BUILD)/libitb3_c.a
 	@mkdir -p $(BENCHBUILD)
-	$(CC) $(CFLAGS) -Ibenches $< $(BUILD)/libitb_c.a -o $@ $(LDFLAGS) $(LIBITB)
+	$(CC) $(CFLAGS) -Ibenches $< $(BUILD)/libitb3_c.a -o $@ $(LDFLAGS) $(LIBITB3)
 
 bench: $(BENCH_BINS)
 	@for b in $(BENCH_BINS); do "$$b" || exit 1; done
@@ -119,5 +119,5 @@ bench: $(BENCH_BINS)
 clean:
 	rm -rf $(BUILD) tests/build benches/build eitb/eitb
 
-.PHONY: all libitb.so tests test test-asan test-ubsan test-valgrind \
+.PHONY: all libitb3.so tests test test-asan test-ubsan test-valgrind \
         eitb bench clean

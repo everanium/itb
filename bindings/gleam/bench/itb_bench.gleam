@@ -38,17 +38,17 @@ import gleam/io
 import gleam/list
 import gleam/result
 import gleam/string
-import itb/pipeline.{type Pipeline}
-import itb/stream
-import itb_gleam.{type Opts}
+import itb3/pipeline.{type Pipeline}
+import itb3/stream
+import itb3_gleam.{type Opts}
 
-@external(erlang, "itb_gleam_ffi", "env")
+@external(erlang, "itb3_gleam_ffi", "env")
 fn env(name: String, default: String) -> String
 
-@external(erlang, "itb_gleam_ffi", "now_us")
+@external(erlang, "itb3_gleam_ffi", "now_us")
 fn now_us() -> Int
 
-@external(erlang, "itb_gleam_ffi", "argv")
+@external(erlang, "itb3_gleam_ffi", "argv")
 fn argv() -> List(String)
 
 @external(erlang, "crypto", "strong_rand_bytes")
@@ -65,8 +65,8 @@ pub fn main() {
   // Bench-scale allocation churn leaks Go scratch heap unboundedly
   // without a soft memory cap + aggressive GC; the return values
   // report the previous settings, not an error.
-  let _ = itb_gleam.set_memory_limit(536_870_912)
-  let _ = itb_gleam.set_gc_percent(20)
+  let _ = itb3_gleam.set_memory_limit(4_294_967_296)
+  let _ = itb3_gleam.set_gc_percent(100)
 
   case argv() {
     ["message"] -> bench_message()

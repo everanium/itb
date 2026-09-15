@@ -22,7 +22,7 @@ module bench_common
   use, intrinsic :: iso_c_binding, only: c_int, c_int8_t, c_size_t, &
       c_intptr_t, c_ptr, c_loc
   use, intrinsic :: iso_fortran_env, only: error_unit, int64, real64
-  use itb
+  use itb3
   implicit none
   private
 

@@ -160,9 +160,9 @@ func TestTriplePixelBoundary(t *testing.T) {
 
 // TestTripleExactMinContainer exercises a payload that fits
 // approximately in the minimum container for the seed's PRF ambiguity
-// requirement (56^MinPixels > 2^bits). The size is chosen so the
-// container sits right at the min-container branch of
-// calcContainerSize3.
+// requirement (7^MinPixels > 2^bits, unified CCA floor via
+// MinPixels := MinPixelsAuth). The size is chosen so the container
+// sits right at the min-container branch of calcContainerSize3.
 func TestTripleExactMinContainer(t *testing.T) {
 	n, l, d1, d2, d3, s1, s2, s3 := makeEightSeeds128(512, sipHash128)
 	data := genTestPlaintext(t, 560)
@@ -686,15 +686,15 @@ func TestParseChunkLenErrors(t *testing.T) {
 		t.Fatal("expected error for zero dimensions")
 	}
 
-	binary.BigEndian.PutUint16(buf[2*currentNonceSizeCfg(nil):], 1)
-	binary.BigEndian.PutUint16(buf[2*currentNonceSizeCfg(nil)+2:], 1)
+	binary.BigEndian.PutUint16(buf[currentNonceSizeCfg(nil):], 1)
+	binary.BigEndian.PutUint16(buf[currentNonceSizeCfg(nil)+2:], 1)
 	if _, err := ParseChunkLenCfg(nil, buf[:headerSizeCfg(nil)+4]); err == nil {
 		t.Fatal("expected error for truncated data")
 	}
 
 	fullBuf := make([]byte, headerSizeCfg(nil)+Channels)
-	binary.BigEndian.PutUint16(fullBuf[2*currentNonceSizeCfg(nil):], 1)
-	binary.BigEndian.PutUint16(fullBuf[2*currentNonceSizeCfg(nil)+2:], 1)
+	binary.BigEndian.PutUint16(fullBuf[currentNonceSizeCfg(nil):], 1)
+	binary.BigEndian.PutUint16(fullBuf[currentNonceSizeCfg(nil)+2:], 1)
 	n, err := ParseChunkLenCfg(nil, fullBuf)
 	if err != nil {
 		t.Fatalf("unexpected error for valid 1x1: %v", err)
@@ -714,8 +714,8 @@ func TestDecryptRejectOversizeContainer(t *testing.T) {
 
 	header := make([]byte, headerSizeCfg(nil)+Channels)
 	nonceSz := currentNonceSizeCfg(nil)
-	binary.BigEndian.PutUint16(header[2*nonceSz:], 3200)
-	binary.BigEndian.PutUint16(header[2*nonceSz+2:], 3200)
+	binary.BigEndian.PutUint16(header[nonceSz:], 3200)
+	binary.BigEndian.PutUint16(header[nonceSz+2:], 3200)
 	fakeContainer := make([]byte, len(header)+3200*3200*8)
 	copy(fakeContainer, header)
 
@@ -788,8 +788,8 @@ func TestConcurrentEncryptSameSeed(t *testing.T) {
 // plaintext.
 //
 // Encrypt-side ciphertext equality across two independent calls is
-// not testable: every Triple encrypt injects fresh crypto/rand into
-// the container background and the payload tail-fill (the CSPRNG
+// not testable: every Triple encrypt injects fresh DRBG-derived bytes into
+// the container background and the payload tail-fill (the DRBG
 // residue is Proof 10 material, not a worker-count artefact). The
 // test asserts the meaningful invariance instead — decrypt-side
 // bit-identical plaintext recovery under a MaxWorkers sweep against

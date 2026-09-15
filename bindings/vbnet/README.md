@@ -6,10 +6,10 @@
 
 **No bespoke cryptography.** ITB introduces no cryptographic primitive of its own — no custom S-box, permutation, or round function. It is a construction over existing primitives, much as PGP composes standard ciphers rather than defining one. Such constructions are not the object of algorithm-level cryptographic certification: national regimes (NIST CAVP/FIPS in the US, GOST/FSB in Russia, OSCCA's SM-series in China, IC3S in India, SOG-IS/EUCC and national lists in the EU, ASD's ISM in Australia, CRYPTREC in Japan, KCMVP in South Korea) certify **primitives** and the **modules** built on them, not compositional schemes. Eligibility for regulated use is therefore inherited from the primitives ITB is configured with, not conferred by ITB itself.
 
-Thin proxy over the sibling [C# binding](../csharp/) — plain CLR
-bytecode interop against the `Itb.dll` assembly, no FFI layer of its
+Thin proxy over the sibling [C# binding](https://github.com/everanium/itb/tree/main/bindings/csharp/) — plain CLR
+bytecode interop against the `Everanium.LibItb3.dll` assembly, no FFI layer of its
 own. The C# binding carries the source-generated P/Invoke surface,
-the libitb lookup order, the SafeHandle lifetime (finalizer
+the libitb3 lookup order, the SafeHandle lifetime (finalizer
 backstop), and the buffer pre-allocation with the BufferTooSmall
 retry-once; this layer re-shapes that surface into idiomatic VB.NET:
 `Using` blocks over `IDisposable` types, structured
@@ -22,7 +22,7 @@ validation; no ITB construction logic lives on the .NET side.
 The public surface is one `Pipeline` type (Init / Load / Save / Rekey /
 Close, Single Message encrypt / decrypt, one-shot and incremental
 stream sessions with `System.IO.Stream` pumps), an `Opts` builder,
-the C# layer's `Itb.Profile` record with the registry entries
+the C# layer's `Everanium.Itb3.Profile` record with the registry entries
 `Pipeline.Register` / `Lookup` / `Profiles` and the blob reader
 `Pipeline.Inspect`, and the Go runtime knobs on `Library`.
 Stream sessions pin their parent `Pipeline` (the `Parent` property),
@@ -38,11 +38,11 @@ sudo pacman -S go dotnet-sdk
 
 Generic Linux / macOS: a Go toolchain plus the .NET SDK (net10.0
 target framework; Visual Basic ships with the SDK). Windows: the
-same; libitb builds as `libitb.dll`.
+same; libitb3 builds as `libitb3.dll`.
 
 ## Build
 
-The convenience driver builds `libitb.so` plus the solution (the
+The convenience driver builds `libitb3.so` plus the solution (the
 ProjectReference chain pulls the sibling C# binding library in
 automatically):
 
@@ -54,17 +54,17 @@ Equivalent manual invocation:
 
 ```bash
 go build -trimpath -buildmode=c-shared \
-    -o dist/linux-amd64/libitb.so ./cmd/cshared
-cd bindings/vbnet && dotnet build EveraniumItb.VisualBasic.sln -c Release
+    -o dist/linux-amd64/libitb3.so ./cmd/cshared
+cd bindings/vbnet && dotnet build Everanium.LibItb3.VisualBasic.sln -c Release
 ```
 
 ## Library lookup order
 
 Native resolution happens entirely in the C# layer:
 
-1. `ITB_LIBITB_PATH` environment variable (path to the shared
+1. `ITB_LIBITB3_PATH` environment variable (path to the shared
    library file).
-2. `<repo>/dist/<os>-<arch>/libitb.<ext>` located by walking up from
+2. `<repo>/dist/<os>-<arch>/libitb3.<ext>` located by walking up from
    the assembly directory (in-repo builds).
 3. The OS default loader path (`LD_LIBRARY_PATH`, `ld.so.cache`,
    `DYLD_LIBRARY_PATH`, `PATH`).
@@ -72,7 +72,8 @@ Native resolution happens entirely in the C# layer:
 ## Usage example
 
 ```vb
-Imports Everanium.Itb.VisualBasic
+Imports Everanium.Itb3.VisualBasic
+Imports Profile = Everanium.Itb3.Profile
 
 Using sender As Pipeline = Pipeline.Init("singlemsg-triple-mac-v1")
     Using receiver As Pipeline = Pipeline.Load(sender.Save())
@@ -145,7 +146,7 @@ sender.SaveF("/path/session.blob")                  ' same bytes, written by the
 Dim a As Pipeline = Pipeline.Load(blob)             ' reopen from bytes
 Dim b As Pipeline = Pipeline.LoadF("/path/session.blob") ' reopen from a file
 Dim c As Pipeline = Pipeline.Load(blob, perm, wrap) ' reopen with a master override
-Dim p As Itb.Profile = Pipeline.Inspect(blob)       ' metadata only, no Pipeline opened
+Dim p As Profile = Pipeline.Inspect(blob)       ' metadata only, no Pipeline opened
 ```
 
 Load works for blobs generated with shipped primitives (every entry
@@ -158,19 +159,19 @@ this binding surfaces `Status.RecipePrimitiveUnknown`. A blob from an earlier wr
 version surfaces `Status.BadInput`; a record that fails the profile field
 rules surfaces `Status.BlobMalformedRecipe`.
 
-The profile registry is reachable through the same `Itb.Profile`
+The profile registry is reachable through the same `Everanium.Itb3.Profile`
 record:
 
 ```vb
 Dim names As String() = Pipeline.Profiles()         ' sorted registry names
-Dim shipped As Itb.Profile = Pipeline.Lookup("singlemsg-triple-nomac-v1")
-Dim custom As New Itb.Profile With {
+Dim shipped As Profile = Pipeline.Lookup("singlemsg-triple-nomac-v1")
+Dim custom As New Profile With {
     .Mode = "singlemsg-nomac", .Width = 512, .Hash = "areion512", .KeyBits = 1024,
     .Wrapper = False, .Parallax = False}
 Pipeline.Register("my-profile", custom)            ' validated by Go; duplicate -> ProfileExists
 ```
 
-`Itb.Profile` is a plain record plus JSON codec — no validation happens
+`Everanium.Itb3.Profile` is a plain record plus JSON codec — no validation happens
 on the binding side. `Inspect` / `Lookup` return it; `Register`
 accepts it; an unknown name at `Init` / `Lookup` surfaces `Status.UnknownProfile`.
 
@@ -182,13 +183,13 @@ cap is per-machine and never written to the blob.
 ## Memory
 
 Two process-wide knobs constrain Go runtime arena pacing, readable
-at libitb load time via env vars (`ITB_GOMEMLIMIT`, `ITB_GOGC`) and
+at libitb3 load time via env vars (`ITB_GOMEMLIMIT`, `ITB_GOGC`) and
 adjustable at any time programmatically. Pass `-1` to query without
 changing:
 
 ```vb
-Library.SetMemoryLimit(512L * 1024 * 1024)
-Library.SetGCPercent(20)
+Library.SetMemoryLimit(4L * 1024 * 1024 * 1024)
+Library.SetGCPercent(100)
 ```
 
 ## Testing
@@ -197,7 +198,7 @@ Library.SetGCPercent(20)
 ./bindings/vbnet/run_tests.sh
 ```
 
-The harness builds `libitb.so`, exports `ITB_LIBITB_PATH`, and
+The harness builds `libitb3.so`, exports `ITB_LIBITB3_PATH`, and
 invokes `dotnet test -c Release`. Positional arguments are forwarded
 to dotnet test (e.g. `./run_tests.sh --filter
 FullyQualifiedName~Smoke`). The suite covers Single Message round
@@ -218,31 +219,31 @@ lives in Go under the shipped tree.
 `Stopwatch`-timed micro-benches: `EncryptMessage` and stream-pump
 throughput at 1 MiB / 16 MiB / 64 MiB. Shape and budget are driven
 by the `ITB_*` env vars listed in
-`bench/EveraniumItb.VisualBasic.Bench/BenchUtil.vb`; defaults match
+`bench/Everanium.LibItb3.VisualBasic.Bench/BenchUtil.vb`; defaults match
 the root Go BENCH3.md pin.
 
-## Related — `itb3` CLI
+## itb3 CLI
 
 The Go core ships an openssl-style CLI utility
-[`itb3`](../../cmd/itb3/) that generates session blobs on disk
+[`itb3`](https://github.com/everanium/itb/tree/main/cmd/itb3/) that generates session blobs on disk
 (`itb3 genblob <mode> <hash> -o blob.json`); this binding reopens
 such blobs via `Pipeline.LoadF`. `itb3` also encrypts / decrypts
 payloads directly on disk (`-i` / `-o`) or through stdin / stdout,
 rotates outer masters, and inspects stored blobs. See
-[`cmd/itb3/README.md`](../../cmd/itb3/README.md) for the full
+[`cmd/itb3/README.md`](https://github.com/everanium/itb/blob/main/cmd/itb3/README.md) for the full
 subcommand reference.
 
 ## eitb utility
 
-The `EveraniumItb.VisualBasic.Eitb` console project mirrors the
+The `Everanium.LibItb3.VisualBasic.Eitb` console project mirrors the
 shipped Go `tools/eitb` scope for shell smoke tests:
 
 ```bash
 cd bindings/vbnet
-dotnet run -c Release --project eitb/EveraniumItb.VisualBasic.Eitb -- version
-dotnet run -c Release --project eitb/EveraniumItb.VisualBasic.Eitb -- profiles
-dotnet run -c Release --project eitb/EveraniumItb.VisualBasic.Eitb -- encrypt singlemsg-triple-mac-v1 in.bin out.bin  # blob hex on stderr
-dotnet run -c Release --project eitb/EveraniumItb.VisualBasic.Eitb -- decrypt singlemsg-triple-mac-v1 <blob-hex> out.bin back.bin
+dotnet run -c Release --project eitb/Everanium.LibItb3.VisualBasic.Eitb -- version
+dotnet run -c Release --project eitb/Everanium.LibItb3.VisualBasic.Eitb -- profiles
+dotnet run -c Release --project eitb/Everanium.LibItb3.VisualBasic.Eitb -- encrypt singlemsg-triple-mac-v1 in.bin out.bin  # blob hex on stderr
+dotnet run -c Release --project eitb/Everanium.LibItb3.VisualBasic.Eitb -- decrypt singlemsg-triple-mac-v1 <blob-hex> out.bin back.bin
 ```
 
 ## Limitations
@@ -260,7 +261,11 @@ dotnet run -c Release --project eitb/EveraniumItb.VisualBasic.Eitb -- decrypt si
 - `Rekey` must not run concurrently with cipher calls or open stream
   sessions on the same `Pipeline`.
 - `Pipeline.Save()` returns a fresh `Byte()` on each call (the C#
-  layer reads the blob from libitb on every call).
+  layer reads the blob from libitb3 on every call).
 - The sibling C# binding source (`bindings/csharp/Itb`) must be
-  present — the solution builds it via ProjectReference — and libitb
+  present — the solution builds it via ProjectReference — and libitb3
   must be reachable at runtime through the lookup order above.
+
+## License
+
+Apache-2.0 — see [LICENSE](../../LICENSE).

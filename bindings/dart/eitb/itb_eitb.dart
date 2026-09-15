@@ -15,7 +15,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:itb/itb.dart';
+import 'package:libitb3/itb.dart';
 
 const String _usage = 'usage: eitb version\n'
     '       eitb profiles\n'
@@ -28,7 +28,7 @@ Never usage() {
 }
 
 void cmdVersion() {
-  print('libitb ${Itb.version()}');
+  print('libitb3 ${Itb.version()}');
   print('itb-dart $bindingVersion');
 }
 
@@ -94,8 +94,8 @@ void cmdDecrypt(String profile, String blobHex, String infile, String outfile) {
 }
 
 void main(List<String> args) {
-  Itb.setMemoryLimit(512 << 20);
-  Itb.setGcPercent(20);
+  Itb.setMemoryLimit(4 << 30);
+  Itb.setGcPercent(100);
   try {
     switch (args.isEmpty ? '' : args[0]) {
       case 'version':

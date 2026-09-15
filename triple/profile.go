@@ -45,6 +45,27 @@ const (
 	// but the Pipeline exposes no cipher surface.
 	ProfileBlobTripleMACV1 = "blob-triple-mac-v1"
 
+	// ProfileSingleMsgAESITBMACV1 is the width-128 AES-ITB counterpart
+	// to [ProfileSingleMsgTripleMACV1]: InnerHash aesitb128, MAC
+	// authenticated, parallax off, wrapper off — the pipeline exercises
+	// the AES-ITB inner PRF alone.
+	ProfileSingleMsgAESITBMACV1 = "singlemsg-aesitb-mac-v1"
+
+	// ProfileSingleMsgAESITBNoMACV1 is the width-128 AES-ITB
+	// counterpart to [ProfileSingleMsgTripleNoMACV1] (parallax off,
+	// wrapper off).
+	ProfileSingleMsgAESITBNoMACV1 = "singlemsg-aesitb-nomac-v1"
+
+	// ProfileStreamingAEADAESITBMACV1 is the width-128 AES-ITB
+	// counterpart to [ProfileStreamingAEADTripleMACV1] (parallax off,
+	// wrapper off).
+	ProfileStreamingAEADAESITBMACV1 = "streaming-aead-aesitb-mac-v1"
+
+	// ProfileStreamingNoAEADAESITBV1 is the width-128 AES-ITB
+	// counterpart to [ProfileStreamingNoAEADTripleV1] (parallax off,
+	// wrapper off).
+	ProfileStreamingNoAEADAESITBV1 = "streaming-noaead-aesitb-v1"
+
 	// ProfileStreamingAEADTripleMACMixedV1 is the width-256 mixed-
 	// primitive counterpart to [ProfileStreamingAEADTripleMACV1]. The
 	// per-slot constellation is
@@ -64,9 +85,10 @@ const (
 	ProfileStreamingNoAEADTripleMixedV1 = "streaming-noaead-triple-mixed-v1"
 
 	// ProfileSingleMsgTripleMACMixedV1 is the width-128 mixed-
-	// primitive counterpart to [ProfileSingleMsgTripleMACV1]. Only
-	// two shipped primitives sit at width 128 (aescmac + siphash24);
-	// the constellation alternates the pair across all eight slots.
+	// primitive counterpart to [ProfileSingleMsgTripleMACV1]. The
+	// constellation alternates the two PRF-grade width-128 primitives
+	// (aescmac + siphash24) across all eight slots — the inner-PRF-only
+	// aesitb128 entry is excluded from Triple slot assignment.
 	ProfileSingleMsgTripleMACMixedV1 = "singlemsg-triple-mac-mixed-v1"
 
 	// ProfileSingleMsgTripleNoMACMixedV1 is the width-512 mixed-
@@ -162,12 +184,31 @@ type Profile struct {
 	// 2048).
 	KeyBits int
 
+	// NonceBits is the on-wire nonce width in bits (128 / 256 / 512)
+	// this Pipeline runs with. This field is NOT part of the profile
+	// recipe: it is populated by [Inspect] / [Load] from the blob's
+	// inner Blob{N}.Globals snapshot, and is always zero on a
+	// Profile passed to [Register] (a non-zero value at Register
+	// time is rejected as a programmer error — nonce width is set
+	// via [Opts.NonceBits] at [Init], not written into the profile
+	// literal). [itb.DefaultNonceBits] is the fallback when
+	// [Opts.NonceBits] is zero at Init.
+	NonceBits int
+
+	// BarrierFill is the DRBG barrier fill margin (1 / 2 / 4 / 8 /
+	// 16 / 32) this Pipeline runs with. Same lifecycle as
+	// [Profile.NonceBits] — populated by [Inspect] / [Load] only;
+	// zero on Register-time Profile; a non-zero value at Register
+	// time is rejected. [itb.DefaultBarrierFill] is the fallback
+	// when [Opts.BarrierFill] is zero at Init.
+	BarrierFill int
+
 	// MacName is the MAC primitive name (e.g. "hmac-blake3"). Empty
 	// for No MAC modes; otherwise must resolve via
 	// [github.com/everanium/itb/macs.Find].
 	MacName string
 
-	// TagStubSize pins the CSPRNG dummy stub reservation size (bytes)
+	// TagStubSize pins the DRBG dummy stub reservation size (bytes)
 	// the No MAC envelope reserves so its wire shape matches a paired
 	// MAC-carrying counterpart with a specific MAC tag length. Zero
 	// defers to the MacName auto-probe (MAC-carrying profiles) or the
@@ -310,6 +351,68 @@ func init() {
 		ParallaxSegmentSize: parallax.DefaultSegmentSize,
 		Parallax:            true,
 		Wrapper:             true,
+	}
+
+	// AES-ITB (width 128) counterparts of the four Triple profiles
+	// above with the wrapper and parallax layers off: same mode / MAC
+	// shape, InnerHash aesitb128, so the pipeline exercises the AES-ITB
+	// inner PRF alone rather than the other shipped primitives the
+	// outer cipher and parallax palette would bring in.
+	profileRegistry[ProfileSingleMsgAESITBMACV1] = Profile{
+		Name:                ProfileSingleMsgAESITBMACV1,
+		Mode:                modeSingleMsgMAC,
+		Width:               128,
+		ChunkSize:           itb.DefaultChunkSize,
+		InnerHash:           hashes.CipherAESITB128,
+		KeyBits:             defaultKeyBits,
+		MacName:             defaultMacName,
+		OuterCipher:         "",  // wrapper off — no outer cipher
+		ParallaxPalette:     nil, // parallax off — no palette
+		ParallaxSegmentSize: 0,
+		Parallax:            false,
+		Wrapper:             false,
+	}
+	profileRegistry[ProfileSingleMsgAESITBNoMACV1] = Profile{
+		Name:                ProfileSingleMsgAESITBNoMACV1,
+		Mode:                modeSingleMsgNoMAC,
+		Width:               128,
+		ChunkSize:           itb.DefaultChunkSize,
+		InnerHash:           hashes.CipherAESITB128,
+		KeyBits:             defaultKeyBits,
+		MacName:             "",  // No MAC by definition.
+		OuterCipher:         "",  // wrapper off — no outer cipher
+		ParallaxPalette:     nil, // parallax off — no palette
+		ParallaxSegmentSize: 0,
+		Parallax:            false,
+		Wrapper:             false,
+	}
+	profileRegistry[ProfileStreamingAEADAESITBMACV1] = Profile{
+		Name:                ProfileStreamingAEADAESITBMACV1,
+		Mode:                modeStreamingAEAD,
+		Width:               128,
+		ChunkSize:           itb.DefaultChunkSize,
+		InnerHash:           hashes.CipherAESITB128,
+		KeyBits:             defaultKeyBits,
+		MacName:             defaultMacName,
+		OuterCipher:         "",  // wrapper off — no outer cipher
+		ParallaxPalette:     nil, // parallax off — no palette
+		ParallaxSegmentSize: 0,
+		Parallax:            false,
+		Wrapper:             false,
+	}
+	profileRegistry[ProfileStreamingNoAEADAESITBV1] = Profile{
+		Name:                ProfileStreamingNoAEADAESITBV1,
+		Mode:                modeStreamingNoAEAD,
+		Width:               128,
+		ChunkSize:           itb.DefaultChunkSize,
+		InnerHash:           hashes.CipherAESITB128,
+		KeyBits:             defaultKeyBits,
+		MacName:             "",  // No MAC by definition.
+		OuterCipher:         "",  // wrapper off — no outer cipher
+		ParallaxPalette:     nil, // parallax off — no palette
+		ParallaxSegmentSize: 0,
+		Parallax:            false,
+		Wrapper:             false,
 	}
 
 	// Blob-only bundle profile — MAC-authenticated inner Blob{N}
@@ -524,6 +627,8 @@ type profileWire struct {
 	InnerHash           string   `json:"hash,omitempty"`
 	MixedHashes         []string `json:"hashes,omitempty"`
 	KeyBits             int      `json:"keybits"`
+	NonceBits           int      `json:"nonce_bits,omitempty"`
+	BarrierFill         int      `json:"barrier_fill,omitempty"`
 	MacName             string   `json:"mac,omitempty"`
 	TagStubSize         int      `json:"tagstub,omitempty"`
 	ChunkSize           int      `json:"chunk,omitempty"`
@@ -537,21 +642,34 @@ type profileWire struct {
 // MarshalJSON encodes p as the documented recipe object. Key set and
 // presence rules:
 //
-//	name      Name                 omitted when empty
-//	mode      Mode                 always
-//	width     Width                always
-//	hash      InnerHash            omitted when empty (mixed profiles)
-//	hashes    MixedHashes          omitted when every slot is empty;
-//	                               otherwise exactly eight strings
-//	keybits   KeyBits              always
-//	mac       MacName              omitted when empty (No MAC)
-//	tagstub   TagStubSize          omitted when 0
-//	chunk     ChunkSize            omitted when 0
-//	wrapper   Wrapper              always
-//	outer     OuterCipher          omitted when empty
-//	parallax  Parallax             always
-//	palette   ParallaxPalette      omitted when empty
-//	segment   ParallaxSegmentSize  omitted when 0
+//	name         Name                 omitted when empty
+//	mode         Mode                 always
+//	width        Width                always
+//	hash         InnerHash            omitted when empty (mixed profiles)
+//	hashes       MixedHashes          omitted when every slot is empty;
+//	                                  otherwise exactly eight strings
+//	keybits      KeyBits              always
+//	nonce_bits   NonceBits            omitted when 0 (Register-time
+//	                                  profile); present when populated
+//	                                  by Inspect / Load from the blob's
+//	                                  inner Blob{N}.Globals
+//	barrier_fill BarrierFill          same shape as nonce_bits
+//	mac          MacName              omitted when empty (No MAC)
+//	tagstub      TagStubSize          omitted when 0
+//	chunk        ChunkSize            omitted when 0
+//	wrapper      Wrapper              always
+//	outer        OuterCipher          omitted when empty
+//	parallax     Parallax             always
+//	palette      ParallaxPalette      omitted when empty
+//	segment      ParallaxSegmentSize  omitted when 0
+//
+// The nonce_bits / barrier_fill keys are inspection-only (not part of
+// the recipe): [Register] rejects a non-zero value on either field
+// fail-fast, so a wrap-layer recipe emitted from marshalWrap never
+// carries them. [Inspect] populates the two fields from the blob's
+// inner Blob{N}.Globals snapshot, so the JSON output surfaced through
+// the CAPI Inspect entry (and downstream bindings that read that
+// JSON) carries them there.
 //
 // No semantic validation is applied by the codec; the field rules are
 // enforced by [Register] on the registry side and by [Load] on the
@@ -563,6 +681,8 @@ func (p Profile) MarshalJSON() ([]byte, error) {
 		Width:               p.Width,
 		InnerHash:           p.InnerHash,
 		KeyBits:             p.KeyBits,
+		NonceBits:           p.NonceBits,
+		BarrierFill:         p.BarrierFill,
 		MacName:             p.MacName,
 		TagStubSize:         p.TagStubSize,
 		ChunkSize:           p.ChunkSize,
@@ -584,6 +704,13 @@ func (p Profile) MarshalJSON() ([]byte, error) {
 // error. Every other field is a straight copy; no semantic validation
 // runs here (see [Profile.MarshalJSON]). A JSON null leaves p
 // unchanged.
+//
+// Future additive fields (like [Profile.NonceBits] /
+// [Profile.BarrierFill]) are placed in [profileWire] alongside the
+// existing keys, so the decoder knows them and does not reject a blob
+// carrying them; the strictness applies to keys the current build
+// does not know about, catching malformed input rather than silently
+// swallowing it.
 func (p *Profile) UnmarshalJSON(data []byte) error {
 	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
 		return nil
@@ -606,6 +733,8 @@ func (p *Profile) UnmarshalJSON(data []byte) error {
 		Width:               w.Width,
 		InnerHash:           w.InnerHash,
 		KeyBits:             w.KeyBits,
+		NonceBits:           w.NonceBits,
+		BarrierFill:         w.BarrierFill,
 		MacName:             w.MacName,
 		TagStubSize:         w.TagStubSize,
 		ChunkSize:           w.ChunkSize,

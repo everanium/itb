@@ -2,7 +2,7 @@
 
 use std::io::Cursor;
 
-use itb::{OptsBuilder, Pipeline};
+use itb3::{OptsBuilder, Pipeline};
 
 #[test]
 fn pump_round_trip_1mib() {

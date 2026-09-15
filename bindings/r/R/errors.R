@@ -1,6 +1,6 @@
 # errors.R — condition class for the ITB R binding.
 #
-# Every libitb failure surfaces as a condition of class
+# Every libitb3 failure surfaces as a condition of class
 # c("itb_error", "error", "condition") carrying three extra fields:
 #
 #   status  integer status code (see the `itb_status` constant list)
@@ -12,7 +12,7 @@
 #   tryCatch(pipeline_create("no-such-profile"),
 #            itb_error = function(e) stopifnot(e$status == itb_status$UNKNOWN_PROFILE))
 
-#' Named libitb status codes (mirrors cmd/cshared/internal/capi/errors.go).
+#' Named libitb3 status codes (mirrors cmd/cshared/internal/capi/errors.go).
 #' @export
 itb_status <- list(
   OK = 0L,
@@ -40,7 +40,7 @@ itb_status <- list(
   INTERNAL = 99L
 )
 
-# Internal: called from the C shim (src/itb_r.c raise_status) to signal
+# Internal: called from the C shim (src/libitb3r.c raise_status) to signal
 # a classed condition. Not exported; the leading dot keeps it out of
 # casual completion.
 .itb_raise <- function(status, label, detail) {

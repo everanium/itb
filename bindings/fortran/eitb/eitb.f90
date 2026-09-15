@@ -15,7 +15,7 @@
 program eitb
   use, intrinsic :: iso_c_binding, only: c_int, c_int8_t, c_int64_t
   use, intrinsic :: iso_fortran_env, only: error_unit
-  use itb
+  use itb3
   implicit none
 
   character(:), allocatable :: cmd
@@ -25,8 +25,8 @@ program eitb
   ! Go-runtime pacing caps applied up front so file-scale encrypt /
   ! decrypt runs under a bounded heap; the return values report the
   ! previous settings, not an error.
-  prev_limit = itb_set_memory_limit(int(512, c_int64_t) * 1024 * 1024)
-  prev_gc = itb_set_gc_percent(20_c_int)
+  prev_limit = itb_set_memory_limit(int(4, c_int64_t) * 1024 * 1024 * 1024)
+  prev_gc = itb_set_gc_percent(100_c_int)
 
   if (command_argument_count() < 1) call usage()
   cmd = argument(1)
@@ -80,7 +80,7 @@ contains
 
     call itb_version(version, err)
     if (.not. itb_ok(err)) call fail("version", err)
-    print '(a)', "libitb "//version
+    print '(a)', "libitb3 "//version
     print '(a)', "itb-fortran "//ITB_BINDING_VERSION
   end subroutine
 

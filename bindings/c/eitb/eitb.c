@@ -21,7 +21,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
-#include "itb.h"
+#include "itb3.h"
 
 static int usage(void)
 {
@@ -164,10 +164,10 @@ static int cmd_version(void)
 {
     const char *v = itb_version();
     if (v == NULL) {
-        fprintf(stderr, "eitb: cannot read libitb version\n");
+        fprintf(stderr, "eitb: cannot read libitb3 version\n");
         return 1;
     }
-    printf("libitb %s\n", v);
+    printf("libitb3 %s\n", v);
     printf("itb-c %s\n", ITB_C_VERSION);
     return 0;
 }
@@ -203,8 +203,8 @@ static int cmd_profiles(void)
  * error. */
 static void cap_go_runtime(void)
 {
-    (void)itb_set_memory_limit(512LL << 20); /* 512 MiB soft cap */
-    (void)itb_set_gc_percent(20);            /* aggressive GC */
+    (void)itb_set_memory_limit(4LL << 30); /* 4 GiB soft cap */
+    (void)itb_set_gc_percent(100);          /* balanced GC */
 }
 
 static int cmd_encrypt(const char *profile, const char *infile,

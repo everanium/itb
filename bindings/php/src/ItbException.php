@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-namespace Everanium\Itb;
+namespace Everanium\Itb3;
 
 /**
  * Exception type shared by every fallible call in the binding.
  *
- * getStatus() carries the libitb status code when the failure came
+ * getStatus() carries the libitb3 status code when the failure came
  * from the shared library (null for binding-side failures such as a
  * library-load error). getDetail() carries the ITB_LastError
  * diagnostic captured immediately after the failing call
@@ -37,7 +37,7 @@ class ItbException extends \RuntimeException
         parent::__construct($text, $status ?? 0);
     }
 
-    /** The libitb status code, or null for a binding-side failure. */
+    /** The libitb3 status code, or null for a binding-side failure. */
     public function getStatus(): ?int
     {
         return $this->status;

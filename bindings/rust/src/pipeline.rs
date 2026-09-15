@@ -49,7 +49,7 @@ pub(crate) fn retry_once(
 ///
 /// [`Pipeline::save`] exports the session bundle the receiver feeds to
 /// [`Pipeline::load`]; [`Pipeline::rekey`] refreshes it. Dropping the
-/// Pipeline frees the handle (libitb zeroes key material internally).
+/// Pipeline frees the handle (libitb3 zeroes key material internally).
 ///
 /// Streaming-decrypt caveat: chunked Streaming AEAD verifies per
 /// chunk, so plaintext of verified chunks is released before a later
@@ -62,7 +62,7 @@ impl Pipeline {
     /// Constructs a fresh Pipeline against the named profile. The
     /// session bundle is available through [`Pipeline::save`]. On a
     /// blob-buffer retry the Init re-runs and yields a fresh session
-    /// (the undersized attempt is closed by libitb before returning).
+    /// (the undersized attempt is closed by libitb3 before returning).
     pub fn init(profile: &str, opts: &OptsBuilder) -> ItbResult<Self> {
         let s = ffi::syms()?;
         let profile_c = cstr(profile, "profile name contains NUL")?;
@@ -113,7 +113,7 @@ impl Pipeline {
     }
 
     /// [`Pipeline::load`] for a blob stored at `path`; the file is read
-    /// inside libitb.
+    /// inside libitb3.
     pub fn load_f(path: impl AsRef<Path>, masters: Option<(&[u8], &[u8])>) -> ItbResult<Self> {
         let s = ffi::syms()?;
         let path_c = path_cstr(path.as_ref())?;
@@ -145,7 +145,7 @@ impl Pipeline {
         })
     }
 
-    /// Writes the current session bundle to `path` inside libitb (file
+    /// Writes the current session bundle to `path` inside libitb3 (file
     /// mode 0600; the containing directory must exist).
     pub fn save_f(&self, path: impl AsRef<Path>) -> ItbResult<()> {
         let s = ffi::syms()?;
@@ -155,7 +155,7 @@ impl Pipeline {
     }
 
     /// Sets the worker cap for every subsequent cipher call. `n` is
-    /// clamped by libitb (`<= 0` selects auto, `> 256` becomes 256);
+    /// clamped by libitb3 (`<= 0` selects auto, `> 256` becomes 256);
     /// only the handle state is reported.
     pub fn max_workers(&self, n: i32) -> ItbResult<()> {
         let s = ffi::syms()?;

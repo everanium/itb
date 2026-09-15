@@ -6,7 +6,7 @@ module test_opts_inner_hashes;
 
 import std.stdio : writeln;
 
-import itb;
+import itb3;
 
 void main()
 {

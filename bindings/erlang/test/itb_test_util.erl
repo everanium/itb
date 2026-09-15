@@ -7,9 +7,9 @@
 
 %% Sender + receiver pipelines over one profile / opts pair.
 pair(Profile, Opts) ->
-    {ok, Sender} = itb:init(Profile, Opts),
-    {ok, Blob} = itb:save(Sender),
-    {ok, Receiver} = itb:load(Blob),
+    {ok, Sender} = itb3:init(Profile, Opts),
+    {ok, Blob} = itb3:save(Sender),
+    {ok, Receiver} = itb3:load(Blob),
     {Sender, Receiver}.
 
 %% Whole-buffer pump through an incremental session with 1 MiB feed /
@@ -20,13 +20,13 @@ pump(Pipe, Direction, Data) ->
 
 pump(Pipe, Direction, Data, WriteSlice, ReadSlice) ->
     {ok, Stream} = case Direction of
-                       encrypt -> itb:encrypt_stream(Pipe);
-                       decrypt -> itb:decrypt_stream(Pipe)
+                       encrypt -> itb3:encrypt_stream(Pipe);
+                       decrypt -> itb3:decrypt_stream(Pipe)
                    end,
     Acc0 = feed(Stream, Data, WriteSlice, ReadSlice, []),
-    ok = itb:stream_end(Stream),
+    ok = itb3:stream_end(Stream),
     Out = drain_all(Stream, ReadSlice, Acc0),
-    ok = itb:stream_free(Stream),
+    ok = itb3:stream_free(Stream),
     Out.
 
 feed(_Stream, <<>>, _WriteSlice, _ReadSlice, Acc) ->
@@ -34,21 +34,21 @@ feed(_Stream, <<>>, _WriteSlice, _ReadSlice, Acc) ->
 feed(Stream, Data, WriteSlice, ReadSlice, Acc) ->
     N = min(byte_size(Data), WriteSlice),
     <<Slice:N/binary, Rest/binary>> = Data,
-    ok = itb:stream_write(Stream, Slice),
+    ok = itb3:stream_write(Stream, Slice),
     %% A read before end never blocks; drain whatever the chain has
     %% produced so far to bound the Go-side spool.
     Acc1 = drain_ready(Stream, ReadSlice, Acc),
     feed(Stream, Rest, WriteSlice, ReadSlice, Acc1).
 
 drain_ready(Stream, ReadSlice, Acc) ->
-    case itb:stream_read(Stream, ReadSlice) of
+    case itb3:stream_read(Stream, ReadSlice) of
         {ok, <<>>, _} -> Acc;
         {ok, Piece, false} -> drain_ready(Stream, ReadSlice, [Piece | Acc]);
         {ok, Piece, true} -> [Piece | Acc]
     end.
 
 drain_all(Stream, ReadSlice, Acc) ->
-    case itb:stream_read(Stream, ReadSlice) of
+    case itb3:stream_read(Stream, ReadSlice) of
         {ok, Piece, true} ->
             iolist_to_binary(lists:reverse([Piece | Acc]));
         {ok, Piece, false} ->

@@ -23,11 +23,11 @@ import os
 import sys
 from pathlib import Path
 
-# Make the itb package importable when the CLI is run by path
+# Make the itb3 package importable when the CLI is run by path
 # (python3 eitb/eitb.py ...).
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-import itb  # noqa: E402
+import itb3 as itb  # noqa: E402
 
 USAGE = """\
 usage: eitb.py version
@@ -38,7 +38,7 @@ usage: eitb.py version
 
 
 def cmd_version() -> None:
-    print(f"libitb {itb.version()}")
+    print(f"libitb3 {itb.version()}")
     print(f"itb-python {itb.__version__}")
 
 
@@ -110,8 +110,8 @@ def main(argv: list[str]) -> int:
         return 2
     try:
         # Go-runtime pacing caps applied before any cipher work.
-        itb.set_memory_limit(512 << 20)
-        itb.set_gc_percent(20)
+        itb.set_memory_limit(4 << 30)
+        itb.set_gc_percent(100)
         if argv[0] == "version":
             cmd_version()
         elif argv[0] == "profiles":

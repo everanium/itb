@@ -26,7 +26,7 @@ The Go entry point is `TestRedTeamGenerateTripleMassive` (in the
 `redteam_kl_test.go` file, guarded by `-tags redteam`); it emits
 `<outdir>/blake3.{bin,plain,pixel}` on the shipped Triple + always-on
 Interlocked Barrier wire, with the `.pixel` sidecar carrying the
-dual-nonce header size and `barrier_fill` value the sub-scripts consume.
+header size and `barrier_fill` value the sub-scripts consume.
 """
 
 from __future__ import annotations
@@ -164,20 +164,43 @@ def parse_output(text: str, patterns: Dict[str, re.Pattern]) -> Dict[str, float]
     return out
 
 
+_warned_container_bytes_fallback = False
+
+
 def container_bytes_from_ciphertext(bin_path: Path) -> int:
-    # shipped ITB ciphertext header is `2 * NonceSize + 4` bytes
-    # (main nonce + interlock nonce + width(2) + height(2)); at the
-    # default 512-bit nonce that is 132 bytes. Strip the header so the
-    # /dev/urandom baseline matches the container-body byte count.
-    # `main_nonce_hex` / `interlock_nonce_hex` in the sibling corpus
-    # `cell.meta.json` schema is the authoritative width source; a
-    # meta-parsing path is not routed through this helper today because
-    # the archived sub-scripts do not emit one, so this function
-    # falls back to the default-config formula. Callers driving a
-    # non-default `NonceBits` must adjust.
+    # shipped ITB ciphertext header is `NonceSize + 4` bytes (main nonce +
+    # width(2) + height(2)); at the default 512-bit nonce that is 68 bytes.
+    # Strip the header so the /dev/urandom baseline matches the container-
+    # body byte count. The sibling `.pixel` sidecar written alongside
+    # `bin_path` by `TestRedTeamGenerateTripleMassive` (see
+    # `redteam_kl_test.go`) carries `header_size=<int>` in the same
+    # key=value format `kl_massive_full.py` parses — read it from there so
+    # a wire-format change needs no edit here. Only when the sidecar is
+    # absent or missing the field does this fall back to the default-
+    # config formula (with a one-time stderr warning); callers driving a
+    # non-default `NonceBits` must fix up the sidecar rather than rely on
+    # the fallback.
+    global _warned_container_bytes_fallback
     default_nonce_bytes = 64  # itb.NonceSize (config.go default)
-    header_size = 2 * default_nonce_bytes + 4
-    return bin_path.stat().st_size - header_size
+    pixel_path = bin_path.with_suffix(".pixel")
+    if pixel_path.exists():
+        sidecar: Dict[str, str] = {}
+        for line in pixel_path.read_text().strip().split("\n"):
+            if "=" not in line:
+                continue
+            k, v = line.split("=", 1)
+            sidecar[k] = v
+        if "header_size" in sidecar:
+            return bin_path.stat().st_size - int(sidecar["header_size"])
+    if not _warned_container_bytes_fallback:
+        print(
+            f"WARNING: kl_matrix.py: {pixel_path} missing or has no "
+            f"header_size field — falling back to default-config "
+            f"header_size={default_nonce_bytes + 4}",
+            file=sys.stderr,
+        )
+        _warned_container_bytes_fallback = True
+    return bin_path.stat().st_size - (default_nonce_bytes + 4)
 
 
 def already_done(size: int, bf: int) -> bool:

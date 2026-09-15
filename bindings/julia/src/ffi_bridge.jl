@@ -1,13 +1,13 @@
-# Runtime symbol loading over the libitb shared library (Libdl +
+# Runtime symbol loading over the libitb3 shared library (Libdl +
 # `ccall` through resolved function pointers).
 #
 # The library is loaded once per process and never unloaded, so the
 # `dlsym`-resolved pointers stay valid for the process lifetime.
 # Search order:
 #
-# 1. `ITB_LIBITB_PATH` environment variable (path to the shared
+# 1. `ITB_LIBITB3_PATH` environment variable (path to the shared
 #    library file).
-# 2. `<repo>/dist/<os>-<arch>/libitb.<ext>` resolved by walking up
+# 2. `<repo>/dist/<os>-<arch>/libitb3.<ext>` resolved by walking up
 #    from this file (in-repo builds).
 # 3. The OS default loader path (`LD_LIBRARY_PATH`, `ld.so.cache`,
 #    `DYLD_LIBRARY_PATH`, `PATH`).
@@ -22,12 +22,12 @@
 
 # The canonical library name; the resolved path is computed lazily on
 # first use (see `_lib_handle`).
-const LIBITB = "libitb"
+const LIBITB3 = "libitb3"
 
 function _lib_filename()::String
-    Sys.iswindows() && return "libitb.dll"
-    Sys.isapple() && return "libitb.dylib"
-    return "libitb.so"
+    Sys.iswindows() && return "libitb3.dll"
+    Sys.isapple() && return "libitb3.dylib"
+    return "libitb3.so"
 end
 
 function _dist_subdir()::String
@@ -38,7 +38,7 @@ function _dist_subdir()::String
 end
 
 function _resolve_library_path()::String
-    env = get(ENV, "ITB_LIBITB_PATH", "")
+    env = get(ENV, "ITB_LIBITB3_PATH", "")
     isempty(env) || return env
     # src/ffi_bridge.jl -> bindings/julia/src; the repo root is three
     # levels up.
@@ -61,7 +61,7 @@ function _handle()::Ptr{Cvoid}
         h != C_NULL && return h
         path = _resolve_library_path()
         opened = Libdl.dlopen(path; throw_error=false)
-        opened === nothing && throw(ITBError("failed to load libitb ($path)"))
+        opened === nothing && throw(ITBError("failed to load libitb3 ($path)"))
         _lib_handle[] = opened
         return opened
     end
@@ -69,7 +69,7 @@ end
 
 function _sym(name::Symbol)::Ptr{Cvoid}
     p = Libdl.dlsym(_handle(), name; throw_error=false)
-    p === nothing && throw(ITBError("missing symbol $name in libitb"))
+    p === nothing && throw(ITBError("missing symbol $name in libitb3"))
     return p
 end
 

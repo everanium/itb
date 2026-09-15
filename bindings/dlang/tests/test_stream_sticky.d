@@ -12,7 +12,7 @@ module test_stream_sticky;
 import std.format : format;
 import std.stdio : writeln;
 
-import itb;
+import itb3;
 
 void main()
 {

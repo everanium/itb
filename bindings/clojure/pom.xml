@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>io.github.everanium</groupId>
+  <artifactId>libitb3-clojure</artifactId>
+  <version>0.5.1</version>
+  <packaging>jar</packaging>
+
+  <name>libitb3-clojure</name>
+  <description>ITB Symmetric Cipher Construction with Ambiguity-Based Security - Clojure</description>
+  <url>https://github.com/everanium/itb</url>
+
+  <licenses>
+    <license>
+      <name>Apache License, Version 2.0</name>
+      <url>https://www.apache.org/licenses/LICENSE-2.0</url>
+      <distribution>repo</distribution>
+    </license>
+  </licenses>
+
+  <developers>
+    <developer>
+      <id>everanium</id>
+      <name>Andrey Kuvshinov</name>
+      <email>andrew@encloud.blue</email>
+    </developer>
+  </developers>
+
+  <scm>
+    <connection>scm:git:https://github.com/everanium/itb.git</connection>
+    <developerConnection>scm:git:ssh://git@github.com/everanium/itb.git</developerConnection>
+    <url>https://github.com/everanium/itb</url>
+  </scm>
+
+  <issueManagement>
+    <system>GitHub Issues</system>
+    <url>https://github.com/everanium/itb/issues</url>
+  </issueManagement>
+
+  <properties>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+  </properties>
+
+  <!-- Source layout matches deps.edn: Clojure sources live under src/. -->
+  <build>
+    <sourceDirectory>src</sourceDirectory>
+    <resources>
+      <resource>
+        <directory>src</directory>
+      </resource>
+    </resources>
+  </build>
+
+  <dependencies>
+    <dependency>
+      <groupId>org.clojure</groupId>
+      <artifactId>clojure</artifactId>
+      <version>1.12.5</version>
+    </dependency>
+    <!-- The sibling Java binding carries the JNI shim; this binding is
+         a thin proxy over its public surface. In-repo builds resolve it
+         from ../java/build/libs via deps.edn instead. -->
+    <dependency>
+      <groupId>io.github.everanium</groupId>
+      <artifactId>libitb3-java</artifactId>
+      <version>0.5.1</version>
+    </dependency>
+  </dependencies>
+</project>

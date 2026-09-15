@@ -8,7 +8,7 @@
 //! surfaces an error must give ITB_STATUS_MAC_FAILURE and remain
 //! sticky on subsequent reads.
 
-use itb::{ItbStatus, OptsBuilder, Pipeline};
+use itb3::{ItbStatus, OptsBuilder, Pipeline};
 
 #[test]
 fn tampered_wire_sticky_failure() {

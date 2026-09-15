@@ -15,10 +15,10 @@ package itb
 //
 //     * noiseSeed  → per-pixel  noisePos       (via processChunk's
 //                                              noiseBuf = pixIdx || nonce)
-//     * dataSeed_i → per-pixel  dataRotation + channelXOR (per snake,
+//     * dataSeed_i → per-pixel  dataRotation + channelXOR (per region,
 //                                              via processChunk's dataBuf
 //                                              = pixIdx || nonce)
-//     * startSeed_i→ per-snake  startPixel     (via deriveStartPixel's
+//     * startSeed_i→ per-region  startPixel     (via deriveStartPixel's
 //                                              buf = 0x02 || nonce)
 //     * lockSeed   → per-chunk  Interlocked Barrier bit-permutation key
 //                                              (via deriveInterLockSeed's
@@ -195,9 +195,9 @@ func generatePlaintextRN(rng *rand.Rand, size int, kind string) []byte {
 
 // bodyOfCTRN slices the ciphertext body out of a shipped wire.
 func bodyOfCTRN(ct []byte) []byte {
-	header := 2*NonceSize + 4
-	w := int(binary.BigEndian.Uint16(ct[2*NonceSize : 2*NonceSize+2]))
-	h := int(binary.BigEndian.Uint16(ct[2*NonceSize+2 : 2*NonceSize+4]))
+	header := NonceSize + 4
+	w := int(binary.BigEndian.Uint16(ct[NonceSize : NonceSize+2]))
+	h := int(binary.BigEndian.Uint16(ct[NonceSize+2 : NonceSize+4]))
 	total := w * h
 	return ct[header : header+total*Channels]
 }
@@ -296,14 +296,14 @@ type rnRun struct {
 // ---------------------------------------------------------------------------
 // No-Δ architectural floor — reference against which every Δ cell is
 // compared. Two Encrypt3x128Cfg calls with identical seeds and IDENTICAL
-// forced nonce; produces the same architectural CSPRNG-noise-bit + fill
+// forced nonce; produces the same architectural DRBG-noise-bit + fill
 // artefact Rank 2 measured (CRC128 ~41.9M / FNV-1a ~56.3M).
 // ---------------------------------------------------------------------------
 
 // TestRedTeamRelatedNonceNoDeltaFloor establishes the χ² floor under
 // shipped Encrypt3x128Cfg with identical seeds + IDENTICAL forced nonce
 // + same plaintext. The Rank 2 methodology-check identifies this as the
-// "CSPRNG-noise-bit + fill" architectural artefact of two independent
+// "DRBG-noise-bit + fill" architectural artefact of two independent
 // encrypts. Values here should reproduce Rank 2's floor within
 // primitive-conditional noise.
 func TestRedTeamRelatedNonceNoDeltaFloor(t *testing.T) {

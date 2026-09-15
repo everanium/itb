@@ -32,8 +32,8 @@ import (
 //
 // Under Triple Ouroboros the input `data` slice at this entry is one
 // third of the user-visible plaintext, so a user X MB whole plaintext
-// arrives here as X/3 MB per snake — every threshold below is stated
-// against that per-snake byte count.
+// arrives here as X/3 MB per region — every threshold below is stated
+// against that per-region byte count.
 //
 // The ITB_MICROBATCH_TIERS env var overrides the shipped ladder for the
 // microBatch-sweep test harness. Format: comma-separated

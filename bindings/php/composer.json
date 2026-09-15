@@ -1,9 +1,22 @@
 {
-    "name": "everanium/itb",
-    "description": "PHP binding for libitb (ITB Triple Pipeline) — FFI relay over the shared library",
+    "name": "everanium/libitb3",
+    "description": "ITB Symmetric Cipher Construction with Ambiguity-Based Security - PHP",
     "type": "library",
-    "license": "MIT",
-    "keywords": ["itb", "encryption", "ffi", "cipher"],
+    "license": "Apache-2.0",
+    "keywords": ["cryptography", "encryption", "cipher", "symmetric", "aead"],
+    "homepage": "https://github.com/everanium/itb",
+    "readme": "README.md",
+    "authors": [
+        {
+            "name": "Andrey Kuvshinov",
+            "email": "andrew@encloud.blue",
+            "role": "Developer"
+        }
+    ],
+    "support": {
+        "issues": "https://github.com/everanium/itb/issues",
+        "source": "https://github.com/everanium/itb"
+    },
     "require": {
         "php": ">=7.4",
         "ext-ffi": "*"
@@ -13,7 +26,7 @@
     },
     "autoload": {
         "psr-4": {
-            "Everanium\\Itb\\": "src/"
+            "Everanium\\Itb3\\": "src/"
         }
     },
     "scripts": {

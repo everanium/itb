@@ -16,19 +16,13 @@ cd "$(dirname "$0")"
 REPO_ROOT="$(cd ../.. && pwd)"
 DIST_DIR="$REPO_ROOT/dist/linux-amd64"
 
-if [[ ! -f "$DIST_DIR/libitb.so" ]]; then
-    echo "error: libitb.so not found at $DIST_DIR" >&2
-    echo "       run ./build.sh first" >&2
-    exit 1
-fi
-
 BENCH_BIN_DIR="bench/bin"
-# Always invoke `make bench` so timestamp-driven rebuilds pick up any
-# bench source changes; make itself no-ops when everything is fresh.
-echo "==> building bench binaries (FC=${FC:-gfortran})"
-make bench
+# build.sh wipes every artefact this binding owns and rebuilds the
+# whole tree, so the bench binaries invoked below are produced by this
+# invocation rather than reused from an earlier one.
+./build.sh
 
-# Embedded RPATH should already point at libitb.so, but export
+# Embedded RPATH should already point at libitb3.so, but export
 # LD_LIBRARY_PATH as a fallback for cases where the Linux loader
 # does not honour the RPATH (e.g. some hardened distro defaults).
 export LD_LIBRARY_PATH="$DIST_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
@@ -36,8 +30,8 @@ export LD_LIBRARY_PATH="$DIST_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 # Go-runtime pacing defaults for bench-scale allocation churn; the
 # `:-` form respects any override set by the caller. The bench mains
 # apply the same caps programmatically.
-export ITB_GOMEMLIMIT="${ITB_GOMEMLIMIT:-512MiB}"
-export ITB_GOGC="${ITB_GOGC:-20}"
+export ITB_GOMEMLIMIT="${ITB_GOMEMLIMIT:-4GiB}"
+export ITB_GOGC="${ITB_GOGC:-100}"
 
 # Bench-shape defaults -- match the root Go BENCH3.md pin so the
 # throughput numbers are directly comparable to the shipped Go

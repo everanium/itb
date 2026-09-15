@@ -9,7 +9,12 @@ set -o pipefail
 
 cd "$(dirname "$0")/.."
 
-if [[ ! -d .local/itb ]]; then
+# The package name comes from DESCRIPTION so the presence check tracks
+# the tree it belongs to; a hard-coded name that drifts would make this
+# launcher reinstall on every invocation.
+PKG_NAME="$(awk '/^Package:/ { print $2; exit }' DESCRIPTION)"
+
+if [[ ! -d ".local/$PKG_NAME" ]]; then
     ./build.sh >&2
 fi
 

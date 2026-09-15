@@ -1,6 +1,6 @@
 --  Test_Cases — binding test roster mirroring the Rust reference
 --  suite (bindings/rust/tests). Each procedure raises
---  Test_Support.Test_Failure (or propagates Itb.Error.Itb_Error) on
+--  Test_Support.Test_Failure (or propagates Itb3.Error.Itb_Error) on
 --  failure; the driver reports PASS / FAIL per procedure.
 
 package Test_Cases is

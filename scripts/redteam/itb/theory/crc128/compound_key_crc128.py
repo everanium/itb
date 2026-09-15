@@ -196,7 +196,8 @@ def main() -> int:
 
     total_pixels = int(meta["total_pixels"])
     if args.raw_ciphertext_mode:
-        observations = parse_raw_ciphertext(stream_path, total_pixels)
+        header_size = int(meta.get("header_size", len(nonce) + 4))
+        observations = parse_raw_ciphertext(stream_path, total_pixels, header_size)
         stream_mode = ("raw-ciphertext (NEGATIVE CONTROL: 8-byte-per-pixel, "
                        "20-byte header skipped)")
     elif stream_mode_hint == "partial":

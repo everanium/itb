@@ -84,7 +84,7 @@ func (s Status) String() string {
 	case StatusBadKeyBits:
 		return "invalid key bits (must be 512..2048, multiple of width)"
 	case StatusBadHandle:
-		return "invalid seed handle"
+		return "invalid handle"
 	case StatusBadInput:
 		return "invalid input"
 	case StatusBufferTooSmall:
@@ -111,7 +111,7 @@ func (s Status) String() string {
 		StatusReserved17:
 		return "reserved status"
 	case StatusBlobModeMismatch:
-		return "blob mode mismatch (expected mode=3 Triple)"
+		return "blob mode mismatch (expected mode=1 or mode=2)"
 	case StatusBlobMalformed:
 		return "malformed state blob"
 	case StatusBlobVersionTooNew:

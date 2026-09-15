@@ -1,0 +1,103 @@
+//go:build amd64 && !purego && !noitbasm
+
+// VAES ZMM (four lanes per register) fused ChainHash cascade kernel for AES-CMAC at the
+// 20-byte shape, 4 lanes (2 zero-padded blocks, 2 AES-128
+// permutations per cascade round).
+// The data blocks are staged once in registers with K0 (and, for
+// block 0, the length tag) folded in, and every cascade round runs
+// from registers; see aescmacasm_fused.go for the
+// construction and the in-package parity tests for the bit-exact pin
+// against the pure-Go cascade.
+
+#include "textflag.h"
+
+// func aesCMAC128FusedChain20x4Avx512Asm(roundKeys *[176]byte, comps *uint64, nPairs int, dataPtrs *[4]*byte, out *[4][2]uint64)
+TEXT ·aesCMAC128FusedChain20x4Avx512Asm(SB), NOSPLIT, $0-40
+	MOVQ roundKeys+0(FP), AX
+	MOVQ comps+8(FP), BX
+	MOVQ nPairs+16(FP), CX
+	MOVQ dataPtrs+24(FP), DX
+	MOVQ out+32(FP), DI
+	MOVQ 0(DX), R8
+	MOVQ 8(DX), R9
+	MOVQ 16(DX), R10
+	MOVQ 24(DX), R11
+
+	VPXORD Z12, Z12, Z12
+	VBROADCASTI32X4 0(AX), Z13
+	MOVQ $20, R12
+	VPBROADCASTQ R12, Z14
+	VPXORD Z13, Z14, Z14
+	VPINSRD $0, 0(R8), X12, X4
+	VPINSRD $1, 4(R8), X4, X4
+	VPINSRQ $1, 8(R8), X4, X4
+	VINSERTI64X2 $0, X4, Z15, Z15
+	VPINSRD $0, 0(R9), X12, X4
+	VPINSRD $1, 4(R9), X4, X4
+	VPINSRQ $1, 8(R9), X4, X4
+	VINSERTI64X2 $1, X4, Z15, Z15
+	VPINSRD $0, 0(R10), X12, X4
+	VPINSRD $1, 4(R10), X4, X4
+	VPINSRQ $1, 8(R10), X4, X4
+	VINSERTI64X2 $2, X4, Z15, Z15
+	VPINSRD $0, 0(R11), X12, X4
+	VPINSRD $1, 4(R11), X4, X4
+	VPINSRQ $1, 8(R11), X4, X4
+	VINSERTI64X2 $3, X4, Z15, Z15
+	VPINSRD $0, 16(R8), X12, X4
+	VINSERTI64X2 $0, X4, Z16, Z16
+	VPINSRD $0, 16(R9), X12, X4
+	VINSERTI64X2 $1, X4, Z16, Z16
+	VPINSRD $0, 16(R10), X12, X4
+	VINSERTI64X2 $2, X4, Z16, Z16
+	VPINSRD $0, 16(R11), X12, X4
+	VINSERTI64X2 $3, X4, Z16, Z16
+	VPXORD Z14, Z15, Z15
+	VPXORD Z13, Z16, Z16
+
+	VBROADCASTI32X4 16(AX), Z1
+	VBROADCASTI32X4 32(AX), Z2
+	VBROADCASTI32X4 48(AX), Z3
+	VBROADCASTI32X4 64(AX), Z4
+	VBROADCASTI32X4 80(AX), Z5
+	VBROADCASTI32X4 96(AX), Z6
+	VBROADCASTI32X4 112(AX), Z7
+	VBROADCASTI32X4 128(AX), Z8
+	VBROADCASTI32X4 144(AX), Z9
+	VBROADCASTI32X4 160(AX), Z10
+	VPXORD Z0, Z0, Z0
+
+loop:
+	VBROADCASTI32X4 0(BX), Z11
+	VPTERNLOGQ $0x96, Z11, Z15, Z0
+	VAESENC Z1, Z0, Z0
+	VAESENC Z2, Z0, Z0
+	VAESENC Z3, Z0, Z0
+	VAESENC Z4, Z0, Z0
+	VAESENC Z5, Z0, Z0
+	VAESENC Z6, Z0, Z0
+	VAESENC Z7, Z0, Z0
+	VAESENC Z8, Z0, Z0
+	VAESENC Z9, Z0, Z0
+	VAESENCLAST Z10, Z0, Z0
+	VPXORD Z16, Z0, Z0
+	VAESENC Z1, Z0, Z0
+	VAESENC Z2, Z0, Z0
+	VAESENC Z3, Z0, Z0
+	VAESENC Z4, Z0, Z0
+	VAESENC Z5, Z0, Z0
+	VAESENC Z6, Z0, Z0
+	VAESENC Z7, Z0, Z0
+	VAESENC Z8, Z0, Z0
+	VAESENC Z9, Z0, Z0
+	VAESENCLAST Z10, Z0, Z0
+	ADDQ $16, BX
+	DECQ CX
+	JNZ loop
+
+	VMOVDQU X0, 0(DI)
+	VEXTRACTI64X2 $1, Z0, 16(DI)
+	VEXTRACTI64X2 $2, Z0, 32(DI)
+	VEXTRACTI64X2 $3, Z0, 48(DI)
+	VZEROUPPER
+	RET

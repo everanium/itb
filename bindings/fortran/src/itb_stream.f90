@@ -4,7 +4,7 @@
 ! in through itb_stream_write and yields wire through itb_stream_read
 ! / itb_stream_drain_all; a decrypt session is the mirror (wire in,
 ! plaintext out). All chunking, MAC, envelope, and wire-format
-! decisions stay inside libitb.
+! decisions stay inside libitb3.
 !
 ! Lifetime discipline: every successful itb_encrypt_stream_begin /
 ! itb_decrypt_stream_begin must be paired with exactly one
@@ -247,7 +247,7 @@ contains
   ! the wire-expansion upper bound (the same bound the Single Message
   ! path uses), so the drain loop appends in place with no growth
   ! copies on the hot path; ensure_room is a never-in-practice
-  ! fallback should libitb outproduce the bound.
+  ! fallback should libitb3 outproduce the bound.
   subroutine pump_into(pipe, encrypt, src, dst, used, err)
     type(itb_pipeline_t), intent(in)                      :: pipe
     logical, intent(in)                                   :: encrypt

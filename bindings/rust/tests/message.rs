@@ -2,7 +2,7 @@
 //! small (4 KiB) and medium (256 KiB) payloads. The blob-only profile
 //! has no cipher surface and is exercised in errors.rs instead.
 
-use itb::{OptsBuilder, Pipeline};
+use itb3::{OptsBuilder, Pipeline};
 
 /// Deterministic non-trivial payload (xorshift fill).
 fn payload(n: usize, seed: u64) -> Vec<u8> {

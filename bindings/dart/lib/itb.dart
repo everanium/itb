@@ -1,14 +1,14 @@
-// Thin Dart proxy over the libitb shared library's Triple Pipeline
+// Thin Dart proxy over the libitb3 shared library's Triple Pipeline
 // surface.
 //
 // The package wraps the `ITB_Triple_*` C ABI exported by
-// `cmd/cshared` (libitb.so / .dylib / .dll) through `dart:ffi` —
+// `cmd/cshared` (libitb3.so / .dylib / .dll) through `dart:ffi` —
 // runtime FFI, no build step, no C compiler at install time. Every
 // hash-name / MAC-name / cipher-name / profile-name is an opaque
 // string passed through to Go for validation; the binding carries no
 // ITB construction logic of its own.
 //
-//   import 'package:itb/itb.dart';
+//   import 'package:libitb3/itb.dart';
 //
 //   final sender = Itb.create('singlemsg-triple-mac-v1');
 //   final receiver = Itb.load(sender.save());
@@ -61,7 +61,7 @@ abstract final class Itb {
   /// Looks up a registered profile by name (see [p.lookup]).
   static Profile lookup(String name) => p.lookup(name);
 
-  /// The libitb library version string.
+  /// The libitb3 library version string.
   static String version() => rt.libVersion();
 
   /// Sets the Go runtime's soft heap limit in bytes; returns the

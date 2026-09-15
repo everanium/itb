@@ -45,7 +45,7 @@ const char *status_str(Status status) noexcept
 
 std::string last_error()
 {
-    /* The libitb diagnostics are short sentences; 2 KiB covers every
+    /* The libitb3 diagnostics are short sentences; 2 KiB covers every
      * message the Go side emits. */
     std::array<char, 2048> buf{};
     std::size_t need = 0;

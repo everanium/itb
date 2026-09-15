@@ -51,8 +51,8 @@ each of the 8 shipped seed roles:
 | Seed role  | Derivation           | Nonce buf layout             | Output consumed as |
 |------------|----------------------|------------------------------|--------------------|
 | noiseSeed  | `blockHash*(buf, p)` | `pixIdx (4 LE) \|\| nonce`   | per-pixel `noisePos = h.lo & 7` |
-| dataSeed_i | `blockHash*(buf, p)` | `pixIdx (4 LE) \|\| nonce`   | per-pixel `dataRotation` + `channelXOR` per snake |
-| startSeed_i| `ChainHash*(buf)`    | `0x02 \|\| nonce`            | `startPixel = h.lo % totalPixels` per snake |
+| dataSeed_i | `blockHash*(buf, p)` | `pixIdx (4 LE) \|\| nonce`   | per-pixel `dataRotation` + `channelXOR` per region |
+| startSeed_i| `ChainHash*(buf)`    | `0x02 \|\| nonce`            | `startPixel = h.lo % totalPixels` per region |
 | lockSeed   | `deriveInterLockSeed`| `0x02 \|\| nonce`            | full-width Interlocked Barrier per-chunk overlay key |
 
 Every one of the 8 seeds consumes the nonce. A 1-bit nonce Δ perturbs

@@ -14,12 +14,38 @@ val javaLibsDir = Def.setting {
 // The library jar only — the eitb.jar / bench.jar tool jars embed
 // duplicate copies of the library classes.
 val javaBindingJars = Def.setting {
-  (javaLibsDir.value * "itb-java-*.jar").classpath
+  (javaLibsDir.value * "libitb3-java-*.jar").classpath
 }
 
 lazy val commonSettings = Seq(
-  organization := "dev.everanium",
-  version := "0.4.1",
+  organization := "io.github.everanium",
+  version := "0.5.1",
+  description := "ITB Symmetric Cipher Construction with Ambiguity-Based Security - Scala",
+  homepage := Some(url("https://github.com/everanium/itb")),
+  licenses := Seq(
+    "Apache-2.0" -> url("https://www.apache.org/licenses/LICENSE-2.0")
+  ),
+  developers := List(
+    Developer(
+      id = "everanium",
+      name = "Andrey Kuvshinov",
+      email = "andrew@encloud.blue",
+      url = url("https://github.com/everanium")
+    )
+  ),
+  scmInfo := Some(
+    ScmInfo(
+      url("https://github.com/everanium/itb"),
+      "scm:git:https://github.com/everanium/itb.git",
+      Some("scm:git:ssh://git@github.com/everanium/itb.git")
+    )
+  ),
+  // sbt has no issueManagement key; the POM element is injected directly.
+  pomExtra :=
+    <issueManagement>
+      <system>GitHub Issues</system>
+      <url>https://github.com/everanium/itb/issues</url>
+    </issueManagement>,
   scalaVersion := "3.6.2",
   scalacOptions ++= Seq(
     "-deprecation",
@@ -39,16 +65,16 @@ lazy val commonSettings = Seq(
 lazy val root = (project in file("."))
   .settings(commonSettings)
   .settings(
-    name := "itb-scala",
+    name := "libitb3-scala",
     libraryDependencies += "org.scalameta" %% "munit" % "1.0.4" % Test
   )
 
 lazy val bench = (project in file("bench"))
   .dependsOn(root)
   .settings(commonSettings)
-  .settings(name := "itb-scala-bench")
+  .settings(name := "libitb3-scala-bench")
 
 lazy val eitb = (project in file("eitb"))
   .dependsOn(root)
   .settings(commonSettings)
-  .settings(name := "itb-scala-eitb")
+  .settings(name := "libitb3-scala-eitb")

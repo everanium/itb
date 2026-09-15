@@ -49,10 +49,10 @@ end
 A Triple Pipeline session constructed against the named profile
 (`ITB_Triple_Init`). `opts` is `nothing`, an opts string, an
 [`Opts`](@ref) builder, or a `Dict` rendered to the URL-query grammar
-libitb validates. The session blob is available through
+libitb3 validates. The session blob is available through
 [`save`](@ref); [`load`](@ref) / [`load_f`](@ref) reopen a session
 from it and [`rekey!`](@ref) refreshes it. [`close!`](@ref) zeroes
-key material inside libitb; [`free!`](@ref) releases the Go-side
+key material inside libitb3; [`free!`](@ref) releases the Go-side
 handle (a GC finalizer covers the non-explicit path).
 
 Streaming-decrypt caveat: chunked Streaming AEAD verifies per chunk,
@@ -62,7 +62,7 @@ fail authentication.
 mutable struct Pipeline
     handle::Csize_t
 
-    # Wraps an already-open libitb handle; not part of the public
+    # Wraps an already-open libitb3 handle; not part of the public
     # API — use the profile constructor, `load`, or `load_f`.
     function Pipeline(handle::Csize_t)
         p = new(handle)
@@ -75,7 +75,7 @@ function Pipeline(profile::AbstractString; opts=nothing)
     opts_s = render_opts(opts)
     href = Ref{Csize_t}(0)
     # On a blob-buffer retry the Init re-runs and yields a fresh
-    # session (the undersized attempt is closed by libitb before
+    # session (the undersized attempt is closed by libitb3 before
     # returning). The Init-time blob copy is dropped; `save` re-reads
     # it from the handle.
     _retry_once(_BLOB_CAP) do buf, need
@@ -211,7 +211,7 @@ end
 """
     free!(p::Pipeline)
 
-Releases the Pipeline handle (libitb closes and zeroes key material
+Releases the Pipeline handle (libitb3 closes and zeroes key material
 first). Safe to call more than once; a GC finalizer covers the
 non-explicit path.
 """
@@ -235,18 +235,16 @@ Base.show(io::IO, p::Pipeline) =
 # --- profile catalogue ---------------------------------------------------
 
 # Shared body for the JSON-returning catalogue entries: retry-once
-# buffer, returned as the JSON text libitb wrote.
+# buffer, returned as the JSON text libitb3 wrote.
 _json_out(f::Function)::String = String(_retry_once(f, _JSON_CAP))
 
 """
     inspect(blob) -> String
 
 Decodes the blob's embedded profile record without opening a Pipeline
-and returns it as the JSON text libitb emits (keys `name`, `mode`,
-`width`, `hash`, `hashes`, `keybits`, `mac`, `tagstub`, `chunk`,
-`wrapper`, `outer`, `parallax`, `palette`, `segment`; absent keys are
-optional fields at their zero value). No registry read, no primitive
-probe — a primitive name the local build lacks is returned unchanged.
+and returns it as the JSON text libitb3 emits; absent keys are optional
+fields at their zero value. No registry read, no primitive probe — a
+primitive name the local build lacks is returned unchanged.
 """
 function inspect(blob)::String
     blob_b = _as_bytes(blob)
@@ -263,7 +261,7 @@ Registers a profile record under `name` so subsequent
 it. `profile_json` is the record as JSON text — the shape
 [`inspect`](@ref) / [`lookup`](@ref) return; a `name` key inside it,
 if present, must be empty or equal to `name`. Validation (name
-pattern, reserved prefixes, field rules) is performed by libitb; a
+pattern, reserved prefixes, field rules) is performed by libitb3; a
 duplicate name fails with `STATUS_PROFILE_EXISTS`.
 """
 function register(name::AbstractString, profile_json::AbstractString)
@@ -287,7 +285,7 @@ end
 """
     profiles() -> Vector{String}
 
-The sorted list of every registered profile name. libitb writes a
+The sorted list of every registered profile name. libitb3 writes a
 JSON array of strings; profile names are restricted to `[a-z0-9-]`,
 so the array unpacks by collecting the quoted items.
 """

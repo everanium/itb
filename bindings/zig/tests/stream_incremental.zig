@@ -2,7 +2,7 @@
 //! sizes (17-byte feed, 23-byte drain) across multiple chunks.
 
 const std = @import("std");
-const itb = @import("itb");
+const itb = @import("itb3");
 
 /// Feeds src in 17-byte writes, ends, drains in 23-byte reads.
 /// Caller frees the returned buffer.

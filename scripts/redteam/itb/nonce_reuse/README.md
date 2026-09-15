@@ -26,11 +26,11 @@ for downstream aggregation.
   / KL / byte-equal-rate on `C1 XOR C2` container bodies. Random /
   structured / near-identical plaintext pairs.
 - `TestRedTeamNonceReuseLayerANaiveKPA` — Layer A': naive Crib KPA
-  constraint match assuming `snake_payload_byte == plaintext_byte`
+  constraint match assuming `region_payload_byte == plaintext_byte`
   (i.e., ignoring the interlock). Reports max pixel-match count over
-  candidate startPixels per snake.
+  candidate startPixels per region.
 - `TestRedTeamNonceReuseLayerBQuietChunk` — Layer B: with startPixel per
-  snake granted as the single documented lab exception, measure per-pixel
+  region granted as the single documented lab exception, measure per-pixel
   `(noisePos, rotation)` ambiguity on a near-identical plaintext pair.
 - `TestRedTeamNonceReuseLayerBRandomPair` — Layer B random floor: same
   probe with random plaintext pair (no artificial quiet chunks).
@@ -57,7 +57,7 @@ for its decision path. Two narrowly-scoped lab peeks are permitted and
 tagged at the call site:
 
 - `[lab-peek: sp_i]` — Layer B / C probes grant the attacker the three
-  snake `startPixel` values. This is the single documented "would it
+  region `startPixel` values. This is the single documented "would it
   matter?" exception in the task brief.
 - `[lab-peek: masks]` — the Layer B' `MaskOraclePeek` probe additionally
   reveals the per-chunk interlock mask triples. Results here are the

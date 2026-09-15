@@ -1,10 +1,10 @@
-// Runtime symbol loading over the libitb shared library (koffi).
+// Runtime symbol loading over the libitb3 shared library (koffi).
 //
 // Lookup order:
 //
-//   1. ITB_LIBITB_PATH environment variable (path to the shared
+//   1. ITB_LIBITB3_PATH environment variable (path to the shared
 //      library file).
-//   2. <repo>/dist/<os>-<arch>/libitb.<ext> resolved by walking up
+//   2. <repo>/dist/<os>-<arch>/libitb3.<ext> resolved by walking up
 //      from this module's directory (in-repo builds).
 //   3. The OS default loader path (ld.so.cache / DYLD_LIBRARY_PATH /
 //      PATH).
@@ -20,14 +20,14 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import koffi from 'koffi';
 
-/** Opaque libitb handle (uintptr_t across the FFI). */
+/** Opaque libitb3 handle (uintptr_t across the FFI). */
 export type Handle = number | bigint;
 
 function libFilename(): string {
   switch (process.platform) {
-    case 'darwin': return 'libitb.dylib';
-    case 'win32': return 'libitb.dll';
-    default: return 'libitb.so';
+    case 'darwin': return 'libitb3.dylib';
+    case 'win32': return 'libitb3.dll';
+    default: return 'libitb3.so';
   }
 }
 
@@ -38,7 +38,7 @@ function platformLibDir(): string {
 }
 
 function resolveLibraryPath(): string {
-  const env = process.env['ITB_LIBITB_PATH'];
+  const env = process.env['ITB_LIBITB3_PATH'];
   if (env && env.length > 0) {
     return env;
   }

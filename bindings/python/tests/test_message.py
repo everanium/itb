@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import unittest
 
-import itb
+import itb3 as itb
 
 
 def payload(n: int, seed: int) -> bytes:

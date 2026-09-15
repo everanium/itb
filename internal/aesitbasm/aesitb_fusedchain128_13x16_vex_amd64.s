@@ -1,0 +1,306 @@
+//go:build amd64 && !purego && !noitbasm
+
+// VEX-encoded AES-NI XMM (VAESENC xmm, xmm, xmm; needs AES-NI + AVX) 16-lane fused ChainHash cascade kernel for AES-ITB-128
+// at the 13-byte per-lane fill shape (1 PKCS#7 block, 3 AES rounds per lane and cascade round).
+// See aesitbasm_fused.go for the construction; every tier is pinned to
+// the pure-Go reference (scalarFusedX16) by the in-package parity tests.
+//
+// Unique to the batch-16 kernel: groupIdx is synthesized in-register from
+// groupIdxBase per lane, avoiding the per-lane pointer gather overhead of
+// the x4 path. The synthesised block is round-invariant per lane; every
+// cascade round XORs key XOR (c0 || c1) and the block into the state and
+// runs the three AES rounds (absorb, finaliser RC[0], finaliser RC[1]).
+//
+// Batch layout: two batches of 8 lanes; each batch runs the whole cascade
+// before the next starts. The 16 blocks are staged once into the frame
+// (16 bytes per lane) in the prologue. Per batch: X0–X7 states, X9–X10
+// RC[0] / RC[1], X13 key, X14 key XOR pair (per round), X15 scratch.
+
+#include "textflag.h"
+
+// func aesITB128FusedChain13x16VexAsm(key *[16]byte, comps *uint64, nPairs int, groupIdxBase uint64, out *[16][2]uint64)
+TEXT ·aesITB128FusedChain13x16VexAsm(SB), NOSPLIT, $256-40
+	MOVQ key+0(FP), AX
+	MOVQ out+32(FP), DI
+	MOVQ groupIdxBase+24(FP), R8
+
+	// Stage the 16 fill blocks into the frame at 16*lane(SP)
+	VMOVDQU ·absorb13Block(SB), X12
+
+	// Lane 0: idx = base
+	MOVQ R8, R9
+	VMOVQ R9, X11
+	VMOVQ R9, X15
+	VPSLLQ $8, X11, X11
+	VPSRLQ $56, X15, X15
+	VPUNPCKLQDQ X15, X11, X11
+	VPXOR X12, X11, X11
+	VMOVDQU X11, 0(SP)
+
+	// Lane 1: idx = base + 1
+	MOVQ R8, R9
+	ADDQ $1, R9
+	VMOVQ R9, X11
+	VMOVQ R9, X15
+	VPSLLQ $8, X11, X11
+	VPSRLQ $56, X15, X15
+	VPUNPCKLQDQ X15, X11, X11
+	VPXOR X12, X11, X11
+	VMOVDQU X11, 16(SP)
+
+	// Lane 2: idx = base + 2
+	MOVQ R8, R9
+	ADDQ $2, R9
+	VMOVQ R9, X11
+	VMOVQ R9, X15
+	VPSLLQ $8, X11, X11
+	VPSRLQ $56, X15, X15
+	VPUNPCKLQDQ X15, X11, X11
+	VPXOR X12, X11, X11
+	VMOVDQU X11, 32(SP)
+
+	// Lane 3: idx = base + 3
+	MOVQ R8, R9
+	ADDQ $3, R9
+	VMOVQ R9, X11
+	VMOVQ R9, X15
+	VPSLLQ $8, X11, X11
+	VPSRLQ $56, X15, X15
+	VPUNPCKLQDQ X15, X11, X11
+	VPXOR X12, X11, X11
+	VMOVDQU X11, 48(SP)
+
+	// Lane 4: idx = base + 4
+	MOVQ R8, R9
+	ADDQ $4, R9
+	VMOVQ R9, X11
+	VMOVQ R9, X15
+	VPSLLQ $8, X11, X11
+	VPSRLQ $56, X15, X15
+	VPUNPCKLQDQ X15, X11, X11
+	VPXOR X12, X11, X11
+	VMOVDQU X11, 64(SP)
+
+	// Lane 5: idx = base + 5
+	MOVQ R8, R9
+	ADDQ $5, R9
+	VMOVQ R9, X11
+	VMOVQ R9, X15
+	VPSLLQ $8, X11, X11
+	VPSRLQ $56, X15, X15
+	VPUNPCKLQDQ X15, X11, X11
+	VPXOR X12, X11, X11
+	VMOVDQU X11, 80(SP)
+
+	// Lane 6: idx = base + 6
+	MOVQ R8, R9
+	ADDQ $6, R9
+	VMOVQ R9, X11
+	VMOVQ R9, X15
+	VPSLLQ $8, X11, X11
+	VPSRLQ $56, X15, X15
+	VPUNPCKLQDQ X15, X11, X11
+	VPXOR X12, X11, X11
+	VMOVDQU X11, 96(SP)
+
+	// Lane 7: idx = base + 7
+	MOVQ R8, R9
+	ADDQ $7, R9
+	VMOVQ R9, X11
+	VMOVQ R9, X15
+	VPSLLQ $8, X11, X11
+	VPSRLQ $56, X15, X15
+	VPUNPCKLQDQ X15, X11, X11
+	VPXOR X12, X11, X11
+	VMOVDQU X11, 112(SP)
+
+	// Lane 8: idx = base + 8
+	MOVQ R8, R9
+	ADDQ $8, R9
+	VMOVQ R9, X11
+	VMOVQ R9, X15
+	VPSLLQ $8, X11, X11
+	VPSRLQ $56, X15, X15
+	VPUNPCKLQDQ X15, X11, X11
+	VPXOR X12, X11, X11
+	VMOVDQU X11, 128(SP)
+
+	// Lane 9: idx = base + 9
+	MOVQ R8, R9
+	ADDQ $9, R9
+	VMOVQ R9, X11
+	VMOVQ R9, X15
+	VPSLLQ $8, X11, X11
+	VPSRLQ $56, X15, X15
+	VPUNPCKLQDQ X15, X11, X11
+	VPXOR X12, X11, X11
+	VMOVDQU X11, 144(SP)
+
+	// Lane 10: idx = base + 10
+	MOVQ R8, R9
+	ADDQ $10, R9
+	VMOVQ R9, X11
+	VMOVQ R9, X15
+	VPSLLQ $8, X11, X11
+	VPSRLQ $56, X15, X15
+	VPUNPCKLQDQ X15, X11, X11
+	VPXOR X12, X11, X11
+	VMOVDQU X11, 160(SP)
+
+	// Lane 11: idx = base + 11
+	MOVQ R8, R9
+	ADDQ $11, R9
+	VMOVQ R9, X11
+	VMOVQ R9, X15
+	VPSLLQ $8, X11, X11
+	VPSRLQ $56, X15, X15
+	VPUNPCKLQDQ X15, X11, X11
+	VPXOR X12, X11, X11
+	VMOVDQU X11, 176(SP)
+
+	// Lane 12: idx = base + 12
+	MOVQ R8, R9
+	ADDQ $12, R9
+	VMOVQ R9, X11
+	VMOVQ R9, X15
+	VPSLLQ $8, X11, X11
+	VPSRLQ $56, X15, X15
+	VPUNPCKLQDQ X15, X11, X11
+	VPXOR X12, X11, X11
+	VMOVDQU X11, 192(SP)
+
+	// Lane 13: idx = base + 13
+	MOVQ R8, R9
+	ADDQ $13, R9
+	VMOVQ R9, X11
+	VMOVQ R9, X15
+	VPSLLQ $8, X11, X11
+	VPSRLQ $56, X15, X15
+	VPUNPCKLQDQ X15, X11, X11
+	VPXOR X12, X11, X11
+	VMOVDQU X11, 208(SP)
+
+	// Lane 14: idx = base + 14
+	MOVQ R8, R9
+	ADDQ $14, R9
+	VMOVQ R9, X11
+	VMOVQ R9, X15
+	VPSLLQ $8, X11, X11
+	VPSRLQ $56, X15, X15
+	VPUNPCKLQDQ X15, X11, X11
+	VPXOR X12, X11, X11
+	VMOVDQU X11, 224(SP)
+
+	// Lane 15: idx = base + 15
+	MOVQ R8, R9
+	ADDQ $15, R9
+	VMOVQ R9, X11
+	VMOVQ R9, X15
+	VPSLLQ $8, X11, X11
+	VPSRLQ $56, X15, X15
+	VPUNPCKLQDQ X15, X11, X11
+	VPXOR X12, X11, X11
+	VMOVDQU X11, 240(SP)
+
+	// Load round constants and key
+	VMOVDQU ·RC+0(SB), X9
+	VMOVDQU ·RC+16(SB), X10
+	VMOVDQU 0(AX), X13
+
+	// ========== BATCH 1: lanes 0–7 ==========
+	MOVQ comps+8(FP), BX
+	MOVQ nPairs+16(FP), CX
+	VPXOR X0, X0, X0
+	VPXOR X1, X1, X1
+	VPXOR X2, X2, X2
+	VPXOR X3, X3, X3
+	VPXOR X4, X4, X4
+	VPXOR X5, X5, X5
+	VPXOR X6, X6, X6
+	VPXOR X7, X7, X7
+
+loop0:
+	VMOVDQU 0(BX), X14
+	VPXOR X13, X14, X14
+	VPXOR X14, X0, X0
+	VPXOR X14, X1, X1
+	VPXOR X14, X2, X2
+	VPXOR X14, X3, X3
+	VPXOR X14, X4, X4
+	VPXOR X14, X5, X5
+	VPXOR X14, X6, X6
+	VPXOR X14, X7, X7
+	VPXOR 0(SP), X0, X0
+	VPXOR 16(SP), X1, X1
+	VPXOR 32(SP), X2, X2
+	VPXOR 48(SP), X3, X3
+	VPXOR 64(SP), X4, X4
+	VPXOR 80(SP), X5, X5
+	VPXOR 96(SP), X6, X6
+	VPXOR 112(SP), X7, X7
+	VAESENC X9, X0, X0; VAESENC X9, X1, X1; VAESENC X9, X2, X2; VAESENC X9, X3, X3; VAESENC X9, X4, X4; VAESENC X9, X5, X5; VAESENC X9, X6, X6; VAESENC X9, X7, X7
+	VAESENC X9, X0, X0; VAESENC X9, X1, X1; VAESENC X9, X2, X2; VAESENC X9, X3, X3; VAESENC X9, X4, X4; VAESENC X9, X5, X5; VAESENC X9, X6, X6; VAESENC X9, X7, X7
+	VAESENC X10, X0, X0; VAESENC X10, X1, X1; VAESENC X10, X2, X2; VAESENC X10, X3, X3; VAESENC X10, X4, X4; VAESENC X10, X5, X5; VAESENC X10, X6, X6; VAESENC X10, X7, X7
+	ADDQ $16, BX
+	DECQ CX
+	JNZ loop0
+
+	// Store batch 1 outputs
+	VMOVDQU X0, 0(DI)
+	VMOVDQU X1, 16(DI)
+	VMOVDQU X2, 32(DI)
+	VMOVDQU X3, 48(DI)
+	VMOVDQU X4, 64(DI)
+	VMOVDQU X5, 80(DI)
+	VMOVDQU X6, 96(DI)
+	VMOVDQU X7, 112(DI)
+
+	// ========== BATCH 2: lanes 8–15 ==========
+	MOVQ comps+8(FP), BX
+	MOVQ nPairs+16(FP), CX
+	VPXOR X0, X0, X0
+	VPXOR X1, X1, X1
+	VPXOR X2, X2, X2
+	VPXOR X3, X3, X3
+	VPXOR X4, X4, X4
+	VPXOR X5, X5, X5
+	VPXOR X6, X6, X6
+	VPXOR X7, X7, X7
+
+loop1:
+	VMOVDQU 0(BX), X14
+	VPXOR X13, X14, X14
+	VPXOR X14, X0, X0
+	VPXOR X14, X1, X1
+	VPXOR X14, X2, X2
+	VPXOR X14, X3, X3
+	VPXOR X14, X4, X4
+	VPXOR X14, X5, X5
+	VPXOR X14, X6, X6
+	VPXOR X14, X7, X7
+	VPXOR 128(SP), X0, X0
+	VPXOR 144(SP), X1, X1
+	VPXOR 160(SP), X2, X2
+	VPXOR 176(SP), X3, X3
+	VPXOR 192(SP), X4, X4
+	VPXOR 208(SP), X5, X5
+	VPXOR 224(SP), X6, X6
+	VPXOR 240(SP), X7, X7
+	VAESENC X9, X0, X0; VAESENC X9, X1, X1; VAESENC X9, X2, X2; VAESENC X9, X3, X3; VAESENC X9, X4, X4; VAESENC X9, X5, X5; VAESENC X9, X6, X6; VAESENC X9, X7, X7
+	VAESENC X9, X0, X0; VAESENC X9, X1, X1; VAESENC X9, X2, X2; VAESENC X9, X3, X3; VAESENC X9, X4, X4; VAESENC X9, X5, X5; VAESENC X9, X6, X6; VAESENC X9, X7, X7
+	VAESENC X10, X0, X0; VAESENC X10, X1, X1; VAESENC X10, X2, X2; VAESENC X10, X3, X3; VAESENC X10, X4, X4; VAESENC X10, X5, X5; VAESENC X10, X6, X6; VAESENC X10, X7, X7
+	ADDQ $16, BX
+	DECQ CX
+	JNZ loop1
+
+	// Store batch 2 outputs
+	VMOVDQU X0, 128(DI)
+	VMOVDQU X1, 144(DI)
+	VMOVDQU X2, 160(DI)
+	VMOVDQU X3, 176(DI)
+	VMOVDQU X4, 192(DI)
+	VMOVDQU X5, 208(DI)
+	VMOVDQU X6, 224(DI)
+	VMOVDQU X7, 240(DI)
+
+	RET

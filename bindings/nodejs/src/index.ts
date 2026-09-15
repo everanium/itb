@@ -1,8 +1,8 @@
-// Thin Node.js / TypeScript proxy over the libitb shared library's
+// Thin Node.js / TypeScript proxy over the libitb3 shared library's
 // Triple Pipeline surface.
 //
 // The package wraps the `ITB_Triple_*` C ABI exported by
-// `cmd/cshared` (libitb.so / .dylib / .dll) through koffi — runtime
+// `cmd/cshared` (libitb3.so / .dylib / .dll) through koffi — runtime
 // FFI, no build step, no C compiler at install time. Every hash-name
 // / MAC-name / cipher-name / profile-name is an opaque string passed
 // through to Go for validation; the binding carries no ITB

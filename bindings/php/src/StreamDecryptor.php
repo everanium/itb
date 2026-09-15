@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Everanium\Itb;
+namespace Everanium\Itb3;
 
 /** Incremental decrypt session: wire in, plaintext out. */
 final class StreamDecryptor extends StreamSession

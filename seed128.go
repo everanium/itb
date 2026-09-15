@@ -50,6 +50,31 @@ type Seed128 struct {
 	// parity invariant). nil disables batched dispatch and preserves
 	// the legacy single-call code path.
 	BatchHash BatchHashFunc128
+
+	// FusedChain and BatchFusedChain optionally evaluate the whole
+	// ChainHash128 cascade inside the primitive (see
+	// [FusedChainHashFunc128]). When non-nil and the implementation
+	// reports ok for the input shape, ChainHash128 / BatchChainHash128
+	// return the fused result; otherwise they run the sequential loop
+	// over Hash / BatchHash. Both paths are bit-exact by contract; the
+	// fields are performance hooks, nil disables them.
+	FusedChain      FusedChainHashFunc128
+	BatchFusedChain BatchFusedChainHashFunc128
+
+	// interlockFillX16 is the batch-16 Interlocked Barrier fill hook for
+	// the 13-byte fill shape (the sole shape the overlay uses): 16
+	// groups per kernel call, see InterlockFillFunc16. A performance
+	// hook only — the cascade fill is the wire with or without it.
+	// Populated via SetInterlockBatch16.
+	interlockFillX16 InterlockFillFunc16
+
+	// batchFusedChainX8 is the eight-lane fused cascade hook of the pixel
+	// pipeline (see BatchFusedChainHashFunc128x8). When non-nil on both
+	// the noise and the data seed, processChunk128 hashes eight pixels
+	// per call ahead of the four-pixel stride; nil keeps the four-lane
+	// path. A performance hook only — the wire is identical either way.
+	// Populated via SetBatchFusedChain8.
+	batchFusedChainX8 BatchFusedChainHashFunc128x8
 }
 
 // NewSeed128 creates a new 128-bit seed with cryptographically random components.
@@ -60,6 +85,14 @@ type Seed128 struct {
 // Example:
 //
 //	seed, err := itb.NewSeed128(1024, sipHash128)
+//
+// Directly-constructed seeds keep their optional fast-path hooks nil
+// and route hot paths through the sequential fallback; the name-keyed
+// constructor hashes.NewSeed128 (the path the triple package and the C
+// ABI take) attaches them. The
+// hooks are performance paths only: a seed produces the same wire with
+// and without them, including the Interlocked Barrier cascade fill,
+// which every lockSeed runs at every width (see [InterlockFillFunc16]).
 func NewSeed128(bits int, hashFunc HashFunc128) (*Seed128, error) {
 	if bits < 512 || bits > MaxKeyBits || bits%128 != 0 {
 		return nil, fmt.Errorf("itb: seed128 bits must be 512-%d and multiple of 128, got %d", MaxKeyBits, bits)
@@ -96,6 +129,13 @@ func NewSeed128(bits int, hashFunc HashFunc128) (*Seed128, error) {
 //	    0x9d8dc0b866e92b87, 0xaf7f4a99914da68b,
 //	    0x51101868dab807ae, 0xbc6e07a2a5067689,
 //	)
+//
+// Directly-constructed seeds keep their optional fast-path hooks nil
+// and route hot paths through the sequential fallback;
+// hashes.SeedFromComponents128 rebuilds a seed of a registry primitive
+// with them. The hooks are performance paths only: a seed rebuilt
+// from components decrypts what the exporting side encrypted with or
+// without them.
 func SeedFromComponents128(hashFunc HashFunc128, components ...uint64) (*Seed128, error) {
 	if len(components) < 8 || len(components) > MaxKeyBits/64 {
 		return nil, fmt.Errorf("itb: components count must be 8-%d, got %d", MaxKeyBits/64, len(components))
@@ -118,17 +158,14 @@ func (s *Seed128) Bits() int {
 
 // MinPixels returns the minimum pixel count ensuring encoding ambiguity
 // exceeds the key space (2^keyBits). Aliases [MinPixelsAuth]'s CCA-
-// resistant formula (ceil(keyBits / log2(7))) so plain and
-// MAC-authenticated modes share one small-message container envelope
-// — the envelope no longer distinguishes mode on tiny payloads.
+// resistant formula so plain and MAC-authenticated modes share one
+// container envelope on small messages.
 func (s *Seed128) MinPixels() int {
 	return s.MinPixelsAuth()
 }
 
 // MinPixelsAuth returns the CCA-resistant minimum pixel count. Formula:
-// ceil(keyBits / log2(7)). Used by EncryptAuthenticated/DecryptAuthenticated
-// (MAC + Reveal possible) and, since the plain-mode floor was unified,
-// also by Encrypt/Decrypt and Stream.
+// ceil(keyBits / log2(7)).
 func (s *Seed128) MinPixelsAuth() int {
 	return (s.Bits()*minPixelsScale + minPixelsDivisor7 - 1) / minPixelsDivisor7
 }
@@ -141,6 +178,11 @@ func (s *Seed128) MinPixelsAuth() int {
 //	(hLo, hHi) = Hash128(data, s[2] ^ hLo, s[3] ^ hHi)
 //	...
 func (s *Seed128) ChainHash128(buf []byte) (uint64, uint64) {
+	if s.FusedChain != nil {
+		if lo, hi, ok := s.FusedChain(s.Components, buf); ok {
+			return lo, hi
+		}
+	}
 	hLo, hHi := s.Hash(buf, s.Components[0], s.Components[1])
 	for i := 2; i < len(s.Components); i += 2 {
 		hLo, hHi = s.Hash(buf, s.Components[i]^hLo, s.Components[i+1]^hHi)
@@ -181,4 +223,20 @@ func (s *Seed128) deriveInterLockSeed(nonce []byte) (uint64, uint64) {
 	buf[0] = 0x04
 	copy(buf[1:], nonce)
 	return s.ChainHash128(buf)
+}
+
+// InterlockFillX16 returns the batch-16 interlock PRF fill hook, nil
+// when none is attached.
+func (s *Seed128) InterlockFillX16() InterlockFillFunc16 {
+	return s.interlockFillX16
+}
+
+// SetInterlockBatch16 installs the batch-16 interlock PRF fill hook
+// (the hashes package calls it after resolving the factory by name).
+// nil removes it; the Interlocked Barrier fill then runs the
+// cascade through the four-lane and single-lane arms. The hook is a
+// performance path only: with or without it the seed produces the
+// same wire.
+func (s *Seed128) SetInterlockBatch16(fn InterlockFillFunc16) {
+	s.interlockFillX16 = fn
 }

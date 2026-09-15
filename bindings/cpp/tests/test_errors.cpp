@@ -61,7 +61,7 @@ static int run()
                     &st),
                 "unknown hash must be rejected");
 
-    /* A half-supplied master-override pair is rejected by libitb. */
+    /* A half-supplied master-override pair is rejected by libitb3. */
     itb::Pipeline probe = itb::Pipeline::init("singlemsg-triple-mac-v1");
     const std::vector<std::uint8_t> probe_blob = probe.save();
     const std::vector<std::uint8_t> perm(32, 0x33);

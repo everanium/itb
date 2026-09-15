@@ -89,19 +89,19 @@ let bench_case name size f =
   Printf.printf "%-17s %-8s %.1f\n%!" name (size_label size) (mb /. !elapsed)
 
 let bench_message () =
-  let pipe = Itb.create (profile_name "ITB_MSG_PROFILE" "singlemsg-triple-nomac-v1") ~opts:(build_opts ()) () in
+  let pipe = Itb3.create (profile_name "ITB_MSG_PROFILE" "singlemsg-triple-nomac-v1") ~opts:(build_opts ()) () in
   List.iter
     (fun size ->
       let plain = random_bytes size in
-      bench_case "message" size (fun () -> ignore (Itb.encrypt_message pipe plain));
+      bench_case "message" size (fun () -> ignore (Itb3.encrypt_message pipe plain));
       (* Pre-encrypt one wire outside the decrypt timing loop. *)
-      let dec_wire = Itb.encrypt_message pipe plain in
-      bench_case "message-dec" size (fun () -> ignore (Itb.decrypt_message pipe dec_wire)))
+      let dec_wire = Itb3.encrypt_message pipe plain in
+      bench_case "message-dec" size (fun () -> ignore (Itb3.decrypt_message pipe dec_wire)))
     sizes;
-  Itb.close pipe
+  Itb3.close pipe
 
 let bench_stream () =
-  let pipe = Itb.create (profile_name "ITB_STREAM_PROFILE" "streaming-noaead-triple-v1") ~opts:(build_opts ()) () in
+  let pipe = Itb3.create (profile_name "ITB_STREAM_PROFILE" "streaming-noaead-triple-v1") ~opts:(build_opts ()) () in
   let slice = 1 lsl 20 in
   (* One reusable drain buffer across every iteration: the consumer
      side of a real pump (socket / file sink) reads into a stable
@@ -115,42 +115,42 @@ let bench_stream () =
     (fun size ->
       let plain = random_bytes size in
       bench_case "stream" size (fun () ->
-          let enc = Itb.encrypt_stream pipe in
+          let enc = Itb3.encrypt_stream pipe in
           let off = ref 0 in
           while !off < size do
             let len = min slice (size - !off) in
-            Itb.write_sub enc plain !off len;
+            Itb3.write_sub enc plain !off len;
             off := !off + len;
             (* Drain available output so the spool stays bounded. *)
             let rec drain () =
-              let n, _ = Itb.read_into enc out out_cap in
+              let n, _ = Itb3.read_into enc out out_cap in
               if n > 0 then drain ()
             in
             drain ()
           done;
-          Itb.end_ enc;
+          Itb3.end_ enc;
           let rec final () =
-            let _n, finished = Itb.read_into enc out out_cap in
+            let _n, finished = Itb3.read_into enc out out_cap in
             if not finished then final ()
           in
           final ());
       (* Pre-encrypt one wire outside the decrypt timing loop. *)
       let parts = Buffer.create (size + 65536) in
-      let enc = Itb.encrypt_stream pipe in
+      let enc = Itb3.encrypt_stream pipe in
       let off = ref 0 in
       while !off < size do
         let len = min slice (size - !off) in
-        Itb.write_sub enc plain !off len;
+        Itb3.write_sub enc plain !off len;
         off := !off + len;
         let rec drain () =
-          let n, _ = Itb.read_into enc out out_cap in
+          let n, _ = Itb3.read_into enc out out_cap in
           if n > 0 then (Buffer.add_subbytes parts out 0 n; drain ())
         in
         drain ()
       done;
-      Itb.end_ enc;
+      Itb3.end_ enc;
       let rec final () =
-        let n, finished = Itb.read_into enc out out_cap in
+        let n, finished = Itb3.read_into enc out out_cap in
         if n > 0 then Buffer.add_subbytes parts out 0 n;
         if not finished then final ()
       in
@@ -158,49 +158,49 @@ let bench_stream () =
       let dec_wire = Buffer.to_bytes parts in
       let dec_size = Bytes.length dec_wire in
       bench_case "stream-dec" size (fun () ->
-          let dec = Itb.decrypt_stream pipe in
+          let dec = Itb3.decrypt_stream pipe in
           let off = ref 0 in
           while !off < dec_size do
             let len = min slice (dec_size - !off) in
-            Itb.write_sub dec dec_wire !off len;
+            Itb3.write_sub dec dec_wire !off len;
             off := !off + len;
             let rec drain () =
-              let n, _ = Itb.read_into dec out out_cap in
+              let n, _ = Itb3.read_into dec out out_cap in
               if n > 0 then drain ()
             in
             drain ()
           done;
-          Itb.end_ dec;
+          Itb3.end_ dec;
           let rec final () =
-            let _n, finished = Itb.read_into dec out out_cap in
+            let _n, finished = Itb3.read_into dec out out_cap in
             if not finished then final ()
           in
           final ()))
     sizes;
-  Itb.close pipe
+  Itb3.close pipe
 
 (* Whole-buffer stream: one FFI round trip through
-   Itb.encrypt_stream_one_shot / Itb.decrypt_stream_one_shot per
+   Itb3.encrypt_stream_one_shot / Itb3.decrypt_stream_one_shot per
    iteration. *)
 let bench_stream_one_shot () =
-  let pipe = Itb.create (profile_name "ITB_STREAM_PROFILE" "streaming-noaead-triple-v1") ~opts:(build_opts ()) () in
+  let pipe = Itb3.create (profile_name "ITB_STREAM_PROFILE" "streaming-noaead-triple-v1") ~opts:(build_opts ()) () in
   List.iter
     (fun size ->
       let plain = random_bytes size in
       bench_case "stream_one_shot" size
-        (fun () -> ignore (Itb.encrypt_stream_one_shot pipe plain));
+        (fun () -> ignore (Itb3.encrypt_stream_one_shot pipe plain));
       (* Pre-encrypt one wire outside the decrypt timing loop. *)
-      let dec_wire = Itb.encrypt_stream_one_shot pipe plain in
+      let dec_wire = Itb3.encrypt_stream_one_shot pipe plain in
       bench_case "stream_one_shot-dec" size
-        (fun () -> ignore (Itb.decrypt_stream_one_shot pipe dec_wire)))
+        (fun () -> ignore (Itb3.decrypt_stream_one_shot pipe dec_wire)))
     sizes;
-  Itb.close pipe
+  Itb3.close pipe
 
 let () =
   (* Bench-scale allocation churn leaks Go scratch heap unboundedly
      without a soft memory cap + aggressive GC. *)
-  Itb.set_memory_limit (512 * 1024 * 1024);
-  Itb.set_gc_percent 20;
+  Itb3.set_memory_limit (4 * 1024 * 1024 * 1024);
+  Itb3.set_gc_percent 100;
   Printf.printf "%-17s %-8s %s\n%!" "bench" "size" "mb_per_sec";
   bench_message ();
   bench_stream ();

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # run_tests.sh -- one-step test runner for the Dart binding.
-# Builds libitb.so via build.sh, points ITB_LIBITB_PATH at the
+# Builds libitb3.so via build.sh, points ITB_LIBITB3_PATH at the
 # freshly-built shared library, then invokes `dart test`. Forwards
 # any positional arguments through to dart test (e.g. a --name
 # filter).
@@ -19,6 +19,6 @@ DIST_DIR="$REPO_ROOT/dist/linux-amd64"
 
 ./build.sh
 
-export ITB_LIBITB_PATH="$DIST_DIR/libitb.so"
+export ITB_LIBITB3_PATH="$DIST_DIR/libitb3.so"
 
 exec dart test "$@"

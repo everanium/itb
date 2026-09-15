@@ -6,7 +6,7 @@
 
 **No bespoke cryptography.** ITB introduces no cryptographic primitive of its own — no custom S-box, permutation, or round function. It is a construction over existing primitives, much as PGP composes standard ciphers rather than defining one. Such constructions are not the object of algorithm-level cryptographic certification: national regimes (NIST CAVP/FIPS in the US, GOST/FSB in Russia, OSCCA's SM-series in China, IC3S in India, SOG-IS/EUCC and national lists in the EU, ASD's ISM in Australia, CRYPTREC in Japan, KCMVP in South Korea) certify **primitives** and the **modules** built on them, not compositional schemes. Eligibility for regulated use is therefore inherited from the primitives ITB is configured with, not conferred by ITB itself.
 
-Thin proxy over the libitb shared library's `ITB_Triple_*` surface
+Thin proxy over the libitb3 shared library's `ITB_Triple_*` surface
 (`cmd/cshared`). Runtime FFI via the SDK's built-in `dart:ffi` —
 no build step, no C compiler at install time, one small pub
 dependency (`ffi` for UTF-8 marshalling and the malloc allocator);
@@ -28,11 +28,11 @@ sudo pacman -S go dart
 ```
 
 Generic Linux / macOS: a Go toolchain plus Dart SDK 3.0+. Windows:
-the same; libitb builds as `libitb.dll`.
+the same; libitb3 builds as `libitb3.dll`.
 
 ## Build the shared library
 
-The convenience driver builds `libitb.so`, resolves the pub
+The convenience driver builds `libitb3.so`, resolves the pub
 dependencies, and analyzes the Dart sources in one step:
 
 ```bash
@@ -43,7 +43,7 @@ Equivalent manual invocation:
 
 ```bash
 go build -trimpath -buildmode=c-shared \
-    -o dist/linux-amd64/libitb.so ./cmd/cshared
+    -o dist/linux-amd64/libitb3.so ./cmd/cshared
 cd bindings/dart && dart pub get
 ```
 
@@ -53,9 +53,9 @@ from another package via a `path:` dependency.
 
 ## Library lookup order
 
-1. `ITB_LIBITB_PATH` environment variable (path to the shared
+1. `ITB_LIBITB3_PATH` environment variable (path to the shared
    library file).
-2. `<repo>/dist/<os>-<arch>/libitb.<ext>` found by walking up from
+2. `<repo>/dist/<os>-<arch>/libitb3.<ext>` found by walking up from
    the current working directory (in-repo builds).
 3. The OS default loader path (`LD_LIBRARY_PATH`, `ld.so.cache`,
    `DYLD_LIBRARY_PATH`, `PATH`).
@@ -66,7 +66,7 @@ from another package via a `path:` dependency.
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:itb/itb.dart';
+import 'package:libitb3/itb.dart';
 
 void main() {
   final sender = Itb.create('singlemsg-triple-mac-v1');
@@ -111,7 +111,7 @@ final receiver2 = Itb.load(rotated);
 
 `Pipeline.free()` releases the Go-side handle deterministically; a
 `Finalizer` backstop frees on garbage collection for the non-`free`
-path (libitb zeroes key material internally). For bounded-memory
+path (libitb3 zeroes key material internally). For bounded-memory
 streaming, `encryptStream()` / `decryptStream()` open incremental
 sessions exposing `write` / `end` / `read` / `drainAll` for
 caller-driven loops plus a `pump` helper that moves an iterable of
@@ -184,13 +184,13 @@ cap is per-machine and never written to the blob.
 ## Memory
 
 Two process-wide knobs constrain Go runtime arena pacing, readable at
-libitb load time via env vars (`ITB_GOMEMLIMIT`, `ITB_GOGC`) and
+libitb3 load time via env vars (`ITB_GOMEMLIMIT`, `ITB_GOGC`) and
 adjustable at any time programmatically. Pass `-1` to query without
 changing:
 
 ```dart
-Itb.setMemoryLimit(512 << 20);
-Itb.setGcPercent(20);
+Itb.setMemoryLimit(4 << 30);
+Itb.setGcPercent(100);
 ```
 
 ## Testing
@@ -199,7 +199,7 @@ Itb.setGcPercent(20);
 ./bindings/dart/run_tests.sh
 ```
 
-The harness builds `libitb.so`, exports `ITB_LIBITB_PATH`, and
+The harness builds `libitb3.so`, exports `ITB_LIBITB3_PATH`, and
 invokes `dart test`. Positional arguments are forwarded (e.g.
 `./run_tests.sh --name 'round trip'`). The suite covers the version
 surface, Single Message round trips per shipped
@@ -220,15 +220,15 @@ Micro-benches: `encryptMessageInto` and stream-pump throughput at 1 MiB /
 `ITB_WITH_PARALLAX`, `ITB_WITH_WRAPPER`, `ITB_BENCH_MIN_SEC`); the
 script pins the same defaults as the root Go BENCH3.md table.
 
-## Related — `itb3` CLI
+## itb3 CLI
 
 The Go core ships an openssl-style CLI utility
-[`itb3`](../../cmd/itb3/) that generates session blobs on disk
+[`itb3`](https://github.com/everanium/itb/tree/main/cmd/itb3/) that generates session blobs on disk
 (`itb3 genblob <mode> <hash> -o blob.json`); this binding reopens
 such blobs via `Itb.loadF`. `itb3` also encrypts / decrypts
 payloads directly on disk (`-i` / `-o`) or through stdin / stdout,
 rotates outer masters, and inspects stored blobs. See
-[`cmd/itb3/README.md`](../../cmd/itb3/README.md) for the full
+[`cmd/itb3/README.md`](https://github.com/everanium/itb/blob/main/cmd/itb3/README.md) for the full
 subcommand reference.
 
 ## eitb utility
@@ -265,4 +265,8 @@ A small CLI under `bindings/dart/eitb/` mirrors the shipped Go
   isolates concurrently.
 - Input buffers are copied into native memory at the FFI boundary;
   outputs are freshly-allocated `Uint8List`s.
-- libitb must be reachable at runtime through the lookup order above.
+- libitb3 must be reachable at runtime through the lookup order above.
+
+## License
+
+Apache-2.0 — see [LICENSE](../../LICENSE).

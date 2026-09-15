@@ -4,7 +4,7 @@
 //! through `write` and yields wire through `read` / `drainAll`;
 //! `DecryptStream` is the mirror (wire in, plaintext out). All
 //! chunking, MAC, envelope, and wire-format decisions stay inside
-//! libitb. `deinit` cancels a still-running session; the `parent`
+//! libitb3. `deinit` cancels a still-running session; the `parent`
 //! pointer pins the Pipeline a session belongs to — the session must
 //! be deinited before its Pipeline.
 

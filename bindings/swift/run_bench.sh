@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
 # run_bench.sh -- micro-benchmark runner for the Swift binding.
-# Builds libitb.so + the C binding library + the Swift package, then
-# runs the ItbBench executable: encryptMessage, encryptStreamPump,
+# Builds libitb3.so + the C binding library + the Swift package, then
+# runs the Itb3Bench executable: encryptMessage, encryptStreamPump,
 # and encryptStreamOneShot throughput at 1 MiB / 16 MiB / 64 MiB as
 # an MB/s table on stdout.
 #
@@ -13,14 +13,18 @@ set -eu
 set -o pipefail
 
 cd "$(dirname "$0")"
+# The SwiftPM manifest lives at the repository root, so its build
+# tree does too.
+REPO_ROOT="$(cd ../.. && pwd -P)"
+BENCH="$REPO_ROOT/.build/release/Itb3Bench"
 
 ./build.sh
 
 # Go-runtime pacing defaults for bench-scale allocation churn; the
 # `:-` form respects any override set by the caller. The bench main
 # applies the same caps programmatically.
-export ITB_GOMEMLIMIT="${ITB_GOMEMLIMIT:-512MiB}"
-export ITB_GOGC="${ITB_GOGC:-20}"
+export ITB_GOMEMLIMIT="${ITB_GOMEMLIMIT:-4GiB}"
+export ITB_GOGC="${ITB_GOGC:-100}"
 
 # Bench-shape defaults — match the root Go BENCH3.md pin so the
 # throughput numbers are directly comparable to the shipped Go
@@ -49,27 +53,27 @@ else
 fi
 
 # Split at the shell layer so each shape carries its own ITB_PROFILE
-# in a single script pass (the ItbBench Swift entry point handles
+# in a single script pass (the Itb3Bench Swift entry point handles
 # "message", "stream", and "all" arguments individually).
 case "${1:-all}" in
     message)
         export ITB_PROFILE="${ITB_MSG_PROFILE_DEFAULT}"
-        exec .build/release/ItbBench message
+        exec "$BENCH" message
         ;;
     stream)
         export ITB_PROFILE="${ITB_STREAM_PROFILE_DEFAULT}"
-        exec .build/release/ItbBench stream
+        exec "$BENCH" stream
         ;;
     stream_one_shot)
         export ITB_PROFILE="${ITB_STREAM_PROFILE_DEFAULT}"
-        exec .build/release/ItbBench stream_one_shot
+        exec "$BENCH" stream_one_shot
         ;;
     all)
         export ITB_PROFILE="${ITB_MSG_PROFILE_DEFAULT}"
-        .build/release/ItbBench message
+        "$BENCH" message
         export ITB_PROFILE="${ITB_STREAM_PROFILE_DEFAULT}"
-        .build/release/ItbBench stream
-        exec .build/release/ItbBench stream_one_shot
+        "$BENCH" stream
+        exec "$BENCH" stream_one_shot
         ;;
     *)
         echo "usage: $0 [message|stream|stream_one_shot|all]" >&2

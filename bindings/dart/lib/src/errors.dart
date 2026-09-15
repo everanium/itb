@@ -1,12 +1,12 @@
 // Status codes and the exception type shared by every fallible call.
 //
-// Numeric values mirror the libitb C ABI
+// Numeric values mirror the libitb3 C ABI
 // (cmd/cshared/internal/capi/errors.go) and are stable across
 // releases.
 
 import 'ffi_bridge.dart';
 
-/// Integer status codes returned by every libitb entry point.
+/// Integer status codes returned by every libitb3 entry point.
 abstract final class Status {
   static const int ok = 0;
   static const int badHash = 1;
@@ -63,7 +63,7 @@ const Map<int, String> _labels = {
 /// Short human-readable label for a status code.
 String statusLabel(int code) => _labels[code] ?? 'unknown status $code';
 
-/// Thrown whenever libitb returns a non-OK status.
+/// Thrown whenever libitb3 returns a non-OK status.
 ///
 /// [statusCode] carries the numeric code; [lastError] carries the
 /// `ITB_LastError` diagnostic captured immediately after the failing
@@ -74,7 +74,7 @@ class ItbException implements Exception {
   ItbException(this.statusCode, [String? detail])
       : lastError = detail ?? readLastError();
 
-  /// Numeric libitb status code (see [Status]).
+  /// Numeric libitb3 status code (see [Status]).
   final int statusCode;
 
   /// `ITB_LastError` diagnostic text ('' when none is recorded).

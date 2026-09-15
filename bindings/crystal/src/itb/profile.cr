@@ -7,21 +7,25 @@ require "json"
 module ITB
   # A Triple Pipeline profile record.
   #
-  # The record is a plain data holder plus a JSON codec over the
-  # fourteen keys of the wire object (`name`, `mode`, `width`, `hash`,
-  # `hashes`, `keybits`, `mac`, `tagstub`, `chunk`, `wrapper`,
-  # `outer`, `parallax`, `palette`, `segment`). No semantic validation
-  # happens on the Crystal side — every field rule (mode names, width
-  # / hash agreement, key sizes, palette shape, reserved name
-  # prefixes) is enforced by Go at `ITB.register` / `Pipeline.load`
-  # time and surfaces as `ITB::Error`. Primitive / MAC / cipher names
-  # are opaque strings.
+  # The record is a plain data holder plus a JSON codec over the keys
+  # of the wire object. No semantic validation happens on the Crystal
+  # side — every field rule (mode names, width / hash agreement, key
+  # sizes, palette shape, reserved name prefixes) is enforced by Go at
+  # `ITB.register` / `Pipeline.load` time and surfaces as
+  # `ITB::Error`. Primitive / MAC / cipher names are opaque strings.
   #
   # Encoding mirrors the Go codec: `mode`, `width`, `keybits`,
   # `wrapper`, `parallax` are always emitted; an empty string, zero
   # integer, or empty array is omitted. `hashes` carries either
   # nothing or exactly eight slot names in the order `[noise, lock,
   # data1, data2, data3, start1, start2, start3]`.
+  #
+  # `nonce_bits` and `barrier_fill` are inspection-only. They are not
+  # part of the profile recipe: `ITB.inspect` reads them from the
+  # blob's runtime globals snapshot, while `ITB.lookup` leaves both
+  # nil because the registry entry never carries them. libitb3 rejects
+  # a `ITB.register` payload that carries either key, so clear both
+  # before registering an inspected record.
   class Profile
     # Registry handle (`name`); empty on an anonymous record.
     property name : String
@@ -36,6 +40,14 @@ module ITB
     property hashes : Array(String)
     # Key material size in bits (`keybits`).
     property key_bits : Int32
+    # On-wire nonce width in bits (`nonce_bits`), read from the blob's
+    # runtime globals. Inspection-only: non-nil on a record from
+    # `ITB.inspect`, nil on one from `ITB.lookup` and on one built by
+    # hand. libitb3 rejects a `register` payload carrying the key.
+    property nonce_bits : Int32?
+    # DRBG barrier fill margin (`barrier_fill`), read from the blob's
+    # runtime globals. Same inspection-only lifecycle as `#nonce_bits`.
+    property barrier_fill : Int32?
     # MAC name (`mac`); empty on a No MAC profile.
     property mac : String
     # Tag stub size (`tagstub`); 0 when absent.
@@ -56,7 +68,8 @@ module ITB
     def initialize(@name = "", @mode = "", @width = 0, @hash = "",
                    @hashes = [] of String, @key_bits = 0, @mac = "",
                    @tag_stub = 0, @chunk = 0, @wrapper = false, @outer = "",
-                   @parallax = false, @palette = [] of String, @segment = 0)
+                   @parallax = false, @palette = [] of String, @segment = 0,
+                   @nonce_bits = nil, @barrier_fill = nil)
     end
 
     # Renders the record as the wire JSON object.
@@ -69,6 +82,12 @@ module ITB
           j.field "hash", @hash unless @hash.empty?
           j.field "hashes", @hashes unless @hashes.empty?
           j.field "keybits", @key_bits
+          if nb = @nonce_bits
+            j.field "nonce_bits", nb
+          end
+          if bf = @barrier_fill
+            j.field "barrier_fill", bf
+          end
           j.field "mac", @mac unless @mac.empty?
           j.field "tagstub", @tag_stub unless @tag_stub == 0
           j.field "chunk", @chunk unless @chunk == 0
@@ -92,6 +111,8 @@ module ITB
         hash: m["hash"]?.try(&.as_s) || "",
         hashes: strings(m["hashes"]?),
         key_bits: m["keybits"]?.try(&.as_i) || 0,
+        nonce_bits: m["nonce_bits"]?.try(&.as_i?),
+        barrier_fill: m["barrier_fill"]?.try(&.as_i?),
         mac: m["mac"]?.try(&.as_s) || "",
         tag_stub: m["tagstub"]?.try(&.as_i) || 0,
         chunk: m["chunk"]?.try(&.as_i) || 0,

@@ -9,7 +9,7 @@
 --      ./eitb/eitb version
 --      ./eitb/eitb hashes
 
-with "itb";
+with "libitb3";
 
 project Itb_Eitb is
 
@@ -18,8 +18,8 @@ project Itb_Eitb is
    for Exec_Dir use "eitb";
    for Main use ("eitb.adb");
 
-   package Compiler renames Itb.Compiler;
-   package Linker renames Itb.Linker;
+   package Compiler renames Libitb3.Compiler;
+   package Linker renames Libitb3.Linker;
 
    package Builder is
       for Default_Switches ("Ada") use ("-j0");

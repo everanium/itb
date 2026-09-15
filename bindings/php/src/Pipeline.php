@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Everanium\Itb;
+namespace Everanium\Itb3;
 
 /**
  * A Triple Pipeline session.
@@ -10,7 +10,7 @@ namespace Everanium\Itb;
  * save() returns the serialised session blob the receiver feeds to
  * Itb::load(); rekey() refreshes it. Destruction (explicit free() or
  * garbage collection via __destruct) releases the Go-side handle —
- * libitb zeroes key material internally.
+ * libitb3 zeroes key material internally.
  *
  * Streaming-decrypt caveat: chunked Streaming AEAD verifies per
  * chunk, so plaintext of verified chunks is released before a later
@@ -193,7 +193,7 @@ final class Pipeline
     }
 
     /**
-     * Releases the Pipeline handle (libitb closes and zeroes key
+     * Releases the Pipeline handle (libitb3 closes and zeroes key
      * material first). Safe to call more than once.
      */
     public function free(): void

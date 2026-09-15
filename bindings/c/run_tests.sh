@@ -4,8 +4,8 @@
 #
 # Each tests/test_*.c is compiled to its own standalone executable in
 # tests/build/, then run in turn. Per-process isolation gives every
-# test a fresh libitb global state without needing an in-process
-# serial lock. Binaries link libitb.so via embedded RPATH, so
+# test a fresh libitb3 global state without needing an in-process
+# serial lock. Binaries link libitb3.so via embedded RPATH, so
 # LD_LIBRARY_PATH is unnecessary at runtime.
 #
 # Usage:

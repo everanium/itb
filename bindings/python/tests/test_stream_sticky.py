@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import unittest
 
-import itb
+import itb3 as itb
 
 
 class StreamStickyTest(unittest.TestCase):

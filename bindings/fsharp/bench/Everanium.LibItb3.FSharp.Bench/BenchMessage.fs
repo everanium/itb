@@ -1,0 +1,22 @@
+// encryptMessage throughput vs plaintext size (Single Message
+// profile) at 1 MiB / 16 MiB / 64 MiB.
+
+module Everanium.Itb3.FSharp.Bench.BenchMessage
+
+open Everanium.Itb3.FSharp
+
+let run () : unit =
+    use pipe =
+        ItbError.get (Pipeline.init (BenchUtil.profileName "singlemsg-triple-nomac-v1") (BenchUtil.buildOpts ()))
+
+    BenchUtil.header ()
+
+    for size in BenchUtil.sizes do
+        let plain = BenchUtil.payload size
+
+        BenchUtil.benchCase "message" size (fun () ->
+            ItbError.get (Pipeline.encryptMessage pipe plain) |> ignore)
+        // Pre-encrypt one wire outside the decrypt timing loop.
+        let decWire = ItbError.get (Pipeline.encryptMessage pipe plain)
+        BenchUtil.benchCase "message-dec" size (fun () ->
+            ItbError.get (Pipeline.decryptMessage pipe decWire) |> ignore)

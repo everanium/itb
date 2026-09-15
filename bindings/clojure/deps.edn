@@ -4,11 +4,11 @@
  ;; when the classpath is computed.
  :paths ["src"]
  :deps {org.clojure/clojure {:mvn/version "1.12.5"}
-        everanium/itb-java {:local/root "../java/build/libs/itb-java-0.4.1.jar"}}
+        everanium/libitb3-java {:local/root "../java/build/libs/libitb3-java-0.5.1.jar"}}
  :aliases
- {;; clojure.test suite: clojure -M:test -m dev.everanium.itb.clojure.test-runner
+ {;; clojure.test suite: clojure -M:test -m io.github.everanium.itb3.clojure.test-runner
   :test {:extra-paths ["test"]}
-  ;; micro-benchmarks: clojure -M:bench -m dev.everanium.itb.clojure.bench-message
+  ;; micro-benchmarks: clojure -M:bench -m io.github.everanium.itb3.clojure.bench-message
   :bench {:extra-paths ["bench"]}
   ;; eitb CLI script: clojure -M:eitb eitb/main.clj <args>
   :eitb {}}}

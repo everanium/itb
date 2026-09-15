@@ -2,7 +2,7 @@ defmodule ITB do
   @moduledoc """
   Public API of the ITB Elixir binding.
 
-  Thin proxy over the ITB Erlang binding's `itb` module via native
+  Thin proxy over the ITB Erlang binding's `itb3` module via native
   BEAM bytecode interop — the Elixir layer adds no FFI hop of its
   own. No ITB construction logic lives in this binding: profile
   names, opts keys, and every primitive name are opaque strings
@@ -20,7 +20,7 @@ defmodule ITB do
 
   Handles are opaque NIF resources owned by the Erlang layer:
   dropping every term reference lets the garbage collector release
-  the Go-side state (libitb zeroes key material internally), and
+  the Go-side state (libitb3 zeroes key material internally), and
   `free/1` / `stream_free/1` release eagerly. A stream session pins
   its parent pipeline, so the pipeline can never be collected under
   a live session. Do not call `free/1` on a handle another process
@@ -47,7 +47,7 @@ defmodule ITB do
   @type stream :: reference()
 
   @typedoc """
-  Opts accumulate into the URL-query string consumed by libitb; the
+  Opts accumulate into the URL-query string consumed by libitb3; the
   binding performs no validation — Go rejects unknown keys and bad
   values with a diagnostic in the error detail. Keyword lists, maps,
   and mixed atom / binary keys are all accepted; values may be
@@ -59,12 +59,10 @@ defmodule ITB do
   @type reason :: {ITB.Status.t(), binary()}
 
   @typedoc """
-  Profile record: the JSON object libitb emits from `inspect/1` /
+  Profile record: the JSON object libitb3 emits from `inspect/1` /
   `lookup/1` and accepts in `register/2`, decoded with the OTP `json`
-  module (binary keys `"name"`, `"mode"`, `"width"`, `"hash"`,
-  `"hashes"`, `"keybits"`, `"mac"`, `"tagstub"`, `"chunk"`,
-  `"wrapper"`, `"outer"`, `"parallax"`, `"palette"`, `"segment"`;
-  absent keys are optional fields at their zero value).
+  module into binary-keyed maps; absent keys are optional fields at
+  their zero value.
   """
   @type profile :: %{optional(binary() | atom()) => term()}
 
@@ -84,7 +82,7 @@ defmodule ITB do
   through `save/1`.
   """
   @spec init(iodata() | atom(), opts()) :: {:ok, pipeline()} | {:error, reason()}
-  def init(profile, opts \\ %{}), do: :itb.init(profile, opts)
+  def init(profile, opts \\ %{}), do: :itb3.init(profile, opts)
 
   @doc "As `init/2`, unwrapping the pipeline or raising `ITB.Error`."
   @spec init!(iodata() | atom(), opts()) :: pipeline()
@@ -100,7 +98,7 @@ defmodule ITB do
   """
   @spec load(binary(), binary(), binary()) :: {:ok, pipeline()} | {:error, reason()}
   def load(blob, perm_master \\ <<>>, wrap_master \\ <<>>),
-    do: :itb.load(blob, perm_master, wrap_master)
+    do: :itb3.load(blob, perm_master, wrap_master)
 
   @doc "As `load/3`, unwrapping the pipeline or raising `ITB.Error`."
   @spec load!(binary(), binary(), binary()) :: pipeline()
@@ -113,7 +111,7 @@ defmodule ITB do
   """
   @spec load_f(iodata(), binary(), binary()) :: {:ok, pipeline()} | {:error, reason()}
   def load_f(path, perm_master \\ <<>>, wrap_master \\ <<>>),
-    do: :itb.load_f(path, perm_master, wrap_master)
+    do: :itb3.load_f(path, perm_master, wrap_master)
 
   @doc "As `load_f/3`, unwrapping the pipeline or raising `ITB.Error`."
   @spec load_f!(iodata(), binary(), binary()) :: pipeline()
@@ -126,7 +124,7 @@ defmodule ITB do
   `rekey/3`.
   """
   @spec save(pipeline()) :: {:ok, binary()} | {:error, reason()}
-  def save(pipeline), do: :itb.save(pipeline)
+  def save(pipeline), do: :itb3.save(pipeline)
 
   @doc "As `save/1`, unwrapping the binary or raising `ITB.Error`."
   @spec save!(pipeline()) :: binary()
@@ -137,7 +135,7 @@ defmodule ITB do
   `0600`; the containing directory must exist).
   """
   @spec save_f(pipeline(), iodata()) :: :ok | {:error, reason()}
-  def save_f(pipeline, path), do: :itb.save_f(pipeline, path)
+  def save_f(pipeline, path), do: :itb3.save_f(pipeline, path)
 
   @doc "As `save_f/2`, returning `:ok` or raising `ITB.Error`."
   @spec save_f!(pipeline(), iodata()) :: :ok
@@ -150,7 +148,7 @@ defmodule ITB do
   tuning and is never written to the blob.
   """
   @spec max_workers(pipeline(), integer()) :: :ok | {:error, reason()}
-  def max_workers(pipeline, n), do: :itb.max_workers(pipeline, n)
+  def max_workers(pipeline, n), do: :itb3.max_workers(pipeline, n)
 
   @doc """
   Rotates the parallax + wrapper masters and returns the refreshed
@@ -160,7 +158,7 @@ defmodule ITB do
   """
   @spec rekey(pipeline(), binary(), binary()) :: {:ok, binary()} | {:error, reason()}
   def rekey(pipeline, perm_master, wrap_master),
-    do: :itb.rekey(pipeline, perm_master, wrap_master)
+    do: :itb3.rekey(pipeline, perm_master, wrap_master)
 
   @doc "As `rekey/3`, unwrapping the refreshed blob or raising `ITB.Error`."
   @spec rekey!(pipeline(), binary(), binary()) :: binary()
@@ -174,7 +172,7 @@ defmodule ITB do
   reference is the release backstop.
   """
   @spec free(pipeline()) :: :ok
-  def free(pipeline), do: :itb.free(pipeline)
+  def free(pipeline), do: :itb3.free(pipeline)
 
   # ------------------------------------------------------------------
   # Single Message encrypt / decrypt
@@ -182,7 +180,7 @@ defmodule ITB do
 
   @doc "One call, one self-contained wire."
   @spec encrypt_message(pipeline(), iodata()) :: {:ok, binary()} | {:error, reason()}
-  def encrypt_message(pipeline, plain), do: :itb.encrypt_message(pipeline, plain)
+  def encrypt_message(pipeline, plain), do: :itb3.encrypt_message(pipeline, plain)
 
   @doc "As `encrypt_message/2`, unwrapping the wire or raising `ITB.Error`."
   @spec encrypt_message!(pipeline(), iodata()) :: binary()
@@ -190,7 +188,7 @@ defmodule ITB do
 
   @doc "Receive-side counterpart of `encrypt_message/2`."
   @spec decrypt_message(pipeline(), iodata()) :: {:ok, binary()} | {:error, reason()}
-  def decrypt_message(pipeline, wire), do: :itb.decrypt_message(pipeline, wire)
+  def decrypt_message(pipeline, wire), do: :itb3.decrypt_message(pipeline, wire)
 
   @doc "As `decrypt_message/2`, unwrapping the plaintext or raising `ITB.Error`."
   @spec decrypt_message!(pipeline(), iodata()) :: binary()
@@ -209,7 +207,7 @@ defmodule ITB do
   @spec encrypt_stream_one_shot(pipeline(), iodata()) ::
           {:ok, binary()} | {:error, reason()}
   def encrypt_stream_one_shot(pipeline, plain),
-    do: :itb.encrypt_stream_one_shot(pipeline, plain)
+    do: :itb3.encrypt_stream_one_shot(pipeline, plain)
 
   @doc "As `encrypt_stream_one_shot/2`, unwrapping the wire or raising `ITB.Error`."
   @spec encrypt_stream_one_shot!(pipeline(), iodata()) :: binary()
@@ -220,7 +218,7 @@ defmodule ITB do
   @spec decrypt_stream_one_shot(pipeline(), iodata()) ::
           {:ok, binary()} | {:error, reason()}
   def decrypt_stream_one_shot(pipeline, wire),
-    do: :itb.decrypt_stream_one_shot(pipeline, wire)
+    do: :itb3.decrypt_stream_one_shot(pipeline, wire)
 
   @doc "As `decrypt_stream_one_shot/2`, unwrapping the plaintext or raising `ITB.Error`."
   @spec decrypt_stream_one_shot!(pipeline(), iodata()) :: binary()
@@ -237,7 +235,7 @@ defmodule ITB do
   so dropping the pipeline reference alone never frees it early).
   """
   @spec encrypt_stream(pipeline()) :: {:ok, stream()} | {:error, reason()}
-  def encrypt_stream(pipeline), do: :itb.encrypt_stream(pipeline)
+  def encrypt_stream(pipeline), do: :itb3.encrypt_stream(pipeline)
 
   @doc "As `encrypt_stream/1`, unwrapping the session or raising `ITB.Error`."
   @spec encrypt_stream!(pipeline()) :: stream()
@@ -245,7 +243,7 @@ defmodule ITB do
 
   @doc "Receive-side counterpart (wire in, plaintext out)."
   @spec decrypt_stream(pipeline()) :: {:ok, stream()} | {:error, reason()}
-  def decrypt_stream(pipeline), do: :itb.decrypt_stream(pipeline)
+  def decrypt_stream(pipeline), do: :itb3.decrypt_stream(pipeline)
 
   @doc "As `decrypt_stream/1`, unwrapping the session or raising `ITB.Error`."
   @spec decrypt_stream!(pipeline()) :: stream()
@@ -256,7 +254,7 @@ defmodule ITB do
   the cipher chain accepts the bytes; errors are sticky.
   """
   @spec stream_write(stream(), iodata()) :: :ok | {:error, reason()}
-  def stream_write(stream, data), do: :itb.stream_write(stream, data)
+  def stream_write(stream, data), do: :itb3.stream_write(stream, data)
 
   @doc "As `stream_write/2`, returning `:ok` or raising `ITB.Error`."
   @spec stream_write!(stream(), iodata()) :: :ok
@@ -267,7 +265,7 @@ defmodule ITB do
   `{:error, {:bad_input, _}}`.
   """
   @spec stream_end(stream()) :: :ok | {:error, reason()}
-  def stream_end(stream), do: :itb.stream_end(stream)
+  def stream_end(stream), do: :itb3.stream_end(stream)
 
   @doc "As `stream_end/1`, returning `:ok` or raising `ITB.Error`."
   @spec stream_end!(stream()) :: :ok
@@ -283,7 +281,7 @@ defmodule ITB do
   """
   @spec stream_read(stream(), pos_integer()) ::
           {:ok, binary(), boolean()} | {:error, reason()}
-  def stream_read(stream, max_bytes \\ @read_buf), do: :itb.stream_read(stream, max_bytes)
+  def stream_read(stream, max_bytes \\ @read_buf), do: :itb3.stream_read(stream, max_bytes)
 
   @doc "As `stream_read/2`, returning `{data, finished}` or raising `ITB.Error`."
   @spec stream_read!(stream(), pos_integer()) :: {binary(), boolean()}
@@ -295,7 +293,7 @@ defmodule ITB do
   Idempotent; garbage collection is the release backstop.
   """
   @spec stream_free(stream()) :: :ok
-  def stream_free(stream), do: :itb.stream_free(stream)
+  def stream_free(stream), do: :itb3.stream_free(stream)
 
   # ------------------------------------------------------------------
   # Lazy Stream adapters
@@ -328,7 +326,7 @@ defmodule ITB do
   Pipeline. No registry read, no primitive probe.
   """
   @spec inspect(binary()) :: {:ok, profile()} | {:error, reason()}
-  def inspect(blob), do: :itb.inspect(blob)
+  def inspect(blob), do: :itb3.inspect(blob)
 
   @doc "As `inspect/1`, unwrapping the record or raising `ITB.Error`."
   @spec inspect!(binary()) :: profile()
@@ -339,11 +337,11 @@ defmodule ITB do
   `lookup/1` calls resolve it. `profile` is the record as a map (the
   shape `inspect/1` / `lookup/1` return) or an already-encoded JSON
   binary; a `"name"` key inside it, if present, must be empty or
-  equal to `name`. Validation is performed by libitb; a duplicate
+  equal to `name`. Validation is performed by libitb3; a duplicate
   name fails with `{:error, {:profile_exists, _}}`.
   """
   @spec register(iodata() | atom(), profile() | iodata()) :: :ok | {:error, reason()}
-  def register(name, profile), do: :itb.register(name, profile)
+  def register(name, profile), do: :itb3.register(name, profile)
 
   @doc "As `register/2`, returning `:ok` or raising `ITB.Error`."
   @spec register!(iodata() | atom(), profile() | iodata()) :: :ok
@@ -355,7 +353,7 @@ defmodule ITB do
   `{:error, {:unknown_profile, _}}`.
   """
   @spec lookup(iodata() | atom()) :: {:ok, profile()} | {:error, reason()}
-  def lookup(name), do: :itb.lookup(name)
+  def lookup(name), do: :itb3.lookup(name)
 
   @doc "As `lookup/1`, unwrapping the record or raising `ITB.Error`."
   @spec lookup!(iodata() | atom()) :: profile()
@@ -363,42 +361,42 @@ defmodule ITB do
 
   @doc "The sorted list of every registered profile name."
   @spec profiles() :: [binary()]
-  def profiles, do: :itb.profiles()
+  def profiles, do: :itb3.profiles()
 
   # ------------------------------------------------------------------
   # Runtime + diagnostics
   # ------------------------------------------------------------------
 
-  @doc ~S(The libitb library version string, e.g. `"0.4.1"`.)
+  @doc ~S(The libitb3 library version string, e.g. `"0.5.1"`.)
   @spec version() :: {:ok, binary()} | {:error, reason()}
-  def version, do: :itb.version()
+  def version, do: :itb3.version()
 
   @doc "As `version/0`, unwrapping the binary or raising `ITB.Error`."
   @spec version!() :: binary()
   def version!, do: bang(version())
 
   @doc """
-  The Go-side diagnostic recorded by the most recent failing libitb
+  The Go-side diagnostic recorded by the most recent failing libitb3
   call (process-global last-write-wins; `<<>>` when none). The error
   tuples already carry this detail — direct use is for ad-hoc
   debugging only.
   """
   @spec last_error() :: binary()
-  def last_error, do: :itb.last_error()
+  def last_error, do: :itb3.last_error()
 
   @doc """
   Sets the Go runtime's soft heap limit in bytes; returns the
   previous limit. A negative value queries without changing.
   """
   @spec set_memory_limit(integer()) :: integer()
-  def set_memory_limit(bytes), do: :itb.set_memory_limit(bytes)
+  def set_memory_limit(bytes), do: :itb3.set_memory_limit(bytes)
 
   @doc """
   Sets the Go GC trigger percentage; returns the previous value. A
   negative value queries without changing.
   """
   @spec set_gc_percent(integer()) :: integer()
-  def set_gc_percent(pct), do: :itb.set_gc_percent(pct)
+  def set_gc_percent(pct), do: :itb3.set_gc_percent(pct)
 
   # ------------------------------------------------------------------
   # Result unwrapping for the bang variants

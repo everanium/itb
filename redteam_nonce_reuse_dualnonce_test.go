@@ -2,13 +2,14 @@
 
 package itb
 
-// Nonce-Reuse dual-nonce re-verification for the shipped wire format
-// (`[main_nonce (N)][interlock_nonce (N)][W][H][container]`, header
-// size `2*N+4`). Companion to the historical `redteam_nonce_reuse_test.go`
-// probes, which were authored against the archived single-nonce wire
-// and cannot re-run against the shipped construction (their wire
-// parsers panic on out-of-range slices when W/H are read from bytes
-// that are actually the interlock nonce).
+// Nonce-Reuse dual-nonce re-verification for the shipped construction,
+// which draws two independent nonces per message: the main nonce, which
+// the wire header carries (`[main_nonce (N)][W][H][container]`, header
+// size `N+4`), and the interlock nonce, which travels split across the
+// three interlocked lanes. Companion to the historical
+// `redteam_nonce_reuse_test.go` probes, which were authored against the
+// archived single-nonce construction and cannot re-run against the
+// shipped one.
 //
 // The three scenarios below map to the maintainer's methodology for
 // isolating the two independent nonces' contributions:
@@ -17,13 +18,14 @@ package itb
 //     main nonce AND both messages share the interlock nonce; within
 //     each message the two nonces stay byte-distinct (matching the
 //     shipped `generateNoncePairCfg` invariant). This reproduces the
-//     archived single-nonce reuse event under the dual-nonce header.
+//     archived single-nonce reuse event under the two-nonce
+//     construction.
 //
 //   Scenario B — Partial nonce-reuse (main-only). The main nonce is
 //     fixed across the compared pair; the interlock nonce is drawn
 //     from crypto/rand per encrypt. Reproduces a buggy caller who
 //     reuses the seven main-nonce-keyed derivation slots (per-pixel
-//     noisePos, per-snake rotation / channelXOR, per-snake startPixel)
+//     noisePos, per-region rotation / channelXOR, per-region startPixel)
 //     but leaves the eighth (lockSeed-keyed per-chunk mask draw)
 //     PRF-parameterised.
 //
@@ -37,7 +39,7 @@ package itb
 // against the 1/256 independent-stream floor, chi-square vs uniform
 // df=255, |Pearson(c1_body, c2_body)|, and Hamming bit-diff fraction
 // (target 0.5 under independence). All statistics operate on the
-// container body only — the deterministic dual-nonce header bytes are
+// container body only — the deterministic wire header bytes are
 // stripped so they do not swamp the barrier signal by contributing
 // perfectly correlated bytes under Scenario A. Two primitives cover
 // the PRF (BLAKE3-128) and below-spec (FNV-1a) ends of the spectrum.
@@ -160,8 +162,10 @@ func setBrokenTestInterlockNonceOnly(t *testing.T, interlockNonce []byte) {
 // Dual-nonce wire parser + statistics.
 // ---------------------------------------------------------------------------
 
-// wireLayoutDualNR describes the shipped dual-nonce wire slices. Both
-// nonces are surfaced independently so probes can consult either one.
+// wireLayoutDualNR describes the shipped wire slices. Both nonces are
+// surfaced independently so probes can consult either one; the
+// interlock nonce is not a wire field and is carried through from the
+// value the probe installed.
 type wireLayoutDualNR struct {
 	mainNonce      []byte
 	interlockNonce []byte
@@ -172,16 +176,18 @@ type wireLayoutDualNR struct {
 	body           []byte
 }
 
-// decodeWireDualNR parses the shipped dual-nonce wire header. Panics on
-// malformed input — probes hand it fresh Encrypt output only.
-func decodeWireDualNR(ct []byte) wireLayoutDualNR {
+// decodeWireDualNR parses the shipped wire header. The header carries
+// the main nonce, width and height; the interlock nonce travels split
+// across the interlocked lanes, so the probe passes in the value it
+// installed through the override. Panics on malformed input — probes
+// hand it fresh Encrypt output only.
+func decodeWireDualNR(ct []byte, il []byte) wireLayoutDualNR {
 	n := NonceSize
 	main := ct[:n]
-	il := ct[n : 2*n]
-	w := int(binary.BigEndian.Uint16(ct[2*n : 2*n+2]))
-	h := int(binary.BigEndian.Uint16(ct[2*n+2 : 2*n+4]))
+	w := int(binary.BigEndian.Uint16(ct[n : n+2]))
+	h := int(binary.BigEndian.Uint16(ct[n+2 : n+4]))
 	total := w * h
-	hdr := 2*n + 4
+	hdr := n + 4
 	body := ct[hdr : hdr+total*Channels]
 	return wireLayoutDualNR{
 		mainNonce:      main,
@@ -423,9 +429,9 @@ func runDualNRScenario(t *testing.T, scenario dualNRScenario, primName string, h
 		return
 	}
 
-	// Body-only aggregate — the deterministic dual-nonce header bytes
-	// are stripped so scenarios with a fixed nonce slot do not swamp
-	// the barrier signal with perfectly correlated header bytes.
+	// Body-only aggregate — the deterministic wire header bytes are
+	// stripped so scenarios with a fixed nonce slot do not swamp the
+	// barrier signal with perfectly correlated header bytes.
 	var (
 		bodyBytesTotal int
 		byteEqualHits  int
@@ -435,19 +441,23 @@ func runDualNRScenario(t *testing.T, scenario dualNRScenario, primName string, h
 	)
 
 	for i := 0; i < pairs; i++ {
-		// Install overrides for this pair.
+		// Install overrides for this pair. The installed values are
+		// retained because the interlock nonce is not readable back
+		// off the wire.
+		var main1, il1 []byte
 		switch scenario {
 		case scenarioA:
-			setBrokenTestNoncePair(t, fixedMain, fixedIl)
+			main1, il1 = fixedMain, fixedIl
 		case scenarioB:
 			freshIl1 := make([]byte, NonceSize)
 			freshRng.Read(freshIl1)
-			setBrokenTestNoncePair(t, fixedMain, freshIl1)
+			main1, il1 = fixedMain, freshIl1
 		case scenarioC:
 			freshMain1 := make([]byte, NonceSize)
 			freshRng.Read(freshMain1)
-			setBrokenTestNoncePair(t, freshMain1, fixedIl)
+			main1, il1 = freshMain1, fixedIl
 		}
+		setBrokenTestNoncePair(t, main1, il1)
 		p1, p2 := makePair(i)
 		c1, err := Encrypt3x128Cfg(nil, ns, ls, d1, d2, d3, s1, s2, s3, p1)
 		if err != nil {
@@ -455,29 +465,33 @@ func runDualNRScenario(t *testing.T, scenario dualNRScenario, primName string, h
 		}
 		// Re-install for the second encrypt — Scenarios B / C draw a
 		// fresh non-collided side so `c1` and `c2` differ on that slot.
+		var main2, il2 []byte
 		switch scenario {
 		case scenarioA:
-			setBrokenTestNoncePair(t, fixedMain, fixedIl)
+			main2, il2 = fixedMain, fixedIl
 		case scenarioB:
 			freshIl2 := make([]byte, NonceSize)
 			freshRng.Read(freshIl2)
-			setBrokenTestNoncePair(t, fixedMain, freshIl2)
+			main2, il2 = fixedMain, freshIl2
 		case scenarioC:
 			freshMain2 := make([]byte, NonceSize)
 			freshRng.Read(freshMain2)
-			setBrokenTestNoncePair(t, freshMain2, fixedIl)
+			main2, il2 = freshMain2, fixedIl
 		}
+		setBrokenTestNoncePair(t, main2, il2)
 		c2, err := Encrypt3x128Cfg(nil, ns, ls, d1, d2, d3, s1, s2, s3, p2)
 		if err != nil {
 			t.Fatalf("Encrypt3x128Cfg p2: %v", err)
 		}
-		layout := decodeWireDualNR(c1)
+		layout := decodeWireDualNR(c1, il1)
 		body1 := c1[layout.headerSize : layout.headerSize+layout.totalPixels*Channels]
 		body2 := c2[layout.headerSize : layout.headerSize+layout.totalPixels*Channels]
 
-		// Sanity: the collided-slot invariant actually holds on the wire.
+		// Sanity: the collided-slot invariant holds. The main nonce is
+		// read back off the wire; the interlock nonce is compared on
+		// the installed values, which is what the encrypt consumed.
 		mainCollide := string(c1[:NonceSize]) == string(c2[:NonceSize])
-		ilCollide := string(c1[NonceSize:2*NonceSize]) == string(c2[NonceSize:2*NonceSize])
+		ilCollide := string(il1) == string(il2)
 		switch scenario {
 		case scenarioA:
 			if !mainCollide || !ilCollide {
@@ -626,7 +640,7 @@ func TestRedTeamNonceReuseDualNonceHeadlineBLAKE3(t *testing.T) {
 // produces a container-body length mismatch between the two encrypts
 // under Scenario A (dual-slot nonce reuse) at each of the three
 // plaintext sizes appearing in the near-identical residue matrix
-// (512 B, 4 KB, 16 KB). Rationale: container size depends on per-snake
+// (512 B, 4 KB, 16 KB). Rationale: container size depends on per-region
 // COBS-encoded lengths (`containerSizeAuth3_128Cfg(..., cobsLens)` in
 // `auth128.go`); a 1-bit flip that transitions the flipped byte to /
 // from `0x00` shifts the COBS overhead by one byte and can shift the
@@ -710,8 +724,8 @@ func TestRedTeamNonceReuseDualNonceCOBSAlignmentProbe(t *testing.T) {
 					t.Fatalf("Encrypt3x128Cfg p2 bf=%d size=%d: %v", bf, plaintextLen, err)
 				}
 
-				l1 := decodeWireDualNR(c1)
-				l2 := decodeWireDualNR(c2)
+				l1 := decodeWireDualNR(c1, fixedIl)
+				l2 := decodeWireDualNR(c2, fixedIl)
 				body1Len := l1.totalPixels * Channels
 				body2Len := l2.totalPixels * Channels
 				diff := body2Len - body1Len

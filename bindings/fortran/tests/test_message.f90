@@ -4,7 +4,7 @@
 
 program test_message
   use, intrinsic :: iso_fortran_env, only: int64
-  use itb
+  use itb3
   use itb_test_helpers
   implicit none
 

@@ -420,8 +420,8 @@ func TestTripleStreamFreeStaleHandle(t *testing.T) {
 	if st := TripleStreamFree(0); st != StatusBadHandle {
 		t.Fatalf("Free(0): got %v, want StatusBadHandle", st)
 	}
-	// Foreign-value branch: pass a plain SeedHandle id here — its
-	// cgo.Handle resolves to *seedHandleRec, not *TripleStreamHandle,
+	// Foreign-value branch: pass a plain TripleHandle id here — its
+	// cgo.Handle resolves to *TripleHandle, not *TripleStreamHandle,
 	// so the type assertion fails and StatusBadHandle is returned.
 	blob := make([]byte, 1<<15)
 	sID, _, st := TripleInit(triple.ProfileStreamingAEADTripleMACV1, "", blob)

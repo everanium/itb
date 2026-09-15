@@ -27,10 +27,10 @@ declare(strict_types=1);
 
 require __DIR__ . '/../autoload.php';
 
-use Everanium\Itb\FFIBridge;
-use Everanium\Itb\Itb;
-use Everanium\Itb\Pipeline;
-use Everanium\Itb\StreamSession;
+use Everanium\Itb3\FFIBridge;
+use Everanium\Itb3\Itb;
+use Everanium\Itb3\Pipeline;
+use Everanium\Itb3\StreamSession;
 
 // 64 MiB plaintexts plus wire copies exceed the default PHP CLI
 // memory_limit; lift it for the bench process only.
@@ -109,8 +109,8 @@ function main(): void
     // Bench-scale allocation churn leaks Go scratch heap unboundedly
     // without a soft memory cap + aggressive GC; the return values
     // report the previous settings, not an error.
-    Itb::setMemoryLimit(512 << 20);
-    Itb::setGcPercent(20);
+    Itb::setMemoryLimit(4 << 30);
+    Itb::setGcPercent(100);
 
     printf("%-17s %-8s mb_per_sec\n", 'bench', 'size');
 

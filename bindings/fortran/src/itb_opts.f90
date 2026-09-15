@@ -2,7 +2,7 @@
 !
 ! The builder performs no validation: every key and value is rendered
 ! into a percent-encoded query string and passed through to Go
-! verbatim; libitb rejects unknown keys or bad values with a
+! verbatim; libitb3 rejects unknown keys or bad values with a
 ! diagnostic surfaced via itb_error_t. Primitive / MAC / cipher /
 ! profile names are opaque strings -- the binding never interprets
 ! them.

@@ -1,11 +1,11 @@
 # Status codes and the error type shared by every fallible call.
 #
-# The numeric values mirror the libitb C ABI
+# The numeric values mirror the libitb3 C ABI
 # (cmd/cshared/internal/capi/errors.go) and are stable across
 # releases.
 
 module ITB
-  # Integer status code returned by every libitb entry point.
+  # Integer status code returned by every libitb3 entry point.
   enum Status : Int32
     Ok               =  0
     BadHash          =  1
@@ -79,7 +79,7 @@ module ITB
     # Normalized status (an unrecognized raw code maps to
     # `Status::Internal`; `status_code` keeps the raw value).
     getter status : Status
-    # Raw integer status code as returned by libitb.
+    # Raw integer status code as returned by libitb3.
     getter status_code : Int32
     # The `ITB_LastError` diagnostic ("" when none was recorded).
     getter last_error : String
@@ -110,11 +110,11 @@ module ITB
     # NULL/0 probe form is part of the ITB_LastError contract — it
     # reports the required capacity without writing.
     need = LibC::SizeT.zero
-    rc = LibItb.last_error(Pointer(LibC::Char).null, LibC::SizeT.zero, pointerof(need))
+    rc = LibItb3.last_error(Pointer(LibC::Char).null, LibC::SizeT.zero, pointerof(need))
     return "" unless rc == Status::Ok.value || rc == Status::BufferTooSmall.value
     return "" if need <= 1
     buf = Bytes.new(need)
-    rc = LibItb.last_error(buf.to_unsafe.as(LibC::Char*), LibC::SizeT.new(buf.size), pointerof(need))
+    rc = LibItb3.last_error(buf.to_unsafe.as(LibC::Char*), LibC::SizeT.new(buf.size), pointerof(need))
     return "" unless rc == Status::Ok.value
     String.new(buf[0, need - 1])
   end

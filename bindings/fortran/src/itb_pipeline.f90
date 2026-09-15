@@ -63,9 +63,9 @@ contains
 
   ! Constructs a fresh Pipeline against the named profile. On a
   ! blob-buffer retry the Init re-runs and yields a fresh session (the
-  ! undersized attempt is closed by libitb before returning). The Init
+  ! undersized attempt is closed by libitb3 before returning). The Init
   ! blob is not retained binding-side; itb_pipeline_save reads the
-  ! current bytes from libitb.
+  ! current bytes from libitb3.
   subroutine itb_pipeline_init(pipe, profile, opts, err)
     type(itb_pipeline_t), intent(out) :: pipe
     character(*), intent(in)          :: profile
@@ -88,7 +88,7 @@ contains
   ! or itb_pipeline_rekey. The profile shape travels inside the blob
   ! -- no profile name, no opts. Omit perm_master / wrap_master to use
   ! the blob-embedded masters; pass both to override them (the pair
-  ! is validated by libitb). A blob whose record names a primitive
+  ! is validated by libitb3). A blob whose record names a primitive
   ! absent from the local build returns
   ! ITB_STATUS_RECIPE_PRIMITIVE_UNKNOWN; a record failing the profile
   ! field rules ITB_STATUS_BLOB_MALFORMED_RECIPE.
@@ -115,7 +115,7 @@ contains
   end subroutine
 
   ! itb_pipeline_load for a blob stored at path; the file is read
-  ! inside libitb (a missing or unreadable file is
+  ! inside libitb3 (a missing or unreadable file is
   ! ITB_STATUS_BAD_INPUT with the diagnostic in err%message).
   subroutine itb_pipeline_load_f(pipe, path, err, perm_master, wrap_master)
     type(itb_pipeline_t), intent(out)                        :: pipe
@@ -152,7 +152,7 @@ contains
     call buffer_call(BUF_SAVE, blob, err, handle=h)
   end subroutine
 
-  ! Writes the current blob to path inside libitb (mode 0600; the
+  ! Writes the current blob to path inside libitb3 (mode 0600; the
   ! containing directory must exist).
   subroutine itb_pipeline_save_f(pipe, path, err)
     type(itb_pipeline_t), intent(in) :: pipe
@@ -165,7 +165,7 @@ contains
   end subroutine
 
   ! Sets the worker cap for every subsequent cipher call. n is clamped
-  ! by libitb (<= 0 selects auto, > 256 becomes 256); only the handle
+  ! by libitb3 (<= 0 selects auto, > 256 becomes 256); only the handle
   ! state is reported. The cap is per-machine and never travels in
   ! the blob.
   subroutine itb_pipeline_max_workers(pipe, n, err)
@@ -209,7 +209,7 @@ contains
     call itb_error_set(err, c_itb_triple_close(pipe%handle))
   end subroutine
 
-  ! Releases the Pipeline handle (libitb closes first, zeroing key
+  ! Releases the Pipeline handle (libitb3 closes first, zeroing key
   ! material). Safe to call on an already-freed or never-initialised
   ! record; the status of the underlying Free is deliberately
   ! discarded on this destructor path.
@@ -323,13 +323,11 @@ contains
 
   ! ---- profile records -------------------------------------------
   !
-  ! A profile record is the JSON object libitb accepts in
+  ! A profile record is the JSON object libitb3 accepts in
   ! itb_register, returns from itb_lookup / itb_inspect, and embeds in
-  ! every blob: keys name / mode / width / hash / hashes / keybits /
-  ! mac / tagstub / chunk / wrapper / outer / parallax / palette /
-  ! segment. Optional keys are omitted when empty / zero. The binding
-  ! treats the record as an opaque string; every field rule is
-  ! enforced by libitb.
+  ! every blob. Optional keys are omitted when empty / zero. The
+  ! binding treats the record as an opaque string; every field rule is
+  ! enforced by libitb3.
 
   ! Decodes the profile record embedded in blob without constructing
   ! a Pipeline. No registry read, no primitive probe.
@@ -392,7 +390,7 @@ contains
     call bytes_to_string(raw, json)
   end subroutine
 
-  ! Byte-for-byte copy of a libitb JSON output into a Fortran string.
+  ! Byte-for-byte copy of a libitb3 JSON output into a Fortran string.
   subroutine bytes_to_string(raw, s)
     integer(c_int8_t), intent(in)          :: raw(:)
     character(:), allocatable, intent(out) :: s
@@ -405,7 +403,7 @@ contains
   end subroutine
 
   ! The masters pair crosses as (perm, wrap, count): both absent
-  ! yields 0, otherwise 2 -- libitb validates the pair.
+  ! yields 0, otherwise 2 -- libitb3 validates the pair.
   subroutine masters_args(perm_master, wrap_master, pm_p, pm_len, wm_p, wm_len, masters)
     integer(c_int8_t), intent(in), target, contiguous, optional :: perm_master(:)
     integer(c_int8_t), intent(in), target, contiguous, optional :: wrap_master(:)
@@ -432,7 +430,7 @@ contains
   ! Single retry-once dispatch site for every variable-size output
   ! buffer (init / save / rekey / inspect / lookup / profiles):
   ! pre-allocate BLOB_CAP, and on ITB_STATUS_BUFFER_TOO_SMALL retry
-  ! once with the exact size libitb reported.
+  ! once with the exact size libitb3 reported.
   subroutine buffer_call(op, dst, err, handle, p1, n1, p2, n2)
     integer, intent(in)                            :: op
     integer(c_int8_t), allocatable, intent(out)    :: dst(:)
@@ -538,7 +536,7 @@ contains
   ! Reusable-buffer body shared by the four *_into cipher entries:
   ! size dst once to max(131072, n + n/4 + 131072), keep it across
   ! calls, retry once on ITB_STATUS_BUFFER_TOO_SMALL with the exact
-  ! size the FFI reported. libitb writes straight into dst; the
+  ! size the FFI reported. libitb3 writes straight into dst; the
   ! caller reads dst(1:n_out).
   subroutine cipher_into(pipe, op, src, dst, n_out, err)
     type(itb_pipeline_t), intent(in)                      :: pipe

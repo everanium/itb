@@ -18,10 +18,10 @@ with Ada.Exceptions;
 with Ada.Streams.Stream_IO;
 with Ada.Text_IO;
 
-with Itb;
-with Itb.Opts;
-with Itb.Pipeline;
-with Itb.Runtime;
+with Itb3;
+with Itb3.Opts;
+with Itb3.Pipeline;
+with Itb3.Runtime;
 
 procedure Eitb is
 
@@ -30,7 +30,7 @@ procedure Eitb is
 
    use type Ada.Streams.Stream_Element_Offset;
 
-   Binding_Version : constant String := "0.4.1";
+   Binding_Version : constant String := "0.5.1";
 
    Hex_Digits : constant String := "0123456789abcdef";
 
@@ -50,11 +50,11 @@ procedure Eitb is
    --  canonical bench configuration).
    procedure Apply_Runtime_Caps is
    begin
-      Itb.Runtime.Set_Memory_Limit (536_870_912);  --  512 MiB soft cap
-      Itb.Runtime.Set_GC_Percent (20);
+      Itb3.Runtime.Set_Memory_Limit (4_294_967_296);  --  4 GiB soft cap
+      Itb3.Runtime.Set_GC_Percent (100);
    end Apply_Runtime_Caps;
 
-   function Read_File (Name : String) return Itb.Byte_Array_Access is
+   function Read_File (Name : String) return Itb3.Byte_Array_Access is
       use Ada.Streams.Stream_IO;
       F : Ada.Streams.Stream_IO.File_Type;
    begin
@@ -62,8 +62,8 @@ procedure Eitb is
       declare
          N      : constant Ada.Streams.Stream_Element_Offset :=
            Ada.Streams.Stream_Element_Offset (Size (F));
-         Result : constant Itb.Byte_Array_Access :=
-           new Itb.Byte_Array (1 .. N);
+         Result : constant Itb3.Byte_Array_Access :=
+           new Itb3.Byte_Array (1 .. N);
          Last   : Ada.Streams.Stream_Element_Offset := 0;
       begin
          if N > 0 then
@@ -105,7 +105,7 @@ procedure Eitb is
          null;
    end Ensure_Parent_Dir;
 
-   procedure Write_File (Name : String; Content : Itb.Byte_Array) is
+   procedure Write_File (Name : String; Content : Itb3.Byte_Array) is
       use Ada.Streams.Stream_IO;
       F : Ada.Streams.Stream_IO.File_Type;
    begin
@@ -115,7 +115,7 @@ procedure Eitb is
       Close (F);
    end Write_File;
 
-   function Hex_Encode (B : Itb.Byte_Array) return String is
+   function Hex_Encode (B : Itb3.Byte_Array) return String is
       Result : String (1 .. Natural (B'Length) * 2);
       J      : Natural := 0;
    begin
@@ -141,14 +141,14 @@ procedure Eitb is
       end case;
    end Nibble;
 
-   function Hex_Decode (S : String) return Itb.Byte_Array_Access is
+   function Hex_Decode (S : String) return Itb3.Byte_Array_Access is
    begin
       if S'Length mod 2 /= 0 then
          raise Program_Error with "blob hex has odd length";
       end if;
       declare
-         Result : constant Itb.Byte_Array_Access :=
-           new Itb.Byte_Array
+         Result : constant Itb3.Byte_Array_Access :=
+           new Itb3.Byte_Array
              (1 .. Ada.Streams.Stream_Element_Offset (S'Length / 2));
          J      : Natural := S'First;
       begin
@@ -168,7 +168,7 @@ procedure Eitb is
 
    procedure Cmd_Version is
    begin
-      Put_Line ("libitb " & Itb.Runtime.Version);
+      Put_Line ("libitb3 " & Itb3.Runtime.Version);
       Put_Line ("itb-ada " & Binding_Version);
    end Cmd_Version;
 
@@ -177,12 +177,12 @@ procedure Eitb is
    ------------------
 
    --  Prints the registered profile catalogue one name per line in
-   --  the sorted order Itb.Pipeline.Profiles returns. The catalogue
+   --  the sorted order Itb3.Pipeline.Profiles returns. The catalogue
    --  arrives as a JSON array of strings; profile names are
    --  restricted to [a-z0-9-], so each quoted run is one complete
    --  name and no escape handling is needed.
    procedure Cmd_Profiles is
-      JSON  : constant String := Itb.Pipeline.Profiles;
+      JSON  : constant String := Itb3.Pipeline.Profiles;
       Start : Natural := 0;
    begin
       for I in JSON'Range loop
@@ -202,18 +202,18 @@ procedure Eitb is
    -----------------
 
    procedure Cmd_Encrypt (Profile, In_File, Out_File : String) is
-      O     : Itb.Opts.Opts;
-      Pipe  : Itb.Pipeline.Pipeline;
-      Plain : Itb.Byte_Array_Access := Read_File (In_File);
+      O     : Itb3.Opts.Opts;
+      Pipe  : Itb3.Pipeline.Pipeline;
+      Plain : Itb3.Byte_Array_Access := Read_File (In_File);
    begin
       Apply_Runtime_Caps;
       Pipe.Init (Profile, O);
       declare
-         Wire : Itb.Byte_Array_Access :=
+         Wire : Itb3.Byte_Array_Access :=
            (if Is_Streaming_Profile (Profile) then
-               new Itb.Byte_Array'(Pipe.Encrypt_Stream_One_Shot (Plain.all))
+               new Itb3.Byte_Array'(Pipe.Encrypt_Stream_One_Shot (Plain.all))
             else
-               new Itb.Byte_Array'(Pipe.Encrypt_Message (Plain.all)));
+               new Itb3.Byte_Array'(Pipe.Encrypt_Message (Plain.all)));
       begin
          Write_File (Out_File, Wire.all);
          Put_Line (Standard_Error, Hex_Encode (Pipe.Save));
@@ -223,9 +223,9 @@ procedure Eitb is
             & " ->"
             & Ada.Streams.Stream_Element_Offset'Image (Wire.all'Length)
             & " bytes)");
-         Itb.Free (Wire);
+         Itb3.Free (Wire);
       end;
-      Itb.Free (Plain);
+      Itb3.Free (Plain);
    end Cmd_Encrypt;
 
    -----------------
@@ -233,20 +233,20 @@ procedure Eitb is
    -----------------
 
    procedure Cmd_Decrypt (Profile, Blob_Hex, In_File, Out_File : String) is
-      Pipe : Itb.Pipeline.Pipeline;
-      Blob : Itb.Byte_Array_Access := Hex_Decode (Blob_Hex);
-      Wire : Itb.Byte_Array_Access := Read_File (In_File);
+      Pipe : Itb3.Pipeline.Pipeline;
+      Blob : Itb3.Byte_Array_Access := Hex_Decode (Blob_Hex);
+      Wire : Itb3.Byte_Array_Access := Read_File (In_File);
    begin
       Apply_Runtime_Caps;
       --  The profile shape travels inside the blob; the profile
       --  argument only selects the Single Message or streaming pair.
       Pipe.Load (Blob.all);
       declare
-         Plain : Itb.Byte_Array_Access :=
+         Plain : Itb3.Byte_Array_Access :=
            (if Is_Streaming_Profile (Profile) then
-               new Itb.Byte_Array'(Pipe.Decrypt_Stream_One_Shot (Wire.all))
+               new Itb3.Byte_Array'(Pipe.Decrypt_Stream_One_Shot (Wire.all))
             else
-               new Itb.Byte_Array'(Pipe.Decrypt_Message (Wire.all)));
+               new Itb3.Byte_Array'(Pipe.Decrypt_Message (Wire.all)));
       begin
          Write_File (Out_File, Plain.all);
          Put_Line
@@ -255,10 +255,10 @@ procedure Eitb is
             & " ->"
             & Ada.Streams.Stream_Element_Offset'Image (Plain.all'Length)
             & " bytes)");
-         Itb.Free (Plain);
+         Itb3.Free (Plain);
       end;
-      Itb.Free (Blob);
-      Itb.Free (Wire);
+      Itb3.Free (Blob);
+      Itb3.Free (Wire);
    end Cmd_Decrypt;
 
 begin

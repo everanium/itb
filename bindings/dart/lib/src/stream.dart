@@ -4,7 +4,7 @@
 // through `write` and yields wire through `read` / `drainAll`;
 // [StreamDecryptor] is the mirror (wire in, plaintext out). All
 // chunking, MAC, envelope, and wire-format decisions stay inside
-// libitb. The session keeps a reference to its parent Pipeline so the
+// libitb3. The session keeps a reference to its parent Pipeline so the
 // Pipeline handle cannot be finalized while a session is live.
 
 import 'dart:ffi';

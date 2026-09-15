@@ -41,10 +41,10 @@ type Config struct {
 	// concatenate-then-MAC path.
 	MACIncremental MACIncrementalFunc
 
-	// TagStubSize governs the CSPRNG dummy stub size the No MAC
-	// envelope reserves in its third-snake region so the on-wire
+	// TagStubSize governs the DRBG dummy stub size the No MAC
+	// envelope reserves in its third region so the on-wire
 	// envelope shape matches the paired AEAD envelope (whose third
-	// snake carries payload || tag || flag). Zero defaults to 32,
+	// region carries payload || tag || flag). Zero defaults to 32,
 	// which matches every shipped MAC's tag length. Low-Level No MAC
 	// callers pairing with a custom-tag-size AEAD peer set this to
 	// the peer's MAC tag length; a MAC-carrying triple.Pipeline
@@ -63,9 +63,9 @@ type Config struct {
 // any realistic deployment volume without the caller having to override.
 const DefaultNonceBits = NonceSize * 8
 
-// DefaultBarrierFill is the CSPRNG barrier fill margin used when
+// DefaultBarrierFill is the DRBG barrier fill margin used when
 // [Config.BarrierFill] is left at zero. The default of 1 pixel is the
-// minimum sufficient margin for the "guaranteed CSPRNG fill" invariant
+// minimum sufficient margin for the "guaranteed DRBG fill" invariant
 // (Proof 10); larger values increase the barrier at wire-size cost.
 const DefaultBarrierFill = 1
 
@@ -110,7 +110,8 @@ func generateNonceCfg(cfg *Config) ([]byte, error) {
 
 // generateInterlockNonceCfg returns a fresh cryptographic interlock
 // nonce of the configured size — the second, independently drawn nonce
-// of the dual-nonce wire header. Width is symmetric with the main
+// the wire carries, split across the three interlocked lanes rather
+// than placed in the header. Width is symmetric with the main
 // nonce (resolved via [currentNonceSizeCfg]); the draw is a separate
 // crypto/rand call so the two nonces share no derivation state. The
 // interlock nonce keys the Interlocked Barrier overlay's per-chunk
@@ -130,7 +131,7 @@ func generateInterlockNonceCfg(cfg *Config) ([]byte, error) {
 	return nonce, nil
 }
 
-// generateNoncePairCfg draws the dual-nonce header pair — main nonce
+// generateNoncePairCfg draws the per-message nonce pair — main nonce
 // and interlock nonce — guaranteed byte-distinct at the draw site.
 // Distinctness is architecturally already provided by the separate
 // domain tags on the downstream derivations (0x02 startPixel, 0x04

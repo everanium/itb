@@ -3,8 +3,9 @@
 package itb
 
 // Related-nonce differential re-verification under the shipped dual-nonce
-// wire (`[main_nonce (N)][interlock_nonce (N)][W][H][container]`, header
-// size `2*N+4`). Companion to `redteam_related_nonce_test.go`, which
+// wire (`[main_nonce (N)][W][H][container]`, header size `N+4`, with the
+// interlock nonce split across the three interlocked lanes inside the
+// container). Companion to `redteam_related_nonce_test.go`, which
 // applies a 1-bit Δ that perturbs BOTH nonce slots simultaneously (its
 // `setBrokenTestNonce` helper installs the same byte value into both
 // overrides). The dual-nonce architecture surfaces two independent
@@ -17,8 +18,8 @@ package itb
 //
 //   Scenario B — main-only Δ. Applies the Δ to `main_nonce` only;
 //     `interlock_nonce` matches across the pair. Isolates the seven
-//     main-nonce-keyed derivation slots (per-pixel `noisePos`, per-snake
-//     `rotation` + `channelXOR`, per-snake `startPixel`) — the interlock
+//     main-nonce-keyed derivation slots (per-pixel `noisePos`, per-region
+//     `rotation` + `channelXOR`, per-region `startPixel`) — the interlock
 //     `lockSeed` slot receives the same nonce byte value on both sides
 //     of the pair.
 //
@@ -183,9 +184,11 @@ func runRelatedNonceDualCell(t *testing.T, scenario rnDualScenario, primName str
 		t.Fatalf("variant Encrypt3x128Cfg %s/%s/%s/%s: %v", scenario, primName, dp.name, ptKind, err)
 	}
 
-	// Sanity: the collision invariant on the un-Δ'd slot holds on the wire.
-	layout0 := decodeWireDualNR(ct0)
-	layout1 := decodeWireDualNR(ct1)
+	// Sanity: the collision invariant on the un-Δ'd slot holds. The
+	// main nonce comes off the wire; the interlock nonce is the value
+	// the probe installed, which is what the encrypt consumed.
+	layout0 := decodeWireDualNR(ct0, baseIL)
+	layout1 := decodeWireDualNR(ct1, variantIL)
 	mainCollide := string(layout0.mainNonce) == string(layout1.mainNonce)
 	ilCollide := string(layout0.interlockNonce) == string(layout1.interlockNonce)
 	switch scenario {
@@ -747,8 +750,8 @@ func TestRedTeamRelatedNonceDualNonceScenarioCTwoSymbolRecovery(t *testing.T) {
 			t.Fatalf("variant encrypt trial %d: %v", trial, err)
 		}
 
-		body0 := decodeWireDualNR(ct0).body
-		body1 := decodeWireDualNR(ct1).body
+		body0 := decodeWireDualNR(ct0, baseIL).body
+		body1 := decodeWireDualNR(ct1, variantIL).body
 
 		for i := 0; i < len(pt); i++ {
 			actual := pt[i]

@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Everanium\Itb\Tests;
+namespace Everanium\Itb3\Tests;
 
-use Everanium\Itb\Itb;
-use Everanium\Itb\ItbException;
-use Everanium\Itb\Status;
+use Everanium\Itb3\Itb;
+use Everanium\Itb3\ItbException;
+use Everanium\Itb3\Status;
 use PHPUnit\Framework\TestCase;
 
 /**

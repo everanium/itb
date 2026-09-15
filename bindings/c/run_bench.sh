@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # run_bench.sh -- micro-benchmark runner for the C binding. Builds
-# libitb.so + the C library via build.sh, then compiles and runs the
+# libitb3.so + the C library via build.sh, then compiles and runs the
 # benches/bench_*.c binaries (make bench): EncryptMessage,
 # encrypt_stream_pump, and encrypt_stream_one_shot throughput at
 # 1 MiB / 16 MiB / 64 MiB.
@@ -19,8 +19,8 @@ cd "$(dirname "$0")"
 # Go-runtime pacing defaults for bench-scale allocation churn; the
 # `:-` form respects any override set by the caller. The bench mains
 # apply the same caps programmatically.
-export ITB_GOMEMLIMIT="${ITB_GOMEMLIMIT:-512MiB}"
-export ITB_GOGC="${ITB_GOGC:-20}"
+export ITB_GOMEMLIMIT="${ITB_GOMEMLIMIT:-4GiB}"
+export ITB_GOGC="${ITB_GOGC:-100}"
 
 # Bench-shape defaults — match the root Go BENCH3.md pin so the
 # throughput numbers are directly comparable to the shipped Go

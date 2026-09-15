@@ -86,6 +86,9 @@ defmodule ITB.SmokeTest do
   end
 
   test "inspect / lookup / profiles" do
+    # inspect carries the registry recipe plus the blob-only
+    # nonce_bits / barrier_fill inspection fields; lookup returns just
+    # the recipe.
     {:ok, pipe} = ITB.init("singlemsg-triple-mac-v1")
     {:ok, blob} = ITB.save(pipe)
     :ok = ITB.free(pipe)
@@ -93,7 +96,12 @@ defmodule ITB.SmokeTest do
     assert record["name"] == "singlemsg-triple-mac-v1"
     assert record["mode"] == "singlemsg-mac"
     assert record["keybits"] > 0
-    assert {:ok, record} == ITB.lookup("singlemsg-triple-mac-v1")
+    assert Map.has_key?(record, "nonce_bits")
+    assert Map.has_key?(record, "barrier_fill")
+    {:ok, looked} = ITB.lookup("singlemsg-triple-mac-v1")
+    refute Map.has_key?(looked, "nonce_bits")
+    refute Map.has_key?(looked, "barrier_fill")
+    assert Map.drop(record, ["nonce_bits", "barrier_fill"]) == looked
     assert {:error, {:bad_input, _}} = ITB.inspect("not a blob")
     assert {:error, {:unknown_profile, _}} = ITB.lookup("no-such-profile")
     names = ITB.profiles()

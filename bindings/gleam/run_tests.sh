@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # run_tests.sh -- one-step test runner for the Gleam binding.
-# Builds libitb.so + the C binding archive + the Erlang backend +
+# Builds libitb3.so + the C binding archive + the Erlang backend +
 # the Gleam project via build.sh, then invokes `gleam test`.
 #
 # Usage:

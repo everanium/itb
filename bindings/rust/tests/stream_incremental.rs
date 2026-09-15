@@ -1,7 +1,7 @@
 //! Explicit write / end / read round trip with pathological batch
 //! sizes (17-byte feed, 23-byte drain) across multiple chunks.
 
-use itb::{OptsBuilder, Pipeline};
+use itb3::{OptsBuilder, Pipeline};
 
 #[test]
 fn incremental_tiny_batches() {

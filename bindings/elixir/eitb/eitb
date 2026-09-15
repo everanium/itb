@@ -20,10 +20,10 @@
 # NIF shim resolves its .so through the application priv dir, which
 # an escript archive cannot provide. The compiled binding
 # (./build.sh in bindings/elixir) is resolved relative to this
-# script's location: ../_build/dev/lib/{itb,itb_elixir}/ebin.
+# script's location: ../_build/dev/lib/{libitb3,libitb3_elixir}/ebin.
 
 defmodule EITB do
-  @eitb_elixir_version "0.4.1"
+  @eitb_elixir_version "0.5.1"
 
   def main(args) do
     :ok = add_binding_paths()
@@ -79,7 +79,7 @@ defmodule EITB do
 
   defp add_binding_paths do
     build = Path.expand("../_build/dev/lib", __DIR__)
-    ebins = [Path.join(build, "itb/ebin"), Path.join(build, "itb_elixir/ebin")]
+    ebins = [Path.join(build, "libitb3/ebin"), Path.join(build, "libitb3_elixir/ebin")]
 
     case Enum.filter(ebins, &(not File.dir?(&1))) do
       [] ->
@@ -107,15 +107,15 @@ defmodule EITB do
   # The setter return values report the previous settings, not an
   # error.
   defp cap_go_runtime do
-    _ = ITB.set_memory_limit(512 * 1024 * 1024)
-    _ = ITB.set_gc_percent(20)
+    _ = ITB.set_memory_limit(4 * 1024 * 1024 * 1024)
+    _ = ITB.set_gc_percent(100)
     :ok
   end
 
   defp cmd_version do
     case ITB.version() do
       {:ok, version} ->
-        IO.puts("libitb #{version}")
+        IO.puts("libitb3 #{version}")
         IO.puts("itb-elixir #{@eitb_elixir_version}")
         0
 

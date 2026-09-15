@@ -1,14 +1,14 @@
-# C ABI declarations for the libitb shared library (cmd/cshared).
+# C ABI declarations for the libitb3 shared library (cmd/cshared).
 #
-# Every signature mirrors a prototype in dist/<os>-<arch>/libitb.h;
+# Every signature mirrors a prototype in dist/<os>-<arch>/libitb3.h;
 # C `size_t` / `uintptr_t` both map to `LibC::SizeT` (identical width
 # on the supported 64-bit targets). Buffer parameters cross as
 # (pointer, length) pairs in the header's argument order.
 #
 # Library resolution happens at link time through the backtick form of
-# the ldflags annotation: src/itb/libitb_flags.sh implements the
-# search order (`ITB_LIBITB_PATH` env -> walk-up to
-# `dist/<os>-<arch>/libitb.<ext>` -> OS default loader path) and bakes
+# the ldflags annotation: src/itb/libitb3_flags.sh implements the
+# search order (`ITB_LIBITB3_PATH` env -> walk-up to
+# `dist/<os>-<arch>/libitb3.<ext>` -> OS default loader path) and bakes
 # the resolved directory into the binary as an RPATH, so the produced
 # executables run without LD_LIBRARY_PATH.
 
@@ -18,8 +18,8 @@ module ITB
   alias Handle = LibC::SizeT
 end
 
-@[Link(ldflags: "`#{__DIR__}/libitb_flags.sh`")]
-lib LibItb
+@[Link(ldflags: "`#{__DIR__}/libitb3_flags.sh`")]
+lib LibItb3
   # ── diagnostics ──────────────────────────────────────────────────
   fun version = ITB_Version(out : LibC::Char*, cap : LibC::SizeT, out_len : LibC::SizeT*) : LibC::Int
   fun last_error = ITB_LastError(out : LibC::Char*, cap : LibC::SizeT, out_len : LibC::SizeT*) : LibC::Int

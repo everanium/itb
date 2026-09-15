@@ -2,21 +2,21 @@
 
 declare(strict_types=1);
 
-namespace Everanium\Itb;
+namespace Everanium\Itb3;
 
 /**
- * Static facade over the libitb Triple Pipeline surface.
+ * Static facade over the libitb3 Triple Pipeline surface.
  *
  * Every hash-name / MAC-name / cipher-name / profile-name is an
  * opaque string passed through to Go for validation; the binding
  * carries no ITB construction logic of its own. Opts are supplied as
  * a PHP array of key => value pairs (booleans render as
  * "true" / "false", everything else via string cast) and cross the
- * FFI boundary as the URL-query-encoded string libitb parses.
+ * FFI boundary as the URL-query-encoded string libitb3 parses.
  *
  * Example:
  *
- *     use Everanium\Itb\Itb;
+ *     use Everanium\Itb3\Itb;
  *
  *     $sender = Itb::create('singlemsg-triple-mac-v1');
  *     $receiver = Itb::load($sender->save());
@@ -26,7 +26,7 @@ namespace Everanium\Itb;
 final class Itb
 {
     /** Binding version. */
-    public const VERSION = '0.4.1';
+    public const VERSION = '0.5.1';
 
     /** Floor capacity for blob output buffers (create / save / rekey). */
     public const BLOB_CAP = 65536;
@@ -38,7 +38,7 @@ final class Itb
      * Constructs a fresh Pipeline against the named profile. The
      * session blob is available through Pipeline::save(). On a
      * blob-buffer retry the Init re-runs and yields a fresh session
-     * (the undersized attempt is closed by libitb before returning).
+     * (the undersized attempt is closed by libitb3 before returning).
      *
      * @param array<string, bool|int|float|string> $opts
      */
@@ -112,10 +112,8 @@ final class Itb
     /**
      * Decodes the blob's embedded profile record without opening a
      * Pipeline and returns it as an associative array decoded from
-     * the JSON libitb emits (keys name, mode, width, hash, hashes,
-     * keybits, mac, tagstub, chunk, wrapper, outer, parallax,
-     * palette, segment; absent keys are optional fields at their
-     * zero value). No registry read, no primitive probe.
+     * the JSON libitb3 emits; absent keys are optional fields at their
+     * zero value. No registry read, no primitive probe.
      *
      * @return array<string, mixed>
      */
@@ -134,7 +132,7 @@ final class Itb
      * already-encoded JSON string; a "name" key inside it, if
      * present, must be empty or equal to $name. Validation (name
      * pattern, reserved prefixes, field rules) is performed by
-     * libitb; a duplicate name fails with Status::PROFILE_EXISTS.
+     * libitb3; a duplicate name fails with Status::PROFILE_EXISTS.
      *
      * @param array<string, mixed>|string $profile
      */
@@ -172,7 +170,7 @@ final class Itb
         });
     }
 
-    /** The libitb library version string. */
+    /** The libitb3 library version string. */
     public static function version(): string
     {
         $ffi = FFIBridge::get();
@@ -210,7 +208,7 @@ final class Itb
 
     /**
      * The Go-side diagnostic recorded by the most recent failing
-     * libitb call (process-global last-write-wins; '' when none).
+     * libitb3 call (process-global last-write-wins; '' when none).
      * The exceptions already carry this detail — direct use is for
      * ad-hoc debugging only.
      */
@@ -220,8 +218,8 @@ final class Itb
     }
 
     /**
-     * Renders an opts array as the URL-query string libitb parses.
-     * No validation happens binding-side; libitb rejects unknown
+     * Renders an opts array as the URL-query string libitb3 parses.
+     * No validation happens binding-side; libitb3 rejects unknown
      * keys or bad values with a diagnostic surfaced via
      * ItbException. Commas stay literal so palette / constellation
      * lists read naturally in diagnostics.
@@ -262,7 +260,7 @@ final class Itb
     /**
      * Shared body for the JSON-returning catalogue entries:
      * retry-once buffer, then a standard-library JSON decode of the
-     * bytes libitb wrote.
+     * bytes libitb3 wrote.
      *
      * @param callable(\FFI\CData, int, \FFI\CData): int $call
      * @return array<mixed>

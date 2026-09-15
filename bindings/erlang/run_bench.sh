@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # run_bench.sh -- micro-benchmark runner for the Erlang binding.
-# Builds libitb.so + the C binding archive + the OTP application via
+# Builds libitb3.so + the C binding archive + the OTP application via
 # build.sh, compiles the bench modules, then runs bench_message,
 # bench_stream and bench_stream_one_shot: encrypt_message, stream-pump
 # and whole-buffer stream throughput at 1 MiB / 16 MiB / 64 MiB.
@@ -22,8 +22,8 @@ cd "$(dirname "$0")"
 # Go-runtime pacing defaults for bench-scale allocation churn; the
 # `:-` form respects any override set by the caller. The bench mains
 # apply the same caps programmatically.
-export ITB_GOMEMLIMIT="${ITB_GOMEMLIMIT:-512MiB}"
-export ITB_GOGC="${ITB_GOGC:-20}"
+export ITB_GOMEMLIMIT="${ITB_GOMEMLIMIT:-4GiB}"
+export ITB_GOGC="${ITB_GOGC:-100}"
 
 # Bench-shape defaults — match the root Go BENCH3.md pin so the
 # throughput numbers are directly comparable to the shipped Go
@@ -36,7 +36,7 @@ export ITB_WITH_WRAPPER="${ITB_WITH_WRAPPER:-false}"
 export ITB_INNER_HASH="${ITB_INNER_HASH:-areion512}"
 export ITB_BENCH_MIN_SEC="${ITB_BENCH_MIN_SEC:-5}"
 
-EBIN="_build/default/lib/itb/ebin"
+EBIN="_build/default/lib/libitb3/ebin"
 
 echo "==> compiling bench modules"
 erlc -o bench bench/bench_message.erl bench/bench_stream.erl \

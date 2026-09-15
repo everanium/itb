@@ -63,7 +63,7 @@ pub fn check(rc: c_uint) Error!void {
     };
 }
 
-/// The Go-side diagnostic recorded by the most recent failing libitb
+/// The Go-side diagnostic recorded by the most recent failing libitb3
 /// call ("" when no diagnostic). The underlying store is
 /// process-global last-write-wins — fetch it immediately after the
 /// failing call; under concurrent use the text may belong to a

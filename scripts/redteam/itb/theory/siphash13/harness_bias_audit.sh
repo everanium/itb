@@ -10,9 +10,12 @@
 # Corpus generation uses a dedicated Go test entry point —
 # TestRedTeamHarnessGenerateSiphash13NonceReuse in
 # harness_shelf_test.go — which delegates to the same runNonceReuse128
-# body as the sibling harness drivers, so encryption, cell.meta.json
-# schema, config.truth.json, and summary.json are identical across all
-# four shelf primitives. The chainhashes/siphash13.py Python mirror is
+# body as the sibling harness drivers, so encryption and the
+# cell.meta.json schema are identical across all four shelf primitives.
+# The driver writes the ciphertext and cell.meta.json only — no
+# config.truth.json and no summary.json — so the probe's axis-2 columns
+# stay null on any corpus from this tree; it warns on stderr when it
+# skips them. The chainhashes/siphash13.py Python mirror is
 # parity-validated against the Go reference by
 # scripts/redteam/itb/theory/_common/chainhashes/_parity_test.py.
 #
