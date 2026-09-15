@@ -1,4 +1,4 @@
-# Related-seed differential re-verification
+## ITB Related-Seed Differential Verification
 
 Empirical re-verification of the archived Phase 2e finding
 (CRC128 42.5M, FNV-1a 56.7M axis-hit ciphertext-XOR χ² on Single

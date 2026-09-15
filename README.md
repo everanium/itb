@@ -12,7 +12,7 @@
   <a href="https://github.com/everanium/itb"><img src="https://img.shields.io/badge/coverage-88%25-green" alt="Coverage"></a>
 </p>
 
-# ITB Symmetric Cipher Construction with Ambiguity-Based Security
+## ITB Symmetric Cipher Construction with Ambiguity-Based Security
 
 > **Security notice.** ITB is an experimental symmetric cipher
 > construction without prior peer review, independent cryptanalysis, or
@@ -747,19 +747,6 @@ C-ABI callers install a persistent profile via `ITB_Triple_Register(name, profil
 ## Advanced — Low-Level `*Cfg` surface
 
 The `triple/` facade is the recommended entry point. Callers who need the raw 8-seed handoff — for custom key management, unusual PRF combinations, or in-process integration with existing seed material — consume the Low-Level `*Cfg` free functions directly. Every Low-Level entry takes an explicit `*itb.Config` (`nil` accepts all compile-in defaults); there is no process-wide setter surface.
-
-> **Low-Level seed construction.** `hashes.NewSeed{128,256,512}(name, keyBits, key...)` builds a seed of a registry primitive with every fast-path hook the primitive offers and returns the fixed key its arms were built with (CSPRNG-generated when omitted; `nil` for primitives keyed by their seed components alone):
->
-> ```go
-> // Low-Level construction — arms and every fast-path hook in one call.
-> ns, key, err := hashes.NewSeed128(hashes.CipherAESITB128, 1024)
-> if err != nil { panic(err) }
-> _ = key // save beside ns.Components if the seed needs to be reconstructed across processes
-> ```
->
-> Every seed built through `itb.NewSeed{128,256,512}` / `itb.SeedFromComponents{128,256,512}` runs the Interlocked Barrier cascade fill (see [HARNESS.md § 3.10.3](HARNESS.md#3103-interlocked-barrier-fill-consumption-chain)) — the fill is the wire for every primitive at every width and does not depend on any hook attached to the seed. The hooks (the fused ChainHash cascade evaluators and the batch-16 / batch-32 fill kernels a registry entry's factories build) are performance paths: `hashes.NewSeed<W>` and `hashes.SeedFromComponents<W>` — the constructors the `triple/` facade and the C ABI run — attach them, and a seed built on the arms alone through `itb.NewSeed<W>` or `itb.SeedFromComponents<W>` (a custom `HashFunc<W>` outside the registry) produces and decrypts the same wire through the sequential arms.
->
-> **Migration note.** Ciphertext produced by earlier releases under any primitive other than AES-ITB-128 decrypts only with the release that produced it (the Interlocked Barrier fill differs; there is no error oracle — the recovered bytes do not match). AES-ITB-128 ciphertext and every seed blob (`Blob{128,256,512}` export / import) are unaffected.
 
 ### Low-Level 1 — Single Message with MAC
 

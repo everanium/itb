@@ -1,4 +1,4 @@
-# SipHash-2-4 kernel generator
+## ITB SipHash-2-4 Kernels Generator
 
 One deterministic generator emits every SipHash-2-4 assembly kernel under
 `hashes/internal/siphashasm/`. It takes no input beyond its own source,

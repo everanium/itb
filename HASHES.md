@@ -1,4 +1,4 @@
-# ITB Assembly Kernels — CPU baseline
+## ITB Assembly Kernels
 
 The shipped `_amd64.s` kernels target a modern x86_64 baseline. The exact CPU feature each kernel needs is detected once at package init via `golang.org/x/sys/cpu` and dispatched from there:
 

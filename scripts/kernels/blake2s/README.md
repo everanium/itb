@@ -1,4 +1,4 @@
-# BLAKE2s kernel generator
+## ITB BLAKE2s Kernels Generator
 
 One deterministic generator emits every BLAKE2s fused ChainHash cascade
 kernel under `hashes/internal/blake2sasm/`. It takes no input beyond its

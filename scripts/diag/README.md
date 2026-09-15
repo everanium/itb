@@ -1,4 +1,4 @@
-# scripts/diag — CPU dispatch diagnostics
+## ITB CPU Dispatch Diagnostics
 
 Two short bash utilities for investigating per-CPU throughput
 anomalies in the ITB dispatch matrix. Both scripts build a Go test

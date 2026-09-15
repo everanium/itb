@@ -1,4 +1,4 @@
-# AES-CMAC kernel generator
+## ITB AES-CMAC Kernels Generator
 
 One deterministic generator emits every AES-CMAC assembly kernel under
 `hashes/internal/aescmacasm/`. It takes no input beyond its own source,

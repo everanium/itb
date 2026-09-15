@@ -1,4 +1,4 @@
-# ITB FAQ: Broken Primitives and the Barrier — an Analytical Walkthrough
+## ITB Broken Primitives Walkthrough
 
 > **Security notice.** ITB is an experimental symmetric cipher construction without prior peer review, independent cryptanalysis, or formal certification. The construction's security properties have **not been verified** by independent cryptographers or mathematicians.
 >
@@ -305,7 +305,7 @@ Attack code: `redteam_jokehash_fullkpa_test.go`, `TestRedTeamJokeHashFullKPA` (G
 | Crib KPA (48 bytes) + startPixels given / brute | not run | pointless — Full KPA already gives no Pixel Barrier foothold |
 | COA (2 wires) | not run | pointless — same reasoning |
 
-Empirical result under Full KPA: the four reduction paths the `nullHash` Stage 1 attack ([Question 1](#question-1--what-if-the-primitive-is-even-more-degenerate-than-jokehash)) exploited are all structurally closed under `jokeHash`. This is **measured absence of the specific reductions the `nullHash` attack used**, not a proven work factor — the same document empirically records `jokeHash`'s poorly-diffused-primitive residual (a plaintext-HW distinguisher under repeat-plaintext CPA, [§ Residual bias under repeat-plaintext CPA](#residual-bias-under-repeat-plaintext-cpa)), so any «~2^X safety» framing would contradict that residue. `TestRedTeamJokeHashFullKPA` empirically confirms four independent reduction paths are all closed under `jokeHash`:
+Empirical result under Full KPA: the four reduction paths the `nullHash` Stage 1 attack ([Question 1](#question-1--what-if-the-primitive-is-even-more-degenerate-than-trainhash-and-jokehash)) exploited are all structurally closed under `jokeHash`. This is **measured absence of the specific reductions the `nullHash` attack used**, not a proven work factor — the same document empirically records `jokeHash`'s poorly-diffused-primitive residual (a plaintext-HW distinguisher under repeat-plaintext CPA, [§ Residual bias under repeat-plaintext CPA](#residual-bias-under-repeat-plaintext-cpa)), so any «~2^X safety» framing would contradict that residue. `TestRedTeamJokeHashFullKPA` empirically confirms four independent reduction paths are all closed under `jokeHash`:
 
 | Reduction path | `nullHash` (cascade collapses) | `jokeHash` (cascade non-collapsing) |
 |---|---|---|

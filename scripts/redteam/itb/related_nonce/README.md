@@ -1,4 +1,4 @@
-# Related-nonce differential re-verification
+## ITB Related-Nonce Differential Verification
 
 Empirical re-verification of the barrier's diffusion property against a
 lab-forced 1-bit nonce Δ. Primitives under test: **CRC128** and

@@ -1,4 +1,4 @@
-# Areion-SoEM kernel generator
+## ITB Areion-SoEM Kernels Generator
 
 One deterministic generator emits every Areion-SoEM fused ChainHash
 cascade kernel under `internal/areionasm/`. It takes no input beyond its

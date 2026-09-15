@@ -1,4 +1,4 @@
-# BLAKE3 kernel generator
+## ITB BLAKE3 Kernels Generator
 
 One deterministic generator emits every BLAKE3 fused ChainHash cascade
 kernel under `hashes/internal/blake3asm/`. It takes no input beyond its
