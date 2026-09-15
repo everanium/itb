@@ -1,4 +1,4 @@
-# Nonce-Reuse adversarial re-verification
+## ITB Nonce-Reuse Adversarial Verification
 
 Empirical re-verification of the shipped (Triple Ouroboros + always-on
 48-bit Interlocked Barrier + 8-seed constellation) construction under

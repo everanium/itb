@@ -1,4 +1,4 @@
-# scripts/redteam — Python attack tooling status
+## ITB Python Attack Tools
 
 Every Python script that ships with the repository lives under
 `scripts/redteam/itb/`. Shell drivers accompany them in three places:

@@ -1,4 +1,4 @@
-# scripts/bench — microBatch policy sweep
+## ITB microBatch Policy Sweep
 
 Single-file sweep runner for the CGO pixel encoder's adaptive microBatch
 switch and its two sync.Pool tiers. The shipped binary reads the policy

@@ -1,4 +1,4 @@
-# `hashes/` — Primitive constructions
+## ITB Hash Constructions
 
 > **Security notice.** ITB is an experimental symmetric cipher construction without prior peer review, independent cryptanalysis, or formal certification. The construction's security properties have **not been verified** by independent cryptographers or mathematicians.
 >

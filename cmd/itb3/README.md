@@ -1,4 +1,4 @@
-# itb3 — Utility for ITB Triple Ouroboros
+## ITB Command-Line Utility
 
 `itb3` is the CLI wrapper for the ITB Triple Ouroboros
 construction. It wraps the shipped [`github.com/everanium/itb/triple`]

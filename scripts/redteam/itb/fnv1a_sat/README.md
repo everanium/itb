@@ -1,4 +1,4 @@
-# FNV-1a lo-lane SAT re-verification
+## ITB FNV-1a SAT Verification
 
 Empirical re-verification of the shipped (Triple Ouroboros + always-on
 48-bit Interlocked Barrier + 8-seed constellation) construction against

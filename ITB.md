@@ -1,4 +1,4 @@
-# ITB: How the Barrier Works
+## ITB How the Barrier Works
 
 > **Security notice.** ITB is an experimental symmetric cipher construction without prior peer review, independent cryptanalysis, or formal certification. The construction's security properties have **not been verified** by independent cryptographers or mathematicians.
 >
@@ -381,4 +381,4 @@ Users plug a custom hash primitive in one of two ways.
 
 **Custom primitives in the `triple` facade.** A user-registered primitive is usable through the triple facade via `triple.Register`: build a `triple.Profile` whose `InnerHash` (or `MixedHashes` per-slot entries) references the registered name, then register the profile under a new user-chosen name and reference it from `triple.Init` like any shipped profile. A blob saved from such a pipeline carries the profile recipe, so `triple.Load` rebuilds the pipeline from the blob without a catalogue lookup — provided the referenced primitive has been registered via `hashes.Register` in the loading process; otherwise `triple.Load` rejects the blob. The shipped profile catalogue itself binds only to shipped registry entries; user profiles pick from any resolvable name (shipped or registered).
 
-For worked examples, see the README's [Advanced — Low-Level `*Cfg` surface](README.md#advanced--low-level-cfg-surface) and [Custom user-supplied primitives](README.md#custom-user-supplied-primitives) sections.
+For worked examples, see the README's [Advanced — Low-Level `*Cfg` surface](README.md#advanced--low-level-cfg-surface) and [Custom user-supplied hashes](README.md#custom-user-supplied-hashes) sections.

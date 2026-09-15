@@ -1,4 +1,4 @@
-# ChaCha20 kernel generator
+## ITB ChaCha20 Kernels Generator
 
 One deterministic generator emits every ChaCha20 fused ChainHash cascade
 kernel under `hashes/internal/chacha20asm/`. It takes no input beyond its

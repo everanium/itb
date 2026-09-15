@@ -1,4 +1,4 @@
-# Fresh-nonce near-identical distinguisher re-verification
+## ITB Fresh-Nonce Near-Identical Distinguisher Verification
 
 Empirical re-verification of the shipped (Triple Ouroboros + always-on
 48-bit Interlocked Barrier + 8-seed constellation) construction against

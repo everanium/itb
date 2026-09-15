@@ -1,4 +1,4 @@
-# AES-ITB-128 kernel generators
+## ITB AES-ITB-128 Kernels Generator
 
 One deterministic generator emits every AES-ITB-128 assembly kernel under
 `internal/aesitbasm/`. It takes no input beyond its own source, reads

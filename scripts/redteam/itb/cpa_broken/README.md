@@ -1,4 +1,4 @@
-# Fresh-nonce CPA broken-primitive re-verification
+## ITB Fresh-Nonce CPA Broken-Primitive Verification
 
 Empirical re-verification of the barrier's closure under a chosen-plaintext
 attacker posture with fresh nonces, driving the below-spec **FNV-1a**
