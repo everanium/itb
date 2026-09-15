@@ -12,7 +12,7 @@
   <a href="https://github.com/everanium/itb"><img src="https://img.shields.io/badge/coverage-88%25-green" alt="Coverage"></a>
 </p>
 
-## ITB Symmetric Cipher Construction with Ambiguity-Based Security
+<h2 align="center">ITB Symmetric Cipher Construction with Ambiguity-Based Security</h2>
 
 > **Security notice.** ITB is an experimental symmetric cipher
 > construction without prior peer review, independent cryptanalysis, or
