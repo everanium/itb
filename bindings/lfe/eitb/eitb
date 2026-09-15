@@ -21,8 +21,8 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$DIR/.."
 
 LFE_EBIN="$ROOT/_build/default/lib/lfe/ebin"
-ITB_EBIN="$ROOT/_build/default/checkouts/itb/ebin"
-APP_EBIN="$ROOT/_build/default/lib/itb_lfe/ebin"
+ITB_EBIN="$ROOT/_build/default/checkouts/libitb3/ebin"
+APP_EBIN="$ROOT/_build/default/lib/libitb3_lfe/ebin"
 
 for ebin in "$LFE_EBIN" "$ITB_EBIN" "$APP_EBIN"; do
     if [ ! -d "$ebin" ]; then

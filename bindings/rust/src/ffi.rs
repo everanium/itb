@@ -1,4 +1,4 @@
-//! Runtime symbol loading over the libitb shared library.
+//! Runtime symbol loading over the libitb3 shared library.
 //!
 //! The library is loaded once per process behind a `OnceLock` and
 //! never unloaded, so the raw `extern "C"` function pointers cached
@@ -6,9 +6,9 @@
 //! stored in the same struct, declared last so it drops after every
 //! pointer field). Search order:
 //!
-//! 1. `ITB_LIBITB_PATH` environment variable (path to the shared
+//! 1. `ITB_LIBITB3_PATH` environment variable (path to the shared
 //!    library file).
-//! 2. `<repo>/dist/<os>-<arch>/libitb.<ext>` resolved by walking up
+//! 2. `<repo>/dist/<os>-<arch>/libitb3.<ext>` resolved by walking up
 //!    from the crate manifest directory (in-repo builds).
 //! 3. The OS default loader path (`LD_LIBRARY_PATH`, `ld.so.cache`,
 //!    `DYLD_LIBRARY_PATH`, `PATH`).
@@ -27,7 +27,7 @@ use libloading::Library;
 use crate::error::{ItbError, ItbResult};
 
 // Function-pointer typedefs. Every signature mirrors a prototype in
-// cmd/cshared/libitb.h; C size_t / uintptr_t map to usize. Buffer
+// cmd/cshared/libitb3.h; C size_t / uintptr_t map to usize. Buffer
 // parameters cross as (ptr, len) pairs in the header's argument order.
 pub(crate) type FnCStrOut = unsafe extern "C" fn(*mut c_char, usize, *mut usize) -> c_int;
 pub(crate) type FnSetMemoryLimit = unsafe extern "C" fn(i64) -> i64;
@@ -138,7 +138,7 @@ pub(crate) struct Syms {
 }
 
 // SAFETY: every field is an immutable `unsafe extern "C" fn` pointer
-// cached once at load time; libitb itself is documented safe for
+// cached once at load time; libitb3 itself is documented safe for
 // concurrent use across OS threads.
 unsafe impl Send for Syms {}
 unsafe impl Sync for Syms {}
@@ -156,13 +156,13 @@ pub(crate) fn syms() -> ItbResult<&'static Syms> {
 
 impl Syms {
     unsafe fn load() -> Result<Self, libloading::Error> {
-        // SAFETY: loading libitb runs its Go runtime initialiser, which
+        // SAFETY: loading libitb3 runs its Go runtime initialiser, which
         // is the documented way to bring the library up.
         let lib = unsafe { Library::new(resolve_library_path())? };
         macro_rules! sym {
             ($name:literal) => {{
                 // SAFETY: the target field's fn-pointer type matches the
-                // C prototype in libitb.h; dereferencing the Symbol
+                // C prototype in libitb3.h; dereferencing the Symbol
                 // yields a raw fn pointer that stays valid while `lib`
                 // (stored in this struct) remains loaded.
                 let s: libloading::Symbol<'_, _> = unsafe { lib.get($name)? };
@@ -204,11 +204,11 @@ impl Syms {
 
 fn lib_filename() -> &'static str {
     if cfg!(target_os = "windows") {
-        "libitb.dll"
+        "libitb3.dll"
     } else if cfg!(target_os = "macos") {
-        "libitb.dylib"
+        "libitb3.dylib"
     } else {
-        "libitb.so"
+        "libitb3.so"
     }
 }
 
@@ -231,7 +231,7 @@ fn dist_subdir() -> String {
 }
 
 fn resolve_library_path() -> PathBuf {
-    if let Ok(p) = std::env::var("ITB_LIBITB_PATH")
+    if let Ok(p) = std::env::var("ITB_LIBITB3_PATH")
         && !p.is_empty()
     {
         return PathBuf::from(p);

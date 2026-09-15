@@ -6,7 +6,7 @@
 # under tests/build/ (see Makefile). The runner iterates the binaries,
 # invokes each in turn, and accumulates a pass / fail count.
 #
-# Per-binary process isolation gives every test a fresh libitb global
+# Per-binary process isolation gives every test a fresh libitb3 global
 # state; tests run sequentially.
 #
 # Usage:
@@ -25,22 +25,24 @@ case "${1:-}" in
     *)            echo "unknown option: $1" >&2; exit 2 ;;
 esac
 
-# Build the test binaries via the Makefile so flags and dependencies
-# stay in one place. Quiet output unless -v.
+# Build through build.sh, which wipes every artefact this binding owns
+# before compiling, so the binaries executed below are the ones this
+# invocation produced. Quiet on stdout unless -v; compiler diagnostics
+# reach stderr either way.
 if [ "$verbose" -eq 1 ]; then
-    make tests
+    ./build.sh
 else
-    make tests >/dev/null
+    ./build.sh >/dev/null
 fi
 
 TEST_BIN_DIR="tests/build"
 
-# Embedded RPATH should already point at libitb.so, but export
+# Embedded RPATH should already point at libitb3.so, but export
 # LD_LIBRARY_PATH as a fallback for cases where the Linux loader
 # doesn't honour the RPATH (e.g. some hardened distro defaults).
-LIBITB_DIR="${LIBITB_DIR:-../../dist/linux-amd64}"
-LIBITB_DIR_ABS="$(cd "$LIBITB_DIR" 2>/dev/null && pwd || echo "$LIBITB_DIR")"
-export LD_LIBRARY_PATH="$LIBITB_DIR_ABS${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+LIBITB3_DIR="${LIBITB3_DIR:-../../dist/linux-amd64}"
+LIBITB3_DIR_ABS="$(cd "$LIBITB3_DIR" 2>/dev/null && pwd || echo "$LIBITB3_DIR")"
+export LD_LIBRARY_PATH="$LIBITB3_DIR_ABS${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
 fail=0
 pass=0

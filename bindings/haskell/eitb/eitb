@@ -13,7 +13,7 @@ REPO_ROOT="$(cd "$BINDING_DIR/../.." && pwd)"
 DIST_DIR="$REPO_ROOT/dist/linux-amd64"
 
 BIN="$(cd "$BINDING_DIR" && cabal list-bin itb-eitb 2>/dev/null || true)"
-if [[ -z "$BIN" || ! -x "$BIN" || ! -f "$DIST_DIR/libitb.so" ]]; then
+if [[ -z "$BIN" || ! -x "$BIN" || ! -f "$DIST_DIR/libitb3.so" ]]; then
     (cd "$BINDING_DIR" && ./build.sh >&2)
     BIN="$(cd "$BINDING_DIR" && cabal list-bin itb-eitb)"
 fi

@@ -4,7 +4,7 @@
 //! stream chain).
 
 const std = @import("std");
-const itb = @import("itb");
+const itb = @import("itb3");
 const util = @import("bench_util.zig");
 
 const Ctx = struct {
@@ -31,8 +31,8 @@ pub fn main(init: std.process.Init) !void {
     // Bench-scale allocation churn leaks Go scratch heap unboundedly
     // without a soft memory cap + aggressive GC; the return values
     // report the previous settings, not an error.
-    _ = itb.setMemoryLimit(512 << 20); // 512 MiB soft cap
-    _ = itb.setGcPercent(20); // aggressive GC
+    _ = itb.setMemoryLimit(4 << 30); // 4 GiB soft cap
+    _ = itb.setGcPercent(100); // balanced GC
 
     const gpa = init.gpa;
     const arena = init.arena.allocator();

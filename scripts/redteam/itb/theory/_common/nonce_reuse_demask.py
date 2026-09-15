@@ -44,7 +44,6 @@ from attack_common import (  # noqa: E402
     DATA_BITS_PER_CHANNEL,
     DATA_BITS_PER_PIXEL,
     EXTRACT7_TABLE,
-    HEADER_SIZE,
     ROT7_TABLE,
     cobs_encode,
     cobs_encode_with_mask,
@@ -794,6 +793,16 @@ def main() -> int:
              "n_probe, Layer 1 near-zero exact recovery) can be observed empirically. "
              "Not a real attacker mode.",
     )
+    parser.add_argument(
+        "--nonce-size",
+        type=int,
+        default=None,
+        help="Override the main-nonce byte length used to parse the ITB header. Default: "
+             "derived from cell.meta.json's main_nonce_hex / nonce_hex field length; falls "
+             "back to 16 bytes only if the corpus metadata omits both fields (every in-tree "
+             "corpus generator hardcodes NonceBits=128, i.e. a 16-byte main nonce — this is "
+             "NOT itb.DefaultNonceBits/8, which is 64).",
+    )
     args = parser.parse_args()
 
     if args.mode not in {"known-plaintext", "partial-plaintext"}:
@@ -858,7 +867,18 @@ def main() -> int:
     # -----------------------------------------------------------------------
     # Parse headers, verify nonce match (true nonce reuse)
     # -----------------------------------------------------------------------
-    nonce_size = 16  # 128-bit nonce (default)
+    nonce_hex_for_header = meta.get("main_nonce_hex") or meta.get("nonce_hex")
+    if args.nonce_size is not None:
+        nonce_size = args.nonce_size
+    elif nonce_hex_for_header:
+        nonce_size = len(bytes.fromhex(nonce_hex_for_header))
+    else:
+        nonce_size = 16  # last-resort fallback — NOT itb.DefaultNonceBits/8
+                          # (=64); every in-tree corpus generator hardcodes
+                          # NonceBits=128, i.e. a 16-byte main nonce.
+        print(f"WARNING: nonce_reuse_demask.py: cell.meta.json has no "
+              f"main_nonce_hex/nonce_hex field — falling back to "
+              f"nonce_size={nonce_size} bytes", file=sys.stderr)
     n1, w1, h1, tp1, cb1_bytes = parse_itb_header(ct1, nonce_size)
     n2, w2, h2, tp2, cb2_bytes = parse_itb_header(ct2, nonce_size)
     if n1 != n2:

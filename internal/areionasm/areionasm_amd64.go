@@ -9,10 +9,7 @@
 // Exported kernels:
 //
 //   - Areion256Permutex4 / Areion512Permutex4 — per-half AVX-512 + VAES
-//     permutations. On amd64 production hot paths these are reached
-//     only via the AVX-2 sibling (see below) and the fused /
-//     chained-absorb kernels; the per-half AVX-512 entries remain
-//     primarily as the fast-known-good reference for parity tests.
+//     permutations; the fast-known-good reference for parity tests.
 //   - Areion256Permutex4Avx2 / Areion512Permutex4Avx2 — AVX-2 + VAES
 //     fallbacks for hosts with VAES but no AVX-512 (some Alder Lake /
 //     Raptor Lake E-core configurations, certain Zen 3 SKUs).
@@ -21,12 +18,10 @@
 //     interleave state1 and state2 permutations on independent ZMM
 //     dependency chains and fold the SoEM output XOR (and Areion512's
 //     final cyclic rotation) into the writeback.
-//   - Areion256ChainAbsorb20x4 / 36x4 / 68x4 (and the Areion-SoEM-512
-//     trio) — specialised CBC-MAC chained-absorb kernels for the three
-//     ITB per-pixel buf shapes (1, 2 or 3 absorb rounds on -256;
-//     1, 1 or 2 on -512). State is held in ZMM registers across all
-//     absorb rounds; broadcast fixedKey and SoA-packed seedKey are
-//     loaded once at function entry.
+//   - the fused ChainHash cascade kernels of areionasm_fused.go
+//     (areion_fusedchain{256,512}_*.s) — the whole component cascade
+//     per lane per call, reached through the hooks the hashes package
+//     attaches.
 //
 // Also exported: the pre-broadcast round-constant table `AreionRC4x`
 // and the Areion-SoEM-256 domain-separation constant
@@ -48,7 +43,7 @@ var AreionRC4x [15 * 64]byte
 
 // AreionSoEMDomainSep256 is the SoEM-256 domain-separation constant
 // pre-broadcast to SoA Block4 layout: 0x01 in byte[0] of each 16-byte
-// lane slot, zero elsewhere. Used by the chained-absorb kernels to
+// lane slot, zero elsewhere. Used by the fused cascade kernels to
 // XOR `d` into state2's first u64 word per SoEM construction.
 var AreionSoEMDomainSep256 = [64]byte{
 	0x01, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // lane 0
@@ -147,36 +142,3 @@ var HasVAESAVX2NoAVX512 = aes.CPU.HasVAES && aes.CPU.HasAVX2 && !aes.CPU.HasAVX5
 // uniformly across architectures without per-arch build tag fences
 // inside the gate expression.
 var HasARMAESBatched = false
-
-// HasAESNIBatched reports whether the runtime CPU exposes AES-NI
-// (AESENC / AESENCLAST on XMM) but none of the wider batched-AES paths
-// (VAES + AVX-512, VAES + AVX-2, ARM Crypto Extension). On these hosts
-// the parent itb package's Areion-SoEM chain-absorb dispatch routes to
-// the XMM AES-NI kernels, which run 4 independent per-lane AES chains
-// (Areion-SoEM-256: 2 lanes/pass, each lane contributing its state1 /
-// state2 permutations as 2 disjoint chains; Areion-SoEM-512: 1
-// lane/pass, whose SoEM state1 / state2 each expose the round's a-chain
-// and c-chain, again 4 disjoint chains). Four independent chains hide
-// the ~4-cycle AESENC latency on a single-issue AES port, so this path
-// lifts every AES-NI-only host (Cascade Lake Xeon Gold, AMD Zen 3, and
-// every AVX2-no-VAES cloud VM) off the per-pixel scalar single hasher.
-// It gates on the three wider flags being false so hosts carrying a
-// wider tier keep it; the AES-NI XMM path is strictly the fallback.
-var HasAESNIBatched = aes.CPU.HasAESNI &&
-	!HasVAESAVX512 && !HasVAESAVX2NoAVX512 && !HasARMAESBatched
-
-// HasVAESAVX2Batched reports whether the runtime CPU exposes VAES + AVX2
-// but lacks AVX-512 — the same silicon class as HasVAESAVX2NoAVX512, but
-// this flag gates the width-specialised YMM VAES chain-absorb kernels
-// (Areion*ChainAbsorb*x4VaesAvx2) rather than the base 4-way
-// permutation. On these hosts the parent itb package's Areion-SoEM
-// chain-absorb dispatch routes the {13,20,36,68}-byte buf shapes through
-// the YMM kernels, which run two lanes per YMM across two passes: within
-// a pass the SoEM state1 / state2 permutations expose four independent
-// VAES chains, saturating a single VAES issue port at the ~4-cycle
-// VAESENC latency (playbook §8). Shapes outside that set, and unequal
-// lane tails, still fall back to the base Areion*Permutex4Avx2 kernel
-// plus the Go-side SoEM absorb loop gated by HasVAESAVX2NoAVX512, so the
-// two flags coexist: HasVAESAVX2NoAVX512 covers the general path,
-// HasVAESAVX2Batched the width-specialised hot path.
-var HasVAESAVX2Batched = aes.CPU.HasVAES && aes.CPU.HasAVX2 && !aes.CPU.HasAVX512

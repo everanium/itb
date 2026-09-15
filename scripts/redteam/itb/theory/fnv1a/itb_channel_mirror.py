@@ -343,12 +343,17 @@ def parity_check_corpus(fnvstress_dir: Path) -> bool:
         start_pixel = _derive_start_pixel(start_lo, nonce, total_pixels, rounds)
 
         # Decode all `capacity` bytes of the payload the encoder packed.
+        # `header_size` prefers the per-cell metadata field so a wire-format
+        # change needs no edit here; derives from the already-parsed
+        # `nonce` length otherwise.
+        header_size = int(cell.get("header_size", len(nonce) + 4))
         payload_recovered = decode_container_to_payload(
             ciphertext=ciphertext,
             data_hash_lo_per_pixel=data_hash_lo_per_pixel,
             noise_hash_lo_per_pixel=noise_hash_lo_per_pixel,
             start_pixel=start_pixel,
             total_pixels=total_pixels,
+            header_size=header_size,
         )
         # Encoder wrote: `cobs_encode(plaintext) || 0x00 || csprng_fill`.
         # Parity passes if: (a) the first len(cobs_expected) bytes match

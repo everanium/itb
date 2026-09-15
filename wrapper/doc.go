@@ -66,8 +66,10 @@
 // [NewUnwrapReader] streaming shape which is single-goroutine.
 //
 // Registry access: [CipherNames] enumerates the canonical outer cipher
-// alphabet as a snapshot of the shared
-// [github.com/everanium/itb/hashes.Registry] names in registry order;
+// alphabet as a snapshot of the outer-cipher-eligible subset of the shared
+// [github.com/everanium/itb/hashes.Registry]
+// ([github.com/everanium/itb/hashes.KeystreamNames]) in registry order —
+// inner-PRF-only entries are excluded;
 // each entry is named by a matching
 // [github.com/everanium/itb/hashes.CipherAES128CTR]-style constant in
 // the hashes package. [KeySize] and [NonceSize] delegate to the ctr

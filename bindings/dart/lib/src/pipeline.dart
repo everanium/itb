@@ -64,7 +64,7 @@ final Finalizer<int> _finalizer = Finalizer<int>((handle) {
 /// [save] exports the self-describing session blob the receiver
 /// feeds to [Pipeline.load] / [Pipeline.loadF]; [rekey] refreshes
 /// it. Release the handle deterministically via [free]; a
-/// [Finalizer] backstop frees on GC (libitb zeroes key material
+/// [Finalizer] backstop frees on GC (libitb3 zeroes key material
 /// internally).
 ///
 /// Streaming-decrypt caveat: chunked Streaming AEAD verifies per
@@ -87,7 +87,7 @@ class Pipeline {
 
   /// Constructs a fresh Pipeline against the named profile. On a
   /// blob-buffer retry the create re-runs and yields a fresh session
-  /// (the undersized attempt is closed by libitb before returning).
+  /// (the undersized attempt is closed by libitb3 before returning).
   /// The session blob is available through [save].
   factory Pipeline.create(String profile, [Opts? opts]) {
     final bridge = FfiBridge.instance;
@@ -246,7 +246,7 @@ class Pipeline {
 
   /// Allocation-free sibling of [encryptMessage]: writes the wire
   /// into the caller-supplied [dst] (reusable across calls) and
-  /// returns the wire byte count. [cap] is the write ceiling libitb
+  /// returns the wire byte count. [cap] is the write ceiling libitb3
   /// honours (default `dst.length`); an [ArgumentError] is thrown
   /// when it exceeds `dst.length`. Throws [ItbException] with
   /// [Status.bufferTooSmall] when [cap] is insufficient — there is
@@ -281,7 +281,7 @@ class Pipeline {
   /// Opens an incremental decrypt session (wire in, plaintext out).
   StreamDecryptor decryptStream() => StreamDecryptor.begin(this);
 
-  /// Releases the handle (libitb closes the Pipeline first, zeroing
+  /// Releases the handle (libitb3 closes the Pipeline first, zeroing
   /// key material). Safe to call more than once.
   void free() {
     if (_handle == 0) return;
@@ -293,7 +293,7 @@ class Pipeline {
   }
 
   /// Copies [src] into the pooled input-side native buffer; returns
-  /// [nullptr] for an empty input (libitb accepts a null pointer
+  /// [nullptr] for an empty input (libitb3 accepts a null pointer
   /// with a zero length).
   Pointer<Uint8> _stageSrc(Uint8List src) {
     if (src.isEmpty) return nullptr;
@@ -329,7 +329,7 @@ class Pipeline {
   /// Shared body for the caller-buffer Message entries: one FFI call
   /// through the pooled native buffers, no retry (the caller owns
   /// capacity policy), byte count out. [cap] is the write ceiling
-  /// libitb honours, so it must never exceed the real length of
+  /// libitb3 honours, so it must never exceed the real length of
   /// [dst].
   int _cipherInto(
       int Function(int, Pointer<Uint8>, int, Pointer<Uint8>, int, Pointer<Size>)

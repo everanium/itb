@@ -5,7 +5,7 @@ package itb
 // Below-spec jokeHash adversarial re-verification for the shipped
 // architecture (always-on 48-bit Interlocked Barrier + Triple Ouroboros +
 // 8-seed constellation). This file is the Go landing surface for FAQ.md's
-// jokeHash walkthrough (Question 1).
+// jokeHash walkthrough (Question 3).
 //
 // Scope: a three-line multiply-add fold, deliberately as trivial as a
 // primitive can be while still producing a per-pixel varying output. It
@@ -225,7 +225,7 @@ func (s *bitStats) hotPerByteHistogram(threshold float64) [9]int {
 // TestRedTeamJokeHashRepeatPlaintextCPA batches N encryptions of the
 // same short plaintext under fresh nonces and measures the wire's
 // statistical surface. Under attacker-realism (fresh nonce per call, no
-// seed peek) the barrier's Part 2 absorption should keep every wire
+// seed peek) the Pixel Barrier absorption should keep every wire
 // byte in the body region indistinguishable from a fresh CSPRNG draw
 // even when every derived encoding parameter (channelXOR, noisePos,
 // rotation, startPixel, mask triple) collapses to a per-session

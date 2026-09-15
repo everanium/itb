@@ -7,15 +7,15 @@ from __future__ import annotations
 import secrets
 
 import bench_util
-import itb
+import itb3 as itb
 
 
 def main() -> None:
     # Bench-scale allocation churn leaks Go scratch heap unboundedly
     # without a soft memory cap + aggressive GC; the return values
     # report the previous settings, not an error.
-    itb.set_memory_limit(512 << 20)
-    itb.set_gc_percent(20)
+    itb.set_memory_limit(4 << 30)
+    itb.set_gc_percent(100)
 
     pipe = itb.Pipeline.init(
         bench_util.profile_name("streaming-noaead-triple-v1"), bench_util.build_opts()

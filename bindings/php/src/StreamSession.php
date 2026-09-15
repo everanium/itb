@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Everanium\Itb;
+namespace Everanium\Itb3;
 
 /**
  * Shared body for the two incremental stream session directions.
@@ -11,7 +11,7 @@ namespace Everanium\Itb;
  * through write() and yields wire through read() / drainAll();
  * StreamDecryptor is the mirror (wire in, plaintext out). All
  * chunking, MAC, envelope, and wire-format decisions stay inside
- * libitb. Destruction (explicit free() or garbage collection via
+ * libitb3. Destruction (explicit free() or garbage collection via
  * __destruct) cancels the session and frees the Go-side state.
  *
  * @internal Base class — use Pipeline::encryptStream() /

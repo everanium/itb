@@ -19,7 +19,7 @@ import (
 //	p   the recipe — the resolved [Profile] record (see
 //	    [Profile.MarshalJSON] for its key set); its name is the
 //	    sender's label
-//	ib  the inner Low-Level Blob{N} JSON, embedded verbatim as an
+//	ib  the inner Blob{N} JSON, embedded verbatim as an
 //	    object (the only carrier of seed / PRF-key / MAC-key material)
 //	pm  32-byte parallax master, base64; present iff p.parallax
 //	wm  32-byte wrapper master, base64; present iff p.wrapper
@@ -57,6 +57,17 @@ func marshalWrap(prof Profile, inner, permMaster, wrapMaster []byte) ([]byte, er
 	if !rec.Parallax {
 		rec.ParallaxPalette, rec.ParallaxSegmentSize = nil, 0
 	}
+	// Recipe is wire-only; runtime globals (NonceBits, BarrierFill)
+	// live in the inner Blob{N}.Globals snapshot and never appear in
+	// the wrap-layer recipe object. The invariant is enforced upstream
+	// (Register + Load fail-fast on non-zero values, resolveProfile
+	// does not carry Opts.NonceBits / Opts.BarrierFill into the stored
+	// Profile), but a caller that mutates a Profile literal directly
+	// before feeding it here would otherwise leak runtime state onto
+	// the wire. Clearing them defensively guarantees byte-identical
+	// wire shape regardless of the upstream Profile provenance.
+	rec.NonceBits = 0
+	rec.BarrierFill = 0
 	wrap := blobWrapV2{
 		Version: blobWrapVersionV2,
 		Profile: rec,

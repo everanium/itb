@@ -1,10 +1,17 @@
 #!/usr/bin/env bash
 #
 # run_bench.sh -- micro-benchmark runner for the F# binding. Builds
-# libitb.so + the solution via build.sh, points ITB_LIBITB_PATH at
+# libitb3.so + the solution via build.sh, points ITB_LIBITB3_PATH at
 # the freshly-built shared library, then runs the bench binary:
 # encryptMessage and stream-pump throughput at 1 MiB / 16 MiB /
 # 64 MiB.
+#
+# build.sh wipes the bin/ and obj/ tree of every project in the
+# solution -- the C# library member included -- before it builds and
+# asserts the bench assembly was written by that invocation, so the
+# code measured here is always the code just compiled, which is what
+# makes the --no-build below safe. Set ITB_SKIP_CLEAN=1 to keep the
+# existing artefacts and build incrementally instead.
 #
 # Usage:
 #   ./run_bench.sh             # both shapes
@@ -20,13 +27,13 @@ DIST_DIR="$REPO_ROOT/dist/linux-amd64"
 
 ./build.sh
 
-export ITB_LIBITB_PATH="$DIST_DIR/libitb.so"
+export ITB_LIBITB3_PATH="$DIST_DIR/libitb3.so"
 
 # Go-runtime pacing defaults for bench-scale allocation churn; the
 # `:-` form respects any override set by the caller. The bench main
 # applies the same caps programmatically.
-export ITB_GOMEMLIMIT="${ITB_GOMEMLIMIT:-512MiB}"
-export ITB_GOGC="${ITB_GOGC:-20}"
+export ITB_GOMEMLIMIT="${ITB_GOMEMLIMIT:-4GiB}"
+export ITB_GOGC="${ITB_GOGC:-100}"
 
 # Bench-shape defaults — match the root Go BENCH3.md pin so the
 # throughput numbers are directly comparable to the shipped Go
@@ -60,22 +67,22 @@ fi
 case "${1:-all}" in
     message)
         export ITB_PROFILE="${ITB_MSG_PROFILE_DEFAULT}"
-        exec dotnet run -c Release --no-build --project bench/EveraniumItb.FSharp.Bench -- message
+        exec dotnet run -c Release --no-build --project bench/Everanium.LibItb3.FSharp.Bench -- message
         ;;
     stream)
         export ITB_PROFILE="${ITB_STREAM_PROFILE_DEFAULT}"
-        exec dotnet run -c Release --no-build --project bench/EveraniumItb.FSharp.Bench -- stream
+        exec dotnet run -c Release --no-build --project bench/Everanium.LibItb3.FSharp.Bench -- stream
         ;;
     stream_one_shot)
         export ITB_PROFILE="${ITB_STREAM_PROFILE_DEFAULT}"
-        exec dotnet run -c Release --no-build --project bench/EveraniumItb.FSharp.Bench -- stream_one_shot
+        exec dotnet run -c Release --no-build --project bench/Everanium.LibItb3.FSharp.Bench -- stream_one_shot
         ;;
     all)
         export ITB_PROFILE="${ITB_MSG_PROFILE_DEFAULT}"
-        dotnet run -c Release --no-build --project bench/EveraniumItb.FSharp.Bench -- message
+        dotnet run -c Release --no-build --project bench/Everanium.LibItb3.FSharp.Bench -- message
         export ITB_PROFILE="${ITB_STREAM_PROFILE_DEFAULT}"
-        dotnet run -c Release --no-build --project bench/EveraniumItb.FSharp.Bench -- stream
-        exec dotnet run -c Release --no-build --project bench/EveraniumItb.FSharp.Bench -- stream_one_shot
+        dotnet run -c Release --no-build --project bench/Everanium.LibItb3.FSharp.Bench -- stream
+        exec dotnet run -c Release --no-build --project bench/Everanium.LibItb3.FSharp.Bench -- stream_one_shot
         ;;
     *)
         echo "usage: $0 [message|stream|stream_one_shot|all]" >&2

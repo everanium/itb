@@ -2,19 +2,19 @@
 
 declare(strict_types=1);
 
-namespace Everanium\Itb;
+namespace Everanium\Itb3;
 
 /**
- * Internal singleton loading the libitb shared library through PHP's
+ * Internal singleton loading the libitb3 shared library through PHP's
  * FFI extension.
  *
  * The library is loaded once per process and never unloaded, so the
  * cached \FFI instance stays valid for the process lifetime. Search
  * order:
  *
- * 1. ITB_LIBITB_PATH environment variable (path to the shared
+ * 1. ITB_LIBITB3_PATH environment variable (path to the shared
  *    library file).
- * 2. <repo>/dist/<os>-<arch>/libitb.<ext> resolved from this file
+ * 2. <repo>/dist/<os>-<arch>/libitb3.<ext> resolved from this file
  *    (in-repo builds).
  * 3. The OS default loader path (LD_LIBRARY_PATH, ld.so.cache,
  *    DYLD_LIBRARY_PATH, PATH).
@@ -119,7 +119,7 @@ final class FFIBridge
                 . 'or run php with -d extension=ffi -d ffi.enable=1'
             );
         }
-        $header = __DIR__ . '/../include/itb.h';
+        $header = __DIR__ . '/../include/itb3.h';
         $decls = @\file_get_contents($header);
         if ($decls === false) {
             throw new ItbException("cannot read FFI declarations: $header");
@@ -128,15 +128,15 @@ final class FFIBridge
         try {
             return \FFI::cdef($decls, $path);
         } catch (\FFI\Exception $e) {
-            throw new ItbException("failed to load libitb ($path): " . $e->getMessage());
+            throw new ItbException("failed to load libitb3 ($path): " . $e->getMessage());
         } catch (\Throwable $e) {
-            throw new ItbException("failed to load libitb ($path): " . $e->getMessage());
+            throw new ItbException("failed to load libitb3 ($path): " . $e->getMessage());
         }
     }
 
     private static function libraryPath(): string
     {
-        $env = \getenv('ITB_LIBITB_PATH');
+        $env = \getenv('ITB_LIBITB3_PATH');
         if (\is_string($env) && $env !== '') {
             return $env;
         }
@@ -153,11 +153,11 @@ final class FFIBridge
     {
         switch (\PHP_OS_FAMILY) {
             case 'Windows':
-                return 'libitb.dll';
+                return 'libitb3.dll';
             case 'Darwin':
-                return 'libitb.dylib';
+                return 'libitb3.dylib';
             default:
-                return 'libitb.so';
+                return 'libitb3.so';
         }
     }
 

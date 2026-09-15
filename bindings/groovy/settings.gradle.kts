@@ -1,1 +1,1 @@
-rootProject.name = "itb-groovy"
+rootProject.name = "libitb3-groovy"

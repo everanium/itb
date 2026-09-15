@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # cross-verify.sh -- ITB fleet cross-binding wire-compat matrix.
 #
-# For each of the 9 shipped triple/ profiles, encrypts the shared
+# For each of the 13 shipped triple/ profiles, encrypts the shared
 # sample file with every eitb utility (33 language bindings + the Go
 # native tool = 34 encrypters) and then decrypts every produced
 # ciphertext with every eitb utility. Verifies SHA-256(decrypted) ==
@@ -12,7 +12,7 @@
 #   tmp/eitb/enc/<profile>/<encrypter>.blob          session-blob hex
 #   tmp/eitb/dec/<profile>/<encrypter>__<decrypter>  decrypter's back.bin (only on FAIL)
 #   tmp/eitb/results.tsv                             profile\tencrypter\tdecrypter\tPASS|FAIL[\tdiag]
-#   tmp/eitb/compat-matrix.md                        rendered 9 tables + summary
+#   tmp/eitb/compat-matrix.md                        rendered 13 tables + summary
 #
 # The Go native eitb is (re)built from tools/eitb before the run.
 # All other eitb utilities are assumed pre-built (each binding's
@@ -37,17 +37,17 @@ if [ ! -f "$IN_FILE" ]; then
     exit 2
 fi
 
-if [ ! -f "$DIST_DIR/libitb.so" ]; then
-    echo "cross-verify: missing $DIST_DIR/libitb.so" >&2
+if [ ! -f "$DIST_DIR/libitb3.so" ]; then
+    echo "cross-verify: missing $DIST_DIR/libitb3.so" >&2
     echo "run ./build.sh at repo root first" >&2
     exit 2
 fi
 
-# Every non-Go binding resolves libitb.so via one of these two env
-# variables (JNI bindings resolve libitb_jni.so relative to
+# Every non-Go binding resolves libitb3.so via one of these two env
+# variables (JNI bindings resolve libitb3_jni.so relative to
 # bindings/java/build/jni/ from their own launcher, so they do not
 # need either variable here).
-export ITB_LIBITB_PATH="$DIST_DIR/libitb.so"
+export ITB_LIBITB3_PATH="$DIST_DIR/libitb3.so"
 export LD_LIBRARY_PATH="$DIST_DIR"
 
 echo "==> (re)building tools/eitb/eitb"
@@ -62,11 +62,15 @@ PROFILES=(
     singlemsg-triple-nomac-v1
     singlemsg-triple-mac-mixed-v1
     singlemsg-triple-nomac-mixed-v1
+    singlemsg-aesitb-mac-v1
+    singlemsg-aesitb-nomac-v1
     blob-triple-mac-v1
     streaming-aead-triple-mac-v1
     streaming-noaead-triple-v1
     streaming-aead-triple-mac-mixed-v1
     streaming-noaead-triple-mixed-v1
+    streaming-aead-aesitb-mac-v1
+    streaming-noaead-aesitb-v1
 )
 
 # LANGS listed in a canonical order (Go native first, then each
@@ -90,13 +94,13 @@ EITB_CMD[c]="$REPO/bindings/c/eitb/eitb"
 EITB_CMD[clojure]="$REPO/bindings/clojure/eitb/eitb"
 EITB_CMD[cpp]="$REPO/bindings/cpp/eitb/eitb"
 EITB_CMD[crystal]="$REPO/bindings/crystal/eitb/eitb"
-EITB_CMD[csharp]="$REPO/bindings/csharp/Itb.Eitb/bin/Release/net10.0/Itb.Eitb"
+EITB_CMD[csharp]="$REPO/bindings/csharp/Everanium.LibItb3.Eitb/bin/Release/net10.0/Everanium.LibItb3.Eitb"
 EITB_CMD[dart]="$REPO/bindings/dart/eitb/eitb"
 EITB_CMD[dlang]="$REPO/bindings/dlang/eitb/eitb"
 EITB_CMD[elixir]="$REPO/bindings/elixir/eitb/eitb"
 EITB_CMD[erlang]="$REPO/bindings/erlang/eitb/eitb.erl"
 EITB_CMD[fortran]="$REPO/bindings/fortran/eitb/eitb"
-EITB_CMD[fsharp]="$REPO/bindings/fsharp/eitb/EveraniumItb.FSharp.Eitb/bin/Release/net10.0/EveraniumItb.FSharp.Eitb"
+EITB_CMD[fsharp]="$REPO/bindings/fsharp/eitb/Everanium.LibItb3.FSharp.Eitb/bin/Release/net10.0/Everanium.LibItb3.FSharp.Eitb"
 EITB_CMD[gleam]="$REPO/bindings/gleam/eitb/eitb"
 EITB_CMD[groovy]="$REPO/bindings/groovy/eitb/eitb"
 EITB_CMD[haskell]="$REPO/bindings/haskell/eitb/eitb"
@@ -116,7 +120,7 @@ EITB_CMD[ruby]="$REPO/bindings/ruby/eitb/eitb"
 EITB_CMD[rust]="$REPO/bindings/rust/eitb/target/release/eitb"
 EITB_CMD[scala]="$REPO/bindings/scala/eitb/eitb"
 EITB_CMD[swift]="$REPO/bindings/swift/.build/x86_64-unknown-linux-gnu/release/eitb"
-EITB_CMD[vbnet]="$REPO/bindings/vbnet/eitb/EveraniumItb.VisualBasic.Eitb/bin/Release/net10.0/EveraniumItb.VisualBasic.Eitb"
+EITB_CMD[vbnet]="$REPO/bindings/vbnet/eitb/Everanium.LibItb3.VisualBasic.Eitb/bin/Release/net10.0/Everanium.LibItb3.VisualBasic.Eitb"
 EITB_CMD[zig]="$REPO/bindings/zig/zig-out/bin/eitb"
 
 # ---------------------------------------------------------------------
@@ -313,8 +317,8 @@ MATRIX="$EITB_DIR/compat-matrix.md"
     echo
     echo "Sample: \`tools/eitb/in-file.txt\` (4096 bytes, SHA-256 \`$SOURCE_SHA\`)."
     echo "Fleet: 34 eitb (33 language bindings + Go core)."
-    echo "Profiles: 9 shipped."
-    echo "Total cross-checks: $TOTAL (34 x 34 x 9 = 10404 nominal)."
+    echo "Profiles: 13 shipped."
+    echo "Total cross-checks: $TOTAL (34 x 34 x 13 = 15028 nominal)."
     echo
     echo "## Summary"
     echo

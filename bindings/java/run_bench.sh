@@ -1,10 +1,16 @@
 #!/usr/bin/env bash
 #
 # run_bench.sh -- bench runner for the Java binding. Builds
-# libitb.so + the binding via build.sh, then runs the bench mains
+# libitb3.so + the binding via build.sh, then runs the bench mains
 # (BenchMessage + BenchStream + BenchStreamOneShot). Positional
 # arguments select the shape: `message`, `stream`, `stream_one_shot`,
 # or `all` (default).
+#
+# build.sh wipes the whole build tree before it builds and asserts
+# build/libs/bench.jar was written by that invocation, so the classes
+# measured here are always the ones just compiled. Set
+# ITB_SKIP_CLEAN=1 to keep the existing artefacts and compile
+# incrementally instead.
 
 set -eu
 set -o pipefail
@@ -13,15 +19,15 @@ cd "$(dirname "$0")"
 
 ./build.sh
 
-export ITB_JNI_PATH="$PWD/build/jni/libitb_jni.so"
+export ITB_JNI_PATH="$PWD/build/jni/libitb3_jni.so"
 
-# Bench-hostile Go runtime defaults are capped at libitb load time
+# Bench-hostile Go runtime defaults are capped at libitb3 load time
 # via env vars so a bench crash before the benches' own
 # setMemoryLimit / setGCPercent calls still runs under a bounded
 # heap. The benches themselves reassert these via the API for
 # self-contained reproducibility.
-export ITB_GOMEMLIMIT="${ITB_GOMEMLIMIT:-512MiB}"
-export ITB_GOGC="${ITB_GOGC:-20}"
+export ITB_GOMEMLIMIT="${ITB_GOMEMLIMIT:-4GiB}"
+export ITB_GOGC="${ITB_GOGC:-100}"
 
 # Bench-shape defaults — match the root Go BENCH3.md pin so the
 # throughput numbers are directly comparable to the shipped Go
@@ -53,22 +59,22 @@ SHAPE="${1:-all}"
 case "$SHAPE" in
     message)
         export ITB_PROFILE="${ITB_MSG_PROFILE_DEFAULT}"
-        java -cp build/libs/bench.jar com.everanium.itb.bench.BenchMessage
+        java -cp build/libs/bench.jar io.github.everanium.itb3.bench.BenchMessage
         ;;
     stream)
         export ITB_PROFILE="${ITB_STREAM_PROFILE_DEFAULT}"
-        java -cp build/libs/bench.jar com.everanium.itb.bench.BenchStream
+        java -cp build/libs/bench.jar io.github.everanium.itb3.bench.BenchStream
         ;;
     stream_one_shot)
         export ITB_PROFILE="${ITB_STREAM_PROFILE_DEFAULT}"
-        java -cp build/libs/bench.jar com.everanium.itb.bench.BenchStreamOneShot
+        java -cp build/libs/bench.jar io.github.everanium.itb3.bench.BenchStreamOneShot
         ;;
     all)
         export ITB_PROFILE="${ITB_MSG_PROFILE_DEFAULT}"
-        java -cp build/libs/bench.jar com.everanium.itb.bench.BenchMessage
+        java -cp build/libs/bench.jar io.github.everanium.itb3.bench.BenchMessage
         export ITB_PROFILE="${ITB_STREAM_PROFILE_DEFAULT}"
-        java -cp build/libs/bench.jar com.everanium.itb.bench.BenchStream
-        java -cp build/libs/bench.jar com.everanium.itb.bench.BenchStreamOneShot
+        java -cp build/libs/bench.jar io.github.everanium.itb3.bench.BenchStream
+        java -cp build/libs/bench.jar io.github.everanium.itb3.bench.BenchStreamOneShot
         ;;
     *)
         echo "usage: $0 [message|stream|stream_one_shot|all]" >&2

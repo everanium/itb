@@ -66,7 +66,7 @@ pub const Pipeline = struct {
     }
 
     /// `load` for a blob stored at `path`; the file is read inside
-    /// libitb (a missing or unreadable file is `error.BadInput`).
+    /// libitb3 (a missing or unreadable file is `error.BadInput`).
     pub fn loadF(allocator: Allocator, path: [:0]const u8, masters: ?Masters) err.Error!Pipeline {
         const m = masters orelse Masters{ .perm = &.{}, .wrap = &.{} };
         var handle: ?*ffi.itb_pipeline = null;
@@ -101,14 +101,14 @@ pub const Pipeline = struct {
         return self.copyOut(out, out_len);
     }
 
-    /// Writes the current blob to `path` inside libitb (mode 0600; the
+    /// Writes the current blob to `path` inside libitb3 (mode 0600; the
     /// containing directory must exist).
     pub fn saveF(self: *const Pipeline, path: [:0]const u8) err.Error!void {
         try err.check(ffi.itb_pipeline_save_f(self.handle, path.ptr));
     }
 
     /// Sets the worker cap for every subsequent cipher call. `n` is
-    /// clamped by libitb (`<= 0` selects auto, `> 256` becomes 256);
+    /// clamped by libitb3 (`<= 0` selects auto, `> 256` becomes 256);
     /// only the handle state is reported.
     pub fn maxWorkers(self: *const Pipeline, n: i32) err.Error!void {
         try err.check(ffi.itb_pipeline_max_workers(self.handle, n));

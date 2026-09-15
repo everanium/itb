@@ -1,4 +1,4 @@
-//! Status codes relayed from the C binding / libitb.
+//! Status codes relayed from the C binding / libitb3.
 
 const std = @import("std");
 const ffi = @import("ffi.zig").c;
@@ -6,7 +6,7 @@ const ffi = @import("ffi.zig").c;
 /// Mirrors the C binding's `itb_status` numerically. Codes 11..13 are
 /// the Triple blob-record / registry sentinels, 14..17 a reserved
 /// block; 19..22 belong to the native Blob surface
-/// (not wrapped here but relayed verbatim if libitb ever returns
+/// (not wrapped here but relayed verbatim if libitb3 ever returns
 /// them). The enum is non-exhaustive so an unknown future code is
 /// carried through rather than trapping.
 pub const Status = enum(c_uint) {

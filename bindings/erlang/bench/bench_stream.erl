@@ -16,7 +16,7 @@
 %%
 %% Invocation (from bindings/erlang, after ./build.sh):
 %%   erlc -o bench bench/bench_stream.erl
-%%   erl -noshell -pa _build/default/lib/itb/ebin -pa bench \
+%%   erl -noshell -pa _build/default/lib/libitb3/ebin -pa bench \
 %%       -run bench_stream main run -run init stop
 
 -module(bench_stream).
@@ -30,11 +30,11 @@ main(_Args) ->
     %% Bench-scale allocation churn leaks Go scratch heap unboundedly
     %% without a soft memory cap + aggressive GC; the return values
     %% report the previous settings, not an error.
-    _ = itb:set_memory_limit(512 bsl 20), %% 512 MiB soft cap
-    _ = itb:set_gc_percent(20),           %% aggressive GC
+    _ = itb3:set_memory_limit(4 bsl 30), %% 4 GiB soft cap
+    _ = itb3:set_gc_percent(100),         %% balanced GC
 
     Profile = env("ITB_PROFILE", "streaming-noaead-triple-v1"),
-    {ok, Pipe} = itb:init(Profile, bench_opts()),
+    {ok, Pipe} = itb3:init(Profile, bench_opts()),
     io:format("~-17s ~-8s ~s~n", ["bench", "size", "mb_per_sec"]),
     lists:foreach(
       fun(Size) ->
@@ -48,39 +48,39 @@ main(_Args) ->
               RunDec = fun() -> pump_dec(Pipe, DecWire) end,
               bench_case("stream_pump-dec", Size, RunDec)
       end, [1 bsl 20, 16 bsl 20, 64 bsl 20]),
-    ok = itb:free(Pipe).
+    ok = itb3:free(Pipe).
 
 %% ------------------------------------------------------------------
 %% Pump: full incremental encrypt session over one buffer.
 %% ------------------------------------------------------------------
 
 pump(Pipe, Plain) ->
-    {ok, Stream} = itb:encrypt_stream(Pipe),
+    {ok, Stream} = itb3:encrypt_stream(Pipe),
     ok = feed(Stream, Plain),
-    ok = itb:stream_end(Stream),
+    ok = itb3:stream_end(Stream),
     ok = drain(Stream),
-    ok = itb:stream_free(Stream).
+    ok = itb3:stream_free(Stream).
 
 feed(_Stream, <<>>) ->
     ok;
 feed(Stream, Data) ->
     N = min(byte_size(Data), ?PUMP_BUF),
     <<Slice:N/binary, Rest/binary>> = Data,
-    ok = itb:stream_write(Stream, Slice),
+    ok = itb3:stream_write(Stream, Slice),
     ok = drain_ready(Stream),
     feed(Stream, Rest).
 
 %% A read before end never blocks; drain whatever the chain has
 %% produced so far to bound the Go-side spool.
 drain_ready(Stream) ->
-    case itb:stream_read(Stream, ?PUMP_BUF) of
+    case itb3:stream_read(Stream, ?PUMP_BUF) of
         {ok, <<>>, _} -> ok;
         {ok, _, true} -> ok;
         {ok, _, false} -> drain_ready(Stream)
     end.
 
 drain(Stream) ->
-    case itb:stream_read(Stream, ?PUMP_BUF) of
+    case itb3:stream_read(Stream, ?PUMP_BUF) of
         {ok, _, true} -> ok;
         {ok, _, false} -> drain(Stream)
     end.
@@ -106,11 +106,11 @@ drain(Stream) ->
 %% behaviour remains fundamentally incompatible with wire collection
 %% across chunk boundaries.
 pump_all(Pipe, Plain) ->
-    {ok, Stream} = itb:encrypt_stream(Pipe),
+    {ok, Stream} = itb3:encrypt_stream(Pipe),
     ok = feed_noread(Stream, Plain),
-    ok = itb:stream_end(Stream),
+    ok = itb3:stream_end(Stream),
     Wire = drain_collect(Stream, []),
-    ok = itb:stream_free(Stream),
+    ok = itb3:stream_free(Stream),
     Wire.
 
 feed_noread(_Stream, <<>>) ->
@@ -118,22 +118,22 @@ feed_noread(_Stream, <<>>) ->
 feed_noread(Stream, Data) ->
     N = min(byte_size(Data), ?PUMP_BUF),
     <<Slice:N/binary, Rest/binary>> = Data,
-    ok = itb:stream_write(Stream, Slice),
+    ok = itb3:stream_write(Stream, Slice),
     feed_noread(Stream, Rest).
 
 drain_collect(Stream, Acc) ->
-    case itb:stream_read(Stream, ?PUMP_BUF) of
+    case itb3:stream_read(Stream, ?PUMP_BUF) of
         {ok, Chunk, true} -> iolist_to_binary(lists:reverse([Chunk | Acc]));
         {ok, Chunk, false} -> drain_collect(Stream, [Chunk | Acc])
     end.
 
 %% Decrypt whole wire.
 pump_dec(Pipe, Wire) ->
-    {ok, Stream} = itb:decrypt_stream(Pipe),
+    {ok, Stream} = itb3:decrypt_stream(Pipe),
     ok = feed(Stream, Wire),
-    ok = itb:stream_end(Stream),
+    ok = itb3:stream_end(Stream),
     ok = drain(Stream),
-    ok = itb:stream_free(Stream).
+    ok = itb3:stream_free(Stream).
 
 %% ------------------------------------------------------------------
 %% Timing loop: one untimed warm-up, then iterate until the wall-clock

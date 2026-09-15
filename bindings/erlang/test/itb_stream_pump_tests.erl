@@ -18,8 +18,8 @@ pump_round_trip(Profile) ->
     ?assert(byte_size(Wire) > byte_size(Plain)),
     Back = itb_test_util:pump(Receiver, decrypt, Wire),
     ?assertEqual(Plain, Back),
-    ok = itb:free(Receiver),
-    ok = itb:free(Sender).
+    ok = itb3:free(Receiver),
+    ok = itb3:free(Sender).
 
 %% Two sequential sessions on the same Pipeline stay independent.
 sequential_sessions_test_() ->
@@ -32,8 +32,8 @@ sequential_sessions_test_() ->
         Wire2 = itb_test_util:pump(Sender, encrypt, Plain2),
         ?assertEqual(Plain1, itb_test_util:pump(Receiver, decrypt, Wire1)),
         ?assertEqual(Plain2, itb_test_util:pump(Receiver, decrypt, Wire2)),
-        ok = itb:free(Receiver),
-        ok = itb:free(Sender)
+        ok = itb3:free(Receiver),
+        ok = itb3:free(Sender)
     end}.
 
 %% Go core rejects zero-payload streams uniformly with ErrEmptyInput
@@ -42,10 +42,10 @@ sequential_sessions_test_() ->
 %% produces no wire on this surface.
 empty_pump_test_() ->
     {timeout, 120, fun() ->
-        {ok, Sender} = itb:init(<<"streaming-aead-triple-mac-v1">>, #{}),
-        {ok, Stream} = itb:encrypt_stream(Sender),
-        EndResult = itb:stream_end(Stream),
-        ReadResult = itb:stream_read(Stream, 1024),
+        {ok, Sender} = itb3:init(<<"streaming-aead-triple-mac-v1">>, #{}),
+        {ok, Stream} = itb3:encrypt_stream(Sender),
+        EndResult = itb3:stream_end(Stream),
+        ReadResult = itb3:stream_read(Stream, 1024),
         ?assert(case EndResult of
                     {error, {bad_input, _}} -> true;
                     _ -> false
@@ -54,6 +54,6 @@ empty_pump_test_() ->
                            {error, {bad_input, _}} -> true;
                            _ -> false
                        end),
-        ok = itb:stream_free(Stream),
-        ok = itb:free(Sender)
+        ok = itb3:stream_free(Stream),
+        ok = itb3:free(Sender)
     end}.

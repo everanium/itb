@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace Everanium\Itb\Tests;
+namespace Everanium\Itb3\Tests;
 
-use Everanium\Itb\FFIBridge;
-use Everanium\Itb\Itb;
+use Everanium\Itb3\FFIBridge;
+use Everanium\Itb3\Itb;
 use PHPUnit\Framework\TestCase;
 
 /**

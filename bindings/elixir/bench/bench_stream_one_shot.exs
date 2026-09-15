@@ -2,7 +2,7 @@
 # size (Streaming Non-AEAD profile) at 1 MiB / 16 MiB / 64 MiB. Each
 # iteration issues one ITB.encrypt_stream_one_shot/2 or
 # ITB.decrypt_stream_one_shot/2 call for callers holding the full
-# payload in memory — the whole-buffer fast path through libitb.
+# payload in memory — the whole-buffer fast path through libitb3.
 #
 # Env-var overrides identical to bench_message (defaults match the
 # root Go BENCH3.md pin):
@@ -29,8 +29,8 @@ defmodule BenchStreamOneShot do
     # Bench-scale allocation churn leaks Go scratch heap unboundedly
     # without a soft memory cap + aggressive GC; the return values
     # report the previous settings, not an error.
-    _ = ITB.set_memory_limit(512 <<< 20)
-    _ = ITB.set_gc_percent(20)
+    _ = ITB.set_memory_limit(4 <<< 30)
+    _ = ITB.set_gc_percent(100)
 
     profile = BenchUtil.env("ITB_PROFILE", "streaming-noaead-triple-v1")
     {:ok, pipe} = ITB.init(profile, BenchUtil.bench_opts())

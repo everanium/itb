@@ -20,7 +20,7 @@
 $LOAD_PATH.unshift(File.expand_path("../lib", __dir__))
 require "fileutils"
 require "json"
-require "itb"
+require "libitb3"
 
 USAGE = <<~TEXT
   usage: itb.rb version
@@ -31,7 +31,7 @@ USAGE = <<~TEXT
 TEXT
 
 def cmd_version
-  puts "libitb #{ITB.version}"
+  puts "libitb3 #{ITB.version}"
   puts "itb-ruby #{ITB::VERSION}"
 end
 
@@ -122,8 +122,8 @@ end
 
 begin
   # Go-runtime pacing caps applied before any cipher work.
-  ITB.set_memory_limit(512 << 20)
-  ITB.set_gc_percent(20)
+  ITB.set_memory_limit(4 << 30)
+  ITB.set_gc_percent(100)
   case argv[0]
   when "version" then cmd_version
   when "profiles" then cmd_profiles

@@ -4,11 +4,11 @@
 // round-trip surface for callers holding the whole payload in
 // memory.
 
-package dev.everanium.itb.groovy.bench
+package io.github.everanium.itb3.groovy.bench
 
 import groovy.transform.CompileStatic
 
-import dev.everanium.itb.groovy.Pipeline
+import io.github.everanium.itb3.groovy.Pipeline
 
 @CompileStatic
 final class BenchStreamOneShot {

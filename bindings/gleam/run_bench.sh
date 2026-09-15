@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # run_bench.sh -- micro-benchmark runner for the Gleam binding.
-# Builds libitb.so + the C binding archive + the Erlang backend +
+# Builds libitb3.so + the C binding archive + the Erlang backend +
 # the Gleam project via build.sh, then runs the message, stream_pump
 # and stream_one_shot shapes: encrypt_message, incremental-session and
 # whole-buffer stream throughput at 1 MiB / 16 MiB / 64 MiB.
@@ -22,8 +22,8 @@ cd "$(dirname "$0")"
 # Go-runtime pacing defaults for bench-scale allocation churn; the
 # `:-` form respects any override set by the caller. The bench main
 # applies the same caps programmatically.
-export ITB_GOMEMLIMIT="${ITB_GOMEMLIMIT:-512MiB}"
-export ITB_GOGC="${ITB_GOGC:-20}"
+export ITB_GOMEMLIMIT="${ITB_GOMEMLIMIT:-4GiB}"
+export ITB_GOGC="${ITB_GOGC:-100}"
 
 # Bench-shape defaults — match the root Go BENCH3.md pin so the
 # throughput numbers are directly comparable to the shipped Go

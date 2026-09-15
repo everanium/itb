@@ -2,7 +2,7 @@
 //!
 //! The builder performs no validation — every key and value is
 //! rendered into a percent-encoded query string and passed through to
-//! Go verbatim; libitb rejects unknown keys or bad values with a
+//! Go verbatim; libitb3 rejects unknown keys or bad values with a
 //! diagnostic surfaced via [`crate::ItbError`]. Primitive / MAC /
 //! cipher / palette names are opaque strings.
 

@@ -42,11 +42,18 @@
 // closure, and the [Make128Pair] / [Make256Pair] / [Make512Pair]
 // counterparts return the (single, batched) pair — the batched arm
 // (a [github.com/everanium/itb.BatchHashFunc128] / BatchHashFunc256 /
-// BatchHashFunc512 closure) fuses four independent per-pixel hash
-// calls into one SIMD-batched invocation on hosts that support the
-// primitive's ZMM / YMM chain-absorb kernel, and falls back to four
-// serial calls elsewhere. The returned batched arm may be nil when
-// the primitive has no batched implementation on the current CPU.
+// BatchHashFunc512 closure) evaluates four independent per-pixel hash
+// calls, through a lane-parallel kernel where the primitive carries one
+// and through four calls of the single arm elsewhere; the fused cascade
+// hooks of the registry entry carry the per-pixel and Interlocked
+// Barrier fill assembly. The returned batched arm may be nil when the
+// primitive has no batched implementation on the current CPU.
+// The [NewSeed128] / [NewSeed256] / [NewSeed512] constructors build a
+// seed of the named primitive with those arms and every fast-path hook
+// the primitive offers, returning the fixed key of the arms; the
+// [SeedFromComponents128] / [SeedFromComponents256] /
+// [SeedFromComponents512] counterparts rebuild such a seed from saved
+// components under its key.
 //
 // All primitives in this package are PRF-grade. The below-spec lab
 // stress controls (CRC128, FNV-1a) used in REDTEAM.md / SCIENCE.md
@@ -94,12 +101,12 @@
 // # Runtime registration
 //
 // A user primitive can be plugged as a closure directly (constructed
-// via one of the builders above and passed to a Cfg-suffixed Low-Level
+// via one of the builders above and passed to a Cfg-suffixed per-call
 // entry point) or registered by name via [Register] so the standard
 // name-keyed dispatchers ([Find], [Make128], [Make256], [Make512] and
 // their Pair counterparts) resolve it alongside shipped entries. The
 // shipped [Registry] itself is immutable — registrations live in a
 // separate mutex-guarded slice exposed via [AllPrimitives] — so the
-// FFI iteration surface is unaffected. See the package README for the
-// full end-to-end registration example.
+// FFI iteration surface (ITB_Triple_HashNames) is unaffected. See
+// the package README for the full end-to-end registration example.
 package hashes

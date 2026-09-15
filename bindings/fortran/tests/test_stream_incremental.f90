@@ -2,7 +2,7 @@
 ! sizes (17-byte feed, 23-byte drain) across multiple chunks.
 
 program test_stream_incremental
-  use itb
+  use itb3
   use itb_test_helpers
   implicit none
 

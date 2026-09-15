@@ -1,22 +1,22 @@
-//! Thin Rust proxy over the libitb shared library's Triple Pipeline
+//! Thin Rust proxy over the libitb3 shared library's Triple Pipeline
 //! surface.
 //!
 //! The crate wraps the `ITB_Triple_*` C ABI exported by `cmd/cshared`
-//! (libitb.so / .dylib / .dll) through `libloading` — runtime FFI, no
+//! (libitb3.so / .dylib / .dll) through `libloading` — runtime FFI, no
 //! compile-time link, no C compiler at install time. Every hash-name /
 //! MAC-name / cipher-name / profile-name is an opaque string passed
 //! through to Go for validation; the binding carries no ITB
 //! construction logic of its own.
 //!
 //! ```no_run
-//! use itb::{OptsBuilder, Pipeline};
+//! use itb3::{OptsBuilder, Pipeline};
 //!
 //! let opts = OptsBuilder::new();
 //! let sender = Pipeline::init("singlemsg-triple-mac-v1", &opts)?;
 //! let receiver = Pipeline::load(&sender.save()?, None)?;
 //! let wire = sender.encrypt_message(b"hello")?;
 //! assert_eq!(receiver.decrypt_message(&wire)?, b"hello");
-//! # Ok::<(), itb::ItbError>(())
+//! # Ok::<(), itb3::ItbError>(())
 //! ```
 
 mod error;

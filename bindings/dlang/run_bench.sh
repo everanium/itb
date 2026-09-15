@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # run_bench.sh -- micro-benchmark runner for the D binding. Builds
-# libitb.so + the binding via build.sh, then compiles and runs the
+# libitb3.so + the binding via build.sh, then compiles and runs the
 # benches/bench_*.d binaries: encryptMessage, encryptStreamPump, and
 # encryptStreamOneShot throughput at 1 MiB / 16 MiB / 64 MiB.
 #
@@ -22,8 +22,8 @@ DIST_DIR="$REPO_ROOT/dist/linux-amd64"
 # Go-runtime pacing defaults for bench-scale allocation churn; the
 # `:-` form respects any override set by the caller. The bench mains
 # apply the same caps programmatically.
-export ITB_GOMEMLIMIT="${ITB_GOMEMLIMIT:-512MiB}"
-export ITB_GOGC="${ITB_GOGC:-20}"
+export ITB_GOMEMLIMIT="${ITB_GOMEMLIMIT:-4GiB}"
+export ITB_GOGC="${ITB_GOGC:-100}"
 
 # Bench-shape defaults — match the root Go BENCH3.md pin so the
 # throughput numbers are directly comparable to the shipped Go
@@ -65,8 +65,8 @@ for bench in bench_message bench_stream bench_stream_one_shot; do
     esac
     "$COMPILER" -w $OPT_FLAGS -I=source -I=benches \
         -of="$BUILD_DIR/$bench" "benches/$bench.d" benches/bench_util.d \
-        source/itb/*.d \
-        -L-L"$DIST_DIR" -L-litb "-L-rpath=$DIST_DIR"
+        source/itb3/*.d \
+        -L-L"$DIST_DIR" -L-litb3 "-L-rpath=$DIST_DIR"
 done
 
 for bench in bench_message bench_stream bench_stream_one_shot; do

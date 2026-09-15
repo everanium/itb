@@ -105,39 +105,28 @@ func allocEightSeedsMixed(mixedHashes [8]string, keyBits, width int) ([8]any, [8
 // panicking so [Init] can bubble the failure through its
 // error-returning signature.
 func allocOneSeed(primitive string, keyBits, width int) (seed any, prfKey []byte, err error) {
+	// hashes.NewSeed<W> runs the whole construction — the (single,
+	// batched) arms, keyBits random components, the fused ChainHash
+	// cascade hooks and the batch-16 Interlocked Barrier fill hook — and
+	// returns the fixed key the arms were built with.
 	switch width {
 	case 128:
-		single, batched, key, herr := hashes.Make128Pair(primitive)
-		if herr != nil {
-			return nil, nil, fmt.Errorf("triple: hashes.Make128Pair(%q): %w", primitive, herr)
+		s, key, err := hashes.NewSeed128(primitive, keyBits)
+		if err != nil {
+			return nil, nil, fmt.Errorf("triple: hashes.NewSeed128(%q): %w", primitive, err)
 		}
-		s, serr := itb.NewSeed128(keyBits, single)
-		if serr != nil {
-			return nil, nil, fmt.Errorf("triple: itb.NewSeed128: %w", serr)
-		}
-		s.BatchHash = batched
 		return s, key, nil
 	case 256:
-		single, batched, key, herr := hashes.Make256Pair(primitive)
-		if herr != nil {
-			return nil, nil, fmt.Errorf("triple: hashes.Make256Pair(%q): %w", primitive, herr)
+		s, key, err := hashes.NewSeed256(primitive, keyBits)
+		if err != nil {
+			return nil, nil, fmt.Errorf("triple: hashes.NewSeed256(%q): %w", primitive, err)
 		}
-		s, serr := itb.NewSeed256(keyBits, single)
-		if serr != nil {
-			return nil, nil, fmt.Errorf("triple: itb.NewSeed256: %w", serr)
-		}
-		s.BatchHash = batched
 		return s, key, nil
 	case 512:
-		single, batched, key, herr := hashes.Make512Pair(primitive)
-		if herr != nil {
-			return nil, nil, fmt.Errorf("triple: hashes.Make512Pair(%q): %w", primitive, herr)
+		s, key, err := hashes.NewSeed512(primitive, keyBits)
+		if err != nil {
+			return nil, nil, fmt.Errorf("triple: hashes.NewSeed512(%q): %w", primitive, err)
 		}
-		s, serr := itb.NewSeed512(keyBits, single)
-		if serr != nil {
-			return nil, nil, fmt.Errorf("triple: itb.NewSeed512: %w", serr)
-		}
-		s.BatchHash = batched
 		return s, key, nil
 	}
 	return nil, nil, fmt.Errorf("triple: unsupported primitive width %d", width)

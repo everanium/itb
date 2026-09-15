@@ -23,7 +23,7 @@
 #include <system_error>
 #include <vector>
 
-#include "itb.hpp"
+#include "itb3.hpp"
 
 namespace {
 
@@ -116,7 +116,7 @@ int write_file(const char *path, const std::vector<std::uint8_t> &buf)
 
 int cmd_version()
 {
-    std::printf("libitb %s\n", itb::version().c_str());
+    std::printf("libitb3 %s\n", itb::version().c_str());
     std::printf("itb-cpp %s\n", ITB_CPP_VERSION);
     return 0;
 }
@@ -151,8 +151,8 @@ int cmd_profiles()
  * error. */
 void cap_go_runtime()
 {
-    (void)itb::set_memory_limit(512LL << 20); /* 512 MiB soft cap */
-    (void)itb::set_gc_percent(20);            /* aggressive GC */
+    (void)itb::set_memory_limit(4LL << 30); /* 4 GiB soft cap */
+    (void)itb::set_gc_percent(100);          /* balanced GC */
 }
 
 int cmd_encrypt(const char *profile, const char *infile, const char *outfile)

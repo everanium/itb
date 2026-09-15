@@ -1,6 +1,6 @@
 //! Init → Rekey → Load receiver with the rotated blob → round trip.
 
-use itb::{OptsBuilder, Pipeline};
+use itb3::{OptsBuilder, Pipeline};
 
 #[test]
 fn rekey_round_trip() {

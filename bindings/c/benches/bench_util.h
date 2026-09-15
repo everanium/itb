@@ -16,7 +16,7 @@
 #include <string.h>
 #include <time.h>
 
-#include "itb.h"
+#include "itb3.h"
 
 /* Per-case wall-clock budget (seconds, env: ITB_BENCH_MIN_SEC)
  * and iteration floor. */

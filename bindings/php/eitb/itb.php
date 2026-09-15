@@ -23,8 +23,8 @@ declare(strict_types=1);
 
 require __DIR__ . '/../autoload.php';
 
-use Everanium\Itb\Itb;
-use Everanium\Itb\ItbException;
+use Everanium\Itb3\Itb;
+use Everanium\Itb3\ItbException;
 
 const USAGE = <<<'TXT'
 usage: eitb version
@@ -36,7 +36,7 @@ TXT;
 
 function cmd_version(): void
 {
-    echo 'libitb ', Itb::version(), "\n";
+    echo 'libitb3 ', Itb::version(), "\n";
     echo 'itb-php ', Itb::VERSION, "\n";
 }
 
@@ -142,8 +142,8 @@ function main(array $argv): int
     ini_set('memory_limit', '-1');
     try {
         // Go-runtime pacing caps applied before any cipher work.
-        Itb::setMemoryLimit(512 << 20);
-        Itb::setGcPercent(20);
+        Itb::setMemoryLimit(4 << 30);
+        Itb::setGcPercent(100);
         switch ($argv[0]) {
             case 'version':
                 cmd_version();

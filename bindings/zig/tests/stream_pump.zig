@@ -2,7 +2,7 @@
 //! AEAD profile at 1 MiB.
 
 const std = @import("std");
-const itb = @import("itb");
+const itb = @import("itb3");
 
 /// Save → Load handshake: a receiver reconstructed from the sender's
 /// current blob.

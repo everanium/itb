@@ -51,8 +51,8 @@ func TestNamesExcludesRegistered(t *testing.T) {
 			t.Fatalf("Names() includes user-registered primitive %q", custom)
 		}
 	}
-	if got := ClassOf(custom); got != ClassNone {
-		t.Fatalf("ClassOf(%q) = %d, want ClassNone for a user-registered primitive", custom, got)
+	if got := ClassOf(custom); got != ClassNPRF {
+		t.Fatalf("ClassOf(%q) = %d, want ClassNPRF for a user-registered primitive", custom, got)
 	}
 	for _, info := range FullView() {
 		if info.Name == custom {
@@ -62,9 +62,19 @@ func TestNamesExcludesRegistered(t *testing.T) {
 }
 
 func TestRegistryClassPopulated(t *testing.T) {
+	// Every shipped Registry entry must carry a Class value the ctr /
+	// kdf / wrapper / parallax packages recognise: ClassNativeStream
+	// and ClassPRFCounter mark outer-cipher-eligible primitives;
+	// ClassNPRF marks inner-PRF-only primitives (AES-ITB and future
+	// entries whose reduced-round structure makes them safe only
+	// under ITB's compound inner-PRF stack). Any other Class value
+	// is a drift bug.
 	for i := range Registry {
-		if Registry[i].Class == ClassNone {
-			t.Errorf("Registry[%d] (%q) has Class == ClassNone", i, Registry[i].Name)
+		switch Registry[i].Class {
+		case ClassNPRF, ClassNativeStream, ClassPRFCounter:
+			// recognised
+		default:
+			t.Errorf("Registry[%d] (%q) has unrecognised Class %d", i, Registry[i].Name, Registry[i].Class)
 		}
 	}
 }
@@ -74,6 +84,7 @@ func TestClassOf(t *testing.T) {
 		name string
 		want Class
 	}{
+		{CipherAESITB128, ClassNPRF},
 		{CipherAreion256, ClassPRFCounter},
 		{CipherAreion512, ClassPRFCounter},
 		{CipherBLAKE2b256, ClassPRFCounter},
@@ -83,8 +94,8 @@ func TestClassOf(t *testing.T) {
 		{CipherAES128CTR, ClassNativeStream},
 		{CipherSipHash24, ClassNativeStream},
 		{CipherChaCha20, ClassNativeStream},
-		{"nope", ClassNone},
-		{"", ClassNone},
+		{"nope", ClassNPRF},
+		{"", ClassNPRF},
 	}
 	for _, c := range cases {
 		if got := ClassOf(c.name); got != c.want {

@@ -266,10 +266,11 @@ func FreeTriple(id TripleHandleID) (st Status) {
 // pass across the Pipeline's full chain: parallax encrypt-Reader → itb
 // Triple 8-seed Streaming AEAD (or Non-AEAD) → wrapper wrap-Writer.
 //
-// Buffer convention mirrors the low-level ITB_EncryptStream* family:
-// the caller supplies a plaintext src slice + a wire destination
-// buffer with capacity; the returned n reports bytes written on
-// success or the required capacity on StatusBufferTooSmall.
+// Buffer convention is the standard caller-allocated one used across
+// every cipher entry: the caller supplies a plaintext src slice + a
+// wire destination buffer with capacity; the returned n reports bytes
+// written on success or the required capacity on
+// StatusBufferTooSmall.
 //
 // The whole plaintext is available up front on this surface, so the
 // call routes through [triple.Pipeline.EncryptStreamBytes] — the
@@ -419,6 +420,31 @@ func mapTripleError(err error) Status {
 		err == triple.ErrEmptyInput:
 		setLastErrMessageTriple(msg)
 		return StatusBadInput
+	// The inner Blob{N}.Import3Cfg / Export3Cfg sentinels. triple.Load
+	// wraps them with %w (see triple/open.go), so errors.Is reaches
+	// them through the wrap. Without these branches a rejected blob
+	// falls through to StatusInternal and surfaces to a binding as a
+	// bare "internal error", indistinguishable from a library fault.
+	//
+	// These are itb-package sentinels and are distinct values from the
+	// triple-package ErrBlobMalformed / ErrBlobVersion matched above,
+	// which describe the outer wrap layer rather than the inner blob.
+	case errors.Is(err, itb.ErrBlobModeMismatch):
+		setLastErrMessageTriple(msg)
+		return StatusBlobModeMismatch
+	case errors.Is(err, itb.ErrBlobMalformed):
+		setLastErrMessageTriple(msg)
+		return StatusBlobMalformed
+	case errors.Is(err, itb.ErrBlobVersionTooNew):
+		setLastErrMessageTriple(msg)
+		return StatusBlobVersionTooNew
+	case errors.Is(err, itb.ErrBlobTooManyOpts):
+		// Defensive: no triple-side caller reaches this today, since
+		// every Export3Cfg call site in triple/init.go passes exactly
+		// one options struct. Mapped so the family is complete if a
+		// variadic path is ever added.
+		setLastErrMessageTriple(msg)
+		return StatusBlobTooManyOpts
 	case errors.Is(err, triple.ErrBadKeyBits):
 		setLastErrMessageTriple(msg)
 		return StatusBadKeyBits

@@ -1,11 +1,10 @@
 package itb
 
 import (
-	"crypto/rand"
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"math"
-	"runtime"
 	"sync"
 )
 
@@ -41,121 +40,47 @@ func EncryptAuthenticated3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, d
 		return nil, err
 	}
 
-	p0, p1, p2 := splitForTriple48LockedCfg(cfg, data, buildLockBatchPRF48_512Cfg(cfg, lockSeed, ilNonce))
-
-	// Phase 1: 3 parallel cobsEncode
-	var encs [3][]byte
-	{
-		parts := [3][]byte{p0, p1, p2}
-		var wg sync.WaitGroup
-		wg.Add(3)
-		for i := 0; i < 3; i++ {
-			go func(i int) {
-				defer wg.Done()
-				encs[i] = cobsEncode(parts[i])
-			}(i)
-		}
-		wg.Wait()
+	// Interlock split, COBS, payload assembly and wire allocation with
+	// overlapped container + payload-tail DRBG fill (see
+	// triplepayload.go). part2 COBS length increased by tagSize + 1
+	// for container sizing: the +1 mirrors the Streaming AEAD flag-byte
+	// slot so the single message wire envelope matches the No MAC
+	// Encrypt3x envelope (which reserves nomacTagStubSizeCfg(cfg) =
+	// tagSize + 1 for the same mode-ambiguity reason — the zero-value
+	// default covers the shipped 32-byte tags, and Config.TagStubSize
+	// carries a custom MAC's tag length). Single messages carry a
+	// fixed 0x00 in that slot — there is no finalFlag semantic on this
+	// path. part0 and part1 are filled to full capacity, part2 reserves
+	// tagSize + 1 (tag slot + fixed 0x00 dummy flag slot) that is
+	// written below.
+	tp, out, container, width, height, err := buildTripleWire3(cfg, data, buildLockBatchPRF48_512Cfg(cfg, lockSeed, ilNonce), tagSize+1, false, nonce, ilNonce,
+		func(cobsLens [3]int) (int, int) {
+			return containerSizeAuth3_512Cfg(cfg, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, cobsLens)
+		})
+	if err != nil {
+		return nil, err
 	}
-
-	// part2 COBS length increased by tagSize + 1 for container sizing:
-	// the +1 mirrors the Streaming AEAD flag-byte slot so the single
-	// message wire envelope matches the No MAC Encrypt3x envelope
-	// (which reserves nomacTagStubSizeCfg(cfg) = tagSize + 1 for the
-	// same mode-ambiguity reason — the zero-value default covers the
-	// shipped 32-byte tags, and Config.TagStubSize carries a
-	// custom MAC's tag length). Single messages carry a fixed 0x00 in
-	// that slot — there is no finalFlag semantic on this path.
-	cobsLens := [3]int{len(encs[0]), len(encs[1]), len(encs[2]) + tagSize + 1}
-	width, height := containerSizeAuth3_512Cfg(cfg, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, cobsLens)
+	defer tp.release()
+	payloads := [3][]byte{tp.bufs[0], tp.bufs[1], tp.bufs[2][:tp.payloadLen[2]]}
 	totalPixels := width * height
-	third := totalPixels / 3
-	thirdPixels2 := totalPixels - 2*third
-
-	caps := [3]int{
-		(third * DataBitsPerPixel) / 8,
-		(third * DataBitsPerPixel) / 8,
-		(thirdPixels2 * DataBitsPerPixel) / 8,
-	}
-	payloadLens := [3]int{caps[0], caps[1], caps[2] - tagSize - 1}
-	for i := 0; i < 3; i++ {
-		if len(encs[i])+1 > payloadLens[i] {
-			return nil, fmt.Errorf("itb: internal error: container third %d too small", i)
-		}
-	}
-
-	// Build payloads: part0 and part1 full capacity, part2 reserves
-	// tagSize + 1 (tag slot + fixed 0x00 dummy flag slot).
-	// Phase 2: 3 parallel payload-build
-	var payloadPtrs [3]*[]byte
-	payloads := [3][]byte{}
-	defer func() {
-		for i := range payloadPtrs {
-			if payloadPtrs[i] != nil {
-				releaseBuffer(payloadPtrs[i], payloads[i])
-			}
-		}
-	}()
-	{
-		var errs [3]error
-		var wg sync.WaitGroup
-		wg.Add(3)
-		for i := 0; i < 3; i++ {
-			go func(i int) {
-				defer wg.Done()
-				payloadPtrs[i], payloads[i] = acquireBuffer(payloadLens[i])
-				copy(payloads[i], encs[i])
-				payloads[i][len(encs[i])] = 0x00
-				fillStart := len(encs[i]) + 1
-				if fillStart < payloadLens[i] {
-					fillBytes, err := generateRandomBytes(payloadLens[i] - fillStart)
-					if err != nil {
-						errs[i] = err
-						return
-					}
-					copy(payloads[i][fillStart:], fillBytes)
-				}
-			}(i)
-		}
-		wg.Wait()
-		for _, err := range errs {
-			if err != nil {
-				return nil, err
-			}
-		}
-	}
+	third, thirdPixels2, _ := tripleThirdCaps(totalPixels)
 
 	// MAC over concatenated payloads (covers all fill bytes)
 	tag := macTagCfg(cfg, macFunc, payloads[0], payloads[1], payloads[2])
 
-	// full2 = payload2 || tag || 0x00 (single-message dummy flag slot)
-	full2Ptr, full2 := acquireBuffer(caps[2])
-	defer releaseBuffer(full2Ptr, full2)
-	copy(full2, payloads[2])
+	// full2 = payload2 || tag || 0x00 (single-message dummy flag slot),
+	// assembled in place in the third payload buffer.
+	full2 := tp.bufs[2]
 	copy(full2[len(payloads[2]):], tag)
 	full2[len(payloads[2])+tagSize] = 0x00
 
-	// 3×CSPRNG parallel generation
-	container := make([]byte, totalPixels*Channels)
-	var wg sync.WaitGroup
-	var randErr [3]error
-	wg.Add(3)
-	go func() { _, randErr[0] = rand.Read(container[0 : third*Channels]); wg.Done() }()
-	go func() { _, randErr[1] = rand.Read(container[third*Channels : 2*third*Channels]); wg.Done() }()
-	go func() { _, randErr[2] = rand.Read(container[2*third*Channels : totalPixels*Channels]); wg.Done() }()
-	wg.Wait()
-	for _, err := range randErr {
-		if err != nil {
-			return nil, fmt.Errorf("itb: crypto/rand: %w", err)
-		}
-	}
-
-	perThird := runtime.NumCPU() / 3
+	perThird := configuredWorkerCount(cfg) / 3
 	if perThird < 1 {
 		perThird = 1
 	}
 	offset1 := third * Channels
 	offset2 := 2 * third * Channels
+	var wg sync.WaitGroup
 	wg.Add(3)
 	go func() {
 		process512Cfg(cfg, noiseSeed, dataSeed1, startSeed1, nonce, container[0:offset1], third, 1, payloads[0], true, perThird)
@@ -170,15 +95,6 @@ func EncryptAuthenticated3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, d
 		wg.Done()
 	}()
 	wg.Wait()
-
-	out := make([]byte, 0, headerSizeCfg(cfg)+len(container))
-	out = append(out, nonce...)
-	out = append(out, ilNonce...)
-	var dim [4]byte
-	binary.BigEndian.PutUint16(dim[0:], uint16(width))
-	binary.BigEndian.PutUint16(dim[2:], uint16(height))
-	out = append(out, dim[:]...)
-	out = append(out, container...)
 
 	return out, nil
 }
@@ -208,9 +124,8 @@ func DecryptAuthenticated3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, d
 
 	nonceLen := currentNonceSizeCfg(cfg)
 	nonce := fileData[:nonceLen]
-	ilNonce := fileData[nonceLen : 2*nonceLen]
-	width := int(binary.BigEndian.Uint16(fileData[2*nonceLen:]))
-	height := int(binary.BigEndian.Uint16(fileData[2*nonceLen+2:]))
+	width := int(binary.BigEndian.Uint16(fileData[nonceLen:]))
+	height := int(binary.BigEndian.Uint16(fileData[nonceLen+2:]))
 	container := fileData[headerSizeCfg(cfg):]
 
 	if width == 0 || height == 0 {
@@ -231,14 +146,7 @@ func DecryptAuthenticated3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, d
 		return nil, fmt.Errorf("itb: container too short: got %d, need %d", len(container), expectedSize)
 	}
 
-	third := totalPixels / 3
-	thirdPixels2 := totalPixels - 2*third
-
-	caps := [3]int{
-		(third * DataBitsPerPixel) / 8,
-		(third * DataBitsPerPixel) / 8,
-		(thirdPixels2 * DataBitsPerPixel) / 8,
-	}
+	third, thirdPixels2, caps := tripleThirdCaps(totalPixels)
 	if caps[2] <= tagSize+1 {
 		return nil, fmt.Errorf("itb: container too small for MAC tag")
 	}
@@ -256,7 +164,7 @@ func DecryptAuthenticated3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, d
 		decodedPtrs[i], decoded[i] = acquireBuffer(caps[i])
 	}
 
-	perThird := runtime.NumCPU() / 3
+	perThird := configuredWorkerCount(cfg) / 3
 	if perThird < 1 {
 		perThird = 1
 	}
@@ -294,7 +202,9 @@ func DecryptAuthenticated3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, d
 		return nil, ErrMACFailure
 	}
 
-	// 3 parallel null-search + cobsDecode (MAC already verified data integrity)
+	// 3 parallel null-search + in-place cobsDecode (MAC already verified
+	// data integrity; each decoded lane overwrites its own COBS bytes
+	// inside the pooled buffer, wiped on release after the interleave)
 	parts := [3][]byte{}
 	{
 		decs := [][]byte{decoded[0], decoded[1], payload2}
@@ -305,17 +215,12 @@ func DecryptAuthenticated3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, d
 			go func(i int) {
 				defer wg.Done()
 				dec := decs[i]
-				nullPos := -1
-				for j := 0; j < len(dec); j++ {
-					if dec[j] == 0x00 && nullPos == -1 {
-						nullPos = j
-					}
-				}
+				nullPos := bytes.IndexByte(dec, 0x00)
 				if nullPos <= 0 {
 					errs[i] = fmt.Errorf("itb: no terminator found in third %d", i)
 					return
 				}
-				parts[i] = cobsDecode(dec[:nullPos])
+				parts[i] = cobsDecodeInto(dec, dec[:nullPos])
 			}(i)
 		}
 		wg.Wait()
@@ -326,7 +231,10 @@ func DecryptAuthenticated3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, d
 		}
 	}
 
-	return interleaveForTriple48LockedCfg(cfg, parts[0], parts[1], parts[2], buildLockBatchPRF48_512Cfg(cfg, lockSeed, ilNonce)), nil
+	// The interlock nonce is carried split across the three lane
+	// prefixes; lanes[i] is what follows fragment i.
+	ilNonce, lanes := recoverInterlockNonce(nonceLen, parts)
+	return interleaveForTriple48LockedCfg(cfg, lanes[0], lanes[1], lanes[2], buildLockBatchPRF48_512Cfg(cfg, lockSeed, ilNonce)), nil
 }
 
 // EncryptStreamAuthenticated3x512Cfg encrypts a single Streaming AEAD
@@ -362,81 +270,23 @@ func EncryptStreamAuthenticated3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSe
 		return nil, err
 	}
 
-	p0, p1, p2 := splitForTriple48LockedCfg(cfg, data, buildLockBatchPRF48_512Cfg(cfg, lockSeed, ilNonce))
-
-	// Phase 1: 3 parallel cobsEncode
-	var encs [3][]byte
-	{
-		parts := [3][]byte{p0, p1, p2}
-		var wg sync.WaitGroup
-		wg.Add(3)
-		for i := 0; i < 3; i++ {
-			go func(i int) {
-				defer wg.Done()
-				encs[i] = cobsEncode(parts[i])
-			}(i)
-		}
-		wg.Wait()
+	// Interlock split, COBS, payload assembly and wire allocation with
+	// overlapped container + payload-tail DRBG fill (see
+	// triplepayload.go). part2 COBS length increased by tagSize + 1
+	// (flag byte) for container sizing; part0 and part1 are filled to
+	// full capacity, part2 reserves tagSize + 1 (tag slot + flag) that
+	// is written below.
+	tp, out, container, width, height, err := buildTripleWire3(cfg, data, buildLockBatchPRF48_512Cfg(cfg, lockSeed, ilNonce), tagSize+1, false, nonce, ilNonce,
+		func(cobsLens [3]int) (int, int) {
+			return containerSizeAuth3_512Cfg(cfg, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, cobsLens)
+		})
+	if err != nil {
+		return nil, err
 	}
-
-	// part2 COBS length increased by tagSize + 1 (flag byte) for container sizing
-	cobsLens := [3]int{len(encs[0]), len(encs[1]), len(encs[2]) + tagSize + 1}
-	width, height := containerSizeAuth3_512Cfg(cfg, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, cobsLens)
+	defer tp.release()
+	payloads := [3][]byte{tp.bufs[0], tp.bufs[1], tp.bufs[2][:tp.payloadLen[2]]}
 	totalPixels := width * height
-	third := totalPixels / 3
-	thirdPixels2 := totalPixels - 2*third
-
-	caps := [3]int{
-		(third * DataBitsPerPixel) / 8,
-		(third * DataBitsPerPixel) / 8,
-		(thirdPixels2 * DataBitsPerPixel) / 8,
-	}
-	payloadLens := [3]int{caps[0], caps[1], caps[2] - tagSize - 1}
-	for i := 0; i < 3; i++ {
-		if len(encs[i])+1 > payloadLens[i] {
-			return nil, fmt.Errorf("itb: internal error: container third %d too small", i)
-		}
-	}
-
-	// Build payloads: part0 and part1 full capacity, part2 reserves tagSize + 1 (flag)
-	// Phase 2: 3 parallel payload-build
-	var payloadPtrs [3]*[]byte
-	payloads := [3][]byte{}
-	defer func() {
-		for i := range payloadPtrs {
-			if payloadPtrs[i] != nil {
-				releaseBuffer(payloadPtrs[i], payloads[i])
-			}
-		}
-	}()
-	{
-		var errs [3]error
-		var wg sync.WaitGroup
-		wg.Add(3)
-		for i := 0; i < 3; i++ {
-			go func(i int) {
-				defer wg.Done()
-				payloadPtrs[i], payloads[i] = acquireBuffer(payloadLens[i])
-				copy(payloads[i], encs[i])
-				payloads[i][len(encs[i])] = 0x00
-				fillStart := len(encs[i]) + 1
-				if fillStart < payloadLens[i] {
-					fillBytes, err := generateRandomBytes(payloadLens[i] - fillStart)
-					if err != nil {
-						errs[i] = err
-						return
-					}
-					copy(payloads[i][fillStart:], fillBytes)
-				}
-			}(i)
-		}
-		wg.Wait()
-		for _, err := range errs {
-			if err != nil {
-				return nil, err
-			}
-		}
-	}
+	third, thirdPixels2, _ := tripleThirdCaps(totalPixels)
 
 	// MAC over concatenated payloads || streamID || uint64_le(offset) || flag
 	flag := streamFlagByte(finalFlag)
@@ -445,34 +295,19 @@ func EncryptStreamAuthenticated3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSe
 	tag := macTagCfg(cfg, macFunc,
 		payloads[0], payloads[1], payloads[2], streamID[:], offsetLE[:], []byte{flag})
 
-	// full2 = payload2 || tag || flag
-	full2Ptr, full2 := acquireBuffer(caps[2])
-	defer releaseBuffer(full2Ptr, full2)
-	copy(full2, payloads[2])
+	// full2 = payload2 || tag || flag, assembled in place in the third
+	// payload buffer.
+	full2 := tp.bufs[2]
 	copy(full2[len(payloads[2]):], tag)
 	full2[len(payloads[2])+tagSize] = flag
 
-	// 3×CSPRNG parallel generation
-	container := make([]byte, totalPixels*Channels)
-	var wg sync.WaitGroup
-	var randErr [3]error
-	wg.Add(3)
-	go func() { _, randErr[0] = rand.Read(container[0 : third*Channels]); wg.Done() }()
-	go func() { _, randErr[1] = rand.Read(container[third*Channels : 2*third*Channels]); wg.Done() }()
-	go func() { _, randErr[2] = rand.Read(container[2*third*Channels : totalPixels*Channels]); wg.Done() }()
-	wg.Wait()
-	for _, err := range randErr {
-		if err != nil {
-			return nil, fmt.Errorf("itb: crypto/rand: %w", err)
-		}
-	}
-
-	perThird := runtime.NumCPU() / 3
+	perThird := configuredWorkerCount(cfg) / 3
 	if perThird < 1 {
 		perThird = 1
 	}
 	offset1 := third * Channels
 	offset2 := 2 * third * Channels
+	var wg sync.WaitGroup
 	wg.Add(3)
 	go func() {
 		process512Cfg(cfg, noiseSeed, dataSeed1, startSeed1, nonce, container[0:offset1], third, 1, payloads[0], true, perThird)
@@ -487,15 +322,6 @@ func EncryptStreamAuthenticated3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSe
 		wg.Done()
 	}()
 	wg.Wait()
-
-	out := make([]byte, 0, headerSizeCfg(cfg)+len(container))
-	out = append(out, nonce...)
-	out = append(out, ilNonce...)
-	var dim [4]byte
-	binary.BigEndian.PutUint16(dim[0:], uint16(width))
-	binary.BigEndian.PutUint16(dim[2:], uint16(height))
-	out = append(out, dim[:]...)
-	out = append(out, container...)
 
 	return out, nil
 }
@@ -525,9 +351,8 @@ func DecryptStreamAuthenticated3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSe
 
 	nonceLen := currentNonceSizeCfg(cfg)
 	nonce := chunkData[:nonceLen]
-	ilNonce := chunkData[nonceLen : 2*nonceLen]
-	width := int(binary.BigEndian.Uint16(chunkData[2*nonceLen:]))
-	height := int(binary.BigEndian.Uint16(chunkData[2*nonceLen+2:]))
+	width := int(binary.BigEndian.Uint16(chunkData[nonceLen:]))
+	height := int(binary.BigEndian.Uint16(chunkData[nonceLen+2:]))
 	container := chunkData[headerSizeCfg(cfg):]
 
 	if width == 0 || height == 0 {
@@ -548,14 +373,7 @@ func DecryptStreamAuthenticated3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSe
 		return nil, false, fmt.Errorf("itb: container too short: got %d, need %d", len(container), expectedSize)
 	}
 
-	third := totalPixels / 3
-	thirdPixels2 := totalPixels - 2*third
-
-	caps := [3]int{
-		(third * DataBitsPerPixel) / 8,
-		(third * DataBitsPerPixel) / 8,
-		(thirdPixels2 * DataBitsPerPixel) / 8,
-	}
+	third, thirdPixels2, caps := tripleThirdCaps(totalPixels)
 	if caps[2] <= tagSize+1 {
 		return nil, false, fmt.Errorf("itb: container too small for MAC tag")
 	}
@@ -573,7 +391,7 @@ func DecryptStreamAuthenticated3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSe
 		decodedPtrs[i], decoded[i] = acquireBuffer(caps[i])
 	}
 
-	perThird := runtime.NumCPU() / 3
+	perThird := configuredWorkerCount(cfg) / 3
 	if perThird < 1 {
 		perThird = 1
 	}
@@ -614,7 +432,9 @@ func DecryptStreamAuthenticated3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSe
 
 	finalFlag := flag == 0xFF
 
-	// 3 parallel null-search + cobsDecode (MAC already verified data integrity)
+	// 3 parallel null-search + in-place cobsDecode (MAC already verified
+	// data integrity; each decoded lane overwrites its own COBS bytes
+	// inside the pooled buffer, wiped on release after the interleave)
 	parts := [3][]byte{}
 	emptyThird := [3]bool{}
 	{
@@ -626,12 +446,7 @@ func DecryptStreamAuthenticated3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSe
 			go func(i int) {
 				defer wg.Done()
 				dec := decs[i]
-				nullPos := -1
-				for j := 0; j < len(dec); j++ {
-					if dec[j] == 0x00 && nullPos == -1 {
-						nullPos = j
-					}
-				}
+				nullPos := bytes.IndexByte(dec, 0x00)
 				if nullPos < 0 {
 					errs[i] = fmt.Errorf("itb: no terminator found in third %d", i)
 					return
@@ -644,7 +459,7 @@ func DecryptStreamAuthenticated3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSe
 					emptyThird[i] = true
 					return
 				}
-				parts[i] = cobsDecode(dec[:nullPos])
+				parts[i] = cobsDecodeInto(dec, dec[:nullPos])
 			}(i)
 		}
 		wg.Wait()
@@ -659,5 +474,8 @@ func DecryptStreamAuthenticated3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSe
 		return []byte{}, true, nil
 	}
 
-	return interleaveForTriple48LockedCfg(cfg, parts[0], parts[1], parts[2], buildLockBatchPRF48_512Cfg(cfg, lockSeed, ilNonce)), finalFlag, nil
+	// The interlock nonce is carried split across the three lane
+	// prefixes; lanes[i] is what follows fragment i.
+	ilNonce, lanes := recoverInterlockNonce(nonceLen, parts)
+	return interleaveForTriple48LockedCfg(cfg, lanes[0], lanes[1], lanes[2], buildLockBatchPRF48_512Cfg(cfg, lockSeed, ilNonce)), finalFlag, nil
 }

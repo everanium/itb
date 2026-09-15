@@ -6,7 +6,7 @@
 #   src:           same as `all`.
 #   tests:         compile every tests/test_*.f90 into a standalone
 #                  binary under tests/build/, linked against the src
-#                  object tree + libitb.so.
+#                  object tree + libitb3.so.
 #   bench:         compile bench/bench_{message,stream,stream_one_shot}.f90
 #                  into bench/bin/.
 #   eitb:          compile the eitb CLI at eitb/eitb.
@@ -16,7 +16,7 @@
 # Variables (override on the command line or env):
 #   FC           Fortran compiler        (default: gfortran)
 #   FCFLAGS      Compiler-side flags     (default below)
-#   LIBITB_DIR   path to libitb.so dir   (default: ../../dist/linux-amd64)
+#   LIBITB3_DIR   path to libitb3.so dir   (default: ../../dist/linux-amd64)
 #   BUILD_DIR    .mod / .o output root   (default: build)
 #
 # Fortran module builds are order-sensitive: every `use`d module's
@@ -31,7 +31,7 @@
 ifeq ($(origin FC),default)
   FC = gfortran
 endif
-LIBITB_DIR ?= ../../dist/linux-amd64
+LIBITB3_DIR ?= ../../dist/linux-amd64
 FCFLAGS    ?= -std=f2008 -Wall -Wextra -Werror -pedantic -O3 -funroll-loops
 BUILD_DIR  ?= build
 MOD_FLAG    = -J $(BUILD_DIR)
@@ -41,8 +41,8 @@ BENCH_BUILD = bench/build
 BENCH_BIN   = bench/bin
 EITB_BUILD  = eitb/build
 
-RPATH   = $(abspath $(LIBITB_DIR))
-LDFLAGS = -L$(LIBITB_DIR) -litb -Wl,-rpath,$(RPATH)
+RPATH   = $(abspath $(LIBITB3_DIR))
+LDFLAGS = -L$(LIBITB3_DIR) -litb3 -Wl,-rpath,$(RPATH)
 
 # Source-side declaration order. Module dependencies are linear:
 # status / ffi / opts -> error -> runtime -> pipeline -> stream ->
@@ -57,7 +57,7 @@ SRC_FILES = \
     src/itb_runtime.f90   \
     src/itb_pipeline.f90  \
     src/itb_stream.f90    \
-    src/itb.f90
+    src/itb3.f90
 
 SRC_OBJS = $(patsubst src/%.f90,$(BUILD_DIR)/%.o,$(SRC_FILES))
 
@@ -93,8 +93,8 @@ $(HELPER_OBJ): $(HELPER_SRC) $(SRC_OBJS) | $(TESTS_BUILD)
 	$(FC) $(FCFLAGS) -J $(TESTS_BUILD) -I$(BUILD_DIR) -c $< -o $@
 
 # Per-test pattern rule. Each tests/test_*.f90 program depends on the
-# full src object tree + the helper module. Linker pulls in libitb.so
-# via -litb + the embedded RPATH.
+# full src object tree + the helper module. Linker pulls in libitb3.so
+# via -litb3 + the embedded RPATH.
 $(TESTS_BUILD)/test_%: tests/test_%.f90 $(SRC_OBJS) $(HELPER_OBJ) | $(TESTS_BUILD)
 	$(FC) $(FCFLAGS) -J $(TESTS_BUILD) -I$(BUILD_DIR) -I$(TESTS_BUILD) \
 	      $< $(SRC_OBJS) $(HELPER_OBJ) -o $@ $(LDFLAGS)
@@ -146,5 +146,5 @@ help:
 	@echo "Variables (override via FC=... etc):"
 	@echo "  FC          Fortran compiler [default: gfortran]"
 	@echo "  FCFLAGS     Compiler flags   [default: -std=f2008 -Wall -Wextra -Werror -pedantic -O3 -funroll-loops]"
-	@echo "  LIBITB_DIR  libitb.so dir    [default: ../../dist/linux-amd64]"
+	@echo "  LIBITB3_DIR  libitb3.so dir    [default: ../../dist/linux-amd64]"
 	@echo "  BUILD_DIR   .mod / .o output [default: build]"

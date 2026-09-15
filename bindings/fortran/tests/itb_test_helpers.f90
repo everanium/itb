@@ -6,7 +6,7 @@
 module itb_test_helpers
   use, intrinsic :: iso_c_binding, only: c_int, c_int8_t
   use, intrinsic :: iso_fortran_env, only: error_unit, int64
-  use itb
+  use itb3
   implicit none
   private
 

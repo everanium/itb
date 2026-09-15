@@ -1,0 +1,33 @@
+// Bench entry point: `message` runs the Single Message shape,
+// `stream` the stream-pump shape, `all` (default) both.
+
+module Everanium.Itb3.FSharp.Bench.Program
+
+open Everanium.Itb3.FSharp
+
+[<EntryPoint>]
+let main args =
+    // Bench-scale allocation churn leaks Go scratch heap unboundedly
+    // without a soft memory cap + aggressive GC; the return values
+    // report the previous settings, not an error.
+    Runtime.setMemoryLimit (4L * 1024L * 1024L * 1024L) |> ignore
+    Runtime.setGCPercent 100 |> ignore
+
+    match (if args.Length > 0 then args[0] else "all") with
+    | "message" ->
+        BenchMessage.run ()
+        0
+    | "stream" ->
+        BenchStream.run ()
+        0
+    | "stream_one_shot" ->
+        BenchStreamOneShot.run ()
+        0
+    | "all" ->
+        BenchMessage.run ()
+        BenchStream.run ()
+        BenchStreamOneShot.run ()
+        0
+    | _ ->
+        eprintfn "usage: Everanium.LibItb3.FSharp.Bench [message|stream|stream_one_shot|all]"
+        2

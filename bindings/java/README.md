@@ -6,9 +6,9 @@
 
 **No bespoke cryptography.** ITB introduces no cryptographic primitive of its own — no custom S-box, permutation, or round function. It is a construction over existing primitives, much as PGP composes standard ciphers rather than defining one. Such constructions are not the object of algorithm-level cryptographic certification: national regimes (NIST CAVP/FIPS in the US, GOST/FSB in Russia, OSCCA's SM-series in China, IC3S in India, SOG-IS/EUCC and national lists in the EU, ASD's ISM in Australia, CRYPTREC in Japan, KCMVP in South Korea) certify **primitives** and the **modules** built on them, not compositional schemes. Eligibility for regulated use is therefore inherited from the primitives ITB is configured with, not conferred by ITB itself.
 
-Thin proxy over the libitb shared library's `ITB_Triple_*` surface
-(`cmd/cshared`). JNI-based FFI: a small C shim (`src/main/jni/itb_jni.c`)
-is compiled against libitb.so and loaded by the `com.everanium.itb`
+Thin proxy over the libitb3 shared library's `ITB_Triple_*` surface
+(`cmd/cshared`). JNI-based FFI: a small C shim (`src/main/jni/itb3_jni.c`)
+is compiled against libitb3.so and loaded by the `io.github.everanium.itb3`
 package at class-initialisation time. JNI (rather than the Panama
 foreign-function API) keeps the binding compatible with JDK 17 LTS and
 Android-class runtimes. Every hash-name / MAC-name / cipher-name /
@@ -42,7 +42,7 @@ pinned distribution on first use. The binding targets Java 17.
 
 ## Build the shared library
 
-The convenience driver builds `libitb.so`, the JNI shim, and the jars
+The convenience driver builds `libitb3.so`, the JNI shim, and the jars
 in one step:
 
 ```bash
@@ -53,25 +53,25 @@ Equivalent manual invocation:
 
 ```bash
 go build -trimpath -buildmode=c-shared \
-    -o dist/linux-amd64/libitb.so ./cmd/cshared
+    -o dist/linux-amd64/libitb3.so ./cmd/cshared
 cd bindings/java && ./gradlew assemble
 ```
 
 ## Library lookup order
 
 1. `ITB_JNI_PATH` environment variable (absolute path to the compiled
-   `libitb_jni.so` shim).
-2. `System.loadLibrary("itb_jni")` over `java.library.path`.
+   `libitb3_jni.so` shim).
+2. `System.loadLibrary("itb3_jni")` over `java.library.path`.
 
-libitb.so itself is a link-time dependency of the shim, resolved via
+libitb3.so itself is a link-time dependency of the shim, resolved via
 the shim's RPATH (the repository `dist/linux-amd64/` directory) or the
 OS loader path (`LD_LIBRARY_PATH`, `ld.so.cache`).
 
 ## Usage example
 
 ```java
-import com.everanium.itb.Opts;
-import com.everanium.itb.Pipeline;
+import io.github.everanium.itb3.Opts;
+import io.github.everanium.itb3.Pipeline;
 
 try (Pipeline sender = Pipeline.init("singlemsg-triple-mac-v1");
         Pipeline receiver = Pipeline.load(sender.save())) {
@@ -165,7 +165,7 @@ variant (`encryptMessageInto`, `decryptMessageInto`,
 `encryptStreamOneShotInto`, `decryptStreamOneShotInto`) that writes
 the output between `position()` and `limit()` of a caller-supplied
 writable direct `ByteBuffer` — no output allocation, no copy-out, and
-libitb never writes past the limit. Stream sessions likewise accept a
+libitb3 never writes past the limit. Stream sessions likewise accept a
 direct-buffer feed (`write(ByteBuffer)`) and drain
 (`readInto(ByteBuffer)`), both zero-copy at the FFI boundary. Size
 Message / one-shot output buffers for the wire-expansion envelope
@@ -180,13 +180,16 @@ the status code plus the `ITB_LastError` diagnostic.
 ## Memory
 
 Two process-wide knobs constrain Go runtime arena pacing, readable at
-libitb load time via env vars (`ITB_GOMEMLIMIT`, `ITB_GOGC`) and
+libitb3 load time via env vars (`ITB_GOMEMLIMIT`, `ITB_GOGC`) and
 adjustable at any time programmatically. Pass `-1` to query without
 changing:
 
 ```java
-com.everanium.itb.Runtime.setMemoryLimit(512L << 20);
-com.everanium.itb.Runtime.setGCPercent(20);
+import static io.github.everanium.itb3.Runtime.setGCPercent;
+import static io.github.everanium.itb3.Runtime.setMemoryLimit;
+
+setMemoryLimit(4L << 30);
+setGCPercent(100);
 ```
 
 ## Testing
@@ -195,7 +198,7 @@ com.everanium.itb.Runtime.setGCPercent(20);
 ./bindings/java/run_tests.sh
 ```
 
-The harness builds `libitb.so` + the JNI shim, then invokes the
+The harness builds `libitb3.so` + the JNI shim, then invokes the
 JUnit 5 suite through Gradle. Positional arguments are forwarded to
 Gradle (e.g. `./run_tests.sh --tests '*SmokeTest'`). The suite covers
 Single Message round trips per shipped profile, stream pumps,
@@ -213,21 +216,21 @@ the deep suite lives in Go under the shipped tree.
 
 Plain-table micro-benches: `message` (Single Message encrypt) and
 `stream_pump` throughput at 1 MiB / 16 MiB / 64 MiB. The script
-exports the canonical bench env defaults (`ITB_GOMEMLIMIT=512MiB`,
-`ITB_GOGC=20`, `ITB_NONCE_BITS=512`, `ITB_KEY_BITS=1024`,
+exports the canonical bench env defaults (`ITB_GOMEMLIMIT=4GiB`,
+`ITB_GOGC=100`, `ITB_NONCE_BITS=512`, `ITB_KEY_BITS=1024`,
 `ITB_WITH_PARALLAX=false`, `ITB_WITH_WRAPPER=false`,
 `ITB_INNER_HASH=areion512`); override any of them before invocation.
 `ITB_BENCH_MIN_SEC` adjusts the per-case wall-clock budget.
 
-## Related — `itb3` CLI
+## itb3 CLI
 
 The Go core ships an openssl-style CLI utility
-[`itb3`](../../cmd/itb3/) that generates session blobs on disk
+[`itb3`](https://github.com/everanium/itb/tree/main/cmd/itb3/) that generates session blobs on disk
 (`itb3 genblob <mode> <hash> -o blob.json`); this binding reopens
 such blobs via `Pipeline.loadF`. `itb3` also encrypts / decrypts
 payloads directly on disk (`-i` / `-o`) or through stdin / stdout,
 rotates outer masters, and inspects stored blobs. See
-[`cmd/itb3/README.md`](../../cmd/itb3/README.md) for the full
+[`cmd/itb3/README.md`](https://github.com/everanium/itb/blob/main/cmd/itb3/README.md) for the full
 subcommand reference.
 
 ## eitb utility
@@ -264,4 +267,8 @@ Equivalent direct invocation: `java -jar build/libs/eitb.jar version`
   threads. A stream session is single-caller: its scratch buffers are
   not synchronised.
 - The JNI shim must be compiled for the running platform; the build
-  currently targets Linux (`libitb_jni.so`).
+  currently targets Linux (`libitb3_jni.so`).
+
+## License
+
+Apache-2.0 — see [LICENSE](../../LICENSE).

@@ -18,13 +18,13 @@
 //   ITB_PROFILE        profile name override
 //   ITB_BENCH_MIN_SEC  per-case wall-clock budget (default 5.0)
 
-package dev.everanium.itb.groovy.bench
+package io.github.everanium.itb3.groovy.bench
 
 import groovy.transform.CompileStatic
 
 import java.security.SecureRandom
 
-import dev.everanium.itb.groovy.Opts
+import io.github.everanium.itb3.groovy.Opts
 
 @CompileStatic
 final class BenchUtil {

@@ -4,9 +4,9 @@ import "encoding/binary"
 
 // BatchHashFunc256 is the 4-way batched 256-bit hash interface
 // alongside [HashFunc256]. Primitives whose SIMD kernel processes
-// four independent (data, seed) tuples per call expose this — e.g.
-// the ZMM-batched Areion-SoEM-256 / BLAKE2s / BLAKE3 / ChaCha20
-// kernels on amd64 with AVX-512 + VAES.
+// four independent (data, seed) tuples per call expose this, through
+// the ZMM-batched width-256 registry kernels on amd64 with
+// AVX-512 + VAES.
 //
 // Bit-exact parity invariant: each lane output
 // BatchHashFunc256(data, seeds)[i] matches the serial
@@ -20,6 +20,11 @@ type BatchHashFunc256 func(data *[4][]byte, seeds [4][4]uint64) [4][4]uint64
 // under the same Components. Caller ensures s.BatchHash != nil
 // (processChunk256 checks this before invoking).
 func (s *Seed256) BatchChainHash256(buf *[4][]byte) [4][4]uint64 {
+	if s.BatchFusedChain != nil {
+		if out, ok := s.BatchFusedChain(s.Components, buf); ok {
+			return out
+		}
+	}
 	var seeds [4][4]uint64
 	for lane := 0; lane < 4; lane++ {
 		seeds[lane][0] = s.Components[0]

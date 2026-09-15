@@ -17,8 +17,8 @@
 --    ITB_PROFILE        overrides the per-shape default profile
 --    ITB_BENCH_MIN_SEC  per-case wall-clock budget (default 5.0)
 
-with Itb;
-with Itb.Opts;
+with Itb3;
+with Itb3.Opts;
 
 package Common is
 
@@ -27,7 +27,7 @@ package Common is
    function Env (Name : String; Default : String) return String;
 
    --  Reads the bench-shape env vars and builds the opts.
-   function Build_Opts return Itb.Opts.Opts;
+   function Build_Opts return Itb3.Opts.Opts;
 
    --  ITB_PROFILE override or Fallback.
    function Profile_Name (Fallback : String) return String;
@@ -35,7 +35,7 @@ package Common is
    --  CSPRNG-fill via getrandom(2) so plaintext content matches the
    --  root Go bench (crypto/rand). Loops until the whole buffer is
    --  filled. Never inside a timing loop.
-   procedure Fill_Random (Buffer : in out Itb.Byte_Array);
+   procedure Fill_Random (Buffer : in out Itb3.Byte_Array);
 
    --  Prints the table header row.
    procedure Bench_Header;

@@ -30,7 +30,7 @@ namespace {
 /* Single retry-once dispatch site for every variable-size output
  * buffer (init / rekey / save / inspect / lookup / profiles):
  * pre-allocate kBlobCap, and on Status::BufferTooSmall retry once
- * with the exact size libitb reported. */
+ * with the exact size libitb3 reported. */
 template <typename Fn>
 std::vector<std::uint8_t> buf_call(Fn &&fn, const char *what)
 {
@@ -56,7 +56,7 @@ std::string json_call(std::vector<std::uint8_t> bytes)
 }
 
 /* The masters pair crosses as (perm, wrap, count): both absent → 0,
- * otherwise 2 — libitb validates the pair. */
+ * otherwise 2 — libitb3 validates the pair. */
 std::size_t masters_count(std::span<const std::byte> perm,
                           std::span<const std::byte> wrap) noexcept
 {
@@ -74,7 +74,7 @@ Pipeline Pipeline::init(std::string_view profile, const Opts &opts)
     const std::string prof(profile);
     uintptr_t handle = 0;
     /* The init blob is not retained binding-side; save() reads the
-     * current bytes from libitb. On a buffer retry Go closes the
+     * current bytes from libitb3. On a buffer retry Go closes the
      * undersized attempt and the re-run yields a fresh session. */
     (void)buf_call(
         [&](void *out, std::size_t cap, std::size_t *len) {
@@ -209,7 +209,7 @@ std::vector<std::uint8_t> cipher_call(uintptr_t handle, CipherFn fn,
 {
     /* Uninitialised scratch at the expansion bound: the cap-wide
      * zero-fill a std::vector constructor would perform is pure waste
-     * (libitb overwrites the prefix, the tail is discarded). One
+     * (libitb3 overwrites the prefix, the tail is discarded). One
      * exact-size copy into the returned vector at the end. */
     std::size_t cap = detail::out_cap(src.size());
     auto buf = std::make_unique_for_overwrite<std::uint8_t[]>(cap);
@@ -281,7 +281,7 @@ std::size_t Pipeline::decrypt_message_into(std::span<const std::byte> wire,
 /* One-shot stream encrypt / decrypt                                   */
 /* ------------------------------------------------------------------ */
 /* Whole-buffer stream entries in a single FFI round trip: the
- * streaming wiring runs inside libitb, so the buffer-in / buffer-out
+ * streaming wiring runs inside libitb3, so the buffer-in / buffer-out
  * dispatch is identical to the Single Message pair. */
 
 std::vector<std::uint8_t> Pipeline::encrypt_stream_one_shot(std::span<const std::byte> plain) const

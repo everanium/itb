@@ -17,8 +17,10 @@ func Channels() int { return itb.Channels }
 func DefaultNonceBits() int { return itb.DefaultNonceBits }
 
 // HeaderSize returns the ciphertext-chunk header size in bytes for
-// the supplied nonceBytes (main nonce + interlock nonce + 2-byte
-// width + 2-byte height; the two nonces are symmetric in width).
+// the supplied nonceBytes (main nonce + 2-byte width + 2-byte height).
+// The interlock nonce is not a header field — it travels split across
+// the three interlocked lanes inside the container — so it contributes
+// nothing here.
 // nonceBytes must be 16, 32, or 64; other values yield StatusBadInput
 // via the caller-provided out-parameter contract of the FFI shim.
 //
@@ -28,14 +30,18 @@ func DefaultNonceBits() int { return itb.DefaultNonceBits }
 // size that misaligns the parser and every subsequent chunk parse
 // fails — the parameter is deliberately explicit rather than latent.
 //
-// The 2*nonceBytes+4 formula must remain in sync with itb.headerSizeCfg;
+// The nonceBytes+4 formula must remain in sync with itb.headerSizeCfg;
 // the FFI-adapter's copy is intentional (its C-ABI stability contract
-// is decoupled from itb-internal helpers), drift is guarded by the
-// stream_test.go Encrypt3 → ParseChunkLen → Decrypt3 round-trip test.
+// is decoupled from itb-internal helpers). Drift is guarded by
+// [TestHeaderSizeMatchesWire] in capi_test.go, which encrypts through
+// the shim at each nonce width and checks this function against the
+// offset the produced wire actually carries its dimensions at. A test
+// that only pinned literals would restate the formula rather than
+// check it, and would stay green while the two copies diverged.
 func HeaderSize(nonceBytes int) (int, Status) {
 	switch nonceBytes {
 	case 16, 32, 64:
-		return 2*nonceBytes + 4, StatusOK
+		return nonceBytes + 4, StatusOK
 	}
 	setLastErr(StatusBadInput)
 	return 0, StatusBadInput

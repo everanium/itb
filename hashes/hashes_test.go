@@ -124,11 +124,24 @@ func roundtrip512(t *testing.T, name string, keyBits int, plaintext []byte) {
 }
 
 func newSeed128(name string, keyBits int) (*itb.Seed128, error) {
-	h, _, err := Make128(name)
+	h, b, key, err := Make128Pair(name)
 	if err != nil {
 		return nil, err
 	}
-	return itb.NewSeed128(keyBits, h)
+	s, err := itb.NewSeed128(keyBits, h)
+	if err != nil {
+		return nil, err
+	}
+	if b != nil {
+		s.BatchHash = b
+	}
+	if err := attachFused128(s, name, key); err != nil {
+		return nil, err
+	}
+	if err := attachInterlockBatch16(s, name, key); err != nil {
+		return nil, err
+	}
+	return s, nil
 }
 
 func newSeed256(name string, keyBits int) (*itb.Seed256, error) {
@@ -162,11 +175,12 @@ func newSeed512(name string, keyBits int) (*itb.Seed512, error) {
 }
 
 // TestRegistryStable verifies that Registry ordering matches the
-// canonical FFI contract. The order is stable because index
-// is exposed through ITB_HashName and any reordering is an
-// ABI-breaking change.
+// canonical FFI contract. The order is stable because the roster is
+// exposed through ITB_Triple_HashNames in this exact sequence and
+// any reordering is an ABI-breaking change.
 func TestRegistryStable(t *testing.T) {
 	want := []string{
+		"aesitb128",
 		"areion256", "areion512", "blake2b256", "blake2b512",
 		"blake2s", "blake3", "aescmac", "siphash24", "chacha20",
 	}
@@ -315,8 +329,8 @@ func TestMake128AESCMACBadKeySize(t *testing.T) {
 // TestMake256ExplicitKeyRoundtrip exercises the explicit-key arm of
 // each Make256 case for cross-process persistence: the key is supplied
 // twice, and the resulting closures must produce identical digests on
-// the same seed + data. Covers the explicit-key branch of every Make256
-// case statement (areion256, blake2b256, blake2s, blake3, chacha20).
+// the same seed + data. Covers the explicit-key branch of every
+// width-256 entry in the registry.
 func TestMake256ExplicitKeyRoundtrip(t *testing.T) {
 	var key [32]byte
 	if _, err := rand.Read(key[:]); err != nil {
@@ -351,7 +365,7 @@ func TestMake256ExplicitKeyRoundtrip(t *testing.T) {
 }
 
 // TestMake512ExplicitKeyRoundtrip exercises the explicit-key arm of
-// each Make512 case statement (areion512, blake2b512). Mirror of
+// every width-512 entry in the registry. Mirror of
 // TestMake256ExplicitKeyRoundtrip at width 512.
 func TestMake512ExplicitKeyRoundtrip(t *testing.T) {
 	var key [64]byte

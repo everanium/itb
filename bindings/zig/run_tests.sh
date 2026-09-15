@@ -4,7 +4,7 @@
 #
 # Each tests/<name>.zig compiles to its own test binary and runs as a
 # separate process, sequentially; per-process isolation gives every
-# test file a fresh libitb global state. Binaries link libitb.so via
+# test file a fresh libitb3 global state. Binaries link libitb3.so via
 # embedded RPATH, so LD_LIBRARY_PATH is unnecessary at runtime.
 #
 # Usage:

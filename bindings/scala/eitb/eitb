@@ -17,6 +17,6 @@ if [ ! -s eitb/.classpath ]; then
     sbt --batch --error "export eitb/Runtime/fullClasspath" | tail -n 1 > eitb/.classpath
 fi
 
-export ITB_JNI_PATH="${ITB_JNI_PATH:-$REPO_ROOT/bindings/java/build/jni/libitb_jni.so}"
+export ITB_JNI_PATH="${ITB_JNI_PATH:-$REPO_ROOT/bindings/java/build/jni/libitb3_jni.so}"
 
-exec java -cp "$(cat eitb/.classpath)" dev.everanium.itb.eitb.Main "$@"
+exec java -cp "$(cat eitb/.classpath)" io.github.everanium.itb3.scala.eitb.Main "$@"

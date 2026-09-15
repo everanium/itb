@@ -33,7 +33,7 @@ size_t itb_internal_out_cap(size_t payload)
 /* Single retry-once dispatch site for every variable-size output
  * buffer (Init / Rekey / Save / Inspect / Lookup / Profiles):
  * pre-allocate cap, and on ITB_STATUS_BUFFER_TOO_SMALL retry once
- * with the exact size libitb reported. On success *out (malloc'd,
+ * with the exact size libitb3 reported. On success *out (malloc'd,
  * `extra` spare bytes past *out_len, zeroed) and *out_len are set;
  * on failure they are NULL / 0 and the status is returned. */
 typedef int (*itb_buf_fn)(void *ctx, void *out, size_t out_cap, size_t *out_len);
@@ -127,7 +127,7 @@ itb_status itb_pipeline_init(const char *profile, const itb_opts *opts,
     size_t blob_len = 0;
     itb_status st = buf_call(init_fn, &ctx, ITB_BLOB_CAP, 0, &blob, &blob_len);
     /* The Init blob is not retained binding-side; itb_pipeline_save
-     * reads the current bytes from libitb. */
+     * reads the current bytes from libitb3. */
     free(blob);
     if (st != ITB_STATUS_OK) {
         free(pipe);
@@ -138,7 +138,7 @@ itb_status itb_pipeline_init(const char *profile, const itb_opts *opts,
     return ITB_STATUS_OK;
 }
 
-/* Shared tail of the two load entries: wraps a libitb handle. */
+/* Shared tail of the two load entries: wraps a libitb3 handle. */
 static itb_status wrap_handle(int rc, uintptr_t handle, itb_pipeline **out)
 {
     if (rc != (int)ITB_STATUS_OK) {
@@ -155,7 +155,7 @@ static itb_status wrap_handle(int rc, uintptr_t handle, itb_pipeline **out)
 }
 
 /* The masters pair crosses as (perm, wrap, count): both absent → 0,
- * otherwise 2 — libitb validates the pair. */
+ * otherwise 2 — libitb3 validates the pair. */
 static size_t masters_count(const uint8_t *perm, size_t perm_len,
                             const uint8_t *wrap, size_t wrap_len)
 {
@@ -384,7 +384,7 @@ itb_status itb_pipeline_decrypt_message(const itb_pipeline *pipe,
 /* One-shot stream encrypt / decrypt                                   */
 /* ------------------------------------------------------------------ */
 /* Whole-buffer stream entries in a single FFI round trip: the
- * streaming wiring runs inside libitb, so the buffer-in / buffer-out
+ * streaming wiring runs inside libitb3, so the buffer-in / buffer-out
  * dispatch is identical to the Single Message pair. */
 
 itb_status itb_pipeline_encrypt_stream_one_shot(const itb_pipeline *pipe,

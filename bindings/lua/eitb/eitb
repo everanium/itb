@@ -9,7 +9,7 @@ set -o pipefail
 
 cd "$(dirname "$0")/.."
 
-if [[ ! -f lua/itb.so ]]; then
+if [[ ! -f lua/libitb3_lua.so ]]; then
     ./build.sh >&2
 fi
 

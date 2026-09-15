@@ -8,6 +8,6 @@
 #ifndef ITB_SWIFT_SHIM_H
 #define ITB_SWIFT_SHIM_H
 
-#include "../../../c/include/itb.h"
+#include "../../../c/include/itb3.h"
 
 #endif /* ITB_SWIFT_SHIM_H */

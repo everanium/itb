@@ -18,8 +18,8 @@
 // -nonce-bits (default 512) selects the on-wire nonce width (128 |
 // 256 | 512) passed to [triple.Init] by -mode=init. The nonce width
 // determines the per-pixel buf shape the inner hash absorbs (nonce
-// bytes + 4 → 20 / 36 / 68 bytes; the dual-nonce wire header itself is
-// 2·nonce + 4 → 36 / 68 / 132 bytes), so sweeping it drives every
+// bytes + 4 → 20 / 36 / 68 bytes, the same size the wire header
+// happens to be), so sweeping it drives every
 // chain-absorb kernel width through the cross-build matrix. The
 // session blob carries the width it was initialised with, so
 // -mode=encrypt / -mode=decrypt accept the flag for invocation
@@ -72,8 +72,8 @@ const parityKeyBits = 1024
 // [itb.SetGCPercent]. Matches the binding-fleet standard so bench-scale
 // FFI churn stays bounded even under repeated multi-MB fixture rounds.
 const (
-	parityMemoryLimitBytes int64 = 512 << 20
-	parityGCPercent              = 20
+	parityMemoryLimitBytes int64 = 4 << 30
+	parityGCPercent              = 100
 )
 
 // seedBlobV1 is the on-disk wrapper written by -mode=init and read by

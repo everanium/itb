@@ -19,7 +19,7 @@
 
 #include <sys/random.h>
 
-#include "itb.hpp"
+#include "itb3.hpp"
 
 /* Per-case wall-clock budget (seconds, env: ITB_BENCH_MIN_SEC)
  * and iteration floor. */

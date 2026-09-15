@@ -20,19 +20,19 @@ incremental_round_trip() ->
     Back = itb_test_util:pump(Receiver, decrypt, Wire, 17, 23),
     ?assertEqual(Plain, Back),
 
-    ok = itb:free(Receiver),
-    ok = itb:free(Sender).
+    ok = itb3:free(Receiver),
+    ok = itb3:free(Sender).
 
 %% end/1 is idempotent; write after end fails with bad_input.
 end_semantics_test_() ->
     {timeout, 120, fun() ->
-        {ok, Pipe} = itb:init(<<"streaming-aead-triple-mac-v1">>, #{}),
-        {ok, Stream} = itb:encrypt_stream(Pipe),
-        ok = itb:stream_write(Stream, <<"payload">>),
-        ok = itb:stream_end(Stream),
-        ok = itb:stream_end(Stream),
+        {ok, Pipe} = itb3:init(<<"streaming-aead-triple-mac-v1">>, #{}),
+        {ok, Stream} = itb3:encrypt_stream(Pipe),
+        ok = itb3:stream_write(Stream, <<"payload">>),
+        ok = itb3:stream_end(Stream),
+        ok = itb3:stream_end(Stream),
         ?assertMatch({error, {bad_input, _}},
-                     itb:stream_write(Stream, <<"late">>)),
-        ok = itb:stream_free(Stream),
-        ok = itb:free(Pipe)
+                     itb3:stream_write(Stream, <<"late">>)),
+        ok = itb3:stream_free(Stream),
+        ok = itb3:free(Pipe)
     end}.

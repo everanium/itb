@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"path/filepath"
+	"strconv"
 	"testing"
 
 	"github.com/everanium/itb/triple"
@@ -584,5 +585,136 @@ func TestTripleMaxWorkersCapi(t *testing.T) {
 	}
 	if st := TripleMaxWorkers(rID, 4); st != StatusTripleClosed {
 		t.Fatalf("TripleMaxWorkers after Close: %v, want StatusTripleClosed", st)
+	}
+}
+
+// TestTripleLoadBlobModeMismatchCapi pins the status a blob naming an
+// Interlocked Barrier chunk width this build cannot construct surfaces
+// as. The inner Blob{N}.Import3Cfg mode gate accepts 1 and 2; anything
+// else must reach the caller as StatusBlobModeMismatch rather than the
+// StatusInternal fallthrough, because a binding that receives a bare
+// "internal error" has no way to tell a rejected blob from a genuine
+// library fault.
+//
+// The edit targets the inner blob's own mode field, not the outer
+// profile record's Mode string — the two are unrelated discriminators
+// that happen to share a name.
+func TestTripleLoadBlobModeMismatchCapi(t *testing.T) {
+	blobBuf := make([]byte, 1<<15)
+	id, blobLen, st := TripleInit(triple.ProfileSingleMsgTripleMACV1, "", blobBuf)
+	if st != StatusOK {
+		t.Fatalf("TripleInit: %v", st)
+	}
+	defer FreeTriple(id)
+
+	editInnerMode := func(blob []byte, mode int) []byte {
+		t.Helper()
+		var wrap map[string]json.RawMessage
+		if err := json.Unmarshal(blob, &wrap); err != nil {
+			t.Fatalf("wrap decode: %v", err)
+		}
+		var inner map[string]json.RawMessage
+		if err := json.Unmarshal(wrap["ib"], &inner); err != nil {
+			t.Fatalf("inner decode: %v", err)
+		}
+		inner["mode"] = json.RawMessage(strconv.Itoa(mode))
+		ib, err := json.Marshal(inner)
+		if err != nil {
+			t.Fatalf("inner marshal: %v", err)
+		}
+		wrap["ib"] = ib
+		out, err := json.Marshal(wrap)
+		if err != nil {
+			t.Fatalf("wrap marshal: %v", err)
+		}
+		return out
+	}
+
+	blob := blobBuf[:blobLen]
+
+	// Positive control: the re-encode itself must not break the blob,
+	// or a rejection below would prove nothing about the mode gate.
+	for _, mode := range []int{1, 2} {
+		reID, st := TripleLoad(editInnerMode(blob, mode))
+		if st != StatusOK {
+			t.Fatalf("TripleLoad mode=%d: %v, want StatusOK (%s)", mode, st, LastError())
+		}
+		FreeTriple(reID)
+	}
+
+	for _, mode := range []int{0, 3, 99} {
+		if _, st := TripleLoad(editInnerMode(blob, mode)); st != StatusBlobModeMismatch {
+			t.Fatalf("TripleLoad mode=%d: %v, want StatusBlobModeMismatch (%s)", mode, st, LastError())
+		}
+	}
+}
+
+// TestTripleLoadInnerBlobStatusesCapi pins the remaining inner-blob
+// sentinels at the capi boundary. Each must arrive as its own status
+// rather than the StatusInternal fallthrough, and each must be
+// distinct from the outer wrap-layer codes: triple's own
+// ErrBlobMalformed / ErrBlobVersion describe the wrapper and route to
+// StatusBadInput, while these describe the inner Blob{N}.
+//
+// StatusBlobTooManyOpts is not exercised — no triple-side call site
+// passes more than one options struct to Export3Cfg, so the sentinel
+// cannot be produced through this boundary. Its branch is defensive.
+func TestTripleLoadInnerBlobStatusesCapi(t *testing.T) {
+	blobBuf := make([]byte, 1<<15)
+	id, blobLen, st := TripleInit(triple.ProfileSingleMsgTripleMACV1, "", blobBuf)
+	if st != StatusOK {
+		t.Fatalf("TripleInit: %v", st)
+	}
+	defer FreeTriple(id)
+	blob := blobBuf[:blobLen]
+
+	editInner := func(edit func(inner map[string]json.RawMessage)) []byte {
+		t.Helper()
+		var wrap map[string]json.RawMessage
+		if err := json.Unmarshal(blob, &wrap); err != nil {
+			t.Fatalf("wrap decode: %v", err)
+		}
+		var inner map[string]json.RawMessage
+		if err := json.Unmarshal(wrap["ib"], &inner); err != nil {
+			t.Fatalf("inner decode: %v", err)
+		}
+		edit(inner)
+		ib, err := json.Marshal(inner)
+		if err != nil {
+			t.Fatalf("inner marshal: %v", err)
+		}
+		wrap["ib"] = ib
+		out, err := json.Marshal(wrap)
+		if err != nil {
+			t.Fatalf("wrap marshal: %v", err)
+		}
+		return out
+	}
+
+	cases := []struct {
+		label string
+		edit  func(inner map[string]json.RawMessage)
+		want  Status
+	}{
+		{"inner_version_too_new", func(i map[string]json.RawMessage) {
+			i["v"] = json.RawMessage("99")
+		}, StatusBlobVersionTooNew},
+		{"inner_bad_hex", func(i map[string]json.RawMessage) {
+			i["key_n"] = json.RawMessage(`"zzzz"`)
+		}, StatusBlobMalformed},
+	}
+	for _, c := range cases {
+		t.Run(c.label, func(t *testing.T) {
+			if _, st := TripleLoad(editInner(c.edit)); st != c.want {
+				t.Fatalf("TripleLoad: %v, want %v (%s)", st, c.want, LastError())
+			}
+		})
+	}
+
+	// The outer wrap layer keeps its own codes — confirms the two
+	// blob-version paths did not collapse onto one status.
+	outer := tripleEditRecord(t, blob, func(p map[string]any) { p["keybits"] = 1000 })
+	if _, st := TripleLoad(outer); st != StatusBlobMalformedRecipe {
+		t.Fatalf("outer record edit: %v, want StatusBlobMalformedRecipe", st)
 	}
 }

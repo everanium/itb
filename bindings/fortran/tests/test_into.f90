@@ -6,7 +6,7 @@
 program test_into
   use, intrinsic :: iso_c_binding, only: c_size_t
   use, intrinsic :: iso_fortran_env, only: int64
-  use itb
+  use itb3
   use itb_test_helpers
   implicit none
 

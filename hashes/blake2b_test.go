@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"crypto/rand"
 	"testing"
-
-	"github.com/everanium/itb/hashes/internal/blake2basm"
 )
 
 // TestBLAKE2b256BatchedParityWithSingle confirms that the 4-way
@@ -87,27 +85,18 @@ func TestBLAKE2b512BatchedParityWithSingle(t *testing.T) {
 	}
 }
 
-// TestBLAKE2bMakePairBatchedFollowsAsmEngagement verifies the
-// asm-conditional contract of Make256Pair / Make512Pair for the
-// blake2b{256,512} primitives — non-nil batched when AVX-512 fused
-// chain-absorb is engaged, nil batched when the asm path is not
-// reachable so process_cgo's nil-fallback drives 4 single-call
-// dispatches through the upstream golang.org/x/crypto BLAKE2b
-// asm directly.
-func TestBLAKE2bMakePairBatchedFollowsAsmEngagement(t *testing.T) {
+// TestBLAKE2bMakePairBatchedArms verifies that Make256Pair / Make512Pair
+// return a batched arm for the blake2b{256,512} primitives on every
+// build: the arm evaluates the four lanes through the single arm, and
+// the fused cascade hooks of the registry entries carry the assembly.
+func TestBLAKE2bMakePairBatchedArms(t *testing.T) {
 	t.Run("blake2b256", func(t *testing.T) {
 		_, b, _, err := Make256Pair("blake2b256")
 		if err != nil {
 			t.Fatalf("Make256Pair(blake2b256): %v", err)
 		}
-		if blake2basm.HasAVX512Fused {
-			if b == nil {
-				t.Fatal("Make256Pair(blake2b256) returned nil batched arm despite asm engaged — FFI will fall back to per-pixel dispatch")
-			}
-		} else {
-			if b != nil {
-				t.Fatal("Make256Pair(blake2b256) returned non-nil batched arm without asm engaged — the scalar 4-lane wrapper is slower than process_cgo's nil-fallback")
-			}
+		if b == nil {
+			t.Fatal("Make256Pair(blake2b256) returned a nil batched arm")
 		}
 	})
 	t.Run("blake2b512", func(t *testing.T) {
@@ -115,14 +104,8 @@ func TestBLAKE2bMakePairBatchedFollowsAsmEngagement(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Make512Pair(blake2b512): %v", err)
 		}
-		if blake2basm.HasAVX512Fused {
-			if b == nil {
-				t.Fatal("Make512Pair(blake2b512) returned nil batched arm despite asm engaged — FFI will fall back to per-pixel dispatch")
-			}
-		} else {
-			if b != nil {
-				t.Fatal("Make512Pair(blake2b512) returned non-nil batched arm without asm engaged — the scalar 4-lane wrapper is slower than process_cgo's nil-fallback")
-			}
+		if b == nil {
+			t.Fatal("Make512Pair(blake2b512) returned a nil batched arm")
 		}
 	})
 }

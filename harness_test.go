@@ -199,7 +199,7 @@ func gcd64(a, b uint64) uint64 {
 }
 
 // ============================================================================
-// Probe C4b — cross-lane (cross-snake) decorrelation at the kernel layer
+// Probe C4b — cross-lane (cross-region) decorrelation at the kernel layer
 // ============================================================================
 
 // TestHarnessC4bLaneDecorrelation drives chunk48lock with random chunk words

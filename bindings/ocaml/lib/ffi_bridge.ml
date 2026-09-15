@@ -1,13 +1,13 @@
-(* Runtime symbol loading over the libitb shared library (ctypes +
+(* Runtime symbol loading over the libitb3 shared library (ctypes +
    libffi).
 
    The library is loaded once per process and never unloaded, so the
    resolved function values stay valid for the process lifetime.
    Search order:
 
-   1. [ITB_LIBITB_PATH] environment variable (path to the shared
+   1. [ITB_LIBITB3_PATH] environment variable (path to the shared
       library file).
-   2. [<repo>/dist/<os>-<arch>/libitb.<ext>] resolved by walking up
+   2. [<repo>/dist/<os>-<arch>/libitb3.<ext>] resolved by walking up
       from the executable's directory, then from the working
       directory (in-repo builds).
    3. The OS default loader path ([LD_LIBRARY_PATH], [ld.so.cache],
@@ -18,7 +18,7 @@
 
 open Ctypes
 
-(* Raised on every failed libitb call. The [int] is the libitb status
+(* Raised on every failed libitb3 call. The [int] is the libitb3 status
    code ([-1] for binding-side failures such as a library-load error);
    the [string] is the [ITB_LastError] diagnostic captured immediately
    after the failing call (process-global last-write-wins -- the
@@ -29,7 +29,7 @@ exception ITB_error of int * string
 let status_ok = 0
 let status_buffer_too_small = 5
 
-(* Short human-readable label for a libitb status code, mirrored from
+(* Short human-readable label for a libitb3 status code, mirrored from
    cmd/cshared/internal/capi/errors.go. Numeric values are stable
    across releases. *)
 let status_label = function
@@ -63,7 +63,7 @@ let status_label = function
 (* Library resolution                                               *)
 (* ---------------------------------------------------------------- *)
 
-let lib_basenames = [ "libitb.so"; "libitb.dylib" ]
+let lib_basenames = [ "libitb3.so"; "libitb3.dylib" ]
 let dist_subdirs = [ "linux-amd64"; "linux-arm64"; "darwin-amd64"; "darwin-arm64" ]
 
 (* All dist-layout candidates under [dir]. *)
@@ -87,7 +87,7 @@ let rec walk_up start levels =
         if String.equal parent start then None else walk_up parent (levels - 1)
 
 let resolve_library_path () =
-  match Sys.getenv_opt "ITB_LIBITB_PATH" with
+  match Sys.getenv_opt "ITB_LIBITB3_PATH" with
   | Some p when String.length p > 0 -> p
   | _ -> (
       let from_exe =
@@ -104,7 +104,7 @@ let resolve_library_path () =
 (* Symbol table                                                     *)
 (* ---------------------------------------------------------------- *)
 
-(* Every prototype mirrors cmd/cshared/libitb.h. uintptr_t handles
+(* Every prototype mirrors cmd/cshared/libitb3.h. uintptr_t handles
    cross as size_t (same width on every supported platform); byte
    buffers cross as [ocaml_bytes] (zero-copy -- the runtime lock is
    held for the duration of each call, so the buffers stay pinned). *)
@@ -156,7 +156,7 @@ let load () =
     with e ->
       raise
         (ITB_error
-           (-1, Printf.sprintf "failed to load libitb (%s): %s" path (Printexc.to_string e)))
+           (-1, Printf.sprintf "failed to load libitb3 (%s): %s" path (Printexc.to_string e)))
   in
   let f name typ = Foreign.foreign ~from:lib name typ in
   let buf_out = ocaml_bytes @-> size_t @-> ptr size_t @-> returning int in
@@ -304,7 +304,7 @@ let load_ext () =
     with e ->
       raise
         (ITB_error
-           (-1, Printf.sprintf "failed to load libitb (%s): %s" path (Printexc.to_string e)))
+           (-1, Printf.sprintf "failed to load libitb3 (%s): %s" path (Printexc.to_string e)))
   in
   let f name typ = Foreign.foreign ~from:lib name typ in
   let cipher =

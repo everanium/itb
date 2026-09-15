@@ -12,7 +12,7 @@
 # registered profile catalogue one name per line; the profiles that
 # carry a cipher surface are the ones `encrypt` / `decrypt` accept.
 
-require "../src/itb"
+require "../src/libitb3"
 
 USAGE = <<-USAGE
 usage: eitb version
@@ -22,7 +22,7 @@ usage: eitb version
 USAGE
 
 def cmd_version : Nil
-  puts "libitb #{ITB.version}"
+  puts "libitb3 #{ITB.version}"
   puts "itb-crystal #{ITB::VERSION}"
 end
 

@@ -24,7 +24,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:itb/itb.dart';
+import 'package:libitb3/itb.dart';
 
 /// Per-case iteration floor alongside the wall-clock budget.
 const int benchMinIters = 3;
@@ -219,8 +219,8 @@ void main() {
   // Bench-scale allocation churn leaks Go scratch heap unboundedly
   // without a soft memory cap + aggressive GC; the return values
   // report the previous settings, not an error.
-  Itb.setMemoryLimit(512 << 20);
-  Itb.setGcPercent(20);
+  Itb.setMemoryLimit(4 << 30);
+  Itb.setGcPercent(100);
 
   benchHeader();
   benchMessage();

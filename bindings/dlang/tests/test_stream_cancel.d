@@ -4,7 +4,7 @@ module test_stream_cancel;
 
 import std.stdio : writeln;
 
-import itb;
+import itb3;
 
 void main()
 {

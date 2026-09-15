@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"crypto/rand"
 	"testing"
-
-	"github.com/everanium/itb/hashes/internal/blake2sasm"
 )
 
 // TestBLAKE2s256BatchedParityWithSingle confirms that the 4-way
@@ -50,25 +48,17 @@ func TestBLAKE2s256BatchedParityWithSingle(t *testing.T) {
 	}
 }
 
-// TestBLAKE2sMakePairBatchedFollowsAsmEngagement verifies the
-// asm-conditional contract of Make256Pair for blake2s — non-nil
-// batched when AVX-512 fused chain-absorb is engaged, nil batched
-// when the asm path is not reachable so process_cgo's nil-fallback
-// drives 4 single-call dispatches through the upstream
-// golang.org/x/crypto BLAKE2s asm directly.
-func TestBLAKE2sMakePairBatchedFollowsAsmEngagement(t *testing.T) {
+// TestBLAKE2sMakePairBatchedArms verifies that Make256Pair returns a
+// batched arm for blake2s on every build: the arm evaluates the four
+// lanes through the single arm, and the fused cascade hooks of the
+// registry entry carry the assembly.
+func TestBLAKE2sMakePairBatchedArms(t *testing.T) {
 	_, b, _, err := Make256Pair("blake2s")
 	if err != nil {
 		t.Fatalf("Make256Pair(blake2s): %v", err)
 	}
-	if blake2sasm.HasAVX512Fused {
-		if b == nil {
-			t.Fatal("Make256Pair(blake2s) returned nil batched arm despite asm engaged — FFI will fall back to per-pixel dispatch")
-		}
-	} else {
-		if b != nil {
-			t.Fatal("Make256Pair(blake2s) returned non-nil batched arm without asm engaged — the scalar 4-lane wrapper is slower than process_cgo's nil-fallback")
-		}
+	if b == nil {
+		t.Fatal("Make256Pair(blake2s) returned a nil batched arm")
 	}
 }
 

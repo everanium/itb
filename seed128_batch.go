@@ -4,8 +4,8 @@ import "encoding/binary"
 
 // BatchHashFunc128 is the 4-way batched 128-bit hash interface
 // alongside [HashFunc128]. Primitives whose SIMD kernel processes
-// four independent (data, seed) tuples per call expose this — e.g.
-// the ZMM-batched SipHash-2-4 / AES-CMAC kernels on amd64 with
+// four independent (data, seed) tuples per call expose this, through
+// the ZMM-batched width-128 registry kernels on amd64 with
 // AVX-512 + VAES.
 //
 // Bit-exact parity invariant: each lane output
@@ -20,6 +20,11 @@ type BatchHashFunc128 func(data *[4][]byte, seeds [4][2]uint64) [4][2]uint64
 // under the same Components. Caller ensures s.BatchHash != nil
 // (processChunk128 checks this before invoking).
 func (s *Seed128) BatchChainHash128(buf *[4][]byte) [4][2]uint64 {
+	if s.BatchFusedChain != nil {
+		if out, ok := s.BatchFusedChain(s.Components, buf); ok {
+			return out
+		}
+	}
 	var seeds [4][2]uint64
 	for lane := 0; lane < 4; lane++ {
 		seeds[lane][0] = s.Components[0]

@@ -30,11 +30,11 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
-# Make the itb package importable when the bench scripts are run by
+# Make the itb3 package importable when the bench scripts are run by
 # path (python3 benches/bench_<shape>.py).
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-import itb  # noqa: E402
+import itb3 as itb  # noqa: E402
 
 # Per-case iteration floor alongside the wall-clock budget.
 BENCH_MIN_ITERS = 3

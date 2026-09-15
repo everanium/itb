@@ -6,10 +6,10 @@
 
 **No bespoke cryptography.** ITB introduces no cryptographic primitive of its own — no custom S-box, permutation, or round function. It is a construction over existing primitives, much as PGP composes standard ciphers rather than defining one. Such constructions are not the object of algorithm-level cryptographic certification: national regimes (NIST CAVP/FIPS in the US, GOST/FSB in Russia, OSCCA's SM-series in China, IC3S in India, SOG-IS/EUCC and national lists in the EU, ASD's ISM in Australia, CRYPTREC in Japan, KCMVP in South Korea) certify **primitives** and the **modules** built on them, not compositional schemes. Eligibility for regulated use is therefore inherited from the primitives ITB is configured with, not conferred by ITB itself.
 
-Thin proxy over the libitb shared library's `ITB_Triple_*` surface
+Thin proxy over the libitb3 shared library's `ITB_Triple_*` surface
 (`cmd/cshared`), written against Crystal's native `lib` / `fun` C
 bindings — no external shard dependencies, no C glue code. The
-compiled binaries link `libitb.so` directly, and every hash-name /
+compiled binaries link `libitb3.so` directly, and every hash-name /
 MAC-name / cipher-name / profile-name is an opaque string passed
 through to Go for validation — the binding carries no ITB construction
 logic. The public surface is the `ITB::Pipeline` class (init / load
@@ -31,8 +31,8 @@ build, tests, and benches call the `crystal` compiler directly.
 
 ## Build
 
-The convenience driver builds `libitb.so` (only when absent — set
-`ITB_REBUILD_LIBITB=1` to force a Go rebuild) and compiles the eitb
+The convenience driver builds `libitb3.so` (only when absent — set
+`ITB_REBUILD_LIBITB3=1` to force a Go rebuild) and compiles the eitb
 CLI binary in one step:
 
 ```bash
@@ -42,24 +42,24 @@ CLI binary in one step:
 Equivalent manual invocation:
 
 ```bash
-go build -trimpath -buildmode=c-shared -o dist/linux-amd64/libitb.so ./cmd/cshared
+go build -trimpath -buildmode=c-shared -o dist/linux-amd64/libitb3.so ./cmd/cshared
 cd bindings/crystal && crystal build -o bin/eitb eitb/itb_eitb.cr
 ```
 
 Hosts without AVX-512+VL: pass `--noitbasm` to `build.sh` to opt out
-of ITB's chain-absorb asm.
+of ITB's SIMD asm kernels.
 
 ## Library lookup order
 
 Linking is resolved at **compile time** through the
 `@[Link(ldflags: ...)]` annotation in `src/itb/ffi_bridge.cr`, which
-executes `src/itb/libitb_flags.sh`. Search order:
+executes `src/itb/libitb3_flags.sh`. Search order:
 
-1. `ITB_LIBITB_PATH` environment variable (path to the shared library
+1. `ITB_LIBITB3_PATH` environment variable (path to the shared library
    file) — read when the Crystal program is compiled.
-2. `<repo>/dist/<os>-<arch>/libitb.<ext>` resolved by walking up from
+2. `<repo>/dist/<os>-<arch>/libitb3.<ext>` resolved by walking up from
    the binding source directory (in-repo builds).
-3. The OS default loader path (`-litb`).
+3. The OS default loader path (`-litb3`).
 
 The resolved directory is baked into the produced binary as an RPATH,
 so executables run without `LD_LIBRARY_PATH`.
@@ -67,7 +67,7 @@ so executables run without `LD_LIBRARY_PATH`.
 ## Usage example
 
 ```crystal
-require "itb"
+require "libitb3"
 
 # Single Message: sender initializes a session, receiver loads it
 # from the exported blob.
@@ -107,7 +107,7 @@ pipe = ITB::Pipeline.new("singlemsg-triple-nomac-v1", opts: opts)
 rotated = pipe.rekey(perm_master, wrap_master)
 
 # Registry roster.
-ITB.version  # => libitb version string
+ITB.version  # => libitb3 version string
 ITB.profiles # => sorted registered profile names
 ```
 
@@ -198,7 +198,7 @@ cap is per-machine and never written to the blob.
 ## Memory
 
 Two process-wide knobs constrain Go runtime arena pacing, readable at
-libitb load time via env vars (`ITB_GOMEMLIMIT`, `ITB_GOGC`) and
+libitb3 load time via env vars (`ITB_GOMEMLIMIT`, `ITB_GOGC`) and
 adjustable at any time programmatically. Pass a negative value to
 query without changing. Long-running or allocation-heavy workloads
 (benchmarks, bulk encryption) should set both — without a soft cap +
@@ -206,8 +206,8 @@ aggressive GC the Go scratch heap grows unboundedly under allocation
 churn:
 
 ```crystal
-ITB.set_memory_limit(512_i64 << 20) # 512 MiB soft cap
-ITB.set_gc_percent(20)              # aggressive GC
+ITB.set_memory_limit(4_i64 << 30) # 4 GiB soft cap
+ITB.set_gc_percent(100)            # balanced GC
 ```
 
 ## Testing
@@ -235,19 +235,19 @@ Message encrypt and incremental Streaming encrypt throughput at
 1 MiB / 16 MiB / 64 MiB under the canonical fleet configuration
 (Areion-SoEM-512, 1024-bit key, 512-bit nonce, parallax and wrapper
 off, No MAC profiles, 5 s wall-clock per case; see
-[BENCH.md](../BENCH.md)). Shape overrides via `ITB_INNER_HASH`,
+[BENCH.md](https://github.com/everanium/itb/blob/main/bindings/BENCH.md)). Shape overrides via `ITB_INNER_HASH`,
 `ITB_KEY_BITS`, `ITB_NONCE_BITS`, `ITB_WITH_PARALLAX`,
 `ITB_WITH_WRAPPER`, `ITB_PROFILE`, `ITB_BENCH_MIN_SEC`.
 
-## Related — `itb3` CLI
+## itb3 CLI
 
 The Go core ships an openssl-style CLI utility
-[`itb3`](../../cmd/itb3/) that generates session blobs on disk
+[`itb3`](https://github.com/everanium/itb/tree/main/cmd/itb3/) that generates session blobs on disk
 (`itb3 genblob <mode> <hash> -o blob.json`); this binding reopens
 such blobs via `ITB::Pipeline.load_f`. `itb3` also encrypts /
 decrypts payloads directly on disk (`-i` / `-o`) or through stdin /
 stdout, rotates outer masters, and inspects stored blobs. See
-[`cmd/itb3/README.md`](../../cmd/itb3/README.md) for the full
+[`cmd/itb3/README.md`](https://github.com/everanium/itb/blob/main/cmd/itb3/README.md) for the full
 subcommand reference.
 
 ## eitb utility
@@ -266,11 +266,11 @@ back to `decrypt` on the receiving side.
 
 - **Compile-time linking.** Library resolution happens when the
   Crystal program is compiled, not at process start — moving
-  `libitb.so` after compilation requires either the baked RPATH to
-  stay valid or `LD_LIBRARY_PATH` at run time. `ITB_LIBITB_PATH` set
+  `libitb3.so` after compilation requires either the baked RPATH to
+  stay valid or `LD_LIBRARY_PATH` at run time. `ITB_LIBITB3_PATH` set
   at compile time overrides the search.
 - **Blocking FFI calls.** Every binding call blocks the calling
-  thread until libitb returns; the calls do not integrate with
+  thread until libitb3 returns; the calls do not integrate with
   Crystal's fiber scheduler. Long encrypt / decrypt operations should
   not share a thread with latency-sensitive fibers.
 - **Streaming-decrypt caveat.** Chunked Streaming AEAD verifies per
@@ -281,3 +281,7 @@ back to `decrypt` on the receiving side.
 - **Triple surface only.** The binding exposes the Triple Pipeline
   facade; the Low-Level configuration surface stays Go-native and is
   not exported here.
+
+## License
+
+Apache-2.0 — see [LICENSE](../../LICENSE).

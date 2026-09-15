@@ -1,6 +1,6 @@
 # test-itb.R — testthat suite for the ITB R binding.
 
-library(itb)
+library(libitb3r)
 
 # Deterministic non-trivial payload (seeded uniform bytes).
 payload <- function(n, seed) {
@@ -33,7 +33,7 @@ test_that("version reports library and binding versions", {
   v <- version()
   expect_type(v, "character")
   expect_gt(nchar(v), 0)
-  expect_equal(as.character(utils::packageVersion("itb")), "0.4.1")
+  expect_equal(as.character(utils::packageVersion("libitb3r")), "0.5.1")
 })
 
 test_that("profiles lists the registered Triple profiles", {
@@ -302,12 +302,19 @@ test_that("load with master override", {
   pipeline_free(sender)
 })
 
-test_that("inspect matches lookup", {
+test_that("inspect carries recipe plus inspection-only fields", {
+  # inspect carries the registry recipe plus the blob-only nonce_bits
+  # / barrier_fill inspection fields; lookup returns just the recipe.
   pipe <- pipeline_create("singlemsg-triple-mac-v1")
   record <- inspect(pipeline_save(pipe))
+  looked <- lookup("singlemsg-triple-mac-v1")
   expect_true(grepl('"name":"singlemsg-triple-mac-v1"', record, fixed = TRUE))
   expect_true(grepl('"mode":"singlemsg-mac"', record, fixed = TRUE))
-  expect_identical(record, lookup("singlemsg-triple-mac-v1"))
+  expect_true(grepl('"nonce_bits":', record, fixed = TRUE))
+  expect_true(grepl('"barrier_fill":', record, fixed = TRUE))
+  expect_true(grepl('"name":"singlemsg-triple-mac-v1"', looked, fixed = TRUE))
+  expect_false(grepl('"nonce_bits":', looked, fixed = TRUE))
+  expect_false(grepl('"barrier_fill":', looked, fixed = TRUE))
   expect_itb_status(inspect("not a blob"), itb_status$BAD_INPUT)
   pipeline_free(pipe)
 })

@@ -1,6 +1,6 @@
 //! Init → save → Load → EncryptMessage → DecryptMessage round trip.
 
-use itb::{OptsBuilder, Pipeline};
+use itb3::{OptsBuilder, Pipeline};
 
 #[test]
 fn smoke_round_trip() {

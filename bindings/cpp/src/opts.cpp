@@ -3,7 +3,7 @@
  *
  * The builder performs no validation — every key and value is
  * percent-encoded into a query string and passed through to Go
- * verbatim; libitb rejects unknown keys or bad values with a
+ * verbatim; libitb3 rejects unknown keys or bad values with a
  * diagnostic carried by the thrown itb::Error. Primitive / MAC /
  * cipher / profile names are opaque strings.
  */

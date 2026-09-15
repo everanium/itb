@@ -1,14 +1,14 @@
 //! Thin Zig proxy over the ITB C binding (`bindings/c`), which in
-//! turn wraps the libitb shared library's Triple Pipeline surface.
+//! turn wraps the libitb3 shared library's Triple Pipeline surface.
 //!
-//! The module `@cImport`s the C binding's public `itb.h` and links
-//! `libitb_c.a` + `libitb.so` at compile time — no runtime symbol
+//! The module `@cImport`s the C binding's public `itb3.h` and links
+//! `libitb3_c.a` + `libitb3.so` at compile time — no runtime symbol
 //! loading. Every hash-name / MAC-name / cipher-name / profile-name
 //! is an opaque string passed through to Go for validation; the
 //! binding carries no ITB construction logic. Buffer sizing and the
 //! BufferTooSmall retry-once dance live in the C layer.
 //!
-//!     const itb = @import("itb");
+//!     const itb = @import("itb3");
 //!
 //!     var sender = try itb.Pipeline.init(allocator, "singlemsg-triple-mac-v1", null);
 //!     defer sender.deinit();
@@ -23,8 +23,8 @@
 //!     defer allocator.free(plain);
 
 /// Zig binding version. Tracks the Zig wrapper; call `version` for
-/// the underlying libitb library version.
-pub const binding_version: [:0]const u8 = "0.4.1";
+/// the underlying libitb3 library version.
+pub const binding_version: [:0]const u8 = "0.5.1";
 
 pub const ffi = @import("ffi.zig");
 

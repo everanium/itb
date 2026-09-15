@@ -6,7 +6,7 @@
 
 **No bespoke cryptography.** ITB introduces no cryptographic primitive of its own — no custom S-box, permutation, or round function. It is a construction over existing primitives, much as PGP composes standard ciphers rather than defining one. Such constructions are not the object of algorithm-level cryptographic certification: national regimes (NIST CAVP/FIPS in the US, GOST/FSB in Russia, OSCCA's SM-series in China, IC3S in India, SOG-IS/EUCC and national lists in the EU, ASD's ISM in Australia, CRYPTREC in Japan, KCMVP in South Korea) certify **primitives** and the **modules** built on them, not compositional schemes. Eligibility for regulated use is therefore inherited from the primitives ITB is configured with, not conferred by ITB itself.
 
-Thin proxy over the libitb shared library's `ITB_Triple_*` surface
+Thin proxy over the libitb3 shared library's `ITB_Triple_*` surface
 (`cmd/cshared`). Source-generated P/Invoke (`[LibraryImport]`) with a
 `DllImportResolver` — the `.so` / `.dylib` / `.dll` is resolved at
 the first FFI call, no compile-time link. Every hash-name / MAC-name
@@ -28,11 +28,11 @@ sudo pacman -S go dotnet-sdk
 ```
 
 Generic Linux / macOS: a Go toolchain plus the .NET SDK (net10.0
-target framework). Windows: the same; libitb builds as `libitb.dll`.
+target framework). Windows: the same; libitb3 builds as `libitb3.dll`.
 
 ## Build the shared library
 
-The convenience driver builds `libitb.so` plus the four .NET
+The convenience driver builds `libitb3.so` plus the four .NET
 projects (library, tests, bench, eitb) in one step:
 
 ```bash
@@ -43,15 +43,15 @@ Equivalent manual invocation:
 
 ```bash
 go build -trimpath -buildmode=c-shared \
-    -o dist/linux-amd64/libitb.so ./cmd/cshared
-cd bindings/csharp && dotnet build Itb.sln -c Release
+    -o dist/linux-amd64/libitb3.so ./cmd/cshared
+cd bindings/csharp && dotnet build Everanium.LibItb3.sln -c Release
 ```
 
 ## Library lookup order
 
-1. `ITB_LIBITB_PATH` environment variable (path to the shared
+1. `ITB_LIBITB3_PATH` environment variable (path to the shared
    library file).
-2. `<repo>/dist/<os>-<arch>/libitb.<ext>` located by walking up from
+2. `<repo>/dist/<os>-<arch>/libitb3.<ext>` located by walking up from
    the assembly directory (in-repo builds).
 3. The OS default loader path (`LD_LIBRARY_PATH`, `ld.so.cache`,
    `DYLD_LIBRARY_PATH`, `PATH`).
@@ -59,7 +59,7 @@ cd bindings/csharp && dotnet build Itb.sln -c Release
 ## Usage example
 
 ```csharp
-using Itb;
+using Everanium.Itb3;
 
 using var sender = Pipeline.Init("singlemsg-triple-mac-v1");
 using var receiver = Pipeline.Load(sender.Save());
@@ -153,13 +153,15 @@ cap is per-machine and never written to the blob.
 ## Memory
 
 Two process-wide knobs constrain Go runtime arena pacing, readable
-at libitb load time via env vars (`ITB_GOMEMLIMIT`, `ITB_GOGC`) and
+at libitb3 load time via env vars (`ITB_GOMEMLIMIT`, `ITB_GOGC`) and
 adjustable at any time programmatically. Pass `-1` to query without
 changing:
 
 ```csharp
-Itb.Runtime.SetMemoryLimit(512L * 1024 * 1024);
-Itb.Runtime.SetGCPercent(20);
+using ItbRuntime = Everanium.Itb3.Runtime;
+
+ItbRuntime.SetMemoryLimit(4L * 1024 * 1024 * 1024);
+ItbRuntime.SetGCPercent(100);
 ```
 
 ## Testing
@@ -168,7 +170,7 @@ Itb.Runtime.SetGCPercent(20);
 ./bindings/csharp/run_tests.sh
 ```
 
-The harness builds `libitb.so`, exports `ITB_LIBITB_PATH`, and
+The harness builds `libitb3.so`, exports `ITB_LIBITB3_PATH`, and
 invokes `dotnet test -c Release`. Positional arguments are forwarded
 to dotnet test (e.g. `./run_tests.sh --filter
 FullyQualifiedName~Smoke`). The suite covers Single Message round
@@ -188,31 +190,31 @@ lives in Go under the shipped tree.
 
 `Stopwatch`-timed micro-benches: `EncryptMessage` and stream-pump
 throughput at 1 MiB / 16 MiB / 64 MiB. Shape and budget are driven
-by the `ITB_*` env vars listed in `Itb.Bench/BenchUtil.cs`; defaults
+by the `ITB_*` env vars listed in `Everanium.LibItb3.Bench/BenchUtil.cs`; defaults
 match the root Go BENCH3.md pin.
 
-## Related — `itb3` CLI
+## itb3 CLI
 
 The Go core ships an openssl-style CLI utility
-[`itb3`](../../cmd/itb3/) that generates session blobs on disk
+[`itb3`](https://github.com/everanium/itb/tree/main/cmd/itb3/) that generates session blobs on disk
 (`itb3 genblob <mode> <hash> -o blob.json`); this binding reopens
 such blobs via `Pipeline.LoadF`. `itb3` also encrypts / decrypts
 payloads directly on disk (`-i` / `-o`) or through stdin / stdout,
 rotates outer masters, and inspects stored blobs. See
-[`cmd/itb3/README.md`](../../cmd/itb3/README.md) for the full
+[`cmd/itb3/README.md`](https://github.com/everanium/itb/blob/main/cmd/itb3/README.md) for the full
 subcommand reference.
 
 ## eitb utility
 
-The `Itb.Eitb` console project mirrors the shipped Go `tools/eitb`
+The `Everanium.LibItb3.Eitb` console project mirrors the shipped Go `tools/eitb`
 scope for shell smoke tests:
 
 ```bash
 cd bindings/csharp
-dotnet run -c Release --project Itb.Eitb -- version
-dotnet run -c Release --project Itb.Eitb -- profiles
-dotnet run -c Release --project Itb.Eitb -- encrypt singlemsg-triple-mac-v1 in.bin out.bin  # blob hex on stderr
-dotnet run -c Release --project Itb.Eitb -- decrypt singlemsg-triple-mac-v1 <blob-hex> out.bin back.bin
+dotnet run -c Release --project Everanium.LibItb3.Eitb -- version
+dotnet run -c Release --project Everanium.LibItb3.Eitb -- profiles
+dotnet run -c Release --project Everanium.LibItb3.Eitb -- encrypt singlemsg-triple-mac-v1 in.bin out.bin  # blob hex on stderr
+dotnet run -c Release --project Everanium.LibItb3.Eitb -- decrypt singlemsg-triple-mac-v1 <blob-hex> out.bin back.bin
 ```
 
 ## Limitations
@@ -229,5 +231,9 @@ dotnet run -c Release --project Itb.Eitb -- decrypt singlemsg-triple-mac-v1 <blo
   attributable.
 - `Rekey` must not run concurrently with cipher calls or open stream
   sessions on the same `Pipeline`.
-- libitb must be reachable at runtime through the lookup order
+- libitb3 must be reachable at runtime through the lookup order
   above.
+
+## License
+
+Apache-2.0 — see [LICENSE](../../LICENSE).

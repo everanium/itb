@@ -144,19 +144,28 @@ func (p *Pipeline) SaveF(path string) error {
 // Inspect decodes the wrap-layer of blob and returns the embedded
 // [Profile] record — every structural field the sender's Pipeline was
 // built with, Init-time Opts overrides folded in, Name carrying the
-// sender's profile label. No Pipeline is opened.
+// sender's profile label. [Profile.NonceBits] and [Profile.BarrierFill]
+// are additionally populated from the blob's inner Blob{N}.Globals
+// snapshot (a lightweight read of the two integer fields — nothing
+// else in the inner blob is decoded). No Pipeline is opened.
 //
 // Inspect is a pure decode: it does not read the profile registry,
 // does not probe primitive availability, does not run the profile
-// field rules, does not open the inner blob, and registers nothing.
-// Primitive names the local build lacks are returned unchanged so a
-// metadata viewer can display them; availability and field validity
-// are enforced by [Load]. Callers who want the record registered call
-// [Register] with prof.Name and the result.
+// field rules, and registers nothing. Primitive names the local build
+// lacks are returned unchanged so a metadata viewer can display them;
+// availability and field validity are enforced by [Load]. Callers who
+// want the record registered call [Register] with prof.Name and the
+// result — with the two Inspect-populated fields zeroed first,
+// otherwise Register refuses them fail-fast.
+//
+// A malformed inner blob leaves [Profile.NonceBits] and
+// [Profile.BarrierFill] at zero and is not surfaced as an error here;
+// the same malformation surfaces cleanly through [Load]'s structural
+// decoder.
 //
 // Errors: [ErrBlobMalformed] (size cap, JSON parse failure, unknown
-// key, trailing content, record not decodable), [ErrBlobVersion]
-// (wrap-layer version other than 2).
+// wrap-layer key, trailing content, record not decodable),
+// [ErrBlobVersion] (wrap-layer version other than 2).
 //
 // Concurrency: safe for concurrent invocation; touches no shared
 // state.
@@ -165,7 +174,18 @@ func Inspect(blob []byte) (Profile, error) {
 	if err != nil {
 		return Profile{}, err
 	}
-	return wrap.Profile, nil
+	prof := wrap.Profile
+	var innerProbe struct {
+		Globals struct {
+			NonceBits   int `json:"nonce_bits"`
+			BarrierFill int `json:"barrier_fill"`
+		} `json:"globals"`
+	}
+	if err := json.Unmarshal(wrap.Inner, &innerProbe); err == nil {
+		prof.NonceBits = innerProbe.Globals.NonceBits
+		prof.BarrierFill = innerProbe.Globals.BarrierFill
+	}
+	return prof, nil
 }
 
 // parseBlobWrap decodes the wrap-layer bytes into a [blobWrapV2]. The

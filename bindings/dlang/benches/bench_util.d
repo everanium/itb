@@ -13,7 +13,7 @@ import std.format : format;
 import std.process : environment;
 import std.stdio : writefln, writeln;
 
-import itb;
+import itb3;
 
 /// Iteration floor per case.
 enum benchMinIters = 3;

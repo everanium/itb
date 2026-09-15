@@ -18,8 +18,8 @@ set -o pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
-if [ ! -d "$ROOT/build/dev/erlang/itb_gleam/ebin" ]; then
-    echo "eitb: binding not built (build/dev/erlang/itb_gleam missing); run ./build.sh first" >&2
+if [ ! -d "$ROOT/build/dev/erlang/libitb3_gleam/ebin" ]; then
+    echo "eitb: binding not built (build/dev/erlang/libitb3_gleam missing); run ./build.sh first" >&2
     exit 1
 fi
 

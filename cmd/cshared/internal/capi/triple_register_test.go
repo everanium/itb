@@ -9,8 +9,8 @@ import (
 )
 
 // tripleRegisterJSONFull returns a profile JSON record that installs a
-// full-stack streaming AEAD profile shape (parallax on + wrapper on,
-// MAC-authenticated, 512-bit inner hash). Callers rewrite fields to
+// full-stack Streaming AEAD profile shape (parallax on + wrapper on,
+// MAC Authenticated, 512-bit inner hash). Callers rewrite fields to
 // exercise the validation surface.
 func tripleRegisterJSONFull() string {
 	return `{"mode":"streaming-aead","width":512,"hash":"areion512","keybits":1024,` +

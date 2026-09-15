@@ -23,7 +23,7 @@ package body Test_Support is
    -- Check_Eq --
    --------------
 
-   procedure Check_Eq (Got, Want : Itb.Byte_Array; Label : String) is
+   procedure Check_Eq (Got, Want : Itb3.Byte_Array; Label : String) is
    begin
       if Got'Length /= Want'Length then
          raise Test_Failure with Label & ": length"
@@ -44,11 +44,11 @@ package body Test_Support is
    -------------
 
    function Payload
-     (N : Positive; Seed : Interfaces.Unsigned_64) return Itb.Byte_Array
+     (N : Positive; Seed : Interfaces.Unsigned_64) return Itb3.Byte_Array
    is
       use Interfaces;
       X      : Unsigned_64 := Seed or 1;
-      Result : Itb.Byte_Array (1 .. Ada.Streams.Stream_Element_Offset (N));
+      Result : Itb3.Byte_Array (1 .. Ada.Streams.Stream_Element_Offset (N));
    begin
       for I in Result'Range loop
          X := X xor Shift_Left (X, 13);

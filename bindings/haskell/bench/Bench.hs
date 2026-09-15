@@ -27,7 +27,7 @@ import System.IO (IOMode (ReadMode), withBinaryFile)
 import Text.Printf (printf)
 import Text.Read (readMaybe)
 
-import ITB
+import ITB3
 
 benchMinIters :: Int
 benchMinIters = 3
@@ -40,8 +40,8 @@ main = do
   -- Bench-scale allocation churn grows the Go scratch heap
   -- unboundedly without a soft memory cap + aggressive GC; the
   -- return values report the previous settings, not an error.
-  void (setMemoryLimit (512 * 1024 * 1024))
-  void (setGcPercent 20)
+  void (setMemoryLimit (4 * 1024 * 1024 * 1024))
+  void (setGcPercent 100)
 
   opts <- benchOpts
   minSec <- envDouble "ITB_BENCH_MIN_SEC" 5.0

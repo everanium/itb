@@ -6,7 +6,7 @@ package itb
 // + always-on 48-bit Interlocked Barrier. This is the harder-primitive
 // counterpart to the nullHash Stage 1 attack (redteam_nullhash_attack_test.go):
 // same threat model (Full KPA — all 512 plaintext bytes known — plus the
-// three per-snake startPixels as a lab concession, fresh nonce, one
+// three per-region startPixels as a lab concession, fresh nonce, one
 // message), but jokeHash instead of nullHash.
 //
 // jokeHash is a T-function multiply-add fold (multiplier 257). Unlike
@@ -34,8 +34,22 @@ package itb
 // characterised null result, not a decision-path recovery, so there is no
 // attacker/oracle boundary to violate); no claim of a working attack is
 // made.
+//
+// The interlock nonce is lab-side material here, of exactly the same
+// class as those victim seeds, and M0 states why no other status is
+// available. It is not a wire field — it travels split across the three
+// interlocked lanes — and neither route that reaches it under a weaker
+// primitive exists under jokeHash: the 64-bit ChainHash output fills the
+// per-channel XOR masks of all eight channels, so there is no 7-of-8
+// unmask to read the lane fronts through, and the derived interlock key
+// survives the cascade fill intact, so the barrier lanes cannot be
+// reconstructed without it. An attack under jokeHash therefore cannot
+// proceed on the interlock nonce at all; the reduction analysis below is
+// stated with the nonce supplied, which only makes the null result
+// stronger, and no step of it is presented as an attacker capability.
 
 import (
+	"crypto/rand"
 	"encoding/binary"
 	"testing"
 )
@@ -58,18 +72,81 @@ func TestRedTeamJokeHashFullKPA(t *testing.T) {
 	// ---- Lab victim setup (seeds are lab-only; used post-hoc only) ----
 	ns, ls, d1, d2, d3, s1, s2, s3 := makeJokeSeeds(t, keyBits)
 	plaintext := make([]byte, 512)
-	for i := range plaintext {
-		plaintext[i] = byte('A' + (i % 26))
+	// Random ASCII fill — realistic KPA target, fresh per run.
+	const asciiAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 ,.:;-!?"
+	tmp := make([]byte, len(plaintext))
+	if _, err := rand.Read(tmp); err != nil {
+		t.Fatalf("crypto/rand.Read plaintext seed: %v", err)
 	}
+	for i := range plaintext {
+		plaintext[i] = asciiAlphabet[int(tmp[i])%len(asciiAlphabet)]
+	}
+	// The interlock nonce is not a wire field — it travels split across
+	// the interlocked lanes — so the lab fixture installs a
+	// CSPRNG-fresh value and records the one the encrypt consumed.
+	ilNonce := make([]byte, currentNonceSizeCfg(cfg))
+	if _, rerr := rand.Read(ilNonce); rerr != nil {
+		t.Fatalf("crypto/rand interlock nonce: %v", rerr)
+	}
+	setBrokenTestInterlockNonceOnly(t, ilNonce)
 	ct, err := Encrypt3x128Cfg(cfg, ns, ls, d1, d2, d3, s1, s2, s3, plaintext)
 	if err != nil {
 		t.Fatalf("Encrypt3x128Cfg: %v", err)
 	}
 	nonceLen := currentNonceSizeCfg(cfg)
 	mainNonce := ct[:nonceLen]
-	ilNonce := ct[nonceLen : 2*nonceLen]
 
 	t.Logf("=== jokeHash Full-KPA reduction analysis (Triple + Interlocked Barrier) ===")
+
+	// ---------------------------------------------------------------
+	// M0. No route to the interlock nonce. Two conditions have to fail
+	// together for the nonce to be reachable, and under jokeHash neither
+	// holds.
+	//
+	// The first is the 7-of-8 unmask a one-byte ChainHash output opens:
+	// xorMask = dataHash >> DataRotationBits has to be too narrow to
+	// cover channels 1..7, leaving those channels carrying lane bits
+	// behind nothing but a rotation and a noise-bit position, which is
+	// what lets a lane front be read directly. jokeHash returns a full
+	// 64-bit lo, so every channel's mask is populated.
+	//
+	// The second is nonce-invariance of the barrier lanes: if the derived
+	// interlock key does not survive the cascade fill, candidate lanes can
+	// be rebuilt without the nonce. jokeHash's multiply-add fold carries
+	// it through.
+	//
+	// Both are measured on attacker-chosen seeds and nonces, so the
+	// conclusion rests on the primitive rather than on this fixture.
+	// ---------------------------------------------------------------
+	{
+		const N = 512
+		maskedChannels := 0
+		probeSeed, perr := NewSeed128(keyBits, jokeHash)
+		if perr != nil {
+			t.Fatalf("M0 NewSeed128: %v", perr)
+		}
+		probeBuf := make([]byte, 4+nonceLen)
+		if _, rerr := rand.Read(probeBuf[4:]); rerr != nil {
+			t.Fatalf("M0 rand nonce: %v", rerr)
+		}
+		for p := 0; p < N; p++ {
+			dh, _ := probeSeed.blockHash128(probeBuf, p)
+			if (dh>>DataRotationBits)>>DataBitsPerChannel != 0 {
+				maskedChannels++
+			}
+		}
+		inv := probeInterlockNonceInvariance128(cfg, jokeHash, keyBits, 8, 8)
+		t.Logf("M0 no 7-of-8 unmask: channels past the first carry a non-zero XOR mask on %d/%d probed pixels", maskedChannels, N)
+		t.Logf("M0 interlock-nonce probe (attacker-side, %d seeds x %d nonces): barrier lanes byte-identical in %d/%d comparisons, distinct derived keys %d",
+			inv.seeds, inv.nonces, inv.laneMatches, inv.laneTrials, inv.distinctKeys)
+		t.Logf("M0 => the interlock nonce is neither readable off the lane fronts nor dispensable for rebuilding the lanes; this analysis is stated with it supplied, as lab-side material alongside the victim seeds")
+		if maskedChannels < N {
+			t.Errorf("M0 structural assumption violated: %d/%d pixels left channels past the first unmasked", N-maskedChannels, N)
+		}
+		if inv.invariant {
+			t.Errorf("M0 structural assumption violated: barrier lanes did not move across %d nonce comparisons", inv.laneTrials)
+		}
+	}
 
 	// ---------------------------------------------------------------
 	// M1. Effective key = even-index components; seed1 ignored; hi=^lo.
@@ -206,12 +283,12 @@ func TestRedTeamJokeHashFullKPA(t *testing.T) {
 	}
 
 	// ---------------------------------------------------------------
-	// M4. Barrier severance of Full KPA. Part 2 encodes the LOCKED lanes
+	// M4. Barrier severance of Full KPA. Pixel Barrier encodes the LOCKED lanes
 	// p_i = chunk48lock(framed_chunk, mask_chunk), not the plaintext. The
 	// attacker knows framed (= len||plaintext), but each lane bit is a
 	// bit of framed selected by an UNKNOWN per-chunk 16-of-48 mask. So
 	// Full KPA at the plaintext level provides no known-plaintext at the
-	// Part-2 level without the 256-bit lockSeed. Quantify the per-chunk
+	// Pixel Barrier level without the 256-bit lockSeed. Quantify the per-chunk
 	// mask space the attacker would have to brute even to reconstruct one
 	// lane, independent of the seed coupling.
 	// ---------------------------------------------------------------
@@ -223,9 +300,11 @@ func TestRedTeamJokeHashFullKPA(t *testing.T) {
 		copy(framed[4:], plaintext)
 
 		// ... but the barrier OUTPUT (lanes) needs the masks. Compute the
-		// true lanes lab-side to display that Part-2 input is seed-locked.
+		// true lanes lab-side to display that Pixel Barrier input is seed-locked.
 		bp := buildLockBatchPRF48_128Cfg(cfg, ls, ilNonce)
-		p0, p1, p2 := splitForTriple48LockedCfg(cfg, plaintext, bp)
+		n := tripleLaneLen(len(plaintext))
+		p0, p1, p2 := make([]byte, n), make([]byte, n), make([]byte, n)
+		splitForTriple48LockedInto(cfg, plaintext, bp, p0, p1, p2)
 		framedKnown := true // attacker computes this exactly
 		lanesSeedLocked := len(p0) > 0 && len(p1) > 0 && len(p2) > 0
 
@@ -235,9 +314,9 @@ func TestRedTeamJokeHashFullKPA(t *testing.T) {
 		// chunk, reduced by the 128-bit rank domain to <= 2^128 but derived
 		// from the 256-bit even key. The point: it is not the 2^16 the
 		// nullHash attack enumerated.
-		t.Logf("M4 barrier severance: attacker knows framed (KPA lever): %v; Part-2 input lanes are seed-locked: %v", framedKnown, lanesSeedLocked)
-		t.Logf("M4 => Full KPA at plaintext does NOT yield known-plaintext at Part 2; lanes depend on the 256-bit lockSeed via per-chunk combinadic-unrank masks (non-T-function, non-GF(2)-linear)")
-		t.Logf("M4 => the FNV-1a-style T-function bit-plane recovery (which needs barrier-free known Part-2 input, i.e. Single Ouroboros) has no foothold here")
+		t.Logf("M4 barrier severance: attacker knows framed (KPA lever): %v; Pixel Barrier input lanes are seed-locked: %v", framedKnown, lanesSeedLocked)
+		t.Logf("M4 => Full KPA at plaintext does NOT yield known-plaintext at Pixel Barrier; lanes depend on the 256-bit lockSeed via per-chunk combinadic-unrank masks (non-T-function, non-GF(2)-linear)")
+		t.Logf("M4 => the FNV-1a-style T-function bit-plane recovery (which needs barrier-free known Pixel Barrier input, i.e. Single Ouroboros) has no foothold here")
 
 		// Sanity: the true lanes decode back (pipeline correctness, lab-side).
 		back, derr := Decrypt3x128Cfg(cfg, ns, ls, d1, d2, d3, s1, s2, s3, ct)

@@ -7,8 +7,8 @@
 **No bespoke cryptography.** ITB introduces no cryptographic primitive of its own — no custom S-box, permutation, or round function. It is a construction over existing primitives, much as PGP composes standard ciphers rather than defining one. Such constructions are not the object of algorithm-level cryptographic certification: national regimes (NIST CAVP/FIPS in the US, GOST/FSB in Russia, OSCCA's SM-series in China, IC3S in India, SOG-IS/EUCC and national lists in the EU, ASD's ISM in Australia, CRYPTREC in Japan, KCMVP in South Korea) certify **primitives** and the **modules** built on them, not compositional schemes. Eligibility for regulated use is therefore inherited from the primitives ITB is configured with, not conferred by ITB itself.
 
 Thin idiomatic layer over the Java binding
-([`../java/`](../java/)) — plain JVM bytecode interop, no FFI hop of
-its own; the Java binding carries the JNI shim over the libitb
+([`../java/`](https://github.com/everanium/itb/tree/main/bindings/java/)) — plain JVM bytecode interop, no FFI hop of
+its own; the Java binding carries the JNI shim over the libitb3
 `ITB_Triple_*` surface. Every hash-name / MAC-name / cipher-name /
 profile-name is an opaque string passed through to Go for
 validation; the binding carries no ITB construction logic.
@@ -37,7 +37,7 @@ the Java binding's JNI shim), and sbt 1.9+.
 
 ## Build
 
-The convenience driver builds the Java binding first (libitb.so +
+The convenience driver builds the Java binding first (libitb3.so +
 JNI shim + jars via `../java/build.sh`), then compiles the Scala
 library, test, bench, and eitb projects:
 
@@ -54,17 +54,17 @@ The Java jar is consumed as an sbt unmanaged jar from
 Native resolution is inherited from the Java binding:
 
 1. `ITB_JNI_PATH` environment variable (path to the JNI shim,
-   `bindings/java/build/jni/libitb_jni.so` for in-repo builds).
-2. `System.loadLibrary("itb_jni")` over `java.library.path`.
+   `bindings/java/build/jni/libitb3_jni.so` for in-repo builds).
+2. `System.loadLibrary("itb3_jni")` over `java.library.path`.
 
-The shim locates `libitb.so` through its RPATH (the repository
+The shim locates `libitb3.so` through its RPATH (the repository
 `dist/linux-amd64/` directory) or the OS loader path.
 
 ## Usage example
 
 ```scala
 import scala.util.Using
-import dev.everanium.itb.{Opts, Pipeline}
+import io.github.everanium.itb3.scala.{Opts, Pipeline}
 
 Using.resource(Pipeline.init("singlemsg-triple-mac-v1").fold(throw _, identity)) { sender =>
   Using.resource(Pipeline.load(sender.save().fold(throw _, identity)).fold(throw _, identity)) { receiver =>
@@ -118,7 +118,7 @@ Using.resource(pipe.beginEncryptStream().fold(throw _, identity)) { session =>
 
 Profile names, opts keys, and every primitive name are validated by
 the Go side; a rejected string surfaces as a `Left(ItbError)`
-carrying the [`Status`](src/main/scala/dev/everanium/itb/Status.scala)
+carrying the [`Status`](src/main/scala/io/github/everanium/itb3/scala/Status.scala)
 code plus the `ITB_LastError` diagnostic.
 
 ## Persisting sessions
@@ -170,13 +170,15 @@ cap is per-machine and never written to the blob.
 ## Memory
 
 Two process-wide knobs constrain Go runtime arena pacing, readable
-at libitb load time via env vars (`ITB_GOMEMLIMIT`, `ITB_GOGC`) and
+at libitb3 load time via env vars (`ITB_GOMEMLIMIT`, `ITB_GOGC`) and
 adjustable at any time programmatically. Pass `-1` to query without
 changing:
 
 ```scala
-dev.everanium.itb.Runtime.setMemoryLimit(512L * 1024 * 1024)
-dev.everanium.itb.Runtime.setGCPercent(20)
+import io.github.everanium.itb3.scala.Runtime as ItbRuntime
+
+ItbRuntime.setMemoryLimit(4L * 1024 * 1024 * 1024)
+ItbRuntime.setGCPercent(100)
 ```
 
 ## Testing
@@ -204,18 +206,18 @@ test suite lives in Go under the shipped tree.
 Wall-clock micro-benches: `encryptMessage` and stream-pump
 throughput at 1 MiB / 16 MiB / 64 MiB. Shape and budget are driven
 by the `ITB_*` env vars listed in
-`bench/src/main/scala/dev/everanium/itb/bench/BenchUtil.scala`;
+`bench/src/main/scala/io/github/everanium/itb3/scala/bench/BenchUtil.scala`;
 defaults match the root Go BENCH3.md pin.
 
-## Related — `itb3` CLI
+## itb3 CLI
 
 The Go core ships an openssl-style CLI utility
-[`itb3`](../../cmd/itb3/) that generates session blobs on disk
+[`itb3`](https://github.com/everanium/itb/tree/main/cmd/itb3/) that generates session blobs on disk
 (`itb3 genblob <mode> <hash> -o blob.json`); this binding reopens
 such blobs via `Pipeline.loadF`. `itb3` also encrypts / decrypts
 payloads directly on disk (`-i` / `-o`) or through stdin / stdout,
 rotates outer masters, and inspects stored blobs. See
-[`cmd/itb3/README.md`](../../cmd/itb3/README.md) for the full
+[`cmd/itb3/README.md`](https://github.com/everanium/itb/blob/main/cmd/itb3/README.md) for the full
 subcommand reference.
 
 ## eitb utility
@@ -248,5 +250,9 @@ eitb/eitb decrypt singlemsg-triple-mac-v1 <blob-hex> out.bin back.bin
 - The `transform` / `toLazyList` adapters are single-pass: traverse
   the returned iterator at most once and do not interleave it with
   direct `write` / `read` calls on the same session.
-- The Java binding (and through it the JNI shim + libitb) must be
+- The Java binding (and through it the JNI shim + libitb3) must be
   built and reachable per the lookup order above.
+
+## License
+
+Apache-2.0 — see [LICENSE](../../LICENSE).

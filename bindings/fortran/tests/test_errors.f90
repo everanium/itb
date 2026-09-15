@@ -3,7 +3,7 @@
 ! constellation), and the runtime accessors.
 
 program test_errors
-  use itb
+  use itb3
   use itb_test_helpers
   implicit none
 

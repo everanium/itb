@@ -1,16 +1,14 @@
-//go:build !amd64 || purego || noitbasm
+//go:build (!amd64 && !arm64) || purego || noitbasm
 
-// Stub package on platforms where the AVX-512 + VAES chain-absorb
-// kernels do not apply. The parent hashes/ package falls back to
-// the AESCMACWithKey closure (itself crypto/aes-backed, which uses
-// AES-NI on hosts that expose the AES round instructions) in this
-// case; nothing here is exercised.
 package aescmacasm
 
-// HasVAESAVX512 is always false on non-amd64 / purego builds.
-var HasVAESAVX512 = false
-
-// HasAESNIBatched is always false on non-amd64 / purego builds — the
-// XMM AES-NI chain-absorb kernels are amd64-only. The parent package
-// falls back to the scalar batched reference in this case.
-var HasAESNIBatched = false
+// No assembly tier applies on this build; every dispatcher routes to the
+// scalar reference. The flags exist so callers compile uniformly.
+var (
+	// Batch-16 tier flags — always false without an assembly tier.
+	HasVAESAVX512X16 = false
+	HasVAESAVX2X16   = false
+	HasAVXAESNIX16   = false
+	HasAESNIX16      = false
+	HasARMAESX16     = false
+)

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # run_bench.sh -- micro-benchmark runner for the PHP binding.
-# Builds libitb.so via build.sh, then runs bench/bench.php:
+# Builds libitb3.so via build.sh, then runs bench/bench.php:
 # encryptMessage and stream-session encrypt throughput at
 # 1 MiB / 16 MiB / 64 MiB.
 #
@@ -17,13 +17,13 @@ DIST_DIR="$REPO_ROOT/dist/linux-amd64"
 
 ./build.sh
 
-export ITB_LIBITB_PATH="$DIST_DIR/libitb.so"
+export ITB_LIBITB3_PATH="$DIST_DIR/libitb3.so"
 
 # Go-runtime pacing defaults for bench-scale allocation churn; the
 # `:-` form respects any override set by the caller. The bench main
 # applies the same caps programmatically.
-export ITB_GOMEMLIMIT="${ITB_GOMEMLIMIT:-512MiB}"
-export ITB_GOGC="${ITB_GOGC:-20}"
+export ITB_GOMEMLIMIT="${ITB_GOMEMLIMIT:-4GiB}"
+export ITB_GOGC="${ITB_GOGC:-100}"
 
 # Bench-shape defaults — match the root Go BENCH3.md pin so the
 # throughput numbers are directly comparable to the shipped Go

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/everanium/itb/hashes"
 	"github.com/everanium/itb/triple"
 )
 
@@ -88,6 +89,54 @@ func TripleProfiles(jsonOut []byte) (n int, st Status) {
 	defer recoverPanic(&st, StatusInternal)
 
 	return writeJSONOut(triple.Profiles(), jsonOut)
+}
+
+// TripleHashNames returns the shipped [hashes.Registry] primitive
+// names in canonical order as a JSON array of strings, written into
+// jsonOut under the same caller-allocated-buffer convention as
+// [TripleProfiles]. Runtime-registered custom primitives via
+// hashes.Register live in a separate slice and are not part of this
+// enumeration; the bindings' triple-only surface never exposes
+// custom-primitive plug.
+func TripleHashNames(jsonOut []byte) (n int, st Status) {
+	defer recoverPanic(&st, StatusInternal)
+
+	return writeJSONOut(hashes.Names(), jsonOut)
+}
+
+// TripleProfileFromJSON registers a user-defined [triple.Profile]
+// under the name carried inside its JSON record. Symmetric counterpart
+// of [TripleRegister] for bindings that prefer to thread the name
+// inside the JSON payload rather than as a separate argument.
+//
+// The profile JSON must carry a non-empty Name field; an empty Name
+// returns StatusBadInput. Duplicate name returns StatusProfileExists;
+// every other validation failure (name pattern, reserved prefix,
+// field rules) returns StatusBadInput with the diagnostic in
+// [LastError].
+func TripleProfileFromJSON(profileJSON string) (st Status) {
+	defer recoverPanic(&st, StatusInternal)
+
+	prof, err := parseProfileJSON(profileJSON)
+	if err != nil {
+		setLastErrMessageTriple(err.Error())
+		return StatusBadInput
+	}
+	if prof.Name == "" {
+		setLastErrMessageTriple("register: profile JSON is missing the name field")
+		return StatusBadInput
+	}
+	name := prof.Name
+	prof.Name = ""
+	if err := triple.Register(name, prof); err != nil {
+		if errors.Is(err, triple.ErrProfileExists) {
+			setLastErrMessageTriple(err.Error())
+			return StatusProfileExists
+		}
+		setLastErrMessageTriple(err.Error())
+		return StatusBadInput
+	}
+	return StatusOK
 }
 
 // writeJSONOut marshals v and copies the bytes into out under the

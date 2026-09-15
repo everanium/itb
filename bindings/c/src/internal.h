@@ -1,8 +1,8 @@
 /*
  * internal.h — shared internals of the ITB C binding.
  *
- * Not installed; consumers include only <itb.h>. The binding links
- * against libitb.so at compile time, so the generated libitb.h
+ * Not installed; consumers include only <itb3.h>. The binding links
+ * against libitb3.so at compile time, so the generated libitb3.h
  * prototypes are the FFI surface — no runtime symbol loading.
  */
 
@@ -12,8 +12,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "itb.h"
-#include "libitb.h"
+#include "itb3.h"
+#include "libitb3.h"
 
 /* Concrete handle layouts behind the public opaque typedefs.
  * Ownership: the structs and every buffer they point at are heap
@@ -45,7 +45,7 @@ struct itb_opts {
  * max(131072, payload * 5/4 + 131072). Overflow-guarded. */
 size_t itb_internal_out_cap(size_t payload);
 
-/* Normalises a raw libitb return code into itb_status (unknown codes
+/* Normalises a raw libitb3 return code into itb_status (unknown codes
  * collapse to ITB_STATUS_INTERNAL). */
 itb_status itb_internal_status(int rc);
 

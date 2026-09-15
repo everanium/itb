@@ -1,7 +1,7 @@
 (* Handle-lifetime wrapper around the Triple Pipeline surface.
 
    A [t] value owns one Go-side Pipeline handle. [Gc.finalise]
-   releases the handle when the value is collected (libitb closes and
+   releases the handle when the value is collected (libitb3 closes and
    zeroes key material first); [close] zeroes deterministically
    without waiting for the GC. *)
 
@@ -37,7 +37,7 @@ let attach handle =
 (* Renders an association list as the URL-query-encoded opts string
    consumed by the Go side. No validation happens here -- every key
    and value is percent-encoded byte-wise (the URL-safe subset plus
-   [','] passes through) and forwarded verbatim; libitb rejects
+   [','] passes through) and forwarded verbatim; libitb3 rejects
    unknown keys or bad values with a diagnostic surfaced via
    [ITB_error]. *)
 let render_opts pairs =
@@ -60,9 +60,9 @@ let render_opts pairs =
 
 (* Constructs a fresh Pipeline against the named profile. On a
    blob-buffer retry the Init re-runs and yields a fresh session (the
-   undersized attempt is closed by libitb before returning). The Init
+   undersized attempt is closed by libitb3 before returning). The Init
    blob is not retained binding-side; [save] reads the current bytes
-   from libitb. *)
+   from libitb3. *)
 let init profile opts =
   let s = syms () in
   let handle = new_handle_out () in
@@ -72,7 +72,7 @@ let init profile opts =
   attach !@handle
 
 (* The masters pair crosses as (perm, wrap, count): both absent
-   yields 0, otherwise 2 -- libitb validates the pair. *)
+   yields 0, otherwise 2 -- libitb3 validates the pair. *)
 let masters_count perm wrap =
   if Bytes.length perm = 0 && Bytes.length wrap = 0 then Unsigned.Size_t.zero
   else sz 2
@@ -89,7 +89,7 @@ let load blob perm wrap =
   attach !@handle
 
 (* [load] for a blob stored at [path]; the file is read inside
-   libitb. *)
+   libitb3. *)
 let load_f path perm wrap =
   let s = syms () in
   let handle = new_handle_out () in
@@ -127,13 +127,13 @@ let save p =
   let s = syms () in
   retry_once blob_cap (fun buf cap need -> s.triple_save p.handle (bs buf) (sz cap) need)
 
-(* Writes the current blob to [path] inside libitb (mode 0600). *)
+(* Writes the current blob to [path] inside libitb3 (mode 0600). *)
 let save_f p path =
   require_live p;
   check ((syms ()).triple_save_f p.handle path)
 
 (* Sets the worker cap for every subsequent cipher call; [n] is
-   clamped by libitb. *)
+   clamped by libitb3. *)
 let max_workers p n =
   require_live p;
   check ((syms ()).triple_max_workers p.handle n)
@@ -181,10 +181,10 @@ let decrypt_stream_one_shot p wire =
 (* Profile records                                                  *)
 (* ---------------------------------------------------------------- *)
 
-(* A profile record is the JSON object libitb accepts in [register],
+(* A profile record is the JSON object libitb3 accepts in [register],
    returns from [lookup] / [inspect], and embeds in every blob. The
    binding treats it as an opaque string; every field rule is
-   enforced by libitb. *)
+   enforced by libitb3. *)
 
 (* Decodes the profile record embedded in [blob] without constructing
    a Pipeline. *)
@@ -206,7 +206,7 @@ let lookup name =
   Bytes.to_string
     (retry_once blob_cap (fun buf cap need -> s.triple_lookup name (bs buf) (sz cap) need))
 
-(* The sorted list of every registered profile name. libitb returns a
+(* The sorted list of every registered profile name. libitb3 returns a
    JSON array of strings; names match [^[a-z][a-z0-9-]+$], so the
    array splits on the quote characters alone. *)
 let profiles () =

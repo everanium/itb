@@ -16,11 +16,11 @@
 ;;
 ;;   clojure -M:eitb eitb/main.clj <args>
 
-(ns dev.everanium.itb.clojure.eitb-main
+(ns io.github.everanium.itb3.clojure.eitb-main
   (:require [clojure.java.io :as io]
             [clojure.string :as string]
-            [dev.everanium.itb.clojure.core :as itb]
-            [dev.everanium.itb.clojure.runtime :as runtime])
+            [io.github.everanium.itb3.clojure.core :as itb]
+            [io.github.everanium.itb3.clojure.runtime :as runtime])
   (:import [java.nio.file Files]
            [java.util HexFormat]))
 
@@ -58,7 +58,7 @@
     (.parseHex (HexFormat/of) ^String s)))
 
 (defn- cmd-version []
-  (println (str "libitb " (runtime/version)))
+  (println (str "libitb3 " (runtime/version)))
   (println (str "itb-clojure " runtime/binding-version))
   0)
 
@@ -107,8 +107,8 @@
 (defn -main [& args]
   ;; Defensive Go-runtime pacing caps — the CLI can be pointed at
   ;; gigabyte files.
-  (runtime/set-memory-limit! (bit-shift-left 512 20))
-  (runtime/set-gc-percent! 20)
+  (runtime/set-memory-limit! (bit-shift-left 4 30))
+  (runtime/set-gc-percent! 100)
   (let [[cmd & more] args
         rc (try
              (cond

@@ -1,10 +1,11 @@
-name: itb
-version: 0.4.1
+name: libitb3
+version: 0.5.1
 
-description: |
-  Crystal binding for the ITB Triple Pipeline — a thin proxy over the
-  libitb shared library's ITB_Triple_* C ABI (cmd/cshared).
+description: ITB Symmetric Cipher Construction with Ambiguity-Based Security - Crystal
+
+authors:
+  - Andrey Kuvshinov <andrew@encloud.blue>
 
 crystal: ">= 1.0.0"
 
-license: MIT
+license: Apache-2.0

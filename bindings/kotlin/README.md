@@ -6,9 +6,9 @@
 
 **No bespoke cryptography.** ITB introduces no cryptographic primitive of its own — no custom S-box, permutation, or round function. It is a construction over existing primitives, much as PGP composes standard ciphers rather than defining one. Such constructions are not the object of algorithm-level cryptographic certification: national regimes (NIST CAVP/FIPS in the US, GOST/FSB in Russia, OSCCA's SM-series in China, IC3S in India, SOG-IS/EUCC and national lists in the EU, ASD's ISM in Australia, CRYPTREC in Japan, KCMVP in South Korea) certify **primitives** and the **modules** built on them, not compositional schemes. Eligibility for regulated use is therefore inherited from the primitives ITB is configured with, not conferred by ITB itself.
 
-Thin proxy over the sibling [Java binding](../java/) — plain JVM
+Thin proxy over the sibling [Java binding](https://github.com/everanium/itb/tree/main/bindings/java/) — plain JVM
 bytecode interop, no FFI layer of its own. The Java binding carries
-the JNI shim and the libitb `ITB_Triple_*` handle lifetime; this
+the JNI shim and the libitb3 `ITB_Triple_*` handle lifetime; this
 layer re-shapes that surface into idiomatic Kotlin: a sealed
 `Status` hierarchy for exhaustive `when` matching, `AutoCloseable`
 types built for `use { }` scoping, an `opts { }` builder DSL,
@@ -41,7 +41,7 @@ through it.
 
 ## Build
 
-The convenience driver builds the whole stack — `libitb.so`, the
+The convenience driver builds the whole stack — `libitb3.so`, the
 Java binding (JNI shim + jar), then the Kotlin classes and the eitb
 jar:
 
@@ -60,18 +60,18 @@ cd bindings/kotlin && ./gradlew assemble
 
 Native resolution happens entirely in the Java layer:
 
-1. `ITB_JNI_PATH` environment variable (path to `libitb_jni.so`);
+1. `ITB_JNI_PATH` environment variable (path to `libitb3_jni.so`);
    the driver scripts and Gradle tasks default it to the sibling
    Java build's output.
-2. `System.loadLibrary("itb_jni")` over `java.library.path`.
+2. `System.loadLibrary("itb3_jni")` over `java.library.path`.
 
-`libitb.so` itself is found through the shim's RPATH (the
+`libitb3.so` itself is found through the shim's RPATH (the
 repository dist directory) or the OS loader path.
 
 ## Usage example
 
 ```kotlin
-import com.everanium.itb.kotlin.*
+import io.github.everanium.itb3.kotlin.*
 
 Pipeline.init("singlemsg-triple-mac-v1").use { sender ->
     Pipeline.load(sender.save()).use { receiver ->
@@ -196,13 +196,13 @@ cap is per-machine and never written to the blob.
 ## Memory
 
 Two process-wide knobs constrain Go runtime arena pacing, readable
-at libitb load time via env vars (`ITB_GOMEMLIMIT`, `ITB_GOGC`) and
+at libitb3 load time via env vars (`ITB_GOMEMLIMIT`, `ITB_GOGC`) and
 adjustable at any time programmatically. Pass `-1` to query without
 changing:
 
 ```kotlin
-ItbRuntime.setMemoryLimit(512L shl 20)
-ItbRuntime.setGCPercent(20)
+ItbRuntime.setMemoryLimit(4L shl 30)
+ItbRuntime.setGCPercent(100)
 ```
 
 ## Testing
@@ -233,15 +233,15 @@ throughput at 1 MiB / 16 MiB / 64 MiB. Shape and budget are driven
 by the `ITB_*` env vars listed in `bench/BenchUtil.kt`; defaults
 match the root Go BENCH3.md pin.
 
-## Related — `itb3` CLI
+## itb3 CLI
 
 The Go core ships an openssl-style CLI utility
-[`itb3`](../../cmd/itb3/) that generates session blobs on disk
+[`itb3`](https://github.com/everanium/itb/tree/main/cmd/itb3/) that generates session blobs on disk
 (`itb3 genblob <mode> <hash> -o blob.json`); this binding reopens
 such blobs via `Pipeline.loadF`. `itb3` also encrypts / decrypts
 payloads directly on disk (`-i` / `-o`) or through stdin / stdout,
 rotates outer masters, and inspects stored blobs. See
-[`cmd/itb3/README.md`](../../cmd/itb3/README.md) for the full
+[`cmd/itb3/README.md`](https://github.com/everanium/itb/blob/main/cmd/itb3/README.md) for the full
 subcommand reference.
 
 ## eitb utility
@@ -272,3 +272,7 @@ cd bindings/kotlin
   sessions on the same `Pipeline`.
 - The sibling Java binding must be built first (its jar and JNI shim
   are this binding's runtime); `build.sh` handles the ordering.
+
+## License
+
+Apache-2.0 — see [LICENSE](../../LICENSE).

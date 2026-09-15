@@ -9,7 +9,7 @@ import (
 // SetMemoryLimit configures the Go runtime's heap-size soft limit
 // (bytes). Pass -1 (or any negative value) to query the current limit
 // without changing it; the previous limit is returned. Setter calls
-// override any ITB_GOMEMLIMIT env var set at libitb load time.
+// override any ITB_GOMEMLIMIT env var set at libitb3 load time.
 func SetMemoryLimit(limit int64) int64 {
 	return debug.SetMemoryLimit(limit)
 }
@@ -18,7 +18,7 @@ func SetMemoryLimit(limit int64) int64 {
 // default is 100 (GC fires at +100% heap growth); lower values trigger
 // GC more aggressively. Pass -1 (or any negative value) to query the
 // current value without changing it; the previous value is returned.
-// Setter calls override any ITB_GOGC env var set at libitb load time.
+// Setter calls override any ITB_GOGC env var set at libitb3 load time.
 func SetGCPercent(pct int) int {
 	if pct < 0 {
 		// Query mode — round-trip set-then-restore to retrieve current

@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace Everanium\Itb;
+namespace Everanium\Itb3;
 
 /**
- * Status codes mirrored from the libitb C ABI
+ * Status codes mirrored from the libitb3 C ABI
  * (cmd/cshared/internal/capi/errors.go). Numeric values are stable
  * across releases.
  */

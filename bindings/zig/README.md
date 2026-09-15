@@ -7,9 +7,9 @@
 **No bespoke cryptography.** ITB introduces no cryptographic primitive of its own — no custom S-box, permutation, or round function. It is a construction over existing primitives, much as PGP composes standard ciphers rather than defining one. Such constructions are not the object of algorithm-level cryptographic certification: national regimes (NIST CAVP/FIPS in the US, GOST/FSB in Russia, OSCCA's SM-series in China, IC3S in India, SOG-IS/EUCC and national lists in the EU, ASD's ISM in Australia, CRYPTREC in Japan, KCMVP in South Korea) certify **primitives** and the **modules** built on them, not compositional schemes. Eligibility for regulated use is therefore inherited from the primitives ITB is configured with, not conferred by ITB itself.
 
 Thin Zig proxy over the ITB C binding (`bindings/c`), which in turn
-wraps the libitb shared library's `ITB_Triple_*` surface
+wraps the libitb3 shared library's `ITB_Triple_*` surface
 (`cmd/cshared`). The binding `@cImport`s the C binding's public
-`itb.h` and **links `libitb_c.a` + `libitb.so` at compile time** (an
+`itb3.h` and **links `libitb3_c.a` + `libitb3.so` at compile time** (an
 absolute RPATH into `dist/` is embedded) — no runtime symbol loading.
 Every hash-name / MAC-name / cipher-name / profile-name is an opaque
 string passed through to Go for validation; the binding carries no
@@ -35,7 +35,7 @@ Generic Linux: a Go toolchain, a C11 compiler, GNU make, and Zig
 
 ## Build
 
-The convenience driver builds `libitb.so`, the C binding static
+The convenience driver builds `libitb3.so`, the C binding static
 archive, and the Zig binaries (eitb + benches) in one step:
 
 ```bash
@@ -46,16 +46,16 @@ Equivalent manual invocation:
 
 ```bash
 go build -trimpath -buildmode=c-shared \
-    -o dist/linux-amd64/libitb.so ./cmd/cshared
-make -C bindings/c build/libitb_c.a
+    -o dist/linux-amd64/libitb3.so ./cmd/cshared
+make -C bindings/c build/libitb3_c.a
 cd bindings/zig && zig build
 ```
 
 ## Add to a Zig project
 
-`build.zig` exposes the library as a named module `itb`; from another
+`build.zig` exposes the library as a named module `itb3`; from another
 project, create the module against `src/itb.zig` with the C include
-path, the `libitb_c.a` object, and the `-litb` link input attached:
+path, the `libitb3_c.a` object, and the `-litb3` link input attached:
 
 ```zig
 const itb_mod = b.createModule(.{
@@ -65,17 +65,17 @@ const itb_mod = b.createModule(.{
     .link_libc = true,
 });
 itb_mod.addIncludePath(b.path("path/to/bindings/c/include"));
-itb_mod.addObjectFile(b.path("path/to/bindings/c/build/libitb_c.a"));
-itb_mod.addLibraryPath(dist); // dist/linux-amd64 with libitb.so
+itb_mod.addObjectFile(b.path("path/to/bindings/c/build/libitb3_c.a"));
+itb_mod.addLibraryPath(dist); // dist/linux-amd64 with libitb3.so
 itb_mod.addRPath(dist);       // absolute, so binaries run anywhere
-itb_mod.linkSystemLibrary("itb", .{});
-exe.root_module.addImport("itb", itb_mod);
+itb_mod.linkSystemLibrary("itb3", .{});
+exe.root_module.addImport("itb3", itb_mod);
 ```
 
 ## Usage example
 
 ```zig
-const itb = @import("itb");
+const itb = @import("itb3");
 
 var sender = try itb.Pipeline.init(allocator, "singlemsg-triple-mac-v1", null);
 defer sender.deinit();
@@ -140,7 +140,7 @@ const profile = try itb.inspect(allocator, blob);        // profile record, no P
 
 `itb.inspect` decodes the embedded profile record (a JSON object)
 without constructing a Pipeline. `saveF` / `loadF` perform the file
-access inside libitb. Every returned slice is allocator-owned —
+access inside libitb3. Every returned slice is allocator-owned —
 release with `allocator.free`.
 
 Load works for blobs generated with shipped primitives (every entry in
@@ -155,7 +155,7 @@ this binding surfaces `error.RecipePrimitiveUnknown`.
 in the blob; the receiver may pick its own after `load`:
 
 ```zig
-try receiver.maxWorkers(4);   // clamped by libitb; <= 0 selects auto
+try receiver.maxWorkers(4);   // clamped by libitb3; <= 0 selects auto
 ```
 
 ## Profile registry
@@ -163,7 +163,7 @@ try receiver.maxWorkers(4);   // clamped by libitb; <= 0 selects auto
 `itb.register` installs a user-defined profile under a new name from
 a profile JSON record; `itb.lookup` reads a registered record back;
 `itb.profiles` lists every registered name as a JSON array. The
-record's field rules are enforced by libitb; the binding treats the
+record's field rules are enforced by libitb3; the binding treats the
 JSON as an opaque string.
 
 ```zig
@@ -194,15 +194,15 @@ the Go side; a rejected string surfaces as a Zig error (for example
 ## Memory
 
 Two process-wide knobs constrain Go runtime arena pacing, readable at
-libitb load time via env vars (`ITB_GOMEMLIMIT`, `ITB_GOGC`) and
+libitb3 load time via env vars (`ITB_GOMEMLIMIT`, `ITB_GOGC`) and
 adjustable at any time programmatically. Pass `-1` to query without
 changing. Long-running or allocation-heavy workloads (benchmarks,
 bulk encryption) should set both — without a soft cap + aggressive GC
 the Go scratch heap grows unboundedly under allocation churn:
 
 ```zig
-_ = itb.setMemoryLimit(512 << 20); // 512 MiB soft cap
-_ = itb.setGcPercent(20);          // aggressive GC
+_ = itb.setMemoryLimit(4 << 30); // 4 GiB soft cap
+_ = itb.setGcPercent(100);        // balanced GC
 ```
 
 ## Testing
@@ -213,7 +213,7 @@ _ = itb.setGcPercent(20);          // aggressive GC
 
 The harness builds the prerequisites, compiles every `tests/*.zig` to
 its own test binary, and runs them sequentially as separate
-processes; per-process isolation gives every test file a fresh libitb
+processes; per-process isolation gives every test file a fresh libitb3
 global state, and `std.testing.allocator` leak-checks every
 allocator-owned buffer. The suite covers Single Message round trips
 per shipped profile (empty plaintext included), stream pumps,
@@ -231,11 +231,22 @@ parity checks; the deep suite lives in Go under the shipped tree.
 Micro-benches (always ReleaseFast): `message` (encryptMessage) and
 `stream_pump` (encrypt stream pump) throughput at 1 MiB / 16 MiB /
 64 MiB, reported as an MB/s table on stdout. The runner exports
-`ITB_GOMEMLIMIT=512MiB` + `ITB_GOGC=20` defaults plus the canonical
+`ITB_GOMEMLIMIT=4GiB` + `ITB_GOGC=100` defaults plus the canonical
 bench-shape env vars (`ITB_NONCE_BITS` / `ITB_KEY_BITS` /
 `ITB_WITH_PARALLAX` / `ITB_WITH_WRAPPER` / `ITB_INNER_HASH` /
 `ITB_PROFILE` / `ITB_BENCH_MIN_SEC`), respecting caller overrides;
 the bench binaries apply the same heap caps programmatically.
+
+## itb3 CLI
+
+The Go core ships an openssl-style CLI utility
+[`itb3`](https://github.com/everanium/itb/tree/main/cmd/itb3/) that generates session blobs on disk
+(`itb3 genblob <mode> <hash> -o blob.json`); this binding reopens
+such blobs via `Pipeline.loadF`. `itb3` also encrypts / decrypts
+payloads directly on disk (`-i` / `-o`) or through stdin / stdout,
+rotates outer masters, and inspects stored blobs. See
+[`cmd/itb3/README.md`](https://github.com/everanium/itb/blob/main/cmd/itb3/README.md) for the full
+subcommand reference.
 
 ## eitb utility
 
@@ -256,13 +267,6 @@ case-insensitive, optional `0x` prefix, embedded whitespace accepted.
 the profile argument only selects the Single Message or streaming
 cipher pair.
 
-## itb3 CLI
-
-The shipped `itb3` binary under `cmd/itb3/` of the main repository
-generates profile files (`.json` on disk) that this binding reopens
-via `Pipeline.loadF`; the same utility also encrypts and decrypts
-files directly. See `cmd/itb3/README.md` for full usage.
-
 ## Limitations
 
 - The binding wraps the Triple Pipeline surface only. The Low-Level
@@ -280,3 +284,7 @@ files directly. See `cmd/itb3/README.md` for full usage.
   with cipher calls or open stream sessions on the same Pipeline.
 - Handles are released exactly once (`Pipeline.deinit` /
   session `deinit`); a stream session must not outlive its Pipeline.
+
+## License
+
+Apache-2.0 — see [LICENSE](../../LICENSE).

@@ -6,9 +6,9 @@
 
 **No bespoke cryptography.** ITB introduces no cryptographic primitive of its own — no custom S-box, permutation, or round function. It is a construction over existing primitives, much as PGP composes standard ciphers rather than defining one. Such constructions are not the object of algorithm-level cryptographic certification: national regimes (NIST CAVP/FIPS in the US, GOST/FSB in Russia, OSCCA's SM-series in China, IC3S in India, SOG-IS/EUCC and national lists in the EU, ASD's ISM in Australia, CRYPTREC in Japan, KCMVP in South Korea) certify **primitives** and the **modules** built on them, not compositional schemes. Eligibility for regulated use is therefore inherited from the primitives ITB is configured with, not conferred by ITB itself.
 
-Thin proxy over the sibling [Java binding](../java/) — plain JVM
+Thin proxy over the sibling [Java binding](https://github.com/everanium/itb/tree/main/bindings/java/) — plain JVM
 bytecode interop, no FFI layer of its own. The Java binding carries
-the JNI shim and the libitb `ITB_Triple_*` handle lifetime; this
+the JNI shim and the libitb3 `ITB_Triple_*` handle lifetime; this
 layer re-shapes that surface into idiomatic Clojure: a `Pipeline`
 record and session types implementing `AutoCloseable` for
 `with-open` scoping, keyword opts maps in place of a builder,
@@ -43,7 +43,7 @@ binding's Gradle wrapper pins its build; `deps.edn` pins Clojure
 
 ## Build
 
-The convenience driver builds the whole stack — `libitb.so`, the
+The convenience driver builds the whole stack — `libitb3.so`, the
 Java binding (JNI shim + jars), then prepares the Clojure classpath
 and compile-checks every namespace with reflection warnings treated
 as errors:
@@ -63,18 +63,18 @@ cd bindings/clojure && clojure -Sforce -P -M:test:bench:eitb
 
 Native resolution happens entirely in the Java layer:
 
-1. `ITB_JNI_PATH` environment variable (path to `libitb_jni.so`);
+1. `ITB_JNI_PATH` environment variable (path to `libitb3_jni.so`);
    the driver scripts default it to the sibling Java build's
    output.
-2. `System.loadLibrary("itb_jni")` over `java.library.path`.
+2. `System.loadLibrary("itb3_jni")` over `java.library.path`.
 
-`libitb.so` itself is found through the shim's RPATH (the
+`libitb3.so` itself is found through the shim's RPATH (the
 repository dist directory) or the OS loader path.
 
 ## Usage example
 
 ```clojure
-(require '[dev.everanium.itb.clojure.core :as itb])
+(require '[io.github.everanium.itb3.clojure.core :as itb])
 
 (with-open [sender (itb/init "singlemsg-triple-mac-v1")]
   (with-open [receiver (itb/load (itb/save sender))]
@@ -122,7 +122,7 @@ the Go side; a rejected string surfaces as an ex-info whose data
 map carries the status keyword:
 
 ```clojure
-(require '[dev.everanium.itb.clojure.error :as err])
+(require '[io.github.everanium.itb3.clojure.error :as err])
 
 (try
   (itb/decrypt-message receiver wire)
@@ -134,7 +134,7 @@ map carries the status keyword:
 
 The data map is `{:type ::err/itb, :status <keyword>, :code <raw
 ABI code>}` — `:code` stays attributable even when `:status` is
-`:unknown` (a future libitb release).
+`:unknown` (a future libitb3 release).
 
 ## Persisting sessions
 
@@ -185,15 +185,15 @@ cap is per-machine and never written to the blob.
 ## Memory
 
 Two process-wide knobs constrain Go runtime arena pacing, readable
-at libitb load time via env vars (`ITB_GOMEMLIMIT`, `ITB_GOGC`) and
+at libitb3 load time via env vars (`ITB_GOMEMLIMIT`, `ITB_GOGC`) and
 adjustable at any time programmatically. Pass `-1` to query without
 changing:
 
 ```clojure
-(require '[dev.everanium.itb.clojure.runtime :as runtime])
+(require '[io.github.everanium.itb3.clojure.runtime :as runtime])
 
-(runtime/set-memory-limit! (bit-shift-left 512 20))
-(runtime/set-gc-percent! 20)
+(runtime/set-memory-limit! (bit-shift-left 4 30))
+(runtime/set-gc-percent! 100)
 ```
 
 ## Testing
@@ -224,15 +224,15 @@ throughput at 1 MiB / 16 MiB / 64 MiB. Shape and budget are driven
 by the `ITB_*` env vars listed in `bench/.../bench_util.clj`;
 defaults match the root Go BENCH3.md pin.
 
-## Related — `itb3` CLI
+## itb3 CLI
 
 The Go core ships an openssl-style CLI utility
-[`itb3`](../../cmd/itb3/) that generates session blobs on disk
+[`itb3`](https://github.com/everanium/itb/tree/main/cmd/itb3/) that generates session blobs on disk
 (`itb3 genblob <mode> <hash> -o blob.json`); this binding reopens
 such blobs via `itb/load-f`. `itb3` also encrypts / decrypts
 payloads directly on disk (`-i` / `-o`) or through stdin / stdout,
 rotates outer masters, and inspects stored blobs. See
-[`cmd/itb3/README.md`](../../cmd/itb3/README.md) for the full
+[`cmd/itb3/README.md`](https://github.com/everanium/itb/blob/main/cmd/itb3/README.md) for the full
 subcommand reference.
 
 ## eitb utility
@@ -265,3 +265,7 @@ cd bindings/clojure
   shim are this binding's runtime); `build.sh` handles the
   ordering, and `deps.edn` resolves the jars by relative path — the
   classpath is computed after the Java build exists.
+
+## License
+
+Apache-2.0 — see [LICENSE](../../LICENSE).

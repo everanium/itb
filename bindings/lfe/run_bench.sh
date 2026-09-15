@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # run_bench.sh -- micro-benchmark runner for the LFE binding. Builds
-# libitb.so + the C binding archive + the Erlang backend + the LFE
+# libitb3.so + the C binding archive + the Erlang backend + the LFE
 # application via build.sh, compiles the bench module with the
 # hex-fetched LFE compiler, then runs the message, stream and
 # stream_one_shot shapes: encrypt-message, stream-pump and
@@ -23,8 +23,8 @@ cd "$(dirname "$0")"
 # Go-runtime pacing defaults for bench-scale allocation churn; the
 # `:-` form respects any override set by the caller. The bench main
 # applies the same caps programmatically.
-export ITB_GOMEMLIMIT="${ITB_GOMEMLIMIT:-512MiB}"
-export ITB_GOGC="${ITB_GOGC:-20}"
+export ITB_GOMEMLIMIT="${ITB_GOMEMLIMIT:-4GiB}"
+export ITB_GOGC="${ITB_GOGC:-100}"
 
 # Bench-shape defaults — match the root Go BENCH3.md pin so the
 # throughput numbers are directly comparable to the shipped Go
@@ -38,8 +38,8 @@ export ITB_INNER_HASH="${ITB_INNER_HASH:-areion512}"
 export ITB_BENCH_MIN_SEC="${ITB_BENCH_MIN_SEC:-5}"
 
 LFE_EBIN="_build/default/lib/lfe/ebin"
-ITB_EBIN="_build/default/checkouts/itb/ebin"
-APP_EBIN="_build/default/lib/itb_lfe/ebin"
+ITB_EBIN="_build/default/checkouts/libitb3/ebin"
+APP_EBIN="_build/default/lib/libitb3_lfe/ebin"
 
 echo "==> compiling bench module (lfe_comp from the hex lfe dep)"
 erl -noshell -pa "$LFE_EBIN" -eval \

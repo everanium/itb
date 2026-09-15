@@ -15,7 +15,7 @@
 -- registered profile catalogue one name per line; the profiles that
 -- carry a cipher surface are the ones `encrypt` / `decrypt` accept.
 
-local itb = require "itb"
+local itb = require "itb3"
 
 local USAGE = [[
 usage: eitb version
@@ -40,7 +40,7 @@ local function write_file(path, data)
 end
 
 local function cmd_version()
-    print("libitb " .. itb.version())
+    print("libitb3 " .. itb.version())
     print("itb-lua " .. itb._VERSION)
 end
 
@@ -115,8 +115,8 @@ local function main(argv)
     end
     local ok, err = pcall(function()
         -- Go-runtime pacing caps applied before any cipher work.
-        itb.set_memory_limit(512 * 1024 * 1024)
-        itb.set_gc_percent(20)
+        itb.set_memory_limit(4 * 1024 * 1024 * 1024)
+        itb.set_gc_percent(100)
         if argv[1] == "version" then
             cmd_version()
         elseif argv[1] == "profiles" then

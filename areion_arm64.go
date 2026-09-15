@@ -66,27 +66,3 @@ func areionSoEM512Permutex4SoA(a1, b1, c1, d1, a2, b2, c2, d2 *aes.Block4) {
 		d1[i] ^= d2[i]
 	}
 }
-
-// areionSoEM512ChainAbsorbHot — arm64 stub. The amd64 fast track
-// uses ZMM 20/36/68 chain-absorb kernels which have no ARM analog;
-// returning ok=false routes through the closure's general path.
-func areionSoEM512ChainAbsorbHot(
-	fixedKey *[64]byte,
-	seeds *[4][8]uint64,
-	data *[4][]byte,
-	commonLen int,
-) (out [4][8]uint64, ok bool) {
-	return out, false
-}
-
-// areionSoEM256ChainAbsorbHot — arm64 stub mirroring the 512-bit
-// counterpart. Returns ok=false so the closure's general CBC-MAC chain
-// path runs.
-func areionSoEM256ChainAbsorbHot(
-	fixedKey *[32]byte,
-	seeds *[4][4]uint64,
-	data *[4][]byte,
-	commonLen int,
-) (out [4][4]uint64, ok bool) {
-	return out, false
-}

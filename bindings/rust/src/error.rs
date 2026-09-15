@@ -13,7 +13,7 @@ pub type ItbResult<T> = Result<T, ItbError>;
 /// The error type returned by every fallible call.
 #[derive(Debug)]
 pub enum ItbError {
-    /// libitb returned a non-OK status. `message` carries the
+    /// libitb3 returned a non-OK status. `message` carries the
     /// `ITB_LastError` diagnostic captured immediately after the
     /// failing call (process-global last-write-wins — the message may
     /// belong to a different call under concurrent FFI use; the
@@ -23,14 +23,14 @@ pub enum ItbError {
     LibraryLoad(Arc<libloading::Error>),
     /// Rust-side misuse of the FFI surface.
     Ffi(&'static str),
-    /// A string returned by libitb failed UTF-8 decoding.
+    /// A string returned by libitb3 failed UTF-8 decoding.
     Utf8(std::str::Utf8Error),
     /// An IO error raised by a stream pump's source or sink.
     Io(std::io::Error),
 }
 
 impl ItbError {
-    /// Returns the libitb status code when the error carries one.
+    /// Returns the libitb3 status code when the error carries one.
     pub fn status(&self) -> Option<ItbStatus> {
         match self {
             Self::Status { status, .. } => Some(*status),
@@ -58,7 +58,7 @@ impl fmt::Display for ItbError {
             Self::Status { status, message } => {
                 write!(f, "itb: status={} ({status}): {message}", *status as i32)
             }
-            Self::LibraryLoad(e) => write!(f, "itb: failed to load libitb: {e}"),
+            Self::LibraryLoad(e) => write!(f, "itb: failed to load libitb3: {e}"),
             Self::Ffi(msg) => write!(f, "itb: {msg}"),
             Self::Utf8(e) => write!(f, "itb: utf8 decode: {e}"),
             Self::Io(e) => write!(f, "itb: io: {e}"),

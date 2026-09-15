@@ -35,9 +35,11 @@ type Spec struct {
 }
 
 // Registry lists every shippable PRF-grade MAC primitive in canonical
-// order. The same order is used by the FFI iteration surface
-// (ITB_MACName, ITB_MACTagSize) so that index 0..2 is stable across
-// releases.
+// order. Callers reach the shipped MAC set by name through
+// [github.com/everanium/itb/triple.Profile.MacName] (or the per-call
+// [triple.Opts.MacName] override); the FFI shim has no MAC enumeration
+// surface of its own — every ITB_Triple_Init call names the MAC
+// through the resolved profile.
 var Registry = [3]Spec{
 	{Name: "kmac256", KeySize: 32, TagSize: 32, MinKeyBytes: 16},
 	{Name: "hmac-sha256", KeySize: 32, TagSize: 32, MinKeyBytes: 16},

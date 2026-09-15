@@ -18,10 +18,10 @@
 //   ITB_PROFILE        profile name override
 //   ITB_BENCH_MIN_SEC  per-case wall-clock budget (default 5.0)
 
-package com.everanium.itb.kotlin.bench
+package io.github.everanium.itb3.kotlin.bench
 
-import com.everanium.itb.kotlin.Opts
-import com.everanium.itb.kotlin.opts
+import io.github.everanium.itb3.kotlin.Opts
+import io.github.everanium.itb3.kotlin.opts
 import java.security.SecureRandom
 
 internal object BenchUtil {

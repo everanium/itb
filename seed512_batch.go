@@ -4,9 +4,9 @@ import "encoding/binary"
 
 // BatchHashFunc512 is the 4-way batched 512-bit hash interface
 // alongside [HashFunc512]. Primitives whose SIMD kernel processes
-// four independent (data, seed) tuples per call expose this — e.g.
-// the ZMM-batched Areion-SoEM-512 / BLAKE2b-512 kernels on amd64
-// with AVX-512 + VAES.
+// four independent (data, seed) tuples per call expose this, through
+// the ZMM-batched width-512 registry kernels on amd64 with
+// AVX-512 + VAES.
 //
 // Bit-exact parity invariant: each lane output
 // BatchHashFunc512(data, seeds)[i] matches the serial
@@ -20,6 +20,11 @@ type BatchHashFunc512 func(data *[4][]byte, seeds [4][8]uint64) [4][8]uint64
 // under the same Components. Caller ensures s.BatchHash != nil
 // (processChunk512 checks this before invoking).
 func (s *Seed512) BatchChainHash512(buf *[4][]byte) [4][8]uint64 {
+	if s.BatchFusedChain != nil {
+		if out, ok := s.BatchFusedChain(s.Components, buf); ok {
+			return out
+		}
+	}
 	var seeds [4][8]uint64
 	for lane := 0; lane < 4; lane++ {
 		seeds[lane][0] = s.Components[0]

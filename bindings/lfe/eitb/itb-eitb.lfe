@@ -24,7 +24,7 @@
 (defmodule itb-eitb
   (export (main 1)))
 
-(defmacro EITB-LFE-VERSION () "0.4.1")
+(defmacro EITB-LFE-VERSION () "0.5.1")
 
 (defun main (args)
   (erlang:halt (dispatch args)))
@@ -60,14 +60,14 @@
 ;; soft memory cap + aggressive GC keep the scratch heap bounded. The
 ;; setter return values report the previous settings, not an error.
 (defun cap-go-runtime ()
-  (itb-lfe:set-memory-limit (bsl 512 20)) ;; 512 MiB soft cap
-  (itb-lfe:set-gc-percent 20)             ;; aggressive GC
+  (itb3-lfe:set-memory-limit (bsl 4 30)) ;; 4 GiB soft cap
+  (itb3-lfe:set-gc-percent 100)           ;; balanced GC
   'ok)
 
 (defun cmd-version ()
-  (case (itb-lfe:version)
+  (case (itb3-lfe:version)
     (`#(ok ,version)
-      (io:format "libitb ~s~n" (list version))
+      (io:format "libitb3 ~s~n" (list version))
       (io:format "itb-lfe ~s~n" (list (EITB-LFE-VERSION)))
       0)
     (`#(error ,reason) (fail "version" reason))))
@@ -84,25 +84,25 @@
 
 (defun stream-one-shot (pipe direction payload)
   (let ((begin-fn (case direction
-                    ('encrypt #'itb-lfe:encrypt-stream/1)
-                    ('decrypt #'itb-lfe:decrypt-stream/1))))
+                    ('encrypt #'itb3-lfe:encrypt-stream/1)
+                    ('decrypt #'itb3-lfe:decrypt-stream/1))))
     (case (funcall begin-fn pipe)
       (`#(error ,reason) `#(error ,reason))
       (`#(ok ,session)
         (let ((result (feed-and-drain session payload)))
-          (itb-lfe:stream-free session)
+          (itb3-lfe:stream-free session)
           result)))))
 
 (defun feed-and-drain (session payload)
-  (case (itb-lfe:stream-write session payload)
+  (case (itb3-lfe:stream-write session payload)
     (`#(error ,reason) `#(error ,reason))
     ('ok
-      (case (itb-lfe:stream-end session)
+      (case (itb3-lfe:stream-end session)
         (`#(error ,reason) `#(error ,reason))
         ('ok (drain-stream session '()))))))
 
 (defun drain-stream (session acc)
-  (case (itb-lfe:stream-read session)
+  (case (itb3-lfe:stream-read session)
     (`#(error ,reason) `#(error ,reason))
     (`#(ok ,piece ,finished)
       (case finished
@@ -117,17 +117,17 @@
                  (list in-file read-err))
       1)
     (`#(ok ,plain)
-      (case (itb-lfe:init (list_to_binary profile))
+      (case (itb3-lfe:init (list_to_binary profile))
         (`#(error ,reason) (fail "init" reason))
         (`#(ok ,pipe)
           (let ((rc (encrypt-with pipe plain profile in-file out-file)))
-            (itb-lfe:free pipe)
+            (itb3-lfe:free pipe)
             rc))))))
 
 (defun encrypt-with (pipe plain profile in-file out-file)
   (let ((result (if (streaming-profile? profile)
                   (stream-one-shot pipe 'encrypt plain)
-                  (itb-lfe:encrypt-message pipe plain))))
+                  (itb3-lfe:encrypt-message pipe plain))))
     (case result
       (`#(error ,reason) (fail "encrypt" reason))
       (`#(ok ,wire)
@@ -138,7 +138,7 @@
                        (list out-file write-err))
             1)
           ('ok
-            (let ((`#(ok ,blob) (itb-lfe:save pipe)))
+            (let ((`#(ok ,blob) (itb3-lfe:save pipe)))
               (io:format 'standard_error "~s~n"
                          (list (string:lowercase (binary:encode_hex blob))))
               (io:format "encrypted ~s -> ~s (~b -> ~b bytes)~n"
@@ -148,7 +148,7 @@
 
 (defun cmd-profiles ()
   (lists:foreach (lambda (name) (io:format "~s~n" (list name)))
-                 (itb-lfe:profiles))
+                 (itb3-lfe:profiles))
   0)
 
 (defun cmd-inspect (blob-hex)
@@ -157,7 +157,7 @@
       (io:format 'standard_error "eitb: invalid blob hex~n" '())
       1)
     (`#(ok ,blob)
-      (case (itb-lfe:inspect blob)
+      (case (itb3-lfe:inspect blob)
         (`#(error ,reason) (fail "inspect" reason))
         (`#(ok ,record)
           (io:format "~s~n" (list (json:encode record)))
@@ -179,12 +179,12 @@
           (decrypt-with profile blob wire in-file out-file))))))
 
 (defun decrypt-with (profile blob wire in-file out-file)
-  (case (itb-lfe:load blob)
+  (case (itb3-lfe:load blob)
     (`#(error ,reason) (fail "load" reason))
     (`#(ok ,pipe)
       (let* ((result (if (streaming-profile? profile)
                        (stream-one-shot pipe 'decrypt wire)
-                       (itb-lfe:decrypt-message pipe wire)))
+                       (itb3-lfe:decrypt-message pipe wire)))
              (rc (case result
                    (`#(error ,dec-err) (fail "decrypt" dec-err))
                    (`#(ok ,plain)
@@ -201,7 +201,7 @@
                            (list in-file out-file (byte_size wire)
                                  (byte_size plain)))
                          0))))))
-        (itb-lfe:free pipe)
+        (itb3-lfe:free pipe)
         rc))))
 
 (defun decode-hex (hex)

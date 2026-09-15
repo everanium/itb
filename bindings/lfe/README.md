@@ -8,21 +8,21 @@
 
 Thin proxy over the ITB Erlang binding's Triple Pipeline surface
 (`bindings/erlang`) via **native BEAM bytecode interop** — the LFE
-layer calls the Erlang `itb` module directly and adds no FFI hop of
+layer calls the Erlang `itb3` module directly and adds no FFI hop of
 its own. The only native code in the stack is the Erlang binding's
 NIF shim, consumed here as a rebar3 checkout dependency (the
-committed `_checkouts/itb` symlink). Every hash-name / MAC-name /
+committed `_checkouts/libitb3` symlink). Every hash-name / MAC-name /
 cipher-name / profile-name is an opaque string passed through to Go
 for validation; the binding carries no ITB construction logic.
 
-The public surface is the `itb-lfe` module (`init` / `load` /
+The public surface is the `itb3-lfe` module (`init` / `load` /
 `load-f` / `save` / `save-f` / `rekey` / `max-workers` / `free`,
 Single Message encrypt / decrypt, incremental stream sessions with
 `stream-write` / `stream-end` / `stream-read`), the profile
 catalogue (`inspect` / `register` / `lookup` / `profiles`), and the
 Go runtime knobs — the Erlang surface under LFE-idiomatic kebab-case
-names. The module is named `itb-lfe`
-rather than `itb` because the Erlang binding's `itb` module shares
+names. The module is named `itb3-lfe`
+rather than `itb3` because the Erlang binding's `itb3` module shares
 the code path; a same-named module would collide on load. Handles
 are opaque NIF resources; the cipher entries run on dirty CPU
 schedulers so multi-megabyte calls never stall the regular BEAM
@@ -37,12 +37,12 @@ sudo pacman -S go gcc make erlang rebar3
 Generic Linux: a Go toolchain, a C11 compiler, GNU make, Erlang/OTP
 27+, and rebar3. The LFE compiler is **not** a system prerequisite —
 it arrives as the `lfe` hex dependency and the `rebar3_lfe` plugin
-drives it. macOS: the same via Homebrew; libitb builds as
-`libitb.dylib`.
+drives it. macOS: the same via Homebrew; libitb3 builds as
+`libitb3.dylib`.
 
 ## Build the shared library
 
-The convenience driver builds `libitb.so`, the C binding's static
+The convenience driver builds `libitb3.so`, the C binding's static
 archive, the Erlang backend (NIF shim included), and the rebar3
 project in one step:
 
@@ -54,40 +54,40 @@ Equivalent manual invocation:
 
 ```bash
 go build -trimpath -buildmode=c-shared \
-    -o dist/linux-amd64/libitb.so ./cmd/cshared
-make -C bindings/c build/libitb_c.a
+    -o dist/linux-amd64/libitb3.so ./cmd/cshared
+make -C bindings/c build/libitb3_c.a
 cd bindings/lfe && rebar3 compile
 ```
 
 ## Add to an LFE project
 
 The binding is a standard rebar3 + `rebar3_lfe` project that pulls
-the Erlang binding through the `_checkouts/itb` symlink. From
+the Erlang binding through the `_checkouts/libitb3` symlink. From
 another rebar3 project, consume both the same way — symlink
-`bindings/erlang` as `_checkouts/itb` and `bindings/lfe` as
-`_checkouts/itb_lfe`, and declare bare `itb` / `itb_lfe` deps.
+`bindings/erlang` as `_checkouts/libitb3` and `bindings/lfe` as
+`_checkouts/libitb3_lfe`, and declare bare `itb` / `itb_lfe` deps.
 
-The compiled NIF (`bindings/erlang/priv/itb_nif.so`) resolves
-`libitb.so` through its embedded RPATH into the repo `dist/`
+The compiled NIF (`bindings/erlang/priv/libitb3_nif.so`) resolves
+`libitb3.so` through its embedded RPATH into the repo `dist/`
 directory, so no `LD_LIBRARY_PATH` is needed at runtime.
 
 ## Usage example
 
 ```lisp
-(let* ((`#(ok ,sender) (itb-lfe:init #"singlemsg-triple-mac-v1"))
-       (`#(ok ,blob) (itb-lfe:save sender))
-       (`#(ok ,receiver) (itb-lfe:load blob))
-       (`#(ok ,wire) (itb-lfe:encrypt-message sender
+(let* ((`#(ok ,sender) (itb3-lfe:init #"singlemsg-triple-mac-v1"))
+       (`#(ok ,blob) (itb3-lfe:save sender))
+       (`#(ok ,receiver) (itb3-lfe:load blob))
+       (`#(ok ,wire) (itb3-lfe:encrypt-message sender
                                               #"any text or binary data"))
-       (`#(ok ,plain) (itb-lfe:decrypt-message receiver wire)))
-  (itb-lfe:free receiver)
-  (itb-lfe:free sender)
+       (`#(ok ,plain) (itb3-lfe:decrypt-message receiver wire)))
+  (itb3-lfe:free receiver)
+  (itb3-lfe:free sender)
   plain)
 
 ;; File-backed equivalent (persist across processes):
-;; (let* ((`#(ok ,sender) (itb-lfe:init #"singlemsg-triple-mac-v1"))
-;;        ('ok (itb-lfe:save-f sender "session.blob"))
-;;        (`#(ok ,receiver) (itb-lfe:load-f "session.blob")))
+;; (let* ((`#(ok ,sender) (itb3-lfe:init #"singlemsg-triple-mac-v1"))
+;;        ('ok (itb3-lfe:save-f sender "session.blob"))
+;;        (`#(ok ,receiver) (itb3-lfe:load-f "session.blob")))
 ;;   ...)
 ```
 
@@ -98,9 +98,9 @@ receiver loads it with no opts of its own:
 
 ```lisp
 (let* ((opts (map #"chunkSize" 65536 #"withWrapper" 'false))
-       (`#(ok ,sender) (itb-lfe:init #"singlemsg-triple-mac-v1" opts))
-       (`#(ok ,blob) (itb-lfe:save sender))
-       (`#(ok ,receiver) (itb-lfe:load blob)))
+       (`#(ok ,sender) (itb3-lfe:init #"singlemsg-triple-mac-v1" opts))
+       (`#(ok ,blob) (itb3-lfe:save sender))
+       (`#(ok ,receiver) (itb3-lfe:load blob)))
   ...)
 ```
 
@@ -110,9 +110,9 @@ design) and returns the refreshed blob; the receiver picks up the new
 masters through a fresh `load/1`:
 
 ```lisp
-(let ((`#(ok ,blob2) (itb-lfe:rekey sender (binary:copy #b(#x11) 32)
+(let ((`#(ok ,blob2) (itb3-lfe:rekey sender (binary:copy #b(#x11) 32)
                                            (binary:copy #b(#x22) 32))))
-  (itb-lfe:load blob2))
+  (itb3-lfe:load blob2))
 ```
 
 ### Persisting sessions
@@ -122,25 +122,17 @@ width, primitives, key bits, MAC, layer switches) alongside the key
 material, so a session reopens from the blob alone.
 
 ```lisp
-(itb-lfe:save sender)                   ; #(ok blob) — current blob
-(itb-lfe:save-f sender "session.blob")  ; written by libitb, mode 0600
-(itb-lfe:load blob)                     ; reopen from bytes
-(itb-lfe:load-f "session.blob")         ; reopen from file
-(itb-lfe:load blob perm wrap)           ; override the masters
-(itb-lfe:inspect blob)                  ; #(ok record) — no Pipeline
+(itb3-lfe:save sender)                   ; #(ok blob) — current blob
+(itb3-lfe:save-f sender "session.blob")  ; written by libitb3, mode 0600
+(itb3-lfe:load blob)                     ; reopen from bytes
+(itb3-lfe:load-f "session.blob")         ; reopen from file
+(itb3-lfe:load blob perm wrap)           ; override the masters
+(itb3-lfe:inspect blob)                  ; #(ok record) — no Pipeline
 ```
 
-`inspect/1` returns the record as a map decoded with the OTP `json`
-module (binary keys `name`, `mode`, `width`, `hash`, `hashes`,
-`keybits`, `mac`, `tagstub`, `chunk`, `wrapper`, `outer`,
-`parallax`, `palette`, `segment`; absent keys are optional fields at
-their zero value).
-
-The shipped `itb3` command-line utility (see `cmd/itb3`) generates
-session blobs on disk (JSON files) that this binding reopens through
-`itb-lfe:load-f/1`, and also encrypts / decrypts files or stdio
-streams from the shell. It is the openssl-style entry point for ITB;
-the binding is the programmatic entry point.
+`inspect/1` returns the record as a binary-keyed map decoded with the
+OTP `json` module; absent keys are optional fields at their zero
+value.
 
 Load works for blobs generated with shipped primitives (every entry
 in the shipped catalogue). Blobs generated by Go programs that use
@@ -153,9 +145,9 @@ through this binding returns `#(error #(recipe_primitive_unknown _))`.
 ### Profile registry
 
 ```lisp
-(itb-lfe:profiles)                          ; sorted list of binaries
-(itb-lfe:lookup #"singlemsg-triple-mac-v1") ; #(ok record); unknown -> unknown_profile
-(itb-lfe:register #"my-profile"
+(itb3-lfe:profiles)                          ; sorted list of binaries
+(itb3-lfe:lookup #"singlemsg-triple-mac-v1") ; #(ok record); unknown -> unknown_profile
+(itb3-lfe:register #"my-profile"
   (map #"mode" #"singlemsg-nomac"
        #"width" 256
        #"hashes" (list #"blake3" #"blake2s" #"areion256" #"blake2b256"
@@ -163,14 +155,14 @@ through this binding returns `#(error #(recipe_primitive_unknown _))`.
        #"keybits" 1024
        #"parallax" 'false
        #"wrapper" 'false))
-(itb-lfe:init #"my-profile")
+(itb3-lfe:init #"my-profile")
 ```
 
 `register/2` takes the same record shape `inspect` / `lookup` return
 (a map, or an already-encoded JSON binary); a `name` key inside it,
 if present, must be empty or equal to the name argument. Every rule
 — name pattern, reserved prefixes, field constraints, primitive
-names — is enforced by libitb; a duplicate name returns
+names — is enforced by libitb3; a duplicate name returns
 `#(error #(profile_exists _))`.
 
 ### Runtime tuning
@@ -187,22 +179,22 @@ the same cap at `init/2`.
 whole in-memory payload through the stream chain in a single call:
 
 ```lisp
-(let* ((`#(ok ,wire) (itb-lfe:encrypt-stream-one-shot sender plain))
-       (`#(ok ,back) (itb-lfe:decrypt-stream-one-shot receiver wire)))
+(let* ((`#(ok ,wire) (itb3-lfe:encrypt-stream-one-shot sender plain))
+       (`#(ok ,back) (itb3-lfe:decrypt-stream-one-shot receiver wire)))
   back)
 ```
 
 ### Caller-driven stream sessions
 
 ```lisp
-(let ((`#(ok ,session) (itb-lfe:encrypt-stream sender)))
-  (itb-lfe:stream-write session chunk1)
-  (itb-lfe:stream-write session chunk2)
-  (itb-lfe:stream-end session)
+(let ((`#(ok ,session) (itb3-lfe:encrypt-stream sender)))
+  (itb3-lfe:stream-write session chunk1)
+  (itb3-lfe:stream-write session chunk2)
+  (itb3-lfe:stream-end session)
   ;; Drain until #(ok data true):
-  (let ((`#(ok ,wire-piece ,finished) (itb-lfe:stream-read session 1048576)))
+  (let ((`#(ok ,wire-piece ,finished) (itb3-lfe:stream-read session 1048576)))
     ...)
-  (itb-lfe:stream-free session))
+  (itb3-lfe:stream-free session))
 ```
 
 Profile names, opts keys, and every primitive name are validated by
@@ -211,7 +203,7 @@ the Go side; a rejected string surfaces as
 binding's status table (e.g. `mac_failure`, `bad_input`,
 `profile_exists`), `detail` the Go-side diagnostic binary. Opts are
 a map or property list (`(map #"keyBits" 1024 #"nonceBits" 512)`)
-rendered into the URL-query string libitb consumes.
+rendered into the URL-query string libitb3 consumes.
 
 Handle lifetime is garbage-collected: dropping every term reference
 releases the Go-side state through the NIF resource destructor, and
@@ -222,15 +214,15 @@ never collected under a live session.
 ## Memory
 
 Two process-wide knobs constrain Go runtime arena pacing, readable
-at libitb load time via env vars (`ITB_GOMEMLIMIT`, `ITB_GOGC`) and
+at libitb3 load time via env vars (`ITB_GOMEMLIMIT`, `ITB_GOGC`) and
 adjustable at any time programmatically. Pass `-1` to query without
 changing. Long-running or allocation-heavy workloads (benchmarks,
 bulk encryption) should set both — without a soft cap + aggressive
 GC the Go scratch heap grows unboundedly under allocation churn:
 
 ```lisp
-(itb-lfe:set-memory-limit (* 512 1024 1024)) ;; 512 MiB soft cap
-(itb-lfe:set-gc-percent 20)                  ;; aggressive GC
+(itb3-lfe:set-memory-limit (* 4 1024 1024 1024)) ;; 4 GiB soft cap
+(itb3-lfe:set-gc-percent 100)                     ;; balanced GC
 ```
 
 ## Testing
@@ -239,7 +231,7 @@ GC the Go scratch heap grows unboundedly under allocation churn:
 ./bindings/lfe/run_tests.sh
 ```
 
-The harness builds `libitb.so` + the C archive + the Erlang backend
+The harness builds `libitb3.so` + the C archive + the Erlang backend
 + the rebar3 project, then invokes `rebar3 eunit` (the LFE test
 module is written with the ltest macros and registered explicitly in
 `rebar.config` — EUnit cannot auto-discover `.lfe` sources). The
@@ -257,10 +249,21 @@ checks; the deep suite lives in Go under the shipped tree.
 Micro-benches: `message` (encrypt-message) and `stream_pump`
 (incremental encrypt session) throughput at 1 MiB / 16 MiB /
 64 MiB, reported as an MB/s table on stdout. The runner exports
-`ITB_GOMEMLIMIT=512MiB` + `ITB_GOGC=20` defaults (respecting caller
+`ITB_GOMEMLIMIT=4GiB` + `ITB_GOGC=100` defaults (respecting caller
 overrides) and the bench module applies the same caps
 programmatically. `./run_bench.sh message` / `./run_bench.sh
 stream` runs one shape.
+
+## itb3 CLI
+
+The Go core ships an openssl-style CLI utility
+[`itb3`](https://github.com/everanium/itb/tree/main/cmd/itb3/) that generates session blobs on disk
+(`itb3 genblob <mode> <hash> -o blob.json`); this binding reopens
+such blobs via `itb3-lfe:load-f/1`. `itb3` also encrypts / decrypts
+payloads directly on disk (`-i` / `-o`) or through stdin / stdout,
+rotates outer masters, and inspects stored blobs. See
+[`cmd/itb3/README.md`](https://github.com/everanium/itb/blob/main/cmd/itb3/README.md) for the full
+subcommand reference.
 
 ## eitb utility
 
@@ -298,3 +301,7 @@ cd bindings/lfe
 - After `stream-end/1`, an empty-spool `stream-read/2` blocks (on a
   dirty scheduler) until the terminal bytes arrive or the session
   errors; the regular schedulers are unaffected.
+
+## License
+
+Apache-2.0 — see [LICENSE](../../LICENSE).

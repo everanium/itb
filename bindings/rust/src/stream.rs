@@ -4,7 +4,7 @@
 //! in through `write` (or `io::Write`) and yields wire through `read`
 //! / `drain_all` (or `io::Read` after `end`); [`DecryptStream`] is
 //! the mirror (wire in, plaintext out). All chunking, MAC, envelope,
-//! and wire-format decisions stay inside libitb. Dropping a session
+//! and wire-format decisions stay inside libitb3. Dropping a session
 //! cancels it and frees the Go-side state; the borrow on the parent
 //! [`Pipeline`] keeps a session from outliving it.
 
@@ -208,7 +208,7 @@ macro_rules! stream_type {
         }
 
         /// Input side of the session (plaintext for encrypt, wire for
-        /// decrypt). Flush is a no-op — chunk boundaries are libitb's
+        /// decrypt). Flush is a no-op — chunk boundaries are libitb3's
         /// decision.
         impl Write for $name<'_> {
             fn write(&mut self, buf: &[u8]) -> io::Result<usize> {

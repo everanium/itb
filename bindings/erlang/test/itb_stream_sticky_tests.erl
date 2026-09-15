@@ -22,8 +22,8 @@ sticky_mac_failure() ->
     Plain = crypto:strong_rand_bytes(65536),
     Wire = itb_test_util:pump(Sender, encrypt, Plain),
     ?assert(probe(Receiver, Wire, 0)),
-    ok = itb:free(Receiver),
-    ok = itb:free(Sender).
+    ok = itb3:free(Receiver),
+    ok = itb3:free(Sender).
 
 %% Flip positions walk the wire body (starting at the 3/4 mark with a
 %% 1031-byte stride) so the probe stays clear of the outer framing
@@ -34,11 +34,11 @@ probe(Receiver, Wire, Attempt) ->
     WireLen = byte_size(Wire),
     Pos = (WireLen * 3 div 4 + Attempt * 1031) rem WireLen,
     Tampered = itb_test_util:flip_byte(Wire, Pos),
-    {ok, Stream} = itb:decrypt_stream(Receiver),
+    {ok, Stream} = itb3:decrypt_stream(Receiver),
     %% The failure may surface on write (chain already failed) or on a
     %% later read — either way a read must eventually report it.
-    _ = itb:stream_write(Stream, Tampered),
-    _ = itb:stream_end(Stream),
+    _ = itb3:stream_write(Stream, Tampered),
+    _ = itb3:stream_end(Stream),
     Result = drain_to_status(Stream),
     Verdict =
         case Result of
@@ -46,14 +46,14 @@ probe(Receiver, Wire, Attempt) ->
                 next; %% flip landed in residue — try the next position
             {error, {mac_failure, _}} ->
                 %% Sticky: a subsequent read reports a failure again.
-                case itb:stream_read(Stream, 4096) of
+                case itb3:stream_read(Stream, 4096) of
                     {error, {mac_failure, _}} -> true;
                     Other -> {unexpected_second, Other}
                 end;
             Other ->
                 {unexpected_first, Other}
         end,
-    ok = itb:stream_free(Stream),
+    ok = itb3:stream_free(Stream),
     case Verdict of
         true -> true;
         next -> probe(Receiver, Wire, Attempt + 1);
@@ -61,7 +61,7 @@ probe(Receiver, Wire, Attempt) ->
     end.
 
 drain_to_status(Stream) ->
-    case itb:stream_read(Stream, 4096) of
+    case itb3:stream_read(Stream, 4096) of
         {ok, _, true} -> clean;
         {ok, _, false} -> drain_to_status(Stream);
         {error, Reason} -> {error, Reason}

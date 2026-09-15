@@ -1,7 +1,7 @@
 ! Init -> Save -> Load -> EncryptMessage -> DecryptMessage round trip.
 
 program test_smoke
-  use itb
+  use itb3
   use itb_test_helpers
   implicit none
 

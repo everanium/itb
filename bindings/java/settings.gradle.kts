@@ -1,1 +1,1 @@
-rootProject.name = "itb-java"
+rootProject.name = "libitb3-java"

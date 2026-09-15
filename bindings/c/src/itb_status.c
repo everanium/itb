@@ -59,10 +59,10 @@ itb_status itb_internal_status(int rc)
 }
 
 /* ------------------------------------------------------------------ */
-/* String getters over the (out, cap, *out_len) libitb contract        */
+/* String getters over the (out, cap, *out_len) libitb3 contract        */
 /* ------------------------------------------------------------------ */
 
-/* Thread-local snapshot buffers. The libitb diagnostics are short
+/* Thread-local snapshot buffers. The libitb3 diagnostics are short
  * sentences; 2 KiB covers every message the Go side emits. */
 #define ITB_ERRBUF_CAP ((size_t)2048)
 static _Thread_local char g_last_error[ITB_ERRBUF_CAP];

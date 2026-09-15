@@ -24,25 +24,25 @@ import gleam/int
 import gleam/io
 import gleam/list
 import gleam/string
-import itb/pipeline.{type Pipeline}
-import itb/stream
-import itb_gleam.{type ItbError, ItbError}
+import itb3/pipeline.{type Pipeline}
+import itb3/stream
+import itb3_gleam.{type ItbError, ItbError}
 
-const eitb_gleam_version = "0.4.1"
+const eitb_gleam_version = "0.5.1"
 
-@external(erlang, "itb_gleam_ffi", "argv")
+@external(erlang, "itb3_gleam_ffi", "argv")
 fn argv() -> List(String)
 
-@external(erlang, "itb_gleam_ffi", "read_file")
+@external(erlang, "itb3_gleam_ffi", "read_file")
 fn read_file(path: String) -> Result(BitArray, String)
 
-@external(erlang, "itb_gleam_ffi", "write_file")
+@external(erlang, "itb3_gleam_ffi", "write_file")
 fn write_file(path: String, data: BitArray) -> Result(Nil, String)
 
-@external(erlang, "itb_gleam_ffi", "hex_encode")
+@external(erlang, "itb3_gleam_ffi", "hex_encode")
 fn hex_encode(data: BitArray) -> String
 
-@external(erlang, "itb_gleam_ffi", "hex_decode")
+@external(erlang, "itb3_gleam_ffi", "hex_decode")
 fn hex_decode(hex: String) -> Result(BitArray, Nil)
 
 @external(erlang, "erlang", "halt")
@@ -150,7 +150,7 @@ fn usage() -> Int {
 }
 
 fn cmd_profiles() -> Int {
-  list.each(itb_gleam.profiles(), io.println)
+  list.each(itb3_gleam.profiles(), io.println)
   0
 }
 
@@ -161,7 +161,7 @@ fn cmd_inspect(blob_hex: String) -> Int {
       1
     }
     Ok(blob) ->
-      case itb_gleam.inspect(blob) {
+      case itb3_gleam.inspect(blob) {
         Error(error) -> fail("inspect", error)
         Ok(record) -> {
           io.println(record)
@@ -182,15 +182,15 @@ fn fail(what: String, error: ItbError) -> Int {
 // The setter return values report the previous settings, not an
 // error.
 fn cap_go_runtime() -> Nil {
-  let _ = itb_gleam.set_memory_limit(536_870_912)
-  let _ = itb_gleam.set_gc_percent(20)
+  let _ = itb3_gleam.set_memory_limit(4_294_967_296)
+  let _ = itb3_gleam.set_gc_percent(100)
   Nil
 }
 
 fn cmd_version() -> Int {
-  case itb_gleam.version() {
+  case itb3_gleam.version() {
     Ok(version) -> {
-      io.println("libitb " <> version)
+      io.println("libitb3 " <> version)
       io.println("itb-gleam " <> eitb_gleam_version)
       0
     }

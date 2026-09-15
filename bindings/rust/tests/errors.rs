@@ -2,7 +2,7 @@
 //! unknown profile, duplicate profile registration (with an 8-entry
 //! `hashes` constellation).
 
-use itb::{ItbStatus, OptsBuilder, Pipeline, Profile, lookup, register};
+use itb3::{ItbStatus, OptsBuilder, Pipeline, Profile, lookup, register};
 
 #[test]
 fn unknown_profile_is_distinct_status_with_diagnostic() {
@@ -108,6 +108,6 @@ fn per_call_inner_hashes_override_round_trips() {
     let plain = b"per-call inner-hashes override round-trip payload";
     let wire = sender.encrypt_message(plain).unwrap();
     assert_eq!(receiver.decrypt_message(&wire).unwrap(), plain);
-    let prof = itb::inspect(&sender.save().unwrap()).unwrap();
+    let prof = itb3::inspect(&sender.save().unwrap()).unwrap();
     assert_eq!(prof.mixed_hashes, mix);
 }

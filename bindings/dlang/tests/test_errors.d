@@ -5,7 +5,7 @@ module test_errors;
 
 import std.stdio : writeln;
 
-import itb;
+import itb3;
 
 /// Runs `dg`, asserting it throws an [ItbException]; returns it.
 ItbException expectThrow(scope void delegate() dg, string what)

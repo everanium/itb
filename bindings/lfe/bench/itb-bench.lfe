@@ -23,7 +23,7 @@
 ;;;; Invocation (from bindings/lfe, after ./build.sh; run_bench.sh
 ;;;; wraps this):
 ;;;;   erl -noshell -pa _build/default/checkouts/itb/ebin \
-;;;;       -pa _build/default/lib/itb_lfe/ebin -pa bench \
+;;;;       -pa _build/default/lib/libitb3_lfe/ebin -pa bench \
 ;;;;       -run itb-bench main message -run init stop
 
 (defmodule itb-bench
@@ -50,7 +50,7 @@
 (defun run-message ()
   (cap-go-runtime)
   (let* ((profile (env "ITB_PROFILE" "singlemsg-triple-nomac-v1"))
-         (`#(ok ,pipe) (itb-lfe:init (list_to_binary profile)
+         (`#(ok ,pipe) (itb3-lfe:init (list_to_binary profile)
                                      (bench-opts))))
     (header)
     (lists:foreach
@@ -60,22 +60,22 @@
         (let ((plain (crypto:strong_rand_bytes size)))
           (bench-case "message" size
             (lambda ()
-              (let ((`#(ok ,_wire) (itb-lfe:encrypt-message pipe plain)))
+              (let ((`#(ok ,_wire) (itb3-lfe:encrypt-message pipe plain)))
                 'ok)))
           ;; Pre-encrypt one wire outside the decrypt timing loop.
-          (let ((`#(ok ,dec-wire) (itb-lfe:encrypt-message pipe plain)))
+          (let ((`#(ok ,dec-wire) (itb3-lfe:encrypt-message pipe plain)))
             (bench-case "message-dec" size
               (lambda ()
-                (let ((`#(ok ,_p) (itb-lfe:decrypt-message pipe dec-wire)))
+                (let ((`#(ok ,_p) (itb3-lfe:decrypt-message pipe dec-wire)))
                   'ok))))))
       (list (bsl 1 20) (bsl 16 20) (bsl 64 20)))
-    (let ((`ok (itb-lfe:free pipe)))
+    (let ((`ok (itb3-lfe:free pipe)))
       'ok)))
 
 (defun run-stream ()
   (cap-go-runtime)
   (let* ((profile (env "ITB_PROFILE" "streaming-noaead-triple-v1"))
-         (`#(ok ,pipe) (itb-lfe:init (list_to_binary profile)
+         (`#(ok ,pipe) (itb3-lfe:init (list_to_binary profile)
                                      (bench-opts))))
     (header)
     (lists:foreach
@@ -88,7 +88,7 @@
             (bench-case "stream_pump-dec" size
               (lambda () (pump-dec pipe dec-wire))))))
       (list (bsl 1 20) (bsl 16 20) (bsl 64 20)))
-    (let ((`ok (itb-lfe:free pipe)))
+    (let ((`ok (itb3-lfe:free pipe)))
       'ok)))
 
 ;; Whole-buffer stream: one FFI round trip through
@@ -96,7 +96,7 @@
 (defun run-stream-one-shot ()
   (cap-go-runtime)
   (let* ((profile (env "ITB_PROFILE" "streaming-noaead-triple-v1"))
-         (`#(ok ,pipe) (itb-lfe:init (list_to_binary profile)
+         (`#(ok ,pipe) (itb3-lfe:init (list_to_binary profile)
                                      (bench-opts))))
     (header)
     (lists:foreach
@@ -105,26 +105,26 @@
           (bench-case "stream_one_shot" size
             (lambda ()
               (let ((`#(ok ,_wire)
-                      (itb-lfe:encrypt-stream-one-shot pipe plain)))
+                      (itb3-lfe:encrypt-stream-one-shot pipe plain)))
                 'ok)))
           ;; Pre-encrypt one wire outside the decrypt timing loop.
           (let ((`#(ok ,dec-wire)
-                  (itb-lfe:encrypt-stream-one-shot pipe plain)))
+                  (itb3-lfe:encrypt-stream-one-shot pipe plain)))
             (bench-case "stream_one_shot-dec" size
               (lambda ()
                 (let ((`#(ok ,_p)
-                        (itb-lfe:decrypt-stream-one-shot pipe dec-wire)))
+                        (itb3-lfe:decrypt-stream-one-shot pipe dec-wire)))
                   'ok))))))
       (list (bsl 1 20) (bsl 16 20) (bsl 64 20)))
-    (let ((`ok (itb-lfe:free pipe)))
+    (let ((`ok (itb3-lfe:free pipe)))
       'ok)))
 
 ;; Bench-scale allocation churn leaks Go scratch heap unboundedly
 ;; without a soft memory cap + aggressive GC; the return values
 ;; report the previous settings, not an error.
 (defun cap-go-runtime ()
-  (itb-lfe:set-memory-limit (bsl 512 20)) ;; 512 MiB soft cap
-  (itb-lfe:set-gc-percent 20)             ;; aggressive GC
+  (itb3-lfe:set-memory-limit (bsl 4 30)) ;; 4 GiB soft cap
+  (itb3-lfe:set-gc-percent 100)           ;; balanced GC
   'ok)
 
 (defun header ()
@@ -135,11 +135,11 @@
 ;;; ------------------------------------------------------------------
 
 (defun pump (pipe plain)
-  (let* ((`#(ok ,stream) (itb-lfe:encrypt-stream pipe))
+  (let* ((`#(ok ,stream) (itb3-lfe:encrypt-stream pipe))
          (`ok (feed stream plain))
-         (`ok (itb-lfe:stream-end stream))
+         (`ok (itb3-lfe:stream-end stream))
          (`ok (drain stream))
-         (`ok (itb-lfe:stream-free stream)))
+         (`ok (itb3-lfe:stream-free stream)))
     'ok))
 
 (defun feed (stream data)
@@ -148,20 +148,20 @@
     (let* ((n (erlang:min (byte_size data) (PUMP-BUF)))
            (slice (binary:part data 0 n))
            (rest (binary:part data n (- (byte_size data) n)))
-           (`ok (itb-lfe:stream-write stream slice))
+           (`ok (itb3-lfe:stream-write stream slice))
            (`ok (drain-ready stream)))
       (feed stream rest))))
 
 ;; A read before end never blocks; drain whatever the chain has
 ;; produced so far to bound the Go-side spool.
 (defun drain-ready (stream)
-  (case (itb-lfe:stream-read stream (PUMP-BUF))
+  (case (itb3-lfe:stream-read stream (PUMP-BUF))
     (`#(ok #"" ,_) 'ok)
     (`#(ok ,_ true) 'ok)
     (`#(ok ,_ false) (drain-ready stream))))
 
 (defun drain (stream)
-  (case (itb-lfe:stream-read stream (PUMP-BUF))
+  (case (itb3-lfe:stream-read stream (PUMP-BUF))
     (`#(ok ,_ true) 'ok)
     (`#(ok ,_ false) (drain stream))))
 
@@ -186,11 +186,11 @@
 ;; byte-dropping behaviour remains fundamentally incompatible with
 ;; wire collection across chunk boundaries.
 (defun pump-all (pipe plain)
-  (let* ((`#(ok ,stream) (itb-lfe:encrypt-stream pipe))
+  (let* ((`#(ok ,stream) (itb3-lfe:encrypt-stream pipe))
          (`ok (feed-noread stream plain))
-         (`ok (itb-lfe:stream-end stream))
+         (`ok (itb3-lfe:stream-end stream))
          (wire (drain-collect stream '())))
-    (itb-lfe:stream-free stream)
+    (itb3-lfe:stream-free stream)
     wire))
 
 (defun feed-noread (stream data)
@@ -199,20 +199,20 @@
     (let* ((n (erlang:min (byte_size data) (PUMP-BUF)))
            (slice (binary:part data 0 n))
            (rest (binary:part data n (- (byte_size data) n)))
-           (`ok (itb-lfe:stream-write stream slice)))
+           (`ok (itb3-lfe:stream-write stream slice)))
       (feed-noread stream rest))))
 
 (defun drain-collect (stream acc)
-  (case (itb-lfe:stream-read stream (PUMP-BUF))
+  (case (itb3-lfe:stream-read stream (PUMP-BUF))
     (`#(ok ,chunk true) (erlang:iolist_to_binary (lists:reverse (cons chunk acc))))
     (`#(ok ,chunk false) (drain-collect stream (cons chunk acc)))))
 
 (defun pump-dec (pipe wire)
-  (let* ((`#(ok ,stream) (itb-lfe:decrypt-stream pipe))
+  (let* ((`#(ok ,stream) (itb3-lfe:decrypt-stream pipe))
          (`ok (feed stream wire))
-         (`ok (itb-lfe:stream-end stream))
+         (`ok (itb3-lfe:stream-end stream))
          (`ok (drain stream))
-         (`ok (itb-lfe:stream-free stream)))
+         (`ok (itb3-lfe:stream-free stream)))
     'ok))
 
 ;;; ------------------------------------------------------------------

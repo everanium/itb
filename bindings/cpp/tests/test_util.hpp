@@ -12,7 +12,7 @@
 #include <exception>
 #include <vector>
 
-#include "itb.hpp"
+#include "itb3.hpp"
 
 /* Prints file:line + the formatted message and fails the enclosing
  * int-returning function. */

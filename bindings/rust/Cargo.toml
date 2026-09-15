@@ -1,13 +1,16 @@
 [package]
-name = "itb"
-version = "0.4.1"
+name = "libitb3"
+version = "0.5.1"
 edition = "2024"
 rust-version = "1.88"
-license = "MIT"
-description = "Rust thin-proxy binding for ITB via the libitb shared library"
+license = "Apache-2.0"
+authors = ["Andrey Kuvshinov <andrew@encloud.blue>"]
+description = "ITB Symmetric Cipher Construction with Ambiguity-Based Security - Rust"
 repository = "https://github.com/everanium/itb"
+homepage = "https://github.com/everanium/itb"
+documentation = "https://github.com/everanium/itb"
 readme = "README.md"
-keywords = ["cryptography", "cipher", "ouroboros", "ffi"]
+keywords = ["cryptography", "encryption", "cipher", "symmetric", "aead"]
 categories = ["cryptography", "external-ffi-bindings", "api-bindings"]
 
 [dependencies]
@@ -20,7 +23,7 @@ criterion = "0.5"
 rand = "0.9"
 
 [lib]
-name = "itb"
+name = "itb3"
 path = "src/lib.rs"
 
 [[bench]]

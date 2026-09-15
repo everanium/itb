@@ -38,18 +38,24 @@ func runnableInterlockTiers() []interlockTier {
 // setInterlockTier overrides the interlock dispatch capability flags
 // for one test and restores the saved values on cleanup. The flags are
 // process-global, so tests using this helper must not run in parallel.
+// UseUnrank16 is pinned to false so tier arms exercise the AVX-512
+// 8-lane x8x2 wire geometry; the 16-lane kernel is covered by the arms
+// battery in interlock48_arms_test.go.
 func setInterlockTier(t *testing.T, tier interlockTier) {
 	t.Helper()
 	saved512 := interlock.HasAVX512RankMask
 	saved2 := interlock.HasAVX2RankMask
 	savedBMI2 := interlock.HasBMI2
+	savedUse16 := interlock.UseUnrank16
 	interlock.HasAVX512RankMask = tier.avx512
 	interlock.HasAVX2RankMask = tier.avx2
 	interlock.HasBMI2 = tier.bmi2
+	interlock.UseUnrank16 = false
 	t.Cleanup(func() {
 		interlock.HasAVX512RankMask = saved512
 		interlock.HasAVX2RankMask = saved2
 		interlock.HasBMI2 = savedBMI2
+		interlock.UseUnrank16 = savedUse16
 	})
 }
 

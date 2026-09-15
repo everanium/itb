@@ -28,7 +28,7 @@ no per-chain observation channel exists.
   anchoring premise as a per-pixel disjunction over the 56 (np, r)
   tuples chained through the symbolic FNV-1a lo-lane; runs against
   both the Single Ouroboros / barrier-off control and the shipped
-  Triple / barrier ciphertext (per snake, over a fast-scan sample of
+  Triple / barrier ciphertext (per region, over a fast-scan sample of
   candidate startPixels). See the module docstring for encoding
   detail and the maximum-peek attacker regime.
 - `aggregate.py` — reads the emitted JSON records and prints a
@@ -55,7 +55,7 @@ for downstream aggregation.
   — the naive-crib SAT anchor recovers the true xor_mask56 at every
   crib pixel. Confirms the anchor logic is sensitive.
 - `TestRedTeamBrokenFNV1aCribKPAStartPixelPeek` — F4: Layer 3
-  scoped bonus with per-snake `sp_i` disclosed via
+  scoped bonus with per-region `sp_i` disclosed via
   `deriveStartPixel`. Reports channel matches at the disclosed sp
   versus the shift-averaged floor. Under barrier: the disclosed sp
   count is at the same floor as every other shift.
@@ -78,13 +78,13 @@ crib) for its decision path. Lab peeks are tagged at each call site:
   + dataSeed_i values, deriving true (np, r) per pixel. Establishes
   the STRONGEST-ATTACKER upper bound. Under barrier the anchor still
   fails at chance floor — a definitive negative.
-- `[lab-peek: sp_i]` — F4 grants the attacker per-snake startPixel
-  via `startSeed_i.deriveStartPixel(nonce, snake_pixels)`. Combines
+- `[lab-peek: sp_i]` — F4 grants the attacker per-region startPixel
+  via `startSeed_i.deriveStartPixel(nonce, region_pixels)`. Combines
   with the F2 lab peek to place 5–6 of the 8 chains in the attacker's
   hands.
 - `[lab-peek: barrier_split]` — F5 uses
   `splitForTriple48LockedCfg` with the true lockSeed to inspect the
-  per-snake lane bytes for the displacement measurement.
+  per-region lane bytes for the displacement measurement.
 
 Ground-truth seed values appear elsewhere only in terminal-stage
 `[audit]` printouts, never in a decision path.
@@ -118,20 +118,20 @@ go test -tags redteam -run TestRedTeamBrokenFNV1a -v ./
 python3 scripts/redteam/itb/fnv1a_sat/aggregate.py
 
 # Bitwuzla SAT probe (defaults 2 crib pixels, 600 s per instance,
-# 4-candidate sp scan per snake):
+# 4-candidate sp scan per region):
 python3 scripts/redteam/itb/fnv1a_sat/sat_probe.py \
     --n-crib-pixels 2 --timeout-sec 600 --regime true_npr
 
 # Env-var knobs:
 #   ITB_FNV1A_SAT_N        — crib pixels per SAT instance (default 2)
 #   ITB_FNV1A_SAT_TIMEOUT  — solver timeout in seconds (default 600)
-#   ITB_FNV1A_SAT_CAP      — candidate sp scan count per snake
+#   ITB_FNV1A_SAT_CAP      — candidate sp scan count per region
 #                            (default 8; run.sh defaults to 4)
 ```
 
 Total wall-clock for the Go probes: ≈ 2 seconds on a workstation.
 The Bitwuzla SAT probe scales with n_crib_pixels and the sp scan
-count; at n = 2 pixels and cap = 4 sp candidates per snake, budget
+count; at n = 2 pixels and cap = 4 sp candidates per region, budget
 ≈ 15 minutes on a commodity workstation.
 
 ## Debug output

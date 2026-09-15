@@ -1,10 +1,16 @@
 #!/usr/bin/env bash
 #
 # run_bench.sh -- micro-benchmark runner for the Scala binding.
-# Builds the Java binding (libitb.so + JNI shim + jars) and the sbt
+# Builds the Java binding (libitb3.so + JNI shim + jars) and the sbt
 # projects via build.sh, points ITB_JNI_PATH at the freshly-built JNI
 # shim, then runs the bench main: encryptMessage and stream-pump
 # throughput at 1 MiB / 16 MiB / 64 MiB.
+#
+# build.sh wipes every sbt target directory and the eitb classpath
+# cache, and delegates the Java layer to bindings/java/build.sh, which
+# cleans its own, so the classes measured here are always compiled by
+# this invocation. Set ITB_SKIP_CLEAN=1 to keep the existing artefacts
+# and compile incrementally instead.
 #
 # Usage:
 #   ./run_bench.sh             # both shapes
@@ -19,13 +25,13 @@ REPO_ROOT="$(cd ../.. && pwd)"
 
 ./build.sh
 
-export ITB_JNI_PATH="$REPO_ROOT/bindings/java/build/jni/libitb_jni.so"
+export ITB_JNI_PATH="$REPO_ROOT/bindings/java/build/jni/libitb3_jni.so"
 
 # Go-runtime pacing defaults for bench-scale allocation churn; the
 # `:-` form respects any override set by the caller. The bench main
 # applies the same caps programmatically.
-export ITB_GOMEMLIMIT="${ITB_GOMEMLIMIT:-512MiB}"
-export ITB_GOGC="${ITB_GOGC:-20}"
+export ITB_GOMEMLIMIT="${ITB_GOMEMLIMIT:-4GiB}"
+export ITB_GOGC="${ITB_GOGC:-100}"
 
 # Bench-shape defaults — match the root Go BENCH3.md pin so the
 # throughput numbers are directly comparable to the shipped Go

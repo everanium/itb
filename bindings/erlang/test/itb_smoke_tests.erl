@@ -11,38 +11,38 @@ smoke_round_trip_test_() ->
     {timeout, 120, fun smoke_round_trip/0}.
 
 smoke_round_trip() ->
-    {ok, Sender} = itb:init(<<"singlemsg-triple-mac-v1">>, #{}),
-    {ok, Blob} = itb:save(Sender),
+    {ok, Sender} = itb3:init(<<"singlemsg-triple-mac-v1">>, #{}),
+    {ok, Blob} = itb3:save(Sender),
     ?assert(byte_size(Blob) > 0),
 
-    {ok, Receiver} = itb:load(Blob),
+    {ok, Receiver} = itb3:load(Blob),
 
     Plain = <<"smoke round-trip payload">>,
-    {ok, Wire} = itb:encrypt_message(Sender, Plain),
+    {ok, Wire} = itb3:encrypt_message(Sender, Plain),
     ?assertNotEqual(Plain, Wire),
 
-    {ok, Back} = itb:decrypt_message(Receiver, Wire),
+    {ok, Back} = itb3:decrypt_message(Receiver, Wire),
     ?assertEqual(Plain, Back),
 
-    ok = itb:free(Receiver),
-    ok = itb:free(Sender).
+    ok = itb3:free(Receiver),
+    ok = itb3:free(Sender).
 
 version_test() ->
-    {ok, Version} = itb:version(),
+    {ok, Version} = itb3:version(),
     ?assert(byte_size(Version) > 0).
 
 save_load_round_trip_test_() ->
     {timeout, 120, fun() ->
-        {ok, Sender} = itb:init(<<"singlemsg-triple-mac-v1">>, #{}),
-        {ok, Blob} = itb:save(Sender),
-        ?assertEqual({ok, Blob}, itb:save(Sender)),
-        {ok, Receiver} = itb:load(Blob),
-        ?assertEqual({ok, Blob}, itb:save(Receiver)),
-        {ok, Wire} = itb:encrypt_message(Sender, <<"in-memory persist">>),
+        {ok, Sender} = itb3:init(<<"singlemsg-triple-mac-v1">>, #{}),
+        {ok, Blob} = itb3:save(Sender),
+        ?assertEqual({ok, Blob}, itb3:save(Sender)),
+        {ok, Receiver} = itb3:load(Blob),
+        ?assertEqual({ok, Blob}, itb3:save(Receiver)),
+        {ok, Wire} = itb3:encrypt_message(Sender, <<"in-memory persist">>),
         ?assertEqual({ok, <<"in-memory persist">>},
-                     itb:decrypt_message(Receiver, Wire)),
-        ok = itb:free(Receiver),
-        ok = itb:free(Sender)
+                     itb3:decrypt_message(Receiver, Wire)),
+        ok = itb3:free(Receiver),
+        ok = itb3:free(Sender)
     end}.
 
 save_f_load_f_round_trip_test_() ->
@@ -51,78 +51,87 @@ save_f_load_f_round_trip_test_() ->
                             "itb-erlang-persist-" ++ os:getpid()),
         ok = file:make_dir(Dir),
         Path = filename:join(Dir, "session.blob"),
-        {ok, Sender} = itb:init(<<"singlemsg-triple-mac-v1">>, #{}),
-        ok = itb:save_f(Sender, Path),
+        {ok, Sender} = itb3:init(<<"singlemsg-triple-mac-v1">>, #{}),
+        ok = itb3:save_f(Sender, Path),
         {ok, #file_info{mode = Mode}} = file:read_file_info(Path),
         ?assertEqual(8#600, Mode band 8#777),
-        {ok, Receiver} = itb:load_f(Path),
-        ?assertEqual(itb:save(Sender), itb:save(Receiver)),
-        {ok, Wire} = itb:encrypt_message(Sender, <<"file persist">>),
+        {ok, Receiver} = itb3:load_f(Path),
+        ?assertEqual(itb3:save(Sender), itb3:save(Receiver)),
+        {ok, Wire} = itb3:encrypt_message(Sender, <<"file persist">>),
         ?assertEqual({ok, <<"file persist">>},
-                     itb:decrypt_message(Receiver, Wire)),
+                     itb3:decrypt_message(Receiver, Wire)),
         ?assertMatch({error, {bad_input, _}},
-                     itb:load_f(filename:join(Dir, "absent.blob"))),
-        ok = itb:free(Receiver),
-        ok = itb:free(Sender),
+                     itb3:load_f(filename:join(Dir, "absent.blob"))),
+        ok = itb3:free(Receiver),
+        ok = itb3:free(Sender),
         ok = file:delete(Path),
         ok = file:del_dir(Dir)
     end}.
 
 load_with_master_override_test_() ->
     {timeout, 120, fun() ->
-        {ok, Sender} = itb:init(<<"singlemsg-triple-mac-v1">>, #{}),
+        {ok, Sender} = itb3:init(<<"singlemsg-triple-mac-v1">>, #{}),
         Perm = binary:copy(<<16#31>>, 32),
         Wrap = binary:copy(<<16#32>>, 32),
-        {ok, Rotated} = itb:rekey(Sender, Perm, Wrap),
-        {ok, Blob} = itb:save(Sender),
-        {ok, Receiver} = itb:load(Blob, Perm, Wrap),
-        ?assertEqual({ok, Rotated}, itb:save(Receiver)),
-        {ok, Wire} = itb:encrypt_message(Sender, <<"master override">>),
+        {ok, Rotated} = itb3:rekey(Sender, Perm, Wrap),
+        {ok, Blob} = itb3:save(Sender),
+        {ok, Receiver} = itb3:load(Blob, Perm, Wrap),
+        ?assertEqual({ok, Rotated}, itb3:save(Receiver)),
+        {ok, Wire} = itb3:encrypt_message(Sender, <<"master override">>),
         ?assertEqual({ok, <<"master override">>},
-                     itb:decrypt_message(Receiver, Wire)),
-        ok = itb:free(Receiver),
-        ok = itb:free(Sender)
+                     itb3:decrypt_message(Receiver, Wire)),
+        ok = itb3:free(Receiver),
+        ok = itb3:free(Sender)
     end}.
 
 inspect_lookup_profiles_test() ->
-    {ok, Pipe} = itb:init(<<"singlemsg-triple-mac-v1">>, #{}),
-    {ok, Blob} = itb:save(Pipe),
-    ok = itb:free(Pipe),
-    {ok, Record} = itb:inspect(Blob),
+    %% inspect carries the registry recipe plus the blob-only
+    %% nonce_bits / barrier_fill inspection fields; lookup returns
+    %% just the recipe.
+    {ok, Pipe} = itb3:init(<<"singlemsg-triple-mac-v1">>, #{}),
+    {ok, Blob} = itb3:save(Pipe),
+    ok = itb3:free(Pipe),
+    {ok, Record} = itb3:inspect(Blob),
     ?assertEqual(<<"singlemsg-triple-mac-v1">>, maps:get(<<"name">>, Record)),
     ?assertEqual(<<"singlemsg-mac">>, maps:get(<<"mode">>, Record)),
     ?assert(maps:get(<<"keybits">>, Record) > 0),
-    ?assertEqual({ok, Record}, itb:lookup(<<"singlemsg-triple-mac-v1">>)),
-    ?assertMatch({error, {bad_input, _}}, itb:inspect(<<"not a blob">>)),
-    ?assertMatch({error, {unknown_profile, _}}, itb:lookup(<<"no-such-profile">>)),
-    Names = itb:profiles(),
+    ?assert(maps:is_key(<<"nonce_bits">>, Record)),
+    ?assert(maps:is_key(<<"barrier_fill">>, Record)),
+    {ok, Looked} = itb3:lookup(<<"singlemsg-triple-mac-v1">>),
+    ?assertNot(maps:is_key(<<"nonce_bits">>, Looked)),
+    ?assertNot(maps:is_key(<<"barrier_fill">>, Looked)),
+    ?assertEqual(Looked,
+                 maps:without([<<"nonce_bits">>, <<"barrier_fill">>], Record)),
+    ?assertMatch({error, {bad_input, _}}, itb3:inspect(<<"not a blob">>)),
+    ?assertMatch({error, {unknown_profile, _}}, itb3:lookup(<<"no-such-profile">>)),
+    Names = itb3:profiles(),
     ?assert(lists:member(<<"singlemsg-triple-mac-v1">>, Names)),
     ?assertEqual(lists:sort(Names), Names),
     lists:foreach(
       fun(Name) ->
-              {ok, R} = itb:lookup(Name),
+              {ok, R} = itb3:lookup(Name),
               ?assertEqual(Name, maps:get(<<"name">>, R))
       end, Names).
 
 max_workers_test() ->
-    {ok, Pipe} = itb:init(<<"singlemsg-triple-mac-v1">>, #{}),
-    ok = itb:max_workers(Pipe, 2),
-    ok = itb:max_workers(Pipe, -1),    %% clamped to auto, never rejected
-    ok = itb:max_workers(Pipe, 10000), %% clamped to 256
-    {ok, Wire} = itb:encrypt_message(Pipe, <<"after cap change">>),
-    ?assertEqual({ok, <<"after cap change">>}, itb:decrypt_message(Pipe, Wire)),
-    ok = itb:free(Pipe),
+    {ok, Pipe} = itb3:init(<<"singlemsg-triple-mac-v1">>, #{}),
+    ok = itb3:max_workers(Pipe, 2),
+    ok = itb3:max_workers(Pipe, -1),    %% clamped to auto, never rejected
+    ok = itb3:max_workers(Pipe, 10000), %% clamped to 256
+    {ok, Wire} = itb3:encrypt_message(Pipe, <<"after cap change">>),
+    ?assertEqual({ok, <<"after cap change">>}, itb3:decrypt_message(Pipe, Wire)),
+    ok = itb3:free(Pipe),
     %% A negative init-time cap is clamped as well.
-    {ok, Neg} = itb:init(<<"singlemsg-triple-mac-v1">>, #{maxWorkers => -1}),
-    {ok, W2} = itb:encrypt_message(Neg, <<"negative cap">>),
-    ?assertEqual({ok, <<"negative cap">>}, itb:decrypt_message(Neg, W2)),
-    ok = itb:free(Neg).
+    {ok, Neg} = itb3:init(<<"singlemsg-triple-mac-v1">>, #{maxWorkers => -1}),
+    {ok, W2} = itb3:encrypt_message(Neg, <<"negative cap">>),
+    ?assertEqual({ok, <<"negative cap">>}, itb3:decrypt_message(Neg, W2)),
+    ok = itb3:free(Neg).
 
 runtime_knobs_test() ->
     %% Negative values query without changing; the return is the
     %% previous setting.
-    Prev = itb:set_memory_limit(-1),
+    Prev = itb3:set_memory_limit(-1),
     ?assert(is_integer(Prev)),
-    ?assertEqual(Prev, itb:set_memory_limit(-1)),
-    PrevGC = itb:set_gc_percent(-2),
+    ?assertEqual(Prev, itb3:set_memory_limit(-1)),
+    PrevGC = itb3:set_gc_percent(-2),
     ?assert(is_integer(PrevGC)).

@@ -6,7 +6,7 @@ import (
 	"sync/atomic"
 )
 
-// testNonceOverride is set only by test code (see setTestNonce in *_test.go).
+// testNonceOverride is set only by test code (see installTestNonce in *_test.go).
 // Production callers never set this — generateNonceCfg falls through to
 // crypto/rand. One atomic load per encryption in the hot path; negligible
 // overhead in production, critical for nonce-reuse attack simulation in
@@ -17,7 +17,7 @@ var testNonceOverride atomic.Pointer[[]byte]
 // [testNonceOverride], set only by test code. Keeping the two overrides
 // separate lets red-team fixtures force the three collision classes
 // independently (main-only / interlock-only / both) when validating the
-// quadratic reuse bound of the dual-nonce header. Production callers
+// quadratic reuse bound of the two-nonce draw. Production callers
 // never set this — generateInterlockNonceCfg falls through to
 // crypto/rand.
 var testInterlockNonceOverride atomic.Pointer[[]byte]

@@ -15,7 +15,7 @@
  */
 
 import Foundation
-import Itb
+import Itb3
 
 func errPrint(_ text: String) {
     FileHandle.standardError.write(Data((text + "\n").utf8))
@@ -34,8 +34,8 @@ func usage() -> Int32 {
 /// Defensive Go-runtime pacing for cipher workloads on large files:
 /// a soft memory cap + aggressive GC keep the scratch heap bounded.
 func capGoRuntime() {
-    ItbRuntime.setMemoryLimit(512 << 20) // 512 MiB soft cap
-    ItbRuntime.setGCPercent(20)          // aggressive GC
+    ItbRuntime.setMemoryLimit(4 << 30) // 4 GiB soft cap
+    ItbRuntime.setGCPercent(100)        // balanced GC
 }
 
 func readFile(_ path: String) -> Data? {
@@ -101,7 +101,7 @@ func hexDecode(_ hex: String) -> Data? {
 }
 
 func cmdVersion() -> Int32 {
-    print("libitb \(ItbRuntime.version)")
+    print("libitb3 \(ItbRuntime.version)")
     print("itb-swift \(itbSwiftVersion)")
     return 0
 }

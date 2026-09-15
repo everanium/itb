@@ -1,14 +1,12 @@
-//go:build !amd64 || purego || noitbasm
+//go:build (!amd64 && !arm64) || purego || noitbasm
 
-// Stub package on platforms where the AVX-512 + VL chain-absorb
-// kernels do not apply. The parent hashes/ package falls back to
-// github.com/dchest/siphash directly in this case; nothing here is
-// exercised.
 package siphashasm
 
-// HasAVX512Fused is always false on non-amd64 / purego builds.
-var HasAVX512Fused = false
-
-// HasAVX2Fused is always false on non-amd64 / purego builds — the AVX2
-// chain-absorb kernels are amd64-only.
-var HasAVX2Fused = false
+// No assembly tier applies on this build; every dispatcher routes to the
+// scalar reference. The flags exist so callers compile uniformly.
+var (
+	// Batch-16 tier flags — always false without an assembly tier.
+	HasAVX512X16 = false
+	HasAVX2X16   = false
+	HasNEONX16   = false
+)

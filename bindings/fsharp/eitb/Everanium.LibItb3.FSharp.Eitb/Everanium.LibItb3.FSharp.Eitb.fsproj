@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <RootNamespace>Everanium.Itb3.FSharp.Eitb</RootNamespace>
+    <AssemblyName>Everanium.LibItb3.FSharp.Eitb</AssemblyName>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="Program.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Everanium.LibItb3.FSharp\Everanium.LibItb3.FSharp.fsproj" />
+  </ItemGroup>
+
+</Project>

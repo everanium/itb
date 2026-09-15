@@ -15,7 +15,7 @@
 # catalogue one name per line; the profiles that carry a cipher
 # surface are the ones `encrypt` / `decrypt` accept.
 
-using ITB
+using LibItb3
 
 const USAGE = """
 usage: eitb version
@@ -25,8 +25,8 @@ usage: eitb version
        eitb decrypt <profile> <blob-hex> <in-file> <out-file>"""
 
 function cmd_version()
-    println("libitb ", version())
-    println("itb-julia ", ITB.BINDING_VERSION)
+    println("libitb3 ", version())
+    println("itb-julia ", LibItb3.BINDING_VERSION)
 end
 
 function cmd_profiles()
@@ -100,8 +100,8 @@ function main(argv::Vector{String})::Int
     end
     try
         # Go-runtime pacing caps applied before any cipher work.
-        set_memory_limit(512 << 20)
-        set_gc_percent(20)
+        set_memory_limit(4 << 30)
+        set_gc_percent(100)
         if argv[1] == "version"
             cmd_version()
         elseif argv[1] == "profiles"

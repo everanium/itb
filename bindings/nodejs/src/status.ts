@@ -1,8 +1,8 @@
-// Status codes mirrored from the libitb C ABI
+// Status codes mirrored from the libitb3 C ABI
 // (cmd/cshared/internal/capi/errors.go). Numeric values are stable
 // across releases.
 
-/** Integer status code returned by every libitb entry point. */
+/** Integer status code returned by every libitb3 entry point. */
 export enum Status {
   Ok = 0,
   BadHash = 1,

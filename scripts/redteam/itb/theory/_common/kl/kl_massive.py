@@ -42,6 +42,10 @@ MASSIVE_DIR = (
 )
 
 # Container / extraction layout — same as distinguisher.py.
+# `header_size` is resolved per-run from the `.pixel` sidecar in main() —
+# the literal below is a last-resort fallback for legacy sidecars that
+# omit the field (see the cascade in main(), mirroring
+# kl_massive_full.py).
 HEADER_SIZE = 20
 CHANNELS = 8
 DATA_BITS_PER_CHANNEL = 7
@@ -111,6 +115,21 @@ def main():
     start_pixel = int(meta["start_pixel"])
     total_pixels = int(meta["total_pixels"])
     barrier_fill = int(meta.get("barrier_fill", "1"))
+    # Prefer the corpus-emitted field so a wire-format change needs no edit
+    # here; fall back to deriving from main_nonce_hex/nonce_hex, then to
+    # the literal default with a one-time stderr warning (mirrors
+    # kl_massive_full.py's cascade).
+    if "header_size" in meta:
+        header_size = int(meta["header_size"])
+    else:
+        nonce_hex = meta.get("main_nonce_hex") or meta.get("nonce_hex")
+        if nonce_hex:
+            header_size = (len(nonce_hex) // 2) + 4
+        else:
+            header_size = HEADER_SIZE
+            print(f"WARNING: kl_massive.py: {pix_path} has no "
+                  f"header_size/main_nonce_hex/nonce_hex field — falling "
+                  f"back to header_size={HEADER_SIZE}", file=sys.stderr)
 
     print(f"{'=' * 72}")
     print(f"  KL floor probe on a single massive sample")
@@ -121,7 +140,7 @@ def main():
     t0 = time.time()
     plaintext = plain_path.read_bytes()
     ciphertext = bin_path.read_bytes()
-    container = ciphertext[HEADER_SIZE:HEADER_SIZE + total_pixels * CHANNELS]
+    container = ciphertext[header_size:header_size + total_pixels * CHANNELS]
     print(f"  plaintext : {len(plaintext):,} bytes ({len(plaintext) / 1024 / 1024:.1f} MB)")
     print(f"  ciphertext: {len(ciphertext):,} bytes ({len(ciphertext) / 1024 / 1024:.1f} MB)")
     print(f"  total pixels: {total_pixels:,}   start pixel: {start_pixel:,}")

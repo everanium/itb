@@ -75,11 +75,10 @@ func decodeBlobStrict(data []byte, out *blobV1) error {
 // Blob — native-API session-bundle surface. Three width-specific
 // types ([Blob128], [Blob256], [Blob512]) pack the low-level
 // encryptor material (hash keys + seed components + dedicated
-// lockSeed + optional MAC material) plus the sender's
-// process-wide bit-permutation / nonce / barrier configuration into
-// one JSON blob. The receiver calls Import3Cfg, which applies
-// the captured globals unconditionally and populates the struct's
-// public fields.
+// lockSeed + optional MAC material) plus the sender's per-instance
+// nonce / barrier configuration into one JSON blob. The receiver
+// calls Import3Cfg, which restores the captured configuration into
+// the caller's *Config and populates the struct's public fields.
 //
 // Hash function closures and BatchHash batched-arm wrappers are
 // NOT stored — the caller picks factories at restore time and
@@ -92,13 +91,14 @@ func decodeBlobStrict(data []byte, out *blobV1) error {
 // the high-level alternative for callers that prefer one
 // constructor call + auto-coupling + per-instance Config snapshot.
 // The native Blob API trades that convenience for explicit factory
-// control and global-Set-based configuration.
+// control and per-instance Config wiring.
 
 // ErrBlobModeMismatch is returned by [Blob128.Import3Cfg] /
 // [Blob256.Import3Cfg] / [Blob512.Import3Cfg] when the JSON blob
-// carries mode != 3. The shipped Import path accepts Triple blobs
-// only; Single-mode blobs from legacy senders are rejected.
-var ErrBlobModeMismatch = errors.New("itb: blob mode mismatch (expected mode=3 Triple)")
+// carries a mode outside {1, 2} — the two Interlocked Barrier chunk
+// widths. Any other value names a construction this tree cannot
+// build seeds for.
+var ErrBlobModeMismatch = errors.New("itb: blob mode mismatch (expected mode=1 or mode=2)")
 
 // ErrBlobMalformed is returned when the JSON blob fails to parse
 // or carries fields outside the documented shape (zero-length
@@ -120,6 +120,18 @@ var ErrBlobTooManyOpts = errors.New("itb: Export accepts at most one options str
 // shape changes bump the version.
 const blobVersionV1 = 1
 
+// Blob mode discriminators. The mode names which Interlocked Barrier
+// chunk width the blob's seed material was drawn for: 1 is the shipped
+// 48-bit barrier, 2 is reserved for the 120-bit variant. Only 1 is
+// emitted on this tree — 2 is accepted on import and carries no
+// behavioural difference, because the 120-bit barrier does not exist
+// here yet, so a blob written under either discriminator loads
+// identically.
+const (
+	blobModeInterlock48  = 1
+	blobModeInterlock120 = 2
+)
+
 // blobV1 is the JSON-encoded shape shared by every width. uint64
 // components are serialised as decimal strings (avoiding JSON's
 // 53-bit number limit); hash keys and MAC key are serialised as
@@ -128,7 +140,7 @@ const blobVersionV1 = 1
 // types stay zero / nil after Import3Cfg when the blob omits them.
 type blobV1 struct {
 	Version int    `json:"v"`
-	Mode    int    `json:"mode"` // 3 = Triple (only mode emitted)
+	Mode    int    `json:"mode"` // 1 = 48-bit interlock (emitted), 2 = 120-bit (accepted)
 	KeyBits int    `json:"key_bits"`
 	KeyN    string `json:"key_n"`
 	KeyL    string `json:"key_l,omitempty"` // dedicated lockSeed
@@ -255,8 +267,10 @@ func validateSeedComponentsLen(got, want int) error {
 // [Blob512.Import3Cfg]; the caller wires Hash / BatchHash closures
 // from the saved Key* bytes through the appropriate 512-bit factory.
 //
-// [Blob512.Mode] is populated by Import3Cfg / Export3Cfg to 3
-// (Triple); no other value is emitted on the shipped surface.
+// [Blob512.Mode] names the Interlocked Barrier chunk width the seed
+// material was drawn for. Export3Cfg emits 1 (48-bit); Import3Cfg
+// accepts 1 or 2 (120-bit) and reports back whichever the blob
+// carried.
 //
 // Not safe for concurrent invocation — Export3Cfg / Import3Cfg
 // calls on the same Blob512 instance must be serialised by the
@@ -373,8 +387,11 @@ type Blob128 struct {
 	KeyS3 []byte
 
 	// Seed components — *Seed128 with .Components populated.
-	// Hash and BatchHash are nil after Import3Cfg; the caller wires
-	// them from the saved Key* bytes.
+	// Hash and BatchHash are nil after Import3Cfg; the caller rebuilds
+	// each seed from its Components and the saved Key* bytes
+	// (hashes.SeedFromComponents128 attaches the arms and every
+	// fast-path hook the primitive offers; the hooks never change the
+	// wire).
 	NS  *Seed128
 	LS  *Seed128 // dedicated lockSeed
 	DS1 *Seed128
@@ -504,7 +521,7 @@ func (b *Blob512) Export3Cfg(
 
 	blob := blobV1{
 		Version: blobVersionV1,
-		Mode:    3,
+		Mode:    blobModeInterlock48,
 		KeyBits: n * 64,
 		KeyN:    hex.EncodeToString(keyN[:]),
 		KeyD1:   hex.EncodeToString(keyD1[:]),
@@ -534,7 +551,7 @@ func (b *Blob512) Export3Cfg(
 		blob.MACKey = hex.EncodeToString(o.MACKey)
 		blob.MACName = o.MACName
 	}
-	b.Mode = 3
+	b.Mode = blobModeInterlock48
 	return json.Marshal(blob)
 }
 
@@ -558,7 +575,7 @@ func (b *Blob512) Import3Cfg(data []byte, cfg *Config) error {
 	if blob.Version > blobVersionV1 {
 		return ErrBlobVersionTooNew
 	}
-	if blob.Mode != 3 {
+	if blob.Mode != blobModeInterlock48 && blob.Mode != blobModeInterlock120 {
 		return ErrBlobModeMismatch
 	}
 	// KeyBits pre-validation — mirrors the [NewSeed512] /
@@ -667,7 +684,7 @@ func (b *Blob512) Import3Cfg(data []byte, cfg *Config) error {
 	}
 
 	*b = Blob512{
-		Mode:    3,
+		Mode:    blob.Mode,
 		KeyN:    keyN,
 		KeyD1:   keyD1,
 		KeyD2:   keyD2,
@@ -737,7 +754,7 @@ func (b *Blob256) Export3Cfg(
 
 	blob := blobV1{
 		Version: blobVersionV1,
-		Mode:    3,
+		Mode:    blobModeInterlock48,
 		KeyBits: n * 64,
 		KeyN:    hex.EncodeToString(keyN[:]),
 		KeyD1:   hex.EncodeToString(keyD1[:]),
@@ -766,7 +783,7 @@ func (b *Blob256) Export3Cfg(
 		blob.MACKey = hex.EncodeToString(o.MACKey)
 		blob.MACName = o.MACName
 	}
-	b.Mode = 3
+	b.Mode = blobModeInterlock48
 	return json.Marshal(blob)
 }
 
@@ -783,7 +800,7 @@ func (b *Blob256) Import3Cfg(data []byte, cfg *Config) error {
 	if blob.Version > blobVersionV1 {
 		return ErrBlobVersionTooNew
 	}
-	if blob.Mode != 3 {
+	if blob.Mode != blobModeInterlock48 && blob.Mode != blobModeInterlock120 {
 		return ErrBlobModeMismatch
 	}
 	// KeyBits pre-validation — mirrors the [NewSeed256] /
@@ -892,7 +909,7 @@ func (b *Blob256) Import3Cfg(data []byte, cfg *Config) error {
 	}
 
 	*b = Blob256{
-		Mode:    3,
+		Mode:    blob.Mode,
 		KeyN:    keyN,
 		KeyD1:   keyD1,
 		KeyD2:   keyD2,
@@ -962,7 +979,7 @@ func (b *Blob128) Export3Cfg(
 
 	blob := blobV1{
 		Version: blobVersionV1,
-		Mode:    3,
+		Mode:    blobModeInterlock48,
 		KeyBits: n * 64,
 		KeyN:    hex.EncodeToString(keyN),
 		KeyD1:   hex.EncodeToString(keyD1),
@@ -991,12 +1008,16 @@ func (b *Blob128) Export3Cfg(
 		blob.MACKey = hex.EncodeToString(o.MACKey)
 		blob.MACName = o.MACName
 	}
-	b.Mode = 3
+	b.Mode = blobModeInterlock48
 	return json.Marshal(blob)
 }
 
 // Import3Cfg — Triple Ouroboros, 128-bit width. See
-// [Blob512.Import3Cfg] for the full contract.
+// [Blob512.Import3Cfg] for the full contract. The imported seeds carry
+// Components only; the caller rebuilds each seed from them with its
+// Hash / BatchHash arms and, for the fast paths, its hooks
+// (hashes.SeedFromComponents128 does both) — the hooks never change
+// the wire.
 func (b *Blob128) Import3Cfg(data []byte, cfg *Config) error {
 	if cfg == nil {
 		return ErrBlobNilCfg
@@ -1008,7 +1029,7 @@ func (b *Blob128) Import3Cfg(data []byte, cfg *Config) error {
 	if blob.Version > blobVersionV1 {
 		return ErrBlobVersionTooNew
 	}
-	if blob.Mode != 3 {
+	if blob.Mode != blobModeInterlock48 && blob.Mode != blobModeInterlock120 {
 		return ErrBlobModeMismatch
 	}
 	// KeyBits pre-validation — mirrors the [NewSeed128] /
@@ -1117,7 +1138,7 @@ func (b *Blob128) Import3Cfg(data []byte, cfg *Config) error {
 	}
 
 	*b = Blob128{
-		Mode:    3,
+		Mode:    blob.Mode,
 		KeyN:    keyN,
 		KeyD1:   keyD1,
 		KeyD2:   keyD2,

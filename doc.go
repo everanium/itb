@@ -62,7 +62,10 @@
 // [ParseChunkLenCfg] inspects the first 20 bytes of a chunk header
 // and reports the chunk's total length on the wire, letting external
 // streaming consumers walk a concatenated chunk stream one chunk at a
-// time. Also exposed through the C ABI as ITB_ParseChunkLen.
+// time. The FFI shim reaches ITB streaming through the Triple family
+// (see the [github.com/everanium/itb/triple] package); external
+// tooling built directly against libitb3 reads chunk sizes via
+// [HeaderSize] combined with the width / height inline in the header.
 //
 // Empty input (nil or zero-length plaintext / wire) is rejected
 // uniformly with [ErrEmptyInput] across every Low-Level Cfg entry
@@ -78,6 +81,21 @@
 // supply any conforming PRF closure; the
 // [github.com/everanium/itb/hashes] subpackage ships paired factories
 // for the shipped PRF-grade primitives.
+//
+// # Seed key sizes
+//
+// A seed carries its per-primitive key material as an integer number
+// of 64-bit components (n = KeyBits / 64). [NewSeed128] / [NewSeed256]
+// / [NewSeed512] accept any KeyBits value that is a multiple of the
+// primitive's native hash width (128 / 256 / 512) in [512,
+// [MaxKeyBits] = 2048]. The shipping default is 1024. Wider keys fold
+// into more ChainHash rounds per seed (rounds = KeyBits / native
+// width): 2048-bit key at 128-bit width is 16 rounds, 2048-bit at
+// 512-bit width is 4 rounds. Common tunings are 512 / 1024 / 2048;
+// intermediate multiples (640, 768, 896, 1152, 1280, 1536, 1792 for
+// width-128, and the corresponding multiples for width-256 /
+// width-512) are accepted per the same contract and produce a
+// proportional ChainHash round count.
 //
 // # State persistence — Blob
 //
@@ -106,10 +124,12 @@
 //
 // # Wire format
 //
-// The on-wire layout is main_nonce ‖ interlock_nonce ‖ W ‖ H ‖
-// pixel_container. Both nonces are drawn independently from
-// crypto/rand on each call (N = 16 / 32 / 64 bytes for 128 / 256 /
-// 512-bit nonce respectively); W and H are unsigned 16-bit big-endian
+// The on-wire layout is main_nonce ‖ W ‖ H ‖ pixel_container. Two
+// nonces are drawn independently from crypto/rand on each call (N =
+// 16 / 32 / 64 bytes for 128 / 256 / 512-bit nonce respectively): the
+// main nonce heads the wire, while the interlock nonce is split into
+// three fragments carried at the front of the three interlocked lanes
+// inside the container. W and H are unsigned 16-bit big-endian
 // container dimensions; the pixel container carries the RGBWYOPA
 // payload routed through the Interlocked Barrier. The byte layout is
 // identical across all three hash width variants and across Single
@@ -130,17 +150,18 @@
 // process-wide memory-limit and GC-percent pacing knobs. Both are
 // process-global; pass -1 to either setter to query the current value
 // without changing it. The knobs are also readable from the
-// environment at libitb load time via ITB_GOMEMLIMIT / ITB_GOGC, and
+// environment at libitb3 load time via ITB_GOMEMLIMIT / ITB_GOGC, and
 // reachable through the C ABI as ITB_SetMemoryLimit /
 // ITB_SetGCPercent.
 //
 // # See also
 //
-//   - FAQ.md — plain-language cryptanalytic walkthroughs.
+//   - FAQ.md — cryptanalytic walkthroughs.
 //   - ITB.md — accessible explanation of how the barrier works.
 //   - PROOFS.md — formal security proofs.
 //   - SCIENCE.md — architectural argument.
 //   - SECURITY.md — threat-model reference.
+//   - HASHES.md — hashes hardware-level cpu support.
 //   - HWTHREATS.md — hardware-level threat boundary.
 //   - REDTEAM.md — empirical adversarial validation.
 //   - HARNESS.md — adversarial testing methodology and calibration.

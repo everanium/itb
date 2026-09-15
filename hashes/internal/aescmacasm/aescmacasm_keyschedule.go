@@ -13,7 +13,7 @@ package aescmacasm
 //
 // The expansion is bit-identical to the round keys produced
 // internally by crypto/aes.NewCipher; the parity test in
-// aescmacasm_chain_test.go cross-checks the kernel output against a
+// aescmacasm_test.go cross-checks the kernel output against a
 // scalar reference that calls cipher.Block.Encrypt, indirectly
 // validating the schedule.
 func ExpandKeyAES128(key [16]byte) [176]byte {

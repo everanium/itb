@@ -111,7 +111,7 @@ Typical install commands:
 }
 
 // newVersionCmd builds the `itb3 version` subcommand. Prints the CLI
-// tag alongside a "libitb <tag>" reference so a receiver can tell at
+// tag alongside a "libitb3 <tag>" reference so a receiver can tell at
 // a glance which library build the CLI was compiled against.
 func newVersionCmd() *cobra.Command {
 	return &cobra.Command{
@@ -119,7 +119,7 @@ func newVersionCmd() *cobra.Command {
 		Short: "Print CLI + library version to stdout",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			fmt.Printf("itb3 %s (libitb %s)\n", version, version)
+			fmt.Printf("itb3 %s (libitb3 %s)\n", version, version)
 			return nil
 		},
 	}

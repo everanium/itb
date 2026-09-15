@@ -39,8 +39,8 @@ package body Common is
    -- Build_Opts --
    ----------------
 
-   function Build_Opts return Itb.Opts.Opts is
-      O          : Itb.Opts.Opts;
+   function Build_Opts return Itb3.Opts.Opts is
+      O          : Itb3.Opts.Opts;
       Inner_Hash : constant String := Env ("ITB_INNER_HASH", "");
       Mac_Name   : constant String := Env ("ITB_MAC_NAME", "");
    begin
@@ -76,7 +76,7 @@ package body Common is
       Flags : Interfaces.C.unsigned) return Interfaces.C.long
    with Import => True, Convention => C, External_Name => "getrandom";
 
-   procedure Fill_Random (Buffer : in out Itb.Byte_Array) is
+   procedure Fill_Random (Buffer : in out Itb3.Byte_Array) is
       use System.Storage_Elements;
       use type Interfaces.C.long;
       Done : Ada.Streams.Stream_Element_Offset := 0;

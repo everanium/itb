@@ -1,9 +1,9 @@
 # Integration spec suite for the ITB Crystal binding. Every case runs
-# against the live libitb shared library resolved at link time.
+# against the live libitb3 shared library resolved at link time.
 
 require "file_utils"
 require "spec"
-require "../src/itb"
+require "../src/libitb3"
 
 # Deterministic non-trivial payload (xorshift fill).
 private def payload(n : Int32, seed : UInt64) : Bytes
@@ -28,7 +28,7 @@ end
 describe ITB do
   it "reports the library and binding versions" do
     ITB.version.should_not be_empty
-    ITB::VERSION.should eq "0.4.1"
+    ITB::VERSION.should eq "0.5.1"
   end
 
   it "lists the shipped profiles" do
@@ -261,7 +261,38 @@ describe ITB do
     prof.name.should eq "streaming-aead-triple-mac-v1"
     prof.mode.should eq "streaming-aead"
     prof.width.should eq 512
-    ITB.lookup("streaming-aead-triple-mac-v1").should eq prof
+    # The recipe fields match the registry entry; the two
+    # inspection-only fields separate the two records.
+    recipe = prof.dup
+    recipe.nonce_bits = nil
+    recipe.barrier_fill = nil
+    ITB.lookup("streaming-aead-triple-mac-v1").should eq recipe
+  end
+
+  it "carries the runtime globals on inspect but not on lookup" do
+    # Defaults: the blob records the compile-in nonce width and
+    # barrier fill margin, and inspect surfaces both.
+    pipe = ITB::Pipeline.new("streaming-aead-triple-mac-v1")
+    prof = ITB.inspect(pipe.save)
+    prof.nonce_bits.should eq 512
+    prof.barrier_fill.should eq 1
+
+    # Per-Pipeline overrides travel through the blob into inspect.
+    tuned = ITB::Pipeline.new("streaming-aead-triple-mac-v1",
+      ITB::Opts.new.with_nonce_bits(256).with_barrier_fill(4))
+    tuned_prof = ITB.inspect(tuned.save)
+    tuned_prof.nonce_bits.should eq 256
+    tuned_prof.barrier_fill.should eq 4
+    tuned_prof.to_json.includes?(%("nonce_bits":256)).should be_true
+    tuned_prof.to_json.includes?(%("barrier_fill":4)).should be_true
+
+    # The registry entry is the recipe alone — neither field is part
+    # of it, so both read as absent rather than as zero.
+    registry = ITB.lookup("streaming-aead-triple-mac-v1")
+    registry.nonce_bits.should be_nil
+    registry.barrier_fill.should be_nil
+    registry.to_json.includes?("nonce_bits").should be_false
+    registry.to_json.includes?("barrier_fill").should be_false
   end
 
   it "maps an unknown lookup name to UnknownProfile" do

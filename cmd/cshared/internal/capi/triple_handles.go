@@ -19,10 +19,9 @@ import (
 // layer just pins it via runtime/cgo.Handle so the value survives
 // across the C boundary without leaking the internal type.
 //
-// Mirrors the SeedHandle / MACHandle pattern in
-// handles.go / macs.go — one TripleHandle replaces
-// the (8 seeds + MAC + parallax + wrapper) constructor ceremony of
-// the low-level surface.
+// TripleHandle is the whole-object handle the FFI shim exposes;
+// its cgo.Handle-based pinning pattern is shared with the streaming
+// session handle in triple_stream.go.
 type TripleHandle struct {
 	pipe *triple.Pipeline
 }

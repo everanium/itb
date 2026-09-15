@@ -15,7 +15,7 @@
 # registered profile catalogue one name per line; the profiles that
 # carry a cipher surface are the ones `encrypt` / `decrypt` accept.
 
-suppressMessages(library(itb))
+suppressMessages(library(libitb3r))
 
 USAGE <- paste(
   "usage: eitb version",
@@ -39,8 +39,8 @@ write_file <- function(path, data) {
 }
 
 cmd_version <- function() {
-  cat("libitb", version(), "\n")
-  cat("itb-r", as.character(utils::packageVersion("itb")), "\n")
+  cat("libitb3", version(), "\n")
+  cat("itb-r", as.character(utils::packageVersion("libitb3r")), "\n")
 }
 
 cmd_profiles <- function() {
@@ -114,8 +114,8 @@ main <- function(argv) {
   tryCatch(
     {
       # Go-runtime pacing caps applied before any cipher work.
-      set_memory_limit(512 * 1024 * 1024)
-      set_gc_percent(20)
+      set_memory_limit(4 * 1024 * 1024 * 1024)
+      set_gc_percent(100)
       switch(argv[1],
         version = cmd_version(),
         profiles = cmd_profiles(),

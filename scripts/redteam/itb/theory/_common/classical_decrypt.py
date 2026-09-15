@@ -262,6 +262,13 @@ def main() -> int:
     ap.add_argument("--min-known-channels", type=int, default=2,
                     help="Partial mode only: minimum known channels per pixel for "
                          "Layer 1 to attempt recovery (default: 2).")
+    ap.add_argument("--nonce-size", type=int, default=None,
+                    help="Override the main-nonce byte length used to parse the ITB "
+                         "header. Default: derived from cell.meta.json's "
+                         "main_nonce_hex / nonce_hex field length; falls back to 16 "
+                         "bytes only if the corpus metadata omits both fields (every "
+                         "in-tree corpus generator hardcodes NonceBits=128 — NOT "
+                         "itb.DefaultNonceBits/8, which is 64).")
     args = ap.parse_args()
 
     cell_dir = args.cell_dir.resolve()
@@ -286,8 +293,18 @@ def main() -> int:
         print(f"ERROR: --mode partial requires ct_*.known_mask sidecars", file=sys.stderr)
         return 2
 
-    nonce1, w1, h1, tp1, body1 = parse_itb_header(c1_bytes)
-    nonce2, w2, h2, tp2, body2 = parse_itb_header(c2_bytes)
+    nonce_hex_for_header = meta.get("main_nonce_hex") or meta.get("nonce_hex")
+    if args.nonce_size is not None:
+        nonce_size = args.nonce_size
+    elif nonce_hex_for_header:
+        nonce_size = len(bytes.fromhex(nonce_hex_for_header))
+    else:
+        nonce_size = 16  # last-resort fallback — see nonce_reuse_demask.py
+        print(f"WARNING: classical_decrypt.py: cell.meta.json has no "
+              f"main_nonce_hex/nonce_hex field — falling back to "
+              f"nonce_size={nonce_size} bytes", file=sys.stderr)
+    nonce1, w1, h1, tp1, body1 = parse_itb_header(c1_bytes, nonce_size)
+    nonce2, w2, h2, tp2, body2 = parse_itb_header(c2_bytes, nonce_size)
     if nonce1 != nonce2:
         print("ERROR: nonces differ — not a nonce-reuse pair", file=sys.stderr)
         return 2

@@ -6,7 +6,7 @@ module test_message;
 import std.format : format;
 import std.stdio : writeln;
 
-import itb;
+import itb3;
 
 /// Deterministic non-trivial payload (xorshift fill).
 ubyte[] payload(size_t n, ulong seed)

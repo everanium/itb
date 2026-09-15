@@ -2,7 +2,7 @@
 # in Go under the shipped tree.
 
 using Test
-using ITB
+using LibItb3
 
 # Deterministic non-trivial payload (xorshift fill).
 function payload(n::Int, seed::Integer)::Vector{UInt8}
@@ -50,7 +50,7 @@ end
             free!(pipe)
         end
         err = capture_itberror(() -> lookup("no-such-profile"))
-        @test err.status_code == ITB.STATUS_UNKNOWN_PROFILE
+        @test err.status_code == LibItb3.STATUS_UNKNOWN_PROFILE
     end
 
     @testset "message round trip" begin
@@ -175,7 +175,7 @@ end
 
     @testset "bad profile maps to UNKNOWN_PROFILE" begin
         err = capture_itberror(() -> Pipeline("no-such-profile"))
-        @test err.status_code == ITB.STATUS_UNKNOWN_PROFILE
+        @test err.status_code == LibItb3.STATUS_UNKNOWN_PROFILE
         @test !isempty(sprint(showerror, err))
     end
 
@@ -191,7 +191,7 @@ end
             wire[mid + i] ⊻= 0xFF
         end
         err = capture_itberror(() -> decrypt_message(receiver, wire))
-        @test err.status_code == ITB.STATUS_MAC_FAILURE
+        @test err.status_code == LibItb3.STATUS_MAC_FAILURE
         free!(sender)
         free!(receiver)
     end
@@ -201,7 +201,7 @@ end
         close!(pipe)
         close!(pipe) # idempotent
         err = capture_itberror(() -> encrypt_message(pipe, payload(64, 1)))
-        @test err.status_code == ITB.STATUS_TRIPLE_CLOSED
+        @test err.status_code == LibItb3.STATUS_TRIPLE_CLOSED
         free!(pipe)
     end
 
@@ -252,11 +252,11 @@ end
         @test decrypt_message(receiver, wire) == Vector{UInt8}("custom profile")
 
         err = capture_itberror(() -> register(name, profile))
-        @test err.status_code == ITB.STATUS_PROFILE_EXISTS
+        @test err.status_code == LibItb3.STATUS_PROFILE_EXISTS
         # Strict record decode on the Go side: an unknown key is
         # rejected there, not by the binding.
         err = capture_itberror(() -> register("$name-bad", "{\"mode\":\"singlemsg-nomac\",\"bogus\":1}"))
-        @test err.status_code == ITB.STATUS_BAD_INPUT
+        @test err.status_code == LibItb3.STATUS_BAD_INPUT
         free!(sender)
         free!(receiver)
     end
@@ -285,7 +285,7 @@ end
             wire = encrypt_message(sender, Vector{UInt8}("file persist"))
             @test decrypt_message(receiver, wire) == Vector{UInt8}("file persist")
             err = capture_itberror(() -> load_f(joinpath(dir, "absent.blob")))
-            @test err.status_code == ITB.STATUS_BAD_INPUT
+            @test err.status_code == LibItb3.STATUS_BAD_INPUT
             free!(sender)
             free!(receiver)
         end
@@ -302,14 +302,22 @@ end
         free!(receiver)
     end
 
-    @testset "inspect matches lookup" begin
+    @testset "inspect carries the recipe plus inspection-only fields" begin
         pipe = Pipeline("singlemsg-triple-mac-v1")
         record = inspect(save(pipe))
+        # inspect carries the registry recipe plus the blob-only
+        # nonce_bits / barrier_fill inspection fields; lookup returns
+        # just the recipe.
+        looked = lookup("singlemsg-triple-mac-v1")
         @test occursin("\"name\":\"singlemsg-triple-mac-v1\"", record)
         @test occursin("\"mode\":\"singlemsg-mac\"", record)
-        @test record == lookup("singlemsg-triple-mac-v1")
+        @test occursin("\"nonce_bits\":", record)
+        @test occursin("\"barrier_fill\":", record)
+        @test occursin("\"name\":\"singlemsg-triple-mac-v1\"", looked)
+        @test !occursin("\"nonce_bits\":", looked)
+        @test !occursin("\"barrier_fill\":", looked)
         err = capture_itberror(() -> inspect(Vector{UInt8}("not a blob")))
-        @test err.status_code == ITB.STATUS_BAD_INPUT
+        @test err.status_code == LibItb3.STATUS_BAD_INPUT
         free!(pipe)
     end
 
@@ -322,7 +330,7 @@ end
         @test decrypt_message(pipe, wire) == Vector{UInt8}("after cap change")
         close!(pipe)
         err = capture_itberror(() -> max_workers!(pipe, 2))
-        @test err.status_code == ITB.STATUS_TRIPLE_CLOSED
+        @test err.status_code == LibItb3.STATUS_TRIPLE_CLOSED
         free!(pipe)
         # A negative init-time cap is clamped as well.
         neg = Pipeline("singlemsg-triple-mac-v1"; opts=with_max_workers!(Opts(), -1))

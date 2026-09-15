@@ -10,7 +10,7 @@ AND CSPRNG fill indistinguishably — and accumulate the raw 7-bit
 candidate distribution.
 
 The container body on the shipped wire is the barrier-permuted
-Triple stream — three snakes distributed through the always-on 48-bit
+Triple stream — three regions distributed through the always-on 48-bit
 Interlocked Barrier. The probe treats the body as one flat
 8-byte-per-pixel stream (matching the coarse treatment
 `raw_mode_common.py` uses); the barrier's structural complexity is
@@ -51,8 +51,8 @@ MASSIVE_DIR = (
 
 CHANNELS = 8
 CHUNK_SIZE = 500_000  # same memory budget as Mode A: ~224 MB cand_raw peak
-# `header_size` is now read per-cell from the `.pixel` sidecar — the 
-# dual-nonce wire header is `2 * NonceSize + 4` bytes (132 at the default
+# `header_size` is now read per-cell from the `.pixel` sidecar — the
+# shipped wire header is `NonceSize + 4` bytes (68 at the default
 # 512-bit nonce); the archived default of 20 remains as a last-resort
 # fallback for legacy corpora that omit the field.
 LEGACY_HEADER_SIZE = 20
@@ -98,8 +98,8 @@ def main():
         meta[k] = v
     total_pixels = int(meta["total_pixels"])
     barrier_fill = int(meta.get("barrier_fill", "1"))
-    # shipped dual-nonce corpora carry `header_size` directly; fall back to
-    # `2 * len(main_nonce) + 4` derived from `main_nonce_hex`, then to the
+    # shipped corpora carry `header_size` directly; fall back to
+    # `len(main_nonce) + 4` derived from `main_nonce_hex`, then to the
     # archived 20-byte constant as a last resort. `Config.BarrierFill` is
     # the runtime knob (never `SetBarrierFill(...)` — no such API exists);
     # the corpus generator threads it via `ITB_BARRIER_FILL` into
@@ -109,7 +109,7 @@ def main():
     else:
         nonce_hex = meta.get("main_nonce_hex") or meta.get("nonce_hex")
         if nonce_hex:
-            header_size = 2 * (len(nonce_hex) // 2) + 4
+            header_size = (len(nonce_hex) // 2) + 4
         else:
             header_size = LEGACY_HEADER_SIZE
 

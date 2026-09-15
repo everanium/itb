@@ -12,16 +12,16 @@
 // registered profile catalogue one name per line; the profiles that
 // carry a cipher surface are the ones `encrypt` / `decrypt` accept.
 
-package dev.everanium.itb.groovy.eitb
+package io.github.everanium.itb3.groovy.eitb
 
 import groovy.transform.CompileStatic
 
 import java.nio.file.Files
 import java.nio.file.Paths
 
-import dev.everanium.itb.groovy.ItbException
-import dev.everanium.itb.groovy.Pipeline
-import dev.everanium.itb.groovy.Runtime
+import io.github.everanium.itb3.groovy.ItbException
+import io.github.everanium.itb3.groovy.Pipeline
+import io.github.everanium.itb3.groovy.Runtime
 
 @CompileStatic
 final class Main {
@@ -30,8 +30,8 @@ final class Main {
     }
 
     static void main(String[] args) {
-        Runtime.setMemoryLimit(512L * 1024 * 1024)
-        Runtime.setGCPercent(20)
+        Runtime.setMemoryLimit(4L * 1024 * 1024 * 1024)
+        Runtime.setGCPercent(100)
         int rc
         try {
             rc = dispatch(args)
@@ -66,7 +66,7 @@ final class Main {
     }
 
     private static int cmdVersion() {
-        println "libitb ${Runtime.version()}"
+        println "libitb3 ${Runtime.version()}"
         println "itb-groovy ${Runtime.BINDING_VERSION}"
         0
     }

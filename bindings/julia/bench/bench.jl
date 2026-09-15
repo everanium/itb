@@ -20,7 +20,7 @@
 #   ITB_BENCH_MIN_SEC   5           per-case wall-clock budget (seconds)
 
 using Random
-using ITB
+using LibItb3
 
 # Per-case iteration floor alongside the wall-clock budget.
 const BENCH_MIN_ITERS = 3
@@ -98,7 +98,7 @@ end
 
 function bench_stream()
     pipe = Pipeline(profile_name("ITB_STREAM_PROFILE", "streaming-noaead-triple-v1"); opts=build_opts())
-    slice = ITB.PUMP_BUF
+    slice = LibItb3.PUMP_BUF
     # One reusable drain buffer across every iteration: the consumer
     # side of a real pump (socket / file sink) reads into a stable
     # buffer, so the bench does the same via read_into! instead of
@@ -175,8 +175,8 @@ end
 # Bench-scale allocation churn leaks Go scratch heap unboundedly
 # without a soft memory cap + aggressive GC; the return values report
 # the previous settings, not an error.
-set_memory_limit(512 << 20)
-set_gc_percent(20)
+set_memory_limit(4 << 30)
+set_gc_percent(100)
 
 function bench_stream_one_shot()
     # Whole-buffer stream: one FFI round trip through

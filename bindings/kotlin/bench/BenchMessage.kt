@@ -1,9 +1,9 @@
 // encryptMessage throughput vs plaintext size (Single Message
 // profile) at 1 MiB / 16 MiB / 64 MiB.
 
-package com.everanium.itb.kotlin.bench
+package io.github.everanium.itb3.kotlin.bench
 
-import com.everanium.itb.kotlin.Pipeline
+import io.github.everanium.itb3.kotlin.Pipeline
 
 internal object BenchMessage {
 

@@ -7,7 +7,16 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 
-import { ItbError, Opts, Pipeline, Status, inspect, lookup, profiles } from '../src/index.js';
+import {
+  ItbError,
+  Opts,
+  Pipeline,
+  type Profile,
+  Status,
+  inspect,
+  lookup,
+  profiles,
+} from '../src/index.js';
 
 const PROFILE = 'singlemsg-triple-mac-v1';
 
@@ -66,16 +75,49 @@ test('load with master override', () => {
   receiver.free();
 });
 
-test('inspect matches lookup', () => {
+test('inspect carries the recipe plus inspection-only fields', () => {
+  // inspect carries the registry recipe plus the blob-only nonce_bits
+  // / barrier_fill inspection fields; lookup returns just the recipe.
   const pipe = Pipeline.init(PROFILE);
-  const record = inspect(pipe.save());
+  const record = inspect(pipe.save()) as unknown as Record<string, unknown>;
   pipe.free();
   assert.equal(record.name, PROFILE);
   assert.equal(record.mode, 'singlemsg-mac');
-  assert.ok(record.keybits > 0);
-  assert.deepEqual(record, lookup(PROFILE));
+  assert.ok((record.keybits as number) > 0);
+  assert.ok('nonce_bits' in record);
+  assert.ok('barrier_fill' in record);
+  const looked = lookup(PROFILE) as unknown as Record<string, unknown>;
+  assert.ok(!('nonce_bits' in looked));
+  assert.ok(!('barrier_fill' in looked));
+  const { nonce_bits: _nb, barrier_fill: _bf, ...recipe } = record;
+  void _nb;
+  void _bf;
+  assert.deepEqual(recipe, looked);
   assert.equal(statusOf(() => inspect(Buffer.from('not a blob'))), Status.BadInput);
   assert.equal(statusOf(() => lookup('no-such-profile')), Status.UnknownProfile);
+});
+
+test('the Profile type exposes the inspection-only fields', () => {
+  // Typed access, no cast: dropping either member from the Profile
+  // interface fails the `tsc` step `npm test` runs before the suite.
+  const pipe = Pipeline.init(PROFILE, new Opts().withNonceBits(256).withBarrierFill(4));
+  const record: Profile = inspect(pipe.save());
+  pipe.free();
+  assert.equal(record.nonce_bits, 256);
+  assert.equal(record.barrier_fill, 4);
+
+  // The registry entry is the recipe alone — neither field is part of
+  // it, so both read as undefined rather than as zero.
+  const registry: Profile = lookup(PROFILE);
+  assert.equal(registry.nonce_bits, undefined);
+  assert.equal(registry.barrier_fill, undefined);
+
+  // Defaults land on the blob too when no override is given.
+  const plain = Pipeline.init(PROFILE);
+  const defaults: Profile = inspect(plain.save());
+  plain.free();
+  assert.equal(defaults.nonce_bits, 512);
+  assert.equal(defaults.barrier_fill, 1);
 });
 
 test('profiles is sorted and resolves', () => {

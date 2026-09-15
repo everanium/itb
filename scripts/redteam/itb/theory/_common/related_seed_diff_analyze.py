@@ -25,17 +25,22 @@ import sys
 from collections import Counter
 from pathlib import Path
 
+# Last-resort fallback only (see the header_size cascade in main()):
+# NonceBits=128 (16-byte main nonce) + 4, pinned by every in-tree corpus
+# generator (e.g. redteam_trainhash_leak_test.go:52).
 HEADER_SIZE = 20
 
+_warned_header_size_fallback = False
 
-def parse_body(ct_path: Path, total_pixels: int) -> bytes:
+
+def parse_body(ct_path: Path, total_pixels: int, header_size: int) -> bytes:
     raw = ct_path.read_bytes()
-    need = HEADER_SIZE + total_pixels * 8
+    need = header_size + total_pixels * 8
     if len(raw) < need:
         raise RuntimeError(
             f"{ct_path.name} too short: {len(raw)} bytes, need {need}"
         )
-    return raw[HEADER_SIZE:need]
+    return raw[header_size:need]
 
 
 def byte_chi_squared(diff: bytes) -> tuple[float, int, float]:
@@ -125,13 +130,32 @@ def main() -> int:
     args = ap.parse_args()
 
     meta = json.loads((args.cell_dir / "cell.meta.json").read_text())
+    # Prefer the corpus-emitted field so a wire-format change needs no edit
+    # here; fall back to deriving from main_nonce_hex/nonce_hex, then to
+    # the literal default with a one-time stderr warning (mirrors
+    # kl_massive_full.py's cascade).
+    global _warned_header_size_fallback
+    if "header_size" in meta:
+        header_size = int(meta["header_size"])
+    else:
+        nonce_hex = meta.get("main_nonce_hex") or meta.get("nonce_hex")
+        if nonce_hex:
+            header_size = (len(nonce_hex) // 2) + 4
+        else:
+            header_size = HEADER_SIZE
+            if not _warned_header_size_fallback:
+                print(f"WARNING: related_seed_diff_analyze.py: "
+                      f"cell.meta.json has no header_size/main_nonce_hex/"
+                      f"nonce_hex field — falling back to "
+                      f"header_size={HEADER_SIZE}", file=sys.stderr)
+                _warned_header_size_fallback = True
     total_pixels = meta["ciphertext_bytes"][0] // 8  # container bytes / 8
     # Recompute: actual container = ciphertext_bytes - header
-    container_bytes = meta["ciphertext_bytes"][0] - HEADER_SIZE
+    container_bytes = meta["ciphertext_bytes"][0] - header_size
     total_pixels = container_bytes // 8
 
-    ct0_body = parse_body(args.cell_dir / "ct_0.bin", total_pixels)
-    ct1_body = parse_body(args.cell_dir / "ct_1.bin", total_pixels)
+    ct0_body = parse_body(args.cell_dir / "ct_0.bin", total_pixels, header_size)
+    ct1_body = parse_body(args.cell_dir / "ct_1.bin", total_pixels, header_size)
     diff = bytes(a ^ b for a, b in zip(ct0_body, ct1_body))
 
     chi2, df, p_chi2 = byte_chi_squared(diff)

@@ -4,7 +4,7 @@
 -- case prints "ok - <name>" on success, and the process exits non-zero
 -- on the first failure with a traceback.
 
-local itb = require "itb"
+local itb = require "itb3"
 
 local failures = 0
 
@@ -54,7 +54,7 @@ end
 run("version", function()
     local v = itb.version()
     assert(type(v) == "string" and #v > 0, "empty version")
-    assert(itb._VERSION == "0.4.1")
+    assert(itb._VERSION == "0.5.1")
 end)
 
 run("profiles list", function()
@@ -284,7 +284,15 @@ run("inspect / lookup / profiles", function()
     local record = itb.inspect(pipe:save())
     assert(record:find('"name":"singlemsg-triple-mac-v1"', 1, true), record)
     assert(record:find('"mode":"singlemsg-mac"', 1, true), record)
-    assert(record == itb.lookup("singlemsg-triple-mac-v1"), "inspect differs from lookup")
+    -- inspect carries the registry recipe plus the blob-only
+    -- nonce_bits / barrier_fill inspection fields; lookup returns
+    -- just the recipe.
+    local looked = itb.lookup("singlemsg-triple-mac-v1")
+    assert(record:find('"nonce_bits":', 1, true), "inspect must carry nonce_bits")
+    assert(record:find('"barrier_fill":', 1, true), "inspect must carry barrier_fill")
+    assert(looked:find('"name":"singlemsg-triple-mac-v1"', 1, true), looked)
+    assert(not looked:find('"nonce_bits":', 1, true), "lookup must not carry nonce_bits")
+    assert(not looked:find('"barrier_fill":', 1, true), "lookup must not carry barrier_fill")
     assert_status({ itb.status.BAD_INPUT }, function() itb.inspect("not a blob") end)
     assert_status({ itb.status.UNKNOWN_PROFILE }, function() itb.lookup("no-such-profile") end)
     local names = itb.profiles()

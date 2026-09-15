@@ -26,7 +26,6 @@ import numpy as np
 # Constants (must match itb.go)
 # ----------------------------------------------------------------------------
 
-HEADER_SIZE = 20               # 16 nonce + 2 W + 2 H (default 128-bit nonce)
 CHANNELS = 8
 DATA_BITS_PER_CHANNEL = 7
 DATA_BITS_PER_PIXEL = 56

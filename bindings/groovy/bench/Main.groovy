@@ -1,10 +1,10 @@
 // Bench entry: `message`, `stream`, or `all` (default).
 
-package dev.everanium.itb.groovy.bench
+package io.github.everanium.itb3.groovy.bench
 
 import groovy.transform.CompileStatic
 
-import dev.everanium.itb.groovy.Runtime
+import io.github.everanium.itb3.groovy.Runtime
 
 @CompileStatic
 final class Main {
@@ -17,8 +17,8 @@ final class Main {
         // the run_bench.sh env defaults apply the same values at
         // load time — the programmatic setter wins when both are
         // present.
-        Runtime.setMemoryLimit(512L * 1024 * 1024)
-        Runtime.setGCPercent(20)
+        Runtime.setMemoryLimit(4L * 1024 * 1024 * 1024)
+        Runtime.setGCPercent(100)
         String shape = args.length > 0 ? args[0] : 'all'
         switch (shape) {
             case 'message':

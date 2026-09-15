@@ -7,7 +7,7 @@
 //!   ...
 
 const std = @import("std");
-const itb = @import("itb");
+const itb = @import("itb3");
 
 /// Iteration floor per case.
 const min_iters: usize = 3;

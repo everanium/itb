@@ -57,12 +57,14 @@ import (
 	"os/signal"
 	"runtime"
 	"runtime/debug"
+	"runtime/pprof"
 	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
 
 	"github.com/everanium/itb/hashes"
+	"github.com/everanium/itb/internal/poolstats"
 	"github.com/everanium/itb/macs"
 	"github.com/everanium/itb/triple"
 )
@@ -119,6 +121,38 @@ type config struct {
 	payloadMode    string // plaintext content policy (payload* constants)
 	seed           uint64 // deterministic plaintext RNG seed; 0 = crypto/rand
 	jsonOutput     bool   // final summary as one JSON object
+	memprofile     string // heap-profile output path; empty = none
+}
+
+// memSnapshot is one point-in-time capture of the cumulative runtime
+// counters the allocation-rate and GC-cost figures are differenced
+// from, together with the pool hit / miss counters of the itb core.
+type memSnapshot struct {
+	at         time.Time
+	totalAlloc uint64
+	mallocs    uint64
+	numGC      uint32
+	pauseNs    uint64
+	gcCPU      float64
+	heapSys    uint64
+	pool       poolstats.Snapshot
+}
+
+// takeMemSnapshot reads the runtime counters (via ReadMemStats, which
+// stops the world briefly) and the pool counters at one instant.
+func takeMemSnapshot() memSnapshot {
+	var ms runtime.MemStats
+	runtime.ReadMemStats(&ms)
+	return memSnapshot{
+		at:         time.Now(),
+		totalAlloc: ms.TotalAlloc,
+		mallocs:    ms.Mallocs,
+		numGC:      ms.NumGC,
+		pauseNs:    ms.PauseTotalNs,
+		gcCPU:      ms.GCCPUFraction,
+		heapSys:    ms.HeapSys,
+		pool:       poolstats.Take(),
+	}
 }
 
 // runState is the shared context handed to workers and the monitor.
@@ -169,6 +203,18 @@ type runState struct {
 	peakHeap         uint64
 	peakGoroutines   int
 	warnings         int
+
+	// warmupMem is captured with the post-warmup baseline; steadyMem
+	// is captured the instant the last worker returns, before the
+	// settle sleep and the forced GCs that precede the leak snapshot,
+	// so the differenced figures describe the main loop only.
+	warmupMem memSnapshot
+	steadyMem memSnapshot
+
+	// lastSample is the previous monitor snapshot; the periodic line
+	// prints the allocation rate and pool-miss count since it. Written
+	// by the monitor goroutine only.
+	lastSample memSnapshot
 }
 
 func main() {
@@ -197,6 +243,8 @@ func run() int {
 	logf("overrides: profile=%q key-bits=%d nonce-bits=%d chunk-size=%s barrier-fill=%d gomaxprocs=%d rekey-every=%d blob-cycle-every=%d payload-mode=%s seed=%d json-output=%v",
 		cfg.profile, cfg.keyBits, cfg.nonceBits, humanBytes(cfg.chunkSize), cfg.barrierFill,
 		cfg.gomaxprocs, cfg.rekeyEvery, cfg.blobCycleEvery, cfg.payloadMode, cfg.seed, cfg.jsonOutput)
+	logf("policy: microbatch-tiers=%s hashpool-starters=%s",
+		policyLabel(os.Getenv("ITB_MICROBATCH_TIERS")), policyLabel(os.Getenv("ITB_HASHPOOL_STARTERS")))
 
 	r := &runState{cfg: cfg, release: make(chan struct{})}
 
@@ -313,6 +361,8 @@ func run() int {
 	r.warmupGoroutines = runtime.NumGoroutine()
 	r.peakHeap = ms.HeapAlloc
 	r.peakGoroutines = r.warmupGoroutines
+	r.warmupMem = takeMemSnapshot()
+	r.lastSample = r.warmupMem
 	logf("warmup: %d goroutines x 1 iter completed in %s (baseline heap=%s, goroutines=%d)",
 		cfg.workers, time.Since(warmupStart).Round(100*time.Millisecond),
 		humanBytes(int64(r.warmupHeap)), r.warmupGoroutines)
@@ -335,8 +385,17 @@ func run() int {
 
 	wg.Wait()
 	elapsed := time.Since(r.start)
+	r.steadyMem = takeMemSnapshot()
 	cancel()
 	<-monDone
+
+	if cfg.memprofile != "" {
+		if perr := writeHeapProfile(cfg.memprofile); perr != nil {
+			fmt.Fprintf(os.Stderr, "loop: memprofile: %v\n", perr)
+		} else {
+			logf("memprofile: heap profile written to %s", cfg.memprofile)
+		}
+	}
 
 	// Drain worker errors (first error already cancelled the run).
 	var workerErrs []error
@@ -384,13 +443,14 @@ func parseFlags(argv []string) (config, error) {
 		keyBits        = fs.Int("key-bits", 0, "per-seed key width in bits: 512 | 1024 | 2048; 0 = profile default (1024)")
 		nonceBits      = fs.Int("nonce-bits", 0, "on-wire nonce width in bits: 128 | 256 | 512; 0 = profile default (512)")
 		chunkSizeStr   = fs.String("chunk-size", "0", "streaming chunk-size budget (e.g. 4MB); 0 = profile default; inert for pure message shape")
-		barrierFill    = fs.Int("barrier-fill", 0, "CSPRNG barrier fill margin: 1 | 2 | 4 | 8 | 16 | 32; 0 = profile default (1)")
+		barrierFill    = fs.Int("barrier-fill", 0, "DRBG barrier fill margin: 1 | 2 | 4 | 8 | 16 | 32; 0 = profile default (1)")
 		gomaxprocs     = fs.Int("gomaxprocs", 0, "runtime.GOMAXPROCS override; 0 = inherit from the environment")
 		rekeyEvery     = fs.Int64("rekey-every", 0, "rotate the parallax + wrapper masters via Pipeline.Rekey every N iterations per worker; 0 = never")
 		blobCycleEvery = fs.Int64("blob-cycle-every", 0, "reopen each pipeline from its session blob every N iterations per worker; 0 = never")
 		payloadMode    = fs.String("payload-mode", payloadFixed, "plaintext content: fixed | rotating | pattern-zero | pattern-ff | pattern-ascii")
 		seed           = fs.Uint64("seed", 0, "deterministic plaintext RNG seed for bug reproduction, NOT for security testing (pipeline keys stay CSPRNG-drawn); 0 = crypto/rand plaintexts")
 		jsonOutput     = fs.Bool("json-output", false, "print the final summary as one compact JSON object instead of log lines")
+		memprofile     = fs.String("memprofile", "", "write a runtime/pprof heap profile (alloc_space by site) to this path at the end of the run; empty = none")
 	)
 	if err := fs.Parse(argv); err != nil {
 		return config{}, err
@@ -417,6 +477,7 @@ func parseFlags(argv []string) (config, error) {
 		payloadMode:    *payloadMode,
 		seed:           *seed,
 		jsonOutput:     *jsonOutput,
+		memprofile:     *memprofile,
 	}
 	if cfg.duration <= 0 {
 		return config{}, fmt.Errorf("--duration must be positive, got %s", cfg.duration)
@@ -544,4 +605,17 @@ func onOff(b bool) string {
 // logf prints one prefixed status line to stdout.
 func logf(format string, args ...any) {
 	fmt.Printf("[loop] "+format+"\n", args...)
+}
+
+// writeHeapProfile dumps the runtime heap profile to path. The profile
+// carries cumulative alloc_space / alloc_objects per call site since
+// process start, so `go tool pprof -sample_index=alloc_space` on it
+// ranks the allocation sources of the whole run.
+func writeHeapProfile(path string) error {
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	return pprof.Lookup("heap").WriteTo(f, 0)
 }

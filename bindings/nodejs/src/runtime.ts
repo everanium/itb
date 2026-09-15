@@ -5,7 +5,7 @@ import { ItbError } from './error.js';
 import { Status } from './status.js';
 
 /** Binding package version, reported by the eitb CLI. */
-export const bindingVersion = '0.4.1';
+export const bindingVersion = '0.5.1';
 
 const decoder = new TextDecoder('utf-8');
 
@@ -26,7 +26,7 @@ export function setGCPercent(pct: number): number {
   return ITB_SetGCPercent(pct | 0);
 }
 
-/** Returns the libitb library version string. */
+/** Returns the libitb3 library version string. */
 export function version(): string {
   const need: [number | bigint] = [0];
   const rc1 = ITB_Version(null, 0, need);

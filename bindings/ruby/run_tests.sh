@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # run_tests.sh -- one-step test runner for the Ruby binding. Builds
-# libitb.so via build.sh, points ITB_LIBITB_PATH at the freshly-built
+# libitb3.so via build.sh, points ITB_LIBITB3_PATH at the freshly-built
 # shared library, then runs the Minitest suite. Positional arguments
 # are forwarded to Minitest (e.g. a single test via
 # `./run_tests.sh -n test_message_round_trip`).
@@ -19,6 +19,6 @@ DIST_DIR="$REPO_ROOT/dist/linux-amd64"
 
 ./build.sh
 
-export ITB_LIBITB_PATH="$DIST_DIR/libitb.so"
+export ITB_LIBITB3_PATH="$DIST_DIR/libitb3.so"
 
 exec ruby -I lib test/itb_test.rb "$@"

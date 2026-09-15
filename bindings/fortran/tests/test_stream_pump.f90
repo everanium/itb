@@ -2,7 +2,7 @@
 ! plus one-shot / pump cross-compatibility.
 
 program test_stream_pump
-  use itb
+  use itb3
   use itb_test_helpers
   implicit none
 

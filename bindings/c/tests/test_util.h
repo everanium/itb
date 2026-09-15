@@ -11,7 +11,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "itb.h"
+#include "itb3.h"
 
 /* Prints file:line + the formatted message and fails the enclosing
  * int-returning function. */

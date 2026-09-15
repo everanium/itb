@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # run_bench.sh -- Criterion bench runner for the Rust binding.
-# Builds libitb.so + the crate via build.sh, points ITB_LIBITB_PATH
+# Builds libitb3.so + the crate via build.sh, points ITB_LIBITB3_PATH
 # at the freshly-built shared library, then runs every bench binary
 # (bench_message + bench_stream + bench_stream_one_shot). Positional
 # arguments are forwarded to the Criterion harness
@@ -16,15 +16,15 @@ DIST_DIR="$REPO_ROOT/dist/linux-amd64"
 
 ./build.sh
 
-export ITB_LIBITB_PATH="$DIST_DIR/libitb.so"
+export ITB_LIBITB3_PATH="$DIST_DIR/libitb3.so"
 
-# Bench-hostile Go runtime defaults are capped at libitb load time
+# Bench-hostile Go runtime defaults are capped at libitb3 load time
 # via env vars so a bench crash before the benches' own
 # set_memory_limit / set_gc_percent calls still runs under a bounded
 # heap. The benches themselves reassert these via the API for
 # self-contained reproducibility.
-export ITB_GOMEMLIMIT="${ITB_GOMEMLIMIT:-512MiB}"
-export ITB_GOGC="${ITB_GOGC:-20}"
+export ITB_GOMEMLIMIT="${ITB_GOMEMLIMIT:-4GiB}"
+export ITB_GOGC="${ITB_GOGC:-100}"
 
 # Bench-shape defaults — match the root Go BENCH3.md pin so the
 # throughput numbers are directly comparable to the shipped Go

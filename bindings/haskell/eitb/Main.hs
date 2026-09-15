@@ -25,7 +25,7 @@ import System.FilePath (takeDirectory)
 import System.IO (hPutStrLn, stderr)
 import Text.Printf (printf)
 
-import ITB
+import ITB3
 
 main :: IO ()
 main = do
@@ -55,7 +55,7 @@ main = do
 cmdVersion :: IO ()
 cmdVersion = do
   v <- version
-  putStrLn ("libitb " <> v)
+  putStrLn ("libitb3 " <> v)
   putStrLn ("itb-haskell " <> bindingVersion)
 
 cmdProfiles :: IO ()

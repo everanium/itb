@@ -1,9 +1,9 @@
 --  Test_Support — shared assertion helper + payload generator for
---  the Itb binding test suite.
+--  the Itb3 binding test suite.
 
 with Interfaces;
 
-with Itb;
+with Itb3;
 
 package Test_Support is
 
@@ -15,10 +15,10 @@ package Test_Support is
    procedure Check (Cond : Boolean; Label : String);
 
    --  Byte-wise equality check between two buffers.
-   procedure Check_Eq (Got, Want : Itb.Byte_Array; Label : String);
+   procedure Check_Eq (Got, Want : Itb3.Byte_Array; Label : String);
 
    --  Deterministic non-trivial payload (xorshift fill), 1-based.
    function Payload
-     (N : Positive; Seed : Interfaces.Unsigned_64) return Itb.Byte_Array;
+     (N : Positive; Seed : Interfaces.Unsigned_64) return Itb3.Byte_Array;
 
 end Test_Support;

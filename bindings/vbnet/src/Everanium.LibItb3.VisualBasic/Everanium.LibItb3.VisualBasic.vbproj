@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Everanium.Itb3.VisualBasic</RootNamespace>
+    <AssemblyName>Everanium.LibItb3.VisualBasic</AssemblyName>
+    <OptionStrict>On</OptionStrict>
+    <OptionExplicit>On</OptionExplicit>
+    <OptionInfer>On</OptionInfer>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <PropertyGroup Label="Package metadata">
+    <PackageId>Everanium.LibItb3.VisualBasic</PackageId>
+    <Version>0.5.1</Version>
+    <Authors>Andrey Kuvshinov</Authors>
+    <Description>ITB Symmetric Cipher Construction with Ambiguity-Based Security - VB.NET</Description>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <PackageTags>cryptography;encryption;cipher;symmetric;aead</PackageTags>
+    <RepositoryUrl>https://github.com/everanium/itb</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageProjectUrl>https://github.com/everanium/itb</PackageProjectUrl>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <Copyright>Copyright (c) 2026 Andrey Kuvshinov</Copyright>
+  </PropertyGroup>
+
+  <ItemGroup Label="Package content">
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" Visible="false" />
+  </ItemGroup>
+
+  <ItemGroup Label="Assembly visibility for tests">
+    <InternalsVisibleTo Include="Everanium.LibItb3.VisualBasic.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\csharp\Everanium.LibItb3\Everanium.LibItb3.csproj" />
+  </ItemGroup>
+
+</Project>

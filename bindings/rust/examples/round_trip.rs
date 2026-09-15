@@ -3,13 +3,13 @@
 //! Run with `cargo run --example round_trip --release` (after
 //! `./build.sh`).
 
-use itb::{OptsBuilder, Pipeline, set_gc_percent, set_memory_limit};
+use itb3::{OptsBuilder, Pipeline, set_gc_percent, set_memory_limit};
 
-fn main() -> Result<(), itb::ItbError> {
+fn main() -> Result<(), itb3::ItbError> {
     // Cap the Go runtime's heap so a workload that scales up does
     // not grow scratch heaps between GC cycles.
-    let _ = set_memory_limit(512 << 20);
-    let _ = set_gc_percent(20);
+    let _ = set_memory_limit(4 << 30);
+    let _ = set_gc_percent(100);
 
     let opts = OptsBuilder::new();
 

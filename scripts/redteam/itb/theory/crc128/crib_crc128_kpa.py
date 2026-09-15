@@ -411,7 +411,7 @@ def main() -> int:
     nonce = bytes.fromhex(nonce_hex)
     ct_path = args.ciphertext or (args.cell_dir / "ct_0000.bin")
     raw = ct_path.read_bytes()
-    HEADER = 20
+    HEADER = int(meta.get("header_size", len(nonce) + 4))
     body = raw[HEADER:HEADER + total_pixels * 8]
     hmod = _load_hash_module(args.hash_module)
     if hasattr(hmod, "init_from_meta"):
@@ -440,7 +440,7 @@ def main() -> int:
     if args.brute_force_shifts:
         shifts_to_try = list(range(total_pixels))
     else:
-        observations = parse_raw_ciphertext(ct_path, total_pixels)
+        observations = parse_raw_ciphertext(ct_path, total_pixels, HEADER)
         t0 = time.time()
         probe = observations[:args.probe_size]
         pins_max = sum(

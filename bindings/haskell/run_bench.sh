@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # run_bench.sh -- micro-benchmark runner for the Haskell binding.
-# Builds libitb.so + the cabal package via build.sh, then runs the
+# Builds libitb3.so + the cabal package via build.sh, then runs the
 # itb-bench harness: Single Message encrypt and incremental Streaming
 # encrypt throughput at 1 MiB / 16 MiB / 64 MiB.
 #
@@ -20,12 +20,12 @@ DIST_DIR="$REPO_ROOT/dist/linux-amd64"
 
 export LD_LIBRARY_PATH="$DIST_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
-# Bench-hostile Go runtime defaults are capped at libitb load time via
+# Bench-hostile Go runtime defaults are capped at libitb3 load time via
 # env vars so a bench crash before the harness's own setMemoryLimit /
 # setGcPercent calls still runs under a bounded heap. The harness
 # reasserts these via the API for self-contained reproducibility.
-export ITB_GOMEMLIMIT="${ITB_GOMEMLIMIT:-512MiB}"
-export ITB_GOGC="${ITB_GOGC:-20}"
+export ITB_GOMEMLIMIT="${ITB_GOMEMLIMIT:-4GiB}"
+export ITB_GOGC="${ITB_GOGC:-100}"
 
 # Bench-shape defaults — match the root Go BENCH3.md pin so the
 # throughput numbers are directly comparable to the shipped Go

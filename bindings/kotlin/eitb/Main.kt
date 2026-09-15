@@ -12,19 +12,19 @@
 // registered profile catalogue one name per line; the profiles that
 // carry a cipher surface are the ones `encrypt` / `decrypt` accept.
 
-package com.everanium.itb.kotlin.eitb
+package io.github.everanium.itb3.kotlin.eitb
 
-import com.everanium.itb.kotlin.ItbException
-import com.everanium.itb.kotlin.ItbRuntime
-import com.everanium.itb.kotlin.Pipeline
+import io.github.everanium.itb3.kotlin.ItbException
+import io.github.everanium.itb3.kotlin.ItbRuntime
+import io.github.everanium.itb3.kotlin.Pipeline
 import java.io.File
 import kotlin.system.exitProcess
 
 fun main(args: Array<String>) {
     // Defensive Go-runtime pacing caps — the CLI can be pointed at
     // gigabyte files.
-    ItbRuntime.setMemoryLimit(512L shl 20)
-    ItbRuntime.setGCPercent(20)
+    ItbRuntime.setMemoryLimit(4L shl 30)
+    ItbRuntime.setGCPercent(100)
     try {
         val rc = when {
             args.firstOrNull() == "version" && args.size == 1 -> cmdVersion()
@@ -56,7 +56,7 @@ fun main(args: Array<String>) {
 }
 
 private fun cmdVersion(): Int {
-    println("libitb ${ItbRuntime.version()}")
+    println("libitb3 ${ItbRuntime.version()}")
     println("itb-kotlin ${ItbRuntime.BINDING_VERSION}")
     return 0
 }

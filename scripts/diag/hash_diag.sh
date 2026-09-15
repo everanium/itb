@@ -17,9 +17,11 @@
 #   PAYLOAD=1MB BENCH_TIME=1s bash scripts/diag/hash_diag.sh # bigger sample
 #
 # Env inputs (all optional):
-#   INTERLOCK_TIER  = natural | avx512 | avx2 | scalar             (default: avx2)
+#   INTERLOCK_TIER  = natural | avx512 | avx512x8 | avx2 | sve2 | sve | neon | scalar
+#                                                                    (default: avx2)
 #   PIXEL_TIER      = natural | A | A_NOGFNI | B | B_NOGFNI | C    (default: natural)
-#   HASH_TIER       = natural | avx512 | vaesavx2 | avx2 | aesni | scalar  (default: natural)
+#   HASH_TIER       = natural | avx512 | vaesavx2 | avx2 | vex | aesni | gpr | sve2 | sve | neon | scalar
+#                                                                    (default: natural)
 #   PAYLOAD         = 4KB..64MB from ExtProductionMessage ladder   (default: 4MB)
 #   BENCH_TIME      = Go bench duration                            (default: 300ms)
 #   BENCH_COUNT     = Go bench -count (samples averaged in output) (default: 3)
@@ -68,7 +70,7 @@ for hash in $HASHES; do
     for n in $NONCE_WIDTHS; do
         mbps=$(env ITB_INNER_HASH=$hash ITB_KEY_BITS=$KEY_BITS ITB_NONCE_BITS=$n \
             ITB_WITH_MAC=false ITB_WITH_PARALLAX=false ITB_WITH_WRAPPER=false \
-            ITB_GOMEMLIMIT=1GiB ITB_GOGC=20 $tier_env \
+            ITB_GOMEMLIMIT=4GiB ITB_GOGC=100 $tier_env \
             "$BINARY" -test.run='^$' \
             -test.bench="^BenchmarkExtProductionMessage_Encrypt_${PAYLOAD}\$" \
             -test.benchtime=${BENCH_TIME} -test.count=${BENCH_COUNT} 2>&1 | \
@@ -88,7 +90,7 @@ for hash in $HASHES; do
     for n in $NONCE_WIDTHS; do
         mbps=$(env ITB_INNER_HASH=$hash ITB_KEY_BITS=$KEY_BITS ITB_NONCE_BITS=$n \
             ITB_WITH_MAC=false ITB_WITH_PARALLAX=false ITB_WITH_WRAPPER=false \
-            ITB_GOMEMLIMIT=1GiB ITB_GOGC=20 $tier_env \
+            ITB_GOMEMLIMIT=4GiB ITB_GOGC=100 $tier_env \
             "$BINARY" -test.run='^$' \
             -test.bench="^BenchmarkExtProductionMessage_Decrypt_${PAYLOAD}\$" \
             -test.benchtime=${BENCH_TIME} -test.count=${BENCH_COUNT} 2>&1 | \

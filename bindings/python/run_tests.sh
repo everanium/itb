@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # run_tests.sh -- one-step test runner for the Python binding.
-# Builds libitb.so via build.sh, points ITB_LIBITB_PATH at the
+# Builds libitb3.so via build.sh, points ITB_LIBITB3_PATH at the
 # freshly-built shared library, then invokes
 # `python -m unittest discover` against the tests/ tree. Forwards any
 # positional arguments through to unittest (e.g. a specific test
@@ -20,7 +20,7 @@ DIST_DIR="$REPO_ROOT/dist/linux-amd64"
 
 ./build.sh
 
-export ITB_LIBITB_PATH="$DIST_DIR/libitb.so"
+export ITB_LIBITB3_PATH="$DIST_DIR/libitb3.so"
 
 if [[ $# -gt 0 ]]; then
     exec python3 -m unittest -v "$@"

@@ -11,7 +11,7 @@ const JSON_CAP: usize = 4096;
 
 /// Registers a user-defined Triple profile under `name` so subsequent
 /// [`crate::Pipeline::init`] calls resolve it. The record's field
-/// rules are validated by libitb; a duplicate name fails with
+/// rules are validated by libitb3; a duplicate name fails with
 /// [`crate::ItbStatus::ProfileExists`]. A non-empty `profile.name`
 /// must equal `name`.
 pub fn register(name: &str, profile: &Profile) -> ItbResult<()> {

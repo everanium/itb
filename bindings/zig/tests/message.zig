@@ -2,7 +2,7 @@
 //! profile at small (4 KiB) and medium (256 KiB) payloads.
 
 const std = @import("std");
-const itb = @import("itb");
+const itb = @import("itb3");
 
 /// Save → Load handshake: a receiver reconstructed from the sender's
 /// current blob.

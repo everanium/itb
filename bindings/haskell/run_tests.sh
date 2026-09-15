@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # run_tests.sh -- one-step test runner for the Haskell binding.
-# Builds libitb.so + the cabal package via build.sh, points the
+# Builds libitb3.so + the cabal package via build.sh, points the
 # dynamic loader at the freshly-built shared library, then invokes
 # `cabal test`. Positional arguments are forwarded to cabal.
 

@@ -76,6 +76,8 @@ func renderInspect(prof triple.Profile, blobLen int, out io.Writer) {
 		fmt.Fprintf(out, "inner_hash: %s\n", prof.InnerHash)
 	}
 	fmt.Fprintf(out, "key_bits: %d\n", prof.KeyBits)
+	fmt.Fprintf(out, "nonce_bits: %d\n", prof.NonceBits)
+	fmt.Fprintf(out, "barrier_fill: %d\n", prof.BarrierFill)
 	if prof.MacName != "" {
 		fmt.Fprintf(out, "mac_name: %s\n", prof.MacName)
 	} else {

@@ -41,8 +41,9 @@ var (
 // [MakeIncremental], and [MakeMACPair], and — transitively — through
 // every consumer that resolves MACs by name, including triple profile
 // MacName resolution. [Registry] itself is not extended — user
-// entries live in a separate mutex-guarded slice — so the FFI
-// iteration surface (ITB_MACCount / ITB_MACName) is unaffected.
+// entries live in a separate mutex-guarded slice — and the FFI shim
+// reaches MACs only through the resolved [triple.Profile.MacName], so
+// runtime registration does not need a dedicated FFI plug.
 //
 // Closure contracts every registered factory must honour (the shipped
 // builders [BuildHMAC] / [BuildKeyedHash] honour them by

@@ -6,7 +6,7 @@ import { Status, statusLabel } from './status.js';
 const decoder = new TextDecoder('utf-8');
 
 /**
- * Raised whenever libitb returns a non-OK status. `status` carries
+ * Raised whenever libitb3 returns a non-OK status. `status` carries
  * the numeric code; the message appends the `ITB_LastError`
  * diagnostic captured immediately after the failing call
  * (process-global last-write-wins — under concurrent FFI use the

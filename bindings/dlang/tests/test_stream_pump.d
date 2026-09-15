@@ -4,7 +4,7 @@ module test_stream_pump;
 
 import std.stdio : writeln;
 
-import itb;
+import itb3;
 
 ubyte[] patterned(size_t n, uint mod)
 {

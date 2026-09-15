@@ -15,7 +15,7 @@
 //! carry a cipher surface are the ones `encrypt` / `decrypt` accept.
 
 const std = @import("std");
-const itb = @import("itb");
+const itb = @import("itb3");
 
 fn usage() u8 {
     std.debug.print(
@@ -44,8 +44,8 @@ fn print(io: std.Io, comptime fmt: []const u8, args: anytype) !void {
 /// The setter return values report the previous settings, not an
 /// error.
 fn capGoRuntime() void {
-    _ = itb.setMemoryLimit(512 << 20); // 512 MiB soft cap
-    _ = itb.setGcPercent(20); // aggressive GC
+    _ = itb.setMemoryLimit(4 << 30); // 4 GiB soft cap
+    _ = itb.setGcPercent(100); // balanced GC
 }
 
 /// Profiles whose canonical name begins with "streaming-" route
@@ -68,10 +68,10 @@ fn ensureParentDir(io: std.Io, path: []const u8) !void {
 fn cmdVersion(io: std.Io) !u8 {
     const v = itb.version();
     if (v.len == 0) {
-        std.debug.print("eitb: cannot read libitb version\n", .{});
+        std.debug.print("eitb: cannot read libitb3 version\n", .{});
         return 1;
     }
-    try print(io, "libitb {s}\n", .{v});
+    try print(io, "libitb3 {s}\n", .{v});
     try print(io, "itb-zig {s}\n", .{itb.binding_version});
     return 0;
 }

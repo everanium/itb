@@ -36,10 +36,9 @@ const (
 )
 
 // minPixelsDivisor7 is the scaled integer divisor for
-// ceil(keyBits / log2(7)) — the CCA-resistant container floor used by
-// both plain and MAC-authenticated modes since the small-message
-// envelope was unified across the two. log2(7) ≈ 2.8074, scaled by
-// 10000 for integer arithmetic.
+// ceil(keyBits / log2(7)) — the CCA-resistant container floor shared by
+// plain and MAC-authenticated modes at the small-message envelope.
+// log2(7) ≈ 2.8074, scaled by 10000 for integer arithmetic.
 const (
 	minPixelsDivisor7 = 28074 // log2(7) * 10000, rounded up
 	minPixelsScale    = 10000
@@ -99,17 +98,38 @@ func effectiveWorkersCfg(cfg *Config, dataPixels int) int {
 	return numWorkers
 }
 
+// configuredWorkerCount is the cfg-consulting worker cap shared by
+// pipeline stages that do not carry the dataPixels input
+// [effectiveWorkersCfg] needs (the Interlocked Barrier overlay batch
+// encode / decode loops of interlock48.go, whose group count is the
+// worker-fan-out ceiling rather than a pixel count). Returns
+// cfg.MaxWorkers (clamped at 256) when cfg is non-nil and the field
+// carries a positive value; otherwise falls back to runtime.NumCPU.
+// A nil cfg or a zero MaxWorkers resolves to runtime.NumCPU, matching
+// the sentinel semantics documented on [Config.MaxWorkers].
+func configuredWorkerCount(cfg *Config) int {
+	if cfg != nil && cfg.MaxWorkers > 0 {
+		n := cfg.MaxWorkers
+		if n > 256 {
+			n = 256
+		}
+		return n
+	}
+	return runtime.NumCPU()
+}
+
 // headerSizeCfg returns the container header size for the given cfg:
-// main nonce + interlock nonce + width(2) + height(2). Both nonces are
-// symmetric in width. Consults [currentNonceSizeCfg] so a non-nil cfg
-// with an explicit NonceBits override is honoured at the header-layout
-// site.
-func headerSizeCfg(cfg *Config) int { return 2*currentNonceSizeCfg(cfg) + 4 }
+// main nonce + width(2) + height(2). The interlock nonce is not a
+// header field — it travels split across the three interlocked lanes
+// (see interlock_nonce.go). Consults [currentNonceSizeCfg] so a non-nil
+// cfg with an explicit NonceBits override is honoured at the
+// header-layout site.
+func headerSizeCfg(cfg *Config) int { return currentNonceSizeCfg(cfg) + 4 }
 
 // calcContainerSize3Cfg computes square container dimensions for
 // Triple Ouroboros. Each third must hold its part's COBS data and
 // satisfy MinPixels independently. Consults [currentBarrierFillCfg]
-// for the CSPRNG barrier margin.
+// for the DRBG barrier margin.
 func calcContainerSize3Cfg(cfg *Config, cobsLens [3]int, minPxNoise int, minPxData [3]int, minPxStart [3]int) (width, height int) {
 	maxThirdPixels := 0
 	for i := 0; i < 3; i++ {

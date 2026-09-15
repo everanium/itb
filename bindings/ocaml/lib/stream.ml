@@ -4,7 +4,7 @@
    in through [write] and yields wire through [read] / [drain_all]; a
    decrypt session is the mirror (wire in, plaintext out). All
    chunking, MAC, envelope, and wire-format decisions stay inside
-   libitb.
+   libitb3.
 
    The [parent] field pins the parent Pipeline via an OCaml reference
    so it cannot be garbage-collected (and its Go-side handle freed)
@@ -106,13 +106,13 @@ let drain_all (sess : _ t) =
    which keeps a high-throughput drain loop free of per-slice buffer
    churn ([read] allocates a fresh chunk per call). Bytes past [n] are
    unspecified. Raises [Invalid_argument] when [cap] exceeds the real
-   length of [dst] -- libitb honours [cap] as the write ceiling, so an
+   length of [dst] -- libitb3 honours [cap] as the write ceiling, so an
    oversized [cap] would license an out-of-bounds write. Same
    blocking / release semantics as [read]. *)
 let read_into (sess : _ t) dst cap =
   if cap < 0 || cap > Bytes.length dst then
     invalid_arg
-      (Printf.sprintf "Itb.read_into: cap %d exceeds buffer length %d" cap
+      (Printf.sprintf "Itb3.read_into: cap %d exceeds buffer length %d" cap
          (Bytes.length dst));
   require_live sess;
   let s = syms () in
@@ -131,7 +131,7 @@ let read_into (sess : _ t) dst cap =
 let write_sub (sess : _ t) src pos len =
   if pos < 0 || len < 0 || pos > Bytes.length src - len then
     invalid_arg
-      (Printf.sprintf "Itb.write_sub: range [%d, %d) exceeds buffer length %d"
+      (Printf.sprintf "Itb3.write_sub: range [%d, %d) exceeds buffer length %d"
          pos (pos + len) (Bytes.length src));
   require_live sess;
   check ((syms ()).stream_write sess.shandle Ctypes.(bs src +@ pos) (sz len))

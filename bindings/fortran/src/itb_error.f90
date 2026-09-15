@@ -3,7 +3,7 @@
 ! Each public subroutine takes a trailing `type(itb_error_t),
 ! intent(out) :: err` argument. On success `err%status` is
 ! ITB_STATUS_OK and `err%message` is empty; on failure `err%status`
-! carries the libitb status code and `err%message` the ITB_LastError
+! carries the libitb3 status code and `err%message` the ITB_LastError
 ! diagnostic captured immediately after the failing call.
 !
 ! ITB_LastError is process-global last-write-wins: under concurrent
@@ -42,7 +42,7 @@ contains
     err%message = ""
   end subroutine
 
-  ! Populate the record from a libitb return code. Non-OK codes pull
+  ! Populate the record from a libitb3 return code. Non-OK codes pull
   ! the ITB_LastError diagnostic; OK clears the record.
   subroutine itb_error_set(err, rc)
     type(itb_error_t), intent(out) :: err

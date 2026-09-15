@@ -1,7 +1,7 @@
 ! Init -> Rekey -> Load receiver with the rotated blob -> round trip.
 
 program test_rekey
-  use itb
+  use itb3
   use itb_test_helpers
   implicit none
 

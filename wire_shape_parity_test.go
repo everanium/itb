@@ -49,7 +49,7 @@ func makeTagMAC(tagSize int) MACFunc {
 // MAC Authenticated path (EncryptAuthenticated3xNCfg with a MAC of
 // that tag length) across tag sizes beyond the shipped 32. A fixed
 // nonce is injected via testNonceOverride so the mask-driven byte
-// distribution across the three snakes is identical on both paths;
+// distribution across the three regions is identical on both paths;
 // with equal reservations (tagSize + 1 on both sides) the container
 // arithmetic then yields byte-count-equal envelopes. Both envelopes
 // are round-tripped to confirm the pair is wire-compatible

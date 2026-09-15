@@ -2,7 +2,7 @@
 ! the Pipeline usable.
 
 program test_stream_cancel
-  use itb
+  use itb3
   use itb_test_helpers
   implicit none
 

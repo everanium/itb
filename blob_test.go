@@ -2,7 +2,9 @@ package itb_test
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
+	"strconv"
 	"testing"
 
 	"github.com/everanium/itb"
@@ -65,7 +67,7 @@ func TestBlobMalformed(t *testing.T) {
 		nil,
 		[]byte("not json"),
 		[]byte("{}"),
-		[]byte(`{"v":1,"mode":3,"key_bits":1024,"key_n":"zzzz"}`),
+		[]byte(`{"v":1,"mode":1,"key_bits":1024,"key_n":"zzzz"}`),
 	} {
 		bDst := &itb.Blob512{}
 		if err := bDst.Import3Cfg(raw, &itb.Config{}); err == nil {
@@ -79,7 +81,7 @@ func TestBlobMalformed(t *testing.T) {
 // rejected with ErrBlobVersionTooNew.
 func TestBlobVersionTooNew(t *testing.T) {
 	bDst := &itb.Blob512{}
-	tooNew := []byte(`{"v":99,"mode":3,"key_bits":1024,"globals":{"nonce_bits":128,"barrier_fill":1}}`)
+	tooNew := []byte(`{"v":99,"mode":1,"key_bits":1024,"globals":{"nonce_bits":128,"barrier_fill":1}}`)
 	if err := bDst.Import3Cfg(tooNew, &itb.Config{}); !errors.Is(err, itb.ErrBlobVersionTooNew) {
 		t.Errorf("Import3Cfg too-new blob: got %v, want ErrBlobVersionTooNew", err)
 	}
@@ -93,7 +95,7 @@ func TestBlobImportRejectsUnknownFields(t *testing.T) {
 	bDst := &itb.Blob512{}
 	// Otherwise-valid Triple blob shape with one extra unknown field
 	// "extra_attacker_field" injected at the top level.
-	withUnknown := []byte(`{"v":1,"mode":3,"key_bits":512,` +
+	withUnknown := []byte(`{"v":1,"mode":1,"key_bits":512,` +
 		`"key_n":"00","ns":["0"],"ds1":["0"],"ds2":["0"],"ds3":["0"],` +
 		`"ss1":["0"],"ss2":["0"],"ss3":["0"],` +
 		`"globals":{"nonce_bits":128,"barrier_fill":1},` +
@@ -404,11 +406,11 @@ func TestBlobImportRejectsBadKeyBits(t *testing.T) {
 	for _, w := range widths {
 		w := w
 		cases := []variant{
-			{"kb_64_below_floor", `{"v":1,"mode":3,"key_bits":64,` + oneComp + `,` + globals + `}`},
-			{"kb_511_below_floor", `{"v":1,"mode":3,"key_bits":511,` + oneComp + `,` + globals + `}`},
-			{"kb_2049_above_ceiling", `{"v":1,"mode":3,"key_bits":2049,` + oneComp + `,` + globals + `}`},
-			{"kb_1_billion", `{"v":1,"mode":3,"key_bits":1000000000,` + oneComp + `,` + globals + `}`},
-			{"kb_negative", `{"v":1,"mode":3,"key_bits":-64,` + oneComp + `,` + globals + `}`},
+			{"kb_64_below_floor", `{"v":1,"mode":1,"key_bits":64,` + oneComp + `,` + globals + `}`},
+			{"kb_511_below_floor", `{"v":1,"mode":1,"key_bits":511,` + oneComp + `,` + globals + `}`},
+			{"kb_2049_above_ceiling", `{"v":1,"mode":1,"key_bits":2049,` + oneComp + `,` + globals + `}`},
+			{"kb_1_billion", `{"v":1,"mode":1,"key_bits":1000000000,` + oneComp + `,` + globals + `}`},
+			{"kb_negative", `{"v":1,"mode":1,"key_bits":-64,` + oneComp + `,` + globals + `}`},
 		}
 		// Add a not-multiple-of-width case that is inside [512, 2048]
 		// but violates the per-width alignment (KeyBits % width != 0).
@@ -426,7 +428,7 @@ func TestBlobImportRejectsBadKeyBits(t *testing.T) {
 		}
 		cases = append(cases, variant{
 			label: "kb_off_width_multiple",
-			body: `{"v":1,"mode":3,"key_bits":` +
+			body: `{"v":1,"mode":1,"key_bits":` +
 				itoa(offMultiple) + `,` + oneComp + `,` + globals + `}`,
 		})
 		t.Run(w.label, func(t *testing.T) {
@@ -585,7 +587,7 @@ func TestBlobImportRejectsOversizedMACKey(t *testing.T) {
 	oneComp := `"key_n":"00","ns":["0"],"ds1":["0"],"ds2":["0"],"ds3":["0"],` +
 		`"ss1":["0"],"ss2":["0"],"ss3":["0"]`
 	globals := `"globals":{"nonce_bits":128,"barrier_fill":1}`
-	body := `{"v":1,"mode":3,"key_bits":512,` +
+	body := `{"v":1,"mode":1,"key_bits":512,` +
 		oneComp + `,` + globals + `,"mac_key":"` + hugeHex + `"}`
 	widths := []struct {
 		label string
@@ -640,7 +642,7 @@ func TestBlob128ImportRejectsOversizedKeyN(t *testing.T) {
 		`"ss1":["0"],"ss2":["0"],"ss3":["0"]`
 	globals := `"globals":{"nonce_bits":128,"barrier_fill":1}`
 	buildBody := func(hexN string) []byte {
-		return []byte(`{"v":1,"mode":3,"key_bits":512,"key_n":"` + hexN + `",` +
+		return []byte(`{"v":1,"mode":1,"key_bits":512,"key_n":"` + hexN + `",` +
 			oneComp + `,` + globals + `}`)
 	}
 	// 130 chars — narrow probe just past the 128-char cap.
@@ -682,4 +684,160 @@ func TestBlob128ImportRejectsOversizedKeyN(t *testing.T) {
 	// Blob128 blob from raw JSON here would duplicate the round-trip
 	// fixtures already covered by TestBlob128ExportImport3CfgRoundTrip
 	// — the boundary case above is enough for the cap contract.
+}
+
+// TestBlobImportModeDiscriminator pins the accepted set of blob mode
+// discriminators. 1 names the shipped 48-bit Interlocked Barrier and 2
+// the 120-bit variant; the two load identically here because the
+// 120-bit barrier does not exist on this tree, so the mode is carried
+// through to the receiver rather than normalised. Every other value —
+// 3 included — names a construction this tree cannot build seeds for
+// and is rejected before any receiver field is written.
+//
+// The fixtures below are malformed past the mode gate (one "0"
+// component against a KeyBits=512 want of 8), which is what makes the
+// test sharp in both directions: an accepted mode must fall through to
+// ErrBlobMalformed rather than stop at ErrBlobModeMismatch, so a gate
+// that accepted everything would be indistinguishable from one that
+// accepted nothing.
+func TestBlobImportModeDiscriminator(t *testing.T) {
+	oneComp := `"key_n":"00","ns":["0"],"ds1":["0"],"ds2":["0"],"ds3":["0"],` +
+		`"ss1":["0"],"ss2":["0"],"ss3":["0"]`
+	globals := `"globals":{"nonce_bits":128,"barrier_fill":1}`
+	body := func(mode int) []byte {
+		return []byte(`{"v":1,"mode":` + strconv.Itoa(mode) + `,"key_bits":512,` +
+			oneComp + `,` + globals + `}`)
+	}
+
+	widths := []struct {
+		label string
+		newFn func() interface {
+			Import3Cfg([]byte, *itb.Config) error
+		}
+	}{
+		{"512", func() interface {
+			Import3Cfg([]byte, *itb.Config) error
+		} {
+			return &itb.Blob512{}
+		}},
+		{"256", func() interface {
+			Import3Cfg([]byte, *itb.Config) error
+		} {
+			return &itb.Blob256{}
+		}},
+		{"128", func() interface {
+			Import3Cfg([]byte, *itb.Config) error
+		} {
+			return &itb.Blob128{}
+		}},
+	}
+
+	for _, w := range widths {
+		for _, mode := range []int{1, 2} {
+			t.Run(w.label+"/accepts_mode_"+strconv.Itoa(mode), func(t *testing.T) {
+				cfg := &itb.Config{}
+				err := w.newFn().Import3Cfg(body(mode), cfg)
+				if errors.Is(err, itb.ErrBlobModeMismatch) {
+					t.Fatalf("mode %d rejected by the mode gate; want it to pass through", mode)
+				}
+				if !errors.Is(err, itb.ErrBlobMalformed) {
+					t.Fatalf("mode %d: got %v, want ErrBlobMalformed from the component-count gate", mode, err)
+				}
+			})
+		}
+		for _, mode := range []int{0, 3, 4, -1} {
+			t.Run(w.label+"/rejects_mode_"+strconv.Itoa(mode), func(t *testing.T) {
+				cfg := &itb.Config{}
+				err := w.newFn().Import3Cfg(body(mode), cfg)
+				if !errors.Is(err, itb.ErrBlobModeMismatch) {
+					t.Fatalf("mode %d: got %v, want ErrBlobModeMismatch", mode, err)
+				}
+			})
+		}
+	}
+}
+
+// TestBlobExportEmitsMode1 pins the emitted discriminator. Export is
+// the only side that chooses a mode; 2 is import-only until the
+// 120-bit barrier ships.
+func TestBlobExportEmitsMode1(t *testing.T) {
+	ks := makeAreion512Keys(t, 8)
+	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeed512Triple(t, ks)
+	cfg := &itb.Config{NonceBits: 128, BarrierFill: 1}
+	b := &itb.Blob512{}
+	data, err := b.Export3Cfg(cfg,
+		ks[0], ks[2], ks[3], ks[4], ks[5], ks[6], ks[7],
+		ns, ds1, ds2, ds3, ss1, ss2, ss3,
+		itb.Blob512Opts{KeyL: ks[1], LS: ls},
+	)
+	if err != nil {
+		t.Fatalf("Export3Cfg: %v", err)
+	}
+	var probe struct {
+		Mode int `json:"mode"`
+	}
+	if err := json.Unmarshal(data, &probe); err != nil {
+		t.Fatalf("unmarshal emitted blob: %v", err)
+	}
+	if probe.Mode != 1 {
+		t.Fatalf("emitted mode = %d, want 1", probe.Mode)
+	}
+	if b.Mode != 1 {
+		t.Fatalf("receiver Mode = %d, want 1", b.Mode)
+	}
+}
+
+// TestBlobImportCarriesMode2Through pins the half of the mode contract
+// that TestBlobImportModeDiscriminator cannot reach. That test's
+// fixtures are malformed past the gate, so the receiver is never
+// written and a Mode-2 blob's discriminator never lands anywhere
+// observable — an implementation that accepted 2 and then normalised
+// it to 1 would satisfy it.
+//
+// This one round-trips a well-formed blob: export at mode 1, rewrite
+// the wire's mode to 2, import, and assert the receiver reports 2.
+// Import must carry the value it received rather than the value Export
+// would have written, because the discriminator names which
+// Interlocked Barrier chunk width the seed material was drawn for and
+// that is the sender's fact, not the receiver's.
+func TestBlobImportCarriesMode2Through(t *testing.T) {
+	ks := makeAreion512Keys(t, 8)
+	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeed512Triple(t, ks)
+	cfg := &itb.Config{NonceBits: 256, BarrierFill: 4}
+
+	bSrc := &itb.Blob512{}
+	data, err := bSrc.Export3Cfg(cfg,
+		ks[0], ks[2], ks[3], ks[4], ks[5], ks[6], ks[7],
+		ns, ds1, ds2, ds3, ss1, ss2, ss3,
+		itb.Blob512Opts{KeyL: ks[1], LS: ls},
+	)
+	if err != nil {
+		t.Fatalf("Export3Cfg: %v", err)
+	}
+
+	// Rewrite only the mode field, structurally — a textual edit could
+	// corrupt the JSON and make a parse failure look like a mode reject.
+	var wire map[string]json.RawMessage
+	if err := json.Unmarshal(data, &wire); err != nil {
+		t.Fatalf("unmarshal exported blob: %v", err)
+	}
+	wire["mode"] = json.RawMessage("2")
+	edited, err := json.Marshal(wire)
+	if err != nil {
+		t.Fatalf("re-marshal blob: %v", err)
+	}
+
+	fresh := &itb.Config{}
+	bDst := &itb.Blob512{}
+	if err := bDst.Import3Cfg(edited, fresh); err != nil {
+		t.Fatalf("Import3Cfg(mode=2): %v, want success", err)
+	}
+	if bDst.Mode != 2 {
+		t.Fatalf("receiver Mode = %d, want 2 carried through from the wire", bDst.Mode)
+	}
+	// The captured configuration must survive the edit untouched —
+	// confirms the mode gate is the only thing the rewrite moved.
+	if fresh.NonceBits != 256 || fresh.BarrierFill != 4 {
+		t.Fatalf("fresh Cfg = %+v, want {NonceBits:256 BarrierFill:4}", fresh)
+	}
 }

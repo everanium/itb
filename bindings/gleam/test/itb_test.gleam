@@ -9,23 +9,23 @@ import gleam/bit_array
 import gleam/int
 import gleam/list
 import gleam/string
-import itb/pipeline.{type Pipeline}
-import itb/stream
-import itb_gleam.{ItbError}
+import itb3/pipeline.{type Pipeline}
+import itb3/stream
+import itb3_gleam.{ItbError}
 
 @external(erlang, "crypto", "strong_rand_bytes")
 fn rand_bytes(n: Int) -> BitArray
 
-@external(erlang, "itb_gleam_ffi", "now_us")
+@external(erlang, "itb3_gleam_ffi", "now_us")
 fn now_us() -> Int
 
-@external(erlang, "itb_gleam_ffi", "read_file")
+@external(erlang, "itb3_gleam_ffi", "read_file")
 fn read_file(path: String) -> Result(BitArray, String)
 
-@external(erlang, "itb_gleam_ffi", "delete_file")
+@external(erlang, "itb3_gleam_ffi", "delete_file")
 fn delete_file(path: String) -> Result(Nil, String)
 
-@external(erlang, "itb_gleam_ffi", "flip_byte")
+@external(erlang, "itb3_gleam_ffi", "flip_byte")
 fn flip_byte(data: BitArray, position: Int) -> BitArray
 
 const read_slice = 1_048_576
@@ -35,16 +35,16 @@ const read_slice = 1_048_576
 // ------------------------------------------------------------------
 
 pub fn version_test() {
-  let assert Ok(version) = itb_gleam.version()
+  let assert Ok(version) = itb3_gleam.version()
   assert version != ""
 }
 
 pub fn runtime_knobs_test() {
   // Negative values query without changing; the return is the
   // previous setting.
-  let previous = itb_gleam.set_memory_limit(-1)
-  assert previous == itb_gleam.set_memory_limit(-1)
-  let _ = itb_gleam.set_gc_percent(-2)
+  let previous = itb3_gleam.set_memory_limit(-1)
+  assert previous == itb3_gleam.set_memory_limit(-1)
+  let _ = itb3_gleam.set_gc_percent(-2)
   Nil
 }
 
@@ -111,19 +111,26 @@ pub fn inspect_lookup_profiles_test() {
   let assert Ok(pipe) = pipeline.new("singlemsg-triple-mac-v1", [])
   let assert Ok(blob) = pipeline.save(pipe)
   pipeline.free(pipe)
-  let assert Ok(record) = itb_gleam.inspect(blob)
+  let assert Ok(record) = itb3_gleam.inspect(blob)
   assert string.contains(record, "\"name\":\"singlemsg-triple-mac-v1\"")
   assert string.contains(record, "\"mode\":\"singlemsg-mac\"")
-  assert itb_gleam.lookup("singlemsg-triple-mac-v1") == Ok(record)
+  // inspect carries the registry recipe plus the blob-only nonce_bits
+  // / barrier_fill inspection fields; lookup returns just the recipe.
+  let assert Ok(looked) = itb3_gleam.lookup("singlemsg-triple-mac-v1")
+  assert string.contains(record, "\"nonce_bits\":")
+  assert string.contains(record, "\"barrier_fill\":")
+  assert !string.contains(looked, "\"nonce_bits\":")
+  assert !string.contains(looked, "\"barrier_fill\":")
+  assert string.contains(looked, "\"name\":\"singlemsg-triple-mac-v1\"")
   let assert Error(ItbError("bad_input", _)) =
-    itb_gleam.inspect(<<"not a blob":utf8>>)
+    itb3_gleam.inspect(<<"not a blob":utf8>>)
   let assert Error(ItbError("unknown_profile", _)) =
-    itb_gleam.lookup("no-such-profile")
-  let names = itb_gleam.profiles()
+    itb3_gleam.lookup("no-such-profile")
+  let names = itb3_gleam.profiles()
   assert list.contains(names, "singlemsg-triple-mac-v1")
   assert names == list.sort(names, string.compare)
   list.each(names, fn(name) {
-    let assert Ok(r) = itb_gleam.lookup(name)
+    let assert Ok(r) = itb3_gleam.lookup(name)
     assert string.contains(r, "\"name\":\"" <> name <> "\"")
   })
 }
@@ -134,16 +141,16 @@ pub fn register_round_trip_test() {
     <> "\"hashes\":[\"blake3\",\"blake2s\",\"areion256\",\"blake2b256\","
     <> "\"chacha20\",\"blake3\",\"blake2s\",\"areion256\"],"
     <> "\"keybits\":1024,\"parallax\":false,\"wrapper\":false}"
-  let assert Ok(Nil) = itb_gleam.register("gleam-binding-test-mixed", profile)
-  assert list.contains(itb_gleam.profiles(), "gleam-binding-test-mixed")
-  let assert Ok(record) = itb_gleam.lookup("gleam-binding-test-mixed")
+  let assert Ok(Nil) = itb3_gleam.register("gleam-binding-test-mixed", profile)
+  assert list.contains(itb3_gleam.profiles(), "gleam-binding-test-mixed")
+  let assert Ok(record) = itb3_gleam.lookup("gleam-binding-test-mixed")
   assert string.contains(record, "\"hashes\":[\"blake3\"")
   let assert Error(ItbError("profile_exists", _)) =
-    itb_gleam.register("gleam-binding-test-mixed", profile)
+    itb3_gleam.register("gleam-binding-test-mixed", profile)
   // Strict record decode on the Go side: an unknown key is rejected
   // there, not by the binding.
   let assert Error(ItbError("bad_input", _)) =
-    itb_gleam.register(
+    itb3_gleam.register(
       "gleam-binding-test-badkey",
       "{\"mode\":\"singlemsg-nomac\",\"bogus\":1}",
     )
@@ -234,7 +241,7 @@ pub fn stream_round_trip_test() {
 }
 
 fn run_session(
-  begin: fn(Pipeline) -> Result(stream.Session, itb_gleam.ItbError),
+  begin: fn(Pipeline) -> Result(stream.Session, itb3_gleam.ItbError),
   pipe: Pipeline,
   data: BitArray,
   chunk: Int,

@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Everanium\Itb\Tests;
+namespace Everanium\Itb3\Tests;
 
-use Everanium\Itb\Itb;
-use Everanium\Itb\ItbException;
-use Everanium\Itb\Status;
+use Everanium\Itb3\Itb;
+use Everanium\Itb3\ItbException;
+use Everanium\Itb3\Status;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -74,13 +74,23 @@ final class PersistTest extends TestCase
 
     public function testInspectMatchesLookup(): void
     {
+        // inspect carries the registry recipe plus the blob-only
+        // nonce_bits / barrier_fill inspection fields; lookup returns
+        // just the recipe.
         $pipe = Itb::create(self::PROFILE);
         $record = Itb::inspect($pipe->save());
         $pipe->free();
         $this->assertSame(self::PROFILE, $record['name']);
         $this->assertSame('singlemsg-mac', $record['mode']);
         $this->assertArrayHasKey('keybits', $record);
-        $this->assertSame(Itb::lookup(self::PROFILE), $record);
+        $this->assertArrayHasKey('nonce_bits', $record);
+        $this->assertArrayHasKey('barrier_fill', $record);
+        $looked = Itb::lookup(self::PROFILE);
+        $this->assertArrayNotHasKey('nonce_bits', $looked);
+        $this->assertArrayNotHasKey('barrier_fill', $looked);
+        $recipe = $record;
+        unset($recipe['nonce_bits'], $recipe['barrier_fill']);
+        $this->assertSame($looked, $recipe);
 
         try {
             Itb::inspect('not a blob');

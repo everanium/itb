@@ -4,7 +4,7 @@
  *
  * A session is a dumb byte pump: plaintext (or wire) goes in through
  * write, produced bytes come out through read. All chunking, MAC,
- * envelope, and wire-format decisions stay inside libitb — the
+ * envelope, and wire-format decisions stay inside libitb3 — the
  * binding moves opaque bytes and relays status codes.
  */
 

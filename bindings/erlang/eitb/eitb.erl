@@ -9,17 +9,17 @@
 %%   eitb encrypt <profile> <in-file> <out-file>    Single Message encrypt
 %%   eitb decrypt <profile> <blob-hex> <in-file> <out-file>
 %%
-%% `encrypt` prints the session blob (itb:save/1) to stderr as hex;
+%% `encrypt` prints the session blob (itb3:save/1) to stderr as hex;
 %% feed that hex back to `decrypt` on the receiving side, which
-%% reopens the session with itb:load/1 (the profile argument only
+%% reopens the session with itb3:load/1 (the profile argument only
 %% routes Single Message versus streaming). `profiles` lists the
 %% registered profile catalogue one name per line; the profiles that
 %% carry a cipher surface are the ones `encrypt` / `decrypt` accept.
 %%
 %% The compiled binding (./build.sh in bindings/erlang) is resolved
-%% relative to this script's location: ../_build/default/lib/itb/ebin.
+%% relative to this script's location: ../_build/default/lib/libitb3/ebin.
 
--define(EITB_ERLANG_VERSION, "0.4.1").
+-define(EITB_ERLANG_VERSION, "0.5.1").
 
 main(Args) ->
     ok = add_binding_path(),
@@ -52,7 +52,7 @@ usage() ->
 add_binding_path() ->
     ScriptDir = filename:dirname(filename:absname(escript:script_name())),
     Ebin = filename:join([ScriptDir, "..", "_build", "default", "lib",
-                          "itb", "ebin"]),
+                          "libitb3", "ebin"]),
     case filelib:is_dir(Ebin) of
         true ->
             true = code:add_pathz(Ebin),
@@ -65,7 +65,7 @@ add_binding_path() ->
     end.
 
 cmd_profiles() ->
-    lists:foreach(fun(Name) -> io:format("~s~n", [Name]) end, itb:profiles()),
+    lists:foreach(fun(Name) -> io:format("~s~n", [Name]) end, itb3:profiles()),
     0.
 
 cmd_inspect(BlobHex) ->
@@ -74,7 +74,7 @@ cmd_inspect(BlobHex) ->
             io:format(standard_error, "eitb: invalid blob hex~n", []),
             1;
         {ok, Blob} ->
-            case itb:inspect(Blob) of
+            case itb3:inspect(Blob) of
                 {error, Reason} ->
                     fail("inspect", Reason);
                 {ok, Record} ->
@@ -91,14 +91,14 @@ fail(What, {Status, Detail}) ->
 %% soft memory cap + aggressive GC keep the scratch heap bounded. The
 %% setter return values report the previous settings, not an error.
 cap_go_runtime() ->
-    _ = itb:set_memory_limit(512 bsl 20), %% 512 MiB soft cap
-    _ = itb:set_gc_percent(20),           %% aggressive GC
+    _ = itb3:set_memory_limit(4 bsl 30), %% 4 GiB soft cap
+    _ = itb3:set_gc_percent(100),         %% balanced GC
     ok.
 
 cmd_version() ->
-    case itb:version() of
+    case itb3:version() of
         {ok, Version} ->
-            io:format("libitb ~s~n", [Version]),
+            io:format("libitb3 ~s~n", [Version]),
             io:format("itb-erlang ~s~n", [?EITB_ERLANG_VERSION]),
             0;
         {error, Reason} ->
@@ -117,19 +117,19 @@ ensure_parent_dir(Path) ->
 
 stream_one_shot(Pipe, Direction, Payload) ->
     BeginFn = case Direction of
-                  encrypt -> fun itb:encrypt_stream/1;
-                  decrypt -> fun itb:decrypt_stream/1
+                  encrypt -> fun itb3:encrypt_stream/1;
+                  decrypt -> fun itb3:decrypt_stream/1
               end,
     case BeginFn(Pipe) of
         {error, Reason} ->
             {error, Reason};
         {ok, Session} ->
             try
-                case itb:stream_write(Session, Payload) of
+                case itb3:stream_write(Session, Payload) of
                     {error, WErr} ->
                         {error, WErr};
                     ok ->
-                        case itb:stream_end(Session) of
+                        case itb3:stream_end(Session) of
                             {error, EErr} ->
                                 {error, EErr};
                             ok ->
@@ -137,12 +137,12 @@ stream_one_shot(Pipe, Direction, Payload) ->
                         end
                 end
             after
-                ok = itb:stream_free(Session)
+                ok = itb3:stream_free(Session)
             end
     end.
 
 drain_stream(Session, Acc) ->
-    case itb:stream_read(Session) of
+    case itb3:stream_read(Session) of
         {error, Reason} ->
             {error, Reason};
         {ok, Piece, true} ->
@@ -159,12 +159,12 @@ cmd_encrypt(Profile, InFile, OutFile) ->
                       [InFile, ReadErr]),
             1;
         {ok, Plain} ->
-            case itb:init(Profile, #{}) of
+            case itb3:init(Profile, #{}) of
                 {error, Reason} ->
                     fail("init", Reason);
                 {ok, Pipe} ->
                     Rc = encrypt_with(Pipe, Plain, Profile, InFile, OutFile),
-                    ok = itb:free(Pipe),
+                    ok = itb3:free(Pipe),
                     Rc
             end
     end.
@@ -173,7 +173,7 @@ encrypt_with(Pipe, Plain, Profile, InFile, OutFile) ->
     Result =
         case is_streaming_profile(Profile) of
             true -> stream_one_shot(Pipe, encrypt, Plain);
-            false -> itb:encrypt_message(Pipe, Plain)
+            false -> itb3:encrypt_message(Pipe, Plain)
         end,
     case Result of
         {error, Reason} ->
@@ -186,7 +186,7 @@ encrypt_with(Pipe, Plain, Profile, InFile, OutFile) ->
                               [OutFile, WriteErr]),
                     1;
                 ok ->
-                    {ok, Blob} = itb:save(Pipe),
+                    {ok, Blob} = itb3:save(Pipe),
                     io:format(standard_error, "~s~n",
                               [string:lowercase(binary:encode_hex(Blob))]),
                     io:format("encrypted ~s -> ~s (~b -> ~b bytes)~n",
@@ -214,14 +214,14 @@ cmd_decrypt(Profile, BlobHex, InFile, OutFile) ->
     end.
 
 decrypt_with(Profile, Blob, Wire, InFile, OutFile) ->
-    case itb:load(Blob) of
+    case itb3:load(Blob) of
         {error, Reason} ->
             fail("load", Reason);
         {ok, Pipe} ->
             Result =
                 case is_streaming_profile(Profile) of
                     true -> stream_one_shot(Pipe, decrypt, Wire);
-                    false -> itb:decrypt_message(Pipe, Wire)
+                    false -> itb3:decrypt_message(Pipe, Wire)
                 end,
             Rc = case Result of
                      {error, DecErr} ->
@@ -242,7 +242,7 @@ decrypt_with(Profile, Blob, Wire, InFile, OutFile) ->
                                  0
                          end
                  end,
-            ok = itb:free(Pipe),
+            ok = itb3:free(Pipe),
             Rc
     end.
 

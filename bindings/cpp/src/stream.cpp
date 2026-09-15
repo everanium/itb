@@ -4,7 +4,7 @@
  *
  * A session is a dumb byte pump: plaintext (or wire) goes in through
  * write, produced bytes come out through read. All chunking, MAC,
- * envelope, and wire-format decisions stay inside libitb — the
+ * envelope, and wire-format decisions stay inside libitb3 — the
  * binding moves opaque bytes and relays status codes.
  */
 
@@ -129,7 +129,7 @@ std::size_t pump_into(Stream &session, std::span<const std::byte> src,
 
 /* Exact-size wrapper over pump_into: uninitialised scratch at the
  * expansion bound, one full pump, one exact-length copy into the
- * returned vector. Should libitb ever outproduce the bound, the
+ * returned vector. Should libitb3 ever outproduce the bound, the
  * whole pump is retried on a fresh session with a doubled buffer (a
  * never-in-practice fallback; nothing has been handed out yet, so
  * the restart is invisible to the caller). */

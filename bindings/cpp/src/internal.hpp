@@ -1,15 +1,15 @@
 /*
  * internal.hpp — shared internals of the ITB C++ binding.
  *
- * Not installed; consumers include only <itb.hpp>. The binding links
- * against libitb.so at compile time, so the generated libitb.h
+ * Not installed; consumers include only <itb3.hpp>. The binding links
+ * against libitb3.so at compile time, so the generated libitb3.h
  * prototypes are the FFI surface — no runtime symbol loading.
  */
 
 #ifndef ITB_INTERNAL_HPP
 #define ITB_INTERNAL_HPP
 
-#include "itb.hpp"
+#include "itb3.hpp"
 
 namespace itb::detail {
 
@@ -20,14 +20,14 @@ inline constexpr std::size_t kBlobCap = 64 * 1024;
 /* Feed / drain slice size used by the pump loops. */
 inline constexpr std::size_t kPumpBuf = std::size_t{1} << 20;
 
-/* Normalises a raw libitb return code into Status (unknown codes
+/* Normalises a raw libitb3 return code into Status (unknown codes
  * collapse to Status::Internal). */
 Status to_status(int rc) noexcept;
 
 /* Throws Error with "<what>: status <rc> (<label>): <last_error()>". */
 [[noreturn]] void fail(int rc, const char *what);
 
-/* Status relay for a raw libitb return code. */
+/* Status relay for a raw libitb3 return code. */
 inline void check(int rc, const char *what)
 {
     if (rc != 0) {
@@ -39,7 +39,7 @@ inline void check(int rc, const char *what)
  * max(131072, payload * 5/4 + 131072). Overflow-guarded. */
 std::size_t out_cap(std::size_t payload) noexcept;
 
-/* const-away casts for the void* / char* (non-const) libitb
+/* const-away casts for the void* / char* (non-const) libitb3
  * prototypes — Go only reads through these pointers. */
 inline void *ffi_bytes(std::span<const std::byte> s) noexcept
 {
