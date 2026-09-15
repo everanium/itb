@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
 #
-# build.sh -- one-step build for the PowerShell binding. The binding
-# itself has no compilation step (script module); this driver builds
-# the C# peer it proxies (libitb3.so + Everanium.LibItb3.dll via ../csharp/build.sh)
-# and then verifies the module and the eitb script both load cleanly
-# under pwsh. Prerequisites (Go, dotnet-sdk, pwsh 7.4+) must be
-# installed separately; see README.md "Prerequisites" section.
+# One-step build for the PowerShell binding. The binding itself has no compilation
+# step (script module); this driver builds the C# peer it proxies (libitb3.so +
+# Everanium.LibItb3.dll via ../csharp/build.sh) and then verifies the module and the
+# eitb script both load cleanly under pwsh. Prerequisites (Go, dotnet-sdk, pwsh
+# 7.4+) must be installed separately; see README.md "Prerequisites" section.
 #
 # Nothing here is compiled, so the only artefacts this binding owns are
 # Pester's test result output; those are removed first so no report can

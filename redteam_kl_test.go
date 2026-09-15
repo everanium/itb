@@ -2,13 +2,13 @@
 
 package itb
 
-// redteam_kl_test.go — Phase 2b Mode B corpus generator for the KL floor probe
-// driven by `scripts/redteam/itb/theory/_common/kl/kl_matrix.py`. Emits one massive
-// ITB ciphertext per invocation on the shipped Triple + always-on 48-bit
+// Phase 2b Mode B corpus generator for the KL floor probe driven by
+// `scripts/redteam/itb/theory/_common/kl/kl_matrix.py`. Emits one massive ITB
+// ciphertext per invocation on the shipped Triple + always-on 48-bit
 // Interlocked Barrier wire, together with a `.pixel` KEY=VALUE sidecar
-// carrying container dimensions and the dual-nonce layout the two
-// Python sub-scripts (`kl_massive_full.py`, `kl_urandom.py`) consume
-// through `kl_matrix.py`.
+// carrying container dimensions and the dual-nonce layout the two Python
+// sub-scripts (`kl_massive_full.py`, `kl_urandom.py`) consume through
+// `kl_matrix.py`.
 //
 // Attacker-realism (attacker-realism discipline):
 //

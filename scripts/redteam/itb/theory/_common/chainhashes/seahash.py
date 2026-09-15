@@ -2,7 +2,7 @@
 (Redox OS / tfs project) adapted to ITB's 128-bit primitive interface
 via parallel two-lane construction.
 
-Mirrors `seahash64` in `harness_test.go` bit-for-bit. Canonical reference:
+Mirrors `shelfSeahash64` in `harness_shelf_test.go` bit-for-bit. Canonical reference:
 https://github.com/ticki/tfs/tree/master/seahash/src (reference.rs +
 helper.rs).
 
@@ -89,7 +89,7 @@ def seahash64(data: bytes, seed: int) -> int:
 
 
 def _seahash_128(data: bytes, seed_lo: int, seed_hi: int) -> tuple[int, int]:
-    """Parallel two-lane adapter matching seahashHash128 in the Go
+    """Parallel two-lane adapter matching shelfSeahashHash128 in the Go
     harness."""
     lo = seahash64(data, seed_lo & MASK64)
     hi = seahash64(data, seed_hi & MASK64)

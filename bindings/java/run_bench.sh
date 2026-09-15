@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 #
-# run_bench.sh -- bench runner for the Java binding. Builds
-# libitb3.so + the binding via build.sh, then runs the bench mains
-# (BenchMessage + BenchStream + BenchStreamOneShot). Positional
-# arguments select the shape: `message`, `stream`, `stream_one_shot`,
-# or `all` (default).
+# Bench runner for the Java binding. Builds libitb3.so + the binding
+# via build.sh, then runs the bench mains (BenchMessage + BenchStream
+# + BenchStreamOneShot). Positional arguments select the shape:
+# `message`, `stream`, `stream_one_shot`, or `all` (default).
 #
 # build.sh wipes the whole build tree before it builds and asserts
 # build/libs/bench.jar was written by that invocation, so the classes

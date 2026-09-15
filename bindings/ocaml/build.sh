@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 #
-# build.sh -- one-step build for the OCaml binding: builds libitb3.so
-# from the Go tree, then compiles the dune project (library, tests,
-# bench, eitb). Prerequisites (Go, OCaml, opam with ctypes /
-# ctypes-foreign / alcotest, dune) must be installed separately; see
-# README.md "Prerequisites" section.
+# One-step build for the OCaml binding: builds libitb3.so from the Go
+# tree, then compiles the dune project (library, tests, bench, eitb).
+# Prerequisites (Go, OCaml, opam with ctypes / ctypes-foreign /
+# alcotest, dune) must be installed separately; see README.md
+# "Prerequisites" section.
 #
 # The build starts by removing every artefact this binding owns, so no
 # output of an earlier build can survive into this one and mask a

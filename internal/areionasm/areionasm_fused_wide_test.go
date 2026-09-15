@@ -5,9 +5,8 @@ import (
 	"testing"
 )
 
-// areionasm_fused_wide_test.go — parity scaffolding of the eight-lane
-// per-pixel dispatchers and the batch-32 fill hooks shared by every
-// architecture.
+// Parity scaffolding of the eight-lane per-pixel dispatchers and the
+// batch-32 fill hooks shared by every architecture.
 
 type x8fn256 func(*[32]byte, []uint64, *[8]*byte, *[8][4]uint64)
 type x8fn512 func(*[64]byte, []uint64, *[8]*byte, *[8][8]uint64)

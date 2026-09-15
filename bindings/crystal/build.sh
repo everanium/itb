@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 #
-# build.sh -- one-step build for the Crystal binding: (re)builds
-# libitb3.so if absent (or when ITB_REBUILD_LIBITB3=1), then compiles
-# the eitb CLI binary. Prerequisites (Go, Crystal) must be installed
-# separately; see README.md "Prerequisites".
+# One-step build for the Crystal binding: (re)builds libitb3.so if
+# absent (or when ITB_REBUILD_LIBITB3=1), then compiles the eitb CLI
+# binary. Prerequisites (Go, Crystal) must be installed separately;
+# see README.md "Prerequisites".
 #
 # Every artefact this binding owns is removed first, so nothing the
 # build produces can be a leftover from an earlier invocation.

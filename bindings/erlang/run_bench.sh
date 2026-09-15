@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 #
-# run_bench.sh -- micro-benchmark runner for the Erlang binding.
-# Builds libitb3.so + the C binding archive + the OTP application via
-# build.sh, compiles the bench modules, then runs bench_message,
-# bench_stream and bench_stream_one_shot: encrypt_message, stream-pump
-# and whole-buffer stream throughput at 1 MiB / 16 MiB / 64 MiB.
+# Micro-benchmark runner for the Erlang binding. Builds libitb3.so +
+# the C binding archive + the OTP application via build.sh, compiles
+# the bench modules, then runs bench_message, bench_stream and
+# bench_stream_one_shot: encrypt_message, stream-pump and whole-buffer
+# stream throughput at 1 MiB / 16 MiB / 64 MiB.
 #
 # Usage:
 #   ./run_bench.sh                        # all shapes

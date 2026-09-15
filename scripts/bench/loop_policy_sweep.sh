@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# loop_policy_sweep.sh — steady-state encoder-policy sweep via tools/loop.
+# Steady-state encoder-policy sweep via tools/loop.
 #
 # Runs one tools/loop cell per line of a cell-spec file, each under its
 # own ITB_MICROBATCH_TIERS / ITB_HASHPOOL_STARTERS / GOGC environment, and

@@ -1,4 +1,4 @@
-! itb_error.f90 -- error record carried by every fallible binding call.
+! Error record carried by every fallible binding call.
 !
 ! Each public subroutine takes a trailing `type(itb_error_t),
 ! intent(out) :: err` argument. On success `err%status` is

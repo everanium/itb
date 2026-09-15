@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 #
-# build.sh -- one-step build for the C++ binding: libitb3.so + the C++
-# library + every test binary. Prerequisites (Go, a C++20 compiler,
-# GNU make) must be installed separately; see README.md
-# "Prerequisites".
+# One-step build for the C++ binding: libitb3.so + the C++ library +
+# every test binary. Prerequisites (Go, a C++20 compiler, GNU make)
+# must be installed separately; see README.md "Prerequisites".
 #
 # Every artefact this binding owns is removed first, so nothing the
 # build produces can be a leftover from an earlier invocation.

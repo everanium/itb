@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 #
-# build.sh -- one-step build for the LFE binding. Chains the Erlang
-# binding's build.sh (libitb3.so + the C binding's static archive +
-# the NIF shim) and then compiles the rebar3 project plus the eitb
-# demonstrator; rebar3 rebuilds the Erlang application as a checkout
-# dependency (_checkouts/libitb3 -> ../erlang). Prerequisites (Go, a
-# C11 compiler, GNU make, Erlang/OTP 27+, rebar3) must be installed
-# separately; the LFE compiler arrives as a hex dependency, so no
-# system LFE install is required. See README.md "Prerequisites".
+# One-step build for the LFE binding. Chains the Erlang binding's
+# build.sh (libitb3.so + the C binding's static archive + the NIF shim)
+# and then compiles the rebar3 project plus the eitb demonstrator;
+# rebar3 rebuilds the Erlang application as a checkout dependency
+# (_checkouts/libitb3 -> ../erlang). Prerequisites (Go, a C11 compiler,
+# GNU make, Erlang/OTP 27+, rebar3) must be installed separately; the
+# LFE compiler arrives as a hex dependency, so no system LFE install is
+# required. See README.md "Prerequisites".
 #
 # The build starts by removing every artefact this binding owns, so no
 # output of an earlier build can survive into this one and mask a

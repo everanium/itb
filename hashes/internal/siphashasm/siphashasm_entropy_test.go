@@ -7,16 +7,16 @@ import (
 	"github.com/everanium/itb/internal/kernelaudit"
 )
 
-// siphashasm_entropy_test.go — the input-entropy differential audit
-// (internal/kernelaudit) of the fused cascade: every bit of every lane
-// buffer, component word and group index base must reach the output,
-// lane for lane (the SipHash-2-4 key is the first component pair, so
-// the component sweep covers it), and the kernel must agree with the
-// pure-Go cascade (ScalarFusedChain / scalarFusedX16) at the baseline
-// and after every flip. The helpers drive the single-, four-, eight- and
-// sixteen-lane evaluators through the audit; the per-architecture files
-// apply them to every kernel by direct call, and this file applies them
-// to the public dispatchers under the current dispatch state.
+// The input-entropy differential audit (internal/kernelaudit) of the
+// fused cascade: every bit of every lane buffer, component word and
+// group index base must reach the output, lane for lane (the SipHash-2-4
+// key is the first component pair, so the component sweep covers it),
+// and the kernel must agree with the pure-Go cascade (ScalarFusedChain /
+// scalarFusedX16) at the baseline and after every flip. The helpers
+// drive the single-, four-, eight- and sixteen-lane evaluators through
+// the audit; the per-architecture files apply them to every kernel by
+// direct call, and this file applies them to the public dispatchers
+// under the current dispatch state.
 
 // auditPairCounts are the cascade lengths audited: the one- and two-pair
 // floor and the five-pair fill cascade of a 512-bit lockSeed.

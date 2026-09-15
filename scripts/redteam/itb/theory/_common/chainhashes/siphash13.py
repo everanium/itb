@@ -2,7 +2,7 @@
 (1 message-mixing round + 3 finalization rounds) wrapped into ITB's 128-bit
 primitive interface via parallel two-lane construction.
 
-Mirrors `siphash13_64` and `chainHash128Siphash13` in `harness_test.go`
+Mirrors `shelfSiphash13Hash` and `chainHash128Siphash13` in `harness_shelf_test.go`
 bit-for-bit. Canonical SipHash reference: Aumasson & Bernstein, "SipHash:
 a fast short-input PRF" (CHES 2012, https://www.aumasson.jp/siphash/).
 
@@ -76,7 +76,7 @@ def _read_u64_le(data: bytes, pos: int) -> int:
 
 def siphash13_hash(data: bytes, seed: int) -> int:
     """Pure-Python port of SipHash-1-3 with the ITB deployment choice
-    `k1 = 0`. Bit-for-bit match with the Go reference siphash13_64."""
+    `k1 = 0`. Bit-for-bit match with the Go reference siphash13Hash."""
     k0 = seed & MASK64
     k1 = 0
 
@@ -119,7 +119,7 @@ def siphash13_hash(data: bytes, seed: int) -> int:
 
 
 def _siphash13_128(data: bytes, seed_lo: int, seed_hi: int) -> tuple[int, int]:
-    """Parallel two-lane adapter matching siphash13Hash128 in the Go harness."""
+    """Parallel two-lane adapter matching shelfSiphash13Hash128 in the Go harness."""
     lo = siphash13_hash(data, seed_lo & MASK64)
     hi = siphash13_hash(data, seed_hi & MASK64)
     return lo, hi

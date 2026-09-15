@@ -1,5 +1,5 @@
-# itb.R — public R API over the itb C shim (src/libitb3r.c), which in
-# turn proxies the libitb3 shared library's Triple Pipeline surface
+# Public R API over the itb C shim (src/libitb3r.c), which in turn
+# proxies the libitb3 shared library's Triple Pipeline surface
 # (ITB_Triple_*, cmd/cshared).
 #
 # The binding is a thin proxy: every hash-name / MAC-name /

@@ -1,7 +1,7 @@
 package itb
 
-// stream_prefix_batch_test.go — regression coverage for the streaming
-// encoder's prefix/first-chunk batching invariant.
+// Regression coverage for the streaming encoder's prefix/first-chunk
+// batching invariant.
 //
 // The Triple Ouroboros streaming encoders (EncryptStream3xCfg,
 // EncryptStreamAuth3xCfg) emit a 32-byte streamID prefix ahead of the

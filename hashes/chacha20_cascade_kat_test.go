@@ -9,16 +9,16 @@ import (
 	"github.com/everanium/itb/internal/forcetier"
 )
 
-// chacha20_cascade_kat_test.go — known-answer vectors of the ChaCha20
-// ChainHash cascade, produced by the pure-Go cascade under the noitbasm
-// build tag and identical on every assembly tier. The vectors cover the
-// per-pixel cascade of the 512 / 1024 / 2048-bit keys at the four kernel
-// shapes — single lane, four lanes, the single-lane fused hook over the
-// prepended lock components of the Interlocked Barrier fill — and the
-// batch-16 fill hook at the 13-byte shape across a group index base that
-// carries through byte 7 inside the batch. A seed with every hook and the
-// same seed on the arms alone are both checked, so the table pins the
-// wire as well as every hook against the noitbasm reference.
+// Known-answer vectors of the ChaCha20 ChainHash cascade, produced by the
+// pure-Go cascade under the noitbasm build tag and identical on every
+// assembly tier. The vectors cover the per-pixel cascade of the 512 /
+// 1024 / 2048-bit keys at the four kernel shapes — single lane, four
+// lanes, the single-lane fused hook over the prepended lock components of
+// the Interlocked Barrier fill — and the batch-16 fill hook at the
+// 13-byte shape across a group index base that carries through byte 7
+// inside the batch. A seed with every hook and the same seed on the arms
+// alone are both checked, so the table pins the wire as well as every
+// hook against the noitbasm reference.
 
 type chacha20CascadeKAT struct {
 	groups, n       int

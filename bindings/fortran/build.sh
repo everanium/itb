@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# build.sh -- one-step build for the ITB Fortran binding.
+# One-step build for the ITB Fortran binding.
 #
 # Ensures the libitb3.so c-shared artefact exists at
 # dist/linux-amd64/libitb3.so (rebuilds it if absent), then dispatches

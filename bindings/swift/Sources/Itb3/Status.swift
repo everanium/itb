@@ -1,5 +1,5 @@
 /*
- * Status.swift — Swift mirror of the C binding's itb_status table.
+ * Swift mirror of the C binding's itb_status table.
  *
  * The numeric values track cmd/cshared/internal/capi/errors.go via
  * bindings/c/include/itb3.h. Codes 11..13 are the Triple blob-record

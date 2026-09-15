@@ -1,6 +1,6 @@
 /*
- * error.cpp — status labels, status normalisation, last-error fetch,
- * and the Error-throwing failure path shared by every FFI call site.
+ * Status labels, status normalisation, last-error fetch, and the
+ * Error-throwing failure path shared by every FFI call site.
  */
 
 #include <array>

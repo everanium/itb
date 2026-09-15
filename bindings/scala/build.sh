@@ -1,12 +1,11 @@
 #!/usr/bin/env bash
 #
-# build.sh -- one-step build for the Scala binding. The binding is a
-# thin proxy over the Java binding (JVM bytecode interop, no FFI hop
-# of its own), so the Java binding is built first (libitb3.so + JNI
-# shim + jars via bindings/java/build.sh), then sbt compiles the
-# Scala library, tests, bench, and eitb. Prerequisites (Go, JDK 17+,
-# Gradle, gcc, sbt) must be installed separately; see README.md
-# "Prerequisites" section.
+# One-step build for the Scala binding. The binding is a thin proxy over
+# the Java binding (JVM bytecode interop, no FFI hop of its own), so the
+# Java binding is built first (libitb3.so + JNI shim + jars via
+# bindings/java/build.sh), then sbt compiles the Scala library, tests,
+# bench, and eitb. Prerequisites (Go, JDK 17+, Gradle, gcc, sbt) must be
+# installed separately; see README.md "Prerequisites" section.
 #
 # The build starts from an empty tree: every sbt target directory
 # (root, bench, eitb and the meta-build under project/), the BSP and

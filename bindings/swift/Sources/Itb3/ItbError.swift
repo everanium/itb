@@ -1,5 +1,5 @@
 /*
- * ItbError.swift — the error type thrown by every fallible entry.
+ * The error type thrown by every fallible entry.
  *
  * Carries the mapped Status, the raw numeric code (attributable even
  * for codes outside the Status table), and the Go-side diagnostic

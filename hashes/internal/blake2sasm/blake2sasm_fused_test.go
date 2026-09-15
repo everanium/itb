@@ -7,9 +7,9 @@ import (
 	"testing"
 )
 
-// blake2sasm_fused_test.go — parity scaffolding of the fused cascade shared
-// by every architecture: random inputs, the dispatcher-level parity
-// checks against ScalarFusedChain256, and the zero-allocation guard.
+// Parity scaffolding of the fused cascade shared by every architecture:
+// random inputs, the dispatcher-level parity checks against
+// ScalarFusedChain256, and the zero-allocation guard.
 
 var groupCounts = []int{1, 2, 4, 8}
 

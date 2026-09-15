@@ -4,7 +4,7 @@ package blake2sasm
 
 import "testing"
 
-// blake2sasm_entropy_arm64_test.go — the input-entropy differential
+// TestInputEntropyKernelsArm64 is the input-entropy differential
 // audit of every arm64 kernel by direct call: the four-lane NEON
 // kernels and the single-lane GPR kernels.
 func TestInputEntropyKernelsArm64(t *testing.T) {

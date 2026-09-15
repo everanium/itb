@@ -64,8 +64,8 @@ The Erlang backend cannot be a `gleam.toml` dependency (it is a
 rebar3 application, not a Gleam package), so consumption is by
 source checkout: depend on this project as a path dependency and
 keep the built Erlang backend reachable. At the first libitb3 call
-the FFI adapter looks the OTP application `itb` up on the code path
-and, when absent, adds its ebin directory from the
+the FFI adapter looks the OTP application `libitb3` up on the code
+path and, when absent, adds its ebin directory from the
 `ITB_ERLANG_EBIN` environment variable (when set) or from the
 sibling checkout at `../erlang/_build/default/lib/libitb3/ebin`
 relative to this project. The compiled NIF
@@ -130,6 +130,7 @@ width, primitives, key bits, MAC, layer switches) alongside the key
 material, so a session reopens from the blob alone.
 
 ```gleam
+import itb3/pipeline
 import itb3_gleam as itb
 
 let assert Ok(blob) = pipeline.save(sender)             // current blob (BitArray)
@@ -157,6 +158,7 @@ through this binding returns
 ### Profile registry
 
 ```gleam
+import itb3/pipeline
 import itb3_gleam as itb
 
 itb.profiles()                          // sorted List(String)
@@ -193,6 +195,8 @@ receiver may pick its own worker cap after `pipeline.load`. The
 through the stream chain in a single call:
 
 ```gleam
+import itb3/pipeline
+
 let assert Ok(wire) = pipeline.encrypt_stream_one_shot(sender, plain)
 let assert Ok(back) = pipeline.decrypt_stream_one_shot(receiver, wire)
 ```

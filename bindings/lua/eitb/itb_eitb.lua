@@ -1,4 +1,4 @@
---- itb_eitb.lua — command-line demonstrator for the ITB Lua binding.
+--- Command-line demonstrator for the ITB Lua binding.
 --
 -- Subcommands:
 --

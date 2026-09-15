@@ -1,4 +1,4 @@
-# Makefile — build for the ITB C++ binding (thin Triple Pipeline proxy).
+# Build for the ITB C++ binding (thin Triple Pipeline proxy).
 #
 # Targets:
 #   all (default):  build/libitb3_cpp.a + build/libitb3_cpp.so + every test binary.

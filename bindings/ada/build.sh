@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 #
-# build.sh -- one-step build for the Ada binding: libitb3.so + gprbuild
-# on the library, test, bench, and eitb projects. Prerequisites (Go,
-# Alire with a selected gnat_native + gprbuild toolchain) must be
-# installed separately; see README.md "Prerequisites" section.
+# One-step build for the Ada binding: libitb3.so + gprbuild on the
+# library, test, bench, and eitb projects. Prerequisites (Go, Alire
+# with a selected gnat_native + gprbuild toolchain) must be installed
+# separately; see README.md "Prerequisites" section.
 #
 # The build starts by removing every artefact this binding owns, so no
 # output of an earlier build can survive into this one and mask a

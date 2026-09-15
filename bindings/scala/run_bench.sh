@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 #
-# run_bench.sh -- micro-benchmark runner for the Scala binding.
-# Builds the Java binding (libitb3.so + JNI shim + jars) and the sbt
-# projects via build.sh, points ITB_JNI_PATH at the freshly-built JNI
-# shim, then runs the bench main: encryptMessage and stream-pump
-# throughput at 1 MiB / 16 MiB / 64 MiB.
+# Micro-benchmark runner for the Scala binding. Builds the Java
+# binding (libitb3.so + JNI shim + jars) and the sbt projects via
+# build.sh, points ITB_JNI_PATH at the freshly-built JNI shim, then
+# runs the bench main: encryptMessage and stream-pump throughput at 1
+# MiB / 16 MiB / 64 MiB.
 #
 # build.sh wipes every sbt target directory and the eitb classpath
 # cache, and delegates the Java layer to bindings/java/build.sh, which

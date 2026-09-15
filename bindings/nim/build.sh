@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
-# build.sh -- one-step build for the Nim binding: builds libitb3.so,
-# type-checks the binding sources, and compiles the eitb CLI binary.
+# One-step build for the Nim binding: builds libitb3.so, type-checks
+# the binding sources, and compiles the eitb CLI binary.
 # Prerequisites (Go, Nim 2.x) must be installed separately; see
 # README.md "Prerequisites" section.
 #

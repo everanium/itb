@@ -9,12 +9,11 @@ import (
 	"golang.org/x/sys/cpu"
 )
 
-// siphash_fusedchain128_13x8_parity_amd64_test.go — the eight-lane fill
-// kernel of the AVX2 tier: each half of a batch-16 call must equal the
-// four-lane AVX2 kernels run over the Go-synthesised blocks of the same
-// lanes (the previous batch-16 arm of the tier), and the two arms are
-// timed against each other so the emit-and-bench record of the tier
-// ladder is reproducible.
+// The eight-lane fill kernel of the AVX2 tier: each half of a batch-16
+// call must equal the four-lane AVX2 kernels run over the
+// Go-synthesised blocks of the same lanes (the previous batch-16 arm of
+// the tier), and the two arms are timed against each other so the
+// emit-and-bench record of the tier ladder is reproducible.
 
 // fillX16ViaX4Avx2 is the batch-16 fill as four four-lane AVX2 kernel
 // calls over Go-synthesised blocks.

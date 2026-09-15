@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 #
-# run_bench.sh -- micro-benchmark runner for the Haskell binding.
-# Builds libitb3.so + the cabal package via build.sh, then runs the
-# itb-bench harness: Single Message encrypt and incremental Streaming
-# encrypt throughput at 1 MiB / 16 MiB / 64 MiB.
+# Micro-benchmark runner for the Haskell binding. Builds libitb3.so +
+# the cabal package via build.sh, then runs the itb-bench harness:
+# Single Message encrypt and incremental Streaming encrypt throughput
+# at 1 MiB / 16 MiB / 64 MiB.
 #
 # Usage:
 #   ./run_bench.sh                       # canonical 5 s per case

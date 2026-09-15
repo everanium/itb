@@ -375,7 +375,7 @@ type lockBatchPRF48 struct {
 	// the batched call performs no per-invocation allocation. fillRanks
 	// and fillRanksX4 agree on every group index by the BatchHash
 	// parity invariant (BatchHash must agree with Hash on every input;
-	// see seed256_batch.go).
+	// see [BatchHashFunc256]).
 	fillRanksX4 func(s *lockFillScratch48, groupIdx uint64, prf []uint64)
 
 	// fillRanksSuper is the optional batch-16 counterpart of fillRanks.

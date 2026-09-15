@@ -1,7 +1,7 @@
 /*
- * itb_pipeline.c — Triple Pipeline handle lifecycle, persistence
- * (save / load), the Single Message cipher entries, and the profile
- * record entries (inspect / register / lookup / profiles).
+ * Triple Pipeline handle lifecycle, persistence (save / load), the
+ * Single Message cipher entries, and the profile record entries
+ * (inspect / register / lookup / profiles).
  *
  * Binding-side logic is limited to the four FFI-boundary inversions:
  * caller-allocated buffers with the codified retry-once on

@@ -5,7 +5,7 @@ Concrete parity gadget for the t1ha1 SAT calibration.
 
 Cross-checks that two independent lo-lane implementations reproduce
 the Go `chainHash128T1ha1` output bit-exact when the Go primitive is
-`t1ha1_64le` (harness_test.go).
+`shelfT1ha1_64le` (harness_shelf_test.go).
 
 Two independent implementations:
 

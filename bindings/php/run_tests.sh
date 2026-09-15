@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 #
-# run_tests.sh -- one-step test runner for the PHP binding.
-# Builds libitb3.so via build.sh, points ITB_LIBITB3_PATH at the
-# freshly-built shared library, then invokes PHPUnit against the
-# tests/ tree. Positional arguments are forwarded to PHPUnit (e.g.
-# --filter MessageTest).
+# One-step test runner for the PHP binding. Builds libitb3.so via
+# build.sh, points ITB_LIBITB3_PATH at the freshly-built shared
+# library, then invokes PHPUnit against the tests/ tree.
+# Positional arguments are forwarded to PHPUnit (e.g. --filter
+# MessageTest).
 #
 # PHPUnit resolution order:
 #   1. $ITB_PHPUNIT (path to a phpunit executable or .phar)

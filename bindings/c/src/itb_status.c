@@ -1,5 +1,5 @@
 /*
- * itb_status.c — status labels, last-error fetch, and runtime knobs.
+ * Status labels, last-error fetch, and runtime knobs.
  */
 
 #include <stdlib.h>

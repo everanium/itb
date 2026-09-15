@@ -2,7 +2,7 @@
 hash (CC0 license; v3.0.0 2022-04-19) adapted to ITB's 128-bit primitive
 interface via parallel two-lane construction.
 
-Mirrors `mx3Hash` in `harness_test.go` bit-for-bit. Canonical reference:
+Mirrors `shelfMx3Hash` in `harness_shelf_test.go` bit-for-bit. Canonical reference:
 https://github.com/jonmaiga/mx3/blob/master/mx3.h. No published test
 vectors — parity with the Go reference is established via 13 randomly-
 drawn vectors covering every tail-handling branch (0 / 1 / 2 / 3 / 4 /
@@ -139,7 +139,7 @@ def mx3_hash(data: bytes, seed: int) -> int:
 
 
 def _mx3_128(data: bytes, seed_lo: int, seed_hi: int) -> tuple[int, int]:
-    """Parallel two-lane adapter matching mx3Hash128 in the Go harness."""
+    """Parallel two-lane adapter matching shelfMx3Hash128 in the Go harness."""
     lo = mx3_hash(data, seed_lo & MASK64)
     hi = mx3_hash(data, seed_hi & MASK64)
     return lo, hi

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 #
-# build.sh -- one-step build for the Node.js / TypeScript binding:
-# libitb3.so + npm install + TypeScript compile. Prerequisites (Go,
-# Node.js >= 22, npm) must be installed separately; see README.md
-# "Prerequisites" section.
+# One-step build for the Node.js / TypeScript binding: libitb3.so +
+# npm install + TypeScript compile. Prerequisites (Go, Node.js >= 22,
+# npm) must be installed separately; see README.md "Prerequisites"
+# section.
 #
 # Every artefact this binding owns is removed before the build, so
 # nothing in the tree predates the invocation. The eitb entry point is

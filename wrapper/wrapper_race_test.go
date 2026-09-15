@@ -1,7 +1,7 @@
 package wrapper
 
-// wrapper_race_test.go — regression coverage for the wrapper writer's
-// nonce/first-body batching invariant.
+// Regression coverage for the wrapper writer's nonce/first-body
+// batching invariant.
 //
 // NewWrapWriter must emit the outer cipher's per-stream nonce and the
 // first inner payload in a single atomic dst.Write call. If the nonce

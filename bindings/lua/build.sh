@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 #
-# build.sh -- one-step build for the Lua binding: (re)builds libitb3.so
-# if absent (or when ITB_REBUILD_LIBITB3=1), then compiles the Lua 5.4
-# C module lua/libitb3_lua.so. Prerequisites (Go, gcc, make, Lua 5.4 headers)
-# must be installed separately; see README.md "Prerequisites".
+# One-step build for the Lua binding: (re)builds libitb3.so if absent (or
+# when ITB_REBUILD_LIBITB3=1), then compiles the Lua 5.4 C module
+# lua/libitb3_lua.so. Prerequisites (Go, gcc, make, Lua 5.4 headers) must be
+# installed separately; see README.md "Prerequisites".
 #
 # Every artefact this binding owns is removed before the build, so
 # nothing in the tree predates the invocation. lua/libitb3_lua.so is

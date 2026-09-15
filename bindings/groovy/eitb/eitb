@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
-# eitb -- launcher for the Groovy binding's eitb CLI. Builds the jar
-# on first use (via ../build.sh), then execs `java -jar eitb.jar`.
+# Launcher for the Groovy binding's eitb CLI. Builds the jar on
+# first use (via ../build.sh), then execs `java -jar eitb.jar`.
 
 set -eu
 

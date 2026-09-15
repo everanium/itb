@@ -1,5 +1,5 @@
 /*
- * libitb3_nif.c — Erlang NIF shim for the ITB Erlang binding.
+ * Erlang NIF shim for the ITB Erlang binding.
  *
  * Thin proxy over the ITB C binding (bindings/c): every entry wraps
  * one itb_pipeline_* / itb_stream_* / diagnostics call from <itb3.h>

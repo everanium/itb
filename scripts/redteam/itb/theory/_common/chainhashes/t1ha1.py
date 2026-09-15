@@ -2,7 +2,7 @@
 Hash v1 (LE variant) adapted to ITB's 128-bit primitive interface via
 parallel two-lane construction.
 
-Mirrors `t1ha1_64le` in `harness_test.go` bit-for-bit. Canonical
+Mirrors `shelfT1ha1_64le` in `harness_shelf_test.go` bit-for-bit. Canonical
 reference: https://github.com/erthink/t1ha/blob/master/src/t1ha1.c + helpers
 at .../t1ha_bits.h. Cross-language parity verified via `_parity_test.py`
 against the Go-generated vector dump.
@@ -93,7 +93,7 @@ def _tail64_le(data: bytes, tail: int) -> int:
 
 def t1ha1_64le(data: bytes, seed: int) -> int:
     """Pure-Python port of erthink/t1ha t1ha1_le. Bit-for-bit match with
-    the Go reference in harness_test.go."""
+    the Go reference in harness_shelf_test.go."""
     length = len(data)
     a = seed & MASK64
     b = length & MASK64
@@ -146,7 +146,7 @@ def t1ha1_64le(data: bytes, seed: int) -> int:
 
 
 def _t1ha1_128(data: bytes, seed_lo: int, seed_hi: int) -> tuple[int, int]:
-    """Parallel two-lane adapter matching t1ha1Hash128 in the Go harness.
+    """Parallel two-lane adapter matching shelfT1ha1Hash128 in the Go harness.
     Two independent t1ha1_64le invocations with seed_lo and seed_hi."""
     lo = t1ha1_64le(data, seed_lo & MASK64)
     hi = t1ha1_64le(data, seed_hi & MASK64)

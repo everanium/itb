@@ -1,5 +1,5 @@
 /*
- * itb3.hpp — public C++ header for the ITB C++ binding.
+ * Public C++ header for the ITB C++ binding.
  *
  * Thin proxy over the libitb3 shared library's `ITB_Triple_*` surface
  * (cmd/cshared). The binding links against libitb3.so at compile time

@@ -62,9 +62,10 @@ standard Lua C-module convention).
   module `lua/itb3.lua` loads first; it locates the compiled `libitb3_lua.so`
   next to itself via `package.loadlib` and re-exports the C surface
   plus the pure-Lua helpers (`opts`, `tohex` / `fromhex`, `pump`).
-- With only `LUA_CPATH` pointing at `bindings/lua/lua/?.so`, the C
-  core loads directly; its surface is complete on its own (the sugar
-  helpers are then unavailable).
+- `LUA_CPATH` plays no part in resolving `require "itb3"`: the
+  compiled C core carries its own basename (`libitb3_lua.so`), so it
+  never answers to that name; the sugar module loads it by explicit
+  path, and the merged table is what `require "itb3"` returns.
 
 The run scripts set both paths.
 

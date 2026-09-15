@@ -1,7 +1,7 @@
-! itb_ffi.f90 -- raw bind(C) interface declarations for the
-! ITB_Triple_* surface of libitb3.so, plus the introspection / runtime
-! entry points the binding consumes, plus the C-string marshalling
-! helpers shared by every higher-level module.
+! Raw bind(C) interface declarations for the ITB_Triple_* surface of
+! libitb3.so, plus the introspection / runtime entry points the
+! binding consumes, plus the C-string marshalling helpers shared by
+! every higher-level module.
 !
 ! Conventions (matching libitb3.h):
 !

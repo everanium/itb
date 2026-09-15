@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# cross-verify.sh -- ITB fleet cross-binding wire-compat matrix.
+# ITB fleet cross-binding wire-compat matrix.
 #
 # For each of the 13 shipped triple/ profiles, encrypts the shared
 # sample file with every eitb utility (33 language bindings + the Go

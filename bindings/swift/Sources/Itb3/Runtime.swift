@@ -1,6 +1,6 @@
 /*
- * Runtime.swift — profile records (inspect / register / lookup /
- * profiles), Go runtime knobs, and the diagnostic registry surface.
+ * Profile records (inspect / register / lookup / profiles), Go
+ * runtime knobs, and the diagnostic registry surface.
  */
 
 import CItb

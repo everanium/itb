@@ -1,6 +1,6 @@
 /*
- * libitb3r.c — R .Call shim over the libitb3 shared library's Triple
- * Pipeline surface (ITB_Triple_*, cmd/cshared).
+ * R .Call shim over the libitb3 shared library's Triple Pipeline surface
+ * (ITB_Triple_*, cmd/cshared).
  *
  * The shim is a thin proxy: every hash-name / MAC-name / cipher-name
  * / profile-name is an opaque string passed through to Go for

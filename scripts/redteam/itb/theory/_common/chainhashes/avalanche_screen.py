@@ -9,7 +9,8 @@ on a solver.
 
 WHY THE LO LANE ONLY
 --------------------
-The 128-bit ChainHash (mirrored in harness_test.go and seed512.go) runs two
+The 128-bit ChainHash (seed128.go, mirrored per primitive in
+_parity_dump/main.go) runs two
 INDEPENDENT 64-bit lanes: lo = P(data, seed_lo); hi = P(data, seed_hi), and
 the feedforward keeps them separate (k_lo = seed[i] ^ h_lo, k_hi =
 seed[i+1] ^ h_hi). ITB's encoding observes only h[0] (the lo lane); the hi

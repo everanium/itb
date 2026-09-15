@@ -1,5 +1,5 @@
 /*
- * runtime.cpp — Go runtime knobs and the library version.
+ * Go runtime knobs and the library version.
  */
 
 #include <array>

@@ -1,5 +1,5 @@
 #!/usr/bin/env elixir
-# eitb — command-line demonstrator for the ITB Elixir binding.
+# Command-line demonstrator for the ITB Elixir binding.
 #
 # Subcommands:
 #

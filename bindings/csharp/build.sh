@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
-# build.sh -- one-step build for the C# / .NET binding: libitb3.so +
-# dotnet build. Prerequisites (Go, dotnet-sdk) must be installed
-# separately; see README.md "Prerequisites" section.
+# One-step build for the C# / .NET binding: libitb3.so + dotnet build.
+# Prerequisites (Go, dotnet-sdk) must be installed separately; see
+# README.md "Prerequisites" section.
 #
 # The build starts from an empty tree: the bin/ and obj/ directories of
 # every project in the solution, plus any test result output, are

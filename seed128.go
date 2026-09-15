@@ -31,6 +31,69 @@ import (
 //	}
 type HashFunc128 func(data []byte, seed0, seed1 uint64) (lo, hi uint64)
 
+// BatchHashFunc128 is the 4-way batched 128-bit hash interface
+// alongside [HashFunc128]. Primitives whose SIMD kernel processes
+// four independent (data, seed) tuples per call expose this, through
+// the ZMM-batched width-128 registry kernels on amd64 with
+// AVX-512 + VAES.
+//
+// Bit-exact parity invariant: each lane output
+// BatchHashFunc128(data, seeds)[i] matches the serial
+// HashFunc128(data[i], seeds[i][0], seeds[i][1]) reference.
+// Implementations violating this break the PRF assumption on the
+// batched dispatch path.
+type BatchHashFunc128 func(data *[4][]byte, seeds [4][2]uint64) [4][2]uint64
+
+// FusedChainHashFunc128 evaluates the whole [Seed128.ChainHash128]
+// cascade in one call: the primitive is applied once per component pair
+// with the previous round's (lo, hi) folded into the next pair, exactly
+// as the sequential loop does, but with the state kept inside the
+// primitive's kernel between rounds.
+//
+// ok reports whether the implementation handled data; when false the
+// caller runs the sequential loop and lo / hi are meaningless. When true
+// the result must be bit-exact with the sequential loop over the same
+// components and data. Implementations decide by input shape only, so a
+// given (components, data) pair is answered the same way on every call.
+type FusedChainHashFunc128 func(components []uint64, data []byte) (lo, hi uint64, ok bool)
+
+// BatchFusedChainHashFunc128 is the four-lane counterpart of
+// [FusedChainHashFunc128]: every lane runs the cascade over the shared
+// components with its own data, matching [Seed128.BatchChainHash128].
+type BatchFusedChainHashFunc128 func(components []uint64, data *[4][]byte) (out [4][2]uint64, ok bool)
+
+// BatchFusedChainHashFunc128x8 is the eight-lane counterpart of
+// [BatchFusedChainHashFunc128]: every lane runs the whole ChainHash128
+// cascade over the shared components with its own data, and the result
+// must be bit-exact with two [BatchFusedChainHashFunc128] evaluations
+// over the lane halves (and hence with eight sequential cascades). ok
+// reports whether the implementation handled data; when false the
+// caller runs the four-lane path twice and out is meaningless.
+// Implementations decide by input shape only.
+//
+// The hook is the pixel pipeline's eight-pixel stride: when both the
+// noise and the data seed carry it, processChunk128 hashes eight pixels
+// per call ahead of the four-pixel and single-pixel tails. Shipped
+// primitives attach it only on hosts whose selected tier carries an
+// eight-lane kernel (through the hashes package's constructors), so
+// every other host keeps the four-lane stride unchanged.
+type BatchFusedChainHashFunc128x8 func(components []uint64, data *[8][]byte) (out [8][2]uint64, ok bool)
+
+// InterlockFillFunc16 is the batch-16 Interlocked Barrier fill kernel
+// interface at width 128. Every lockSeed fills its rank pairs with the
+// whole ChainHash cascade over components — the prepended slice
+// [lockLo, lockHi, c[0], c[1], …] the fill builder assembles from the
+// nonce-derived pair and the seed's Components — and the hook, when
+// attached (by the hashes package's constructors), evaluates that cascade for
+// 16 consecutive groups in one kernel call: groupIdxBase is the first
+// group index and lane offset i (0..15) produces groupIdx =
+// groupIdxBase + i on the fill block [0x03 | LE64(groupIdx) | 4×0x00];
+// out receives the 16 × 128-bit rank pairs at [0..15]. The result must
+// be bit-exact with sixteen sequential single-lane cascades over the
+// same components and blocks. A performance hook only: the cascade
+// fill is the wire with or without it.
+type InterlockFillFunc16 func(components []uint64, groupIdxBase uint64, out *[16][2]uint64)
+
 // Seed128 holds a dynamically-sized symmetric key with a pluggable 128-bit hash function.
 //
 // Key size is len(Components) * 64 bits. Components are consumed 2 per round
@@ -46,9 +109,8 @@ type Seed128 struct {
 	// processChunk128 dispatches per-pixel hashing four pixels at a
 	// time via BatchChainHash128 instead of one pixel per ChainHash128
 	// call. The Hash field remains the bit-exact reference; BatchHash
-	// must agree with Hash on every input (see seed128_batch.go for the
-	// parity invariant). nil disables batched dispatch and preserves
-	// the legacy single-call code path.
+	// must agree with Hash on every input. nil disables batched
+	// dispatch and preserves the legacy single-call code path.
 	BatchHash BatchHashFunc128
 
 	// FusedChain and BatchFusedChain optionally evaluate the whole
@@ -225,6 +287,88 @@ func (s *Seed128) deriveInterLockSeed(nonce []byte) (uint64, uint64) {
 	return s.ChainHash128(buf)
 }
 
+// BatchChainHash128 runs the four-way batched ChainHash128 via
+// s.BatchHash. Output [i] matches serial ChainHash128(data[i])
+// under the same Components. Caller ensures s.BatchHash != nil
+// (processChunk128 checks this before invoking).
+func (s *Seed128) BatchChainHash128(buf *[4][]byte) [4][2]uint64 {
+	if s.BatchFusedChain != nil {
+		if out, ok := s.BatchFusedChain(s.Components, buf); ok {
+			return out
+		}
+	}
+	var seeds [4][2]uint64
+	for lane := 0; lane < 4; lane++ {
+		seeds[lane][0] = s.Components[0]
+		seeds[lane][1] = s.Components[1]
+	}
+	h := s.BatchHash(buf, seeds)
+
+	for i := 2; i < len(s.Components); i += 2 {
+		c0, c1 := s.Components[i], s.Components[i+1]
+		for lane := 0; lane < 4; lane++ {
+			seeds[lane][0] = c0 ^ h[lane][0]
+			seeds[lane][1] = c1 ^ h[lane][1]
+		}
+		h = s.BatchHash(buf, seeds)
+	}
+	return h
+}
+
+// blockHash128x4 is the four-way counterpart of blockHash128.
+// Writes pixelIndices[i] as little-endian uint32 into buf[i]'s
+// first four bytes, then runs the batched chain hash.
+func (s *Seed128) blockHash128x4(buf *[4][]byte, pixelIndices [4]int) [4][2]uint64 {
+	for i := 0; i < 4; i++ {
+		binary.LittleEndian.PutUint32(buf[i], uint32(pixelIndices[i]))
+	}
+	return s.BatchChainHash128(buf)
+}
+
+// SetBatchFusedChain8 installs the eight-lane fused cascade hook. nil
+// removes it; the pixel pipeline then keeps the four-lane stride. The
+// hook is a performance path only: with or without it the seed produces
+// the same wire.
+func (s *Seed128) SetBatchFusedChain8(fn BatchFusedChainHashFunc128x8) {
+	s.batchFusedChainX8 = fn
+}
+
+// BatchFusedChain8 returns the installed eight-lane fused cascade hook,
+// nil when none is attached.
+func (s *Seed128) BatchFusedChain8() BatchFusedChainHashFunc128x8 {
+	return s.batchFusedChainX8
+}
+
+// batchChainHash128x8 runs the eight-lane batched ChainHash128: the
+// eight-lane hook first, otherwise two [Seed128.BatchChainHash128] calls
+// over the lane halves. Output [i] matches serial ChainHash128(buf[i])
+// under the same Components. Caller ensures s.BatchHash != nil.
+func (s *Seed128) batchChainHash128x8(buf *[8][]byte) [8][2]uint64 {
+	if s.batchFusedChainX8 != nil {
+		if out, ok := s.batchFusedChainX8(s.Components, buf); ok {
+			return out
+		}
+	}
+	var out [8][2]uint64
+	lo := [4][]byte{buf[0], buf[1], buf[2], buf[3]}
+	hi := [4][]byte{buf[4], buf[5], buf[6], buf[7]}
+	h := s.BatchChainHash128(&lo)
+	copy(out[0:4], h[:])
+	h = s.BatchChainHash128(&hi)
+	copy(out[4:8], h[:])
+	return out
+}
+
+// blockHash128x8 is the eight-way counterpart of blockHash128x4. Writes
+// pixelIndices[i] as little-endian uint32 into buf[i]'s first four
+// bytes, then runs the eight-lane batched chain hash.
+func (s *Seed128) blockHash128x8(buf *[8][]byte, pixelIndices [8]int) [8][2]uint64 {
+	for i := 0; i < 8; i++ {
+		binary.LittleEndian.PutUint32(buf[i], uint32(pixelIndices[i]))
+	}
+	return s.batchChainHash128x8(buf)
+}
+
 // InterlockFillX16 returns the batch-16 interlock PRF fill hook, nil
 // when none is attached.
 func (s *Seed128) InterlockFillX16() InterlockFillFunc16 {
@@ -239,4 +383,52 @@ func (s *Seed128) InterlockFillX16() InterlockFillFunc16 {
 // same wire.
 func (s *Seed128) SetInterlockBatch16(fn InterlockFillFunc16) {
 	s.interlockFillX16 = fn
+}
+
+// chainHash128With evaluates the ChainHash128 cascade over a
+// caller-supplied component slice instead of s.Components — the
+// prepended slice of the Interlocked Barrier cascade fill
+// ([buildLockBatchPRF48_128]). Evaluation order matches
+// [Seed128.ChainHash128]: the fused hook first, the sequential Hash loop
+// when the hook is absent or declines. components must hold an even
+// count of at least two words.
+func (s *Seed128) chainHash128With(components []uint64, buf []byte) (uint64, uint64) {
+	if s.FusedChain != nil {
+		if lo, hi, ok := s.FusedChain(components, buf); ok {
+			return lo, hi
+		}
+	}
+	hLo, hHi := s.Hash(buf, components[0], components[1])
+	for i := 2; i < len(components); i += 2 {
+		hLo, hHi = s.Hash(buf, components[i]^hLo, components[i+1]^hHi)
+	}
+	return hLo, hHi
+}
+
+// batchChainHash128With is the four-lane counterpart of
+// [Seed128.chainHash128With], mirroring [Seed128.BatchChainHash128] over
+// the supplied slice: the batched fused hook first, the sequential
+// BatchHash loop otherwise. Output [i] matches chainHash128With on
+// buf[i]. Caller ensures s.BatchHash != nil.
+func (s *Seed128) batchChainHash128With(components []uint64, buf *[4][]byte) [4][2]uint64 {
+	if s.BatchFusedChain != nil {
+		if out, ok := s.BatchFusedChain(components, buf); ok {
+			return out
+		}
+	}
+	var seeds [4][2]uint64
+	for lane := 0; lane < 4; lane++ {
+		seeds[lane][0] = components[0]
+		seeds[lane][1] = components[1]
+	}
+	h := s.BatchHash(buf, seeds)
+	for i := 2; i < len(components); i += 2 {
+		c0, c1 := components[i], components[i+1]
+		for lane := 0; lane < 4; lane++ {
+			seeds[lane][0] = c0 ^ h[lane][0]
+			seeds[lane][1] = c1 ^ h[lane][1]
+		}
+		h = s.BatchHash(buf, seeds)
+	}
+	return h
 }

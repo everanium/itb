@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tier_diag.sh — force each ITB dispatch tier and report throughput.
+# Force each ITB dispatch tier and report throughput.
 #
 # Runs a short single-thread bench (default: 4 MiB payload, 300 ms
 # per direction) at natural dispatch and then under every documented

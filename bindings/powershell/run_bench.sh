@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 #
-# run_bench.sh -- micro-benchmark runner for the PowerShell binding.
-# Builds the C# peer via build.sh, points ITB_LIBITB3_PATH at the
-# freshly-built shared library, then runs the bench scripts:
-# EncryptMessage and stream-pump throughput at 1 MiB / 16 MiB /
-# 64 MiB.
+# Micro-benchmark runner for the PowerShell binding. Builds the C# peer
+# via build.sh, points ITB_LIBITB3_PATH at the freshly-built shared
+# library, then runs the bench scripts: EncryptMessage and stream-pump
+# throughput at 1 MiB / 16 MiB / 64 MiB.
 #
 # The bench scripts are not compiled, so what has to be current is the
 # C# assembly they bind. build.sh delegates that to ../csharp/build.sh,

@@ -1,12 +1,11 @@
 #!/usr/bin/env bash
 #
-# build.sh -- one-step build for the Elixir binding. Chains the
-# Erlang binding's build.sh (libitb3.so + the C binding's static
-# archive + the NIF shim) and then compiles the Mix project; Mix
-# rebuilds the Erlang application as a rebar3 path dependency.
-# Prerequisites (Go, a C11 compiler, GNU make, Erlang/OTP 27+,
-# rebar3, Elixir 1.17+) must be installed separately; see README.md
-# "Prerequisites".
+# One-step build for the Elixir binding. Chains the Erlang binding's
+# build.sh (libitb3.so + the C binding's static archive + the NIF shim)
+# and then compiles the Mix project; Mix rebuilds the Erlang
+# application as a rebar3 path dependency. Prerequisites (Go, a C11
+# compiler, GNU make, Erlang/OTP 27+, rebar3, Elixir 1.17+) must be
+# installed separately; see README.md "Prerequisites".
 #
 # The build starts by removing every artefact this binding owns, so no
 # output of an earlier build can survive into this one and mask a

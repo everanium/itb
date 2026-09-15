@@ -1,7 +1,6 @@
 /*
- * Profile.swift — the profile record: the JSON object libitb3 accepts
- * in `register`, returns from `lookup` and `inspect`, and embeds in
- * every blob.
+ * The profile record: the JSON object libitb3 accepts in `register`,
+ * returns from `lookup` and `inspect`, and embeds in every blob.
  *
  * The record is a plain data carrier: no field is validated on the
  * Swift side. Field rules (mode / width / hash-width agreement, MAC

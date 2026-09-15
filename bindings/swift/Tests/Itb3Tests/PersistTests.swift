@@ -1,6 +1,6 @@
 /*
- * PersistTests.swift — persistence surface: save / saveF / load /
- * loadFile round trips, inspect, lookup / profiles, maxWorkers.
+ * Persistence surface: save / saveF / load / loadFile round
+ * trips, inspect, lookup / profiles, maxWorkers.
  */
 
 import Foundation

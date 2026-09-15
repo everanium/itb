@@ -4,9 +4,8 @@ package siphashasm
 
 import "testing"
 
-// siphashasm_entropy_arm64_test.go — the input-entropy differential
-// audit of every arm64 kernel by direct call, independent of the
-// dispatch flag.
+// The input-entropy differential audit of every arm64 kernel by
+// direct call, independent of the dispatch flag.
 
 // TestInputEntropyKernelsArm64 audits the four-lane NEON kernels and the
 // single-lane GPR kernels of every shape and the NEON eight-lane fill

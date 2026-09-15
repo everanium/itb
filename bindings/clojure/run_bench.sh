@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 #
-# run_bench.sh -- micro-benchmark runner for the Clojure binding.
-# Builds everything via build.sh, then runs the bench namespaces:
-# encrypt-message and stream-pump throughput at 1 MiB / 16 MiB /
-# 64 MiB.
+# Micro-benchmark runner for the Clojure binding. Builds everything
+# via build.sh, then runs the bench namespaces: encrypt-message and
+# stream-pump throughput at 1 MiB / 16 MiB / 64 MiB.
 #
 # build.sh wipes the compiled target directory and the Clojure CLI
 # classpath cache, and delegates the Java layer to

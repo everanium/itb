@@ -88,7 +88,9 @@ by design) and returns the refreshed blob; the receiver picks up
 the new masters through a fresh `Save()` / `Load` handshake:
 
 ```csharp
-byte[] rotated = sender.Rekey(new byte[32] { /* fresh perm */ }, new byte[32] { /* fresh wrap */ });
+var perm = new byte[32]; Array.Fill(perm, (byte)0x11);
+var wrap = new byte[32]; Array.Fill(wrap, (byte)0x22);
+byte[] rotated = sender.Rekey(perm, wrap);
 using var receiver2 = Pipeline.Load(rotated);
 ```
 

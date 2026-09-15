@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# render-matrix.sh -- render tmp/eitb/compat-matrix.md from
-# tmp/eitb/results.tsv. Separated from cross-verify.sh so a completed
-# results file can be re-rendered without re-running the fleet.
+# Render tmp/eitb/compat-matrix.md from tmp/eitb/results.tsv.
+# Separated from cross-verify.sh so a completed results file can be
+# re-rendered without re-running the fleet.
 
 set -eu
 set -o pipefail

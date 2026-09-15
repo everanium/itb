@@ -1,4 +1,4 @@
-# itb_eitb.cr — command-line demonstrator for the ITB Crystal binding.
+# Command-line demonstrator for the ITB Crystal binding.
 #
 # Subcommands:
 #

@@ -4,9 +4,8 @@ package blake2basm
 
 import "testing"
 
-// blake2basm_fused_arm64_test.go — the four-lane NEON kernels by direct
-// call and the four-lane dispatchers under the NEON and scalar dispatch
-// states.
+// The four-lane NEON kernels by direct call and the four-lane
+// dispatchers under the NEON and scalar dispatch states.
 
 func wrap4_256(f func(*[32]byte, *uint64, int, *[4]*byte, *[4][4]uint64)) x4fn256 {
 	return func(k *[32]byte, c []uint64, p *[4]*byte, o *[4][4]uint64) { f(k, &c[0], len(c)/4, p, o) }

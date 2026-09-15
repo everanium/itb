@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
-# build.sh -- one-step build for the Julia binding's libitb3.so
-# dependency. Prerequisites (Go, Julia 1.10+) must be installed
-# separately; see README.md "Prerequisites" section.
+# One-step build for the Julia binding's libitb3.so dependency.
+# Prerequisites (Go, Julia 1.10+) must be installed separately; see
+# README.md "Prerequisites" section.
 #
 # Every artefact this binding owns is removed before the build, so
 # nothing in the tree predates the invocation. eitb/eitb runs its Julia

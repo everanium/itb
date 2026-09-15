@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 #
-# build.sh -- one-step build for the Gleam binding. Chains the
-# Erlang binding's build.sh (libitb3.so + the C binding's static
-# archive + the NIF shim) and then compiles the Gleam project; the
-# Erlang application is discovered on the code path at runtime by
-# the FFI adapter (rebar3 applications are not Gleam packages, so it
-# cannot be a gleam.toml dependency). Prerequisites (Go, a C11
-# compiler, GNU make, Erlang/OTP 27+, rebar3, Gleam 1.11+) must be
-# installed separately; see README.md "Prerequisites".
+# One-step build for the Gleam binding. Chains the Erlang binding's
+# build.sh (libitb3.so + the C binding's static archive + the NIF shim)
+# and then compiles the Gleam project; the Erlang application is
+# discovered on the code path at runtime by the FFI adapter (rebar3
+# applications are not Gleam packages, so it cannot be a gleam.toml
+# dependency). Prerequisites (Go, a C11 compiler, GNU make, Erlang/OTP
+# 27+, rebar3, Gleam 1.11+) must be installed separately; see README.md
+# "Prerequisites".
 #
 # The build starts by removing every artefact this binding owns, so no
 # output of an earlier build can survive into this one and mask a

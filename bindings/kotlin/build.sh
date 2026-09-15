@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 #
-# build.sh -- one-step build for the Kotlin binding: libitb3.so + JNI
-# shim + Java binding jar (via the sibling bindings/java/build.sh),
-# then the Kotlin classes + eitb jar via Gradle. Prerequisites (Go,
-# JDK 17+, Gradle, Kotlin, gcc) must be installed separately; see
-# README.md "Prerequisites" section.
+# One-step build for the Kotlin binding: libitb3.so + JNI shim + Java
+# binding jar (via the sibling bindings/java/build.sh), then the Kotlin
+# classes + eitb jar via Gradle. Prerequisites (Go, JDK 17+, Gradle,
+# Kotlin, gcc) must be installed separately; see README.md
+# "Prerequisites" section.
 #
 # The build starts from an empty tree: the Gradle build directory, the
 # project-local Gradle and Kotlin caches and stray class output are

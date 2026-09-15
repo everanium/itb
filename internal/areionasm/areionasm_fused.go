@@ -7,8 +7,8 @@ import (
 	"github.com/jedisct1/go-aes"
 )
 
-// areionasm_fused.go — the fused ChainHash cascade of Areion-SoEM-256 /
-// -512 and its pure-Go reference.
+// The fused ChainHash cascade of Areion-SoEM-256 / -512 and its pure-Go
+// reference.
 //
 // The cascade is Seed256.ChainHash256 / Seed512.ChainHash512 over the
 // root package's Areion-SoEM chain-absorb closures: per component group

@@ -7,7 +7,7 @@ import (
 	"github.com/everanium/itb"
 )
 
-// seed_attach_test.go — the Low-Level attach surface: attachFused128 /
+// The Low-Level attach surface: attachFused128 /
 // attachInterlockBatch16. The hooks are performance paths only, so
 // every test below pins agreement between a hooked seed and the same
 // seed on the arms alone rather than the presence of any hook: the

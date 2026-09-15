@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 #
-# run_bench.sh -- Criterion bench runner for the Rust binding.
-# Builds libitb3.so + the crate via build.sh, points ITB_LIBITB3_PATH
-# at the freshly-built shared library, then runs every bench binary
+# Criterion bench runner for the Rust binding. Builds libitb3.so +
+# the crate via build.sh, points ITB_LIBITB3_PATH at the
+# freshly-built shared library, then runs every bench binary
 # (bench_message + bench_stream + bench_stream_one_shot). Positional
-# arguments are forwarded to the Criterion harness
-# (e.g. `./run_bench.sh --measurement-time 2`).
+# arguments are forwarded to the Criterion harness (e.g.
+# `./run_bench.sh --measurement-time 2`).
 
 set -eu
 set -o pipefail

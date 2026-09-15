@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
-# run_bench.sh -- micro-benchmark runner for the VB.NET binding.
-# Builds libitb3.so + the solution via build.sh, points
-# ITB_LIBITB3_PATH at the freshly-built shared library, then runs the
+# Micro-benchmark runner for the VB.NET binding. Builds libitb3.so +
+# the solution via build.sh, points ITB_LIBITB3_PATH at the
+# freshly-built shared library, then runs the
 # Everanium.LibItb3.VisualBasic.Bench binary: EncryptMessage and
 # stream-pump throughput at 1 MiB / 16 MiB / 64 MiB.
 #

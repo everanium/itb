@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
-# build.sh -- one-step build for the Python binding's libitb3.so
-# dependency. Prerequisites (Go, Python 3.10+) must be installed
-# separately; see README.md "Prerequisites" section.
+# One-step build for the Python binding's libitb3.so dependency.
+# Prerequisites (Go, Python 3.10+) must be installed separately;
+# see README.md "Prerequisites" section.
 #
 # Every artefact this binding owns is removed before the build, so
 # nothing in the tree predates the invocation.

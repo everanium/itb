@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 #
-# build.sh -- one-step build for the Groovy binding: libitb3.so + JNI
-# shim + Java binding jar (via the sibling bindings/java/build.sh),
-# then the Groovy classes + eitb jar via Gradle. Prerequisites (Go,
-# JDK 17+, Gradle, gcc) must be installed separately; see README.md
-# "Prerequisites" section.
+# One-step build for the Groovy binding: libitb3.so + JNI shim + Java
+# binding jar (via the sibling bindings/java/build.sh), then the Groovy
+# classes + eitb jar via Gradle. Prerequisites (Go, JDK 17+, Gradle,
+# gcc) must be installed separately; see README.md "Prerequisites"
+# section.
 #
 # The build starts from an empty tree: the Gradle build directory, the
 # project-local Gradle cache and stray class output are removed first,

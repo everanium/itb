@@ -1,4 +1,4 @@
-# errors.R — condition class for the ITB R binding.
+# Condition class for the ITB R binding.
 #
 # Every libitb3 failure surfaces as a condition of class
 # c("itb_error", "error", "condition") carrying three extra fields:

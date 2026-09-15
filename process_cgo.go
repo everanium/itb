@@ -228,7 +228,7 @@ func processChunk128(cfg *Config, noiseSeed, dataSeed *Seed128, nonce []byte, co
 	noiseBuf, dataBuf := ls.noise[0], ls.data[0]
 	noiseBufs, dataBufs := &ls.noise4, &ls.data4
 
-	// Eight-pixel stride (see process128_x8.go): lanes 4..7 extend the
+	// Eight-pixel stride (see process_x8.go): lanes 4..7 extend the
 	// four-lane buffers when both seeds carry the eight-lane fused hook.
 	useBatch8 := useBatch8Seeds(noiseSeed, dataSeed)
 	noiseBufs8, dataBufs8 := &ls.noise, &ls.data
@@ -319,7 +319,7 @@ func processChunk256(cfg *Config, noiseSeed, dataSeed *Seed256, nonce []byte, co
 	noiseBuf, dataBuf := ls.noise[0], ls.data[0]
 	noiseBufs, dataBufs := &ls.noise4, &ls.data4
 
-	// Eight-pixel stride (see process256_x8.go): lanes 4..7 extend the
+	// Eight-pixel stride (see process_x8.go): lanes 4..7 extend the
 	// four-lane buffers when both seeds carry the eight-lane fused hook.
 	useBatch8 := useBatch8Seeds256(noiseSeed, dataSeed)
 	noiseBufs8, dataBufs8 := &ls.noise, &ls.data
@@ -405,7 +405,7 @@ func processChunk512(cfg *Config, noiseSeed, dataSeed *Seed512, nonce []byte, co
 	noiseBuf, dataBuf := ls.noise[0], ls.data[0]
 	noiseBufs, dataBufs := &ls.noise4, &ls.data4
 
-	// Eight-pixel stride (see process512_x8.go): lanes 4..7 extend the
+	// Eight-pixel stride (see process_x8.go): lanes 4..7 extend the
 	// four-lane buffers when both seeds carry the eight-lane fused hook.
 	useBatch8 := useBatch8Seeds512(noiseSeed, dataSeed)
 	noiseBufs8, dataBufs8 := &ls.noise, &ls.data
