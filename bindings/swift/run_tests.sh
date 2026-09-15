@@ -9,9 +9,7 @@
 set -euo pipefail
 
 cd "$(dirname "$0")"
-REPO_ROOT="$(cd ../.. && pwd -P)"
 
 ./build.sh
 
-# The SwiftPM manifest lives at the repository root.
-swift test --package-path "$REPO_ROOT" "$@"
+swift test "$@"

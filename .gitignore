@@ -83,14 +83,6 @@ bindings/rust/Cargo.lock
 bindings/python/build/
 bindings/python/dist/
 
-# SwiftPM artefacts — the manifest sits at the repository root so the
-# package is resolvable as a Git dependency, and the build tree lands
-# beside it.
-/.build/
-/.swiftpm/
-/.index-build/
-/Package.resolved
-
 # Fortran cache
 *.mod
 

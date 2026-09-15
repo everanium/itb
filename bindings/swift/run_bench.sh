@@ -13,10 +13,6 @@ set -eu
 set -o pipefail
 
 cd "$(dirname "$0")"
-# The SwiftPM manifest lives at the repository root, so its build
-# tree does too.
-REPO_ROOT="$(cd ../.. && pwd -P)"
-BENCH="$REPO_ROOT/.build/release/Itb3Bench"
 
 ./build.sh
 
@@ -58,22 +54,22 @@ fi
 case "${1:-all}" in
     message)
         export ITB_PROFILE="${ITB_MSG_PROFILE_DEFAULT}"
-        exec "$BENCH" message
+        exec .build/release/Itb3Bench message
         ;;
     stream)
         export ITB_PROFILE="${ITB_STREAM_PROFILE_DEFAULT}"
-        exec "$BENCH" stream
+        exec .build/release/Itb3Bench stream
         ;;
     stream_one_shot)
         export ITB_PROFILE="${ITB_STREAM_PROFILE_DEFAULT}"
-        exec "$BENCH" stream_one_shot
+        exec .build/release/Itb3Bench stream_one_shot
         ;;
     all)
         export ITB_PROFILE="${ITB_MSG_PROFILE_DEFAULT}"
-        "$BENCH" message
+        .build/release/Itb3Bench message
         export ITB_PROFILE="${ITB_STREAM_PROFILE_DEFAULT}"
-        "$BENCH" stream
-        exec "$BENCH" stream_one_shot
+        .build/release/Itb3Bench stream
+        exec .build/release/Itb3Bench stream_one_shot
         ;;
     *)
         echo "usage: $0 [message|stream|stream_one_shot|all]" >&2

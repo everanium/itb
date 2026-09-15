@@ -236,4 +236,4 @@ dotnet run -c Release --project Everanium.LibItb3.Eitb -- decrypt singlemsg-trip
 
 ## License
 
-Apache-2.0 — see [LICENSE](../../LICENSE).
+Apache-2.0 — see [LICENSE](https://github.com/everanium/itb/blob/main/LICENSE).

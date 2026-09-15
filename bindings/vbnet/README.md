@@ -268,4 +268,4 @@ dotnet run -c Release --project eitb/Everanium.LibItb3.VisualBasic.Eitb -- decry
 
 ## License
 
-Apache-2.0 — see [LICENSE](../../LICENSE).
+Apache-2.0 — see [LICENSE](https://github.com/everanium/itb/blob/main/LICENSE).

@@ -255,4 +255,4 @@ eitb/eitb decrypt singlemsg-triple-mac-v1 <blob-hex> out.bin back.bin
 
 ## License
 
-Apache-2.0 — see [LICENSE](../../LICENSE).
+Apache-2.0 — see [LICENSE](https://github.com/everanium/itb/blob/main/LICENSE).
