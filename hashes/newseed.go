@@ -2,18 +2,17 @@ package hashes
 
 import "github.com/everanium/itb"
 
-// newseed.go — name-keyed seed constructors, the constructor path of
-// every shipped seed: the triple package's seed builders and the C ABI
-// seed constructors call them. Each builds a seed of the named registry
+// Name-keyed seed constructors, the constructor path of every shipped
+// seed: the triple package's seed builders and the C ABI seed
+// constructors call them. Each builds a seed of the named registry
 // primitive with every performance hook the primitive offers: the
 // (single, batched) arms from the width's Make<W>Pair, keyBits random
 // components from the itb constructor, then the fused ChainHash cascade
 // hooks and the Interlocked Barrier fill hooks from the width's attach
-// steps. The
-// hooks are performance paths only — a seed built on the arms alone
-// through itb.NewSeed<W> produces and decrypts the same wire — so
-// itb.NewSeed<W> remains the constructor for callers who supply their
-// own HashFunc<W> outside the registry.
+// steps. The hooks are performance paths only — a seed built on the
+// arms alone through itb.NewSeed<W> produces and decrypts the same wire
+// — so itb.NewSeed<W> remains the constructor for callers who supply
+// their own HashFunc<W> outside the registry.
 
 // NewSeed128 builds a width-128 seed of the named primitive with
 // keyBits bits of random components and every hook the primitive

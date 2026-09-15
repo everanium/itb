@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# sweep.sh — single-policy microBatch bench with compact output.
+# Single-policy microBatch bench with compact output.
 #
 # Runs the canonical BenchmarkExtProductionMessage_(Encrypt|Decrypt) cohort
 # at 1s x count=1 with -benchmem, parses each result line into a compact

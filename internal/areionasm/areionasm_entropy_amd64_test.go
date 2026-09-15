@@ -8,10 +8,9 @@ import (
 	aes "github.com/jedisct1/go-aes"
 )
 
-// areionasm_entropy_amd64_test.go — the input-entropy differential audit
-// of every amd64 kernel by direct call, independent of the dispatch
-// flags, and of the dispatchers under every dispatch state the host can
-// execute.
+// The input-entropy differential audit of every amd64 kernel by direct
+// call, independent of the dispatch flags, and of the dispatchers under
+// every dispatch state the host can execute.
 
 func fill256x8Kernel(k *[32]byte, c []uint64, base uint64, o *[8][4]uint64) {
 	areion256FusedChain13x8Avx512Asm(k, &c[0], len(c)/4, base, o)

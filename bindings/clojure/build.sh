@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 #
-# build.sh -- one-step build for the Clojure binding: libitb3.so + JNI
-# shim + Java binding jars (via the sibling bindings/java/build.sh),
-# then a classpath prepare + compile check of the Clojure namespaces
-# with reflection warnings treated as errors. Prerequisites (Go,
-# JDK 17+, Gradle, Clojure CLI, gcc) must be installed separately;
-# see README.md "Prerequisites" section.
+# One-step build for the Clojure binding: libitb3.so + JNI shim + Java
+# binding jars (via the sibling bindings/java/build.sh), then a
+# classpath prepare + compile check of the Clojure namespaces with
+# reflection warnings treated as errors. Prerequisites (Go, JDK 17+,
+# Gradle, Clojure CLI, gcc) must be installed separately; see README.md
+# "Prerequisites" section.
 #
 # The build starts from an empty tree: the compiled target directory
 # and the Clojure CLI's project-local classpath cache are removed

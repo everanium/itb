@@ -1,4 +1,4 @@
-! itb_status.f90 -- status codes returned by every libitb3 entry point.
+! Status codes returned by every libitb3 entry point.
 !
 ! Mirrors the ITB_OK / ITB_ERR_* constants of the C ABI
 ! (cmd/cshared/internal/capi/errors.go). The numeric values are

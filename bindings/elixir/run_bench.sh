@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 #
-# run_bench.sh -- micro-benchmark runner for the Elixir binding.
-# Builds libitb3.so + the C binding archive + the Erlang backend +
-# the Mix project via build.sh, then runs bench_message, bench_stream
-# and bench_stream_one_shot: encrypt_message, stream-pump and
+# Micro-benchmark runner for the Elixir binding. Builds libitb3.so +
+# the C binding archive + the Erlang backend + the Mix project via
+# build.sh, then runs bench_message, bench_stream and
+# bench_stream_one_shot: encrypt_message, stream-pump and
 # whole-buffer stream throughput at 1 MiB / 16 MiB / 64 MiB.
 #
 # Usage:

@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 #
-# run_bench.sh -- micro-benchmark runner for the F# binding. Builds
-# libitb3.so + the solution via build.sh, points ITB_LIBITB3_PATH at
-# the freshly-built shared library, then runs the bench binary:
-# encryptMessage and stream-pump throughput at 1 MiB / 16 MiB /
-# 64 MiB.
+# Micro-benchmark runner for the F# binding. Builds libitb3.so + the
+# solution via build.sh, points ITB_LIBITB3_PATH at the
+# freshly-built shared library, then runs the bench binary:
+# encryptMessage and stream-pump throughput at 1 MiB / 16 MiB / 64
+# MiB.
 #
 # build.sh wipes the bin/ and obj/ tree of every project in the
 # solution -- the C# library member included -- before it builds and

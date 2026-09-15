@@ -8,18 +8,17 @@ import (
 	"github.com/everanium/itb"
 )
 
-// seed_attach_wide32_test.go — the eight-lane fused hook and the
-// batch-32 fill hook of the width-256 / width-512 attach surface:
-// Spec.FusedChainHash256x8 / FusedChainHash512x8 through attachFused256 /
-// attachFused512 and Spec.InterlockFillBatch32x256 / x512 through
-// attachInterlockBatch32x256 / x512. On the shipped registry the helpers
-// are pinned entry by entry — a hook an entry's factory returns must be
-// bit-exact with the sequential cascade of the entry's single arm, and
-// an entry without a factory leaves the seed unhooked — and the helpers
-// are exercised through custom primitives registered with pure-Go
-// factories, including divergent factories the Register smoke must
-// reject and declining factories (nil kernel) that leave the seed on
-// the narrower paths.
+// The eight-lane fused hook and the batch-32 fill hook of the width-256 /
+// width-512 attach surface: Spec.FusedChainHash256x8 /
+// FusedChainHash512x8 through attachFused256 / attachFused512 and
+// Spec.InterlockFillBatch32x256 / x512 through attachInterlockBatch32x256
+// / x512. On the shipped registry the helpers are pinned entry by entry —
+// a hook an entry's factory returns must be bit-exact with the sequential
+// cascade of the entry's single arm, and an entry without a factory
+// leaves the seed unhooked — and the helpers are exercised through custom
+// primitives registered with pure-Go factories, including divergent
+// factories the Register smoke must reject and declining factories (nil
+// kernel) that leave the seed on the narrower paths.
 
 // goX8Factory256 returns a FusedChainHash256x8 factory evaluating the
 // cascade lane by lane in Go over the supplied single arm; corrupt flips

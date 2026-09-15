@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 #
-# run_bench.sh -- micro-benchmark runner for the LFE binding. Builds
-# libitb3.so + the C binding archive + the Erlang backend + the LFE
-# application via build.sh, compiles the bench module with the
-# hex-fetched LFE compiler, then runs the message, stream and
-# stream_one_shot shapes: encrypt-message, stream-pump and
-# whole-buffer stream throughput at 1 MiB / 16 MiB / 64 MiB.
+# Micro-benchmark runner for the LFE binding. Builds libitb3.so +
+# the C binding archive + the Erlang backend + the LFE application
+# via build.sh, compiles the bench module with the hex-fetched LFE
+# compiler, then runs the message, stream and stream_one_shot
+# shapes: encrypt-message, stream-pump and whole-buffer stream
+# throughput at 1 MiB / 16 MiB / 64 MiB.
 #
 # Usage:
 #   ./run_bench.sh                        # all shapes

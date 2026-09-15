@@ -26,7 +26,7 @@ func processChunk128(cfg *Config, noiseSeed, dataSeed *Seed128, nonce []byte, co
 	if noiseSeed.BatchHash != nil && dataSeed.BatchHash != nil {
 		noiseBufs, dataBufs := &ls.noise4, &ls.data4
 
-		// Eight-pixel stride (see process128_x8.go): when both seeds
+		// Eight-pixel stride (see process_x8.go): when both seeds
 		// carry the eight-lane fused hook, eight pixels are hashed per
 		// call ahead of the four-pixel loop below; the per-pixel body is
 		// the same.
@@ -286,7 +286,7 @@ func processChunk256(cfg *Config, noiseSeed, dataSeed *Seed256, nonce []byte, co
 	if noiseSeed.BatchHash != nil && dataSeed.BatchHash != nil {
 		noiseBufs, dataBufs := &ls.noise4, &ls.data4
 
-		// Eight-pixel stride (see process256_x8.go): when both seeds
+		// Eight-pixel stride (see process_x8.go): when both seeds
 		// carry the eight-lane fused hook, eight pixels are hashed per
 		// call ahead of the four-pixel loop below; the per-pixel body is
 		// the same.
@@ -546,7 +546,7 @@ func processChunk512(cfg *Config, noiseSeed, dataSeed *Seed512, nonce []byte, co
 	if noiseSeed.BatchHash != nil && dataSeed.BatchHash != nil {
 		noiseBufs, dataBufs := &ls.noise4, &ls.data4
 
-		// Eight-pixel stride (see process512_x8.go): when both seeds
+		// Eight-pixel stride (see process_x8.go): when both seeds
 		// carry the eight-lane fused hook, eight pixels are hashed per
 		// call ahead of the four-pixel loop below; the per-pixel body is
 		// the same.

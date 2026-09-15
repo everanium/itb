@@ -6,7 +6,7 @@ Concrete parity gadget for the SipHash-1-3 SAT calibration
 
 Cross-checks that two independent lo-lane implementations reproduce
 the Go `chainHash128Siphash13` output bit-exact when the Go primitive
-is `siphash13Hash` (harness_test.go).
+is `shelfSiphash13Hash` (harness_shelf_test.go).
 
 Two independent implementations:
 
@@ -65,7 +65,7 @@ SIP_D = 3
 
 
 # ============================================================================
-# Concrete reference — pure Python mirror of harness_test.go siphash13 ref
+# Concrete reference — pure Python mirror of harness_shelf_test.go siphash13 ref
 # ============================================================================
 
 

@@ -8,18 +8,17 @@ import (
 	"github.com/everanium/itb/internal/forcetier"
 )
 
-// siphash24_cascade_kat_test.go — known-answer vectors of the SipHash-2-4
-// ChainHash128 cascade, produced by the pure-Go cascade under the
-// noitbasm build tag and identical on every assembly tier. The vectors
-// cover the per-pixel cascade of the 512 / 1024 / 2048-bit keys (4 / 8 /
-// 16 component pairs) at the four kernel shapes — single lane, four
-// lanes, and the single-lane fused hook over the prepended lock
-// components of the Interlocked Barrier fill (5 / 9 / 17 pairs) — and
-// the batch-16 fill hook at the 13-byte shape across a group index base
-// that carries through byte 7 inside the batch. A seed with every hook
-// and the same seed on the arms alone are both checked, so the table
-// pins the wire as well as every hook against the noitbasm reference.
-// SipHash has no fixed key: the components are the whole key.
+// Known-answer vectors of the SipHash-2-4 ChainHash128 cascade, produced
+// by the pure-Go cascade under the noitbasm build tag and identical on
+// every assembly tier. The vectors cover the per-pixel cascade of the 512
+// / 1024 / 2048-bit keys (4 / 8 / 16 component pairs) at the four kernel
+// shapes — single lane, four lanes, and the single-lane fused hook over
+// the prepended lock components of the Interlocked Barrier fill (5 / 9 /
+// 17 pairs) — and the batch-16 fill hook at the 13-byte shape across a
+// group index base that carries through byte 7 inside the batch. A seed
+// with every hook and the same seed on the arms alone are both checked,
+// so the table pins the wire as well as every hook against the noitbasm
+// reference. SipHash has no fixed key: the components are the whole key.
 
 type siphash24CascadeKAT struct {
 	pairs, n int

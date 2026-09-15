@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 #
-# run_tests.sh -- one-step test runner for the F# binding. Builds
-# libitb3.so + the solution via build.sh, points ITB_LIBITB3_PATH at
-# the freshly-built shared library, then invokes `dotnet test
-# -c Release`. Positional arguments are forwarded through to dotnet
+# One-step test runner for the F# binding. Builds libitb3.so + the
+# solution via build.sh, points ITB_LIBITB3_PATH at the
+# freshly-built shared library, then invokes `dotnet test -c
+# Release`. Positional arguments are forwarded through to dotnet
 # test (e.g. `--filter` to scope the run).
 #
 # build.sh wipes the bin/ and obj/ tree of every project in the

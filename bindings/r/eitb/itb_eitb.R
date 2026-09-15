@@ -1,4 +1,4 @@
-# itb_eitb.R — command-line demonstrator for the ITB R binding.
+# Command-line demonstrator for the ITB R binding.
 #
 # Subcommands:
 #

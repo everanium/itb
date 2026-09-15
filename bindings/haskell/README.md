@@ -63,6 +63,7 @@ time — run `build.sh` first (or write an equivalent
 
 ```haskell
 import ITB3
+import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BC
 
 main :: IO ()

@@ -74,7 +74,9 @@ preprocessor-free copy of the generated `dist/<os>-<arch>/libitb3.h`
 ## Usage example
 
 ```php
-require 'bindings/php/autoload.php';
+require 'vendor/autoload.php';
+// In-repo checkout without composer:
+// require 'bindings/php/autoload.php';
 
 use Everanium\Itb3\Itb;
 

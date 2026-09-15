@@ -9,23 +9,23 @@ import (
 	"github.com/everanium/itb/internal/kernelaudit"
 )
 
-// nonce_entropy_audit_test.go — the input-entropy differential audit
-// (internal/kernelaudit) of every shipped registry entry as the pipeline
-// reaches it: the single and batched hash arms of the entry, and every
-// fused cascade hook its factories install — the single- and four-lane
-// per-pixel evaluators, the eight-lane evaluators and the batch-16 /
-// batch-32 Interlocked Barrier fill hooks — at every per-pixel shape
-// (the 13-byte fill block and the 20 / 36 / 68-byte nonce-buf shapes of
-// the 128 / 256 / 512-bit nonces). Every bit of every lane buffer,
-// component word and group index base must reach the output, lane for
-// lane, through the closure the pipeline calls — the composition of the
-// factory, the kernel dispatcher and the kernel under the dispatch
-// state the process runs with (auto, or the ITB_FORCE_* state of the
-// environment) — and every hook must agree, at the baseline and after
-// every flip, with the sequential cascade over the entry's single arm,
-// the reference the seed's sequential loop evaluates. The kernel
-// packages audit every kernel by direct call under every tier; this
-// file audits the shipped plumbing.
+// The input-entropy differential audit (internal/kernelaudit) of every
+// shipped registry entry as the pipeline reaches it: the single and
+// batched hash arms of the entry, and every fused cascade hook its
+// factories install — the single- and four-lane per-pixel evaluators,
+// the eight-lane evaluators and the batch-16 / batch-32 Interlocked
+// Barrier fill hooks — at every per-pixel shape (the 13-byte fill block
+// and the 20 / 36 / 68-byte nonce-buf shapes of the 128 / 256 / 512-bit
+// nonces). Every bit of every lane buffer, component word and group
+// index base must reach the output, lane for lane, through the closure
+// the pipeline calls — the composition of the factory, the kernel
+// dispatcher and the kernel under the dispatch state the process runs
+// with (auto, or the ITB_FORCE_* state of the environment) — and every
+// hook must agree, at the baseline and after every flip, with the
+// sequential cascade over the entry's single arm, the reference the
+// seed's sequential loop evaluates. The kernel packages audit every
+// kernel by direct call under every tier; this file audits the shipped
+// plumbing.
 
 // auditShapes are the per-pixel input lengths every arm and hook is
 // audited at.

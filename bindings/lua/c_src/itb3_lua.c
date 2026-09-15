@@ -1,6 +1,6 @@
 /*
- * itb3_lua.c — Lua 5.4 C module over the libitb3 shared library's
- * Triple Pipeline surface (ITB_Triple_*, cmd/cshared).
+ * Lua 5.4 C module over the libitb3 shared library's Triple Pipeline
+ * surface (ITB_Triple_*, cmd/cshared).
  *
  * The module is a thin proxy: every hash-name / MAC-name / cipher-name
  * / profile-name is an opaque string passed through to Go for

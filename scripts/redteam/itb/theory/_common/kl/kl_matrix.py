@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""kl_matrix.py — Mode B BarrierFill auto-selection driver.
+"""Mode B BarrierFill auto-selection driver.
 
 Iterates the Cartesian product of plaintext sizes × BarrierFill values,
 runs the Mode B distinguisher on both ITB ciphertext and a matched-size

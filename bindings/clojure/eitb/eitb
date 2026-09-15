@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
-# eitb -- launcher for the Clojure binding's eitb CLI. Builds the
-# Java binding layer on first use (via ../build.sh), then execs the
+# Launcher for the Clojure binding's eitb CLI. Builds the Java
+# binding layer on first use (via ../build.sh), then execs the
 # clojure.main script with the :eitb alias.
 
 set -eu

@@ -82,8 +82,7 @@ Every kernel implements the construction documented in
 there by the in-package parity tests (`go test ./internal/aesitbasm/`,
 every tier by direct call plus `ITB_FORCE_HASH_TIER` /
 `ITB_FORCE_INTERLOCK_PRF_FILL_TIER` probes), by the root
-`aesitb_parity_test.go` / `aesitb_fused_parity_test.go`, and by the
-cross-tier wire-parity tests. The generators change how a kernel reads its
+`aesitb_test.go`, and by the cross-tier wire-parity tests. The generators change how a kernel reads its
 inputs and where it stages them, never what it computes.
 
 Independently of any reference, every kernel is held to the

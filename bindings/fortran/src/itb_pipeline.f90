@@ -1,4 +1,4 @@
-! itb_pipeline.f90 -- the Triple Pipeline handle wrapper.
+! The Triple Pipeline handle wrapper.
 !
 ! One itb_pipeline_t replaces the 8-seed + parallax + wrapper +
 ! MAC ceremony of the low-level path. The Pipeline is initialised

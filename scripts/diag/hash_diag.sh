@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# hash_diag.sh — 9-hash x 3-nonce-width throughput matrix at fixed
-# tier configuration.
+# 9-hash x 3-nonce-width throughput matrix at fixed tier
+# configuration.
 #
 # Purpose: detect hash-specific or nonce-width-specific regressions on
 # a given CPU. Compares the same 27 cells across CPUs (or across tier

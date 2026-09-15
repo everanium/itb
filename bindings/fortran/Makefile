@@ -1,5 +1,5 @@
-# Makefile -- build the ITB Fortran binding sources, test programs,
-# bench binaries, and the eitb CLI.
+# Build the ITB Fortran binding sources, test programs, bench
+# binaries, and the eitb CLI.
 #
 # Targets:
 #   all (default): compile every src/*.f90 module into build/.

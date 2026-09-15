@@ -1,8 +1,7 @@
 /*
- * ErrorsTests.swift — error-mapping surface: opaque-string relay,
- * unknown profile, profile registration with an 8-entry `hashes`
- * constellation, duplicate registration, and the mapped status
- * codes.
+ * Error-mapping surface: opaque-string relay, unknown profile,
+ * profile registration with an 8-entry `hashes` constellation,
+ * duplicate registration, and the mapped status codes.
  */
 
 import Foundation

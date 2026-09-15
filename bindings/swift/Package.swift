@@ -1,6 +1,6 @@
 // swift-tools-version: 6.0
 //
-// Package.swift — SwiftPM manifest for the ITB Swift binding.
+// SwiftPM manifest for the ITB Swift binding.
 //
 // The binding is a thin proxy over the C binding's public surface
 // (bindings/c/include/itb3.h, libitb3_c) which in turn links the

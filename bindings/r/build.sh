@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 #
-# build.sh -- one-step build for the R binding: (re)builds libitb3.so
-# if absent (or when ITB_REBUILD_LIBITB3=1), then installs the R
-# package (compiling the C shim src/libitb3r.c) into the local library
-# directory .local/. Prerequisites (Go, gcc, R) must be installed
-# separately; see README.md "Prerequisites".
+# One-step build for the R binding: (re)builds libitb3.so if absent (or
+# when ITB_REBUILD_LIBITB3=1), then installs the R package (compiling
+# the C shim src/libitb3r.c) into the local library directory .local/.
+# Prerequisites (Go, gcc, R) must be installed separately; see
+# README.md "Prerequisites".
 #
 # Every artefact this binding owns is removed before the build, so
 # nothing in the tree predates the invocation. .local/ is wiped and

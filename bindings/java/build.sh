@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
-# build.sh -- one-step build for the Java binding: libitb3.so + JNI
-# shim + jars via Gradle. Prerequisites (Go, JDK 17+, Gradle, gcc)
-# must be installed separately; see README.md "Prerequisites" section.
+# One-step build for the Java binding: libitb3.so + JNI shim + jars via
+# Gradle. Prerequisites (Go, JDK 17+, Gradle, gcc) must be installed
+# separately; see README.md "Prerequisites" section.
 #
 # The build starts from an empty tree: every artefact this binding
 # owns -- the Gradle build directory, the project-local Gradle cache,

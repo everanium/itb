@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 #
-# build.sh -- one-step build for the Erlang binding: libitb3.so + the C
-# binding's static archive + the OTP application (NIF shim compiled by
-# the rebar3 compile pre-hook) + the eitb demonstrator. Prerequisites
-# (Go, a C11 compiler, GNU make, Erlang/OTP 27+, rebar3) must be
-# installed separately; see README.md "Prerequisites".
+# One-step build for the Erlang binding: libitb3.so + the C binding's
+# static archive + the OTP application (NIF shim compiled by the rebar3
+# compile pre-hook) + the eitb demonstrator. Prerequisites (Go, a C11
+# compiler, GNU make, Erlang/OTP 27+, rebar3) must be installed
+# separately; see README.md "Prerequisites".
 #
 # The build starts by removing every artefact this binding owns, so no
 # output of an earlier build can survive into this one and mask a

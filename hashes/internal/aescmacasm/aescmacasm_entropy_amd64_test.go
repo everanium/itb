@@ -4,10 +4,9 @@ package aescmacasm
 
 import "testing"
 
-// aescmacasm_entropy_amd64_test.go — the input-entropy differential
-// audit of every amd64 kernel by direct call, independent of the
-// dispatch flags, and of the dispatchers under every dispatch state the
-// host can execute.
+// The input-entropy differential audit of every amd64 kernel by direct
+// call, independent of the dispatch flags, and of the dispatchers under
+// every dispatch state the host can execute.
 
 // TestInputEntropyKernelsAmd64 audits every kernel the host can execute:
 // the four-lane kernels of every tier, the single-lane kernels of the

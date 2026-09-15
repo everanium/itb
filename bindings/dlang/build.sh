@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 #
-# build.sh -- one-step build for the D binding: libitb3.so + dub build
-# of the binding library + the eitb CLI. Prerequisites (Go, dmd /
-# ldc2, dub) must be installed separately; see README.md
-# "Prerequisites" section.
+# One-step build for the D binding: libitb3.so + dub build of the
+# binding library + the eitb CLI. Prerequisites (Go, dmd / ldc2, dub)
+# must be installed separately; see README.md "Prerequisites" section.
 #
 # Every artefact this binding owns is removed first, so nothing the
 # build produces can be a leftover from an earlier invocation.

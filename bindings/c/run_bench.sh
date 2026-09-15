@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 #
-# run_bench.sh -- micro-benchmark runner for the C binding. Builds
-# libitb3.so + the C library via build.sh, then compiles and runs the
-# benches/bench_*.c binaries (make bench): EncryptMessage,
-# encrypt_stream_pump, and encrypt_stream_one_shot throughput at
-# 1 MiB / 16 MiB / 64 MiB.
+# Micro-benchmark runner for the C binding. Builds libitb3.so + the C
+# library via build.sh, then compiles and runs the benches/bench_*.c
+# binaries (make bench): EncryptMessage, encrypt_stream_pump, and
+# encrypt_stream_one_shot throughput at 1 MiB / 16 MiB / 64 MiB.
 #
 # Usage:
 #   ./run_bench.sh

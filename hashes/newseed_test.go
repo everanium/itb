@@ -9,13 +9,13 @@ import (
 	"github.com/everanium/itb"
 )
 
-// newseed_test.go — the name-keyed seed constructors NewSeed128 /
-// NewSeed256 / NewSeed512. For every shipped primitive at every key
-// size the constructed seed carries exactly the hooks the manual attach
-// sequence installs, the returned key rebuilds identical arms, and the
-// wire round-trips both ways against an arms-only twin built through
-// the itb constructor on the same components — the cascade fill is the
-// wire, the hooks only evaluate it. A custom registered primitive goes
+// The name-keyed seed constructors NewSeed128 / NewSeed256 /
+// NewSeed512. For every shipped primitive at every key size the
+// constructed seed carries exactly the hooks the manual attach sequence
+// installs, the returned key rebuilds identical arms, and the wire
+// round-trips both ways against an arms-only twin built through the itb
+// constructor on the same components — the cascade fill is the wire,
+// the hooks only evaluate it. A custom registered primitive goes
 // through the same constructor; bad names, widths, keys and key sizes
 // are rejected.
 

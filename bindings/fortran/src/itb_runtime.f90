@@ -1,5 +1,4 @@
-! itb_runtime.f90 -- process-wide Go runtime knobs and the library
-! version string.
+! Process-wide Go runtime knobs and the library version string.
 
 module itb_runtime
   use, intrinsic :: iso_c_binding, only: c_int, c_int64_t, c_size_t, &

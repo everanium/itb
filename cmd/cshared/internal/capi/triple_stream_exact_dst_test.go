@@ -1,7 +1,7 @@
 package capi
 
-// triple_stream_exact_dst_test.go — regression coverage for the
-// TripleStreamRead teardown-flag sync invariant.
+// Regression coverage for the TripleStreamRead teardown-flag sync
+// invariant.
 //
 // The cipher goroutine's tail runs `spool.close() → close(done)` as
 // two distinct steps. Without the drained-and-closed sync on

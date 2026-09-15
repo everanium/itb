@@ -2,13 +2,13 @@
 
 package itb
 
-// harness_shelf_test.go — HARNESS.md § 3.3 Axis B corpus generators for the
-// four non-cryptographic hash primitives on the shelf (t1ha1_64le, SeaHash,
-// mx3, SipHash-1-3), driving the shipped Triple + always-on 48-bit Interlocked
-// Barrier construction. One env-gated `TestRedTeamHarnessGenerate*NonceReuse`
-// test per primitive, invoked by the four
-// `scripts/redteam/itb/theory/<primitive>/harness_bias_audit.sh` drivers, which then
-// feed the emitted `cell.meta.json` + `ct_0000.bin` through
+// HARNESS.md § 3.3 Axis B corpus generators for the four non-cryptographic
+// hash primitives on the shelf (t1ha1_64le, SeaHash, mx3, SipHash-1-3),
+// driving the shipped Triple + always-on 48-bit Interlocked Barrier
+// construction. One env-gated `TestRedTeamHarnessGenerate*NonceReuse` test per
+// primitive, invoked by the four
+// `scripts/redteam/itb/theory/<primitive>/harness_bias_audit.sh` drivers,
+// which then feed the emitted `cell.meta.json` + `ct_0000.bin` through
 // `scripts/redteam/itb/theory/_common/raw_mode_bias_probe.py` for the |Δ50|
 // reading.
 //

@@ -4,10 +4,10 @@ package siphashasm
 
 import "testing"
 
-// siphash_fusedchain128_13x8_parity_arm64_test.go — the eight-lane fill
-// kernel of the NEON tier by direct call: each half of a batch-16 call
-// must equal the pure-Go reference and the four-lane NEON kernels run
-// over the Go-synthesised blocks of the same lanes.
+// The eight-lane fill kernel of the NEON tier by direct call: each
+// half of a batch-16 call must equal the pure-Go reference and the
+// four-lane NEON kernels run over the Go-synthesised blocks of the
+// same lanes.
 
 // fillX16ViaX8Neon is the batch-16 fill as two eight-lane NEON kernel
 // calls with in-register block synthesis.

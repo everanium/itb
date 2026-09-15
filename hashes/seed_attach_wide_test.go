@@ -9,11 +9,11 @@ import (
 	"github.com/everanium/itb"
 )
 
-// seed_attach_wide_test.go — the width-256 / width-512 attach surface:
-// attachFused256 / attachInterlockBatch16x256 and their 512 twins. Every
-// shipped entry leaves the wide factory fields nil, so the helpers are
-// pinned as no-ops on the registry and exercised through custom
-// primitives registered with pure-Go whole-cascade factories.
+// The width-256 / width-512 attach surface: attachFused256 /
+// attachInterlockBatch16x256 and their 512 twins. Every shipped entry
+// leaves the wide factory fields nil, so the helpers are pinned as
+// no-ops on the registry and exercised through custom primitives
+// registered with pure-Go whole-cascade factories.
 
 // wideAttachCase is one width's attach surface, expressed through the
 // registry-agnostic operations the tests below need.

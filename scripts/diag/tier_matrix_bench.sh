@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tier_matrix_bench.sh — AES-ITB-128 dispatch-tier matrix benchmark.
+# AES-ITB-128 dispatch-tier matrix benchmark.
 #
 # Crosses the two aesitbasm forcing variables and reports encrypt /
 # decrypt throughput of the Triple 512-bit AES-ITB-128 cell for every

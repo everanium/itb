@@ -4,9 +4,8 @@ package areionasm
 
 import "testing"
 
-// areionasm_entropy_arm64_test.go — the input-entropy differential audit
-// of every NEON kernel by direct call, independent of the dispatch
-// flag.
+// The input-entropy differential audit of every NEON kernel by
+// direct call, independent of the dispatch flag.
 
 // TestInputEntropyKernelsArm64 audits the four-lane and single-lane NEON
 // kernels of every shape at both widths and the eight-lane NEON fill

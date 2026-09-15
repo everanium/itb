@@ -1,4 +1,4 @@
-(* Public surface of the OCaml binding; see itb.mli for the
+(* Public surface of the OCaml binding; see itb3.mli for the
    documented signature. Implementation lives in Ffi_bridge (symbol
    loading, status mapping, retry-once buffers), Pipeline (handle
    lifetime, Message cipher calls), and Stream (incremental

@@ -8,15 +8,15 @@ import (
 	"github.com/everanium/itb"
 )
 
-// cascade_fill_test.go — the Interlocked Barrier cascade fill is the
-// wire of every Pipeline regardless of the fast-path hooks its seeds
-// carry. For every shipped profile, a Pipeline built by Init and a
-// Pipeline rebuilt from its blob by Load with every hook stripped from
-// every seed must decrypt each other's wire, on the message or the
-// streaming surface the profile exposes; after Rekey the freshly
-// loaded, hook-stripped receiver must decrypt the rekeyed sender's
-// wire. A hook that changed the wire, or a constructor path that left
-// the cascade behind, would break the cross-decrypt.
+// The Interlocked Barrier cascade fill is the wire of every Pipeline
+// regardless of the fast-path hooks its seeds carry. For every shipped
+// profile, a Pipeline built by Init and a Pipeline rebuilt from its
+// blob by Load with every hook stripped from every seed must decrypt
+// each other's wire, on the message or the streaming surface the
+// profile exposes; after Rekey the freshly loaded, hook-stripped
+// receiver must decrypt the rekeyed sender's wire. A hook that changed
+// the wire, or a constructor path that left the cascade behind, would
+// break the cross-decrypt.
 
 // stripHooks removes every fast-path hook from the eight seeds so the
 // Pipeline runs the sequential cascade arms only.

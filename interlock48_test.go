@@ -3,14 +3,33 @@ package itb
 import (
 	"bytes"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/binary"
+	"encoding/hex"
 	"math/big"
 	"math/bits"
 	mathrand "math/rand"
 	"runtime"
 	"sync"
 	"testing"
+
+	aes "github.com/jedisct1/go-aes"
+
+	"github.com/everanium/itb/internal/aesitbasm"
+	"github.com/everanium/itb/internal/forcetier"
+	"github.com/everanium/itb/internal/interlock"
 )
+
+// The Interlocked Barrier's 48-bit lock path: the combinadic rank
+// arithmetic, the per-chunk and batched split / interleave drivers, and
+// the PRF fill ladder that keys them.
+//
+// The sections below move from the arithmetic outward — the big-integer
+// oracles and the rank / mask invariants, the chunk48lock round trip,
+// the high-level split / interleave across widths and driver paths, the
+// per-chunk PRF oracle the batched production path is checked against,
+// the fill-ladder knobs, and the four-lane, batch-16 and superblock
+// rungs of the fill with their parity and golden pins.
 
 // ============================================================================
 // Big-integer oracles — allowed here (tests only) as ground-truth references
@@ -852,4 +871,781 @@ func interleaveTriple48Locked(p0, p1, p2 []byte, prf lockPRF48) []byte {
 	}
 	wg.Wait()
 	return result
+}
+
+// ============================================================================
+// Fill-ladder knobs — the rungs as the tests see them: a test that
+// exercises a rung skips when a knob disarms it.
+// ============================================================================
+
+// fillBatch16Disarmed reports whether a knob leaves the batch-16 fill
+// rung off: ITB_FORCE_INTERLOCK_PRF_FILL_SEQ, _X1 or _X4.
+func fillBatch16Disarmed() bool {
+	return forcetier.InterlockPRFFillSeq() || forcetier.InterlockPRFFillX1() || forcetier.InterlockPRFFillX4()
+}
+
+// fillBatch32Disarmed reports whether a knob leaves the batch-32 fill
+// rung off: any knob of fillBatch16Disarmed or _X16.
+func fillBatch32Disarmed() bool {
+	return fillBatch16Disarmed() || forcetier.InterlockPRFFillX16()
+}
+
+// clearFillKnobs unsets every fill-ladder knob for the test's duration.
+func clearFillKnobs(t interface{ Setenv(string, string) }) {
+	for _, k := range []string{"ITB_FORCE_INTERLOCK_PRF_FILL_SEQ", "ITB_FORCE_INTERLOCK_PRF_FILL_X1", "ITB_FORCE_INTERLOCK_PRF_FILL_X4", "ITB_FORCE_INTERLOCK_PRF_FILL_X16"} {
+		t.Setenv(k, "")
+	}
+}
+
+// TestInterlockPRFFillSeqEnvVarToggle verifies that ITB_FORCE_INTERLOCK_PRF_FILL_SEQ
+// environment variable properly toggles the batch-16 path nil/non-nil state in
+// buildLockBatchPRF48_128. When SEQ=1, fillRanksSuper is nil (sequential fallback);
+// when SEQ is unset, fillRanksSuper is populated (batch-16 active).
+func TestInterlockPRFFillSeqEnvVarToggle(t *testing.T) {
+	// Create a seed with AES-ITB-128 hash for testing
+	seedKey := [16]byte{
+		0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+		0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
+	}
+	hash128, _, _ := MakeAESITB128Hash(seedKey)
+
+	seed, err := NewSeed128(512, hash128)
+	if err != nil {
+		t.Fatalf("NewSeed128: %v", err)
+	}
+
+	// Attach a batch-16 hook (the Triple pipeline attaches the real one
+	// in allocOneSeed). The hook body is irrelevant here: the test
+	// checks only that buildLockBatchPRF48_128 consults InterlockFillX16()
+	// and gates fillRanksSuper on the env-var, so a no-op stands in for
+	// the kernel dispatch.
+	seed.SetInterlockBatch16(func(components []uint64, groupIdxBase uint64, out *[16][2]uint64) {})
+
+	nonce := bytes.Repeat([]byte{0xAA}, 16)
+	clearFillKnobs(t)
+
+	// Test 1: SEQ=1 → fillRanksSuper must be nil (sequential path forced)
+	t.Setenv("ITB_FORCE_INTERLOCK_PRF_FILL_SEQ", "1")
+	bp1 := buildLockBatchPRF48_128(seed, nonce)
+	if bp1.fillRanksSuper != nil {
+		t.Error("SEQ=1: fillRanksSuper should be nil, got non-nil")
+	}
+
+	// Test 2: SEQ unset → fillRanksSuper must be populated (batch-16 active)
+	t.Setenv("ITB_FORCE_INTERLOCK_PRF_FILL_SEQ", "")
+	bp2 := buildLockBatchPRF48_128(seed, nonce)
+	if bp2.fillRanksSuper == nil {
+		t.Error("SEQ unset: fillRanksSuper should be populated, got nil")
+	}
+
+	// Test 3: Verify env-var is consulted per call (toggle again)
+	t.Setenv("ITB_FORCE_INTERLOCK_PRF_FILL_SEQ", "1")
+	bp3 := buildLockBatchPRF48_128(seed, nonce)
+	if bp3.fillRanksSuper != nil {
+		t.Error("SEQ=1 after toggle: fillRanksSuper should be nil")
+	}
+}
+
+// ============================================================================
+// Four-lane fill parity — the fillRanksX4 batched PRF fill path of
+// splitTriple48LockedBatchInto / interleaveTriple48LockedBatch.
+// ============================================================================
+//
+// The x4 arm must produce lane bytes bit-identical to the scalar
+// fillRanks arm on every input: the tests below run the same split with
+// fillRanksX4 armed and disarmed and require byte-equal lane outputs,
+// then round-trip the x4-armed encode through the x4-armed decode.
+// The 256/512-bit widths use the real Areion-SoEM batched arm; the
+// 128-bit width uses a synthetic 4-lane BatchHash wrapper over the
+// scalar test hash, which satisfies the BatchHash parity invariant by
+// construction and exercises the loop restructure on any host.
+
+// synthBatch128 wraps a HashFunc128 into a 4-lane BatchHashFunc128 that
+// trivially satisfies the parity invariant.
+func synthBatch128(h HashFunc128) BatchHashFunc128 {
+	return func(data *[4][]byte, seeds [4][2]uint64) [4][2]uint64 {
+		var out [4][2]uint64
+		for lane := 0; lane < 4; lane++ {
+			out[lane][0], out[lane][1] = h(data[lane], seeds[lane][0], seeds[lane][1])
+		}
+		return out
+	}
+}
+
+func interlock48X4Cases(t *testing.T) []struct {
+	label string
+	bp    lockBatchPRF48
+} {
+	t.Helper()
+	nonce := interlock48Nonce()
+
+	ns128, err := NewSeed128(512, sipHash128)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ns128.BatchHash = synthBatch128(sipHash128)
+
+	h256, b256, _ := MakeAreionSoEM256Hash()
+	ns256, err := NewSeed256(512, h256)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ns256.BatchHash = b256
+
+	h512, b512 := makeAreionSoEM512Pair()
+	ns512, err := NewSeed512(512, h512)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ns512.BatchHash = b512
+
+	return []struct {
+		label string
+		bp    lockBatchPRF48
+	}{
+		{"128-sip-synthbatch", buildLockBatchPRF48_128(ns128, nonce)},
+		{"256-areion", buildLockBatchPRF48_256(ns256, nonce)},
+		{"512-areion", buildLockBatchPRF48_512(ns512, nonce)},
+	}
+}
+
+// TestFillRanksX4VsScalarParity splits identical framed inputs through
+// the x4-armed and scalar-only variants of the same lockBatchPRF48 and
+// requires bit-identical lane bytes at every size class.
+func TestFillRanksX4VsScalarParity(t *testing.T) {
+	for _, tc := range interlock48X4Cases(t) {
+		tc := tc
+		t.Run(tc.label, func(t *testing.T) {
+			if tc.bp.fillRanksX4 == nil {
+				t.Skip("BatchHash arm unavailable on this host/build — fillRanksX4 not armed")
+			}
+			scalar := tc.bp
+			scalar.fillRanksX4 = nil
+			for _, sz := range interlock48Sizes {
+				framed := interlock48RandomBytes(sz)
+				src := framedSrc48{body: framed}
+				M := src.chunkCount()
+				x0, x1, x2 := make([]byte, 2*M), make([]byte, 2*M), make([]byte, 2*M)
+				s0, s1, s2 := make([]byte, 2*M), make([]byte, 2*M), make([]byte, 2*M)
+				splitTriple48LockedBatchInto(src, x0, x1, x2, tc.bp, nil)
+				splitTriple48LockedBatchInto(src, s0, s1, s2, scalar, nil)
+				if !bytes.Equal(x0, s0) || !bytes.Equal(x1, s1) || !bytes.Equal(x2, s2) {
+					t.Fatalf("size %d: x4 lanes diverge from scalar lanes", sz)
+				}
+			}
+		})
+	}
+}
+
+// TestFillRanksX4RoundTrip encodes with the x4-armed closure and
+// decodes with the same closure, requiring exact recovery of the
+// framed input (modulo the 6-byte zero padding the encoder added).
+func TestFillRanksX4RoundTrip(t *testing.T) {
+	for _, tc := range interlock48X4Cases(t) {
+		tc := tc
+		t.Run(tc.label, func(t *testing.T) {
+			if tc.bp.fillRanksX4 == nil {
+				t.Skip("BatchHash arm unavailable on this host/build — fillRanksX4 not armed")
+			}
+			for _, sz := range interlock48Sizes {
+				framed := interlock48RandomBytes(sz)
+				src := framedSrc48{body: framed}
+				M := src.chunkCount()
+				p0, p1, p2 := make([]byte, 2*M), make([]byte, 2*M), make([]byte, 2*M)
+				splitTriple48LockedBatchInto(src, p0, p1, p2, tc.bp, nil)
+				got := interleaveTriple48LockedBatch(p0, p1, p2, tc.bp, nil)
+				if len(got) < len(framed) {
+					t.Fatalf("size %d: recovered %d bytes < input %d", sz, len(got), len(framed))
+				}
+				if !bytes.Equal(got[:len(framed)], framed) {
+					t.Fatalf("size %d: round-trip mismatch", sz)
+				}
+				for i := len(framed); i < len(got); i++ {
+					if got[i] != 0 {
+						t.Fatalf("size %d: non-zero padding byte at %d", sz, i)
+					}
+				}
+			}
+		})
+	}
+}
+
+// ============================================================================
+// Batch-16 fill parity — the batch-16 ≡ sequential PRF fill invariant of
+// the Interlocked Barrier.
+// ============================================================================
+//
+// splitTriple48LockedBatchInto / interleaveTriple48LockedBatch split the
+// group range across runtime.NumCPU() workers, and each worker routes a
+// group through the batch-16 hook (fillRanksSuper) whenever its range
+// still holds 16 groups and through the per-group fillRanks path
+// otherwise. Which path a given group takes therefore depends on the
+// core count of the machine running the call: an encoder with many
+// cores and a decoder with few cores can fill the same group through
+// different paths. The wire is only portable if the two paths produce
+// bit-identical rank pairs on every group index.
+//
+// Two layers pin that invariant on a real aesitb128 lockSeed with the
+// batch-16 hook attached the way triple/seeds.go attaches it:
+//
+//  1. Direct: bp.fillRanksSuper on a base versus 16 sequential
+//     bp.fillRanks calls on base .. base+15, at bases the worker split
+//     can never reach (byte-7 → byte-8 carry, top-of-range wrap).
+//  2. Wiring: splitTriple48LockedBatchInto with the hook armed versus the
+//     same closure with fillRanksSuper = nil, at sizes that straddle
+//     the 16-group batch boundary and the worker split, plus the
+//     cross round trip (armed encode → disarmed decode and back).
+//
+// Both layers run under every batch-16 kernel tier the host silicon
+// can execute, by setting the aesitbasm dispatch flags atomically per
+// tier, so the invariant is pinned for every shipped kernel and for the
+// scalar reference. The wiring layer additionally runs under both
+// unrank geometries of the batch-16 branch — the 16-lane AVX-512 pass
+// and the two-8-lane-pass fallback (ITB_FORCE_INTERLOCK_TIER=avx512x8)
+// — on hosts where the 16-lane kernel is selectable.
+
+// x16UnrankGeometries lists the unrank geometries the batch-16 branch
+// can run on this host: the auto-selected one, and — when the 16-lane
+// AVX-512 kernel is selectable — the explicit 16-lane and two-8-lane
+// settings of interlock.UseUnrank16.
+func x16UnrankGeometries() []struct {
+	name     string
+	unrank16 bool
+} {
+	geometries := []struct {
+		name     string
+		unrank16 bool
+	}{{"auto", interlock.UseUnrank16}}
+	if interlock.HasAVX512RankMask {
+		geometries = append(geometries,
+			struct {
+				name     string
+				unrank16 bool
+			}{"unrank16", true},
+			struct {
+				name     string
+				unrank16 bool
+			}{"unrank8x2", false})
+	}
+	return geometries
+}
+
+// x16TierFlags is a snapshot of the aesitbasm batch-16 dispatch flags.
+type x16TierFlags struct {
+	zmm, ymm, vex, aesni, arm bool
+}
+
+func readX16TierFlags() x16TierFlags {
+	return x16TierFlags{
+		aesitbasm.HasVAESAVX512X16, aesitbasm.HasVAESAVX2X16,
+		aesitbasm.HasAVXAESNIX16, aesitbasm.HasAESNIX16, aesitbasm.HasARMAESX16,
+	}
+}
+
+func (f x16TierFlags) apply() {
+	aesitbasm.HasVAESAVX512X16, aesitbasm.HasVAESAVX2X16 = f.zmm, f.ymm
+	aesitbasm.HasAVXAESNIX16, aesitbasm.HasAESNIX16, aesitbasm.HasARMAESX16 = f.vex, f.aesni, f.arm
+}
+
+// x16HostTiers lists every batch-16 dispatch state the host can
+// execute: the auto-selected state, each assembly tier the silicon
+// supports, and the scalar reference.
+func x16HostTiers() []struct {
+	name  string
+	flags x16TierFlags
+} {
+	tiers := []struct {
+		name  string
+		flags x16TierFlags
+	}{
+		{"auto", readX16TierFlags()},
+	}
+	if aes.CPU.HasVAES && aes.CPU.HasAVX512 {
+		tiers = append(tiers, struct {
+			name  string
+			flags x16TierFlags
+		}{"avx512", x16TierFlags{zmm: true}})
+	}
+	if aes.CPU.HasVAES && aes.CPU.HasAVX2 {
+		tiers = append(tiers, struct {
+			name  string
+			flags x16TierFlags
+		}{"vaesavx2", x16TierFlags{ymm: true}})
+	}
+	if aes.CPU.HasAESNI && aes.CPU.HasAVX2 {
+		tiers = append(tiers, struct {
+			name  string
+			flags x16TierFlags
+		}{"vex", x16TierFlags{vex: true}})
+	}
+	if aes.CPU.HasAESNI {
+		tiers = append(tiers, struct {
+			name  string
+			flags x16TierFlags
+		}{"aesni", x16TierFlags{aesni: true}})
+	}
+	if aes.CPU.HasARMCrypto {
+		tiers = append(tiers, struct {
+			name  string
+			flags x16TierFlags
+		}{"neon", x16TierFlags{arm: true}})
+	}
+	tiers = append(tiers, struct {
+		name  string
+		flags x16TierFlags
+	}{"scalar", x16TierFlags{}})
+	return tiers
+}
+
+// x16LockSeedCases builds aesitb128 lockSeeds with the batch-16 hook
+// attached exactly as the hashes package's constructors attach it (the
+// hook dispatches through aesitbasm.FusedChain13x16 under the seed's
+// own fixed key), on fixed keys and components for reproducibility. The
+// seeds carry no fused ChainHash hooks, so fillRanks / fillRanksX4 run
+// the sequential Hash / BatchHash cascade over the prepended lock
+// components and the layers below pin the batch-16 kernel to that
+// sequential reference. Every case's fillRanksSuper must be armed; the
+// test is skipped when a fill-ladder knob disarms it.
+func x16LockSeedCases(t *testing.T) []struct {
+	label string
+	bp    lockBatchPRF48
+} {
+	t.Helper()
+	if fillBatch16Disarmed() {
+		t.Skip("a fill-ladder knob disarms the batch-16 hook")
+	}
+	nonce := interlock48Nonce()
+	keys := [][16]byte{
+		{},
+		{0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f},
+		{0xde, 0xad, 0xbe, 0xef, 0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0xfe, 0xdc, 0xba, 0x98},
+	}
+	componentSets := [][]uint64{
+		{1, 2, 3, 4, 5, 6, 7, 8},
+		{0x0102030405060708, 0x090a0b0c0d0e0f00, 0xFFFFFFFFFFFFFFFF, 0, 0x8000000000000000, 0x7FFFFFFFFFFFFFFF, 0xAAAAAAAAAAAAAAAA, 0x5555555555555555},
+		{0x243F6A8885A308D3, 0x13198A2E03707344, 0xA4093822299F31D0, 0x082EFA98EC4E6C89, 0x452821E638D01377, 0xBE5466CF34E90C6C, 0xC0AC29B7C97C50DD, 0x3F84D5B5B5470917},
+	}
+	var cases []struct {
+		label string
+		bp    lockBatchPRF48
+	}
+	for i := range keys {
+		key := keys[i]
+		h, bh, _ := MakeAESITB128Hash(key)
+		seed, err := SeedFromComponents128(h, componentSets[i]...)
+		if err != nil {
+			t.Fatal(err)
+		}
+		seed.BatchHash = bh
+		seed.SetInterlockBatch16(func(components []uint64, groupIdxBase uint64, out *[16][2]uint64) {
+			aesitbasm.FusedChain13x16(&key, components, groupIdxBase, out)
+		})
+		bp := buildLockBatchPRF48_128(seed, nonce)
+		if bp.fillRanksSuper == nil {
+			t.Fatalf("case %d: fillRanksSuper not armed", i)
+		}
+		cases = append(cases, struct {
+			label string
+			bp    lockBatchPRF48
+		}{[]string{"zero-key", "ascending-key", "mixed-key"}[i], bp})
+	}
+	return cases
+}
+
+// x16FillRanksBases are the group-index bases the direct layer checks:
+// small bases, bases straddling the byte-7 → byte-8 carry of the
+// in-register groupIdx synthesis, and bases whose 16-lane batch wraps
+// the uint64 range.
+var x16FillRanksBases = []uint64{
+	0, 1, 7, 15, 16, 17, 31, 0xFF, 0x100, 0xFFF0, 0xFFF8,
+	0x00FFFFFFFFFFFFF0, 0x00FFFFFFFFFFFFF8, 0x00FFFFFFFFFFFFFF, 0x0100000000000000,
+	0x7FFFFFFFFFFFFFF0, 0x7FFFFFFFFFFFFFFF, 0x8000000000000000,
+	0xFEFEFEFEFEFEFEFE, 0xFFFFFFFFFFFFFFF0, 0xFFFFFFFFFFFFFFF8, 0xFFFFFFFFFFFFFFFF,
+}
+
+// TestFillRanksSuperVsFillRanksParity is the direct layer: one
+// fillRanksSuper call on a base must produce exactly the 16 rank pairs
+// of 16 sequential fillRanks calls on base .. base+15, under every
+// batch-16 dispatch tier the host can execute.
+func TestFillRanksSuperVsFillRanksParity(t *testing.T) {
+	saved := readX16TierFlags()
+	t.Cleanup(saved.apply)
+	cases := x16LockSeedCases(t)
+	for _, tier := range x16HostTiers() {
+		tier := tier
+		t.Run(tier.name, func(t *testing.T) {
+			tier.flags.apply()
+			for _, tc := range cases {
+				for _, base := range x16FillRanksBases {
+					var scratch lockFillScratch48
+					var super [8 * lockBatchFactor48Max]uint64
+					tc.bp.fillRanksSuper(&scratch, base, super[0:32])
+
+					var buf [13]byte
+					var seq [8 * lockBatchFactor48Max]uint64
+					for i := 0; i < 16; i++ {
+						tc.bp.fillRanks(buf[:], base+uint64(i), seq[2*i:])
+					}
+					for i := 0; i < 16; i++ {
+						if super[2*i] != seq[2*i] || super[2*i+1] != seq[2*i+1] {
+							t.Fatalf("%s base=%#x lane %d: fillRanksSuper (%#x, %#x) != fillRanks (%#x, %#x)",
+								tc.label, base, i, super[2*i], super[2*i+1], seq[2*i], seq[2*i+1])
+						}
+					}
+				}
+			}
+		})
+	}
+}
+
+// x16SplitSizes are framed-input sizes in bytes chosen so the group
+// count straddles the 16-group batch boundary (15 / 16 / 17, 31 / 32 /
+// 33, 47 / 48, 63 / 64 / 65, 96 groups at 6 bytes per group), plus the
+// standard residue-class and worker-spawning sizes.
+var x16SplitSizes = func() []int {
+	sizes := []int{
+		6 * 15, 6*15 + 1, 6 * 16, 6*16 + 1, 6 * 17,
+		6 * 31, 6 * 32, 6*32 + 5, 6 * 33,
+		6 * 47, 6 * 48, 6 * 63, 6 * 64, 6 * 65, 6 * 96,
+		6*100 + 3, 6*1000 + 1, 6*1024 + 2,
+	}
+	return append(sizes, interlock48Sizes...)
+}()
+
+// TestFillRanksSuperSplitParity is the wiring layer: the batched split
+// with fillRanksSuper armed must produce lane bytes bit-identical to
+// the same closure with fillRanksSuper disarmed (x4 / per-group paths
+// only), under every batch-16 dispatch tier the host can execute.
+func TestFillRanksSuperSplitParity(t *testing.T) {
+	saved := readX16TierFlags()
+	t.Cleanup(saved.apply)
+	savedUnrank16 := interlock.UseUnrank16
+	t.Cleanup(func() { interlock.UseUnrank16 = savedUnrank16 })
+	// Snapshot the tier list (its "auto" entry reads the flags) before any
+	// subtest mutates them.
+	tiers := x16HostTiers()
+	cases := x16LockSeedCases(t)
+	inputs := make([][]byte, len(x16SplitSizes))
+	for i, sz := range x16SplitSizes {
+		inputs[i] = interlock48RandomBytes(sz)
+	}
+	for _, geo := range x16UnrankGeometries() {
+		geo := geo
+		t.Run(geo.name, func(t *testing.T) {
+			interlock.UseUnrank16 = geo.unrank16
+			for _, tier := range tiers {
+				tier := tier
+				t.Run(tier.name, func(t *testing.T) {
+					tier.flags.apply()
+					for _, tc := range cases {
+						seq := tc.bp
+						seq.fillRanksSuper = nil
+						for i, framed := range inputs {
+							src := framedSrc48{body: framed}
+							M := src.chunkCount()
+							x0, x1, x2 := make([]byte, 2*M), make([]byte, 2*M), make([]byte, 2*M)
+							s0, s1, s2 := make([]byte, 2*M), make([]byte, 2*M), make([]byte, 2*M)
+							splitTriple48LockedBatchInto(src, x0, x1, x2, tc.bp, nil)
+							splitTriple48LockedBatchInto(src, s0, s1, s2, seq, nil)
+							if !bytes.Equal(x0, s0) || !bytes.Equal(x1, s1) || !bytes.Equal(x2, s2) {
+								t.Fatalf("%s size %d: batch-16 lanes diverge from sequential lanes", tc.label, x16SplitSizes[i])
+							}
+						}
+					}
+				})
+			}
+		})
+	}
+}
+
+// TestFillRanksSuperCrossRoundTrip encodes with the batch-16 hook armed
+// and decodes with it disarmed, and vice versa, requiring exact
+// recovery of the framed input — the cross-machine shape (many-core
+// encoder, few-core decoder) reduced to one process.
+func TestFillRanksSuperCrossRoundTrip(t *testing.T) {
+	saved := readX16TierFlags()
+	t.Cleanup(saved.apply)
+	savedUnrank16 := interlock.UseUnrank16
+	t.Cleanup(func() { interlock.UseUnrank16 = savedUnrank16 })
+	// Snapshot the tier list (its "auto" entry reads the flags) before any
+	// subtest mutates them.
+	tiers := x16HostTiers()
+	cases := x16LockSeedCases(t)
+	for _, geo := range x16UnrankGeometries() {
+		geo := geo
+		t.Run(geo.name, func(t *testing.T) {
+			interlock.UseUnrank16 = geo.unrank16
+			for _, tier := range tiers {
+				tier := tier
+				t.Run(tier.name, func(t *testing.T) {
+					tier.flags.apply()
+					for _, tc := range cases {
+						seq := tc.bp
+						seq.fillRanksSuper = nil
+						for _, sz := range x16SplitSizes {
+							framed := interlock48RandomBytes(sz)
+							src := framedSrc48{body: framed}
+							M := src.chunkCount()
+							for _, dir := range []struct {
+								label    string
+								enc, dec lockBatchPRF48
+							}{
+								{"armed→disarmed", tc.bp, seq},
+								{"disarmed→armed", seq, tc.bp},
+								{"armed→armed", tc.bp, tc.bp},
+							} {
+								p0, p1, p2 := make([]byte, 2*M), make([]byte, 2*M), make([]byte, 2*M)
+								splitTriple48LockedBatchInto(src, p0, p1, p2, dir.enc, nil)
+								got := interleaveTriple48LockedBatch(p0, p1, p2, dir.dec, nil)
+								if len(got) < len(framed) || !bytes.Equal(got[:len(framed)], framed) {
+									t.Fatalf("%s size %d %s: round-trip mismatch", tc.label, sz, dir.label)
+								}
+								for i := len(framed); i < len(got); i++ {
+									if got[i] != 0 {
+										t.Fatalf("%s size %d %s: non-zero padding byte at %d", tc.label, sz, dir.label, i)
+									}
+								}
+							}
+						}
+					}
+				})
+			}
+		})
+	}
+}
+
+// ============================================================================
+// Superblock parity + golden lane digests for the batched 48-bit lock path.
+// ============================================================================
+//
+// The production worker loops in splitTriple48LockedBatchInto /
+// interleaveTriple48LockedBatch accumulate the 128-bit rank pairs of up
+// to superChunks48 chunks and derive their mask triples in one
+// fillLockMasksTriple48Super pass. The mask derivation is a pure
+// function of each chunk's rank pair, so the lane bytes must be
+// bit-identical to a sequential per-group derivation through bp.fill.
+// Two independent anchors enforce that:
+//
+//  1. refSplitPerGroup48 / refInterleavePerGroup48 — sequential
+//     single-threaded references driven by bp.fill (one mask-derivation
+//     pass per PRF group), compared byte-for-byte against the parallel
+//     superblock production kernels across M values that cross every
+//     superblock boundary at every width factor.
+//  2. Golden SHA-256 digests of the lane bytes under fixed seed
+//     components, fixed nonce, and fixed data — locking the overlay's
+//     wire contribution against any derivation-order or kernel change.
+
+// refSplitPerGroup48 is the sequential per-group reference for
+// [splitTriple48LockedBatchInto]: identical padding, group indexing, and
+// lane serialisation, with one bp.fill mask-derivation per group and no
+// superblock accumulation and no parallelism.
+func refSplitPerGroup48(data []byte, bp lockBatchPRF48) (p0, p1, p2 []byte) {
+	L := len(data)
+	LPad := ((L + 5) / 6) * 6
+	padded := make([]byte, LPad)
+	copy(padded, data)
+	M := LPad / 6
+
+	p0 = make([]byte, 2*M)
+	p1 = make([]byte, 2*M)
+	p2 = make([]byte, 2*M)
+
+	factor := bp.factor
+	numGroups := (M + factor - 1) / factor
+	var buf [13]byte
+	var masks [lockBatchFactor48Max][3]uint64
+	for g := 0; g < numGroups; g++ {
+		bp.fill(buf[:], uint64(g), &masks)
+		for j := 0; j < factor; j++ {
+			k := g*factor + j
+			if k >= M {
+				break
+			}
+			m0, m1, m2 := masks[j][0], masks[j][1], masks[j][2]
+			x := readChunk48(padded, 6*k)
+			l0, l1, l2 := chunk48lock(x, m0, m1, m2)
+			p0[2*k] = byte(l0)
+			p0[2*k+1] = byte(l0 >> 8)
+			p1[2*k] = byte(l1)
+			p1[2*k+1] = byte(l1 >> 8)
+			p2[2*k] = byte(l2)
+			p2[2*k+1] = byte(l2 >> 8)
+		}
+	}
+	return
+}
+
+// refInterleavePerGroup48 is the sequential per-group reference for
+// [interleaveTriple48LockedBatch].
+func refInterleavePerGroup48(p0, p1, p2 []byte, bp lockBatchPRF48) []byte {
+	M := len(p0) / 2
+	result := make([]byte, M*6)
+
+	factor := bp.factor
+	numGroups := (M + factor - 1) / factor
+	var buf [13]byte
+	var masks [lockBatchFactor48Max][3]uint64
+	for g := 0; g < numGroups; g++ {
+		bp.fill(buf[:], uint64(g), &masks)
+		for j := 0; j < factor; j++ {
+			k := g*factor + j
+			if k >= M {
+				break
+			}
+			m0, m1, m2 := masks[j][0], masks[j][1], masks[j][2]
+			l0 := uint16(p0[2*k]) | uint16(p0[2*k+1])<<8
+			l1 := uint16(p1[2*k]) | uint16(p1[2*k+1])<<8
+			l2 := uint16(p2[2*k]) | uint16(p2[2*k+1])<<8
+			x := unchunk48lock(l0, l1, l2, m0, m1, m2)
+			writeChunk48(result, 6*k, x)
+		}
+	}
+	return result
+}
+
+// superTestFixedData returns n deterministic bytes for the parity and
+// golden fixtures (no RNG — the fixtures must be reproducible across
+// runs and trees).
+func superTestFixedData(n int) []byte {
+	b := make([]byte, n)
+	for i := range b {
+		b[i] = byte(i*131 + 7)
+	}
+	return b
+}
+
+// superTestNonce is the fixed nonce shared by the parity and golden
+// fixtures in this file.
+var superTestNonce = []byte{
+	0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
+	0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x00,
+}
+
+// superTestComponents is the fixed 8-component seed material shared by
+// the parity and golden fixtures in this file.
+var superTestComponents = []uint64{
+	0xc07724706ed0758b, 0x0489964ee29ad754,
+	0x97819a4b77e0fd0a, 0xd9b9322f08f9eb5c,
+	0x9d8dc0b866e92b87, 0xaf7f4a99914da68b,
+	0x51101868dab807ae, 0xbc6e07a2a5067689,
+}
+
+// superTestBuilders returns one deterministic lockBatchPRF48 per hash
+// width (factor 1 / 2 / 4), all keyed from the same fixed components
+// and fixed nonce.
+func superTestBuilders(t *testing.T) []struct {
+	label string
+	bp    lockBatchPRF48
+} {
+	t.Helper()
+	ls128, err := SeedFromComponents128(sipHash128, superTestComponents...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ls256, err := SeedFromComponents256(testHash256, superTestComponents...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ls512, err := SeedFromComponents512(testHash512, superTestComponents...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return []struct {
+		label string
+		bp    lockBatchPRF48
+	}{
+		{"128-factor1", buildLockBatchPRF48_128(ls128, superTestNonce)},
+		{"256-factor2", buildLockBatchPRF48_256(ls256, superTestNonce)},
+		{"512-factor4", buildLockBatchPRF48_512(ls512, superTestNonce)},
+	}
+}
+
+// TestSuperblockVsPerGroupParity asserts that the superblock production
+// kernels produce lane bytes bit-identical to the sequential per-group
+// bp.fill reference at every width factor, across M values that cross
+// the superblock boundary (multiples of superChunks48 and their
+// neighbours), short tails at every factor residue, and worker-range
+// splits from the parallel dispatch.
+func TestSuperblockVsPerGroupParity(t *testing.T) {
+	// M values crossing every superblock / factor / worker boundary of
+	// interest; sizes exercise both 6-aligned and padded framed lengths.
+	mValues := []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 16, 17, 23, 24, 25, 31, 32, 33, 40, 64, 65, 100, 257}
+	for _, wc := range superTestBuilders(t) {
+		wc := wc
+		t.Run(wc.label, func(t *testing.T) {
+			for _, m := range mValues {
+				for _, sz := range []int{6 * m, 6*m - 3} {
+					if sz <= 0 {
+						continue
+					}
+					framed := superTestFixedData(sz)
+
+					refP0, refP1, refP2 := refSplitPerGroup48(framed, wc.bp)
+					src := framedSrc48{body: framed}
+					M := src.chunkCount()
+					gotP0, gotP1, gotP2 := make([]byte, 2*M), make([]byte, 2*M), make([]byte, 2*M)
+					splitTriple48LockedBatchInto(src, gotP0, gotP1, gotP2, wc.bp, nil)
+					if !bytes.Equal(refP0, gotP0) || !bytes.Equal(refP1, gotP1) || !bytes.Equal(refP2, gotP2) {
+						t.Fatalf("M=%d size=%d: superblock split lane bytes diverge from per-group reference", m, sz)
+					}
+
+					refOut := refInterleavePerGroup48(refP0, refP1, refP2, wc.bp)
+					gotOut := interleaveTriple48LockedBatch(gotP0, gotP1, gotP2, wc.bp, nil)
+					if !bytes.Equal(refOut, gotOut) {
+						t.Fatalf("M=%d size=%d: superblock interleave diverges from per-group reference", m, sz)
+					}
+					if !bytes.Equal(gotOut[:sz], framed) {
+						t.Fatalf("M=%d size=%d: round-trip mismatch", m, sz)
+					}
+				}
+			}
+		})
+	}
+}
+
+// TestInterlock48LockedLaneGolden locks the batched lock split's lane
+// bytes to fixed SHA-256 digests under fixed seed components, fixed
+// nonce, and fixed data. Any change to the mask derivation, PRF group
+// indexing, chunk packing, or lane serialisation — including asm-kernel
+// and derivation-order changes — breaks these digests. The interleave
+// of the same lanes must also round-trip to the input.
+func TestInterlock48LockedLaneGolden(t *testing.T) {
+	golden := map[string]map[int]string{
+		"128-factor1": {
+			144:  "d73a343a6ed9b92f35677afe98ede3a00b98b08ec284a7ba0d91c756be07a07b",
+			1000: "af8ff890ace80cb334a736c4a89da102139b0652aac6c4c5a96a174c862390d0",
+		},
+		"256-factor2": {
+			144:  "233f41c8911a60f8a18dad4aace7e762b16905c37ccfa48ce3873324554959b9",
+			1000: "81af7eec8de327ea762506ffb82ec271e4a01583d2d01574f1c662b76d0f8290",
+		},
+		"512-factor4": {
+			144:  "9f8533db28e32bd292b57e4eb047325227c32a800f2b6078372e96db3bfa811c",
+			1000: "d38d2f1ba459d4f6124f89075bbcc282c9319c8c7968186632ef63c238200285",
+		},
+	}
+	for _, wc := range superTestBuilders(t) {
+		wc := wc
+		t.Run(wc.label, func(t *testing.T) {
+			for sz, want := range golden[wc.label] {
+				framed := superTestFixedData(sz)
+				src := framedSrc48{body: framed}
+				M := src.chunkCount()
+				p0, p1, p2 := make([]byte, 2*M), make([]byte, 2*M), make([]byte, 2*M)
+				splitTriple48LockedBatchInto(src, p0, p1, p2, wc.bp, nil)
+				h := sha256.New()
+				h.Write(p0)
+				h.Write(p1)
+				h.Write(p2)
+				got := hex.EncodeToString(h.Sum(nil))
+				if got != want {
+					t.Fatalf("size=%d: lane digest %s, want %s", sz, got, want)
+				}
+				out := interleaveTriple48LockedBatch(p0, p1, p2, wc.bp, nil)
+				if !bytes.Equal(out[:sz], framed) {
+					t.Fatalf("size=%d: golden lanes do not round-trip", sz)
+				}
+			}
+		})
+	}
 }

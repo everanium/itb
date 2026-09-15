@@ -1,5 +1,5 @@
 /*
- * Pipeline.swift — Triple Pipeline session over itb_pipeline.
+ * Triple Pipeline session over itb_pipeline.
  *
  * A reference type: ARC finalisation calls itb_pipeline_free (which
  * runs Close Go-side, zeroing key material). Buffer sizing — the

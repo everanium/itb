@@ -6,7 +6,7 @@ Concrete parity gadget for the SeaHash SAT calibration
 
 Cross-checks that two independent lo-lane implementations reproduce
 the Go `chainHash128SeaHash` output bit-exact when the Go primitive
-is `seahash64` (harness_test.go). Without this gate, a later SAT
+is `shelfSeahash64` (harness_shelf_test.go). Without this gate, a later SAT
 harness risks encoding a structurally-wrong chain and never noticing.
 
 Two independent implementations:
@@ -76,7 +76,7 @@ _PRIME_BITS = [i for i in range(64) if (SEAHASH_PRIME >> i) & 1]
 
 
 # ============================================================================
-# Concrete reference — pure Python mirror of harness_test.go seahash reference
+# Concrete reference — pure Python mirror of harness_shelf_test.go seahash reference
 # ============================================================================
 
 

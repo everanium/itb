@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 #
-# run_bench.sh -- micro-benchmark runner for the Gleam binding.
-# Builds libitb3.so + the C binding archive + the Erlang backend +
-# the Gleam project via build.sh, then runs the message, stream_pump
-# and stream_one_shot shapes: encrypt_message, incremental-session and
-# whole-buffer stream throughput at 1 MiB / 16 MiB / 64 MiB.
+# Micro-benchmark runner for the Gleam binding. Builds libitb3.so +
+# the C binding archive + the Erlang backend + the Gleam project via
+# build.sh, then runs the message, stream_pump and stream_one_shot
+# shapes: encrypt_message, incremental-session and whole-buffer stream
+# throughput at 1 MiB / 16 MiB / 64 MiB.
 #
 # Usage:
 #   ./run_bench.sh                        # all shapes

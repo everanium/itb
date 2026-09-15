@@ -1,4 +1,4 @@
-# bench.R — micro-benchmarks for the ITB R binding.
+# Micro-benchmarks for the ITB R binding.
 #
 # Single Message encrypt and incremental Streaming encrypt throughput
 # at 1 MiB / 16 MiB / 64 MiB. Wall-clock via the binding's monotonic

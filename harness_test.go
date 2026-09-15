@@ -2,11 +2,11 @@
 
 package itb
 
-// harness_test.go — construction-level structural / statistical harness for
-// the 48-bit Interlocked Barrier core, primitive-agnostic. These probes drive
-// the package-private barrier kernels (rankToMaskTriple48, chunk48lock)
-// directly, verifying the architectural mask-space and lane-independence
-// claims at the derivation layer rather than through the facade.
+// Construction-level structural / statistical harness for the 48-bit
+// Interlocked Barrier core, primitive-agnostic. These probes drive the
+// package-private barrier kernels (rankToMaskTriple48, chunk48lock) directly,
+// verifying the architectural mask-space and lane-independence claims at the
+// derivation layer rather than through the facade.
 //
 // None of these is an attack: no seed, key, or plaintext is recovered. They
 // are white-box correctness + uniformity measurements — the kind a randomness

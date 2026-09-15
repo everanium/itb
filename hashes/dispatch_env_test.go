@@ -6,14 +6,13 @@ import (
 	"github.com/everanium/itb/internal/forcetier"
 )
 
-// dispatch_env_test.go — the disarm knobs of the fused cascade hooks,
-// asserted for every shipped registry entry: under
-// ITB_FORCE_CHAINHASH_SEQ a seed built through the name-keyed
-// constructor carries no fused hook at any width, under
-// ITB_FORCE_CHAINHASH_X4 it carries no eight-lane hook, and with neither
-// variable set every entry whose registry row populates a factory
-// carries the hook the factory builds. The tier variables are asserted
-// by the forcetier tests of every kernel package.
+// The disarm knobs of the fused cascade hooks, asserted for every
+// shipped registry entry: under ITB_FORCE_CHAINHASH_SEQ a seed built
+// through the name-keyed constructor carries no fused hook at any width,
+// under ITB_FORCE_CHAINHASH_X4 it carries no eight-lane hook, and with
+// neither variable set every entry whose registry row populates a
+// factory carries the hook the factory builds. The tier variables are
+// asserted by the forcetier tests of every kernel package.
 
 // TestRegistryFusedHooksFollowDisarmKnobs walks the registry at every
 // width and checks the hooks of a name-keyed seed against the knobs.

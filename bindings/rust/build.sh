@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
-# build.sh -- one-step build for the Rust binding: libitb3.so + cargo
-# build. Prerequisites (Go, rustup / cargo) must be installed
-# separately; see README.md "Prerequisites" section.
+# One-step build for the Rust binding: libitb3.so + cargo build.
+# Prerequisites (Go, rustup / cargo) must be installed separately; see
+# README.md "Prerequisites" section.
 #
 # Every artefact this binding owns is removed before the build, so
 # nothing in the tree predates the invocation. eitb is a separate crate

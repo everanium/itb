@@ -1,5 +1,5 @@
-/* itb3_jni.c — JNI shim between io.github.everanium.itb3.Native and the
- * libitb3 shared library's ITB_Triple_* surface (cmd/cshared).
+/* JNI shim between io.github.everanium.itb3.Native and the libitb3
+ * shared library's ITB_Triple_* surface (cmd/cshared).
  *
  * Deliberately mechanical: every function extracts direct-buffer
  * addresses and scalars, forwards them to the matching libitb3 export,

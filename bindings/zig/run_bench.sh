@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 #
-# run_bench.sh -- micro-benchmark runner for the Zig binding. Builds
-# libitb3.so + the C binding archive + the Zig binaries via build.sh,
-# then runs bench_message + bench_stream + bench_stream_one_shot (zig
-# build bench, always ReleaseFast): encryptMessage, encryptStreamPump,
-# and encryptStreamOneShot throughput at 1 MiB / 16 MiB / 64 MiB.
+# Micro-benchmark runner for the Zig binding. Builds libitb3.so + the
+# C binding archive + the Zig binaries via build.sh, then runs
+# bench_message + bench_stream + bench_stream_one_shot (zig build
+# bench, always ReleaseFast): encryptMessage, encryptStreamPump, and
+# encryptStreamOneShot throughput at 1 MiB / 16 MiB / 64 MiB.
 #
 # Usage:
 #   ./run_bench.sh

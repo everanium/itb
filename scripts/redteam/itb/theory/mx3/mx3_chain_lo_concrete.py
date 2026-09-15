@@ -6,7 +6,7 @@ Concrete parity gadget for the mx3 SAT calibration
 
 Cross-checks that two independent lo-lane implementations reproduce
 the Go `chainHash128Mx3` output bit-exact when the Go primitive is
-`mx3` (harness_test.go). Without this gate, a later SAT harness
+`mx3` (harness_shelf_test.go). Without this gate, a later SAT harness
 risks encoding a structurally-wrong chain and never noticing.
 
 Two independent implementations:
@@ -54,7 +54,7 @@ MX3_C = 0xBEA225F9EB34556D
 
 
 # ============================================================================
-# Concrete reference — pure Python mirror of harness_test.go mx3 reference
+# Concrete reference — pure Python mirror of harness_shelf_test.go mx3 reference
 # ============================================================================
 
 

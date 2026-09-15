@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# cross-build-parity.sh -- cross-build C ↔ pure-Go pixel parity harness.
+# Cross-build C ↔ pure-Go pixel parity harness.
 #
 # Builds two arms of the tools/parity helper (CGO_ENABLED=1 dispatches
 # into process_pixels.c Tier A / B / C; CGO_ENABLED=0 runs the pure-Go

@@ -3,13 +3,13 @@
 #
 # Single-primitive driver that generates ITB corpora under known_ascii
 # plaintext mode with siphash13 wrapped into ChainHash128 (via the parallel
-# two-lane adapter siphash13Hash128 defined in harness_test.go), then runs
+# two-lane adapter shelfSiphash13Hash128 defined in harness_shelf_test.go), then runs
 # the raw-mode bias probe at scripts/redteam/itb/theory/_common/raw_mode_bias_probe.py
 # against each corpus.
 #
 # Corpus generation uses a dedicated Go test entry point —
 # TestRedTeamHarnessGenerateSiphash13NonceReuse in
-# harness_shelf_test.go — which delegates to the same runNonceReuse128
+# harness_shelf_test.go — which delegates to the same runShelfCorpus
 # body as the sibling harness drivers, so encryption and the
 # cell.meta.json schema are identical across all four shelf primitives.
 # The driver writes the ciphertext and cell.meta.json only — no

@@ -65,7 +65,8 @@ The binding is a standard rebar3 + `rebar3_lfe` project that pulls
 the Erlang binding through the `_checkouts/libitb3` symlink. From
 another rebar3 project, consume both the same way — symlink
 `bindings/erlang` as `_checkouts/libitb3` and `bindings/lfe` as
-`_checkouts/libitb3_lfe`, and declare bare `itb` / `itb_lfe` deps.
+`_checkouts/libitb3_lfe`, and declare bare `libitb3` /
+`libitb3_lfe` deps.
 
 The compiled NIF (`bindings/erlang/priv/libitb3_nif.so`) resolves
 `libitb3.so` through its embedded RPATH into the repo `dist/`

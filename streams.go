@@ -1,7 +1,7 @@
-// streams.go — width-less io.Reader / io.Writer streaming helpers
-// for plain and authenticated stream cipher modes. The width is
-// determined by the supplied seed type via the same any-typed
-// dispatch path used by the Single Message helpers.
+// Width-less io.Reader / io.Writer streaming helpers for plain and
+// authenticated stream cipher modes. The width is determined by the
+// supplied seed type via the same any-typed dispatch path used by the
+// Single Message helpers.
 //
 // Each helper drains src to EOF, encrypts or decrypts chunk-by-chunk,
 // and writes the resulting wire chunks (encrypt) or recovered

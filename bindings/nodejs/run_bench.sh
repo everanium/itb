@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 #
-# run_bench.sh -- bench runner for the Node.js / TypeScript binding.
-# Builds libitb3.so + the binding via build.sh, points ITB_LIBITB3_PATH
-# at the freshly-built shared library, then runs every bench script
-# (bench_message + bench_stream + bench_stream_one_shot) at
-# 1 / 16 / 64 MiB.
+# Bench runner for the Node.js / TypeScript binding. Builds libitb3.so
+# + the binding via build.sh, points ITB_LIBITB3_PATH at the
+# freshly-built shared library, then runs every bench script
+# (bench_message + bench_stream + bench_stream_one_shot) at 1 / 16 / 64
+# MiB.
 
 set -eu
 set -o pipefail

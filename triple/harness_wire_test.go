@@ -2,8 +2,8 @@
 
 package triple
 
-// harness_wire_test.go — construction-level wire-distinguishability harness
-// driven through the Triple facade.
+// Construction-level wire-distinguishability harness driven through the Triple
+// facade.
 //
 // These are attacker-realistic wire probes: every statistic is computed from
 // bytes an attacker holding the ciphertext already has. No seed, key, or

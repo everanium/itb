@@ -5,8 +5,8 @@ import (
 	"testing"
 )
 
-// blake3asm_fused_wide_test.go — parity scaffolding of the eight-lane
-// per-pixel dispatchers shared by every architecture.
+// Parity scaffolding of the eight-lane per-pixel dispatchers shared
+// by every architecture.
 
 type x8fn256 func(*[32]byte, []uint64, *[8]*byte, *[8][4]uint64)
 

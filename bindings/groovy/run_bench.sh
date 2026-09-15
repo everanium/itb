@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 #
-# run_bench.sh -- micro-benchmark runner for the Groovy binding.
-# Builds everything via build.sh, then runs the bench main:
-# encryptMessage and stream-pump throughput at 1 MiB / 16 MiB /
-# 64 MiB.
+# Micro-benchmark runner for the Groovy binding. Builds everything via
+# build.sh, then runs the bench main: encryptMessage and stream-pump
+# throughput at 1 MiB / 16 MiB / 64 MiB.
 #
 # build.sh wipes this binding's build tree and delegates the Java
 # layer to bindings/java/build.sh, which cleans its own, so the classes

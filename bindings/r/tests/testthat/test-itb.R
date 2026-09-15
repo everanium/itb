@@ -1,4 +1,4 @@
-# test-itb.R — testthat suite for the ITB R binding.
+# testthat suite for the ITB R binding.
 
 library(libitb3r)
 

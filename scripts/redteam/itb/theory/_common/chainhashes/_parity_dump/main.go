@@ -34,7 +34,7 @@ type entry struct {
 
 // --- t1ha1_64le (erthink/t1ha, LE variant) ----------------------------------
 //
-// Duplicated from harness_test.go so this standalone main can be built
+// Duplicated rather than imported so this standalone main can be built
 // without pulling the itb test package. Bit-for-bit match with the canonical
 // reference at https://github.com/erthink/t1ha/blob/master/src/t1ha1.c.
 
@@ -152,7 +152,7 @@ func chainHash128T1ha1(data []byte, seed []uint64) (lo, hi uint64) {
 
 // --- SeaHash (ticki/tfs, Redox OS) ------------------------------------------
 //
-// Duplicated from harness_test.go so this standalone main can be built
+// Duplicated rather than imported so this standalone main can be built
 // without pulling the itb test package. Bit-for-bit match with the canonical
 // reference at https://github.com/ticki/tfs/tree/master/seahash/src.
 
@@ -219,7 +219,7 @@ func chainHash128SeaHash(data []byte, seed []uint64) (lo, hi uint64) {
 
 // --- mx3 (jonmaiga/mx3, CC0 license; v3.0.0 2022-04-19) ---------------------
 //
-// Duplicated from harness_test.go so this standalone main can be built
+// Duplicated rather than imported so this standalone main can be built
 // without pulling the itb test package. Bit-for-bit match with the canonical
 // reference at https://github.com/jonmaiga/mx3/blob/master/mx3.h.
 
@@ -336,7 +336,7 @@ func chainHash128Mx3(data []byte, seed []uint64) (lo, hi uint64) {
 
 // --- SipHash-1-3 (Aumasson & Bernstein 2012, reduced-round variant) ---------
 //
-// Duplicated from harness_test.go so this standalone main can be built
+// Duplicated rather than imported so this standalone main can be built
 // without pulling the itb test package. Reduced-round structure: 1
 // message-mixing round + 3 finalization rounds. ITB deployment fixes
 // SipHash's k1 to zero, driving the primitive from a single 64-bit

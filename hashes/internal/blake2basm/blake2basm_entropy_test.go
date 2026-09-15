@@ -7,16 +7,16 @@ import (
 	"github.com/everanium/itb/internal/kernelaudit"
 )
 
-// blake2basm_entropy_test.go — the input-entropy differential audit
-// (internal/kernelaudit) of the fused cascade: every bit of every lane
-// buffer, component word, key byte and group index base must reach the
-// output, lane for lane, and the kernel must agree with the pure-Go
-// cascade (ScalarFusedChain256 / 512 and the scalar fill references) at
-// the baseline and after every flip. The helpers drive the single-,
-// four- and eight-lane evaluators and the fill hooks of both widths
-// through the audit; the per-architecture files apply them to every
-// kernel by direct call, and this file applies them to the public
-// dispatchers under the current dispatch state.
+// The input-entropy differential audit (internal/kernelaudit) of the
+// fused cascade: every bit of every lane buffer, component word, key
+// byte and group index base must reach the output, lane for lane, and
+// the kernel must agree with the pure-Go cascade (ScalarFusedChain256 /
+// 512 and the scalar fill references) at the baseline and after every
+// flip. The helpers drive the single-, four- and eight-lane evaluators
+// and the fill hooks of both widths through the audit; the
+// per-architecture files apply them to every kernel by direct call, and
+// this file applies them to the public dispatchers under the current
+// dispatch state.
 
 // auditGroupCounts are the cascade lengths audited: the one-group floor
 // and the two- and three-group cascades that exercise the re-seeded

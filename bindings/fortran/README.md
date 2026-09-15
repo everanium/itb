@@ -54,7 +54,7 @@ so `build.sh` runs `make clean` first.
 
 ## Module structure
 
-- `src/itb.f90` — root module; `use itb` re-exports the whole
+- `src/itb3.f90` — root module; `use itb3` re-exports the whole
   public surface (plus the interop kinds it uses).
 - `src/itb_status.f90` — status-code constants + labels.
 - `src/itb_error.f90` — `itb_error_t` record + `ITB_LastError`
