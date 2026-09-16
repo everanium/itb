@@ -17,7 +17,11 @@ fn save_then_load_round_trip() {
     let receiver = Pipeline::load(&blob, None).unwrap();
     let wire = sender.encrypt_message(b"in-memory").unwrap();
     assert_eq!(receiver.decrypt_message(&wire).unwrap(), b"in-memory");
-    assert_eq!(receiver.save().unwrap(), blob, "load retains the blob bytes");
+    assert_eq!(
+        receiver.save().unwrap(),
+        blob,
+        "load retains the blob bytes"
+    );
 }
 
 #[test]

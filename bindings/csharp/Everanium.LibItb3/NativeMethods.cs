@@ -90,6 +90,19 @@ internal static unsafe partial class NativeMethods
     [LibraryImport(LibName)]
     internal static partial int ITB_SetGCPercent(int pct);
 
+    [LibraryImport(LibName)]
+    internal static partial int ITB_SetGOMAXPROCS(int n);
+
+    [LibraryImport(LibName, StringMarshalling = StringMarshalling.Utf8)]
+    internal static partial int ITB_WriteHeapProfile(string path);
+
+    [LibraryImport(LibName)]
+    internal static partial int ITB_PoolStatsLen();
+
+    [LibraryImport(LibName)]
+    internal static partial int ITB_PoolStats(
+        long* @out, nuint capElems, out nuint lenElems);
+
     // ----------------------------------------------------------------
     // Triple Pipeline lifecycle
     // ----------------------------------------------------------------
@@ -157,6 +170,10 @@ internal static unsafe partial class NativeMethods
 
     [LibraryImport(LibName)]
     internal static partial int ITB_Triple_Profiles(
+        byte* jsonOut, nuint jsonCap, out nuint jsonLen);
+
+    [LibraryImport(LibName)]
+    internal static partial int ITB_Triple_HashNames(
         byte* jsonOut, nuint jsonCap, out nuint jsonLen);
 
     // ----------------------------------------------------------------

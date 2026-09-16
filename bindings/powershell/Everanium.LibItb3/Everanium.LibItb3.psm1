@@ -262,6 +262,26 @@ function Get-ItbProfileName {
     }
 }
 
+function Get-ItbHashName {
+    <#
+    .SYNOPSIS
+    Lists every primitive in the shipped hash registry, in canonical
+    order.
+    .DESCRIPTION
+    Wraps [Everanium.Itb3.Pipeline]::HashNames. Primitives registered
+    at runtime on the Go side are not part of this enumeration.
+    #>
+    [CmdletBinding()]
+    [OutputType([string[]])]
+    param()
+    try {
+        [Everanium.Itb3.Pipeline]::HashNames()
+    }
+    catch [System.Management.Automation.MethodInvocationException] {
+        throw (Script:Get-ItbInnerException $_)
+    }
+}
+
 function Register-ItbProfile {
     <#
     .SYNOPSIS
@@ -809,11 +829,89 @@ function Set-ItbGCPercent {
     [Everanium.Itb3.Runtime]::SetGCPercent($Percent)
 }
 
+function Set-ItbGOMAXPROCS {
+    <#
+    .SYNOPSIS
+    Sets the Go runtime's GOMAXPROCS; returns the previous value. Zero
+    or a negative value queries without changing.
+    #>
+    [CmdletBinding()]
+    [OutputType([int])]
+    param(
+        [Parameter(Mandatory, Position = 0)]
+        [int]$Count
+    )
+    [Everanium.Itb3.Runtime]::SetGOMAXPROCS($Count)
+}
+
+function Write-ItbHeapProfile {
+    <#
+    .SYNOPSIS
+    Writes the Go runtime's heap profile (pprof format) to -Path after
+    one forced garbage collection.
+    .DESCRIPTION
+    An empty path falls back to the ITB_MEMPROFILE environment variable
+    inside libitb3; a path that is still empty, or a file-system
+    failure, throws with status BadInput.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory, Position = 0)]
+        [AllowEmptyString()]
+        [string]$Path
+    )
+    try {
+        [Everanium.Itb3.Runtime]::WriteHeapProfile($Path)
+    }
+    catch [System.Management.Automation.MethodInvocationException] {
+        throw (Script:Get-ItbInnerException $_)
+    }
+}
+
+function Get-ItbPoolStatsLength {
+    <#
+    .SYNOPSIS
+    Returns the number of slots Get-ItbPoolStats fills.
+    #>
+    [CmdletBinding()]
+    [OutputType([int])]
+    param()
+    [Everanium.Itb3.Runtime]::PoolStatsLen()
+}
+
+function Get-ItbPoolStats {
+    <#
+    .SYNOPSIS
+    One snapshot of the library's pool hit / miss counters.
+    .DESCRIPTION
+    Every counter is a monotonically increasing total since library
+    load, so a per-window figure is the difference of two snapshots.
+
+    Slot layout, with T the tier count in slot 0: hash-array tier i
+    holds starter width, checkouts, constructor misses, regrow
+    replacements and bytes allocated at slots 1 + 5*i .. 1 + 5*i + 4;
+    the scratch byte pool's get / new / regrow / regrow-bytes follow at
+    1 + 5*T, and the parallax chunk pool's at 1 + 5*T + 4. The vector
+    is sized from the library's own length query, never from a
+    constant.
+    #>
+    [CmdletBinding()]
+    [OutputType([long[]])]
+    param()
+    try {
+        , [Everanium.Itb3.Runtime]::PoolStats()
+    }
+    catch [System.Management.Automation.MethodInvocationException] {
+        throw (Script:Get-ItbInnerException $_)
+    }
+}
+
 Export-ModuleMember -Function @(
     'New-ItbOpts'
     'New-ItbProfile'
     'Get-ItbProfile'
     'Get-ItbProfileName'
+    'Get-ItbHashName'
     'Register-ItbProfile'
     'New-ItbPipeline'
     'Import-ItbPipeline'
@@ -830,4 +928,8 @@ Export-ModuleMember -Function @(
     'Get-ItbVersion'
     'Set-ItbMemoryLimit'
     'Set-ItbGCPercent'
+    'Set-ItbGOMAXPROCS'
+    'Write-ItbHeapProfile'
+    'Get-ItbPoolStatsLength'
+    'Get-ItbPoolStats'
 )

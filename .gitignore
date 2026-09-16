@@ -6,7 +6,9 @@
 /itb
 /itb.test
 /cshared
+/loop
 **/eitb/eitb
+**/loop/loop
 # Bindings whose eitb entry-point is a committed shell launcher
 # (not a compiled binary) — re-include those so git tracks them.
 !bindings/clojure/eitb/eitb

@@ -89,6 +89,12 @@ module Pipeline =
     let profiles () : Result<string list, ItbError> =
         ItbError.attempt (fun () -> Everanium.Itb3.Pipeline.Profiles() |> List.ofArray)
 
+    /// The names of every primitive in the shipped hash registry, in
+    /// canonical order. Primitives registered at runtime on the Go
+    /// side are not part of this enumeration.
+    let hashNames () : Result<string list, ItbError> =
+        ItbError.attempt (fun () -> Everanium.Itb3.Pipeline.HashNames() |> List.ofArray)
+
     /// The current self-describing session blob: the bytes
     /// <c>init</c> produced, the bytes <c>load</c> re-marshalled, or
     /// the bytes of the latest <c>rekey</c>.

@@ -10,7 +10,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "libitb3.h"
 #include "loop.h"
 
 /* ------------------------------------------------------------------ */
@@ -67,14 +66,13 @@ void read_rss(uint64_t *current, uint64_t *peak)
  * cycles. The slot layout is read from the library: slot 0 carries
  * the tier count T, tier i occupies the five slots at 1 + 5*i, and
  * the two byte pools occupy the eight slots at 1 + 5*T; the buffer
- * is sized from ITB_PoolStatsLen, never from a constant. */
+ * is sized from the binding's length query, never from a constant. */
 int pool_snapshot_alloc(int64_t **out, size_t *len)
 {
-    int n = ITB_PoolStatsLen();
-    if (n <= 0) {
+    *len = itb_pool_stats_len();
+    if (*len == 0) {
         return -1;
     }
-    *len = (size_t)n;
     *out = calloc(*len, sizeof(int64_t));
     return *out == NULL ? -1 : 0;
 }
@@ -82,8 +80,7 @@ int pool_snapshot_alloc(int64_t **out, size_t *len)
 int pool_snapshot_take(int64_t *dst, size_t len)
 {
     size_t written = 0;
-    int rc = ITB_PoolStats(dst, len, &written);
-    return rc == (int)ITB_STATUS_OK ? 0 : -1;
+    return itb_pool_stats(dst, len, &written) == ITB_STATUS_OK ? 0 : -1;
 }
 
 /* ------------------------------------------------------------------ */
@@ -241,7 +238,7 @@ int final_summary(struct run_state *r, int64_t elapsed_ns)
     bool pass = errors == 0;
     long long rekeys = (long long)atomic_load(&r->rekeys);
     long long cycles = (long long)atomic_load(&r->blob_cycles);
-    int gomaxprocs = ITB_SetGOMAXPROCS(0);
+    int gomaxprocs = (int)itb_set_gomaxprocs(0);
     const char *stream_profile = r->stream_pipe != NULL ? r->stream_profile : "";
     const char *msg_profile = r->msg_pipe != NULL ? r->msg_profile : "";
 

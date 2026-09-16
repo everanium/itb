@@ -88,7 +88,7 @@ ITB ships two pixel-processing backends selected automatically at compile time, 
 
 ### CPU baseline for the shipped assembly kernels
 
-See [HASHES.md](HASHES.md) for the full per-kernel CPU feature matrix and the cross-referenced shipping-microarchitecture map (Intel Rocket Lake / Cascade Lake / Haswell-Comet Lake, AMD Zen 4-5 / Zen 3 / Zen 1-2, ARM64 Neoverse V2 / other, older x86 with `-tags noitbasm`, and every other Go target through the pure-Go pipeline).
+See [KERNELS.md](KERNELS.md) for the full per-kernel CPU feature matrix and the cross-referenced shipping-microarchitecture map (Intel Rocket Lake / Cascade Lake / Haswell-Comet Lake, AMD Zen 4-5 / Zen 3 / Zen 1-2, ARM64 Neoverse V2 / other, older x86 with `-tags noitbasm`, and every other Go target through the pure-Go pipeline).
 
 ### Usage
 
@@ -1242,6 +1242,7 @@ Per-binding examples ship in each binding's own directory once the rework lands.
 - [SECURITY.md](SECURITY.md) — Security reference tables.
 - [HWTHREATS.md](HWTHREATS.md) — Hardware-level threat analysis (Spectre, Meltdown, Rowhammer, etc.).
 - [HARNESS.md](HARNESS.md) — Adversarial testing methodology and calibration.
+- [KERNELS.md](KERNELS.md) — Assembly kernels and the CPU features they need.
 - [REDTEAM.md](REDTEAM.md) — Empirical Red Team validation.
 - [BENCH3.md](BENCH3.md) — Benchmark tables across primitives and CPUs.
 - [hashes/CONSTRUCTIONS.md](hashes/CONSTRUCTIONS.md) — Primitive construction descriptions.

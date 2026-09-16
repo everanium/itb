@@ -49,7 +49,6 @@
 #include <string.h>
 #include <time.h>
 
-#include "libitb3.h"
 #include "loop.h"
 
 /* Profiles the shape-based pair is built against when --profile is
@@ -157,7 +156,7 @@ static struct flag *flag_table(struct raw_flags *f, size_t *count)
         { "hash", "string", FLAG_STRING, NULL,
           "inner ITB hash primitive name" },
         { "iterations", "int", FLAG_INT64, NULL,
-          "fixed per-goroutine iteration count; 0 = duration-based" },
+          "fixed per-worker iteration count; 0 = duration-based" },
         { "json-output", "", FLAG_BOOL, NULL,
           "print the final summary as one compact JSON object instead of log lines" },
         { "key-bits", "int", FLAG_INT, NULL,
@@ -349,35 +348,19 @@ static int parse_on_off(const char *v, bool *out)
     return -1;
 }
 
-/* Whether name is in the JSON array of strings the shared library
- * returns for the shipped hash registry. Names are restricted to
- * [a-z0-9-], so a quoted run is one complete name. */
+/* Whether name is in the JSON array of strings the binding returns
+ * for the shipped hash registry. Names are restricted to [a-z0-9-],
+ * so a quoted run is one complete name. */
 static int hash_registered(const char *name)
 {
-    size_t cap = 4096;
-    char *json = malloc(cap);
-    if (json == NULL) {
+    char *json = NULL;
+    if (itb_hash_names(&json) != ITB_STATUS_OK) {
         return 0;
     }
-    size_t len = 0;
-    int rc = ITB_Triple_HashNames(json, cap, &len);
-    if (rc == (int)ITB_STATUS_BUFFER_TOO_SMALL) {
-        char *grown = realloc(json, len);
-        if (grown == NULL) {
-            free(json);
-            return 0;
-        }
-        json = grown;
-        cap = len;
-        rc = ITB_Triple_HashNames(json, cap, &len);
-    }
-    int found = 0;
-    if (rc == (int)ITB_STATUS_OK) {
-        char quoted[128];
-        (void)snprintf(quoted, sizeof(quoted), "\"%s\"", name);
-        found = strstr(json, quoted) != NULL;
-    }
-    free(json);
+    char quoted[128];
+    (void)snprintf(quoted, sizeof(quoted), "\"%s\"", name);
+    int found = strstr(json, quoted) != NULL;
+    itb_string_free(json);
     return found;
 }
 
@@ -650,6 +633,68 @@ static void install_signals(void)
 /* Pipelines                                                           */
 /* ------------------------------------------------------------------ */
 
+/* Integer value of key in a profile JSON record; 0 when absent. */
+static long long record_int(const char *json, const char *key)
+{
+    char needle[64];
+    (void)snprintf(needle, sizeof(needle), "\"%s\":", key);
+    const char *p = strstr(json, needle);
+    return p != NULL ? strtoll(p + strlen(needle), NULL, 10) : 0;
+}
+
+/* String value of key in a profile JSON record, or "-" when absent
+ * or empty. Profile record strings are restricted to [a-z0-9-], so a
+ * quoted run is one complete value. */
+static void record_str(const char *json, const char *key, char *out, size_t cap)
+{
+    char needle[64];
+    (void)snprintf(needle, sizeof(needle), "\"%s\":\"", key);
+    const char *p = strstr(json, needle);
+    if (p == NULL) {
+        (void)snprintf(out, cap, "-");
+        return;
+    }
+    p += strlen(needle);
+    const char *end = strchr(p, '"');
+    if (end == NULL || end == p) {
+        (void)snprintf(out, cap, "-");
+        return;
+    }
+    (void)snprintf(out, cap, "%.*s", (int)(end - p), p);
+}
+
+/* Boolean value of key in a profile JSON record; false when absent. */
+static int record_bool(const char *json, const char *key)
+{
+    char needle[64];
+    (void)snprintf(needle, sizeof(needle), "\"%s\":true", key);
+    return strstr(json, needle) != NULL;
+}
+
+/* Prints the construction line with the recipe read back from the
+ * blob the Pipeline handed out, not echoed from the flags: every
+ * construction override is proven to have reached the library by the
+ * value the receiver would see. Record values that are empty (a No
+ * MAC profile's MAC, a mixed profile's single hash) print as "-". */
+static void log_pipeline_initialised(const char *profile, const uint8_t *blob, size_t blob_len)
+{
+    char *json = NULL;
+    if (itb_inspect(blob, blob_len, &json) != ITB_STATUS_OK) {
+        log_line("pipeline initialised: profile=%s blob=%zu bytes (inspect: %s)", profile, blob_len,
+                 itb_last_error());
+        return;
+    }
+    char hash[64];
+    char mac[64];
+    record_str(json, "hash", hash, sizeof(hash));
+    record_str(json, "mac", mac, sizeof(mac));
+    log_line("pipeline initialised: profile=%s blob=%zu bytes hash=%s key-bits=%lld nonce-bits=%lld barrier-fill=%lld chunk-size=%lld mac=%s parallax=%s wrapper=%s",
+             profile, blob_len, hash, record_int(json, "keybits"), record_int(json, "nonce_bits"),
+             record_int(json, "barrier_fill"), record_int(json, "chunk"), mac,
+             on_off(record_bool(json, "parallax") != 0), on_off(record_bool(json, "wrapper") != 0));
+    itb_string_free(json);
+}
+
 /* Constructs one Pipeline against profile with every flag-carried
  * override in the opts string (zero values included — the shared
  * library treats zero as "profile default"), then obtains the Init
@@ -704,7 +749,7 @@ static int build_pipeline(const struct config *cfg, const char *profile,
         *pipe = NULL;
         return -1;
     }
-    log_line("pipeline initialised: profile=%s blob=%zu bytes", profile, *blob_len);
+    log_pipeline_initialised(profile, *blob, *blob_len);
     return 0;
 }
 
@@ -748,7 +793,7 @@ static int run(int argc, char **argv)
         (void)itb_set_gc_percent(cfg->gogc);
     }
     if (cfg->gomaxprocs > 0) {
-        (void)ITB_SetGOMAXPROCS(cfg->gomaxprocs);
+        (void)itb_set_gomaxprocs(cfg->gomaxprocs);
     }
 
     char a[32], b[32], c[32];
@@ -880,7 +925,7 @@ static int run(int argc, char **argv)
     (void)pool_snapshot_take(r.pool_steady, r.pool_len);
 
     if (cfg->memprofile[0] != '\0') {
-        if (ITB_WriteHeapProfile((char *)cfg->memprofile) != (int)ITB_STATUS_OK) {
+        if (itb_write_heap_profile(cfg->memprofile) != ITB_STATUS_OK) {
             fprintf(stderr, "loop: memprofile: %s\n", itb_last_error());
         } else {
             log_line("memprofile: heap profile written to %s", cfg->memprofile);

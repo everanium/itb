@@ -19,6 +19,7 @@
     <Compile Include="StreamPumpTests.fs" />
     <Compile Include="StreamIncrementalTests.fs" />
     <Compile Include="StreamStickyTests.fs" />
+    <Compile Include="RuntimeTests.fs" />
   </ItemGroup>
 
   <ItemGroup>
