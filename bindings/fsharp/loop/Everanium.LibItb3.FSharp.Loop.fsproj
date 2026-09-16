@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <RootNamespace>Everanium.Itb3.FSharp.Loop</RootNamespace>
+    <AssemblyName>Everanium.LibItb3.FSharp.Loop</AssemblyName>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="Size.fs" />
+    <Compile Include="Payload.fs" />
+    <Compile Include="Types.fs" />
+    <Compile Include="Ops.fs" />
+    <Compile Include="Worker.fs" />
+    <Compile Include="Summary.fs" />
+    <Compile Include="Main.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\src\Everanium.LibItb3.FSharp\Everanium.LibItb3.FSharp.fsproj" />
+  </ItemGroup>
+
+</Project>

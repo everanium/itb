@@ -107,6 +107,13 @@ Public NotInheritable Class Pipeline
         Return Guarded(Function() Global.Everanium.Itb3.Pipeline.Profiles())
     End Function
 
+    ''' <summary>The names of every primitive in the shipped hash
+    ''' registry, in canonical order. Primitives registered at runtime
+    ''' on the Go side are not part of this enumeration.</summary>
+    Public Shared Function HashNames() As String()
+        Return Guarded(Function() Global.Everanium.Itb3.Pipeline.HashNames())
+    End Function
+
     ''' <summary>The current self-describing session blob: the bytes
     ''' <see cref="Init"/> produced, the bytes <see cref="Load"/>
     ''' re-marshalled, or the bytes of the latest

@@ -91,10 +91,9 @@ impl fmt::Display for ItbStatus {
             Self::BlobMalformedRecipe => "blob recipe malformed",
             Self::RecipePrimitiveUnknown => "blob recipe names an unknown primitive",
             Self::UnknownProfile => "unknown profile name",
-            Self::Reserved14
-            | Self::Reserved15
-            | Self::Reserved16
-            | Self::Reserved17 => "reserved status",
+            Self::Reserved14 | Self::Reserved15 | Self::Reserved16 | Self::Reserved17 => {
+                "reserved status"
+            }
             Self::BlobModeMismatch => "blob mode mismatch",
             Self::BlobMalformed => "malformed state blob",
             Self::BlobVersionTooNew => "blob version too new",

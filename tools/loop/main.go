@@ -430,7 +430,7 @@ func run() int {
 		}()
 		r.streamPipe = pipe
 		r.streamBlob = blob
-		logf("pipeline initialised: profile=%s blob=%d bytes", r.streamProfile, len(blob))
+		logPipelineInitialised(r.streamProfile, blob)
 	}
 	if usesMessage(cfg.shape) {
 		pipe, blob, ierr := triple.Init(r.msgProfile, opts)
@@ -445,7 +445,7 @@ func run() int {
 		}()
 		r.msgPipe = pipe
 		r.msgBlob = blob
-		logf("pipeline initialised: profile=%s blob=%d bytes", r.msgProfile, len(blob))
+		logPipelineInitialised(r.msgProfile, blob)
 	}
 
 	// Allocation posture. Per-worker plaintexts are generated once and
@@ -586,7 +586,7 @@ func parseFlags(argv []string) (config, error) {
 	fs := flag.NewFlagSet("loop", flag.ContinueOnError)
 	var (
 		duration    = fs.Duration("duration", 5*time.Minute, "run duration (Go format: 30s / 5m / 1h); ignored when --iterations > 0")
-		iterations  = fs.Int64("iterations", 0, "fixed per-goroutine iteration count; 0 = duration-based")
+		iterations  = fs.Int64("iterations", 0, "fixed per-worker iteration count; 0 = duration-based")
 		workers     = fs.Int("goroutines", 3, fmt.Sprintf("concurrent workers (1..%d); on runtimes without parallelism values above 1 are clamped to 1", maxWorkersFlag))
 		shape       = fs.String("shape", shapeStream, "cipher surface to exercise: stream | message | stream_one_shot | both")
 		hash        = fs.String("hash", "areion512", "inner ITB hash primitive name")
@@ -748,6 +748,31 @@ func parseOnOff(name, v string) (bool, error) {
 		return false, nil
 	}
 	return false, fmt.Errorf("%s must be on | off, got %q", name, v)
+}
+
+// logPipelineInitialised prints the construction line with the
+// recipe read back from the blob the Pipeline handed out, not echoed
+// from the flags: every construction override is proven to have
+// reached the library by the value the receiver would see. Record
+// values that are empty (a No MAC profile's MAC, a mixed profile's
+// single hash) print as "-".
+func logPipelineInitialised(profile string, blob []byte) {
+	rec, err := triple.Inspect(blob)
+	if err != nil {
+		logf("pipeline initialised: profile=%s blob=%d bytes (inspect: %v)", profile, len(blob), err)
+		return
+	}
+	logf("pipeline initialised: profile=%s blob=%d bytes hash=%s key-bits=%d nonce-bits=%d barrier-fill=%d chunk-size=%d mac=%s parallax=%s wrapper=%s",
+		profile, len(blob), dash(rec.InnerHash), rec.KeyBits, rec.NonceBits, rec.BarrierFill,
+		rec.ChunkSize, dash(rec.MacName), onOff(rec.Parallax), onOff(rec.Wrapper))
+}
+
+// dash renders an empty record value as "-".
+func dash(s string) string {
+	if s == "" {
+		return "-"
+	}
+	return s
 }
 
 // onOff renders a bool as the on/off flag vocabulary.

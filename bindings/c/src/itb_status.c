@@ -106,6 +106,31 @@ int32_t itb_set_gc_percent(int32_t pct)
     return (int32_t)ITB_SetGCPercent((int)pct);
 }
 
+int32_t itb_set_gomaxprocs(int32_t n)
+{
+    return (int32_t)ITB_SetGOMAXPROCS((int)n);
+}
+
+itb_status itb_write_heap_profile(const char *path)
+{
+    return itb_internal_status(ITB_WriteHeapProfile((char *)path));
+}
+
+size_t itb_pool_stats_len(void)
+{
+    int n = ITB_PoolStatsLen();
+    return n > 0 ? (size_t)n : 0;
+}
+
+itb_status itb_pool_stats(int64_t *out, size_t cap, size_t *len_out)
+{
+    if (len_out == NULL || (out == NULL && cap > 0)) {
+        return ITB_STATUS_BAD_INPUT;
+    }
+    *len_out = 0;
+    return itb_internal_status(ITB_PoolStats(out, cap, len_out));
+}
+
 /* ------------------------------------------------------------------ */
 /* Bytes helper                                                        */
 /* ------------------------------------------------------------------ */

@@ -161,10 +161,10 @@
 //   - PROOFS.md — formal security proofs.
 //   - SCIENCE.md — architectural argument.
 //   - SECURITY.md — threat-model reference.
-//   - HASHES.md — hashes hardware-level cpu support.
 //   - HWTHREATS.md — hardware-level threat boundary.
-//   - REDTEAM.md — empirical adversarial validation.
 //   - HARNESS.md — adversarial testing methodology and calibration.
+//   - KERNELS.md — assembly kernels and the CPU features they need.
+//   - REDTEAM.md — empirical adversarial validation.
 //   - README.md — full API surface, worked examples, primitive registry.
 //   - BENCH3.md — benchmark tables across primitives and CPUs.
 package itb

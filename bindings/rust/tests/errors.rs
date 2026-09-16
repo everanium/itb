@@ -49,7 +49,13 @@ fn register_mixed_then_duplicate() {
         mode: "singlemsg-nomac".into(),
         width: 256,
         mixed_hashes: [
-            "blake3", "blake2s", "areion256", "blake2b256", "chacha20", "blake3", "blake2s",
+            "blake3",
+            "blake2s",
+            "areion256",
+            "blake2b256",
+            "chacha20",
+            "blake3",
+            "blake2s",
             "areion256",
         ]
         .iter()
@@ -99,8 +105,14 @@ fn per_call_inner_hashes_override_round_trips() {
     // through the innerHashes= opts key). The blob carries the
     // resolved constellation, so the receiver needs no override.
     let mix = [
-        "areion512", "blake2b512", "areion512", "blake2b512",
-        "areion512", "blake2b512", "areion512", "blake2b512",
+        "areion512",
+        "blake2b512",
+        "areion512",
+        "blake2b512",
+        "areion512",
+        "blake2b512",
+        "areion512",
+        "blake2b512",
     ];
     let sender_opts = OptsBuilder::new().with_inner_hashes(&mix);
     let sender = Pipeline::init("singlemsg-triple-mac-v1", &sender_opts).unwrap();
