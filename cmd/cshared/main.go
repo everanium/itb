@@ -21,7 +21,9 @@
 //   - Runtime family — build-time constants (ITB_Version,
 //     ITB_MaxKeyBits, ITB_Channels, ITB_DefaultNonceBits,
 //     ITB_HeaderSize), runtime tunables (ITB_SetMemoryLimit,
-//     ITB_SetGCPercent), and the last-error accessor (ITB_LastError).
+//     ITB_SetGCPercent, ITB_SetGOMAXPROCS), runtime diagnostics
+//     (ITB_WriteHeapProfile, ITB_PoolStatsLen, ITB_PoolStats), and
+//     the last-error accessor (ITB_LastError).
 //
 // Buffer convention. All input/output buffers are caller-allocated.
 // For functions that produce variable-size output (every string-
@@ -205,6 +207,77 @@ func ITB_SetGCPercent(pct C.int) C.int {
 		return C.int(curr)
 	}
 	return C.int(debug.SetGCPercent(int(pct)))
+}
+
+// Configures the Go runtime's GOMAXPROCS — the number of OS threads
+// that execute Go code simultaneously inside the library. Pass 0 (or
+// any negative value) to query the current value without changing
+// it; the previous value is returned, matching runtime.GOMAXPROCS.
+// Setter calls override any ITB_GOMAXPROCS env var set at libitb3
+// load time.
+//
+//export ITB_SetGOMAXPROCS
+func ITB_SetGOMAXPROCS(n C.int) C.int {
+	return C.int(capi.SetGOMAXPROCS(int(n)))
+}
+
+// Writes the Go runtime's heap profile (pprof format, readable with
+// `go tool pprof`) to path after one forced garbage collection, so
+// the in-use figures describe the live heap at the call. A NULL or
+// empty path falls back to the ITB_MEMPROFILE env var; when that is
+// empty too the call returns ITB_ERR_BAD_INPUT. File-system failures
+// return ITB_ERR_BAD_INPUT with the os diagnostic in ITB_LastError.
+//
+//export ITB_WriteHeapProfile
+func ITB_WriteHeapProfile(path *C.char) C.int {
+	var p string
+	if path != nil {
+		p = C.GoString(path)
+	}
+	return C.int(capi.WriteHeapProfile(p))
+}
+
+// Returns the number of int64 slots ITB_PoolStats fills. Callers
+// size their buffer from this value rather than a compile-time
+// constant: the slot count grows if the library adds a pool.
+//
+//export ITB_PoolStatsLen
+func ITB_PoolStatsLen() C.int {
+	return C.int(capi.PoolStatsLen())
+}
+
+// Copies the library's pool hit / miss counters into out under the
+// caller-allocated buffer convention with the capacity counted in
+// int64 slots rather than bytes: on success *out_len receives the
+// slot count written; on ITB_ERR_BUFFER_TOO_SMALL it receives the
+// required count (the probe form out=NULL, cap_elems=0 reports the
+// requirement without writing). Every counter is a monotonically
+// increasing total since library load; a consumer differences two
+// snapshots.
+//
+// Slot layout, with T the hash-array pool tier count carried in
+// slot 0: for tier i in 0..T-1 the five slots at 1 + 5*i hold the
+// starter width (0 for an unused tier), checkouts, constructor
+// misses, regrow replacements and bytes allocated by misses +
+// regrows; the four slots at 1 + 5*T hold the scratch byte pool's
+// get / new / regrow / regrow-bytes and the four after them the
+// parallax chunk pool's, in the same order.
+//
+//export ITB_PoolStats
+func ITB_PoolStats(out *C.int64_t, capElems C.size_t, outLen *C.size_t) C.int {
+	if outLen == nil {
+		return C.int(capi.StatusBadInput)
+	}
+	if !validateLen(capElems) {
+		return C.int(capi.StatusBadInput)
+	}
+	var dst []int64
+	if out != nil && capElems > 0 {
+		dst = unsafe.Slice((*int64)(unsafe.Pointer(out)), int(capElems))
+	}
+	n, st := capi.PoolStats(dst)
+	*outLen = C.size_t(n)
+	return C.int(st)
 }
 
 // ─── Read-only build constants ─────────────────────────────────────

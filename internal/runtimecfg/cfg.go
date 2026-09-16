@@ -1,12 +1,14 @@
-// Package runtimecfg reads the ITB_GOMEMLIMIT and ITB_GOGC env vars at
-// libitb3 load time and applies them to the Go runtime via runtime/debug.
-// Programmatic setters (itb.SetMemoryLimit, itb.SetGCPercent,
-// ITB_SetMemoryLimit, ITB_SetGCPercent) override the env-set values.
+// Package runtimecfg reads the ITB_GOMEMLIMIT, ITB_GOGC and
+// ITB_GOMAXPROCS env vars at libitb3 load time and applies them to the
+// Go runtime via runtime/debug and runtime.GOMAXPROCS. Programmatic
+// setters (itb.SetMemoryLimit, itb.SetGCPercent, ITB_SetMemoryLimit,
+// ITB_SetGCPercent, ITB_SetGOMAXPROCS) override the env-set values.
 package runtimecfg
 
 import (
 	"errors"
 	"os"
+	"runtime"
 	"runtime/debug"
 	"strconv"
 	"strings"
@@ -23,6 +25,28 @@ func init() {
 			debug.SetGCPercent(n)
 		}
 	}
+	if n, ok := parseGOMAXPROCS(os.Getenv("ITB_GOMAXPROCS")); ok {
+		runtime.GOMAXPROCS(n)
+	}
+}
+
+// parseGOMAXPROCS accepts a positive decimal integer and reports
+// whether the value is usable as a GOMAXPROCS setting. The Go runtime
+// applies its own GOMAXPROCS env var before any package init runs;
+// the ITB-prefixed variable is the analogue of ITB_GOGC to GOGC, so a
+// host process can pin the library's scheduler width without
+// touching a variable its own runtime may also read. Empty, non-
+// numeric, zero and negative values are ignored (the runtime's
+// current setting stands), matching the leniency of the two siblings.
+func parseGOMAXPROCS(s string) (int, bool) {
+	if s == "" {
+		return 0, false
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil || n <= 0 {
+		return 0, false
+	}
+	return n, true
 }
 
 // errInvalidSize is returned by parseSize when the input does not

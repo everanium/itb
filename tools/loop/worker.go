@@ -3,9 +3,10 @@ package main
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	mrand "math/rand/v2"
+	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -75,13 +76,13 @@ func (w *worker) runLoop(ctx context.Context, r *runState, warmupWG *sync.WaitGr
 	}
 }
 
-// iterate performs one encrypt -> decrypt -> compare round-trip on the
-// shared Pipeline. Under --shape both, even iterations exercise the
-// streaming surface and odd iterations the Single Message surface, so
-// both shapes interleave inside every worker. The whole round-trip
-// runs under the pipeMu read lock so pipeline-mutating maintenance
-// (Rekey, blob cycle) never lands between an encrypt and its matching
-// decrypt.
+// One iteration. In order: refill the plaintext under rotating mode;
+// take the read lock; pick the surface; encrypt (timed); decrypt
+// (timed); compare the round-trip with the plaintext; bump the
+// counters; release the lock. The whole round-trip runs under the
+// pipeMu read lock so pipeline-mutating maintenance (Rekey, blob
+// cycle) never lands between an encrypt and its matching decrypt —
+// maintenance runs after this returns, from runLoop.
 func (w *worker) iterate(r *runState, iter int64) error {
 	if w.payloadMode == payloadRotating {
 		if err := fillPayload(payloadRotating, w.rng, w.plaintext); err != nil {
@@ -92,57 +93,119 @@ func (w *worker) iterate(r *runState, iter int64) error {
 	r.pipeMu.RLock()
 	defer r.pipeMu.RUnlock()
 
+	// Shape dispatch. message is one whole-buffer call on the Single
+	// Message Pipeline; stream_one_shot is one whole-buffer call on
+	// the streaming Pipeline (EncryptStreamBytes — the entry the C
+	// ABI's ITB_Triple_EncryptStream routes to); stream hands the
+	// same streaming Pipeline an io.Reader / io.Writer pair and ITB
+	// runs the chunk loop itself. Under both the three rotate by
+	// iteration number so the session path and the whole-buffer path
+	// alternate on one handle inside every worker — the cross-path
+	// state-reuse hazard this harness exists to catch.
 	shape := r.cfg.shape
 	if shape == shapeBoth {
-		if iter%2 == 0 {
+		switch iter % 3 {
+		case 0:
 			shape = shapeStream
-		} else {
+		case 1:
 			shape = shapeMessage
+		default:
+			shape = shapeStreamOneShot
 		}
 	}
 
 	var got []byte
 	switch shape {
 	case shapeStream:
+		// Pump loop. Not applicable here: EncryptStream takes the
+		// io.Reader / io.Writer pair and ITB drives the chunk loop
+		// internally, so this harness never feeds or drains a session
+		// by hand. A binding has no reader / writer entry on the C ABI
+		// and drives the loop itself over a stream session.
 		w.wireBuf.Reset()
 		encStart := time.Now()
 		if err := r.streamPipe.EncryptStream(bytes.NewReader(w.plaintext), &w.wireBuf); err != nil {
-			return fmt.Errorf("g%d iter %d: EncryptStream: %w", w.id, iter, err)
+			return fmt.Errorf("g%d iter %d shape=%s: encrypt: %w", w.id, iter, shape, err)
 		}
 		w.nanosEnc.Add(time.Since(encStart).Nanoseconds())
 		w.plainBuf.Reset()
 		decStart := time.Now()
 		if err := r.streamPipe.DecryptStream(bytes.NewReader(w.wireBuf.Bytes()), &w.plainBuf); err != nil {
-			return fmt.Errorf("g%d iter %d: DecryptStream: %w", w.id, iter, err)
+			return fmt.Errorf("g%d iter %d shape=%s: decrypt: %w", w.id, iter, shape, err)
 		}
 		w.nanosDec.Add(time.Since(decStart).Nanoseconds())
 		got = w.plainBuf.Bytes()
+	case shapeStreamOneShot:
+		encStart := time.Now()
+		wire, err := r.streamPipe.EncryptStreamBytes(w.plaintext)
+		if err != nil {
+			return fmt.Errorf("g%d iter %d shape=%s: encrypt: %w", w.id, iter, shape, err)
+		}
+		w.nanosEnc.Add(time.Since(encStart).Nanoseconds())
+		decStart := time.Now()
+		out, err := r.streamPipe.DecryptStreamBytes(wire)
+		if err != nil {
+			return fmt.Errorf("g%d iter %d shape=%s: decrypt: %w", w.id, iter, shape, err)
+		}
+		w.nanosDec.Add(time.Since(decStart).Nanoseconds())
+		got = out
 	case shapeMessage:
 		encStart := time.Now()
 		wire, err := r.msgPipe.EncryptMessage(w.plaintext)
 		if err != nil {
-			return fmt.Errorf("g%d iter %d: EncryptMessage: %w", w.id, iter, err)
+			return fmt.Errorf("g%d iter %d shape=%s: encrypt: %w", w.id, iter, shape, err)
 		}
 		w.nanosEnc.Add(time.Since(encStart).Nanoseconds())
 		decStart := time.Now()
 		out, err := r.msgPipe.DecryptMessage(wire)
 		if err != nil {
-			return fmt.Errorf("g%d iter %d: DecryptMessage: %w", w.id, iter, err)
+			return fmt.Errorf("g%d iter %d shape=%s: decrypt: %w", w.id, iter, shape, err)
 		}
 		w.nanosDec.Add(time.Since(decStart).Nanoseconds())
 		got = out
 	}
 
+	// Failure model. A cipher call that returns an error is a worker
+	// error: it is returned to the launcher, listed in the summary,
+	// and forces the FAIL verdict while the other workers finish their
+	// in-flight iteration. A round-trip that returns without error but
+	// with different bytes is a data mismatch: the process terminates
+	// here, without summary or cleanup, because the Pipeline state
+	// that produced the wrong bytes is the evidence and nothing that
+	// runs afterwards may touch it.
 	if !bytes.Equal(w.plaintext, got) {
-		panic(fmt.Sprintf(
-			"loop: DATA MISMATCH g%d iter %d shape=%s: want %d bytes sha256=%x, got %d bytes sha256=%x",
-			w.id, iter, shape,
-			len(w.plaintext), sha256.Sum256(w.plaintext),
-			len(got), sha256.Sum256(got)))
+		off := firstDifference(w.plaintext, got)
+		fmt.Fprintf(os.Stderr,
+			"loop: DATA MISMATCH g%d iter %d shape=%s: want %d bytes, got %d bytes, first difference at offset %d: want %s got %s\n",
+			w.id, iter, shape, len(w.plaintext), len(got), off,
+			hexWindow(w.plaintext, off), hexWindow(got, off))
+		os.Exit(3)
 	}
 
 	w.iters.Add(1)
 	w.bytesEnc.Add(int64(len(w.plaintext)))
 	w.bytesDec.Add(int64(len(got)))
 	return nil
+}
+
+// firstDifference returns the first offset at which a and b differ;
+// the shorter length when one is a prefix of the other.
+func firstDifference(a, b []byte) int {
+	n := min(len(a), len(b))
+	for i := 0; i < n; i++ {
+		if a[i] != b[i] {
+			return i
+		}
+	}
+	return n
+}
+
+// hexWindow renders up to 16 bytes of buf from off as lowercase hex,
+// or "-" when buf has no bytes there.
+func hexWindow(buf []byte, off int) string {
+	if off >= len(buf) {
+		return "-"
+	}
+	end := min(off+16, len(buf))
+	return hex.EncodeToString(buf[off:end])
 }

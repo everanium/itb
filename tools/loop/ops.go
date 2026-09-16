@@ -13,13 +13,16 @@ import (
 // [triple.Init] auto-generates when no override is supplied.
 const rekeyWrapMasterSize = 32
 
-// maintenance runs the periodic pipeline-mutating operations after a
-// completed iteration: master rotation (--rekey-every) and blob
-// export/reopen cycling (--blob-cycle-every). Both intervals count
-// per-worker iterations; the warmup iteration (iter 0) never triggers
-// because runLoop calls this for iter >= 1 only. Each operation takes
-// the runState write lock, so in-flight cipher calls on other workers
-// drain before any pipeline state mutates — the serialisation the
+// Handle mutation. maintenance runs the periodic pipeline-mutating
+// operations after a completed iteration: master rotation
+// (--rekey-every) and blob export/reopen cycling (--blob-cycle-every).
+// Both intervals count per-worker iterations; the warmup iteration
+// (iter 0) never triggers because runLoop calls this for iter >= 1
+// only. Rekey rewrites the outer-layer keying of a live Pipeline and
+// a blob cycle replaces the Pipeline pointer outright; each operation
+// takes the runState write lock, so in-flight cipher calls on other
+// workers drain before any pipeline state mutates and no encrypt is
+// separated from its decrypt by either — the serialisation the
 // [triple.Pipeline.Rekey] thread-safety contract requires.
 func (w *worker) maintenance(r *runState, iter int64) error {
 	if r.cfg.rekeyEvery > 0 && iter%r.cfg.rekeyEvery == 0 {
@@ -35,14 +38,14 @@ func (w *worker) maintenance(r *runState, iter int64) error {
 	return nil
 }
 
-// rekeyPipes rotates the parallax + wrapper masters on every active
-// pipeline via [triple.Pipeline.Rekey] under the write lock, and
-// stores the refreshed session blobs for subsequent blob cycles.
-// Masters are drawn fresh from CSPRNG on every rotation regardless of
-// --seed (master rotation is pipeline keying, not plaintext content);
-// a disabled layer receives nil, which Rekey ignores. The eight inner
-// seeds and the MAC key are untouched by design — Rekey targets only
-// the two outer-layer master secrets.
+// Master rotation. rekeyPipes rotates the parallax + wrapper masters
+// on every active pipeline via [triple.Pipeline.Rekey] under the
+// write lock, and stores the refreshed session blobs for subsequent
+// blob cycles. Masters are drawn fresh from CSPRNG on every rotation
+// regardless of --seed (master rotation is pipeline keying, not
+// plaintext content); a disabled layer receives nil, which Rekey
+// ignores. The eight inner seeds and the MAC key are untouched by
+// design — Rekey targets only the two outer-layer master secrets.
 func (r *runState) rekeyPipes(workerID int, iter int64) error {
 	var (
 		permMaster []byte
@@ -83,15 +86,18 @@ func (r *runState) rekeyPipes(workerID int, iter int64) error {
 	return nil
 }
 
-// blobCyclePipes reopens every active pipeline from its current
-// session blob under the write lock: a fresh Pipeline is built via
-// [triple.Load], the running instance is closed, and the fresh one is
-// swapped in. This exercises the blob export/import path's fidelity —
-// every subsequent iteration round-trips through seeds and masters
-// that survived a blob crossing. The blob carries the pipeline's full
-// shape (the resolved profile record plus the inner Config snapshot),
-// so no override reaches the reopen. On a Load failure the running
-// pipeline is left in place and the error aborts the run.
+// Blob reopen. blobCyclePipes reopens every active pipeline from its
+// current session blob under the write lock: a fresh Pipeline is
+// built via [triple.Load], the running instance is closed, and the
+// fresh one is swapped in. This exercises the blob export/import
+// path's fidelity — every subsequent iteration round-trips through
+// seeds and masters that survived a blob crossing. The input is the
+// blob Init or the latest Rekey handed out, not a fresh Save: that is
+// what a receiver holds, and reopening from it proves the handed-out
+// bytes rather than the live state. The blob carries the pipeline's
+// full shape (the resolved profile record plus the inner Config
+// snapshot), so no override reaches the reopen. On a Load failure the
+// running pipeline is left in place and the error aborts the run.
 func (r *runState) blobCyclePipes(workerID int, iter int64) error {
 	r.pipeMu.Lock()
 	defer r.pipeMu.Unlock()

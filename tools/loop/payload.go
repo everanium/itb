@@ -25,11 +25,14 @@ const (
 	payloadPatternASCII = "pattern-ascii"
 )
 
-// newWorkerRNG builds the deterministic per-worker plaintext source
-// for seeded runs. Returns nil when seed is zero — the crypto/rand
-// path. Each worker's stream is domain-separated by its id so seeded
-// workers still hold pairwise-distinct buffers under the fixed and
-// rotating modes.
+// Seeded plaintext. newWorkerRNG builds the deterministic per-worker
+// plaintext source for seeded runs, so a failing iteration can be
+// replayed with the same bytes; the seed governs plaintext content
+// only — pipeline keys, nonces and masters stay CSPRNG-drawn, so a
+// seeded run is a reproduction aid and never a security test.
+// Returns nil when seed is zero — the crypto/rand path. Each worker's
+// stream is domain-separated by its id so seeded workers still hold
+// pairwise-distinct buffers under the fixed and rotating modes.
 func newWorkerRNG(seed uint64, workerID int) *mrand.ChaCha8 {
 	if seed == 0 {
 		return nil

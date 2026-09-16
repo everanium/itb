@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
-	"github.com/everanium/itb/internal/poolstats"
+	itb "github.com/everanium/itb"
 )
 
 // monitorInterval is the runtime-stat sampling period.
@@ -79,16 +81,16 @@ func sample(r *runState) {
 	prev := r.lastSample
 	r.lastSample = now
 	window := now.at.Sub(prev.at)
-	poolDelta := now.pool.Sub(prev.pool)
+	poolDelta := diffPoolVectors(now.pool, prev.pool)
 	var hashMiss int64
-	for i := range poolDelta.HashNew {
-		hashMiss += poolDelta.HashNew[i] + poolDelta.HashRegrow[i]
+	for _, t := range poolDelta.tiers {
+		hashMiss += t.fresh + t.regrow
 	}
 	logf("+%s: iters=[%s] heap=%s objects=%d goroutines=%d gcs=%d alloc=%s/s poolmiss=hash:%d buf:%d chunk:%d tput=enc:%s dec:%s combined:%s",
 		elapsed.Round(time.Second), strings.Join(iterParts, " "),
 		humanBytes(int64(ms.HeapAlloc)), ms.HeapObjects, goroutines, ms.NumGC,
 		humanBytes(rateBytes(now.totalAlloc-prev.totalAlloc, window)),
-		hashMiss, poolDelta.BufRegrow, poolDelta.ChunkRegrow,
+		hashMiss, poolDelta.buf.regrow, poolDelta.chunk.regrow,
 		humanRateBare(totalEnc, avgEncTime), humanRateBare(totalDec, avgDecTime),
 		humanRate(totalEnc+totalDec, elapsed))
 
@@ -100,7 +102,7 @@ func sample(r *runState) {
 	// collection, so the mid-run heap warning triggers only past both
 	// the 2x post-GC baseline and the configured soft memory limit —
 	// the verdict-grade heap check runs post-GC in finalSummary.
-	allowedGoroutines := r.warmupGoroutines + r.cfg.workers*runtime.GOMAXPROCS(0) + 2
+	allowedGoroutines := r.warmupGoroutines + r.cfg.workers*itb.SetGOMAXPROCS(0) + 2
 	if goroutines > allowedGoroutines {
 		r.warnings++
 		logf("WARNING: goroutine count %d exceeds transient allowance %d (warmup baseline %d)",
@@ -116,10 +118,19 @@ func sample(r *runState) {
 
 // finalSummary prints the end-of-run report and returns the process
 // exit code. Verdict criteria: zero worker errors (a data mismatch
-// panics before reaching this point, so surviving iterations all
-// round-tripped byte-exact), final goroutine count within +2 of the
-// pre-worker idle baseline, and final heap below 2x the post-warmup
-// baseline.
+// terminates the process before reaching this point, so surviving
+// iterations all round-tripped byte-exact), final goroutine count
+// within +2 of the pre-worker idle baseline, and final heap below 2x
+// the post-warmup baseline. The first criterion is the binding-side
+// verdict; the other two are this harness's extension.
+//
+// Output contract. Both renderings are shared with every binding's
+// loop utility field for field: the core lines / keys every
+// implementation emits, in one fixed order, then this harness's
+// Go-runtime extension (goroutine and heap lines, allocation and GC
+// figures) at the positions reserved for it — after the rss line and
+// after the parallax_chunk_pool key. Floats carry a fixed number of
+// decimals so the JSON is byte-identical across implementations.
 func finalSummary(r *runState, elapsed time.Duration, finalHeap uint64, finalGoroutines int, workerErrs []error) int {
 	var (
 		iterParts                    []string
@@ -155,7 +166,20 @@ func finalSummary(r *runState, elapsed time.Duration, finalHeap uint64, finalGor
 	if r.warmupHeap > 0 {
 		growthPct = 100 * float64(heapDelta) / float64(r.warmupHeap)
 	}
+	rssDelta := int64(r.rssFinal) - int64(r.rssWarmup)
+	rssGrowthPct := 0.0
+	if r.rssWarmup > 0 {
+		rssGrowthPct = 100 * float64(rssDelta) / float64(r.rssWarmup)
+	}
 
+	// Throughput. Per-direction throughput divides the sum of every
+	// worker's wall time in that direction by the worker count — the
+	// equivalent single-stream wall time under N-way concurrency — so
+	// each direction reports the aggregate rate it sustained rather
+	// than collapsing to combined/2 (every iteration moves equal
+	// encrypt and decrypt bytes, so a total-elapsed denominator would
+	// give both directions the same figure). The combined rate keeps
+	// total elapsed as the one-glance overall figure.
 	workerCount := int64(len(r.workers))
 	avgEncTime := avgWorkerTime(totalNanosEnc, workerCount)
 	avgDecTime := avgWorkerTime(totalNanosDec, workerCount)
@@ -165,7 +189,7 @@ func finalSummary(r *runState, elapsed time.Duration, finalHeap uint64, finalGor
 	if r.cfg.jsonOutput {
 		return printJSONSummary(r, elapsed, finalHeap, finalGoroutines, workerErrs,
 			perWorkerIters, totalIters, totalEnc, totalDec, avgEncTime, avgDecTime,
-			growthPct, pass, am)
+			growthPct, rssGrowthPct, pass, am)
 	}
 
 	logf("=== FINAL ===")
@@ -176,6 +200,10 @@ func finalSummary(r *runState, elapsed time.Duration, finalHeap uint64, finalGor
 		humanRate(totalEnc+totalDec, elapsed))
 	logf("  bytes: %s encrypted, %s decrypted", humanBytes(totalEnc), humanBytes(totalDec))
 	logf("  data integrity: %d/%d PASS", totalIters, totalIters)
+	logf("  concurrency: %s, workers %d (requested %d)", concurrencyMode, len(r.workers), r.cfg.workers)
+	logf("  rss: warmup %s, peak %s, final %s (delta %s, %.1f%% growth)",
+		humanBytes(int64(r.rssWarmup)), humanBytes(int64(r.rssPeak)),
+		humanBytes(int64(r.rssFinal)), humanBytesSigned(rssDelta), rssGrowthPct)
 	logf("  goroutines: idle baseline %d, warmup %d, peak %d, final %d (%s)",
 		r.idleGoroutines, r.warmupGoroutines, r.peakGoroutines, finalGoroutines,
 		stableLabel(goroutinesOK))
@@ -183,7 +211,7 @@ func finalSummary(r *runState, elapsed time.Duration, finalHeap uint64, finalGor
 		humanBytes(int64(r.warmupHeap)), humanBytes(int64(r.peakHeap)),
 		humanBytes(int64(finalHeap)), humanBytesSigned(heapDelta), growthPct)
 	logf("  alloc: %s total, %s/s, %s/iteration, %d mallocs/iteration",
-		humanBytes(am.AllocTotalBytes), humanBytes(int64(am.AllocBytesPerSec)),
+		humanBytes(am.AllocTotalBytes), humanBytes(am.AllocBytesPerSec),
 		humanBytes(int64(am.AllocBytesPerIteration)), int64(am.MallocsPerIteration))
 	logf("  gc: %d cycles (%.1f/s), stw pause %s (%.2f%% of wall), gc cpu fraction %.4f",
 		am.GCCount, am.GCPerSec, time.Duration(am.GCPauseTotalNs), am.GCPausePercent, am.GCCPUFraction)
@@ -241,48 +269,91 @@ func avgWorkerTime(nanosSum, workerCount int64) time.Duration {
 	return time.Duration(nanosSum / workerCount)
 }
 
+// fixed1 / fixed2 / fixed3 / fixed4 are floats that marshal with
+// exactly that many decimals and never in exponent form, so the JSON
+// summary is byte-identical across every implementation of the
+// contract regardless of the host language's float printer.
+type (
+	fixed1 float64
+	fixed2 float64
+	fixed3 float64
+	fixed4 float64
+)
+
+func (f fixed1) MarshalJSON() ([]byte, error) { return marshalFixed(float64(f), 1) }
+func (f fixed2) MarshalJSON() ([]byte, error) { return marshalFixed(float64(f), 2) }
+func (f fixed3) MarshalJSON() ([]byte, error) { return marshalFixed(float64(f), 3) }
+func (f fixed4) MarshalJSON() ([]byte, error) { return marshalFixed(float64(f), 4) }
+
+func marshalFixed(v float64, decimals int) ([]byte, error) {
+	if math.IsNaN(v) || math.IsInf(v, 0) {
+		v = 0
+	}
+	return []byte(strconv.FormatFloat(v, 'f', decimals, 64)), nil
+}
+
 // summaryReport is the machine-readable final-summary shape emitted
-// under --json-output. Field semantics mirror the human-readable
-// summary lines; throughput figures are binary MiB per second (the
-// same unit the MB/s log rendering uses).
+// under --json-output. The leading block is the core every binding's
+// loop utility emits in this key order; the trailing block is this
+// harness's Go-runtime extension. Throughput figures are binary MiB
+// per second (the same unit the MB/s log rendering uses).
 type summaryReport struct {
-	DurationSeconds     float64  `json:"duration_seconds"`
+	DurationSeconds     fixed3   `json:"duration_seconds"`
 	Iterations          int64    `json:"iterations"`
 	PerWorkerIterations []int64  `json:"per_worker_iterations"`
 	BytesEncrypted      int64    `json:"bytes_encrypted"`
 	BytesDecrypted      int64    `json:"bytes_decrypted"`
-	EncryptMBPerSec     float64  `json:"encrypt_mb_per_sec"`
-	DecryptMBPerSec     float64  `json:"decrypt_mb_per_sec"`
-	CombinedMBPerSec    float64  `json:"combined_mb_per_sec"`
-	HeapWarmupBytes     uint64   `json:"heap_warmup_bytes"`
-	HeapPeakBytes       uint64   `json:"heap_peak_bytes"`
-	HeapFinalBytes      uint64   `json:"heap_final_bytes"`
-	HeapGrowthPercent   float64  `json:"heap_growth_percent"`
-	GoroutinesIdle      int      `json:"goroutines_idle"`
-	GoroutinesWarmup    int      `json:"goroutines_warmup"`
-	GoroutinesPeak      int      `json:"goroutines_peak"`
-	GoroutinesFinal     int      `json:"goroutines_final"`
-	Warnings            int      `json:"warnings"`
+	EncryptMBPerSec     fixed1   `json:"encrypt_mb_per_sec"`
+	DecryptMBPerSec     fixed1   `json:"decrypt_mb_per_sec"`
+	CombinedMBPerSec    fixed1   `json:"combined_mb_per_sec"`
 	Rekeys              int64    `json:"rekeys"`
 	BlobCycles          int64    `json:"blob_cycles"`
 	WorkerErrors        []string `json:"worker_errors"`
 	Verdict             string   `json:"verdict"`
 
-	// Runtime shaping the run executed under, so each summary is
+	// The configuration the run executed under, so each summary is
 	// self-describing when cells of a sweep are compared.
-	GOGC         string `json:"gogc"`
-	MemLimit     int64  `json:"memlimit_bytes"`
-	GOMAXPROCS   int    `json:"gomaxprocs"`
-	Hash         string `json:"hash"`
-	PayloadBytes int64  `json:"payload_bytes"`
-	Workers      int    `json:"goroutines"`
+	Shape            string              `json:"shape"`
+	StreamProfile    string              `json:"stream_profile"`
+	MessageProfile   string              `json:"message_profile"`
+	Hash             string              `json:"hash"`
+	Mac              string              `json:"mac"`
+	PayloadBytes     int64               `json:"payload_bytes"`
+	PayloadMode      string              `json:"payload_mode"`
+	Seed             uint64              `json:"seed"`
+	KeyBits          int                 `json:"key_bits"`
+	NonceBits        int                 `json:"nonce_bits"`
+	ChunkSizeBytes   int64               `json:"chunk_size_bytes"`
+	BarrierFill      int                 `json:"barrier_fill"`
+	Parallax         string              `json:"parallax"`
+	Wrapper          string              `json:"wrapper"`
+	WorkersRequested int                 `json:"goroutines_requested"`
+	Workers          int                 `json:"goroutines"`
+	Concurrency      string              `json:"concurrency"`
+	GOGC             string              `json:"gogc"`
+	MemLimit         int64               `json:"memlimit_bytes"`
+	GOMAXPROCS       int                 `json:"gomaxprocs"`
+	MicroBatchTiers  string              `json:"microbatch_tiers"`
+	HashPoolStarters string              `json:"hashpool_starters"`
+	RSSWarmupBytes   uint64              `json:"rss_warmup_bytes"`
+	RSSPeakBytes     uint64              `json:"rss_peak_bytes"`
+	RSSFinalBytes    uint64              `json:"rss_final_bytes"`
+	RSSGrowthPercent fixed2              `json:"rss_growth_percent"`
+	HashPoolTiers    []hashPoolTierStats `json:"hash_pool_tiers"`
+	BufPool          bufPoolStats        `json:"buf_pool"`
+	ChunkPool        bufPoolStats        `json:"parallax_chunk_pool"`
 
-	// Encoder policy knobs the process was started with, read from the
-	// ITB_MICROBATCH_TIERS / ITB_HASHPOOL_STARTERS env at init ("default"
-	// when unset), so every cell of a policy sweep is self-describing.
-	MicroBatchTiers  string `json:"microbatch_tiers"`
-	HashPoolStarters string `json:"hashpool_starters"`
-
+	// Go-runtime extension: nothing below is reachable through the C
+	// ABI, so no binding emits it.
+	HeapWarmupBytes   uint64 `json:"heap_warmup_bytes"`
+	HeapPeakBytes     uint64 `json:"heap_peak_bytes"`
+	HeapFinalBytes    uint64 `json:"heap_final_bytes"`
+	HeapGrowthPercent fixed2 `json:"heap_growth_percent"`
+	GoroutinesIdle    int    `json:"goroutines_idle"`
+	GoroutinesWarmup  int    `json:"goroutines_warmup"`
+	GoroutinesPeak    int    `json:"goroutines_peak"`
+	GoroutinesFinal   int    `json:"goroutines_final"`
+	Warnings          int    `json:"warnings"`
 	allocMetrics
 }
 
@@ -295,40 +366,42 @@ func policyLabel(env string) string {
 	return "default"
 }
 
-// allocMetrics is the allocation-rate / GC-cost / pool hit-miss block
-// of the summary. Every figure is differenced between the post-warmup
-// baseline and the instant the last worker returned, so it describes
-// the main loop only — the settle sleep and the forced GCs that
-// precede the leak snapshot are excluded. The one exception is
-// GCCPUFraction, which the runtime reports cumulatively since process
-// start and which cannot be differenced; the warmup phase is short
-// enough for the figure to be dominated by the main loop.
+// allocMetrics is the allocation-rate / GC-cost block of the summary
+// together with the pool hit-miss block. Every figure is differenced
+// between the post-warmup baseline and the instant the last worker
+// returned, so it describes the main loop only — the settle sleep and
+// the forced GCs that precede the leak snapshot are excluded. The one
+// exception is GCCPUFraction, which the runtime reports cumulatively
+// since process start and which cannot be differenced; the warmup
+// phase is short enough for the figure to be dominated by the main
+// loop. The pool block is core (every binding emits it); the
+// allocation and GC figures are the Go-runtime extension.
 type allocMetrics struct {
-	AllocTotalBytes        int64   `json:"alloc_total_bytes"`
-	AllocBytesPerSec       float64 `json:"alloc_bytes_per_sec"`
-	AllocBytesPerIteration float64 `json:"alloc_bytes_per_iteration"`
-	MallocsPerIteration    float64 `json:"mallocs_per_iteration"`
-	GCCount                int64   `json:"gc_count"`
-	GCPerSec               float64 `json:"gc_per_sec"`
-	GCPauseTotalNs         int64   `json:"gc_pause_total_ns"`
-	GCPausePercent         float64 `json:"gc_pause_percent"`
-	GCCPUFraction          float64 `json:"gc_cpu_fraction"`
-	HeapSysPeakBytes       uint64  `json:"heap_sys_bytes"`
+	AllocTotalBytes        int64  `json:"alloc_total_bytes"`
+	AllocBytesPerSec       int64  `json:"alloc_bytes_per_sec"`
+	AllocBytesPerIteration fixed1 `json:"alloc_bytes_per_iteration"`
+	MallocsPerIteration    fixed1 `json:"mallocs_per_iteration"`
+	GCCount                int64  `json:"gc_count"`
+	GCPerSec               fixed2 `json:"gc_per_sec"`
+	GCPauseTotalNs         int64  `json:"gc_pause_total_ns"`
+	GCPausePercent         fixed2 `json:"gc_pause_percent"`
+	GCCPUFraction          fixed4 `json:"gc_cpu_fraction"`
+	HeapSysPeakBytes       uint64 `json:"heap_sys_bytes"`
 
-	HashPoolTiers []hashPoolTierStats `json:"hash_pool_tiers"`
-	BufPool       bufPoolStats        `json:"buf_pool"`
-	ChunkPool     bufPoolStats        `json:"parallax_chunk_pool"`
+	HashPoolTiers []hashPoolTierStats `json:"-"`
+	BufPool       bufPoolStats        `json:"-"`
+	ChunkPool     bufPoolStats        `json:"-"`
 }
 
 // hashPoolTierStats is one starter tier of the itb hash-array pool.
 type hashPoolTierStats struct {
-	Tier        int     `json:"tier"`
-	Starter     int64   `json:"starter"`
-	Get         int64   `json:"get"`
-	New         int64   `json:"new"`
-	Regrow      int64   `json:"regrow"`
-	NewBytes    int64   `json:"new_bytes"`
-	MissPercent float64 `json:"miss_percent"`
+	Tier        int    `json:"tier"`
+	Starter     int64  `json:"starter"`
+	Get         int64  `json:"get"`
+	New         int64  `json:"new"`
+	Regrow      int64  `json:"regrow"`
+	NewBytes    int64  `json:"new_bytes"`
+	MissPercent fixed2 `json:"miss_percent"`
 }
 
 // bufPoolStats is one single-size byte pool (the itb scratch pool or
@@ -337,14 +410,15 @@ type hashPoolTierStats struct {
 // same acquire on any larger request, so counting New separately would
 // double-count that checkout.
 type bufPoolStats struct {
-	Get         int64   `json:"get"`
-	New         int64   `json:"new"`
-	Regrow      int64   `json:"regrow"`
-	RegrowBytes int64   `json:"regrow_bytes"`
-	MissPercent float64 `json:"miss_percent"`
+	Get         int64  `json:"get"`
+	New         int64  `json:"new"`
+	Regrow      int64  `json:"regrow"`
+	RegrowBytes int64  `json:"regrow_bytes"`
+	MissPercent fixed2 `json:"miss_percent"`
 }
 
-// newAllocMetrics differences the warmup and steady snapshots on r.
+// newAllocMetrics differences the warmup and steady snapshots on r:
+// the runtime counters here, the pool counters via diffPoolVectors.
 func newAllocMetrics(r *runState, totalIters int64) allocMetrics {
 	w, s := r.warmupMem, r.steadyMem
 	window := s.at.Sub(w.at)
@@ -353,39 +427,36 @@ func newAllocMetrics(r *runState, totalIters int64) allocMetrics {
 	pauseNs := int64(s.pauseNs - w.pauseNs)
 	am := allocMetrics{
 		AllocTotalBytes:  allocTotal,
-		AllocBytesPerSec: float64(rateBytes(uint64(allocTotal), window)),
+		AllocBytesPerSec: rateBytes(uint64(allocTotal), window),
 		GCCount:          gcCount,
 		GCPauseTotalNs:   pauseNs,
-		GCCPUFraction:    s.gcCPU,
+		GCCPUFraction:    fixed4(s.gcCPU),
 		HeapSysPeakBytes: s.heapSys,
 	}
 	if window > 0 {
-		am.GCPerSec = float64(gcCount) / window.Seconds()
-		am.GCPausePercent = 100 * float64(pauseNs) / float64(window.Nanoseconds())
+		am.GCPerSec = fixed2(float64(gcCount) / window.Seconds())
+		am.GCPausePercent = fixed2(100 * float64(pauseNs) / float64(window.Nanoseconds()))
 	}
 	if totalIters > 0 {
-		am.AllocBytesPerIteration = float64(allocTotal) / float64(totalIters)
-		am.MallocsPerIteration = float64(s.mallocs-w.mallocs) / float64(totalIters)
+		am.AllocBytesPerIteration = fixed1(float64(allocTotal) / float64(totalIters))
+		am.MallocsPerIteration = fixed1(float64(s.mallocs-w.mallocs) / float64(totalIters))
 	}
-	pd := s.pool.Sub(w.pool)
-	for i := 0; i < poolstats.MaxHashTiers; i++ {
-		if pd.HashStarter[i] == 0 {
-			continue
-		}
+	pd := diffPoolVectors(s.pool, w.pool)
+	for _, pt := range pd.tiers {
 		t := hashPoolTierStats{
-			Tier: i, Starter: pd.HashStarter[i],
-			Get: pd.HashGet[i], New: pd.HashNew[i], Regrow: pd.HashRegrow[i],
-			NewBytes: pd.HashNewBytes[i],
+			Tier: pt.index, Starter: pt.starter,
+			Get: pt.get, New: pt.fresh, Regrow: pt.regrow,
+			NewBytes: pt.newBytes,
 		}
 		t.MissPercent = missPercent(t.New+t.Regrow, t.Get)
 		am.HashPoolTiers = append(am.HashPoolTiers, t)
 	}
 	am.BufPool = bufPoolStats{
-		Get: pd.BufGet, New: pd.BufNew, Regrow: pd.BufRegrow, RegrowBytes: pd.BufRegrowBytes,
+		Get: pd.buf.get, New: pd.buf.fresh, Regrow: pd.buf.regrow, RegrowBytes: pd.buf.regrowBytes,
 	}
 	am.BufPool.MissPercent = missPercent(am.BufPool.Regrow, am.BufPool.Get)
 	am.ChunkPool = bufPoolStats{
-		Get: pd.ChunkGet, New: pd.ChunkNew, Regrow: pd.ChunkRegrow, RegrowBytes: pd.ChunkRegrowBytes,
+		Get: pd.chunk.get, New: pd.chunk.fresh, Regrow: pd.chunk.regrow, RegrowBytes: pd.chunk.regrowBytes,
 	}
 	am.ChunkPool.MissPercent = missPercent(am.ChunkPool.Regrow, am.ChunkPool.Get)
 	return am
@@ -393,11 +464,11 @@ func newAllocMetrics(r *runState, totalIters int64) allocMetrics {
 
 // missPercent renders misses over checkouts as a percentage; zero when
 // nothing was checked out.
-func missPercent(miss, get int64) float64 {
+func missPercent(miss, get int64) fixed2 {
 	if get <= 0 {
 		return 0
 	}
-	return 100 * float64(miss) / float64(get)
+	return fixed2(100 * float64(miss) / float64(get))
 }
 
 // rateBytes converts a byte delta over a window into bytes per second;
@@ -415,7 +486,7 @@ func rateBytes(n uint64, d time.Duration) int64 {
 // the run stay human-readable.
 func printJSONSummary(r *runState, elapsed time.Duration, finalHeap uint64, finalGoroutines int,
 	workerErrs []error, perWorkerIters []int64, totalIters, totalEnc, totalDec int64,
-	avgEncTime, avgDecTime time.Duration, growthPct float64, pass bool, am allocMetrics) int {
+	avgEncTime, avgDecTime time.Duration, growthPct, rssGrowthPct float64, pass bool, am allocMetrics) int {
 	errStrs := make([]string, 0, len(workerErrs))
 	for _, werr := range workerErrs {
 		errStrs = append(errStrs, werr.Error())
@@ -424,36 +495,68 @@ func printJSONSummary(r *runState, elapsed time.Duration, finalHeap uint64, fina
 	if !pass {
 		verdict = "FAIL"
 	}
+	hashTiers := am.HashPoolTiers
+	if hashTiers == nil {
+		hashTiers = []hashPoolTierStats{}
+	}
+	var streamProfile, msgProfile string
+	if r.streamPipe != nil {
+		streamProfile = r.streamProfile
+	}
+	if r.msgPipe != nil {
+		msgProfile = r.msgProfile
+	}
 	rep := summaryReport{
-		DurationSeconds:     elapsed.Seconds(),
+		DurationSeconds:     fixed3(elapsed.Seconds()),
 		Iterations:          totalIters,
 		PerWorkerIterations: perWorkerIters,
 		BytesEncrypted:      totalEnc,
 		BytesDecrypted:      totalDec,
-		EncryptMBPerSec:     mbPerSec(totalEnc, avgEncTime),
-		DecryptMBPerSec:     mbPerSec(totalDec, avgDecTime),
-		CombinedMBPerSec:    mbPerSec(totalEnc+totalDec, elapsed),
+		EncryptMBPerSec:     fixed1(mbPerSec(totalEnc, avgEncTime)),
+		DecryptMBPerSec:     fixed1(mbPerSec(totalDec, avgDecTime)),
+		CombinedMBPerSec:    fixed1(mbPerSec(totalEnc+totalDec, elapsed)),
+		Rekeys:              r.rekeys.Load(),
+		BlobCycles:          r.blobCycles.Load(),
+		WorkerErrors:        errStrs,
+		Verdict:             verdict,
+		Shape:               r.cfg.shape,
+		StreamProfile:       streamProfile,
+		MessageProfile:      msgProfile,
+		Hash:                r.cfg.hash,
+		Mac:                 r.cfg.mac,
+		PayloadBytes:        r.cfg.payload,
+		PayloadMode:         r.cfg.payloadMode,
+		Seed:                r.cfg.seed,
+		KeyBits:             r.cfg.keyBits,
+		NonceBits:           r.cfg.nonceBits,
+		ChunkSizeBytes:      r.cfg.chunkSize,
+		BarrierFill:         r.cfg.barrierFill,
+		Parallax:            onOff(r.cfg.parallax),
+		Wrapper:             onOff(r.cfg.wrapper),
+		WorkersRequested:    r.cfg.workers,
+		Workers:             len(r.workers),
+		Concurrency:         concurrencyMode,
+		GOGC:                gogcLabel(r.cfg.gogc),
+		MemLimit:            r.cfg.memlimit,
+		GOMAXPROCS:          itb.SetGOMAXPROCS(0),
+		MicroBatchTiers:     policyLabel(os.Getenv("ITB_MICROBATCH_TIERS")),
+		HashPoolStarters:    policyLabel(os.Getenv("ITB_HASHPOOL_STARTERS")),
+		RSSWarmupBytes:      r.rssWarmup,
+		RSSPeakBytes:        r.rssPeak,
+		RSSFinalBytes:       r.rssFinal,
+		RSSGrowthPercent:    fixed2(rssGrowthPct),
+		HashPoolTiers:       hashTiers,
+		BufPool:             am.BufPool,
+		ChunkPool:           am.ChunkPool,
 		HeapWarmupBytes:     r.warmupHeap,
 		HeapPeakBytes:       r.peakHeap,
 		HeapFinalBytes:      finalHeap,
-		HeapGrowthPercent:   growthPct,
+		HeapGrowthPercent:   fixed2(growthPct),
 		GoroutinesIdle:      r.idleGoroutines,
 		GoroutinesWarmup:    r.warmupGoroutines,
 		GoroutinesPeak:      r.peakGoroutines,
 		GoroutinesFinal:     finalGoroutines,
 		Warnings:            r.warnings,
-		Rekeys:              r.rekeys.Load(),
-		BlobCycles:          r.blobCycles.Load(),
-		WorkerErrors:        errStrs,
-		Verdict:             verdict,
-		GOGC:                gogcLabel(r.cfg.gogc),
-		MemLimit:            r.cfg.memlimit,
-		GOMAXPROCS:          runtime.GOMAXPROCS(0),
-		Hash:                r.cfg.hash,
-		PayloadBytes:        r.cfg.payload,
-		Workers:             r.cfg.workers,
-		MicroBatchTiers:     policyLabel(os.Getenv("ITB_MICROBATCH_TIERS")),
-		HashPoolStarters:    policyLabel(os.Getenv("ITB_HASHPOOL_STARTERS")),
 		allocMetrics:        am,
 	}
 	b, err := json.Marshal(rep)
@@ -468,17 +571,17 @@ func printJSONSummary(r *runState, elapsed time.Duration, finalHeap uint64, fina
 	return 1
 }
 
-// gogcLabel renders the effective GC percentage: the --gogc flag when
-// set, otherwise the GOGC environment variable the runtime consumed at
-// start ("100" when unset, matching the runtime default).
+// gogcLabel renders the effective GC percentage as the runtime
+// reports it through the query form of [itb.SetGCPercent] (the same
+// probe the C ABI's ITB_SetGCPercent(-1) runs), which makes the field
+// identical across implementations whether the percentage came from
+// --gogc, from the GOGC / ITB_GOGC environment, or from the runtime
+// default.
 func gogcLabel(flag int) string {
 	if flag > 0 {
 		return fmt.Sprint(flag)
 	}
-	if v := os.Getenv("GOGC"); v != "" {
-		return v
-	}
-	return "100"
+	return fmt.Sprint(itb.SetGCPercent(-1))
 }
 
 // mbPerSec converts a byte count over a duration into binary MiB per
