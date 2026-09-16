@@ -39,6 +39,7 @@ let package = Package(
         .library(name: "LibItb3", targets: ["Itb3"]),
         .executable(name: "Itb3Bench", targets: ["Itb3Bench"]),
         .executable(name: "eitb", targets: ["eitb"]),
+        .executable(name: "loop", targets: ["loop"]),
     ],
     targets: [
         .systemLibrary(name: "CItb", path: "Sources/CItb"),
@@ -49,6 +50,10 @@ let package = Package(
         ),
         .executableTarget(name: "Itb3Bench", dependencies: ["Itb3"]),
         .executableTarget(name: "eitb", dependencies: ["Itb3"]),
+        // The stress harness keeps its sources next to eitb/ and
+        // benches/ rather than under Sources/, so the target carries
+        // an explicit path.
+        .executableTarget(name: "loop", dependencies: ["Itb3"], path: "loop"),
         .testTarget(name: "Itb3Tests", dependencies: ["Itb3"]),
     ]
 )

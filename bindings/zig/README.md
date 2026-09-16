@@ -248,6 +248,28 @@ rotates outer masters, and inspects stored blobs. See
 [`cmd/itb3/README.md`](https://github.com/everanium/itb/blob/main/cmd/itb3/README.md) for the full
 subcommand reference.
 
+## loop utility
+
+A long-run stress harness under `bindings/zig/loop/` holds one
+Pipeline handle for minutes, cycles encrypt → decrypt → compare
+round-trips through it, rotates the outer masters and reopens the
+handle from its session blob on a schedule, and reports whether the
+process survived with every byte intact. It is the binding-side
+counterpart of the Go harness under `tools/loop`: same flags, same
+round structure, same summary in both renderings.
+
+```bash
+cd bindings/zig && zig build loop
+./run_loop.sh --duration 2m --shape both
+```
+
+`./zig-out/bin/loop -h` lists every flag. Concurrency mode:
+**shared-handle** — OS threads call into one Pipeline handle
+concurrently, which libitb3 permits once the handle is constructed
+and the binding's `Pipeline` struct allows (it adds no
+synchronisation of its own), so `--goroutines` is the thread count
+verbatim.
+
 ## eitb utility
 
 A small CLI under `bindings/zig/eitb/` mirrors the shipped Go
