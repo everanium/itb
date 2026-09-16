@@ -142,6 +142,7 @@ through this binding returns `{:error, {:recipe_primitive_unknown, _}}`.
 
 ```elixir
 ITB.profiles()                                 # sorted list of binaries
+ITB.hash_names()                               # shipped hash registry, list of binaries
 ITB.lookup("singlemsg-triple-mac-v1")          # {:ok, record}; unknown -> :unknown_profile
 :ok = ITB.register("my-profile", %{
   mode: "singlemsg-nomac",
@@ -153,6 +154,11 @@ ITB.lookup("singlemsg-triple-mac-v1")          # {:ok, record}; unknown -> :unkn
 })
 {:ok, sender} = ITB.init("my-profile")
 ```
+
+`ITB.hash_names/0` enumerates the shipped hash registry in canonical
+order; those are the names `ITB.init/2` accepts under the `innerHash`
+opts key, so a caller validating a primitive name reads it from there
+rather than carrying a list of its own.
 
 `ITB.register/2` takes the same record shape `inspect` / `lookup`
 return (a map with atom or binary keys, or an already-encoded JSON
@@ -230,6 +236,11 @@ binding's status table (e.g. `:mac_failure`, `:bad_input`,
 are a map or keyword list (`%{keyBits: 1024, nonceBits: 512}`)
 rendered into the URL-query string libitb3 consumes.
 
+`ITB.Status.code/1` resolves a status atom to the numeric code the
+C ABI assigns it, for a diagnostic that has to name the code the
+library itself uses; an atom outside the table is the internal-error
+code.
+
 Handle lifetime is garbage-collected: dropping every term reference
 releases the Go-side state through the NIF resource destructor, and
 `ITB.free/1` / `ITB.stream_free/1` release eagerly (both
@@ -238,16 +249,31 @@ the pipeline is never collected under a live session.
 
 ## Memory
 
-Two process-wide knobs constrain Go runtime arena pacing, readable
-at libitb3 load time via env vars (`ITB_GOMEMLIMIT`, `ITB_GOGC`) and
-adjustable at any time programmatically. Pass `-1` to query without
-changing. Long-running or allocation-heavy workloads (benchmarks,
-bulk encryption) should set both — without a soft cap + aggressive
-GC the Go scratch heap grows unboundedly under allocation churn:
+Process-wide knobs constrain Go runtime arena pacing, readable at
+libitb3 load time via env vars (`ITB_GOMEMLIMIT`, `ITB_GOGC`,
+`ITB_GOMAXPROCS`) and adjustable at any time programmatically. Pass
+`-1` (or, for GOMAXPROCS, `0`) to query without changing.
+Long-running or allocation-heavy workloads (benchmarks, bulk
+encryption) should set the soft cap and the GC percentage — without a
+soft cap + aggressive GC the Go scratch heap grows unboundedly under
+allocation churn:
 
 ```elixir
 ITB.set_memory_limit(4 * 1024 * 1024 * 1024) # 4 GiB soft cap
 ITB.set_gc_percent(100)                       # balanced GC
+ITB.set_gomaxprocs(4)                         # cap the Go-side parallelism
+```
+
+`ITB.write_heap_profile/1` writes a Go heap profile in pprof format
+after one forced collection, for reading with `go tool pprof`.
+`ITB.pool_stats/0` returns the library's pool hit / miss counters as
+one slot vector — monotonic totals since load, sized by
+`ITB.pool_stats_len/0` — so two snapshots bracketing a workload
+difference into that window's figures:
+
+```elixir
+:ok = ITB.write_heap_profile("/tmp/itb-heap.pprof")
+{:ok, slots} = ITB.pool_stats()
 ```
 
 ## Testing
@@ -291,6 +317,27 @@ payloads directly on disk (`-i` / `-o`) or through stdin / stdout,
 rotates outer masters, and inspects stored blobs. See
 [`cmd/itb3/README.md`](https://github.com/everanium/itb/blob/main/cmd/itb3/README.md) for the full
 subcommand reference.
+
+## loop utility
+
+A long-run stress harness under `bindings/elixir/loop/` holds one
+Pipeline handle for minutes, cycles encrypt → decrypt → compare
+round-trips through it, rotates the outer masters and reopens the
+handle from its session blob on a schedule, and reports whether the
+process survived with every byte intact. It is the binding-side
+counterpart of the Go harness under `tools/loop`: same flags, same
+round structure, same summary in both renderings.
+
+```bash
+./build.sh
+./run_loop.sh --duration 2m --shape both
+```
+
+`./run_loop.sh -h` lists every flag. Concurrency mode:
+**shared-handle** — BEAM processes call the NIF beneath the Elixir
+wrapper concurrently on dirty schedulers and one Pipeline resource
+serves all of them, since the handle carries no scheduler-affine
+state, so `--goroutines` is the process count verbatim.
 
 ## eitb utility
 

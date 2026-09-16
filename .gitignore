@@ -29,6 +29,12 @@
 !bindings/r/eitb/eitb
 !bindings/ruby/eitb/eitb
 !bindings/scala/eitb/eitb
+# Bindings whose loop entry-point is a committed shell launcher
+# (not a compiled binary) — re-include those so git tracks them.
+!bindings/elixir/loop/loop
+!bindings/erlang/loop/loop
+!bindings/gleam/loop/loop
+!bindings/lfe/loop/loop
 /eitb
 /tools/eitb/eitb
 # Parity helper compiled binaries (built by scripts/parity/cross-build-parity.sh)
