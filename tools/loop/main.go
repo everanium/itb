@@ -1,20 +1,33 @@
-// Command loop is a long-run concurrency stress harness for a single
-// shared [github.com/everanium/itb/triple.Pipeline] instance.
+// Long-run stress harness. Command loop hammers one shared
+// [github.com/everanium/itb/triple.Pipeline] instance with concurrent
+// encrypt → decrypt → compare round-trips for minutes, rotating the
+// outer masters and reopening the Pipeline from its session blob on
+// a schedule, and reports whether the process survived with every
+// byte intact. It is the Go reference for the loop utility every
+// binding under bindings/<lang>/loop/ carries: the option surface,
+// the round structure and the output format are the same there, so
+// a run of either reads the same and a sweep can compare cells across
+// the two.
 //
-// N worker goroutines (default 3, capped at 10) hammer one Pipeline
-// with concurrent Encrypt/Decrypt round-trips over a configurable
-// duration (or a fixed per-worker iteration count). Every worker owns
-// a distinct CSPRNG-generated plaintext buffer held for the whole run,
-// so any cross-call state leakage inside the Pipeline surfaces as a
-// data mismatch between workers rather than cancelling out. Each
-// iteration encrypts the worker's plaintext to wire bytes, decrypts
-// the wire back, and compares the round-trip output byte-for-byte
-// against the original; a mismatch panics immediately with the worker
-// id, iteration number, and SHA-256 digests of both buffers.
+// N worker goroutines (default 3, capped at 10) share one Pipeline
+// per exercised shape. Every worker owns a distinct CSPRNG-generated
+// plaintext buffer held for the whole run, so any cross-call state
+// leakage inside the Pipeline surfaces as a data mismatch between
+// workers rather than cancelling out. Each iteration encrypts the
+// worker's plaintext to wire bytes, decrypts the wire back, and
+// compares the round-trip output byte-for-byte against the original;
+// a mismatch terminates the process immediately with the worker id,
+// iteration number, and the first differing offset.
 //
-// The default shape is full production: Streaming AEAD profile with
-// parallax on, wrapper on, KMAC256 MAC, Areion-SoEM-512 inner hash,
-// 1024-bit keys, and the compile-in 512-bit nonce width.
+// Three cipher surfaces are exercised under --shape: stream drives
+// [triple.Pipeline.EncryptStream] with an io.Reader / io.Writer pair
+// (ITB runs the chunk loop), stream_one_shot drives
+// [triple.Pipeline.EncryptStreamBytes] with the whole buffer, message
+// drives [triple.Pipeline.EncryptMessage]; both rotates through the
+// three by iteration number. The default shape is full production:
+// Streaming AEAD profile with parallax on, wrapper on, hmac-blake3
+// MAC, Areion-SoEM-512 inner hash, 1024-bit keys, and the compile-in
+// 512-bit nonce width.
 //
 // Overrides beyond that shape: --profile exercises one registered
 // triple profile in place of the shape-based pair; --key-bits /
@@ -33,9 +46,11 @@
 // A monitor goroutine samples runtime state every 5 seconds (heap
 // alloc, heap objects, GC count, goroutine count, per-worker iteration
 // counters, aggregate throughput) and warns on goroutine-count or
-// heap-growth anomalies. The final summary reports totals, peak vs
-// final runtime state, and a PASS/FAIL verdict: PASS iff zero data
-// mismatches, the final goroutine count settles within +2 of the
+// heap-growth anomalies. The monitor is the one part of this harness
+// with no binding-side counterpart: nothing it reads is reachable
+// through the C ABI. The final summary reports totals, peak vs final
+// runtime state, and a PASS/FAIL verdict: PASS iff zero worker
+// errors, the final goroutine count settles within +2 of the
 // pre-worker idle baseline, and the final heap stays below 2x the
 // post-warmup baseline.
 //
@@ -51,64 +66,153 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
+	"math"
 	"os"
 	"os/signal"
 	"runtime"
-	"runtime/debug"
-	"runtime/pprof"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
 
+	itb "github.com/everanium/itb"
 	"github.com/everanium/itb/hashes"
-	"github.com/everanium/itb/internal/poolstats"
 	"github.com/everanium/itb/macs"
+	"github.com/everanium/itb/parallax"
 	"github.com/everanium/itb/triple"
 )
 
 // Shape selector values for the --shape flag.
 const (
-	shapeStream  = "stream"
-	shapeMessage = "message"
-	shapeBoth    = "both"
+	shapeStream        = "stream"
+	shapeMessage       = "message"
+	shapeStreamOneShot = "stream_one_shot"
+	shapeBoth          = "both"
 )
+
+// concurrencyMode names the concurrency mode this harness implements,
+// as every loop utility reports it in its summary (shared-handle /
+// independent-handles / single). Concurrency mode. Go goroutines
+// share one *triple.Pipeline freely — the Pipeline's cipher path is
+// concurrent-safe by construction — so N workers call into the same
+// handle and the harness runs the shared-handle stress every binding
+// with real threads runs; --goroutines is the worker count verbatim,
+// never clamped.
+const concurrencyMode = "shared-handle"
+
+// usesStream reports whether the shape exercises the streaming
+// Pipeline (stream and stream_one_shot share it); usesMessage whether
+// it exercises the Single Message Pipeline.
+func usesStream(shape string) bool {
+	return shape == shapeStream || shape == shapeStreamOneShot || shape == shapeBoth
+}
+
+func usesMessage(shape string) bool {
+	return shape == shapeMessage || shape == shapeBoth
+}
 
 // maxWorkersFlag caps --goroutines; the harness targets modest hosts
 // and each worker pins payload-sized buffers for the whole run.
 const maxWorkersFlag = 10
 
-// profileSurface maps every shipped triple profile with a cipher
-// surface to the shape its Mode exposes. --profile validation gates on
-// this map: the loop binary links only the shipped registry, so a name
-// outside it cannot resolve at Init time either. The blob-only profile
-// is deliberately absent — it carries no cipher surface to exercise.
-var profileSurface = map[string]string{
-	triple.ProfileStreamingAEADTripleMACV1:      shapeStream,
-	triple.ProfileStreamingNoAEADTripleV1:       shapeStream,
-	triple.ProfileSingleMsgTripleMACV1:          shapeMessage,
-	triple.ProfileSingleMsgTripleNoMACV1:        shapeMessage,
-	triple.ProfileStreamingAEADTripleMACMixedV1: shapeStream,
-	triple.ProfileStreamingNoAEADTripleMixedV1:  shapeStream,
-	triple.ProfileSingleMsgTripleMACMixedV1:     shapeMessage,
-	triple.ProfileSingleMsgTripleNoMACMixedV1:   shapeMessage,
+// profileSurface resolves a registered triple profile to the shape
+// family its Mode exposes — shapeStream for the streaming modes,
+// shapeMessage for the Single Message modes — by reading the profile
+// record the registry holds, so every registered name (shipped or
+// installed at runtime) is accepted and the surface never has to be
+// restated here. The blob-only mode carries no cipher surface and is
+// rejected.
+func profileSurface(name string) (string, error) {
+	p, err := triple.Lookup(name)
+	if err != nil {
+		return "", fmt.Errorf("--profile %q is not a registered triple profile", name)
+	}
+	switch {
+	case strings.HasPrefix(p.Mode, "streaming"):
+		return shapeStream, nil
+	case strings.HasPrefix(p.Mode, "singlemsg"):
+		return shapeMessage, nil
+	}
+	return "", fmt.Errorf("--profile %q carries no cipher surface (blob-only mode)", name)
+}
+
+// keystreamFillCipher is the primitive the loop supplies for the
+// parallax palette and the outer cipher when a profile ships without
+// them. AES-CMAC is PRF-grade, so it is sound outside the Interlocked
+// Barrier, and it is the closest relative of the AES-based inner
+// primitive whose profiles need this fill.
+const keystreamFillCipher = "aescmac"
+
+// fillKeystreamLayers folds a keystream primitive into opts for any
+// layer the named profile leaves unfilled but the operator asked for.
+//
+// A profile built around a primitive that is safe only inside the
+// Interlocked Barrier ships with an empty parallax palette and no
+// outer cipher: both layers run outside the barrier, where that
+// primitive would stand bare, so the recipe leaves them unnamed
+// rather than naming a primitive that must not key them. Engaging
+// either layer therefore needs a keystream-capable primitive supplied
+// from outside the recipe; without it construction fails on a palette
+// below its minimum or an unnamed outer cipher, and the primitive
+// that most deserves stressing becomes the one that cannot be
+// stressed with those layers engaged.
+//
+// Overrides fold into the resolved record the blob carries, so the
+// receiver rebuilds the same shape from the blob alone.
+func fillKeystreamLayers(name string, opts *triple.Opts, wantParallax, wantWrapper bool) (bool, error) {
+	p, err := triple.Lookup(name)
+	if err != nil {
+		return false, fmt.Errorf("--profile %q is not a registered triple profile", name)
+	}
+	filled := false
+	if wantParallax && len(p.ParallaxPalette) == 0 {
+		opts.ParallaxPalette = []string{keystreamFillCipher, keystreamFillCipher, keystreamFillCipher}
+		if p.ParallaxSegmentSize == 0 {
+			// A recipe that never carried a palette never carried a
+			// segment size either, and the schedule rejects zero.
+			opts.ParallaxSegmentSize = parallax.DefaultSegmentSize
+		}
+		filled = true
+	}
+	if wantWrapper && p.OuterCipher == "" {
+		opts.OuterCipher = keystreamFillCipher
+		filled = true
+	}
+	return filled, nil
+}
+
+// narrowShape applies a --profile's surface to the requested shape: a
+// message-surface profile forces message; a stream-surface profile
+// keeps stream or stream_one_shot as requested and turns message or
+// both into stream.
+func narrowShape(requested, surface string) string {
+	if surface == shapeMessage {
+		return shapeMessage
+	}
+	if requested == shapeStreamOneShot {
+		return shapeStreamOneShot
+	}
+	return shapeStream
 }
 
 // config carries the resolved CLI surface.
 type config struct {
-	duration   time.Duration
-	iterations int64 // per-worker; 0 = duration-based
-	workers    int
-	shape      string
-	hash       string
-	mac        string
-	payload    int64
-	memlimit   int64 // resolved bytes
-	gogc       int   // 0 = leave the runtime default
-	parallax   bool
-	wrapper    bool
+	duration     time.Duration
+	iterations   int64 // per-worker; 0 = duration-based
+	workers      int
+	shape        string
+	hash         string
+	mac          string
+	payload      int64
+	memlimit     int64 // resolved bytes; the effective limit once the runtime is shaped
+	memlimitAuto bool  // --memlimit auto: cap only when the runtime has no limit
+	gogc         int   // 0 = leave the runtime default
+	parallax     bool
+	wrapper      bool
 
 	profile        string // non-empty = exercise this single registered profile
 	keyBits        int    // 0 = profile default
@@ -126,7 +230,8 @@ type config struct {
 
 // memSnapshot is one point-in-time capture of the cumulative runtime
 // counters the allocation-rate and GC-cost figures are differenced
-// from, together with the pool hit / miss counters of the itb core.
+// from, together with the pool hit / miss counter vector of the itb
+// core (see pool.go for its layout).
 type memSnapshot struct {
 	at         time.Time
 	totalAlloc uint64
@@ -135,7 +240,7 @@ type memSnapshot struct {
 	pauseNs    uint64
 	gcCPU      float64
 	heapSys    uint64
-	pool       poolstats.Snapshot
+	pool       []int64
 }
 
 // takeMemSnapshot reads the runtime counters (via ReadMemStats, which
@@ -151,7 +256,7 @@ func takeMemSnapshot() memSnapshot {
 		pauseNs:    ms.PauseTotalNs,
 		gcCPU:      ms.GCCPUFraction,
 		heapSys:    ms.HeapSys,
-		pool:       poolstats.Take(),
+		pool:       takePoolVector(),
 	}
 }
 
@@ -211,6 +316,14 @@ type runState struct {
 	warmupMem memSnapshot
 	steadyMem memSnapshot
 
+	// rssWarmup / rssFinal are the process resident set at the
+	// post-warmup baseline and at shutdown; rssPeak is the kernel's
+	// high-water mark read at shutdown. Informational, shared with
+	// every binding's summary; the verdict does not read them.
+	rssWarmup uint64
+	rssPeak   uint64
+	rssFinal  uint64
+
 	// lastSample is the previous monitor snapshot; the periodic line
 	// prints the allocation rate and pool-miss count since it. Written
 	// by the monitor goroutine only.
@@ -223,22 +336,46 @@ func main() {
 
 func run() int {
 	cfg, err := parseFlags(os.Args[1:])
+	if errors.Is(err, flag.ErrHelp) {
+		return 0
+	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "loop: %v\n", err)
 		return 2
 	}
 
-	// Runtime shaping before any allocation-heavy setup.
-	debug.SetMemoryLimit(cfg.memlimit)
+	// Runtime shaping. A long run under allocation churn grows the Go
+	// heap without bound unless a soft limit paces the collector, so
+	// a limit is always in force: an explicit --memlimit is set as
+	// given, and auto caps the heap only when the runtime reports no
+	// limit at all (a limit already installed from the environment
+	// is left standing). The GC percentage and GOMAXPROCS are set
+	// only when their flag is non-zero — a zero flag skips the setter
+	// rather than calling it with zero, because zero is a real value
+	// to SetGCPercent, and a call would clobber whatever the
+	// environment installed. Every knob goes through the itb
+	// package's exported setters — the same entries the C ABI wraps
+	// for the bindings — so each run of this harness also exercises
+	// the path the binding-side utilities depend on. All of it lands
+	// before any allocation-heavy setup so the baselines are taken
+	// under the shaped runtime.
+	if cfg.memlimitAuto {
+		if itb.SetMemoryLimit(-1) == math.MaxInt64 {
+			itb.SetMemoryLimit(cfg.memlimit)
+		}
+	} else {
+		itb.SetMemoryLimit(cfg.memlimit)
+	}
+	cfg.memlimit = itb.SetMemoryLimit(-1)
 	if cfg.gogc > 0 {
-		debug.SetGCPercent(cfg.gogc)
+		itb.SetGCPercent(cfg.gogc)
 	}
 	if cfg.gomaxprocs > 0 {
-		runtime.GOMAXPROCS(cfg.gomaxprocs)
+		itb.SetGOMAXPROCS(cfg.gomaxprocs)
 	}
 
-	logf("start: duration=%s iterations=%d goroutines=%d shape=%s hash=%s mac=%s payload=%s memlimit=%s parallax=%s wrapper=%s",
-		cfg.duration, cfg.iterations, cfg.workers, cfg.shape, cfg.hash, cfg.mac,
+	logf("start: duration=%s iterations=%d goroutines=%d workers=%d concurrency=%s shape=%s hash=%s mac=%s payload=%s memlimit=%s parallax=%s wrapper=%s",
+		cfg.duration, cfg.iterations, cfg.workers, cfg.workers, concurrencyMode, cfg.shape, cfg.hash, cfg.mac,
 		humanBytes(cfg.payload), humanBytes(cfg.memlimit), onOff(cfg.parallax), onOff(cfg.wrapper))
 	logf("overrides: profile=%q key-bits=%d nonce-bits=%d chunk-size=%s barrier-fill=%d gomaxprocs=%d rekey-every=%d blob-cycle-every=%d payload-mode=%s seed=%d json-output=%v",
 		cfg.profile, cfg.keyBits, cfg.nonceBits, humanBytes(cfg.chunkSize), cfg.barrierFill,
@@ -265,10 +402,19 @@ func run() int {
 	r.streamProfile = triple.ProfileStreamingAEADTripleMACV1
 	r.msgProfile = triple.ProfileSingleMsgTripleMACV1
 	if cfg.profile != "" {
+		filled, ferr := fillKeystreamLayers(cfg.profile, &opts, cfg.parallax, cfg.wrapper)
+		if ferr != nil {
+			fmt.Fprintf(os.Stderr, "loop: %v\n", ferr)
+			return 1
+		}
+		if filled {
+			fmt.Fprintf(os.Stderr, "loop: %s leaves the requested keystream layers unnamed; %s supplied for them\n",
+				cfg.profile, keystreamFillCipher)
+		}
 		r.streamProfile = cfg.profile
 		r.msgProfile = cfg.profile
 	}
-	if cfg.shape == shapeStream || cfg.shape == shapeBoth {
+	if usesStream(cfg.shape) {
 		pipe, blob, ierr := triple.Init(r.streamProfile, opts)
 		if ierr != nil {
 			fmt.Fprintf(os.Stderr, "loop: triple.Init(%s): %v\n", r.streamProfile, ierr)
@@ -286,7 +432,7 @@ func run() int {
 		r.streamBlob = blob
 		logf("pipeline initialised: profile=%s blob=%d bytes", r.streamProfile, len(blob))
 	}
-	if cfg.shape == shapeMessage || cfg.shape == shapeBoth {
+	if usesMessage(cfg.shape) {
 		pipe, blob, ierr := triple.Init(r.msgProfile, opts)
 		if ierr != nil {
 			fmt.Fprintf(os.Stderr, "loop: triple.Init(%s): %v\n", r.msgProfile, ierr)
@@ -302,11 +448,13 @@ func run() int {
 		logf("pipeline initialised: profile=%s blob=%d bytes", r.msgProfile, len(blob))
 	}
 
-	// Per-worker plaintexts, generated once and held for the whole run
-	// (rotating mode refills per iteration inside the worker). Under
-	// the default fixed CSPRNG mode every worker's buffer is distinct,
-	// so cross-worker data crossover is detectable; pattern modes trade
-	// that property for content edge-case coverage.
+	// Allocation posture. Per-worker plaintexts are generated once and
+	// held for the whole run (rotating mode refills them in place per
+	// iteration); the wire and round-trip buffers live inside each
+	// worker and are reused across iterations. Under the default fixed
+	// CSPRNG mode every worker's buffer is distinct, so cross-worker
+	// data crossover is detectable; pattern modes trade that property
+	// for content edge-case coverage.
 	r.workers = make([]*worker, cfg.workers)
 	for i := range r.workers {
 		pt := make([]byte, cfg.payload)
@@ -318,7 +466,11 @@ func run() int {
 		r.workers[i] = &worker{id: i, plaintext: pt, payloadMode: cfg.payloadMode, rng: rng}
 	}
 
-	// Signal-aware root context: Ctrl-C / SIGTERM cancels gracefully.
+	// Graceful stop. Ctrl-C / SIGTERM cancel the root context: every
+	// worker checks it before starting an iteration, so a stop request
+	// interrupts nothing mid-call — the in-flight encrypt / decrypt /
+	// compare completes, the worker returns, and the partial summary
+	// prints with the verdict the completed iterations earned.
 	sigCtx, sigStop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer sigStop()
 	ctx, cancel := context.WithCancel(sigCtx)
@@ -329,8 +481,12 @@ func run() int {
 	runtime.GC()
 	r.idleGoroutines = runtime.NumGoroutine()
 
-	// Launch workers. Each performs one warmup iteration, signals the
-	// barrier, and blocks on r.release before entering the main loop.
+	// Warmup barrier. Each worker performs one iteration, signals the
+	// barrier, and blocks on r.release before entering the main loop,
+	// so the clock starts only once every worker has paid its first-
+	// call costs (pool warm-up, lazy kernel dispatch, page faults on
+	// the payload buffers) and the baselines below describe a process
+	// that has already run the whole cipher path once per worker.
 	var (
 		wg       sync.WaitGroup
 		warmupWG sync.WaitGroup
@@ -363,9 +519,10 @@ func run() int {
 	r.peakGoroutines = r.warmupGoroutines
 	r.warmupMem = takeMemSnapshot()
 	r.lastSample = r.warmupMem
-	logf("warmup: %d goroutines x 1 iter completed in %s (baseline heap=%s, goroutines=%d)",
+	r.rssWarmup, _ = readRSS()
+	logf("warmup: %d workers x 1 iter completed in %s (baseline rss=%s, heap=%s, goroutines=%d)",
 		cfg.workers, time.Since(warmupStart).Round(100*time.Millisecond),
-		humanBytes(int64(r.warmupHeap)), r.warmupGoroutines)
+		humanBytes(int64(r.rssWarmup)), humanBytes(int64(r.warmupHeap)), r.warmupGoroutines)
 
 	// Open the gate; arm the duration timer only in duration mode.
 	r.start = time.Now()
@@ -386,11 +543,12 @@ func run() int {
 	wg.Wait()
 	elapsed := time.Since(r.start)
 	r.steadyMem = takeMemSnapshot()
+	r.rssFinal, r.rssPeak = readRSS()
 	cancel()
 	<-monDone
 
 	if cfg.memprofile != "" {
-		if perr := writeHeapProfile(cfg.memprofile); perr != nil {
+		if perr := itb.WriteHeapProfile(cfg.memprofile); perr != nil {
 			fmt.Fprintf(os.Stderr, "loop: memprofile: %v\n", perr)
 		} else {
 			logf("memprofile: heap profile written to %s", cfg.memprofile)
@@ -429,12 +587,12 @@ func parseFlags(argv []string) (config, error) {
 	var (
 		duration    = fs.Duration("duration", 5*time.Minute, "run duration (Go format: 30s / 5m / 1h); ignored when --iterations > 0")
 		iterations  = fs.Int64("iterations", 0, "fixed per-goroutine iteration count; 0 = duration-based")
-		workers     = fs.Int("goroutines", 3, fmt.Sprintf("concurrent worker goroutines (1..%d)", maxWorkersFlag))
-		shape       = fs.String("shape", shapeStream, "cipher surface to exercise: stream | message | both")
+		workers     = fs.Int("goroutines", 3, fmt.Sprintf("concurrent workers (1..%d); on runtimes without parallelism values above 1 are clamped to 1", maxWorkersFlag))
+		shape       = fs.String("shape", shapeStream, "cipher surface to exercise: stream | message | stream_one_shot | both")
 		hash        = fs.String("hash", "areion512", "inner ITB hash primitive name")
 		mac         = fs.String("mac", "hmac-blake3", "MAC primitive name")
 		payloadStr  = fs.String("payload-size", "16MB", "per-iteration plaintext size (e.g. 1MB / 16MB / 64MB)")
-		memlimitStr = fs.String("memlimit", "auto", "Go heap soft limit: auto (1GiB when goroutines <= 3, else 256MiB) or a size (e.g. 512MB)")
+		memlimitStr = fs.String("memlimit", "auto", "Go heap soft limit: auto (1GiB when goroutines <= 3, else 256MiB, applied only when the runtime has no limit) or a size (e.g. 512MB)")
 		gogc        = fs.Int("gogc", 0, "GC trigger percentage; 0 = leave the runtime default")
 		parallaxStr = fs.String("parallax", "on", "parallax layer: on | off")
 		wrapperStr  = fs.String("wrapper", "on", "wrapper (Outer cipher) layer: on | off")
@@ -444,13 +602,13 @@ func parseFlags(argv []string) (config, error) {
 		nonceBits      = fs.Int("nonce-bits", 0, "on-wire nonce width in bits: 128 | 256 | 512; 0 = profile default (512)")
 		chunkSizeStr   = fs.String("chunk-size", "0", "streaming chunk-size budget (e.g. 4MB); 0 = profile default; inert for pure message shape")
 		barrierFill    = fs.Int("barrier-fill", 0, "DRBG barrier fill margin: 1 | 2 | 4 | 8 | 16 | 32; 0 = profile default (1)")
-		gomaxprocs     = fs.Int("gomaxprocs", 0, "runtime.GOMAXPROCS override; 0 = inherit from the environment")
-		rekeyEvery     = fs.Int64("rekey-every", 0, "rotate the parallax + wrapper masters via Pipeline.Rekey every N iterations per worker; 0 = never")
+		gomaxprocs     = fs.Int("gomaxprocs", 0, "Go runtime GOMAXPROCS override; 0 = inherit from the environment")
+		rekeyEvery     = fs.Int64("rekey-every", 0, "rotate the parallax + wrapper masters via Rekey every N iterations per worker; 0 = never")
 		blobCycleEvery = fs.Int64("blob-cycle-every", 0, "reopen each pipeline from its session blob every N iterations per worker; 0 = never")
 		payloadMode    = fs.String("payload-mode", payloadFixed, "plaintext content: fixed | rotating | pattern-zero | pattern-ff | pattern-ascii")
 		seed           = fs.Uint64("seed", 0, "deterministic plaintext RNG seed for bug reproduction, NOT for security testing (pipeline keys stay CSPRNG-drawn); 0 = crypto/rand plaintexts")
 		jsonOutput     = fs.Bool("json-output", false, "print the final summary as one compact JSON object instead of log lines")
-		memprofile     = fs.String("memprofile", "", "write a runtime/pprof heap profile (alloc_space by site) to this path at the end of the run; empty = none")
+		memprofile     = fs.String("memprofile", "", "write a Go runtime heap profile (pprof) to this path at the end of the run; empty = none")
 	)
 	if err := fs.Parse(argv); err != nil {
 		return config{}, err
@@ -489,9 +647,9 @@ func parseFlags(argv []string) (config, error) {
 		return config{}, fmt.Errorf("--goroutines must be in 1..%d, got %d", maxWorkersFlag, cfg.workers)
 	}
 	switch cfg.shape {
-	case shapeStream, shapeMessage, shapeBoth:
+	case shapeStream, shapeMessage, shapeStreamOneShot, shapeBoth:
 	default:
-		return config{}, fmt.Errorf("--shape must be stream | message | both, got %q", cfg.shape)
+		return config{}, fmt.Errorf("--shape must be stream | message | stream_one_shot | both, got %q", cfg.shape)
 	}
 	if _, ok := hashes.Find(cfg.hash); !ok {
 		return config{}, fmt.Errorf("--hash %q is not a registered hash primitive", cfg.hash)
@@ -510,6 +668,7 @@ func parseFlags(argv []string) (config, error) {
 	cfg.payload = payload
 
 	if *memlimitStr == "auto" {
+		cfg.memlimitAuto = true
 		if cfg.workers <= 3 {
 			cfg.memlimit = 1 << 30 // 1 GiB
 		} else {
@@ -536,16 +695,13 @@ func parseFlags(argv []string) (config, error) {
 	}
 
 	if cfg.profile != "" {
-		surface, ok := profileSurface[cfg.profile]
-		if !ok {
-			if cfg.profile == triple.ProfileBlobTripleMACV1 {
-				return config{}, fmt.Errorf("--profile %q carries no cipher surface (blob-only mode)", cfg.profile)
-			}
-			return config{}, fmt.Errorf("--profile %q is not a shipped triple profile", cfg.profile)
+		surface, serr := profileSurface(cfg.profile)
+		if serr != nil {
+			return config{}, serr
 		}
 		// The profile's Mode dictates which cipher surface exists;
 		// narrow the shape so worker dispatch targets only that one.
-		cfg.shape = surface
+		cfg.shape = narrowShape(cfg.shape, surface)
 	}
 	switch cfg.keyBits {
 	case 0, 512, 1024, 2048:
@@ -605,17 +761,4 @@ func onOff(b bool) string {
 // logf prints one prefixed status line to stdout.
 func logf(format string, args ...any) {
 	fmt.Printf("[loop] "+format+"\n", args...)
-}
-
-// writeHeapProfile dumps the runtime heap profile to path. The profile
-// carries cumulative alloc_space / alloc_objects per call site since
-// process start, so `go tool pprof -sample_index=alloc_space` on it
-// ranks the allocation sources of the whole run.
-func writeHeapProfile(path string) error {
-	f, err := os.Create(path)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	return pprof.Lookup("heap").WriteTo(f, 0)
 }

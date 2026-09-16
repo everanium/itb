@@ -76,3 +76,32 @@ func TestParseSize(t *testing.T) {
 		}
 	}
 }
+
+func TestParseGOMAXPROCS(t *testing.T) {
+	cases := []struct {
+		in     string
+		want   int
+		wantOK bool
+	}{
+		{"1", 1, true},
+		{"8", 8, true},
+		{"64", 64, true},
+
+		// Ignored forms: empty, zero, negative, non-numeric, decimal,
+		// whitespace, unit suffix.
+		{"", 0, false},
+		{"0", 0, false},
+		{"-1", 0, false},
+		{"abc", 0, false},
+		{"1.5", 0, false},
+		{" 4", 0, false},
+		{"4 ", 0, false},
+		{"4x", 0, false},
+	}
+	for _, c := range cases {
+		got, ok := parseGOMAXPROCS(c.in)
+		if ok != c.wantOK || got != c.want {
+			t.Errorf("parseGOMAXPROCS(%q) = (%d, %v), want (%d, %v)", c.in, got, ok, c.want, c.wantOK)
+		}
+	}
+}
