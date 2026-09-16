@@ -363,6 +363,15 @@ defmodule ITB do
   @spec profiles() :: [binary()]
   def profiles, do: :itb3.profiles()
 
+  @doc """
+  The shipped hash-primitive registry in canonical order. These are
+  the names `init/2` accepts under the `innerHash` opts key, so a
+  caller validating a primitive name reads it from here rather than
+  carrying a list of its own.
+  """
+  @spec hash_names() :: [binary()]
+  def hash_names, do: :itb3.hash_names()
+
   # ------------------------------------------------------------------
   # Runtime + diagnostics
   # ------------------------------------------------------------------
@@ -397,6 +406,41 @@ defmodule ITB do
   """
   @spec set_gc_percent(integer()) :: integer()
   def set_gc_percent(pct), do: :itb3.set_gc_percent(pct)
+
+  @doc """
+  Sets the Go runtime's GOMAXPROCS; returns the previous value. Zero
+  or a negative value queries without changing.
+  """
+  @spec set_gomaxprocs(integer()) :: integer()
+  def set_gomaxprocs(n), do: :itb3.set_gomaxprocs(n)
+
+  @doc """
+  Writes the Go runtime's heap profile (pprof format) to `path` after
+  one forced garbage collection. An empty path falls back to the
+  `ITB_MEMPROFILE` environment variable; a path that is still empty,
+  or a file-system failure, is `{:error, {:bad_input, _}}`.
+  """
+  @spec write_heap_profile(iodata()) :: :ok | {:error, reason()}
+  def write_heap_profile(path), do: :itb3.write_heap_profile(path)
+
+  @doc """
+  Number of counter slots `pool_stats/0` returns. Size a reader from
+  this call, never from a constant.
+  """
+  @spec pool_stats_len() :: integer()
+  def pool_stats_len, do: :itb3.pool_stats_len()
+
+  @doc """
+  The library's pool hit / miss counters in slot order, as one list of
+  monotonically increasing totals since library load. Slot 0 carries
+  the hash-array tier count `t`; tier `i` occupies the five slots at
+  `1 + 5*i` (starter width, get, new, regrow, new_bytes); the scratch
+  byte pool and the parallax chunk pool occupy the eight slots at
+  `1 + 5*t`. Differencing two snapshots gives the figures of one
+  measured window.
+  """
+  @spec pool_stats() :: {:ok, [integer()]} | {:error, reason()}
+  def pool_stats, do: :itb3.pool_stats()
 
   # ------------------------------------------------------------------
   # Result unwrapping for the bang variants

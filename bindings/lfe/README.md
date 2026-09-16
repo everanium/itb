@@ -147,6 +147,7 @@ through this binding returns `#(error #(recipe_primitive_unknown _))`.
 
 ```lisp
 (itb3-lfe:profiles)                          ; sorted list of binaries
+(itb3-lfe:hash-names)                        ; shipped hash registry, list of binaries
 (itb3-lfe:lookup #"singlemsg-triple-mac-v1") ; #(ok record); unknown -> unknown_profile
 (itb3-lfe:register #"my-profile"
   (map #"mode" #"singlemsg-nomac"
@@ -206,6 +207,11 @@ binding's status table (e.g. `mac_failure`, `bad_input`,
 a map or property list (`(map #"keyBits" 1024 #"nonceBits" 512)`)
 rendered into the URL-query string libitb3 consumes.
 
+`itb3-lfe:status-code/1` resolves a status atom to the numeric code
+the C ABI assigns it, for a diagnostic that has to name the code the
+library itself uses; an atom outside the table is the internal-error
+code.
+
 Handle lifetime is garbage-collected: dropping every term reference
 releases the Go-side state through the NIF resource destructor, and
 `free/1` / `stream-free/1` release eagerly (both idempotent). A
@@ -214,16 +220,31 @@ never collected under a live session.
 
 ## Memory
 
-Two process-wide knobs constrain Go runtime arena pacing, readable
-at libitb3 load time via env vars (`ITB_GOMEMLIMIT`, `ITB_GOGC`) and
-adjustable at any time programmatically. Pass `-1` to query without
-changing. Long-running or allocation-heavy workloads (benchmarks,
-bulk encryption) should set both — without a soft cap + aggressive
-GC the Go scratch heap grows unboundedly under allocation churn:
+Process-wide knobs constrain Go runtime arena pacing, readable at
+libitb3 load time via env vars (`ITB_GOMEMLIMIT`, `ITB_GOGC`,
+`ITB_GOMAXPROCS`) and adjustable at any time programmatically. Pass
+`-1` (or, for GOMAXPROCS, `0`) to query without changing.
+Long-running or allocation-heavy workloads (benchmarks, bulk
+encryption) should set the soft cap and the GC percentage — without a
+soft cap + aggressive GC the Go scratch heap grows unboundedly under
+allocation churn:
 
 ```lisp
 (itb3-lfe:set-memory-limit (* 4 1024 1024 1024)) ;; 4 GiB soft cap
 (itb3-lfe:set-gc-percent 100)                     ;; balanced GC
+(itb3-lfe:set-gomaxprocs 4)                       ;; cap Go-side parallelism
+```
+
+`itb3-lfe:write-heap-profile/1` writes a Go heap profile in pprof
+format after one forced collection, for reading with `go tool pprof`.
+`itb3-lfe:pool-stats/0` returns the library's pool hit / miss counters
+as one slot vector — monotonic totals since load, sized by
+`itb3-lfe:pool-stats-len/0` — so two snapshots bracketing a workload
+difference into that window's figures:
+
+```lisp
+(itb3-lfe:write-heap-profile "/tmp/itb-heap.pprof")
+(itb3-lfe:pool-stats)
 ```
 
 ## Testing
@@ -265,6 +286,27 @@ payloads directly on disk (`-i` / `-o`) or through stdin / stdout,
 rotates outer masters, and inspects stored blobs. See
 [`cmd/itb3/README.md`](https://github.com/everanium/itb/blob/main/cmd/itb3/README.md) for the full
 subcommand reference.
+
+## loop utility
+
+A long-run stress harness under `bindings/lfe/loop/` holds one
+Pipeline handle for minutes, cycles encrypt → decrypt → compare
+round-trips through it, rotates the outer masters and reopens the
+handle from its session blob on a schedule, and reports whether the
+process survived with every byte intact. It is the binding-side
+counterpart of the Go harness under `tools/loop`: same flags, same
+round structure, same summary in both renderings.
+
+```bash
+./build.sh
+./run_loop.sh --duration 2m --shape both
+```
+
+`./run_loop.sh -h` lists every flag. Concurrency mode:
+**shared-handle** — BEAM processes call the NIF beneath the LFE
+wrapper concurrently on dirty schedulers and one Pipeline resource
+serves all of them, since the handle carries no scheduler-affine
+state, so `--goroutines` is the process count verbatim.
 
 ## eitb utility
 

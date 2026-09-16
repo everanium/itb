@@ -162,6 +162,7 @@ import itb3/pipeline
 import itb3_gleam as itb
 
 itb.profiles()                          // sorted List(String)
+itb.hash_names()                        // shipped hash registry, List(String)
 itb.lookup("singlemsg-triple-mac-v1")   // Ok(json); unknown -> "unknown_profile"
 let assert Ok(Nil) =
   itb.register(
@@ -173,6 +174,11 @@ let assert Ok(Nil) =
   )
 let assert Ok(sender) = pipeline.new("my-profile", [])
 ```
+
+`itb3_gleam.hash_names` enumerates the shipped hash registry in
+canonical order; those are the names `pipeline.new` accepts under the
+`innerHash` opts key, so a caller validating a primitive name reads it
+from there rather than carrying a list of its own.
 
 `itb3_gleam.register` takes the same JSON record shape `inspect` /
 `lookup` return; a `name` key inside it, if present, must be empty
@@ -227,6 +233,11 @@ table entry as a string (e.g. `"mac_failure"`, `"bad_input"`,
 list of string pairs (`[#("keyBits", "1024"), #("nonceBits",
 "512")]`) rendered into the URL-query string libitb3 consumes.
 
+`itb3_gleam.status_code` resolves a status name to the numeric code
+the C ABI assigns it, for a diagnostic that has to name the code the
+library itself uses; a name outside the table is the internal-error
+code.
+
 Handle lifetime is garbage-collected: dropping every reference
 releases the Go-side state through the NIF resource destructor, and
 `pipeline.free` / `stream.free` release eagerly (both idempotent).
@@ -236,18 +247,33 @@ is never collected under a live session.
 
 ## Memory
 
-Two process-wide knobs constrain Go runtime arena pacing, readable
-at libitb3 load time via env vars (`ITB_GOMEMLIMIT`, `ITB_GOGC`) and
-adjustable at any time programmatically. Pass `-1` to query without
-changing. Long-running or allocation-heavy workloads (benchmarks,
-bulk encryption) should set both — without a soft cap + aggressive
-GC the Go scratch heap grows unboundedly under allocation churn:
+Process-wide knobs constrain Go runtime arena pacing, readable at
+libitb3 load time via env vars (`ITB_GOMEMLIMIT`, `ITB_GOGC`,
+`ITB_GOMAXPROCS`) and adjustable at any time programmatically. Pass
+`-1` (or, for GOMAXPROCS, `0`) to query without changing.
+Long-running or allocation-heavy workloads (benchmarks, bulk
+encryption) should set the soft cap and the GC percentage — without a
+soft cap + aggressive GC the Go scratch heap grows unboundedly under
+allocation churn:
 
 ```gleam
 import itb3_gleam as itb
 
 itb.set_memory_limit(4_294_967_296) // 4 GiB soft cap
 itb.set_gc_percent(100)              // balanced GC
+itb.set_gomaxprocs(4)                // cap the Go-side parallelism
+```
+
+`write_heap_profile` writes a Go heap profile in pprof format after
+one forced collection, for reading with `go tool pprof`. `pool_stats`
+returns the library's pool hit / miss counters as one slot vector —
+monotonic totals since load, sized by `pool_stats_len` — so two
+snapshots bracketing a workload difference into that window's
+figures:
+
+```gleam
+let assert Ok(Nil) = itb.write_heap_profile("/tmp/itb-heap.pprof")
+let assert Ok(slots) = itb.pool_stats()
 ```
 
 ## Testing
@@ -296,6 +322,27 @@ payloads directly on disk (`-i` / `-o`) or through stdin / stdout,
 rotates outer masters, and inspects stored blobs. See
 [`cmd/itb3/README.md`](https://github.com/everanium/itb/blob/main/cmd/itb3/README.md) for the full
 subcommand reference.
+
+## loop utility
+
+A long-run stress harness under `bindings/gleam/loop/` holds one
+Pipeline handle for minutes, cycles encrypt → decrypt → compare
+round-trips through it, rotates the outer masters and reopens the
+handle from its session blob on a schedule, and reports whether the
+process survived with every byte intact. It is the binding-side
+counterpart of the Go harness under `tools/loop`: same flags, same
+round structure, same summary in both renderings.
+
+```bash
+./build.sh
+./run_loop.sh --duration 2m --shape both
+```
+
+`./run_loop.sh -h` lists every flag. Concurrency mode:
+**shared-handle** — BEAM processes call the NIF beneath the Gleam
+wrapper concurrently on dirty schedulers and one Pipeline resource
+serves all of them, since the handle carries no scheduler-affine
+state, so `--goroutines` is the process count verbatim.
 
 ## eitb utility
 
