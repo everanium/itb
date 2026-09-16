@@ -58,50 +58,12 @@ internal static class Worker
         return null;
     }
 
-    /// <summary>
-    /// The human label of a libitb3 status code, as every
-    /// implementation of this utility renders one.
-    ///
-    /// .NET-specific. The binding's <see cref="Status"/> is a plain
-    /// enum whose <c>ToString</c> yields the identifier spelling, so
-    /// the sentence form lives here rather than on the binding's
-    /// surface, which the freeze keeps closed to additions this
-    /// utility does not strictly need.
-    /// </summary>
-    private static string Label(Status status) => status switch
-    {
-        Status.Ok => "ok",
-        Status.BadHash => "unknown hash name",
-        Status.BadKeyBits => "invalid key bits",
-        Status.BadHandle => "invalid handle",
-        Status.BadInput => "invalid input",
-        Status.BufferTooSmall => "output buffer too small",
-        Status.EncryptFailed => "encrypt failed",
-        Status.DecryptFailed => "decrypt failed",
-        Status.SeedWidthMix => "seed width mismatch",
-        Status.BadMac => "unknown MAC name or invalid MAC handle",
-        Status.MacFailure => "MAC verification failed",
-        Status.BlobMalformedRecipe => "blob recipe malformed",
-        Status.RecipePrimitiveUnknown => "blob recipe names an unknown primitive",
-        Status.UnknownProfile => "unknown profile name",
-        Status.Reserved14 or Status.Reserved15
-            or Status.Reserved16 or Status.Reserved17 => "reserved status",
-        Status.BlobModeMismatch => "blob mode mismatch",
-        Status.BlobMalformed => "malformed state blob",
-        Status.BlobVersionTooNew => "blob version too new",
-        Status.BlobTooManyOpts => "too many blob export opts",
-        Status.StreamTruncated => "stream truncated before terminator",
-        Status.StreamAfterFinal => "stream chunk after terminator",
-        Status.TripleClosed => "Triple Pipeline is closed",
-        Status.ProfileExists => "profile name already registered",
-        Status.Internal => "internal error",
-        _ => "unknown status",
-    };
-
     /// <summary>Renders a binding error the way every implementation
-    /// reports a failed library call: <c>status &lt;code&gt;
-    /// (&lt;label&gt;): &lt;last error&gt;</c>; any other failure
-    /// carries its own text.</summary>
+    /// reports a failed library call: <c>status &lt;code&gt;: &lt;last
+    /// error&gt;</c>; any other failure carries its own text. The
+    /// library assembles the whole sentence — the class of failure and
+    /// the case that raised it — so this reports what arrived and
+    /// composes nothing.</summary>
     internal static string Detail(Exception e)
     {
         if (e is not ItbException ie)
@@ -117,7 +79,7 @@ internal static class Worker
         string message = ie.Message.StartsWith(prefix, StringComparison.Ordinal)
             ? ie.Message[prefix.Length..]
             : ie.Message;
-        return $"status {code.ToString(inv)} ({Label(ie.Status)}): {message}";
+        return $"status {code.ToString(inv)}: {message}";
     }
 
     /// <summary>Records the worker's error text (first error wins) and

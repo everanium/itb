@@ -198,8 +198,9 @@ pointer's protected slot), so the R garbage collector cannot collect
 the Pipeline while the session is live.
 
 Errors are signalled as R conditions of class `itb_error` (fields
-`status`, `label`, `detail`), so `tryCatch` callers branch on the
-status against the `itb_status` constant list:
+`status`, `detail`), so `tryCatch` callers branch on the status
+against the `itb_status` constant list while `detail` carries the
+libitb3 diagnostic:
 
 ```r
 err <- tryCatch(pipeline_create("no-such-profile"),

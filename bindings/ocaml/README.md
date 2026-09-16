@@ -182,8 +182,8 @@ is live.
 
 Profile names, opts keys, and every primitive name are validated by
 the Go side; a rejected string raises `ITB_error (status, message)`
-carrying the libitb3 status code plus the `ITB_LastError` diagnostic
-(`Itb.status_label` maps a code to a short label).
+carrying the libitb3 status code plus the `ITB_LastError` diagnostic,
+which already reads as a sentence describing the failure.
 
 ## Memory
 

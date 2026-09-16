@@ -27,5 +27,5 @@ export {
   register,
 } from './pipeline.js';
 export { bindingVersion, setGCPercent, setMemoryLimit, version } from './runtime.js';
-export { Status, statusLabel } from './status.js';
+export { Status } from './status.js';
 export { DecryptStream, EncryptStream } from './stream.js';

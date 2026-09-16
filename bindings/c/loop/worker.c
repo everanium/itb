@@ -225,13 +225,13 @@ static void cipher_fail(struct worker *w, int64_t iter, enum shape shape,
                         const char *direction, const char *what, itb_status st)
 {
     if (strcmp(what, direction) == 0) {
-        worker_fail(w, "g%d iter %lld shape=%s: %s: status %d (%s): %s",
+        worker_fail(w, "g%d iter %lld shape=%s: %s: status %d: %s",
                     w->id, (long long)iter, shape_name(shape), direction,
-                    (int)st, itb_status_str(st), itb_last_error());
+                    (int)st, itb_last_error());
     } else {
-        worker_fail(w, "g%d iter %lld shape=%s: %s: %s: status %d (%s): %s",
+        worker_fail(w, "g%d iter %lld shape=%s: %s: %s: status %d: %s",
                     w->id, (long long)iter, shape_name(shape), direction, what,
-                    (int)st, itb_status_str(st), itb_last_error());
+                    (int)st, itb_last_error());
     }
 }
 

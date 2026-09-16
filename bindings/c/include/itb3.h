@@ -99,10 +99,6 @@ typedef enum itb_status {
     ITB_STATUS_INTERNAL             = 99
 } itb_status;
 
-/* Short static label for a status code. Never NULL; the pointer is a
- * string literal — do not free. */
-const char *itb_status_str(itb_status status);
-
 /* ------------------------------------------------------------------ */
 /* Opaque handle types                                                 */
 /* ------------------------------------------------------------------ */

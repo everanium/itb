@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Everanium.Itb3.VisualBasic.LoopHarness</RootNamespace>
+    <AssemblyName>Everanium.LibItb3.VisualBasic.Loop</AssemblyName>
+    <StartupObject>Everanium.Itb3.VisualBasic.LoopHarness.Program</StartupObject>
+    <OptionStrict>On</OptionStrict>
+    <OptionExplicit>On</OptionExplicit>
+    <OptionInfer>On</OptionInfer>
+    <!-- The seeded plaintext generator is defined over wrapping 64-bit
+         arithmetic, which this language checks for overflow by default
+         and would raise on; the checks are off so it produces the
+         values its definition calls for. -->
+    <RemoveIntegerChecks>true</RemoveIntegerChecks>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\src\Everanium.LibItb3.VisualBasic\Everanium.LibItb3.VisualBasic.vbproj" />
+  </ItemGroup>
+
+</Project>

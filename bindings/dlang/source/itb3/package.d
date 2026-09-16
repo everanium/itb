@@ -24,5 +24,5 @@ public import itb3.pipeline : Pipeline, inspect, lookup, profiles, register;
 public import itb3.profile : Profile;
 public import itb3.runtime : bindingVersion, libitb3Version, setGCPercent,
     setMemoryLimit;
-public import itb3.status : Status, statusFromRc, statusLabel;
+public import itb3.status : Status, statusFromRc;
 public import itb3.stream : DecryptStream, EncryptStream;

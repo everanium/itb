@@ -26,8 +26,8 @@
     } while (0)
 
 #define TEST_OK(st, what)                                             \
-    TEST_ASSERT((st) == ITB_STATUS_OK, "%s: status %d (%s): %s",      \
-                (what), (int)(st), itb_status_str(st), itb_last_error())
+    TEST_ASSERT((st) == ITB_STATUS_OK, "%s: status %d: %s",           \
+                (what), (int)(st), itb_last_error())
 
 /* Deterministic non-trivial payload (xorshift fill). Caller frees. */
 static inline uint8_t *test_payload(size_t n, uint64_t seed)

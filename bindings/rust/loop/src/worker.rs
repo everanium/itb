@@ -47,12 +47,12 @@ impl Shape {
 }
 
 /// Renders a binding error the way every implementation reports a
-/// failed library call: `status <code> (<label>): <last error>`; any
-/// other error kind carries its own text.
+/// failed library call: `status <code>: <last error>`; any other error
+/// kind carries its own text.
 pub fn detail(e: &ItbError) -> String {
     match e {
         ItbError::Status { status, message } => {
-            format!("status {} ({}): {}", *status as i32, status, message)
+            format!("status {}: {}", *status as i32, message)
         }
         other => other.to_string(),
     }

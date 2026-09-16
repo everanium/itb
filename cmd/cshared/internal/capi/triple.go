@@ -31,13 +31,11 @@ func TripleInit(profile string, opts string, blobOut []byte) (id TripleHandleID,
 
 	parsed, err := parseTripleOpts(opts)
 	if err != nil {
-		setLastErr(StatusBadInput)
-		return 0, 0, StatusBadInput
+		return 0, 0, tripleErr(StatusBadInput, err.Error())
 	}
 	pipe, blob, err := triple.Init(profile, parsed)
 	if err != nil {
 		s := mapTripleError(err)
-		setLastErr(s)
 		return 0, 0, s
 	}
 	if len(blob) > len(blobOut) {
@@ -71,7 +69,6 @@ func TripleLoad(blob []byte, masters ...[]byte) (id TripleHandleID, st Status) {
 	pipe, err := triple.Load(blob, masters...)
 	if err != nil {
 		s := mapTripleError(err)
-		setLastErr(s)
 		return 0, s
 	}
 	h := &TripleHandle{pipe: pipe}
@@ -92,7 +89,6 @@ func TripleLoadF(path string, masters ...[]byte) (id TripleHandleID, st Status) 
 	pipe, err := triple.LoadF(path, masters...)
 	if err != nil {
 		s := mapTripleError(err)
-		setLastErr(s)
 		return 0, s
 	}
 	h := &TripleHandle{pipe: pipe}
@@ -139,7 +135,6 @@ func TripleSaveF(id TripleHandleID, path string) (st Status) {
 	}
 	if err := h.pipe.SaveF(path); err != nil {
 		s := mapTripleError(err)
-		setLastErr(s)
 		return s
 	}
 	return StatusOK
@@ -158,7 +153,6 @@ func TripleInspect(blob []byte, jsonOut []byte) (n int, st Status) {
 	prof, err := triple.Inspect(blob)
 	if err != nil {
 		s := mapTripleError(err)
-		setLastErr(s)
 		return 0, s
 	}
 	return writeJSONOut(prof, jsonOut)
@@ -205,7 +199,6 @@ func TripleRekey(id TripleHandleID, permMaster, wrapMaster []byte, blobOut []byt
 	blob, err := h.pipe.Rekey(permMaster, wrapMaster)
 	if err != nil {
 		s := mapTripleError(err)
-		setLastErr(s)
 		return 0, s
 	}
 	if len(blob) > len(blobOut) {
@@ -290,7 +283,6 @@ func TripleEncryptStream(id TripleHandleID, plainSrc, wireDst []byte) (n int, st
 	wire, err := h.pipe.EncryptStreamBytes(plainSrc)
 	if err != nil {
 		s := mapTripleError(err)
-		setLastErr(s)
 		return 0, s
 	}
 	if len(wire) > len(wireDst) {
@@ -319,7 +311,6 @@ func TripleDecryptStream(id TripleHandleID, wireSrc, plainDst []byte) (n int, st
 	plain, err := h.pipe.DecryptStreamBytes(wireSrc)
 	if err != nil {
 		s := mapTripleError(err)
-		setLastErr(s)
 		return 0, s
 	}
 	if len(plain) > len(plainDst) {
@@ -347,7 +338,6 @@ func TripleEncryptMessage(id TripleHandleID, plain, wireDst []byte) (n int, st S
 	wire, err := h.pipe.EncryptMessage(plain)
 	if err != nil {
 		s := mapTripleError(err)
-		setLastErr(s)
 		return 0, s
 	}
 	if len(wire) > len(wireDst) {
@@ -370,7 +360,6 @@ func TripleDecryptMessage(id TripleHandleID, wire, plainDst []byte) (n int, st S
 	plain, err := h.pipe.DecryptMessage(wire)
 	if err != nil {
 		s := mapTripleError(err)
-		setLastErr(s)
 		return 0, s
 	}
 	if len(plain) > len(plainDst) {
@@ -398,28 +387,23 @@ func mapTripleError(err error) Status {
 	// comparison is enough.
 	switch {
 	case errors.Is(err, triple.ErrBlobMalformedRecipe):
-		setLastErrMessageTriple(msg)
-		return StatusBlobMalformedRecipe
+		return tripleErr(StatusBlobMalformedRecipe, msg)
 	case errors.Is(err, triple.ErrRecipePrimitiveUnknown):
-		setLastErrMessageTriple(msg)
-		return StatusRecipePrimitiveUnknown
+		return tripleErr(StatusRecipePrimitiveUnknown, msg)
 	case err == triple.ErrClosed:
-		return StatusTripleClosed
+		return tripleErr(StatusTripleClosed, msg)
 	case err == triple.ErrUnknownProfile:
-		setLastErrMessageTriple(msg)
-		return StatusUnknownProfile
+		return tripleErr(StatusUnknownProfile, msg)
 	case err == triple.ErrIdenticalMasters,
 		err == triple.ErrMissingMasters,
 		err == triple.ErrMastersArity,
 		err == triple.ErrBlobVersion,
 		err == triple.ErrBlobMalformed:
-		setLastErrMessageTriple(msg)
-		return StatusBadInput
+		return tripleErr(StatusBadInput, msg)
 	case err == triple.ErrProfileNotStreaming,
 		err == triple.ErrProfileNoCipher,
 		err == triple.ErrEmptyInput:
-		setLastErrMessageTriple(msg)
-		return StatusBadInput
+		return tripleErr(StatusBadInput, msg)
 	// The inner Blob{N}.Import3Cfg / Export3Cfg sentinels. triple.Load
 	// wraps them with %w (see triple/open.go), so errors.Is reaches
 	// them through the wrap. Without these branches a rejected blob
@@ -430,35 +414,28 @@ func mapTripleError(err error) Status {
 	// triple-package ErrBlobMalformed / ErrBlobVersion matched above,
 	// which describe the outer wrap layer rather than the inner blob.
 	case errors.Is(err, itb.ErrBlobModeMismatch):
-		setLastErrMessageTriple(msg)
-		return StatusBlobModeMismatch
+		return tripleErr(StatusBlobModeMismatch, msg)
 	case errors.Is(err, itb.ErrBlobMalformed):
-		setLastErrMessageTriple(msg)
-		return StatusBlobMalformed
+		return tripleErr(StatusBlobMalformed, msg)
 	case errors.Is(err, itb.ErrBlobVersionTooNew):
-		setLastErrMessageTriple(msg)
-		return StatusBlobVersionTooNew
+		return tripleErr(StatusBlobVersionTooNew, msg)
 	case errors.Is(err, itb.ErrBlobTooManyOpts):
 		// Defensive: no triple-side caller reaches this today, since
 		// every Export3Cfg call site in triple/init.go passes exactly
 		// one options struct. Mapped so the family is complete if a
 		// variadic path is ever added.
-		setLastErrMessageTriple(msg)
-		return StatusBlobTooManyOpts
+		return tripleErr(StatusBlobTooManyOpts, msg)
 	case errors.Is(err, triple.ErrBadKeyBits):
-		setLastErrMessageTriple(msg)
-		return StatusBadKeyBits
+		return tripleErr(StatusBadKeyBits, msg)
 	case errors.Is(err, itb.ErrMACFailure):
-		setLastErrMessageTriple(msg)
-		return StatusMACFailure
+		return tripleErr(StatusMACFailure, msg)
 	}
 	// File-system failures from TripleLoadF / TripleSaveF (missing
 	// file, permission denied, no space) are caller-side input errors
 	// at the FFI boundary; the raw os diagnostic rides in lastErr.
 	var pathErr *fs.PathError
 	if errors.As(err, &pathErr) {
-		setLastErrMessageTriple(msg)
-		return StatusBadInput
+		return tripleErr(StatusBadInput, msg)
 	}
 	// Mixed-primitive validation surface: allocEightSeedsMixed +
 	// importInnerBlobMixed emit fmt.Errorf messages naming the
@@ -470,17 +447,36 @@ func mapTripleError(err error) Status {
 	// TripleRegister boundary) or via per-call TripleInit; route them
 	// uniformly here.
 	if strings.Contains(msg, "mixedHashes") {
-		setLastErrMessageTriple(msg)
-		return StatusBadInput
+		return tripleErr(StatusBadInput, msg)
 	}
-	setLastErrMessageTriple(msg)
-	return StatusInternal
+	return tripleErr(StatusInternal, msg)
 }
 
 // setLastErrMessageTriple stores the triple-side error message under
 // the shared lastErr slot so [LastError] surfaces the raw diagnostic
 // alongside the mapped Status code.
 func setLastErrMessageTriple(msg string) {
-	v := "triple: " + msg
+	// Errors raised inside the triple package already carry the
+	// package prefix; adding a second one reads as a stutter in the
+	// text every binding surfaces to its caller.
+	v := msg
+	if !strings.HasPrefix(v, "triple: ") {
+		v = "triple: " + v
+	}
 	lastErr.Store(&v)
+}
+
+// tripleErr stores the complete sentence for a failure and returns its
+// status. The sentence is assembled here, once, rather than by each
+// binding: the status names the class of failure and the message names
+// the instance, and a caller that has to join the two is a caller that
+// can forget to. A binding then prints what it received instead of
+// composing anything.
+func tripleErr(s Status, msg string) Status {
+	if !strings.HasPrefix(msg, "triple: ") {
+		msg = "triple: " + msg
+	}
+	v := s.String() + ": " + msg
+	lastErr.Store(&v)
+	return s
 }

@@ -208,5 +208,11 @@ class Pipeline internal constructor(internal val impl: JPipeline) : AutoCloseabl
 
         /** The sorted names of every registered profile. */
         fun profiles(): List<String> = itbCall { JPipeline.profiles() }
+
+        /**
+         * The names of every hash primitive in the shipped registry,
+         * in the registry's own canonical order.
+         */
+        fun hashNames(): List<String> = itbCall { JPipeline.hashNames() }
     }
 }

@@ -59,9 +59,8 @@ static int rekey_pipes(struct worker *w, int64_t iter)
         itb_status st = itb_pipeline_rekey(r->stream_pipe, perm_p, perm_len,
                                            wrap_p, wrap_len, &blob, &blob_len);
         if (st != ITB_STATUS_OK) {
-            worker_fail(w, "g%d iter %lld: Rekey(%s): status %d (%s): %s",
-                        w->id, (long long)iter, r->stream_profile, (int)st,
-                        itb_status_str(st), itb_last_error());
+            worker_fail(w, "g%d iter %lld: Rekey(%s): status %d: %s",
+                        w->id, (long long)iter, r->stream_profile, (int)st, itb_last_error());
             rc = -1;
             goto done;
         }
@@ -75,9 +74,8 @@ static int rekey_pipes(struct worker *w, int64_t iter)
         itb_status st = itb_pipeline_rekey(r->msg_pipe, perm_p, perm_len,
                                            wrap_p, wrap_len, &blob, &blob_len);
         if (st != ITB_STATUS_OK) {
-            worker_fail(w, "g%d iter %lld: Rekey(%s): status %d (%s): %s",
-                        w->id, (long long)iter, r->msg_profile, (int)st,
-                        itb_status_str(st), itb_last_error());
+            worker_fail(w, "g%d iter %lld: Rekey(%s): status %d: %s",
+                        w->id, (long long)iter, r->msg_profile, (int)st, itb_last_error());
             rc = -1;
             goto done;
         }
@@ -115,9 +113,8 @@ static int blob_cycle_pipes(struct worker *w, int64_t iter)
         itb_status st = itb_pipeline_load(r->stream_blob, r->stream_blob_len,
                                           NULL, 0, NULL, 0, &fresh);
         if (st != ITB_STATUS_OK) {
-            worker_fail(w, "g%d iter %lld: Load(%s): status %d (%s): %s",
-                        w->id, (long long)iter, r->stream_profile, (int)st,
-                        itb_status_str(st), itb_last_error());
+            worker_fail(w, "g%d iter %lld: Load(%s): status %d: %s",
+                        w->id, (long long)iter, r->stream_profile, (int)st, itb_last_error());
             rc = -1;
             goto done;
         }
@@ -129,9 +126,8 @@ static int blob_cycle_pipes(struct worker *w, int64_t iter)
         itb_status st = itb_pipeline_load(r->msg_blob, r->msg_blob_len,
                                           NULL, 0, NULL, 0, &fresh);
         if (st != ITB_STATUS_OK) {
-            worker_fail(w, "g%d iter %lld: Load(%s): status %d (%s): %s",
-                        w->id, (long long)iter, r->msg_profile, (int)st,
-                        itb_status_str(st), itb_last_error());
+            worker_fail(w, "g%d iter %lld: Load(%s): status %d: %s",
+                        w->id, (long long)iter, r->msg_profile, (int)st, itb_last_error());
             rc = -1;
             goto done;
         }

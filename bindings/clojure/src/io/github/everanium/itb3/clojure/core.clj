@@ -98,6 +98,14 @@
   []
   (vec (itb-call (io.github.everanium.itb3.Pipeline/profiles))))
 
+(defn hash-names
+  "The names of every hash primitive in the shipped registry, in
+  registry order, as a vector. The registry is the roster `init`
+  validates an inner-hash name against; a name outside it fails on
+  the Go side with :bad-hash."
+  []
+  (vec (itb-call (io.github.everanium.itb3.Pipeline/hashNames))))
+
 (defn save
   "The current self-describing session blob: the bytes `init`
   produced, the bytes `load` re-marshalled, or the bytes of the

@@ -35,8 +35,8 @@ static int usage(void)
 
 static int fail_status(const char *what, itb_status st)
 {
-    fprintf(stderr, "eitb: %s: status %d (%s): %s\n", what, (int)st,
-            itb_status_str(st), itb_last_error());
+    fprintf(stderr, "eitb: %s: status %d: %s\n", what, (int)st,
+            itb_last_error());
     return 1;
 }
 

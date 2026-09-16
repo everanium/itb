@@ -34,38 +34,6 @@ module ITB
     TripleClosed     = 25
     ProfileExists    = 26
     Internal         = 99
-
-    # Human-readable label for the status code.
-    def label : String
-      case self
-      in .ok?                  then "ok"
-      in .bad_hash?            then "unknown hash name"
-      in .bad_key_bits?        then "invalid key bits"
-      in .bad_handle?          then "invalid handle"
-      in .bad_input?           then "invalid input"
-      in .buffer_too_small?    then "output buffer too small"
-      in .encrypt_failed?      then "encrypt failed"
-      in .decrypt_failed?      then "decrypt failed"
-      in .seed_width_mix?      then "seed width mismatch"
-      in .bad_mac?             then "unknown MAC name or invalid MAC handle"
-      in .mac_failure?         then "MAC verification failed"
-      in .blob_malformed_recipe? then "blob profile record invalid"
-      in .recipe_primitive_unknown?
-        "blob profile record names a primitive absent from the local registries"
-      in .unknown_profile?     then "unknown profile name"
-      in .reserved14?, .reserved15?, .reserved16?, .reserved17?
-        "reserved status"
-      in .blob_mode_mismatch?  then "blob mode mismatch"
-      in .blob_malformed?      then "malformed state blob"
-      in .blob_version_too_new? then "blob version too new"
-      in .blob_too_many_opts?  then "too many blob export opts"
-      in .stream_truncated?    then "stream truncated before terminator"
-      in .stream_after_final?  then "stream chunk after terminator"
-      in .triple_closed?       then "Triple Pipeline is closed"
-      in .profile_exists?      then "profile name already registered"
-      in .internal?            then "internal error"
-      end
-    end
   end
 
   # The exception raised by every fallible binding call.
@@ -85,9 +53,7 @@ module ITB
     getter last_error : String
 
     def initialize(@status : Status, @status_code : Int32, @last_error : String)
-      msg = "itb: status=#{@status_code} (#{@status.label})"
-      msg += ": #{@last_error}" unless @last_error.empty?
-      super(msg)
+      super("itb: status=#{@status_code}: #{@last_error}")
     end
 
     # Builds an Error from a raw return code, pulling the

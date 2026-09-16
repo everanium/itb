@@ -35,39 +35,6 @@ final class Status
     public const PROFILE_EXISTS = 26;
     public const INTERNAL = 99;
 
-    /** @var array<int, string> */
-    private const LABELS = [
-        self::OK => 'ok',
-        self::BAD_HASH => 'unknown hash name',
-        self::BAD_KEY_BITS => 'invalid key bits',
-        self::BAD_HANDLE => 'invalid handle',
-        self::BAD_INPUT => 'invalid input',
-        self::BUFFER_TOO_SMALL => 'output buffer too small',
-        self::ENCRYPT_FAILED => 'encrypt failed',
-        self::DECRYPT_FAILED => 'decrypt failed',
-        self::SEED_WIDTH_MIX => 'seed width mismatch',
-        self::BAD_MAC => 'unknown MAC name or invalid MAC handle',
-        self::MAC_FAILURE => 'MAC verification failed',
-        self::BLOB_MALFORMED_RECIPE => 'blob profile record invalid',
-        self::RECIPE_PRIMITIVE_UNKNOWN => 'blob profile record names a primitive absent from the local registries',
-        self::UNKNOWN_PROFILE => 'unknown profile name',
-        self::BLOB_MODE_MISMATCH => 'blob mode mismatch',
-        self::BLOB_MALFORMED => 'malformed state blob',
-        self::BLOB_VERSION_TOO_NEW => 'blob version too new',
-        self::BLOB_TOO_MANY_OPTS => 'too many blob export opts',
-        self::STREAM_TRUNCATED => 'stream truncated before terminator',
-        self::STREAM_AFTER_FINAL => 'stream chunk after terminator',
-        self::TRIPLE_CLOSED => 'Triple Pipeline is closed',
-        self::PROFILE_EXISTS => 'profile name already registered',
-        self::INTERNAL => 'internal error',
-    ];
-
-    /** Short human-readable label for a status code. */
-    public static function label(int $code): string
-    {
-        return self::LABELS[$code] ?? 'unknown status';
-    }
-
     private function __construct()
     {
     }

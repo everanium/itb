@@ -11,4 +11,6 @@
   ;; micro-benchmarks: clojure -M:bench -m io.github.everanium.itb3.clojure.bench-message
   :bench {:extra-paths ["bench"]}
   ;; eitb CLI script: clojure -M:eitb eitb/main.clj <args>
-  :eitb {}}}
+  :eitb {}
+  ;; loop stress harness: clojure -M:loop -m io.github.everanium.itb3.clojure.loop.main
+  :loop {:extra-paths ["loop"]}}}

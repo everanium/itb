@@ -107,4 +107,12 @@ pwsh -NoProfile -Command '
 echo "==> verifying eitb script (pwsh)"
 pwsh -NoProfile -File eitb/eitb.ps1 version
 
+# The loop harness is a script as well, so the equivalent guarantee is a
+# two-iteration run: it imports the module, compiles its native shim,
+# constructs a Pipeline through the assembly the build just produced and
+# drives a worker runspace end to end.
+echo "==> verifying loop harness (pwsh)"
+pwsh -NoProfile -File loop/Main.ps1 --iterations 2 --shape message \
+    --payload-size 64KB --goroutines 1 >/dev/null
+
 echo "==> ready: ./run_tests.sh"

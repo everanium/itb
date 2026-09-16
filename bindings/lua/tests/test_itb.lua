@@ -45,8 +45,7 @@ local function assert_status(expected, fn)
             return err
         end
     end
-    error(("unexpected status %d (%s): %s"):format(
-        err.status, tostring(err.label), tostring(err)))
+    error(("unexpected status %d: %s"):format(err.status, tostring(err)))
 end
 
 -- ---------------------------------------------------------------------
@@ -166,7 +165,7 @@ run("unknown profile maps to UNKNOWN_PROFILE", function()
     local err = assert_status({ itb.status.UNKNOWN_PROFILE }, function()
         itb.create("no-such-profile")
     end)
-    assert(err.label == "unknown profile name")
+    assert(#err.message > 0, "error object must carry a diagnostic")
 end)
 
 run("unknown opts key maps to BAD_INPUT", function()

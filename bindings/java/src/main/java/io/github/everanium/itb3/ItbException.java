@@ -42,7 +42,7 @@ public final class ItbException extends RuntimeException {
     static ItbException of(int rc) {
         Status status = Status.fromCode(rc);
         String detail = Native.readLastError();
-        String message = "itb: status=" + rc + " (" + status.label() + ")"
+        String message = "itb: status=" + rc
                 + (detail.isEmpty() ? "" : ": " + detail);
         return new ItbException(status, rc, message);
     }

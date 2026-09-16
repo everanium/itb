@@ -83,10 +83,22 @@ final class ErrorsTests: XCTestCase {
         }
     }
 
-    func testStatusLabels() {
-        XCTAssertFalse(Status.ok.label.isEmpty)
-        XCTAssertFalse(Status.macFailure.label.isEmpty)
-        XCTAssertFalse(Status.internalError.label.isEmpty)
+    func testErrorDescriptionCarriesTheLibrarySentence() throws {
+        // The description is the numeric code plus whatever the library
+        // put in its last-error slot: a finished sentence naming the
+        // class of failure and, where there is one, the instance. The
+        // binding composes nothing beyond the code, so a description
+        // that lost the sentence means the slot was not read.
+        var mismatch = try lookup(name: "singlemsg-triple-nomac-v1")
+        mismatch.name = "some-other-name"
+        XCTAssertThrowsError(
+            try register(name: "swift-binding-test-description", profile: mismatch)
+        ) { error in
+            let text = String(describing: error)
+            XCTAssertTrue(text.contains("ITB status"), text)
+            XCTAssertTrue(text.contains(":"), text)
+            XCTAssertGreaterThan(text.count, "ITB status 4".count, text)
+        }
     }
 
     func testFreedStreamRejectsUse() throws {

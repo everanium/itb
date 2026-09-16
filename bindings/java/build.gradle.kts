@@ -1,5 +1,5 @@
 // Build for the ITB Java binding: library jar + JNI shim + JUnit 5
-// test suite + bench / eitb tool jars.
+// test suite + bench / eitb / loop tool jars.
 //
 // The JNI shim (src/main/jni/itb3_jni.c) is compiled with the system C
 // compiler and linked against libitb3.so from the repository dist
@@ -36,6 +36,14 @@ sourceSets {
         runtimeClasspath += sourceSets.main.get().output
     }
     create("eitb") {
+        compileClasspath += sourceSets.main.get().output
+        runtimeClasspath += sourceSets.main.get().output
+    }
+    create("loop") {
+        // The utility's sources live in the binding's own loop/
+        // directory, next to eitb/ and the bench sources, rather than
+        // under the source set's default src/loop/java path.
+        java.setSrcDirs(listOf("loop"))
         compileClasspath += sourceSets.main.get().output
         runtimeClasspath += sourceSets.main.get().output
     }
@@ -98,8 +106,18 @@ val benchJar = tasks.register<Jar>("benchJar") {
     from(sourceSets.main.get().output)
 }
 
+val loopJar = tasks.register<Jar>("loopJar") {
+    description = "Self-contained loop stress-harness jar"
+    archiveFileName.set("loop.jar")
+    manifest {
+        attributes("Main-Class" to "io.github.everanium.itb3.loop.Main")
+    }
+    from(sourceSets["loop"].output)
+    from(sourceSets.main.get().output)
+}
+
 tasks.assemble {
-    dependsOn(compileJni, eitbJar, benchJar)
+    dependsOn(compileJni, eitbJar, benchJar, loopJar)
 }
 
 // Maven publication metadata. No sources / javadoc jar is attached:

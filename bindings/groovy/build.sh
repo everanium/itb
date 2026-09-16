@@ -97,12 +97,13 @@ fi
 echo "==> building Java binding layer (libitb3.so + JNI shim + jar)"
 ../java/build.sh "$@"
 
-# assemble covers the library jar, the bench classes and the eitb jar
-# (see build.gradle.kts: tasks.assemble dependsOn benchClasses,
-# eitbClasses, eitbJar).
+# assemble covers the library jar, the bench classes, the eitb jar and
+# the loop jar (see build.gradle.kts: tasks.assemble dependsOn
+# benchClasses, eitbClasses, eitbJar, loopJar).
 echo "==> building Groovy binding (gradle assemble)"
 ./gradlew --console=plain assemble
 
 require_built "$BINDING_DIR/build/libs/eitb.jar"
+require_built "$BINDING_DIR/build/libs/loop.jar"
 
 echo "==> ready: ./run_tests.sh"
