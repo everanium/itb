@@ -737,14 +737,12 @@ static int build_pipeline(const struct config *cfg, const char *profile,
     itb_status st = itb_pipeline_init(profile, opts, pipe);
     itb_opts_free(opts);
     if (st != ITB_STATUS_OK) {
-        fprintf(stderr, "loop: Init(%s): status %d (%s): %s\n", profile, (int)st,
-                itb_status_str(st), itb_last_error());
+        fprintf(stderr, "loop: Init(%s): status %d: %s\n", profile, (int)st, itb_last_error());
         return -1;
     }
     st = itb_pipeline_save(*pipe, blob, blob_len);
     if (st != ITB_STATUS_OK) {
-        fprintf(stderr, "loop: Save(%s): status %d (%s): %s\n", profile, (int)st,
-                itb_status_str(st), itb_last_error());
+        fprintf(stderr, "loop: Save(%s): status %d: %s\n", profile, (int)st, itb_last_error());
         itb_pipeline_free(*pipe);
         *pipe = NULL;
         return -1;

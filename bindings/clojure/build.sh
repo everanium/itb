@@ -2,10 +2,11 @@
 #
 # One-step build for the Clojure binding: libitb3.so + JNI shim + Java
 # binding jars (via the sibling bindings/java/build.sh), then a
-# classpath prepare + compile check of the Clojure namespaces with
-# reflection warnings treated as errors. Prerequisites (Go, JDK 17+,
-# Gradle, Clojure CLI, gcc) must be installed separately; see README.md
-# "Prerequisites" section.
+# classpath prepare + compile check of the Clojure namespaces — the
+# library, the tests, the benches, the eitb script and the loop stress
+# harness — with reflection warnings treated as errors. Prerequisites
+# (Go, JDK 17+, Gradle, Clojure CLI, gcc) must be installed separately;
+# see README.md "Prerequisites" section.
 #
 # The build starts from an empty tree: the compiled target directory
 # and the Clojure CLI's project-local classpath cache are removed
@@ -87,11 +88,11 @@ echo "==> building Java binding layer (libitb3.so + JNI shim + jars)"
 ../java/build.sh "$@"
 
 echo "==> preparing Clojure classpath"
-clojure -Sforce -P -M:test:bench:eitb
+clojure -Sforce -P -M:test:bench:eitb:loop
 
 echo "==> compile check (reflection warnings are errors)"
 export ITB_JNI_PATH="${ITB_JNI_PATH:-$PWD/../java/build/jni/libitb3_jni.so}"
-out="$(clojure -M:test:bench -e "
+out="$(clojure -M:test:bench:loop -e "
 (set! *warn-on-reflection* true)
 (require 'io.github.everanium.itb3.clojure.status
          'io.github.everanium.itb3.clojure.error
@@ -103,7 +104,14 @@ out="$(clojure -M:test:bench -e "
          'io.github.everanium.itb3.clojure.bench-util
          'io.github.everanium.itb3.clojure.bench-message
          'io.github.everanium.itb3.clojure.bench-stream
-         'io.github.everanium.itb3.clojure.bench-stream-one-shot)
+         'io.github.everanium.itb3.clojure.bench-stream-one-shot
+         'io.github.everanium.itb3.clojure.loop.size
+         'io.github.everanium.itb3.clojure.loop.payload
+         'io.github.everanium.itb3.clojure.loop.state
+         'io.github.everanium.itb3.clojure.loop.ops
+         'io.github.everanium.itb3.clojure.loop.worker
+         'io.github.everanium.itb3.clojure.loop.summary
+         'io.github.everanium.itb3.clojure.loop.main)
 (println :compiled-ok)" 2>&1)"
 echo "$out"
 if grep -q "Reflection warning" <<<"$out"; then

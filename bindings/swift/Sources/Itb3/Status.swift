@@ -47,8 +47,4 @@ public enum Status: Int32, Sendable, Equatable, Hashable {
         self = Status(rawValue: Int32(bitPattern: raw.rawValue)) ?? .internalError
     }
 
-    /// Short static label for the status code (via `itb_status_str`).
-    public var label: String {
-        String(cString: itb_status_str(itb_status(rawValue: UInt32(bitPattern: rawValue))))
-    }
 }

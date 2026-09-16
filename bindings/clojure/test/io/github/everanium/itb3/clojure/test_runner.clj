@@ -15,6 +15,7 @@
             [io.github.everanium.itb3.clojure.message-test]
             [io.github.everanium.itb3.clojure.persist-test]
             [io.github.everanium.itb3.clojure.rekey-test]
+            [io.github.everanium.itb3.clojure.runtime-test]
             [io.github.everanium.itb3.clojure.smoke-test]
             [io.github.everanium.itb3.clojure.stream-cancel-test]
             [io.github.everanium.itb3.clojure.stream-incremental-test]
@@ -31,7 +32,8 @@
     io.github.everanium.itb3.clojure.rekey-test
     io.github.everanium.itb3.clojure.errors-test
     io.github.everanium.itb3.clojure.inner-hashes-test
-    io.github.everanium.itb3.clojure.persist-test])
+    io.github.everanium.itb3.clojure.persist-test
+    io.github.everanium.itb3.clojure.runtime-test])
 
 (defn -main [& args]
   (let [wanted (if (seq args)

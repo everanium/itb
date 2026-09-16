@@ -235,6 +235,27 @@ rotates outer masters, and inspects stored blobs. See
 [`cmd/itb3/README.md`](https://github.com/everanium/itb/blob/main/cmd/itb3/README.md) for the full
 subcommand reference.
 
+## loop utility
+
+A long-run stress harness under `bindings/clojure/loop/` holds one
+Pipeline handle for minutes, cycles encrypt → decrypt → compare
+round-trips through it, rotates the outer masters and reopens the
+handle from its session blob on a schedule, and reports whether the
+process survived with every byte intact. It is the binding-side
+counterpart of the Go harness under `tools/loop`: same flags, same
+round structure, same summary in both renderings.
+
+```bash
+./build.sh
+./run_loop.sh --duration 2m --shape both
+```
+
+`./run_loop.sh -h` lists every flag. Concurrency mode:
+**shared-handle** — JVM platform threads call into one Pipeline handle
+concurrently, since the handle is an opaque Go-side registry key and
+neither the Clojure record around it nor the Java layer beneath holds
+thread-affine state, so `--goroutines` is the thread count verbatim.
+
 ## eitb utility
 
 The launcher mirrors the shipped Go `tools/eitb` scope for shell

@@ -125,8 +125,7 @@ let () =
   in
   try run () with
   | Itb3.ITB_error (st, msg) ->
-      Printf.eprintf "eitb: status=%d (%s)%s\n" st (Itb3.status_label st)
-        (if msg = "" then "" else ": " ^ msg);
+      Printf.eprintf "eitb: status=%d: %s\n" st msg;
       exit 1
   | Sys_error msg ->
       Printf.eprintf "eitb: %s\n" msg;

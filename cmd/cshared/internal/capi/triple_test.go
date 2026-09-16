@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/everanium/itb/triple"
@@ -716,5 +717,72 @@ func TestTripleLoadInnerBlobStatusesCapi(t *testing.T) {
 	outer := tripleEditRecord(t, blob, func(p map[string]any) { p["keybits"] = 1000 })
 	if _, st := TripleLoad(outer); st != StatusBlobMalformedRecipe {
 		t.Fatalf("outer record edit: %v, want StatusBlobMalformedRecipe", st)
+	}
+}
+
+// The sentence a failing entry point leaves behind for [LastError].
+// Every binding prints that sentence verbatim and composes nothing of
+// its own, so the class of failure and the instance that caused it
+// both have to be in the text before it crosses the FFI boundary. A
+// binding cannot repair a half-sentence it never had the parts for.
+
+// TestLastErrorCarriesClassAndInstance drives a real entry point into
+// a failure and checks the stored text names both the class of
+// failure and the offending input.
+func TestLastErrorCarriesClassAndInstance(t *testing.T) {
+	blobBuf := make([]byte, 1<<15)
+	_, _, st := TripleInit(triple.ProfileStreamingAEADTripleMACV1, "wibble=42", blobBuf)
+	if st != StatusBadInput {
+		t.Fatalf("TripleInit unknown key: %v, want StatusBadInput", st)
+	}
+	got := LastError()
+	if !strings.HasPrefix(got, st.String()) {
+		t.Errorf("LastError() = %q, want it to open with the class %q", got, st.String())
+	}
+	if !strings.Contains(got, "wibble") {
+		t.Errorf("LastError() = %q, want it to name the offending key", got)
+	}
+}
+
+// TestTripleErrDoesNotStutterThePrefix confirms a message that already
+// carries the package prefix is not given a second one. The doubled
+// form reads as a stutter in every binding that prints the sentence.
+func TestTripleErrDoesNotStutterThePrefix(t *testing.T) {
+	tripleErr(StatusBadInput, "triple: nonce bits out of range")
+	got := LastError()
+	if strings.Count(got, "triple: ") != 1 {
+		t.Errorf("LastError() = %q, want exactly one package prefix", got)
+	}
+	want := StatusBadInput.String() + ": triple: nonce bits out of range"
+	if got != want {
+		t.Errorf("LastError() = %q, want %q", got, want)
+	}
+}
+
+// TestTripleErrAddsTheMissingPrefix covers the other arm: a message
+// raised without the package prefix receives one.
+func TestTripleErrAddsTheMissingPrefix(t *testing.T) {
+	tripleErr(StatusUnknownProfile, "no such profile \"wibble\"")
+	got := LastError()
+	want := StatusUnknownProfile.String() + ": triple: no such profile \"wibble\""
+	if got != want {
+		t.Errorf("LastError() = %q, want %q", got, want)
+	}
+}
+
+// TestLastErrorSentenceFitsTheBindingFormat checks the composed text
+// carries no newline. Bindings render it as a single line under
+// "status %d: %s", and a wrapped sentence splits that line in two.
+func TestLastErrorSentenceFitsTheBindingFormat(t *testing.T) {
+	blobBuf := make([]byte, 1<<15)
+	if _, _, st := TripleInit("no-such-profile-here", "", blobBuf); st == StatusOK {
+		t.Fatal("TripleInit unknown profile: StatusOK, want a failure")
+	}
+	got := LastError()
+	if got == "" {
+		t.Fatal("LastError() is empty after a failed TripleInit")
+	}
+	if strings.ContainsAny(got, "\n\r") {
+		t.Errorf("LastError() = %q, want a single line", got)
 	}
 }

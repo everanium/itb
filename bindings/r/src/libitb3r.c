@@ -50,8 +50,8 @@
  * session-parent-pin (the R-level half is the object's `parent` field).
  *
  * Errors are signalled as R conditions of class "itb_error" (fields
- * status / label / message) by evaluating the package-internal helper
- * .itb_raise(status, label, message) inside the itb namespace; see
+ * status / detail) by evaluating the package-internal helper
+ * .itb_raise(status, detail) inside the itb namespace; see
  * R/errors.R.
  *
  * Output-buffer discipline: variable-size outputs pre-allocate
@@ -109,62 +109,33 @@ enum {
     ST_INTERNAL = 99,
 };
 
-typedef struct {
-    int code;
-    const char *label; /* human-readable */
-} status_row;
-
-static const status_row STATUS_ROWS[] = {
-    {ST_OK, "ok"},
-    {ST_BAD_HASH, "unknown hash name"},
-    {ST_BAD_KEY_BITS, "invalid key bits"},
-    {ST_BAD_HANDLE, "invalid handle"},
-    {ST_BAD_INPUT, "invalid input"},
-    {ST_BUFFER_TOO_SMALL, "output buffer too small"},
-    {ST_ENCRYPT_FAILED, "encrypt failed"},
-    {ST_DECRYPT_FAILED, "decrypt failed"},
-    {ST_SEED_WIDTH_MIX, "seed width mismatch"},
-    {ST_BAD_MAC, "unknown MAC name or invalid MAC handle"},
-    {ST_MAC_FAILURE, "MAC verification failed"},
-    {ST_BLOB_MALFORMED_RECIPE, "blob profile record invalid"},
-    {ST_RECIPE_PRIMITIVE_UNKNOWN,
-     "blob profile record names a primitive absent from the local registries"},
-    {ST_UNKNOWN_PROFILE, "unknown profile name"},
-    {ST_BLOB_MODE_MISMATCH, "blob mode mismatch"},
-    {ST_BLOB_MALFORMED, "malformed state blob"},
-    {ST_BLOB_VERSION_TOO_NEW, "blob version too new"},
-    {ST_BLOB_TOO_MANY_OPTS, "too many blob export opts"},
-    {ST_STREAM_TRUNCATED, "stream truncated before terminator"},
-    {ST_STREAM_AFTER_FINAL, "stream chunk after terminator"},
-    {ST_TRIPLE_CLOSED, "Triple Pipeline is closed"},
-    {ST_PROFILE_EXISTS, "profile name already registered"},
-    {ST_INTERNAL, "internal error"},
-};
-
-static const char *status_label(int code) {
-    size_t i;
-    for (i = 0; i < sizeof(STATUS_ROWS) / sizeof(STATUS_ROWS[0]); i++) {
-        if (STATUS_ROWS[i].code == code) {
-            return STATUS_ROWS[i].label;
-        }
-    }
-    return "unknown status";
-}
-
 /* ---- error raising ------------------------------------------------ */
 
-/* Copies the ITB_LastError diagnostic (NUL-stripped) into buf. */
-static void last_error(char *buf, size_t cap) {
+/* Returns the ITB_LastError diagnostic (NUL-stripped), or "" when
+ * none was recorded. The storage is R_alloc scratch, valid for the
+ * rest of the .Call. */
+static const char *last_error(void) {
     size_t need = 0;
-    int rc;
-    buf[0] = '\0';
-    rc = ITB_LastError(buf, cap, &need);
-    if (rc != ST_OK) {
-        buf[0] = '\0';
-        return;
+    char *buf;
+    int rc = ITB_LastError(NULL, 0, &need);
+    if (rc != ST_OK && rc != ST_BUFFER_TOO_SMALL) {
+        return "";
     }
-    /* NUL-terminated by libitb3; need counts the trailing NUL. */
-    buf[cap - 1] = '\0';
+    if (need <= 1) {
+        return "";
+    }
+    /* The diagnostic is the only text the condition carries, so its
+     * length is asked of the library rather than guessed: an os
+     * diagnostic naming a path outgrows any buffer picked in advance.
+     * R_alloc scratch is reclaimed on the .Call exit and on the
+     * unwind out of raise_status, so nothing here outlives the call. */
+    buf = R_alloc(need, 1);
+    buf[0] = '\0';
+    if (ITB_LastError(buf, need, &need) != ST_OK) {
+        return "";
+    }
+    buf[need > 0 ? need - 1 : 0] = '\0';
+    return buf;
 }
 
 /* Signals an R condition of class "itb_error" via the package-internal
@@ -172,17 +143,16 @@ static void last_error(char *buf, size_t cap) {
  * helper longjmps past this frame (R restores the protection stack and
  * the R_alloc watermark while unwinding). */
 static void raise_status(int rc) {
-    char msg[2048];
+    const char *msg = last_error();
     SEXP ns, call;
-    last_error(msg, sizeof(msg));
     ns = R_FindNamespace(Rf_mkString("libitb3r"));
     PROTECT(ns);
-    call = PROTECT(Rf_lang4(Rf_install(".itb_raise"), Rf_ScalarInteger(rc),
-                            Rf_mkString(status_label(rc)), Rf_mkString(msg)));
+    call = PROTECT(Rf_lang3(Rf_install(".itb_raise"), Rf_ScalarInteger(rc),
+                            Rf_mkString(msg)));
     Rf_eval(call, ns);
     /* Not reached; belt-and-braces if .itb_raise ever returns. */
     UNPROTECT(2);
-    Rf_error("itb: %s (status %d): %s", status_label(rc), rc, msg);
+    Rf_error("itb: status=%d: %s", rc, msg);
 }
 
 /* ---- argument helpers ---------------------------------------------- */

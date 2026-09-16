@@ -128,7 +128,7 @@ fi
 
 cd "$BINDING_DIR"
 echo "==> building Scala binding (sbt compile)"
-sbt --batch compile Test/compile bench/Compile/compile eitb/Compile/compile
+sbt --batch compile Test/compile bench/Compile/compile eitb/Compile/compile loop/Compile/compile
 
 echo "==> refreshing eitb launcher classpath cache"
 sbt --batch --error "export eitb/Runtime/fullClasspath" | tail -n 1 > eitb/.classpath
@@ -144,5 +144,14 @@ if ! grep -q 'libitb3-java-' eitb/.classpath; then
     exit 1
 fi
 require_built "$BINDING_DIR/eitb/.classpath"
+
+echo "==> refreshing loop launcher classpath cache"
+sbt --batch --error "export loop/Runtime/fullClasspath" | tail -n 1 > loop/.classpath
+if ! grep -q 'libitb3-java-' loop/.classpath; then
+    echo "build.sh: loop/.classpath does not name the Java binding jar:" >&2
+    cat loop/.classpath >&2
+    exit 1
+fi
+require_built "$BINDING_DIR/loop/.classpath"
 
 echo "==> ready: ./run_tests.sh"

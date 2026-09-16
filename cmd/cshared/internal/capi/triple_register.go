@@ -29,21 +29,17 @@ func TripleRegister(name string, profileJSON string) (st Status) {
 
 	prof, err := parseProfileJSON(profileJSON)
 	if err != nil {
-		setLastErrMessageTriple(err.Error())
-		return StatusBadInput
+		return tripleErr(StatusBadInput, err.Error())
 	}
 	if prof.Name != "" && prof.Name != name {
-		setLastErrMessageTriple(fmt.Sprintf("register: profile JSON name %q disagrees with name argument %q", prof.Name, name))
-		return StatusBadInput
+		return tripleErr(StatusBadInput, fmt.Sprintf("register: profile JSON name %q disagrees with name argument %q", prof.Name, name))
 	}
 	prof.Name = ""
 	if err := triple.Register(name, prof); err != nil {
 		if errors.Is(err, triple.ErrProfileExists) {
-			setLastErrMessageTriple(err.Error())
-			return StatusProfileExists
+			return tripleErr(StatusProfileExists, err.Error())
 		}
-		setLastErrMessageTriple(err.Error())
-		return StatusBadInput
+		return tripleErr(StatusBadInput, err.Error())
 	}
 	return StatusOK
 }
@@ -74,7 +70,6 @@ func TripleLookup(name string, jsonOut []byte) (n int, st Status) {
 	prof, err := triple.Lookup(name)
 	if err != nil {
 		s := mapTripleError(err)
-		setLastErr(s)
 		return 0, s
 	}
 	return writeJSONOut(prof, jsonOut)
@@ -119,22 +114,18 @@ func TripleProfileFromJSON(profileJSON string) (st Status) {
 
 	prof, err := parseProfileJSON(profileJSON)
 	if err != nil {
-		setLastErrMessageTriple(err.Error())
-		return StatusBadInput
+		return tripleErr(StatusBadInput, err.Error())
 	}
 	if prof.Name == "" {
-		setLastErrMessageTriple("register: profile JSON is missing the name field")
-		return StatusBadInput
+		return tripleErr(StatusBadInput, "register: profile JSON is missing the name field")
 	}
 	name := prof.Name
 	prof.Name = ""
 	if err := triple.Register(name, prof); err != nil {
 		if errors.Is(err, triple.ErrProfileExists) {
-			setLastErrMessageTriple(err.Error())
-			return StatusProfileExists
+			return tripleErr(StatusProfileExists, err.Error())
 		}
-		setLastErrMessageTriple(err.Error())
-		return StatusBadInput
+		return tripleErr(StatusBadInput, err.Error())
 	}
 	return StatusOK
 }

@@ -197,9 +197,10 @@ through a session with bounded memory. A stream session holds a
 reference to its parent `Pipeline` in its uservalue, so the Lua GC
 cannot collect the Pipeline while the session is live.
 
-Errors are raised as objects — tables `{status=<int>, label=<string>,
+Errors are raised as objects — tables `{status=<int>,
 message=<string>}` with a `__tostring` metamethod — so `pcall` callers
-branch on `err.status` against the `itb.status` constant table:
+branch on `err.status` against the `itb.status` constant table, while
+`err.message` carries the libitb3 diagnostic:
 
 ```lua
 local ok, err = pcall(function() return itb.create("no-such-profile") end)

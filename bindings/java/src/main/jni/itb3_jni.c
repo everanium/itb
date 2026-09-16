@@ -74,6 +74,38 @@ JNIEXPORT jint JNICALL Java_io_github_everanium_itb3_Native_setGCPercent(
     return ITB_SetGCPercent((int)pct);
 }
 
+JNIEXPORT jint JNICALL Java_io_github_everanium_itb3_Native_setGOMAXPROCS(
+    JNIEnv *env, jclass cls, jint n) {
+    (void)env;
+    (void)cls;
+    return ITB_SetGOMAXPROCS((int)n);
+}
+
+JNIEXPORT jint JNICALL Java_io_github_everanium_itb3_Native_writeHeapProfile(
+    JNIEnv *env, jclass cls, jobject path) {
+    (void)cls;
+    return ITB_WriteHeapProfile((char *)addr(env, path));
+}
+
+JNIEXPORT jint JNICALL Java_io_github_everanium_itb3_Native_poolStatsLen(
+    JNIEnv *env, jclass cls) {
+    (void)env;
+    (void)cls;
+    return ITB_PoolStatsLen();
+}
+
+/* The counter vector crosses as raw int64 elements inside a direct
+ * buffer, so the Java side reads it through a LongBuffer in native
+ * byte order rather than element by element. */
+JNIEXPORT jint JNICALL Java_io_github_everanium_itb3_Native_poolStats(
+    JNIEnv *env, jclass cls, jobject out, jlong capElems, jlongArray outLen) {
+    (void)cls;
+    size_t n = 0;
+    int rc = ITB_PoolStats((int64_t *)addr(env, out), (size_t)capElems, &n);
+    set_long(env, outLen, n);
+    return rc;
+}
+
 /* ── Triple Pipeline lifecycle ────────────────────────────────────── */
 
 JNIEXPORT jint JNICALL Java_io_github_everanium_itb3_Native_tripleInit(
@@ -204,6 +236,15 @@ JNIEXPORT jint JNICALL Java_io_github_everanium_itb3_Native_tripleProfiles(
     (void)cls;
     size_t n = 0;
     int rc = ITB_Triple_Profiles(addr(env, jsonOut), (size_t)jsonCap, &n);
+    set_long(env, jsonLen, n);
+    return rc;
+}
+
+JNIEXPORT jint JNICALL Java_io_github_everanium_itb3_Native_tripleHashNames(
+    JNIEnv *env, jclass cls, jobject jsonOut, jlong jsonCap, jlongArray jsonLen) {
+    (void)cls;
+    size_t n = 0;
+    int rc = ITB_Triple_HashNames(addr(env, jsonOut), (size_t)jsonCap, &n);
     set_long(env, jsonLen, n);
     return rc;
 }

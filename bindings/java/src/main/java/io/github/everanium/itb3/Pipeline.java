@@ -169,6 +169,13 @@ public final class Pipeline implements AutoCloseable, Destroyable {
         return Profile.stringsFromJson(Profile.utf8(json));
     }
 
+    /** The names of every hash primitive in the shipped registry, in
+     * the registry's own canonical order. */
+    public static List<String> hashNames() {
+        byte[] json = retryOnce(JSON_CAP, Native::tripleHashNames);
+        return Profile.stringsFromJson(Profile.utf8(json));
+    }
+
     /** The current self-describing session blob: the bytes
      * {@link #init} produced, the bytes {@link #load} re-marshalled,
      * or the bytes of the latest {@link #rekey}. */

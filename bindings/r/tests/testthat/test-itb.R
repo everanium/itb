@@ -21,8 +21,7 @@ expect_itb_status <- function(expr, expected) {
   expect_false(is.null(err), label = "expected an itb_error, got success")
   expect_true(err$status %in% expected,
     label = sprintf(
-      "unexpected status %d (%s): %s",
-      err$status, err$label, conditionMessage(err)
+      "unexpected status %d: %s", err$status, conditionMessage(err)
     )
   )
   expect_gt(nchar(conditionMessage(err)), 0)
@@ -166,7 +165,7 @@ test_that("unknown profile maps to UNKNOWN_PROFILE", {
     pipeline_create("no-such-profile"),
     itb_status$UNKNOWN_PROFILE
   )
-  expect_equal(err$label, "unknown profile name")
+  expect_gt(nchar(err$detail), 0)
   expect_s3_class(err, "itb_error")
 })
 

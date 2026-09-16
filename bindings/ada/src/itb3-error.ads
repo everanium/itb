@@ -8,8 +8,8 @@
 --      "25|Triple Pipeline is closed"
 --
 --  decoded by the Status_Code and Message accessors below. The text
---  half combines the status label with the ITB_LastError diagnostic
---  captured immediately after the failing call.
+--  half is the ITB_LastError diagnostic captured immediately after
+--  the failing call.
 
 with Ada.Exceptions;
 

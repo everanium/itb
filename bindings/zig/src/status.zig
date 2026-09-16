@@ -44,8 +44,4 @@ pub const Status = enum(c_uint) {
         return @enumFromInt(rc);
     }
 
-    /// Short static label for the code (C-side string literal).
-    pub fn label(self: Status) [:0]const u8 {
-        return std.mem.span(ffi.itb_status_str(@intFromEnum(self)));
-    }
 };

@@ -129,6 +129,7 @@ else
         bench/Everanium.LibItb3.VisualBasic.Bench/obj \
         eitb/Everanium.LibItb3.VisualBasic.Eitb/bin \
         eitb/Everanium.LibItb3.VisualBasic.Eitb/obj \
+        loop/bin                                   loop/obj \
         TestResults
 
     echo "==> cleaning the C# library solution member"
@@ -151,5 +152,6 @@ require_built "$CSHARP_LIB_DIR/bin/Release/net*/Everanium.LibItb3.dll"
 require_built "$BINDING_DIR/src/Everanium.LibItb3.VisualBasic/bin/Release/net*/Everanium.LibItb3.VisualBasic.dll"
 require_built "$BINDING_DIR/eitb/Everanium.LibItb3.VisualBasic.Eitb/bin/Release/net*/Everanium.LibItb3.VisualBasic.Eitb.dll"
 require_built "$BINDING_DIR/bench/Everanium.LibItb3.VisualBasic.Bench/bin/Release/net*/Everanium.LibItb3.VisualBasic.Bench.dll"
+require_built "$BINDING_DIR/loop/bin/Release/net*/Everanium.LibItb3.VisualBasic.Loop.dll"
 
 echo "==> ready: ./run_tests.sh"

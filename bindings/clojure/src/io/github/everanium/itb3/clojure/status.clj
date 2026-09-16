@@ -4,45 +4,47 @@
   keywords so call sites match with plain `=` / `case`. Numeric
   values are stable across releases; a code outside the known roster
   (a future libitb3 release) maps to :unknown while the raw code stays
-  available in the error map.")
+  available in the error map.
+
+  The keywords are the structural code only. The human wording of a
+  failure arrives already composed in the library's own diagnostic —
+  the class of failure and, where there is one, the specific case —
+  so no wording is restated here.")
 
 (def ^:private code-table
-  [[0  :ok                   "ok"]
-   [1  :bad-hash             "unknown hash name"]
-   [2  :bad-key-bits         "invalid key bits"]
-   [3  :bad-handle           "invalid handle"]
-   [4  :bad-input            "invalid input"]
-   [5  :buffer-too-small     "output buffer too small"]
-   [6  :encrypt-failed       "encrypt failed"]
-   [7  :decrypt-failed       "decrypt failed"]
-   [8  :seed-width-mix       "seed width mismatch"]
-   [9  :bad-mac              "unknown MAC name or invalid MAC handle"]
-   [10 :mac-failure          "MAC verification failed"]
-   [11 :blob-malformed-recipe "blob profile record invalid"]
-   [12 :recipe-primitive-unknown "blob profile record names a primitive absent from the local registries"]
-   [13 :unknown-profile      "unknown profile name"]
-   [14 :reserved-14          "reserved status"]
-   [15 :reserved-15          "reserved status"]
-   [16 :reserved-16          "reserved status"]
-   [17 :reserved-17          "reserved status"]
-   [19 :blob-mode-mismatch   "blob mode mismatch"]
-   [20 :blob-malformed       "malformed state blob"]
-   [21 :blob-version-too-new "blob version too new"]
-   [22 :blob-too-many-opts   "too many blob export opts"]
-   [23 :stream-truncated     "stream truncated before terminator"]
-   [24 :stream-after-final   "stream chunk after terminator"]
-   [25 :triple-closed        "Triple Pipeline is closed"]
-   [26 :profile-exists       "profile name already registered"]
-   [99 :internal             "internal error"]])
+  [[0  :ok]
+   [1  :bad-hash]
+   [2  :bad-key-bits]
+   [3  :bad-handle]
+   [4  :bad-input]
+   [5  :buffer-too-small]
+   [6  :encrypt-failed]
+   [7  :decrypt-failed]
+   [8  :seed-width-mix]
+   [9  :bad-mac]
+   [10 :mac-failure]
+   [11 :blob-malformed-recipe]
+   [12 :recipe-primitive-unknown]
+   [13 :unknown-profile]
+   [14 :reserved-14]
+   [15 :reserved-15]
+   [16 :reserved-16]
+   [17 :reserved-17]
+   [19 :blob-mode-mismatch]
+   [20 :blob-malformed]
+   [21 :blob-version-too-new]
+   [22 :blob-too-many-opts]
+   [23 :stream-truncated]
+   [24 :stream-after-final]
+   [25 :triple-closed]
+   [26 :profile-exists]
+   [99 :internal]])
 
 (def ^:private code->kw
-  (into {} (map (fn [[code kw _]] [code kw])) code-table))
+  (into {} (map (fn [[code kw]] [code kw])) code-table))
 
 (def ^:private kw->code
-  (into {} (map (fn [[code kw _]] [kw code])) code-table))
-
-(def ^:private kw->label
-  (into {} (map (fn [[_ kw label]] [kw label])) code-table))
+  (into {} (map (fn [[code kw]] [kw code])) code-table))
 
 (defn code->status
   "Maps a raw libitb3 status code to its keyword; an unknown code maps
@@ -55,8 +57,3 @@
   :unknown and unrecognised keywords."
   [status]
   (get kw->code status))
-
-(defn label
-  "Short human-readable label for a status keyword."
-  [status]
-  (get kw->label status "unknown status"))

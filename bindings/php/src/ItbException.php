@@ -29,10 +29,8 @@ class ItbException extends \RuntimeException
         $this->detail = $detail;
         if ($status === null) {
             $text = 'itb: ' . $detail;
-        } elseif ($detail !== '') {
-            $text = sprintf('itb: status=%d (%s): %s', $status, Status::label($status), $detail);
         } else {
-            $text = sprintf('itb: status=%d (%s)', $status, Status::label($status));
+            $text = sprintf('itb: status=%d: %s', $status, $detail);
         }
         parent::__construct($text, $status ?? 0);
     }

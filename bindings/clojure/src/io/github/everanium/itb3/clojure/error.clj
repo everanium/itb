@@ -37,7 +37,7 @@
   (let [code (.rawCode e)
         st (status/code->status code)
         msg (or (.getMessage e)
-                (str "itb: status=" code " (" (status/label st) ")"))]
+                (str "itb: status=" code))]
     (ex-info msg {:type ::itb :status st :code code} e)))
 
 (defmacro itb-call

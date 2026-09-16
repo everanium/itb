@@ -25,9 +25,6 @@
     attributable). *)
 exception ITB_error of int * string
 
-(** Short human-readable label for a libitb3 status code. *)
-val status_label : int -> string
-
 (** A Triple Pipeline session. The Go-side handle is released by a GC
     finaliser; [close] zeroes the key material deterministically
     without waiting for the GC. *)

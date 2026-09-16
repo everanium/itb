@@ -86,10 +86,6 @@ enum class Status : int {
     Internal         = 99,
 };
 
-/* Short static label for a status code. Never null; the pointer is a
- * string literal. */
-const char *status_str(Status status) noexcept;
-
 /* The Go-side diagnostic recorded by the most recent failing libitb3
  * call. Process-global last-write-wins on the Go side — fetch it
  * immediately after the failing call; itb::Error already snapshots it

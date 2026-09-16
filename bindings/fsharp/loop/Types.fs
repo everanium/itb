@@ -190,46 +190,11 @@ module Common =
 
     let ticksToNs (ticks: int64) : int64 = int64 (float ticks * nsPerTick)
 
-    /// The human label of a libitb3 status code, as every
-    /// implementation of this utility renders one.
-    ///
-    /// .NET-specific. The binding's status type carries no sentence
-    /// form, so it lives here rather than on the binding's surface,
-    /// which the freeze keeps closed to additions this utility does not
-    /// strictly need.
-    let statusLabel (code: int) : string =
-        match code with
-        | 0 -> "ok"
-        | 1 -> "unknown hash name"
-        | 2 -> "invalid key bits"
-        | 3 -> "invalid handle"
-        | 4 -> "invalid input"
-        | 5 -> "output buffer too small"
-        | 6 -> "encrypt failed"
-        | 7 -> "decrypt failed"
-        | 8 -> "seed width mismatch"
-        | 9 -> "unknown MAC name or invalid MAC handle"
-        | 10 -> "MAC verification failed"
-        | 11 -> "blob recipe malformed"
-        | 12 -> "blob recipe names an unknown primitive"
-        | 13 -> "unknown profile name"
-        | 14
-        | 15
-        | 16
-        | 17 -> "reserved status"
-        | 19 -> "blob mode mismatch"
-        | 20 -> "malformed state blob"
-        | 21 -> "blob version too new"
-        | 22 -> "too many blob export opts"
-        | 23 -> "stream truncated before terminator"
-        | 24 -> "stream chunk after terminator"
-        | 25 -> "Triple Pipeline is closed"
-        | 26 -> "profile name already registered"
-        | 99 -> "internal error"
-        | _ -> "unknown status"
-
     /// Renders a binding error the way every implementation reports a
-    /// failed library call: `status <code> (<label>): <last error>`.
+    /// failed library call: `status <code>: <last error>`. The library
+    /// assembles the whole sentence — the class of failure and the case
+    /// that raised it — so this reports what arrived and composes
+    /// nothing.
     let detail (e: ItbError) : string =
         // The C# layer under this binding folds the diagnostic into
         // the exception message behind a fixed prefix; strip that
@@ -242,7 +207,7 @@ module Common =
             else
                 e.Detail
 
-        "status " + e.Code.ToString inv + " (" + statusLabel e.Code + "): " + message
+        "status " + e.Code.ToString inv + ": " + message
 
     /// Records the worker's error text (first error wins) and requests a
     /// stop of the whole run.

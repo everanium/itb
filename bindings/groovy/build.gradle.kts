@@ -44,8 +44,9 @@ java {
     }
 }
 
-// Bench + eitb live in flat top-level directories (fleet layout);
-// each is its own source set compiled against the main output.
+// Bench, eitb and loop live in flat top-level directories (fleet
+// layout); each is its own source set compiled against the main
+// output.
 val bench: SourceSet by sourceSets.creating {
     groovy.srcDir("bench")
     compileClasspath += sourceSets.main.get().output
@@ -58,10 +59,18 @@ val eitb: SourceSet by sourceSets.creating {
     runtimeClasspath += sourceSets.main.get().output
 }
 
+val loop: SourceSet by sourceSets.creating {
+    groovy.srcDir("loop")
+    compileClasspath += sourceSets.main.get().output
+    runtimeClasspath += sourceSets.main.get().output
+}
+
 configurations["benchImplementation"].extendsFrom(configurations["implementation"])
 configurations["benchRuntimeOnly"].extendsFrom(configurations["runtimeOnly"])
 configurations["eitbImplementation"].extendsFrom(configurations["implementation"])
 configurations["eitbRuntimeOnly"].extendsFrom(configurations["runtimeOnly"])
+configurations["loopImplementation"].extendsFrom(configurations["implementation"])
+configurations["loopRuntimeOnly"].extendsFrom(configurations["runtimeOnly"])
 
 /** Defaults ITB_JNI_PATH to the sibling Java build's shim when the
  * caller has not exported it. */
@@ -110,8 +119,21 @@ val eitbJar = tasks.register<Jar>("eitbJar") {
     exclude("META-INF/*.SF", "META-INF/*.DSA", "META-INF/*.RSA")
 }
 
+val loopJar = tasks.register<Jar>("loopJar") {
+    description = "Self-contained loop stress-harness jar"
+    archiveFileName = "loop.jar"
+    manifest {
+        attributes("Main-Class" to "io.github.everanium.itb3.groovy.loop.Main")
+    }
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    from(loop.output)
+    from(sourceSets.main.get().output)
+    from(configurations["loopRuntimeClasspath"].map { if (it.isDirectory) it else zipTree(it) })
+    exclude("META-INF/*.SF", "META-INF/*.DSA", "META-INF/*.RSA")
+}
+
 tasks.assemble {
-    dependsOn("benchClasses", "eitbClasses", eitbJar)
+    dependsOn("benchClasses", "eitbClasses", eitbJar, loopJar)
 }
 
 // Maven publication metadata. No sources / javadoc jar is attached:

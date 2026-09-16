@@ -145,6 +145,12 @@ final class Pipeline implements AutoCloseable {
         ItbException.relay { JPipeline.profiles() }
     }
 
+    /** The names of every hash primitive in the shipped registry, in
+     * the registry's own canonical order. */
+    static List<String> hashNames() {
+        ItbException.relay { JPipeline.hashNames() }
+    }
+
     /** Scopes a fresh Pipeline inside {@code body}: init, run the
      * closure with the Pipeline as its argument, close on the way
      * out. Returns the closure's value. */

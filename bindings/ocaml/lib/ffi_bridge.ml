@@ -29,36 +29,6 @@ exception ITB_error of int * string
 let status_ok = 0
 let status_buffer_too_small = 5
 
-(* Short human-readable label for a libitb3 status code, mirrored from
-   cmd/cshared/internal/capi/errors.go. Numeric values are stable
-   across releases. *)
-let status_label = function
-  | 0 -> "ok"
-  | 1 -> "unknown hash name"
-  | 2 -> "invalid key bits"
-  | 3 -> "invalid handle"
-  | 4 -> "invalid input"
-  | 5 -> "output buffer too small"
-  | 6 -> "encrypt failed"
-  | 7 -> "decrypt failed"
-  | 8 -> "seed width mismatch"
-  | 9 -> "unknown MAC name or invalid MAC handle"
-  | 10 -> "MAC verification failed"
-  | 11 -> "blob recipe malformed"
-  | 12 -> "blob recipe names an unknown primitive"
-  | 13 -> "unknown profile name"
-  | 19 -> "blob mode mismatch"
-  | 20 -> "malformed state blob"
-  | 21 -> "blob version too new"
-  | 22 -> "too many blob export opts"
-  | 23 -> "stream truncated before terminator"
-  | 24 -> "stream chunk after terminator"
-  | 25 -> "Triple Pipeline is closed"
-  | 26 -> "profile name already registered"
-  | 99 -> "internal error"
-  | -1 -> "binding-side failure"
-  | _ -> "unknown status"
-
 (* ---------------------------------------------------------------- *)
 (* Library resolution                                               *)
 (* ---------------------------------------------------------------- *)

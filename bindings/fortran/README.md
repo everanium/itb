@@ -56,7 +56,7 @@ so `build.sh` runs `make clean` first.
 
 - `src/itb3.f90` — root module; `use itb3` re-exports the whole
   public surface (plus the interop kinds it uses).
-- `src/itb_status.f90` — status-code constants + labels.
+- `src/itb_status.f90` — status-code constants.
 - `src/itb_error.f90` — `itb_error_t` record + `ITB_LastError`
   capture.
 - `src/itb_opts.f90` — `itb_opts_t` URL-query builder (opaque

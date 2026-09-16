@@ -8,8 +8,6 @@ open Ctypes
 
 exception ITB_error = Ffi_bridge.ITB_error
 
-let status_label = Ffi_bridge.status_label
-
 type pipeline = Pipeline.t
 type enc = Stream.enc
 type dec = Stream.dec
