@@ -199,6 +199,14 @@ ITB.set_memory_limit(4 << 30)
 ITB.set_gc_percent(100)
 ```
 
+Three further knobs sit on the same surface: `ITB.set_gomaxprocs(n)`
+(a value of zero or below queries), `ITB.write_heap_profile(path)` (a
+pprof heap profile after one forced collection) and `ITB.pool_stats`
+with its `ITB.pool_stats_len` companion, which returns the library's
+monotonic pool checkout / miss counters as an Array of Integer a
+consumer differences between two snapshots. `ITB.hash_names`
+enumerates the shipped inner-hash registry next to `ITB.profiles`.
+
 ## Testing
 
 ```bash
@@ -237,6 +245,28 @@ payloads directly on disk (`-i` / `-o`) or through stdin / stdout,
 rotates outer masters, and inspects stored blobs. See
 [`cmd/itb3/README.md`](https://github.com/everanium/itb/blob/main/cmd/itb3/README.md) for the full
 subcommand reference.
+
+## loop utility
+
+A long-run stress harness under `bindings/ruby/loop/` holds one
+Pipeline handle for minutes, cycles encrypt → decrypt → compare
+round-trips through it, rotates the outer masters and reopens the
+handle from its session blob on a schedule, and reports whether the
+process survived with every byte intact. It is the binding-side
+counterpart of the Go harness under `tools/loop`: same flags, same
+round structure, same summary in both renderings.
+
+```bash
+./bindings/ruby/build.sh
+./bindings/ruby/run_loop.sh --duration 2m --shape both
+```
+
+`./bindings/ruby/run_loop.sh -h` lists every flag. Concurrency mode:
+**shared-handle** — the ffi gem attaches every call that does
+non-trivial Go-side work with `blocking: true`, which releases the
+global VM lock for its duration, so worker threads call into one
+Pipeline handle concurrently and `--goroutines` is the thread count
+verbatim, never clamped.
 
 ## eitb utility
 

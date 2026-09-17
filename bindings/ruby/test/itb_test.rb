@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "minitest/autorun"
+require "tmpdir"
 require_relative "../lib/libitb3"
 
 # Surface parity checks for the Ruby binding; the deep suite lives in
@@ -381,5 +382,83 @@ class ItbTest < Minitest::Test
     small&.free
     sender&.free
     receiver&.free
+  end
+
+  # -- runtime surface ------------------------------------------------
+
+  def test_set_gomaxprocs_queries_then_restores
+    # A value of zero or below queries without changing; the setter
+    # returns the value that was in force before it.
+    before = ITB.set_gomaxprocs(0)
+    assert_operator before, :>, 0
+    assert_equal before, ITB.set_gomaxprocs(2)
+    assert_equal 2, ITB.set_gomaxprocs(0)
+    ITB.set_gomaxprocs(before)
+    assert_equal before, ITB.set_gomaxprocs(0)
+  end
+
+  def test_write_heap_profile_writes_a_readable_profile
+    Dir.mktmpdir do |dir|
+      path = File.join(dir, "heap.prof")
+      ITB.write_heap_profile(path)
+      assert_operator File.size(path), :>, 0
+      # pprof profiles are gzip-wrapped protobuf.
+      assert_equal "\x1F\x8B".b, File.binread(path, 2)
+    end
+  end
+
+  def test_write_heap_profile_reports_the_os_diagnostic
+    err = assert_raises(ITB::Error) do
+      ITB.write_heap_profile("/no-such-directory-libitb3-test/heap.prof")
+    end
+    assert_equal ITB::Status::BAD_INPUT, err.status_code
+    assert_includes err.last_error, "heap.prof"
+  end
+
+  def test_pool_stats_length_matches_the_declared_layout
+    length = ITB.pool_stats_len
+    assert_operator length, :>, 0
+    stats = ITB.pool_stats
+    assert_equal length, stats.size
+    tiers = stats[0]
+    # Slot 0 carries the tier count T; the vector is 1 + 5*T + 8.
+    assert_operator tiers, :>, 0
+    assert_equal 1 + (5 * tiers) + 8, length
+  end
+
+  def test_pool_stats_counters_are_monotonic_across_work
+    before = ITB.pool_stats
+    pipe = ITB.create("singlemsg-triple-mac-v1")
+    pipe.decrypt_message(pipe.encrypt_message("x" * 4096))
+    after = ITB.pool_stats
+    assert_equal before.size, after.size
+    (1...after.size).each { |i| assert_operator after[i], :>=, before[i] }
+    assert_operator after[1..].sum, :>, before[1..].sum
+  ensure
+    pipe&.free
+  end
+
+  # -- hash registry enumeration --------------------------------------
+
+  def test_hash_names_enumerates_the_shipped_registry
+    names = ITB.hash_names
+    assert_operator names.size, :>, 1
+    assert_equal names.size, names.uniq.size
+    names.each { |n| refute_empty n }
+    # The enumeration is what a caller validates a primitive name
+    # against, so a shipped name resolves and a typo does not.
+    assert_includes names, "areion512"
+    refute_includes names, "areion512-nope"
+  end
+
+  def test_every_enumerated_name_constructs_a_pipeline
+    ITB.hash_names.each do |name|
+      pipe = ITB.create("singlemsg-triple-nomac-v1",
+                        "innerHash=#{name}&withParallax=false")
+      assert_equal "registry probe",
+                   pipe.decrypt_message(pipe.encrypt_message("registry probe"))
+    ensure
+      pipe&.free
+    end
   end
 end

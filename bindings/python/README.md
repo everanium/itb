@@ -182,6 +182,14 @@ itb.set_memory_limit(4 << 30)
 itb.set_gc_percent(100)
 ```
 
+Three further knobs sit on the same surface: `set_gomaxprocs(n)`
+(`n <= 0` queries), `write_heap_profile(path)` (a pprof heap profile
+after one forced collection) and `pool_stats()` with its
+`pool_stats_len()` companion, which returns the library's monotonic
+pool checkout / miss counters as an `int64` vector a consumer
+differences between two snapshots. `hash_names()` enumerates the
+shipped inner-hash registry next to `profiles()`.
+
 ## Testing
 
 ```bash
@@ -221,6 +229,27 @@ payloads directly on disk (`-i` / `-o`) or through stdin / stdout,
 rotates outer masters, and inspects stored blobs. See
 [`cmd/itb3/README.md`](https://github.com/everanium/itb/blob/main/cmd/itb3/README.md) for the full
 subcommand reference.
+
+## loop utility
+
+A long-run stress harness under `bindings/python/loop/` holds one
+Pipeline handle for minutes, cycles encrypt → decrypt → compare
+round-trips through it, rotates the outer masters and reopens the
+handle from its session blob on a schedule, and reports whether the
+process survived with every byte intact. It is the binding-side
+counterpart of the Go harness under `tools/loop`: same flags, same
+round structure, same summary in both renderings.
+
+```bash
+./bindings/python/build.sh
+./bindings/python/run_loop.sh --duration 2m --shape both
+```
+
+`./bindings/python/run_loop.sh -h` lists every flag. Concurrency mode:
+**shared-handle** — `ctypes` releases the interpreter lock for the
+duration of every foreign call, so worker threads call into one
+Pipeline handle concurrently and `--goroutines` is the thread count
+verbatim, never clamped.
 
 ## eitb utility
 
