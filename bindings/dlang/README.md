@@ -214,6 +214,26 @@ rotates outer masters, and inspects stored blobs. See
 [`cmd/itb3/README.md`](https://github.com/everanium/itb/blob/main/cmd/itb3/README.md) for the full
 subcommand reference.
 
+## loop utility
+
+A long-run stress harness under `bindings/dlang/loop/` holds one
+Pipeline handle for minutes, cycles encrypt → decrypt → compare
+round-trips through it, rotates the outer masters and reopens the
+handle from its session blob on a schedule, and reports whether the
+process survived with every byte intact. It is the binding-side
+counterpart of the Go harness under `tools/loop`: same flags, same
+round structure, same summary in both renderings.
+
+```bash
+cd bindings/dlang && ./build.sh
+./run_loop.sh --duration 2m --shape both
+```
+
+`./loop/loop -h` lists every flag. Concurrency mode: **shared-handle** —
+druntime threads call into one Pipeline handle concurrently, which
+libitb3 permits once the handle is constructed, so `--goroutines` is
+the thread count verbatim.
+
 ## eitb utility
 
 A small CLI under `bindings/dlang/eitb/` mirrors the shipped Go
@@ -273,6 +293,18 @@ cipher pair.
   `--DRT-gcopt=parallel:N` or `rt_options` — the runtime-option
   parser sees the crt-constructor setting and the explicit
   override wins.
+- **Loading the D binding relocates druntime's stop-the-world
+  signals to `SIGRTMIN + 2` / `SIGRTMIN + 3`** (via a
+  `pragma(crt_constructor)` in `itb3.ffi`) and blocks both around
+  every call into libitb3. A thread inside such a call runs on a Go
+  goroutine stack, and a collector signal answered there corrupts Go
+  memory and faults the collector's stack scan; the Go runtime also
+  unconditionally unblocks `SIGRTMIN` on every thread that enters
+  it, which rules out blocking druntime's default numbers. The two
+  signal numbers are part of the binding's contract: an application
+  must neither call `thread_setGCSignals` itself nor use them for
+  its own purposes. A collection that starts while other threads
+  are inside libitb3 waits for those calls to return.
 
 ## License
 

@@ -424,6 +424,11 @@ std::string lookup(std::string_view name);
  * of strings. */
 std::string profiles();
 
+/* The shipped hash-primitive registry in canonical order as a JSON
+ * array of strings. The registry is the authority on which names
+ * Pipeline::init accepts for the innerHash opts key. */
+std::string hash_names();
+
 /* ------------------------------------------------------------------ */
 /* Runtime + diagnostics                                               */
 /* ------------------------------------------------------------------ */
@@ -438,6 +443,31 @@ std::int64_t set_memory_limit(std::int64_t bytes) noexcept;
 /* Sets the Go GC trigger percentage; returns the previous value. A
  * negative value queries without changing. */
 int set_gc_percent(int pct) noexcept;
+
+/* Sets the Go runtime's GOMAXPROCS; returns the previous value. Zero
+ * or a negative value queries without changing. */
+int set_gomaxprocs(int n) noexcept;
+
+/* Writes the Go runtime's heap profile (pprof format) to path after
+ * one forced garbage collection. An empty path falls back to the
+ * ITB_MEMPROFILE environment variable; a path that is still empty, or
+ * a file-system failure, throws Error with Status::BadInput. */
+void write_heap_profile(std::string_view path);
+
+/* Number of std::int64_t slots pool_stats fills. Size the destination
+ * from this call, never from a constant. */
+std::size_t pool_stats_len() noexcept;
+
+/* Copies the library's pool hit / miss counters into dst and returns
+ * the slot count written. Every counter is a monotonically increasing
+ * total since library load; difference two snapshots. Slot layout,
+ * with T the tier count in slot 0: tier i holds starter width,
+ * checkouts, constructor misses, regrow replacements and bytes
+ * allocated at slots 1 + 5*i .. 1 + 5*i + 4; the scratch byte pool's
+ * get / new / regrow / regrow-bytes follow at 1 + 5*T, and the
+ * parallax chunk pool's at 1 + 5*T + 4. A dst shorter than
+ * pool_stats_len() throws Error with Status::BufferTooSmall. */
+std::size_t pool_stats(std::span<std::int64_t> dst);
 
 } // namespace itb
 

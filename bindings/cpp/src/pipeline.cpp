@@ -349,4 +349,13 @@ std::string profiles()
         "profiles"));
 }
 
+std::string hash_names()
+{
+    return json_call(buf_call(
+        [&](void *out, std::size_t cap, std::size_t *len) {
+            return ITB_Triple_HashNames(out, cap, len);
+        },
+        "hash_names"));
+}
+
 } // namespace itb
