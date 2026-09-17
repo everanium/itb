@@ -74,6 +74,10 @@ module ITB
     attach_function :ITB_LastError, [:buffer_out, :size_t, :pointer], :int
     attach_function :ITB_SetMemoryLimit, [:int64], :int64
     attach_function :ITB_SetGCPercent, [:int], :int
+    attach_function :ITB_SetGOMAXPROCS, [:int], :int
+    attach_function :ITB_WriteHeapProfile, [:string], :int
+    attach_function :ITB_PoolStatsLen, [], :int
+    attach_function :ITB_PoolStats, [:pointer, :size_t, :pointer], :int
 
     # -- Triple Pipeline surface ----------------------------------------
     attach_function :ITB_Triple_Init,
@@ -115,6 +119,7 @@ module ITB
     attach_function :ITB_Triple_Lookup,
                     [:string, :buffer_out, :size_t, :pointer], :int
     attach_function :ITB_Triple_Profiles, [:buffer_out, :size_t, :pointer], :int
+    attach_function :ITB_Triple_HashNames, [:buffer_out, :size_t, :pointer], :int
     attach_function :ITB_Triple_EncryptStreamBegin, [:size_t, :pointer], :int
     attach_function :ITB_Triple_DecryptStreamBegin, [:size_t, :pointer], :int
     attach_function :ITB_Triple_StreamWrite,
