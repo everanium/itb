@@ -1112,8 +1112,22 @@ internal static class Program
         return exit;
     }
 
+    [DllImport("libc", EntryPoint = "signal")]
+    private static extern IntPtr SysSignal(int sig, IntPtr handler);
+
+    private const int Sigpipe = 13;
+
     private static int Main(string[] args)
     {
+        // .NET-specific. The runtime ignores SIGPIPE and the console
+        // stream drops a write to a closed pipe without a word, so a
+        // consumer that stops reading leaves the process printing into
+        // nothing and exiting 0 with its verdict undelivered. With the
+        // default disposition back the first such write ends the
+        // process, which is what every other implementation does and
+        // what a fleet driver expects.
+        SysSignal(Sigpipe, IntPtr.Zero);
+
         // .NET-specific. Number rendering is part of the output
         // contract, so the process runs under the invariant culture
         // rather than the operator's locale; every formatter names the

@@ -802,9 +802,21 @@
                           (some-> ^java.lang.AutoCloseable (:msg pipes) .close)
                           exit)))))))))))))
 
+;; Restores the default disposition of SIGPIPE.
+;;
+;; Clojure-specific. The runtime ignores the signal and the standard
+;; streams swallow the write error that replaces it, so a consumer that
+;; stops reading leaves the process printing into nothing and exiting 0
+;; with its verdict undelivered. With the default disposition back the
+;; first such write ends the process, which is what every other
+;; implementation does and what a fleet driver expects.
+(defn- restore-sigpipe []
+  (sun.misc.Signal/handle (sun.misc.Signal. "PIPE") sun.misc.SignalHandler/SIG_DFL))
+
 (defn -main
   "Entry point."
   [& args]
+  (restore-sigpipe)
   (let [code (try
                (run args)
                (catch clojure.lang.ExceptionInfo e

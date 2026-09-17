@@ -877,8 +877,22 @@ let private run (args: string[]) : int =
     r.Pipes.Msg |> Option.iter (fun p -> p.Dispose())
     code
 
+[<DllImport("libc", EntryPoint = "signal")>]
+extern nativeint private sysSignal(int signum, nativeint handler)
+
+[<Literal>]
+let private Sigpipe = 13
+
 [<EntryPoint>]
 let main args =
+    // .NET-specific. The runtime ignores SIGPIPE and the console stream
+    // drops a write to a closed pipe without a word, so a consumer that
+    // stops reading leaves the process printing into nothing and exiting
+    // 0 with its verdict undelivered. With the default disposition back
+    // the first such write ends the process, which is what every other
+    // implementation does and what a fleet driver expects.
+    sysSignal (Sigpipe, 0n) |> ignore
+
     // .NET-specific. Number rendering is part of the output contract, so
     // the process runs under the invariant culture rather than the
     // operator's locale; every formatter names the culture as well, and

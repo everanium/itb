@@ -1129,8 +1129,22 @@ final class Main {
         return exit
     }
 
+    /** Restores the default disposition of SIGPIPE.
+     *
+     * Groovy-specific. The runtime ignores the signal and the standard
+     * streams swallow the write error that replaces it, so a consumer
+     * that stops reading leaves the process printing into nothing and
+     * exiting 0 with its verdict undelivered. With the default
+     * disposition back the first such write ends the process, which is
+     * what every other implementation does and what a fleet driver
+     * expects. */
+    static void restoreSigpipe() {
+        sun.misc.Signal.handle(new sun.misc.Signal('PIPE'), sun.misc.SignalHandler.SIG_DFL)
+    }
+
     /** Entry point. */
     static void main(String[] args) {
+        restoreSigpipe()
         int code = run(args)
         System.out.flush()
         System.err.flush()

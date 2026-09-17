@@ -1098,8 +1098,33 @@ public final class Main {
         return exit;
     }
 
+    /** Restores the default disposition of SIGPIPE.
+     *
+     * Java-specific. The runtime ignores the signal and the standard
+     * streams swallow the write error that replaces it, so a consumer
+     * that stops reading leaves the process printing into nothing and
+     * exiting 0 with its verdict undelivered. With the default
+     * disposition back the first such write ends the process, which is
+     * what every other implementation does and what a fleet driver
+     * expects. The class that grants it sits outside the supported
+     * API, and naming it directly is a compiler warning the build
+     * treats as an error, so it is reached by reflection; a runtime
+     * without it leaves the disposition as the runtime installed it. */
+    static void restoreSigpipe() {
+        try {
+            Class<?> signal = Class.forName("sun.misc.Signal");
+            Class<?> handler = Class.forName("sun.misc.SignalHandler");
+            Object pipe = signal.getConstructor(String.class).newInstance("PIPE");
+            Object dfl = handler.getField("SIG_DFL").get(null);
+            signal.getMethod("handle", signal, handler).invoke(null, pipe, dfl);
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            // Left as the runtime installed it.
+        }
+    }
+
     /** Entry point. */
     public static void main(String[] args) {
+        restoreSigpipe();
         int code = run(args);
         System.out.flush();
         System.err.flush();

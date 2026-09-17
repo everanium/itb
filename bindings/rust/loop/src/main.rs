@@ -1157,6 +1157,14 @@ fn run(args: &[String]) -> i32 {
 }
 
 fn main() -> ExitCode {
+    // Rust-specific. The runtime ignores SIGPIPE before main runs, so
+    // a write to a closed stdout panics with exit 101 instead of
+    // ending the process. Restoring the signal's default disposition
+    // ends it on the spot, which is what every other implementation
+    // does and what a fleet driver expects.
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+    }
     let args: Vec<String> = std::env::args().skip(1).collect();
     ExitCode::from(run(&args) as u8)
 }

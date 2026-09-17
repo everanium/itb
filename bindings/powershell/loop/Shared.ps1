@@ -74,6 +74,20 @@ public static class LoopNative
         _signalSeen = true;
     }
 
+    [DllImport("libc", EntryPoint = "signal")]
+    private static extern IntPtr sys_signal(int sig, IntPtr handler);
+
+    // The host ignores SIGPIPE and the console stream drops a write to
+    // a closed pipe without a word, so a consumer that stops reading
+    // would leave the process printing into nothing and exiting 0 with
+    // its verdict undelivered. With the default disposition back the
+    // first such write ends the process, which is what every other
+    // implementation does and what a fleet driver expects.
+    public static void RestoreSigpipe()
+    {
+        sys_signal(13, IntPtr.Zero);
+    }
+
     [DllImport("libc", EntryPoint = "getrandom", SetLastError = true)]
     private static extern IntPtr getrandom(IntPtr buf, UIntPtr buflen, uint flags);
 
