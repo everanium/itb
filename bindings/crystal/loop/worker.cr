@@ -91,7 +91,7 @@ module Loop
         @error = text
         @failed = true
       end
-      @run.stop = true
+      @run.stop.set(true)
     end
 
     # Crystal-specific. Appends a drained chunk to one of the worker's
@@ -185,11 +185,12 @@ module Loop
     end
 
     # One iteration. In order: refill the plaintext under rotating
-    # mode; pick the surface; encrypt (timed); decrypt (timed); compare
-    # the round-trip with the plaintext; bump the counters. In the
-    # shared-handle mode of the other bindings the whole round-trip
-    # runs under a read lock; here it does not need one — see the
-    # handle-mutation note on Loop.maintenance.
+    # mode; take the read lock; pick the surface; encrypt (timed);
+    # decrypt (timed); compare the round-trip with the plaintext; bump
+    # the counters; release the read lock. The whole round-trip runs
+    # under the read side of the handle lock so a rekey or a blob
+    # reopen (write side) never lands between an encrypt and its
+    # decrypt.
     def iterate(iter : Int64) : Bool
       if @payload_mode == PayloadMode::Rotating
         ok, @rng = Loop.fill_payload(PayloadMode::Rotating, @seeded, @rng, @plaintext)
@@ -199,6 +200,18 @@ module Loop
         end
       end
 
+      @run.pipe_lock.lock_read
+      begin
+        iterate_locked(iter)
+      ensure
+        @run.pipe_lock.unlock_read
+      end
+    end
+
+    # The part of an iteration that runs under the read lock: the
+    # surface selection, both cipher directions, the comparison and
+    # the counters.
+    private def iterate_locked(iter : Int64) : Bool
       # Shape dispatch. message is one whole-buffer call on the Single
       # Message Pipeline; stream_one_shot is one whole-buffer call on
       # the streaming Pipeline (the C ABI's ITB_Triple_EncryptStream,
@@ -305,18 +318,19 @@ module Loop
     # warmup still passes both barriers so the launcher never waits on
     # a worker that has already given up.
     #
-    # Concurrency mode. This binding runs single: Crystal's default
-    # execution context is resizable to several OS threads with no
-    # compile-time flag, but the collector this runtime links suspends
-    # those threads with a signal whose handler runs on the current
-    # stack — and inside a call into the shared library that stack
-    # belongs to the library's own runtime, not to the thread, so the
-    # collector then scans a range that is not a stack. Measured on
-    # this host, two and three context threads fault on every run
-    # while one faults on none, and a twelve-line library built the
-    # same way reproduces it without any of this project's code. So
-    # --goroutines above 1 is clamped to 1 and the core runs on one
-    # execution unit, which is what the summary reports.
+    # Concurrency mode. This binding runs shared-handle: every worker
+    # is a fiber, the default execution context is resized to one
+    # thread per worker plus one for the main fiber, and all workers
+    # call into the same Pipeline handles under the read side of the
+    # handle lock. The collector this runtime links suspends threads
+    # with a signal whose handler runs on the current stack, which
+    # inside a call into the shared library belongs to the library's
+    # own runtime; the binding marks the calling thread as blocked for
+    # the collector around every raw call (`GC_do_blocking`), so a
+    # collection started by one worker while another is inside the
+    # library scans that worker's own stack up to the point of entry
+    # and never the library's. Without that mark two and three context
+    # threads fault on every run; with it every capacity survives.
     def run_body : Nil
       ok = iterate(0_i64)
       @run.warmup_done.send(nil)
@@ -328,13 +342,17 @@ module Loop
 
       iter = 1_i64
       loop do
-        # Crystal-specific. The scheduler is cooperative and a call
-        # into the shared library never yields, so the fiber that
-        # enforces the deadline gets its turn here, between iterations,
-        # exactly where an in-flight iteration is allowed to finish.
+        # Crystal-specific. A call into the shared library never yields,
+        # and the event loop that fires the deadline timer runs only on
+        # a scheduler thread that is looking for work — the context's
+        # threads start on demand, so nothing guarantees an idle one.
+        # The yield here hands the thread to its scheduler between
+        # iterations, exactly where an in-flight iteration is allowed
+        # to finish, and the fiber that enforces the deadline gets its
+        # turn.
         Fiber.yield
         break if @run.cfg.iterations > 0 && iter >= @run.cfg.iterations
-        break if @run.stop
+        break if @run.stop.get
         break unless iterate(iter)
         break unless Loop.maintenance(self, iter)
         iter += 1

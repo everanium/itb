@@ -254,8 +254,7 @@ module Loop
         io << ",\"miss_percent\":" << fmt_f("%.2f", miss_percent(pd.chunk_regrow, pd.chunk_get)) << '}'
         io << "}\n"
       end
-      STDOUT.write(j.to_slice)
-      STDOUT.flush
+      emit(STDOUT, j.to_slice)
       return pass ? 0 : 1
     end
 

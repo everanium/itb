@@ -265,11 +265,11 @@ cd bindings/crystal && ./build.sh
 ./run_loop.sh --duration 2m --shape both
 ```
 
-`./loop/loop -h` lists every flag. Concurrency mode: **single** — the
-default execution context is resizable to several OS threads, but the
-collector this runtime links suspends them with a signal whose handler
-runs on the current stack, which inside a libitb3 call belongs to the
-library's own runtime, so `--goroutines` above 1 is clamped to 1.
+`./loop/loop -h` lists every flag. Concurrency mode: **shared-handle** —
+`--goroutines` fibers on as many threads of the default execution
+context call into one Pipeline handle, the binding marking each thread
+as blocked for the collector around every libitb3 call so a collection
+started on one thread never scans the library's stack on another.
 
 ## eitb utility
 

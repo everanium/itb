@@ -76,11 +76,11 @@ module ITB
     # NULL/0 probe form is part of the ITB_LastError contract — it
     # reports the required capacity without writing.
     need = LibC::SizeT.zero
-    rc = LibItb3.last_error(Pointer(LibC::Char).null, LibC::SizeT.zero, pointerof(need))
+    rc = ITB.blocking(->{ LibItb3.last_error(Pointer(LibC::Char).null, LibC::SizeT.zero, pointerof(need)) })
     return "" unless rc == Status::Ok.value || rc == Status::BufferTooSmall.value
     return "" if need <= 1
     buf = Bytes.new(need)
-    rc = LibItb3.last_error(buf.to_unsafe.as(LibC::Char*), LibC::SizeT.new(buf.size), pointerof(need))
+    rc = ITB.blocking(->{ LibItb3.last_error(buf.to_unsafe.as(LibC::Char*), LibC::SizeT.new(buf.size), pointerof(need)) })
     return "" unless rc == Status::Ok.value
     String.new(buf[0, need - 1])
   end
