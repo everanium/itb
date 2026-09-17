@@ -287,7 +287,7 @@ compare(W, Iter, Shape, Plain, Got) ->
              "first difference at offset ~B: want ~s got ~s~n",
              [W#w.id, Iter, shape_name(Shape), byte_size(Plain), byte_size(Got),
               Off, hex_window(Plain, Off), hex_window(Got, Off)]),
-    io:put_chars(standard_error, Text),
+    loop_main:emit(standard_error, Text),
     erlang:halt(3, [{flush, true}]).
 
 %% Up to 16 bytes from Off as lowercase hex, or "-" when the buffer

@@ -329,7 +329,7 @@ defmodule Loop.Worker do
   defp compare(w, iter, shape, plain, got) do
     off = :binary.longest_common_prefix([plain, got])
 
-    IO.write(:stderr, [
+    Loop.Main.emit(:stderr, [
       "loop: DATA MISMATCH g#{w.id} iter #{iter} shape=#{shape_name(shape)}: ",
       "want #{byte_size(plain)} bytes, got #{byte_size(got)} bytes, ",
       "first difference at offset #{off}: ",

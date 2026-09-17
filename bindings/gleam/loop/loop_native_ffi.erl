@@ -31,7 +31,8 @@
          read_text/1, halt/1, format_float/2, format_term/1,
          send_after/3, cancel_timer/1, random_bytes/1,
          common_prefix/2, hex_lower/1, argv/0,
-         install_signal_handler/1]).
+         install_signal_handler/1, install_closed_pipe_filter/0,
+         closed_pipe_filter/2]).
 
 -export([init/1, handle_event/2, handle_call/2, handle_info/2,
          terminate/2, code_change/3]).
@@ -87,8 +88,47 @@ monotonic_ns() -> erlang:monotonic_time(nanosecond).
 
 %% One io request per line, so a line and its newline can never be
 %% separated by another worker's line.
-write_stdout(Text) -> io:put_chars(Text), nil.
-write_stderr(Text) -> io:put_chars(standard_error, Text), nil.
+%% The two writers end the process when their device is gone. The
+%% emulator ignores SIGPIPE, so a consumer that stops reading does not
+%% end the run the way it ends the reference: the io server behind the
+%% closed descriptor exits, the write raises, and the node would halt
+%% on its own terms with exit 1. The failed write is answered with the
+%% exit code the signal would have produced, 141, with nothing further
+%% printed and nothing flushed.
+write_stdout(Text) -> emit(standard_io, Text).
+write_stderr(Text) -> emit(standard_error, Text).
+
+emit(Device, Text) ->
+    try
+        io:put_chars(Device, Text), nil
+    catch
+        _:_ -> erlang:halt(141, [{flush, false}])
+    end.
+
+%% Keeps the emulator's own report about the closed pipe off stderr.
+%% When stdout is a closed pipe the emulator's stdout writer dies of
+%% epipe, and the terminal driver files an error report about it before
+%% it stops; only then does the io server go away and the failed write
+%% above end the process. The report therefore leaves the driver ahead
+%% of the halt, and whether the default handler gets it onto stderr
+%% first is a race the utility cannot win from the failing write. The
+%% primary filter installed at start runs inside the driver before the
+%% report reaches any handler and drops that one report — the stdout
+%% writer, reason epipe — and no other, so every other event the
+%% emulator files still prints.
+install_closed_pipe_filter() ->
+    ok = logger:add_primary_filter(loop_closed_pipe,
+                                   {fun ?MODULE:closed_pipe_filter/2, none}),
+    nil.
+
+closed_pipe_filter(#{msg := {Format, [epipe]},
+                     meta := #{mfa := {user_drv, _, _}}}, _) ->
+    case string:prefix(Format, "Writer crashed") of
+        nomatch -> ignore;
+        _ -> stop
+    end;
+closed_pipe_filter(_Event, _) ->
+    ignore.
 
 getenv(Name) ->
     case os:getenv(binary_to_list(Name)) of

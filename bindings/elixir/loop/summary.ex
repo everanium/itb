@@ -190,7 +190,7 @@ defmodule Loop.Summary do
   # ------------------------------------------------------------------
 
   defp json(cfg, f) do
-    IO.write([
+    Loop.Main.emit(:stdio, [
       "{\"duration_seconds\":", Size.f3(f.elapsed / 1.0e9),
       ",\"iterations\":", i(f.total_iters),
       ",\"per_worker_iterations\":[",

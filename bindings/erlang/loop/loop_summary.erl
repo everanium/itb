@@ -228,7 +228,7 @@ json(Cfg, F) ->
          ",\"buf_pool\":", json_byte_pool(Buf),
          ",\"parallax_chunk_pool\":", json_byte_pool(Chunk),
          "}\n"],
-    io:put_chars(Text).
+    loop_main:emit(standard_io, Text).
 
 json_tier(T) ->
     #{tier := I, starter := Starter, get := Get, new := New,
