@@ -393,3 +393,40 @@ suite "itb nim binding":
         @(plain.toOpenArrayByte(0, plain.len - 1))
     receiver.free()
     sender.free()
+
+  test "hash registry enumeration":
+    let names = hashNames()
+    check names.len > 0
+    check "areion512" in names
+    check "aesitb128" in names
+    check "nope" notin names
+
+  test "runtime knobs":
+    # GOMAXPROCS: the setter returns the previous value and zero is
+    # the query form, so the original is restored afterwards.
+    let original = setGomaxprocs(0)
+    check original > 0
+    check setGomaxprocs(2) == original
+    check setGomaxprocs(0) == 2
+    discard setGomaxprocs(original)
+
+    # The pool-counter vector is sized from the library's own length
+    # query and every slot is filled.
+    let slots = poolStatsLen()
+    check slots >= 9
+    var counters = newSeq[int64](slots)
+    check poolStats(counters) == slots
+    check counters[0] > 0
+    var tooSmall = newSeq[int64](1)
+    expect ItbError:
+      discard poolStats(tooSmall)
+
+  test "heap profile":
+    let path = getTempDir() / "itb-nim-heap.pprof"
+    removeFile(path)
+    writeHeapProfile(path)
+    check fileExists(path)
+    check getFileSize(path) > 0
+    removeFile(path)
+    expect ItbError:
+      writeHeapProfile("/proc/itb-no-such-directory/heap.pprof")
