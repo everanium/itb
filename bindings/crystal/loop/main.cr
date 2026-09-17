@@ -47,7 +47,7 @@ module Loop
 
   # The concurrency mode this binding implements, as the summary
   # reports it (shared-handle / independent-handles / single).
-  CONCURRENCY_MODE = "single"
+  CONCURRENCY_MODE = "shared-handle"
 
   # Largest slice fed to a stream session per write; the drain after
   # every write uses the same bound.
@@ -96,8 +96,8 @@ module Loop
   end
 
   # The state the run shares: the Pipeline handles, the retained blobs,
-  # the stop request, the warmup barrier, and the baselines the summary
-  # reads.
+  # the lock that keeps iterations clear of handle mutation, the stop
+  # request, the warmup barrier, and the baselines the summary reads.
   class RunState
     property cfg : Config
     # Crystal-specific. A shape builds at most one of the two handles,
@@ -110,8 +110,15 @@ module Loop
     property stream_profile = ""
     property msg_profile = ""
 
+    # Handle mutation. Iterations hold the read side for their whole
+    # encrypt -> decrypt -> compare; rekey and blob reopen take the
+    # write side, so no cipher call is in flight while a handle's
+    # keying changes or the handle itself is swapped, and no encrypt
+    # is separated from its decrypt by either.
+    property pipe_lock = Sync::RWLock.new
+
     # The blob Init handed out, replaced by every rekey; the input of
-    # the next blob reopen.
+    # the next blob reopen. Guarded by pipe_lock.
     property stream_blob : Bytes = Bytes.empty
     property msg_blob : Bytes = Bytes.empty
 
@@ -119,18 +126,22 @@ module Loop
     property blob_cycles = 0_i64
     property workers = [] of Worker
 
-    # Warmup barrier: the worker arrives at warmup_done after iteration
-    # 0 and waits on release until main has taken the baselines. With
-    # one execution unit the two channels are the whole barrier; with
-    # several they would be counted rendezvous points.
+    # Warmup barrier: every worker arrives at warmup_done after
+    # iteration 0 and waits on release until main has taken the
+    # baselines. The two channels are counted rendezvous points: main
+    # receives one arrival per worker, then sends one release per
+    # worker.
     property warmup_done = Channel(Nil).new
     property release = Channel(Nil).new
     property done = Channel(Nil).new
 
     # Set by the duration deadline, by a signal, or by a failing
-    # worker; checked before every iteration.
-    property stop = false
+    # worker; checked by every worker before it starts an iteration.
+    property stop = Atomic(Bool).new(false)
 
+    # The last returning worker stamps finish_ns under done_mu so
+    # elapsed excludes the wake-up latency of the waiter.
+    property done_mu = Mutex.new
     property start_ns = 0_i64
     property finish_ns = 0_i64
 
@@ -162,8 +173,10 @@ module Loop
 
     # Marks the worker returned; it stamps the finish instant itself so
     # the poll interval of the waiter never enters the elapsed time.
+    # The stamps are ordered by the mutex, so the last worker to
+    # return leaves the last instant.
     def worker_done : Nil
-      @finish_ns = Loop.now_ns
+      @done_mu.synchronize { @finish_ns = Loop.now_ns }
       @done.send(nil)
     end
   end
@@ -174,22 +187,39 @@ module Loop
   # its newline leave in one write: a routine that emitted them
   # separately would let another line land between the parts.
   def self.log_line(text : String) : Nil
-    line = "[loop] " + text + "\n"
-    STDOUT.write(line.to_slice)
-    STDOUT.flush
+    emit(STDOUT, ("[loop] " + text + "\n").to_slice)
   end
 
   # The stderr counterpart, under the same one-write rule.
   def self.err_line(text : String) : Nil
-    line = "loop: " + text + "\n"
-    STDERR.write(line.to_slice)
-    STDERR.flush
+    emit(STDERR, ("loop: " + text + "\n").to_slice)
   end
 
   # Writes text to stderr verbatim, in one call (the usage block).
   def self.err_raw(text : String) : Nil
-    STDERR.write(text.to_slice)
-    STDERR.flush
+    emit(STDERR, text.to_slice)
+  end
+
+  # Writes *bytes* to *io* in one call and flushes. Every write of this
+  # utility goes through here.
+  #
+  # Crystal-specific. SIGPIPE keeps its default disposition (restored
+  # at the top of Loop.run), so a write from the main thread to a pipe
+  # whose reader is gone ends the process on the spot. The runtime,
+  # however, blocks every signal on the threads it starts for the
+  # execution context, and a fiber may be running on any of them: from
+  # such a thread the same write comes back as an error instead. The
+  # error is answered the way the signal would have been — SIGPIPE is
+  # sent to the process, where the main thread, which blocks nothing,
+  # takes it with the default action, and the exit is by signal, code
+  # 141, with nothing printed.
+  def self.emit(io : IO::FileDescriptor, bytes : Bytes) : Nil
+    io.write(bytes)
+    io.flush
+  rescue e : IO::Error
+    raise e unless e.os_error == Errno::EPIPE
+    LibC.kill(LibC.getpid, Signal::PIPE.value)
+    LibLoopExit._exit(141)
   end
 
   def self.on_off(b : Bool) : String
@@ -558,11 +588,13 @@ module Loop
       err_line("--goroutines must be in 1..#{MAX_WORKERS}, got #{f.goroutines}")
       return {-1, cfg}
     end
-    # Concurrency mode. This binding runs single, so the requested
-    # count is recorded and the effective one is clamped to 1 — see the
-    # note on Worker#run_body for the runtime property that dictates it.
+    # Concurrency mode. This binding runs shared-handle: every worker
+    # is a fiber on its own context thread and all of them call into
+    # the same handles, so the effective count is the requested one —
+    # see the note on Worker#run_body for the runtime property that
+    # allows it.
     cfg.workers_requested = f.goroutines
-    cfg.workers = 1
+    cfg.workers = f.goroutines
     shape = parse_shape(f.shape)
     if shape.nil?
       err_line("--shape must be stream | message | stream_one_shot | both, got \"#{f.shape}\"")
@@ -737,6 +769,15 @@ module Loop
   # ── Run ──────────────────────────────────────────────────────────
 
   def self.run(argv : Array(String)) : Int32
+    # Crystal-specific. This runtime ignores SIGPIPE and turns a write
+    # to a closed stdout into an exception instead, which would end
+    # the run with a stack trace and exit 1 rather than the way every
+    # other implementation ends it. Restoring the signal's default
+    # disposition before the first line is printed ends the process on
+    # the spot, which is what a fleet driver expects; Loop.emit covers
+    # the threads on which the runtime blocks the signal.
+    Signal::PIPE.reset
+
     rc, cfg = parse_flags(argv)
     return 0 if rc == 1
     return 2 if rc != 0
@@ -761,6 +802,15 @@ module Loop
     cfg.memlimit = ITB.set_memory_limit(-1_i64)
     ITB.set_gc_percent(cfg.gogc) if cfg.gogc > 0
     ITB.set_gomaxprocs(cfg.gomaxprocs) if cfg.gomaxprocs > 0
+
+    # Crystal-specific. The default execution context is parallel with
+    # a capacity of one; it is raised here to one thread per worker
+    # plus one for the main fiber. The capacity is a ceiling: the
+    # runtime starts a thread when runnable fibers are waiting, so the
+    # workers spread over their threads as they are spawned, and the
+    # deadline fiber is served at the yield every worker makes between
+    # iterations (see Worker#run_body).
+    Fiber::ExecutionContext.default.resize(cfg.workers + 1)
 
     log_line("start: duration=#{human_duration(cfg.duration_ns)} " \
              "iterations=#{cfg.iterations} goroutines=#{cfg.workers_requested} " \
@@ -835,15 +885,6 @@ module Loop
     Signal::INT.trap { signal_seen = true }
     Signal::TERM.trap { signal_seen = true }
 
-    # Crystal-specific. This runtime ignores SIGPIPE and turns a write
-    # to a closed stdout into an exception instead. Raised inside the
-    # worker fiber that exception ends the fiber alone, and the waiter
-    # below then has nothing left to wait for, so a consumer that stops
-    # reading leaves the process alive forever. Restoring the signal's
-    # default disposition ends the process on the spot, which is what
-    # every other implementation does and what a fleet driver expects.
-    Signal::PIPE.reset
-
     # Warmup barrier. The worker runs one iteration and waits; the
     # clock starts only once it has paid its first-call costs (pool
     # warm-up, lazy kernel dispatch, page faults on the payload
@@ -851,7 +892,7 @@ module Loop
     # process that has already run the whole cipher path once.
     warmup_start = now_ns
     r.workers.each { |w| spawn { w.run_body } }
-    r.warmup_done.receive
+    cfg.workers.times { r.warmup_done.receive }
     r.rss_warmup, r.rss_peak = read_rss
     pool_snapshot_take(r.pool_warmup.not_nil!)
     warmup_ns = now_ns - warmup_start
@@ -863,18 +904,20 @@ module Loop
     # enforces in duration mode.
     r.start_ns = now_ns
     r.finish_ns = r.start_ns
-    r.release.send(nil)
+    cfg.workers.times { r.release.send(nil) }
 
-    # Wait for the worker, polling so the deadline and a signal are
-    # both noticed promptly. The worker stamps the finish instant
-    # itself, so the poll interval never enters the elapsed time.
-    loop do
+    # Wait for the workers, polling so the deadline and a signal are
+    # both noticed promptly. The last worker to return stamps the
+    # finish instant itself, so the poll interval never enters the
+    # elapsed time.
+    returned = 0
+    while returned < cfg.workers
       select
       when r.done.receive
-        break
+        returned += 1
       when timeout(10.milliseconds)
-        r.stop = true if signal_seen
-        r.stop = true if cfg.iterations == 0 && now_ns - r.start_ns >= cfg.duration_ns
+        r.stop.set(true) if signal_seen
+        r.stop.set(true) if cfg.iterations == 0 && now_ns - r.start_ns >= cfg.duration_ns
       end
     end
     elapsed_ns = r.finish_ns - r.start_ns

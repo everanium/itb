@@ -17,6 +17,12 @@ module Loop
   # by design — Rekey targets only the two outer-layer master secrets.
   private def self.rekey_pipes(w : Worker, iter : Int64) : Bool
     r = w.run
+    r.pipe_lock.write { rekey_pipes_locked(w, iter) }
+  end
+
+  # The rotation itself, under the write lock.
+  private def self.rekey_pipes_locked(w : Worker, iter : Int64) : Bool
+    r = w.run
     perm = Bytes.empty
     wrap = Bytes.empty
 
@@ -69,6 +75,12 @@ module Loop
   # aborts the run.
   private def self.blob_cycle_pipes(w : Worker, iter : Int64) : Bool
     r = w.run
+    r.pipe_lock.write { blob_cycle_pipes_locked(w, iter) }
+  end
+
+  # The reopen itself, under the write lock.
+  private def self.blob_cycle_pipes_locked(w : Worker, iter : Int64) : Bool
+    r = w.run
     if r.has_stream
       begin
         # The fresh handle is constructed into a local first, so a
@@ -104,12 +116,9 @@ module Loop
   # iterations; the warmup iteration (iter 0) never triggers because
   # the worker loop calls this for iter >= 1 only. Rekey rewrites the
   # outer-layer keying of a live handle and a blob reopen replaces the
-  # handle outright. The bindings that run several execution units take
-  # a write lock around both so in-flight cipher calls drain first and
-  # no encrypt is separated from its decrypt; this one runs a single
-  # execution unit, which cannot be inside a cipher call while it is
-  # here, so there is nothing to exclude and no lock. Returns false
-  # after recording the worker error.
+  # handle outright, so both take the write lock: in-flight cipher
+  # calls drain first, and no encrypt is separated from its decrypt.
+  # Returns false after recording the worker error.
   def self.maintenance(w : Worker, iter : Int64) : Bool
     cfg = w.run.cfg
     if cfg.rekey_every > 0 && iter % cfg.rekey_every == 0

@@ -1,4 +1,5 @@
-# C ABI declarations for the libitb3 shared library (cmd/cshared).
+# C ABI declarations for the libitb3 shared library (cmd/cshared), and
+# the collector guard every call into it runs under.
 #
 # Every signature mirrors a prototype in dist/<os>-<arch>/libitb3.h;
 # C `size_t` / `uintptr_t` both map to `LibC::SizeT` (identical width
@@ -11,6 +12,33 @@
 # `dist/<os>-<arch>/libitb3.<ext>` -> OS default loader path) and bakes
 # the resolved directory into the binary as an RPATH, so the produced
 # executables run without LD_LIBRARY_PATH.
+#
+# The collector guard. The Boehm collector this runtime links stops the
+# world by sending every registered thread a signal whose handler runs
+# on whatever stack the thread is on, records the stack pointer it
+# finds there, and later scans from that pointer up to the stack bottom
+# the runtime registered for the thread. Inside a call into libitb3
+# that stack pointer is not on the thread's own stack: the Go runtime
+# runs an exported function on a goroutine stack, so the handler's
+# frames land in Go-owned memory and the scan walks a range that is
+# not a stack at all. With the default execution context holding a
+# single thread nothing collects while the one thread is inside the
+# library; the moment an application raises the context's capacity,
+# any collection started by one thread while another is inside the
+# library faults the process. A twelve-line Go library reproduces it
+# without any of this project's code.
+#
+# `GC_do_blocking` is the collector's own answer for a thread that
+# leaves managed code: it records the stack pointer on the thread's
+# own stack before the call, and a world stop started during the call
+# neither signals the thread nor waits for it — the stack is scanned
+# from the recorded pointer, and the thread rejoins when the call
+# returns. `ITB.blocking` wraps every raw call in the binding that way.
+# Nothing inside the guarded region may allocate on the managed heap:
+# the region holds the raw call and nothing else, every buffer sized
+# and allocated by the caller before entry. The guard costs under a
+# microsecond per entry, most of it the context save the collector
+# performs on the way in.
 
 module ITB
   # Go-side handle for Pipeline / stream-session / seed objects
@@ -85,4 +113,48 @@ lib LibItb3
   fun triple_stream_read = ITB_Triple_StreamRead(stream : LibC::SizeT, out : Void*, out_cap : LibC::SizeT,
                                                  out_len : LibC::SizeT*, finished : LibC::Int*) : LibC::Int
   fun triple_stream_free = ITB_Triple_StreamFree(stream : LibC::SizeT) : LibC::Int
+end
+
+{% unless flag?(:gc_none) %}
+  lib LibGC
+    alias BlockingFn = Void* -> Void*
+    fun do_blocking = GC_do_blocking(fn : BlockingFn, client_data : Void*) : Void*
+  end
+{% end %}
+
+module ITB
+  # :nodoc:
+  # The stack slot a guarded call runs through: the call to make and
+  # the value it returned. It lives in the caller's frame, which the
+  # collector scans from the pointer `GC_do_blocking` recorded, so the
+  # proc and everything it captured stay reachable for the whole
+  # region.
+  struct Blocking(T)
+    property fn : Proc(T)
+    property result : T
+
+    def initialize(@fn : Proc(T))
+      @result = T.zero
+    end
+  end
+
+  # :nodoc:
+  # Runs *fn* with the calling thread marked as blocked for the
+  # collector (`GC_do_blocking`) and returns its value. Every raw
+  # libitb3 call in the binding goes through here; *fn* must not
+  # allocate on the managed heap. Under `-Dgc_none` there is no
+  # collector to inform and the proc runs directly.
+  def self.blocking(fn : Proc(T)) : T forall T
+    {% if flag?(:gc_none) %}
+      fn.call
+    {% else %}
+      slot = Blocking(T).new(fn)
+      LibGC.do_blocking(->(data : Void*) : Void* {
+        s = data.as(Blocking(T)*)
+        s.value.result = s.value.fn.call
+        Pointer(Void).null
+      }, pointerof(slot).as(Void*))
+      slot.result
+    {% end %}
+  end
 end

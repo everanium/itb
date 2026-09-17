@@ -33,14 +33,14 @@ module ITB
 
   # Returns the libitb3 library version string.
   def self.version : String
-    read_cstr { |out_p, cap, len_p| LibItb3.version(out_p, cap, len_p) }
+    read_cstr { |out_p, cap, len_p| ITB.blocking(->{ LibItb3.version(out_p, cap, len_p) }) }
   end
 
   # Returns the sorted names of every registered profile — the shipped
   # catalogue plus prior `ITB.register` calls (`ITB_Triple_Profiles`).
   def self.profiles : Array(String)
     json = retry_once(JSON_CAP) do |buf, len_p|
-      LibItb3.triple_profiles(buf.to_unsafe.as(Void*), LibC::SizeT.new(buf.size), len_p)
+      ITB.blocking(->{ LibItb3.triple_profiles(buf.to_unsafe.as(Void*), LibC::SizeT.new(buf.size), len_p) })
     end
     Profile.strings_from_json(String.new(json))
   end
@@ -50,8 +50,8 @@ module ITB
   # probe.
   def self.inspect(blob : Bytes) : Profile
     json = retry_once(JSON_CAP) do |buf, len_p|
-      LibItb3.triple_inspect(blob.to_unsafe.as(Void*), LibC::SizeT.new(blob.size),
-        buf.to_unsafe.as(Void*), LibC::SizeT.new(buf.size), len_p)
+      ITB.blocking(->{ LibItb3.triple_inspect(blob.to_unsafe.as(Void*), LibC::SizeT.new(blob.size),
+        buf.to_unsafe.as(Void*), LibC::SizeT.new(buf.size), len_p) })
     end
     Profile.from_json(String.new(json))
   end
@@ -61,7 +61,7 @@ module ITB
   # `Status::UnknownProfile`.
   def self.lookup(name : String) : Profile
     json = retry_once(JSON_CAP) do |buf, len_p|
-      LibItb3.triple_lookup(name, buf.to_unsafe.as(Void*), LibC::SizeT.new(buf.size), len_p)
+      ITB.blocking(->{ LibItb3.triple_lookup(name, buf.to_unsafe.as(Void*), LibC::SizeT.new(buf.size), len_p) })
     end
     Profile.from_json(String.new(json))
   end
@@ -69,7 +69,7 @@ module ITB
   # Sets the Go runtime's soft heap limit in bytes and returns the
   # previous limit. A negative value queries without changing.
   def self.set_memory_limit(bytes : Int64) : Int64
-    LibItb3.set_memory_limit(bytes)
+    ITB.blocking(->{ LibItb3.set_memory_limit(bytes) })
   end
 
   # :ditto:
@@ -80,13 +80,13 @@ module ITB
   # Sets the Go GC trigger percentage and returns the previous value.
   # A negative value queries without changing.
   def self.set_gc_percent(pct : Int32) : Int32
-    LibItb3.set_gc_percent(pct)
+    ITB.blocking(->{ LibItb3.set_gc_percent(pct) })
   end
 
   # Sets the Go runtime's GOMAXPROCS and returns the previous value.
   # Zero or a negative value queries without changing.
   def self.set_gomaxprocs(n : Int32) : Int32
-    LibItb3.set_gomaxprocs(n)
+    ITB.blocking(->{ LibItb3.set_gomaxprocs(n) })
   end
 
   # Writes the Go runtime's heap profile (pprof format) to *path*
@@ -95,13 +95,13 @@ module ITB
   # empty, or a file-system failure, raises `ITB::Error` carrying
   # `Status::BadInput`.
   def self.write_heap_profile(path : String) : Nil
-    check(LibItb3.write_heap_profile(path))
+    check(ITB.blocking(->{ LibItb3.write_heap_profile(path) }))
   end
 
   # Number of `Int64` slots `pool_stats` fills. Size the destination
   # from this call, never from a constant.
   def self.pool_stats_len : Int32
-    n = LibItb3.pool_stats_len
+    n = ITB.blocking(->{ LibItb3.pool_stats_len })
     n > 0 ? n : 0
   end
 
@@ -116,7 +116,7 @@ module ITB
   # than `pool_stats_len` raises with `Status::BufferTooSmall`.
   def self.pool_stats(dst : Slice(Int64)) : Int32
     written = LibC::SizeT.zero
-    check(LibItb3.pool_stats(dst.to_unsafe, LibC::SizeT.new(dst.size), pointerof(written)))
+    check(ITB.blocking(->{ LibItb3.pool_stats(dst.to_unsafe, LibC::SizeT.new(dst.size), pointerof(written)) }))
     written.to_i32
   end
 
@@ -125,7 +125,7 @@ module ITB
   # names `Pipeline.new` accepts for the `innerHash` opts key.
   def self.hash_names : Array(String)
     json = retry_once(JSON_CAP) do |buf, len_p|
-      LibItb3.triple_hash_names(buf.to_unsafe.as(Void*), LibC::SizeT.new(buf.size), len_p)
+      ITB.blocking(->{ LibItb3.triple_hash_names(buf.to_unsafe.as(Void*), LibC::SizeT.new(buf.size), len_p) })
     end
     Profile.strings_from_json(String.new(json))
   end
@@ -135,7 +135,7 @@ module ITB
   # field rule is validated by Go; a duplicate name fails with
   # `Status::ProfileExists`.
   def self.register(name : String, profile : Profile) : Nil
-    check(LibItb3.triple_register(name, profile.to_json))
+    check(ITB.blocking(->{ LibItb3.triple_register(name, profile.to_json) }))
   end
 
   # Two-phase read over the `(out, cap, *out_len)` C-string contract:
