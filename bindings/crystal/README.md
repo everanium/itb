@@ -250,6 +250,27 @@ stdout, rotates outer masters, and inspects stored blobs. See
 [`cmd/itb3/README.md`](https://github.com/everanium/itb/blob/main/cmd/itb3/README.md) for the full
 subcommand reference.
 
+## loop utility
+
+A long-run stress harness under `bindings/crystal/loop/` holds one
+Pipeline handle for minutes, cycles encrypt → decrypt → compare
+round-trips through it, rotates the outer masters and reopens the
+handle from its session blob on a schedule, and reports whether the
+process survived with every byte intact. It is the binding-side
+counterpart of the Go harness under `tools/loop`: same flags, same
+round structure, same summary in both renderings.
+
+```bash
+cd bindings/crystal && ./build.sh
+./run_loop.sh --duration 2m --shape both
+```
+
+`./loop/loop -h` lists every flag. Concurrency mode: **single** — the
+default execution context is resizable to several OS threads, but the
+collector this runtime links suspends them with a signal whose handler
+runs on the current stack, which inside a libitb3 call belongs to the
+library's own runtime, so `--goroutines` above 1 is clamped to 1.
+
 ## eitb utility
 
 ```bash

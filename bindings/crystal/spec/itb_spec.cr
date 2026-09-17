@@ -333,4 +333,41 @@ describe ITB do
       pipe.max_workers(2)
     end
   end
+  it "enumerates the shipped hash registry" do
+    names = ITB.hash_names
+    names.should_not be_empty
+    names.should contain("areion512")
+    names.should contain("aesitb128")
+    names.should_not contain("nope")
+  end
+
+  it "reports and restores GOMAXPROCS" do
+    original = ITB.set_gomaxprocs(0)
+    original.should be > 0
+    ITB.set_gomaxprocs(2).should eq original
+    ITB.set_gomaxprocs(0).should eq 2
+    ITB.set_gomaxprocs(original)
+  end
+
+  it "fills the pool-counter vector sized from its own length query" do
+    slots = ITB.pool_stats_len
+    slots.should be >= 9
+    counters = Slice(Int64).new(slots)
+    ITB.pool_stats(counters).should eq slots
+    counters[0].should be > 0
+    expect_status([ITB::Status::BufferTooSmall]) do
+      ITB.pool_stats(Slice(Int64).new(1))
+    end
+  end
+
+  it "writes a heap profile and reports a bad path" do
+    path = File.tempname("itb-crystal-heap", ".pprof")
+    ITB.write_heap_profile(path)
+    File.exists?(path).should be_true
+    File.size(path).should be > 0
+    File.delete(path)
+    expect_status([ITB::Status::BadInput]) do
+      ITB.write_heap_profile("/proc/itb-no-such-directory/heap.pprof")
+    end
+  end
 end

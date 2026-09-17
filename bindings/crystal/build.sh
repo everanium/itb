@@ -43,6 +43,7 @@ CLEAN_TARGETS=(
     .crystal              # compiler cache
     lib                   # installed shard tree
     .shards               # shard metadata tree
+    loop/loop             # loop stress harness binary
 )
 
 clean_artefacts() {
@@ -89,5 +90,8 @@ fi
 echo "==> compiling the eitb CLI (crystal build)"
 mkdir -p bin
 crystal build -o bin/eitb eitb/itb_eitb.cr
+
+echo "==> compiling the loop stress harness (crystal build)"
+crystal build -o loop/loop loop/main.cr
 
 echo "==> ready: ./run_tests.sh"

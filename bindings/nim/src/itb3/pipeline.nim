@@ -308,3 +308,13 @@ proc profiles*(): seq[string] =
       ITB_Triple_Profiles(buf, cap, n))
   for e in parseJson(jsonOf(raw)):
     result.add(e.getStr)
+
+proc hashNames*(): seq[string] =
+  ## Returns the shipped hash-primitive registry in canonical order.
+  ## The registry is the authority on which names ``initPipeline``
+  ## accepts for the ``innerHash`` opts key.
+  let raw = retryOnce(BlobCap,
+    proc (buf: pointer, cap: csize_t, n: ptr csize_t): cint =
+      ITB_Triple_HashNames(buf, cap, n))
+  for e in parseJson(jsonOf(raw)):
+    result.add(e.getStr)

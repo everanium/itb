@@ -27,6 +27,11 @@ lib LibItb3
   # ── Go runtime knobs ─────────────────────────────────────────────
   fun set_memory_limit = ITB_SetMemoryLimit(limit : Int64) : Int64
   fun set_gc_percent = ITB_SetGCPercent(pct : LibC::Int) : LibC::Int
+  fun set_gomaxprocs = ITB_SetGOMAXPROCS(n : LibC::Int) : LibC::Int
+  fun write_heap_profile = ITB_WriteHeapProfile(path : LibC::Char*) : LibC::Int
+  fun pool_stats_len = ITB_PoolStatsLen : LibC::Int
+  fun pool_stats = ITB_PoolStats(out : Int64*, cap_elems : LibC::SizeT,
+                                 out_len : LibC::SizeT*) : LibC::Int
 
   # ── Triple Pipeline lifecycle ────────────────────────────────────
   fun triple_init = ITB_Triple_Init(profile : LibC::Char*, opts : LibC::Char*,
@@ -60,6 +65,7 @@ lib LibItb3
   fun triple_lookup = ITB_Triple_Lookup(name : LibC::Char*,
                                         json_out : Void*, json_cap : LibC::SizeT, json_len : LibC::SizeT*) : LibC::Int
   fun triple_profiles = ITB_Triple_Profiles(json_out : Void*, json_cap : LibC::SizeT, json_len : LibC::SizeT*) : LibC::Int
+  fun triple_hash_names = ITB_Triple_HashNames(json_out : Void*, json_cap : LibC::SizeT, json_len : LibC::SizeT*) : LibC::Int
 
   # ── buffer-in / buffer-out cipher entries ────────────────────────
   fun triple_encrypt_message = ITB_Triple_EncryptMessage(handle : LibC::SizeT, src : Void*, src_len : LibC::SizeT,
