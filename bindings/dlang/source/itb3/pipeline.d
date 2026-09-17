@@ -373,3 +373,18 @@ string[] profiles() @trusted
         names ~= v.str;
     return names;
 }
+
+/// Returns the shipped hash-primitive registry in canonical order.
+/// The registry is the authority on which names [Pipeline.create]
+/// accepts for the `innerHash` opts key.
+string[] hashNames() @trusted
+{
+    import std.json : parseJSON;
+
+    auto json = retryOnce(blobCap, (buf, len)
+        => ITB_Triple_HashNames(buf.length ? &buf[0] : null, buf.length, len));
+    string[] names;
+    foreach (v; parseJSON(cast(string) json).array)
+        names ~= v.str;
+    return names;
+}
