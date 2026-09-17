@@ -312,7 +312,7 @@ fn usage() void {
 /// summary prints with the verdict the completed iterations earned.
 var signal_seen = std.atomic.Value(bool).init(false);
 
-extern "c" fn signal(sig: c_int, handler: *const fn (c_int) callconv(.c) void) callconv(.c) ?*anyopaque;
+extern "c" fn signal(sig: c_int, handler: ?*const fn (c_int) callconv(.c) void) callconv(.c) ?*anyopaque;
 
 fn onSignal(_: c_int) callconv(.c) void {
     signal_seen.store(true, .monotonic);
@@ -950,5 +950,14 @@ fn run(gpa: std.mem.Allocator, argv: []const [*:0]const u8) u8 {
 /// process hands over: every worker thread allocates from it
 /// concurrently, and libc's is thread-safe without a wrapper.
 pub fn main(init: std.process.Init) u8 {
+    // Zig-specific. The standard library's threaded I/O layer installs
+    // an empty handler for SIGPIPE while it starts, so a write to a
+    // closed stdout returns an error the writer drops and the process
+    // runs on, exiting 0 with its verdict undelivered. Restoring the
+    // signal's default disposition (a null handler) before the first
+    // line is printed ends the process on the first such write, which
+    // is what every other implementation does and what a fleet driver
+    // expects.
+    _ = signal(@intFromEnum(std.c.SIG.PIPE), null);
     return run(std.heap.c_allocator, init.minimal.args.vector);
 }

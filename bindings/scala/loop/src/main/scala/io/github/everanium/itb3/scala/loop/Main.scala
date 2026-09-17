@@ -980,8 +980,22 @@ object Main:
     r.pipes.msg.foreach(_.close())
     exit
 
+  /** Restores the default disposition of SIGPIPE.
+    *
+    * Scala-specific. The runtime ignores the signal and the standard
+    * streams swallow the write error that replaces it, so a consumer
+    * that stops reading leaves the process printing into nothing and
+    * exiting 0 with its verdict undelivered. With the default
+    * disposition back the first such write ends the process, which is
+    * what every other implementation does and what a fleet driver
+    * expects.
+    */
+  def restoreSigpipe(): Unit =
+    sun.misc.Signal.handle(new sun.misc.Signal("PIPE"), sun.misc.SignalHandler.SIG_DFL)
+
   /** Entry point. */
   def main(args: Array[String]): Unit =
+    restoreSigpipe()
     val code = run(args)
     System.out.flush()
     System.err.flush()

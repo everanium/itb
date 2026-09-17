@@ -523,6 +523,10 @@ function Invoke-LoopRun {
     param([string[]]$Argv)
 
     New-LoopNativeShim
+    # The host ignores SIGPIPE; the shim restores the default disposition
+    # before the first line is printed, so a consumer that stops reading
+    # ends the run the way it ends the reference (see the shim).
+    [LoopNative]::RestoreSigpipe()
     Import-Module $script:LoopModulePath -Force
 
     $parsed = Read-LoopConfig $Argv

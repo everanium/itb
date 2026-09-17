@@ -462,6 +462,9 @@ proc cSignal(sig: cint, handler: pointer): pointer
   ## closed stdout raises instead of ending the process. Restoring the
   ## signal's default disposition ends it on the spot, which is what
   ## every other implementation does and what a fleet driver expects.
+  ## The restore is the first thing `run` does, ahead of the first
+  ## line printed: a write that fails before it would end the run with
+  ## a stack trace instead of the signal.
 
 proc installSignals() =
   ## Graceful stop. SIGINT / SIGTERM set a flag the main thread polls
@@ -476,7 +479,6 @@ proc installSignals() =
   sa.sa_flags = 0
   discard sigaction(SIGINT, sa)
   discard sigaction(SIGTERM, sa)
-  cSignal(SIGPIPE, cast[pointer](0))  # SIG_DFL
 
 # ─── Pipelines ─────────────────────────────────────────────────────
 
@@ -553,6 +555,7 @@ var runState: RunState
   ## shared-global access the compiler rejects.
 
 proc run(argv: seq[string]): int =
+  cSignal(SIGPIPE, cast[pointer](0))  # SIG_DFL; see cSignal
   let r = addr runState
   let cfg = addr r.cfg
   let rc = parseFlags(argv, cfg[])
