@@ -1026,8 +1026,10 @@ fn log_pipeline_initialised(profile: String, blob: BitArray) -> Nil {
 // ------------------------------------------------------------------
 
 /// Entry point: the emulator calls this with the command line after
-/// `-extra`.
+/// `-extra`. The closed-pipe filter goes in before the first write, so
+/// a consumer that stops reading ends the run silently with 141.
 pub fn main() -> Nil {
+  loop_ffi.install_closed_pipe_filter()
   loop_ffi.halt(run(loop_ffi.argv()))
 }
 

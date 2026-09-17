@@ -39,7 +39,8 @@
 
 -behaviour(gen_event).
 
--export([start/0, log/2, on_off/1, policy_label/1, status_text/2]).
+-export([start/0, log/2, emit/2, closed_pipe_filter/2, on_off/1, policy_label/1,
+         status_text/2]).
 
 %% Graceful stop. The signal handler below is installed into the
 %% emulator's signal server in place of the default one, so a
@@ -62,10 +63,53 @@
 %% would let another worker's line land between them.
 -spec log(string(), [term()]) -> ok.
 log(Format, Args) ->
-    io:put_chars(["[loop] ", io_lib:format(Format, Args), $\n]).
+    emit(standard_io, ["[loop] ", io_lib:format(Format, Args), $\n]).
 
 err(Format, Args) ->
-    io:put_chars(standard_error, ["loop: ", io_lib:format(Format, Args), $\n]).
+    emit(standard_error, ["loop: ", io_lib:format(Format, Args), $\n]).
+
+%% Writes Data to Device as one request, and ends the process when the
+%% device is gone. Every write of this utility goes through here.
+%%
+%% Erlang-specific. The emulator ignores SIGPIPE, so a consumer that
+%% stops reading does not end the run the way it ends the reference:
+%% the io server behind the closed descriptor exits, the write raises,
+%% and the node would halt on its own terms with exit 1. The failed
+%% write is answered with the exit code the signal would have produced,
+%% 141, with nothing further printed and nothing flushed.
+-spec emit(io:device(), iodata()) -> ok.
+emit(Device, Data) ->
+    try
+        io:put_chars(Device, Data)
+    catch
+        _:_ -> erlang:halt(141, [{flush, false}])
+    end.
+
+%% Keeps the emulator's own report about the closed pipe off stderr.
+%%
+%% Erlang-specific. When stdout is a closed pipe the emulator's stdout
+%% writer dies of epipe, and the terminal driver files an error report
+%% about it before it stops; only then does the io server go away and
+%% the failed write above end the process. The report therefore leaves
+%% the driver ahead of the halt, and whether the default handler gets
+%% it onto stderr first is a race the utility cannot win from the
+%% failing write. The primary filter installed at start runs inside
+%% the driver before the report reaches any handler and drops that one
+%% report — the stdout writer, reason epipe — and no other, so every
+%% other event the emulator files still prints.
+install_closed_pipe_filter() ->
+    ok = logger:add_primary_filter(loop_closed_pipe,
+                                   {fun ?MODULE:closed_pipe_filter/2, none}).
+
+-spec closed_pipe_filter(logger:log_event(), term()) -> stop | ignore.
+closed_pipe_filter(#{msg := {Format, [epipe]},
+                     meta := #{mfa := {user_drv, _, _}}}, _) ->
+    case string:prefix(Format, "Writer crashed") of
+        nomatch -> ignore;
+        _ -> stop
+    end;
+closed_pipe_filter(_Event, _) ->
+    ignore.
 
 -spec on_off(boolean()) -> string().
 on_off(true) -> "on";
@@ -167,7 +211,7 @@ usage() ->
         ["Usage of loop:\n"
          | [flag_usage(Name, Label, Kind, Help, maps:get(Name, D))
             || {Name, Label, Kind, Help} <- flag_table()]],
-    io:put_chars(standard_error, Lines).
+    emit(standard_error, Lines).
 
 flag_usage(Name, Label, Kind, Help, Default) ->
     Head = case Label of
@@ -670,6 +714,7 @@ code_change(_Old, Flags, _Extra) -> {ok, Flags}.
 
 -spec start() -> no_return().
 start() ->
+    install_closed_pipe_filter(),
     erlang:halt(run(init:get_plain_arguments()), [{flush, true}]).
 
 run(Args) ->

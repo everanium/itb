@@ -155,7 +155,8 @@
 ;;; ------------------------------------------------------------------
 
 (defun json (cfg f)
-  (io:put_chars
+  (loop-main:emit
+   'standard_io
    (list
     "{\"duration_seconds\":" (f3 (/ (maps:get 'elapsed f) 1.0e9))
     ",\"iterations\":" (i (maps:get 'total-iters f))

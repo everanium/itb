@@ -126,3 +126,9 @@ pub fn argv() -> List(String)
 /// Installs the termination-signal handler that sets the stop slot.
 @external(erlang, "loop_native_ffi", "install_signal_handler")
 pub fn install_signal_handler(flags: Flags) -> Nil
+
+/// Installs the logger filter that keeps the emulator's own report
+/// about a closed stdout pipe off stderr, so the closed-consumer exit
+/// prints nothing.
+@external(erlang, "loop_native_ffi", "install_closed_pipe_filter")
+pub fn install_closed_pipe_filter() -> Nil

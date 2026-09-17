@@ -39,7 +39,8 @@
 
 (defmodule loop-main
   (behaviour gen_event)
-  (export (start 0) (log 2) (on-off 1) (policy-label 1) (status-text 2))
+  (export (start 0) (log 2) (emit 2) (closed-pipe-filter 2) (on-off 1)
+          (policy-label 1) (status-text 2))
   ;; Graceful stop. The signal handler below is installed into the
   ;; emulator's signal server in place of the default one, so a
   ;; termination signal sets the run's stop request instead of halting
@@ -66,10 +67,52 @@
 ;; routine that emitted the text and the newline as two requests would
 ;; let another worker's line land between them.
 (defun log (format args)
-  (io:put_chars (list "[loop] " (io_lib:format format args) "\n")))
+  (emit 'standard_io (list "[loop] " (io_lib:format format args) "\n")))
 
 (defun err (format args)
-  (io:put_chars 'standard_error (list "loop: " (io_lib:format format args) "\n")))
+  (emit 'standard_error (list "loop: " (io_lib:format format args) "\n")))
+
+;; Writes data to device as one request, and ends the process when the
+;; device is gone. Every write of this utility goes through here.
+;;
+;; LFE-specific. The emulator ignores SIGPIPE, so a consumer that stops
+;; reading does not end the run the way it ends the reference: the io
+;; server behind the closed descriptor exits, the write raises, and the
+;; node would halt on its own terms with exit 1. The failed write is
+;; answered with the exit code the signal would have produced, 141,
+;; with nothing further printed and nothing flushed.
+(defun emit (device data)
+  (try
+    (io:put_chars device data)
+    (catch
+      ((tuple _ _ _) (erlang:halt 141 (list #(flush false)))))))
+
+;; Keeps the emulator's own report about the closed pipe off stderr.
+;;
+;; LFE-specific. When stdout is a closed pipe the emulator's stdout
+;; writer dies of epipe, and the terminal driver files an error report
+;; about it before it stops; only then does the io server go away and
+;; the failed write above end the process. The report therefore leaves
+;; the driver ahead of the halt, and whether the default handler gets
+;; it onto stderr first is a race the utility cannot win from the
+;; failing write. The primary filter installed at start runs inside
+;; the driver before the report reaches any handler and drops that one
+;; report — the stdout writer, reason epipe — and no other, so every
+;; other event the emulator files still prints.
+(defun install-closed-pipe-filter ()
+  (let (('ok (logger:add_primary_filter
+               'loop_closed_pipe
+               (tuple (fun loop-main closed-pipe-filter 2) 'none))))
+    'ok))
+
+(defun closed-pipe-filter
+  (((map 'msg (tuple format (list 'epipe))
+         'meta (map 'mfa (tuple 'user_drv _ _)))
+    _)
+   (case (string:prefix format "Writer crashed")
+     ('nomatch 'ignore)
+     (_ 'stop)))
+  ((_event _) 'ignore))
 
 (defun on-off (b) (if b "on" "off"))
 
@@ -154,7 +197,7 @@
 
 (defun usage ()
   (let ((d (defaults)))
-    (io:put_chars
+    (emit
      'standard_error
      (cons "Usage of loop:\n"
            (lists:map (lambda (e)
@@ -594,6 +637,7 @@
 ;;; ------------------------------------------------------------------
 
 (defun start ()
+  (install-closed-pipe-filter)
   (erlang:halt (run (init:get_plain_arguments)) (list #(flush true))))
 
 (defun run (args)

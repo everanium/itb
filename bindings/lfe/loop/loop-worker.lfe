@@ -259,7 +259,7 @@
   (if (=:= plain got)
     'ok
     (let ((off (binary:longest_common_prefix (list plain got))))
-      (io:put_chars
+      (loop-main:emit
        'standard_error
        (io_lib:format
         (++ "loop: DATA MISMATCH g~B iter ~B shape=~s: want ~B bytes, got ~B bytes, "

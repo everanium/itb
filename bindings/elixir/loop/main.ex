@@ -64,9 +64,61 @@ defmodule Loop.Main do
   would let another worker's line land between them.
   """
   @spec log(iodata()) :: :ok
-  def log(text), do: IO.write(["[loop] ", text, "\n"])
+  def log(text), do: emit(:stdio, ["[loop] ", text, "\n"])
 
-  defp err(text), do: IO.write(:stderr, ["loop: ", text, "\n"])
+  defp err(text), do: emit(:stderr, ["loop: ", text, "\n"])
+
+  @doc """
+  Writes `data` to `device` as one request, and ends the process when
+  the device is gone. Every write of this utility goes through here.
+
+  Elixir-specific. The emulator ignores SIGPIPE, so a consumer that
+  stops reading does not end the run the way it ends the reference:
+  the io server behind the closed descriptor exits, the write raises,
+  and the node would halt on its own terms with exit 1. The failed
+  write is answered with the exit code the signal would have produced,
+  141, with nothing further printed and nothing flushed.
+  """
+  @spec emit(atom() | pid(), iodata()) :: :ok
+  def emit(device, data) do
+    IO.write(device, data)
+  catch
+    _kind, _reason -> :erlang.halt(141, flush: false)
+  end
+
+  # Keeps the emulator's own report about the closed pipe off stderr.
+  #
+  # Elixir-specific. When stdout is a closed pipe the emulator's stdout
+  # writer dies of epipe, and the terminal driver files an error report
+  # about it before it stops; only then does the io server go away and
+  # the failed write above end the process. The report therefore leaves
+  # the driver ahead of the halt, and whether the default handler gets
+  # it onto stderr first is a race the utility cannot win from the
+  # failing write. The primary filter installed at start runs inside
+  # the driver before the report reaches any handler and drops that one
+  # report — the stdout writer, reason epipe — and no other, so every
+  # other event the emulator files still prints.
+  defp install_closed_pipe_filter do
+    :ok =
+      :logger.add_primary_filter(
+        :loop_closed_pipe,
+        {&__MODULE__.closed_pipe_filter/2, nil}
+      )
+  end
+
+  @doc false
+  @spec closed_pipe_filter(:logger.log_event(), term()) :: :stop | :ignore
+  def closed_pipe_filter(
+        %{msg: {format, [:epipe]}, meta: %{mfa: {:user_drv, _, _}}},
+        _
+      ) do
+    case :string.prefix(format, "Writer crashed") do
+      :nomatch -> :ignore
+      _ -> :stop
+    end
+  end
+
+  def closed_pipe_filter(_event, _), do: :ignore
 
   @spec on_off(boolean()) :: String.t()
   def on_off(true), do: "on"
@@ -179,7 +231,7 @@ defmodule Loop.Main do
   }
 
   defp usage do
-    IO.write(:stderr, [
+    emit(:stderr, [
       "Usage of loop:\n"
       | Enum.map(@flags, fn {name, label, kind, help} ->
           flag_usage(name, label, kind, help, Map.fetch!(@defaults, name))
@@ -739,7 +791,10 @@ defmodule Loop.Main do
   # ------------------------------------------------------------------
 
   @spec start() :: no_return()
-  def start, do: :erlang.halt(run(System.argv()), flush: true)
+  def start do
+    install_closed_pipe_filter()
+    :erlang.halt(run(System.argv()), flush: true)
+  end
 
   defp run(args) do
     case parse_argv(args) do
