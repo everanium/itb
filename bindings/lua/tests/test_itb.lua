@@ -358,6 +358,78 @@ run("hex codec", function()
     assert(not pcall(itb.fromhex, "012"))
 end)
 
+run("hash registry enumeration", function()
+    local got = itb.hash_names()
+    assert(#got > 0, "empty hash registry")
+    local set = {}
+    for _, name in ipairs(got) do
+        assert(type(name) == "string" and #name > 0)
+        set[name] = true
+    end
+    for _, want in ipairs({ "areion512", "blake3", "aesitb128" }) do
+        assert(set[want], "missing hash primitive " .. want)
+    end
+    -- The enumeration is what a caller validates a name against, so a
+    -- name that is not in it must be one libitb3 rejects.
+    assert(not set["nosuchhash"])
+    assert_status({ itb.status.BAD_HASH, itb.status.BAD_INPUT,
+        itb.status.INTERNAL }, function()
+        itb.create("singlemsg-triple-mac-v1",
+            itb.opts({ inner_hash = "nosuchhash" }))
+    end)
+end)
+
+run("gomaxprocs knob", function()
+    -- n <= 0 queries without changing; a positive n sets and reports
+    -- the previous value, so the pair round-trips.
+    local before = itb.set_gomaxprocs(0)
+    assert(type(before) == "number" and before > 0)
+    local prev = itb.set_gomaxprocs(2)
+    assert(prev == before, "set did not report the previous value")
+    assert(itb.set_gomaxprocs(0) == 2, "set did not take effect")
+    itb.set_gomaxprocs(before)
+    assert(itb.set_gomaxprocs(0) == before, "restore failed")
+end)
+
+run("heap profile", function()
+    local path = os.tmpname()
+    itb.write_heap_profile(path)
+    local f = assert(io.open(path, "rb"))
+    local body = f:read("a")
+    f:close()
+    os.remove(path)
+    assert(#body > 0, "empty heap profile")
+    -- pprof output is a gzip stream.
+    assert(body:byte(1) == 0x1F and body:byte(2) == 0x8B, "not a pprof profile")
+    assert_status({ itb.status.BAD_INPUT }, function()
+        itb.write_heap_profile("/nonexistent-directory-for-itb-tests/heap.prof")
+    end)
+end)
+
+run("pool counters", function()
+    local want = itb.pool_stats_len()
+    assert(type(want) == "number" and want > 0)
+    local first = itb.pool_stats()
+    assert(#first == want, "slot count does not match the length query")
+    -- Slot 0 carries the hash-array tier count, and the vector holds
+    -- five slots per tier plus the eight slots of the two byte pools.
+    local tiers = first[1]
+    assert(tiers > 0 and 1 + 5 * tiers + 8 == want, "slot layout mismatch")
+    -- The counters are monotonic totals since library load, so work
+    -- done between two snapshots can only raise them.
+    local pipe <close> = itb.create("singlemsg-triple-mac-v1")
+    pipe:decrypt_message(pipe:encrypt_message(payload(64 * 1024, 3)))
+    local second = itb.pool_stats()
+    local rose = false
+    for i = 1, want do
+        assert(second[i] >= first[i], "counter went backwards at slot " .. i)
+        if second[i] > first[i] then
+            rose = true
+        end
+    end
+    assert(rose, "no counter moved across a round trip")
+end)
+
 -- ---------------------------------------------------------------------
 
 if failures > 0 then

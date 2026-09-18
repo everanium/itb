@@ -466,3 +466,68 @@ test_that("stream_read_into rejects an unusable scratch buffer", {
   stream_free(enc)
   pipeline_free(pipe)
 })
+
+test_that("hash_names enumerates the shipped hash registry", {
+  got <- hash_names()
+  expect_type(got, "character")
+  expect_gt(length(got), 0)
+  for (want in c("areion512", "blake3", "aesitb128")) {
+    expect_true(want %in% got, label = sprintf("missing hash primitive %s", want))
+  }
+  # The enumeration is what a caller validates a name against, so a
+  # name outside it must be one libitb3 rejects.
+  expect_false("nosuchhash" %in% got)
+  expect_itb_status(
+    pipeline_create("singlemsg-triple-mac-v1",
+      itb_opts(inner_hash = "nosuchhash")),
+    c(itb_status$BAD_HASH, itb_status$BAD_INPUT, itb_status$INTERNAL)
+  )
+})
+
+test_that("set_gomaxprocs sets and queries", {
+  before <- set_gomaxprocs(0L)
+  expect_type(before, "integer")
+  expect_gt(before, 0L)
+  expect_identical(set_gomaxprocs(2L), before)
+  expect_identical(set_gomaxprocs(0L), 2L)
+  set_gomaxprocs(before)
+  expect_identical(set_gomaxprocs(0L), before)
+})
+
+test_that("write_heap_profile writes a pprof profile", {
+  path <- tempfile(fileext = ".prof")
+  on.exit(unlink(path), add = TRUE)
+  write_heap_profile(path)
+  expect_true(file.exists(path))
+  expect_gt(file.size(path), 0)
+  # pprof output is a gzip stream.
+  magic <- readBin(path, "raw", 2L)
+  expect_identical(magic, as.raw(c(0x1f, 0x8b)))
+  expect_itb_status(
+    write_heap_profile("/nonexistent-directory-for-itb-tests/heap.prof"),
+    itb_status$BAD_INPUT
+  )
+})
+
+test_that("pool_stats reports the library's pool counters", {
+  want <- pool_stats_len()
+  expect_type(want, "integer")
+  expect_gt(want, 0L)
+  first <- pool_stats()
+  expect_length(first, want)
+  # Slot 1 carries the hash-array tier count, and the vector holds five
+  # slots per tier plus the eight slots of the two byte pools.
+  tiers <- first[1]
+  expect_gt(tiers, 0)
+  expect_identical(1 + 5 * tiers + 8, as.numeric(want))
+  # The counters are monotonic totals since library load, so work done
+  # between two snapshots can only raise them.
+  pipe <- pipeline_create("singlemsg-triple-mac-v1")
+  on.exit(pipeline_free(pipe), add = TRUE)
+  plain <- payload(64 * 1024, 3)
+  expect_identical(
+    pipeline_decrypt_message(pipe, pipeline_encrypt_message(pipe, plain)), plain)
+  second <- pool_stats()
+  expect_true(all(second >= first))
+  expect_true(any(second > first))
+})

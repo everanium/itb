@@ -18,6 +18,11 @@
  *   C_r_register(chr, chr)             -> NULL
  *   C_r_lookup(chr)                    -> character(1) profile-record JSON
  *   C_r_now()                          -> numeric(1)  monotonic seconds
+ *   C_r_set_gomaxprocs(int)            -> integer(1)  previous value
+ *   C_r_write_heap_profile(chr)        -> NULL
+ *   C_r_pool_stats_len()               -> integer(1)  slot count
+ *   C_r_pool_stats()                   -> numeric vector of the pool counters
+ *   C_r_hash_names()                   -> character vector (registry order)
  *   C_r_pipeline_create(chr, chr)      -> extptr
  *   C_r_pipeline_load(raw, raw|NULL, raw|NULL)    -> extptr
  *   C_r_pipeline_load_f(chr, raw|NULL, raw|NULL)  -> extptr
@@ -447,6 +452,102 @@ SEXP C_r_now(void) {
     return Rf_ScalarReal((double)ts.tv_sec + (double)ts.tv_nsec * 1e-9);
 }
 
+/* Sets GOMAXPROCS and returns the previous value; n <= 0 queries
+ * without changing, so a caller reads the effective value the same way
+ * it sets one. ITB_GOMAXPROCS in the environment applies at library
+ * load time and a query leaves it standing. */
+SEXP C_r_set_gomaxprocs(SEXP n) {
+    return Rf_ScalarInteger(ITB_SetGOMAXPROCS(arg_int(n, "n")));
+}
+
+/* Writes a Go runtime heap profile (pprof format) to path after one
+ * forced collection. */
+SEXP C_r_write_heap_profile(SEXP path) {
+    int rc = ITB_WriteHeapProfile(MUT(arg_string(path, "path")));
+    if (rc != ST_OK) {
+        raise_status(rc);
+    }
+    return R_NilValue;
+}
+
+/* Number of int64 slots C_r_pool_stats fills. */
+SEXP C_r_pool_stats_len(void) {
+    return Rf_ScalarInteger(ITB_PoolStatsLen());
+}
+
+/* The shared library's pool counters, one numeric per slot. Every
+ * counter is a monotonically increasing total since library load; a
+ * caller differences two snapshots. The vector is sized from
+ * ITB_PoolStatsLen rather than from a constant, because the slot count
+ * follows the number of hash-array pool tiers the library ships.
+ *
+ * R-specific. The counters are int64 and R carries no 64-bit integer
+ * vector, so they land in a double vector. The largest of them are
+ * byte totals, which stay exact to 2^53 — roughly nine petabytes, well
+ * past anything a run accumulates. */
+SEXP C_r_pool_stats(void) {
+    int want = ITB_PoolStatsLen();
+    size_t cap, n = 0, i;
+    int64_t *buf;
+    int rc;
+    SEXP out;
+    if (want <= 0) {
+        return Rf_allocVector(REALSXP, 0);
+    }
+    cap = (size_t)want;
+    /* R_alloc scratch is reclaimed when this .Call frame exits, error
+     * unwinds included, so the vector the library writes into cannot
+     * outlive the call that asked for it. */
+    buf = (int64_t *)R_alloc(cap, sizeof(int64_t));
+    rc = ITB_PoolStats(buf, cap, &n);
+    if (rc != ST_OK) {
+        raise_status(rc);
+    }
+    if (n > cap) {
+        n = cap;
+    }
+    out = PROTECT(Rf_allocVector(REALSXP, (R_xlen_t)n));
+    for (i = 0; i < n; i++) {
+        REAL(out)[i] = (double)buf[i];
+    }
+    UNPROTECT(1);
+    return out;
+}
+
+static int hash_names_thunk(void *ctx, void *out, size_t cap, size_t *n) {
+    (void)ctx;
+    return ITB_Triple_HashNames(out, cap, n);
+}
+
+/* Every shipped inner-hash primitive name, in registry order. libitb3
+ * writes a JSON array of strings; primitive names are restricted to
+ * [a-z0-9-] so the array unpacks by scanning the quoted items, exactly
+ * as C_r_profiles does. */
+SEXP C_r_hash_names(void) {
+    size_t len = 0;
+    const char *json = buf_call(hash_names_thunk, NULL, JSON_CAP, &len);
+    const char *end = json + len;
+    const char *p;
+    int count = 0, i = 0;
+    SEXP out;
+    for (p = json; p < end; p++) {
+        if (*p == '"') count++;
+    }
+    out = PROTECT(Rf_allocVector(STRSXP, count / 2));
+    p = json;
+    while (p < end && i < count / 2) {
+        const char *q = memchr(p, '"', (size_t)(end - p));
+        const char *e;
+        if (q == NULL) break;
+        e = memchr(q + 1, '"', (size_t)(end - (q + 1)));
+        if (e == NULL) break;
+        SET_STRING_ELT(out, i++, Rf_mkCharLen(q + 1, (int)(e - (q + 1))));
+        p = e + 1;
+    }
+    UNPROTECT(1);
+    return out;
+}
+
 /* ---- Pipeline lifecycle ---------------------------------------------- */
 
 typedef struct {
@@ -819,6 +920,11 @@ static const R_CallMethodDef CALL_DEFS[] = {
     CALLDEF(C_r_register, 2),
     CALLDEF(C_r_lookup, 1),
     CALLDEF(C_r_now, 0),
+    CALLDEF(C_r_set_gomaxprocs, 1),
+    CALLDEF(C_r_write_heap_profile, 1),
+    CALLDEF(C_r_pool_stats_len, 0),
+    CALLDEF(C_r_pool_stats, 0),
+    CALLDEF(C_r_hash_names, 0),
     CALLDEF(C_r_pipeline_create, 2),
     CALLDEF(C_r_pipeline_load, 3),
     CALLDEF(C_r_pipeline_load_f, 3),

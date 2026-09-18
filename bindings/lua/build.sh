@@ -130,4 +130,16 @@ if [[ ! -f lua/libitb3_lua.so ]]; then
     exit 1
 fi
 
+echo "==> syntax-checking the Lua sources, the tests, the bench, eitb and loop"
+LUAC="${LUAC:-luac5.4}"
+if ! command -v "$LUAC" >/dev/null 2>&1; then
+    LUAC=luac
+fi
+# The loop utility and the other Lua sources compile to nothing on
+# disk, so the build's part in owning them is proving they parse: -p
+# checks a chunk and writes no output. A stale artefact is impossible
+# where there is no artefact, which is why the wipe above needs no
+# entry for them.
+"$LUAC" -p lua/*.lua tests/*.lua bench/*.lua eitb/*.lua loop/*.lua
+
 echo "==> ready: ./run_tests.sh"

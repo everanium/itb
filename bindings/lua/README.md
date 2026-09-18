@@ -275,6 +275,27 @@ rotates outer masters, and inspects stored blobs. See
 [`cmd/itb3/README.md`](https://github.com/everanium/itb/blob/main/cmd/itb3/README.md) for the full
 subcommand reference.
 
+## loop utility
+
+A long-run stress harness under `bindings/lua/loop/` holds one
+Pipeline handle for minutes, cycles encrypt → decrypt → compare
+round-trips through it, rotates the outer masters and reopens the
+handle from its session blob on a schedule, and reports whether the
+process survived with every byte intact. It is the binding-side
+counterpart of the Go harness under `tools/loop`: same flags, same
+round structure, same summary in both renderings.
+
+```bash
+./bindings/lua/build.sh
+./bindings/lua/run_loop.sh --duration 2m --shape both
+```
+
+`./bindings/lua/run_loop.sh -h` lists every flag. Concurrency mode:
+**single** — a stock Lua 5.4 interpreter is one thread around one
+`lua_State` and its standard library offers no thread primitive, only
+cooperative coroutines, so `--goroutines` above 1 is clamped to 1 and
+the summary reports the effective count next to the requested one.
+
 ## eitb utility
 
 ```bash

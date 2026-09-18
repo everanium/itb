@@ -126,6 +126,46 @@ itb_now <- function() {
   .Call(C_r_now)
 }
 
+#' Sets the Go runtime's GOMAXPROCS; returns the previous value.
+#' Values at or below zero query without changing.
+#' @export
+set_gomaxprocs <- function(n) {
+  .Call(C_r_set_gomaxprocs, as.integer(n))
+}
+
+#' Writes a Go runtime heap profile (pprof format) to `path` after one
+#' forced collection. Raises `itb_error` when the path cannot be
+#' written.
+#' @export
+write_heap_profile <- function(path) {
+  invisible(.Call(C_r_write_heap_profile, path))
+}
+
+#' Number of slots `pool_stats` returns.
+#' @export
+pool_stats_len <- function() {
+  .Call(C_r_pool_stats_len)
+}
+
+#' The shared library's pool counters as a numeric vector, one entry
+#' per slot. Every counter is a monotonically increasing total since
+#' library load, so a caller differences two snapshots. Slot 1 carries
+#' the hash-array tier count T, tier i occupies the five slots from
+#' 2 + 5 * i, and the scratch byte pool and the parallax chunk pool
+#' occupy the eight slots from 2 + 5 * T. Size a buffer from
+#' `pool_stats_len`, never from a constant.
+#' @export
+pool_stats <- function() {
+  .Call(C_r_pool_stats)
+}
+
+#' Character vector of every shipped inner-hash primitive name, in
+#' registry order. A name outside it is one libitb3 rejects.
+#' @export
+hash_names <- function() {
+  .Call(C_r_hash_names)
+}
+
 # ---- opts builder ------------------------------------------------------
 
 # Snake_case keys map onto the Go opts grammar; any key not in the map

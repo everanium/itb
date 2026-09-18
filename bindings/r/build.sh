@@ -146,4 +146,11 @@ if [[ "${#INSTALLED[@]}" -ne 1 || "${INSTALLED[0]}" != "$PKG_NAME" ]]; then
     exit 1
 fi
 
+echo "==> parse-checking the R sources, the tests, the bench, eitb and loop"
+# The loop utility and the other R sources outside the package compile
+# to nothing on disk, so the build's part in owning them is proving
+# they parse. A stale artefact is impossible where there is no
+# artefact, which is why the wipe above needs no entry for them.
+Rscript --vanilla -e 'for (f in c(list.files("R", pattern = "[.]R$", full.names = TRUE), list.files("tests", pattern = "[.]R$", full.names = TRUE, recursive = TRUE), list.files("bench", pattern = "[.]R$", full.names = TRUE), list.files("eitb", pattern = "[.]R$", full.names = TRUE), list.files("loop", pattern = "[.]R$", full.names = TRUE))) invisible(parse(f))' >&2
+
 echo "==> ready: ./run_tests.sh"
