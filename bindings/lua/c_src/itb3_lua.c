@@ -17,9 +17,14 @@
  *   itb.register(name, profile_json)
  *   itb.lookup(name)                        -> profile-record JSON string
  *   itb.profiles()                          -> { "blob-triple-mac-v1", ... } (sorted)
+ *   itb.hash_names()                        -> { "aesitb128", ... } (registry order)
  *   itb.version()                           -> string
  *   itb.set_memory_limit(bytes)             -> previous limit
  *   itb.set_gc_percent(pct)                 -> previous percent
+ *   itb.set_gomaxprocs(n)                   -> previous value (n <= 0 queries)
+ *   itb.write_heap_profile(path)
+ *   itb.pool_stats_len()                    -> slot count
+ *   itb.pool_stats()                        -> { int64, ... }
  *   itb.now()                               -> monotonic seconds (number)
  *   itb.status                              -> { OK=0, BAD_INPUT=4, ... }
  *
@@ -498,6 +503,108 @@ static int l_now(lua_State *L) {
     return 1;
 }
 
+/* itb.set_gomaxprocs(n) -> previous value. n <= 0 queries without
+ * changing, so the caller reads the effective value the same way it
+ * sets one. ITB_GOMAXPROCS in the environment applies at library load
+ * time and is left standing by a query. */
+static int l_set_gomaxprocs(lua_State *L) {
+    lua_Integer n = luaL_checkinteger(L, 1);
+    lua_pushinteger(L, (lua_Integer)ITB_SetGOMAXPROCS((int)n));
+    return 1;
+}
+
+/* itb.write_heap_profile(path) — writes a Go runtime heap profile
+ * (pprof format) to path after one forced collection. */
+static int l_write_heap_profile(lua_State *L) {
+    const char *path = luaL_checkstring(L, 1);
+    int rc = ITB_WriteHeapProfile(MUT(path));
+    if (rc != ST_OK) {
+        return raise_status(L, rc);
+    }
+    return 0;
+}
+
+/* itb.pool_stats_len() -> the number of int64 slots pool_stats fills. */
+static int l_pool_stats_len(lua_State *L) {
+    lua_pushinteger(L, (lua_Integer)ITB_PoolStatsLen());
+    return 1;
+}
+
+/* itb.pool_stats() -> array of the shared library's pool counters.
+ * Every counter is a monotonically increasing total since library
+ * load; a caller differences two snapshots. The vector is sized from
+ * pool_stats_len rather than from a constant, because the slot count
+ * follows the number of hash-array pool tiers the library ships. */
+static int l_pool_stats(lua_State *L) {
+    int want = ITB_PoolStatsLen();
+    size_t cap;
+    size_t n = 0;
+    int64_t *buf;
+    int rc;
+    size_t i;
+    if (want <= 0) {
+        lua_createtable(L, 0, 0);
+        return 1;
+    }
+    cap = (size_t)want;
+    /* C-specific. The scratch vector is a Lua-owned full userdata
+     * rather than malloc: it sits on the stack for the whole call, so
+     * the collector keeps it reachable while the library writes into
+     * it, and an error raised below unwinds without leaking it. */
+    buf = (int64_t *)lua_newuserdatauv(L, cap * sizeof(int64_t), 0);
+    rc = ITB_PoolStats(buf, cap, &n);
+    if (rc != ST_OK) {
+        lua_pop(L, 1);
+        return raise_status(L, rc);
+    }
+    if (n > cap) {
+        n = cap;
+    }
+    lua_createtable(L, (int)n, 0);
+    for (i = 0; i < n; i++) {
+        lua_pushinteger(L, (lua_Integer)buf[i]);
+        lua_rawseti(L, -2, (lua_Integer)(i + 1));
+    }
+    lua_remove(L, -2); /* drop the scratch userdata, keep the array */
+    return 1;
+}
+
+static int hash_names_thunk(void *ctx, void *out, size_t cap, size_t *n) {
+    (void)ctx;
+    return ITB_Triple_HashNames(out, cap, n);
+}
+
+/* itb.hash_names() -> array of every shipped inner-hash primitive
+ * name, in registry order. libitb3 writes a JSON array of strings;
+ * primitive names are restricted to [a-z0-9-] so the array unpacks by
+ * scanning the quoted items, exactly as profiles() does. */
+static int l_hash_names(lua_State *L) {
+    size_t len = 0;
+    const char *json;
+    const char *p;
+    lua_Integer i = 0;
+    buf_call(L, hash_names_thunk, NULL, JSON_CAP);
+    json = lua_tolstring(L, -1, &len);
+    lua_createtable(L, 0, 0);
+    p = json;
+    while (p < json + len) {
+        const char *q = memchr(p, '"', (size_t)(json + len - p));
+        const char *e;
+        if (q == NULL) {
+            break;
+        }
+        e = memchr(q + 1, '"', (size_t)(json + len - (q + 1)));
+        if (e == NULL) {
+            break;
+        }
+        lua_pushlstring(L, q + 1, (size_t)(e - (q + 1)));
+        lua_rawseti(L, -2, ++i);
+        p = e + 1;
+    }
+    lua_remove(L, -2); /* drop the JSON text, keep the array */
+    return 1;
+}
+
 /* ---- Pipeline methods ---------------------------------------------- */
 
 static int l_pipe_encrypt_message(lua_State *L) {
@@ -776,6 +883,11 @@ static const luaL_Reg MODULE_FUNCS[] = {
     {"set_memory_limit", l_set_memory_limit},
     {"set_gc_percent", l_set_gc_percent},
     {"now", l_now},
+    {"set_gomaxprocs", l_set_gomaxprocs},
+    {"write_heap_profile", l_write_heap_profile},
+    {"pool_stats_len", l_pool_stats_len},
+    {"pool_stats", l_pool_stats},
+    {"hash_names", l_hash_names},
     {NULL, NULL},
 };
 

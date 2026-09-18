@@ -449,6 +449,17 @@ func mapTripleError(err error) Status {
 	if strings.Contains(msg, "mixedHashes") {
 		return tripleErr(StatusBadInput, msg)
 	}
+	// An unresolvable MAC name is the caller's input, not a library
+	// fault, and StatusBadMAC exists to say so. The name is checked
+	// against the registry with a plain comparison rather than a
+	// sentinel, in triple and in macs alike, so there is nothing for
+	// errors.Is to reach and the branch matches on the text the same
+	// way the mixedHashes one above does. Without it the caller is
+	// told the library broke, which sends them looking in the wrong
+	// place for a typo they made.
+	if strings.Contains(msg, "unknown MAC ") {
+		return tripleErr(StatusBadMAC, msg)
+	}
 	return tripleErr(StatusInternal, msg)
 }
 
