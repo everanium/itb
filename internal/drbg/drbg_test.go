@@ -317,8 +317,8 @@ func BenchmarkDRBGChaCha20(b *testing.B) {
 	}
 }
 
-// BenchmarkStdlibCryptoRand times the baseline crypto/rand.Read (Go
-// vDSO vgetrandom on Linux 1.24+) at every container-relevant size.
+// BenchmarkStdlibCryptoRand times the baseline crypto/rand.Read (vDSO
+// getrandom on Linux) at every container-relevant size.
 // This is the reference this package aims to accelerate; the AES-CTR /
 // ChaCha20 tiers are compared against these numbers in RESULTS.md.
 func BenchmarkStdlibCryptoRand(b *testing.B) {

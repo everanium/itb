@@ -36,7 +36,7 @@ Listed in canonical primitive order. Below-spec lab helpers (CRC128, FNV-1a, MD5
 | 4 | `blake2b256` | 256 | BLAKE2b-256 unkeyed (`x/crypto/blake2b`) | Prepend-key MAC with seed XOR into data prefix |
 | 5 | `blake2b512` | 512 | BLAKE2b-512 unkeyed (`x/crypto/blake2b`) | Prepend-key MAC, scaled to 64-byte key + 512-bit output |
 | 6 | `blake2s` | 256 | BLAKE2s-256 unkeyed (`x/crypto/blake2s`) | Prepend-key MAC with seed XOR into data prefix |
-| 7 | `blake3` | 256 | BLAKE3 keyed (`zeebo/blake3.NewKeyed`) | Native RFC keyed BLAKE3 + seed XOR mix |
+| 7 | `blake3` | 256 | BLAKE3 keyed (`zeebo/blake3.NewKeyed`) | Native keyed BLAKE3 + seed XOR mix |
 | 8 | `aescmac` | 128 | AES-128 (`crypto/aes`) | AES-128-CBC-MAC with length-tag fold into seed prefix |
 | 9 | `siphash24` | 128 | SipHash-2-4 (`dchest/siphash`) | Direct call — seed components are the SipHash key |
 | 10 | `chacha20` | 256 | ChaCha20 stream (`x/crypto/chacha20`) | Custom keystream-MAC over a 32-byte accumulator state |
@@ -170,17 +170,17 @@ The security argument does not regress relative to a sponge framing. CBC-MAC is 
 
 **Underlying primitive.** BLAKE3-keyed (`github.com/zeebo/blake3.NewKeyed`).
 
-**Construction.** Native RFC keyed BLAKE3 plus a per-call seed XOR mix into the first 32 bytes of data. Defined in `blake3.go::BLAKE3WithKey`.
+**Construction.** Native keyed BLAKE3 plus a per-call seed XOR mix into the first 32 bytes of data. Defined in `blake3.go::BLAKE3WithKey`.
 
 **Per-call flow** (data of length `L`):
 
-1. Once at construction: `template = blake3.NewKeyed(fixedKey)` (proper RFC keyed BLAKE3).
+1. Once at construction: `template = blake3.NewKeyed(fixedKey)` (native keyed BLAKE3).
 2. Per call: `h = template.Clone()` (state-copy operation BLAKE3 supports natively; sidesteps the data race that `Reset()` on a shared hasher would create when ITB dispatches multiple goroutines per seed).
 3. Build mixed data buffer: `mixed = data` zero-padded to 32 bytes when `L < 32`; XOR seed (4 × uint64 LE) into `mixed[0..32)`.
 4. `h.Write(mixed)`; `out = h.Sum(buf[:0])`.
 5. Output: 32 bytes re-marshalled as 4 × uint64 LE.
 
-**Why this IS proper RFC-keyed BLAKE3.** BLAKE3 specifies a native keyed mode (§1.3 of the BLAKE3 spec) — when the hasher is initialised via `NewKeyed(key)`, the 32-byte key replaces the IV constants in the chunk chaining values, yielding a per-block PRF property that the spec ships with directly. This construction uses that mode verbatim via `zeebo/blake3.NewKeyed`, which is the upstream library's exposure of the spec keyed mode. The only deviation from spec-bare keyed BLAKE3 is the per-call seed XOR mix into the first 32 bytes of data — defence in depth, not a substitute for keying.
+**Why this is native keyed BLAKE3.** BLAKE3 specifies a native keyed mode (§1.3 of the BLAKE3 spec) — when the hasher is initialised via `NewKeyed(key)`, the 32-byte key replaces the IV constants in the chunk chaining values, yielding a per-block PRF property that the spec ships with directly. This construction uses that mode verbatim via `zeebo/blake3.NewKeyed`, which is the upstream library's exposure of the spec keyed mode. The only deviation from spec-bare keyed BLAKE3 is the per-call seed XOR mix into the first 32 bytes of data — defence in depth, not a substitute for keying.
 
 This native-keyed-mode use is enabled by BLAKE3's clone-friendly hasher API: `template = blake3.NewKeyed(key)` once at construction, then `template.Clone()` per call avoids re-keying and stays allocation-free under the closure's `sync.Pool`. The BLAKE2 family's upstream API (`blake2.New256(key)`) does not expose a comparably cheap clone — its hasher object would need to be allocated or pooled per call — so BLAKE2b / BLAKE2s in this registry use the function-form `Sum256` / `Sum512` instead, paying for that allocation discipline with the prepend-key wrapper documented in the BLAKE2s section. BLAKE3 is therefore the only registry primitive whose underlying upstream library exposes a keyed-PRF mode that this wrapper consumes verbatim. (SipHash-2-4 has no separate "keyed mode" concept — it is itself a designed PRF — so its closure is a direct call without a wrapper, but it is not a "native keyed mode" use in the same sense.)
 
@@ -258,7 +258,7 @@ Every closure in this registry sidesteps that trap by adhering to four architect
 
 1. **CBC-MAC chain over a keyed permutation** — `aesitb128`, `areion256`, `areion512`, `aescmac`, `chacha20`. The ITB nonce never lands in the primitive's native nonce or IV slot; it enters through the `data` parameter and absorbs iteratively. `chacha20` zeros ChaCha20's native 12-byte nonce explicitly (`var nonce [12]byte` in `chacha20.go`); freshness comes from the per-call `key = fixedKey ⊕ seed` derivation, not from the disabled nonce slot. `aesitb128` is the sole Non-PRF entry in this group — the chain-absorb shape is identical to `aescmac` but the primitive runs at reduced round count (one AES round per absorbed block + two finalising rounds) and ships strictly for the inner-Barrier role, not as a user-selectable PRF.
 2. **Prepend-key concatenation buffer** — `blake2b256`, `blake2b512`, `blake2s`. The closure builds `buf = fixedKey ‖ data ‖ zero-pad`, XORs the seed into the data prefix, and submits the whole buffer to BLAKE2's one-shot `Sum256` / `Sum512` path. For a 512-bit nonce: the full 64-byte nonce lives in the buffer's data region (seed XOR overlays the leading 32 bytes for `blake2b256` / `blake2s`; the trailing 32 bytes pass through verbatim into the compression). For `blake2b512` the seed-XOR region covers the entire 64-byte nonce. No primitive-internal slot is consumed by the ITB nonce.
-3. **Native keyed mode plus streaming write** — `blake3`. The fixed key is bound via `blake3.NewKeyed(fixedKey)` (RFC keyed mode); the ITB nonce flows in through `h.Write(mixed)` where `mixed` is the data buffer with seed XOR mixed into the leading 32 bytes. BLAKE3's chunk-tree streams the full 64-byte buffer through the keyed compression — no fixed-width slot intervenes.
+3. **Native keyed mode plus streaming write** — `blake3`. The fixed key is bound via `blake3.NewKeyed(fixedKey)` (native keyed mode); the ITB nonce flows in through `h.Write(mixed)` where `mixed` is the data buffer with seed XOR mixed into the leading 32 bytes. BLAKE3's chunk-tree streams the full 64-byte buffer through the keyed compression — no fixed-width slot intervenes.
 4. **Native variable-length absorb** — `siphash24`. SipHash-2-4 by design accepts arbitrary-length data through unlimited 8-byte SipRound blocks; the closure is a direct passthrough to `siphash.Hash128(seed0, seed1, data)`. There is no nonce slot to misuse. A 64-byte ITB nonce absorbs through 8 SipRound blocks; the SipHash spec encodes `len(data)` in the final block's padding byte, so length disambiguation is structural.
 
 **Type-level guard against cross-width misuse.** Every shipped primitive's closure is strictly typed to its native width (`itb.HashFunc128`, `itb.HashFunc256`, or `itb.HashFunc512`). Dispatch in `itb.Seed{128,256,512}` is type-discriminated: a `HashFunc128` closure cannot be installed where a `HashFunc512` is expected, nor can a `HashFunc256` be misconfigured into a 128-bit seed. The Go type system rejects cross-width assignments at compile time. Generic cross-width adaptations across `{128,256,512}` are provided separately through the pluggable PRF builders in [`builders.go`](builders.go).
@@ -271,11 +271,12 @@ The registry names (`aescmac`, `chacha20`, `blake2b256`, ...) are short identifi
 
 ## Why use builders for custom user primitives
 
-Beyond the shipped primitives, the package exposes three builder families in [`builders.go`](builders.go) for safely wrapping user-supplied PRFs:
+Beyond the shipped primitives, the package exposes builder families in [`builders.go`](builders.go) for safely wrapping user-supplied PRFs:
 
 - `BuildCBCMACChainAbsorb{128,256,512}` — wraps a keyed [`cipher.Block`](https://pkg.go.dev/crypto/cipher#Block) into a CBC-MAC chain-absorb closure.
 - `BuildSpongeChainAbsorb{128,256,512}` — wraps an unkeyed permutation function into a keyed-sponge chain-absorb closure.
 - `BuildARXChainAbsorb{128,256,512}` — wraps a full hash function (`Hash256Fn` or `Hash512Fn`) into a Merkle-Damgard-style closure.
+- `BuildHMACChainAbsorb{128,256,512}` — semantic alias of `BuildARXChainAbsorb` tailored for HMAC-style keyed closures.
 
 The builders exist to close a specific silent-failure mode in pluggable PRF integration. This section documents the failure mode so external integrators understand the security argument for the builders' existence and the cost of bypassing them.
 
@@ -339,19 +340,19 @@ In every case, the wrapper compiles cleanly, accepts the right type signature, a
 
 ### What the builders do
 
-The three builder families above absorb the full `data` parameter — all 20 / 36 / 68 bytes of pixel index + ITB nonce — through their respective chain-absorb patterns:
+The builder families above absorb the full `data` parameter — all 20 / 36 / 68 bytes of pixel index + ITB nonce — through their respective chain-absorb patterns:
 
 - **CBC-MAC chain**: data XOR'd into state in `BlockSize()`-byte chunks, then `block.Encrypt(state)` per chunk. State holds seed + length tag in initial bytes; every input byte reaches the final 16-byte digest extraction.
 - **Sponge chain**: data XOR'd into rate region in rate-byte chunks, then `permute(state)` per chunk. State holds fixedKey + seed in capacity region; rate region accumulates the full input through repeated permutation.
-- **ARX absorb**: data appended to a `(fixedKey || lenTag || seed || domain)` prefix in one canonical buffer; the underlying full hash function (`hashFn`) absorbs the whole thing through its native variable-length input path.
+- **ARX / HMAC absorb**: data appended to a `(fixedKey || lenTag || seed || domain)` prefix in one canonical buffer; the underlying full hash function (`hashFn`) absorbs the whole thing through its native variable-length input path.
 
-In all three patterns, **all 8 seed components, the full input data, and a length tag reach the digest by construction**. The user only writes a primitive call (`block.Encrypt`, `permute`, or `hashFn`); the chain-absorb plumbing lives inside the builder. There is no caller-side knowledge of the chain-absorb pattern required, and no caller-side opportunity to drop bytes.
+In all patterns, **all 8 seed components, the full input data, and a length tag reach the digest by construction**. The user only writes a primitive call (`block.Encrypt`, `permute`, or `hashFn`); the chain-absorb plumbing lives inside the builder. There is no caller-side knowledge of the chain-absorb pattern required, and no caller-side opportunity to drop bytes.
 
 ### Performance cost of the builders
 
 The builders dispatch through interface callbacks (`cipher.Block.Encrypt`, the `Permute` function type, `Hash256Fn`/`Hash512Fn`) and operate on `make([]byte, stateSize)` buffers that escape to heap. The built-in primitive closures in this package use stack-allocated fixed-size state arrays (`var state [32]byte`), inlined primitive calls, and `unsafe.Pointer` escape-analysis tricks to keep buffers on the stack and avoid heap allocation in the hot path.
 
-Concrete delta: ~5-15% throughput loss vs the inline implementations for the CBC-MAC and sponge patterns; ~0% delta for ARX (where the cost is dominated by the underlying hash function call). Built-in primitives stay primitive-specific for performance; builders target correctness-by-construction for user primitives.
+Concrete delta: ~5-15% throughput loss vs the inline implementations for the CBC-MAC and sponge patterns; ~0% delta for ARX and HMAC (where the cost is dominated by the underlying hash function call). Built-in primitives stay primitive-specific for performance; builders target correctness-by-construction for user primitives.
 
 ### Position in the chain of defenses
 

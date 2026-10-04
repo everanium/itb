@@ -860,7 +860,9 @@ func ITB_Triple_ProfileFromJSON(profileJSON *C.char) C.int {
 // handle. The returned session handle is distinct from the Pipeline
 // handle and lives until ITB_Triple_StreamFree releases it. Multiple
 // concurrent sessions per Pipeline are permitted; the Pipeline's
-// cipher path is concurrent-safe by construction. Only Streaming
+// cipher path is concurrent-safe by construction. Each individual
+// streaming session is single-owner: Write, Read, End, and Free calls
+// for a given stream session must be issued sequentially. Only Streaming
 // profiles are accepted — a Single Message profile makes the session
 // error out on the first write with ITB_ERR_BAD_INPUT.
 //

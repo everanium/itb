@@ -10,7 +10,7 @@ import (
 
 // widthCase pairs an inner-hash primitive name with its native width.
 // The three widths are reachable through [Opts.InnerHash] overrides
-// even though every shipped profile defaults to areion512 (512-bit).
+// across profiles defaulting to 128, 256, or 512-bit inner widths.
 // The single primitive per width is picked to exercise the width path
 // with minimal cross-primitive noise — a follow-up may diversify.
 type widthCase struct {

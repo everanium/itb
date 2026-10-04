@@ -8,7 +8,7 @@
 
 > **See [CONSTRUCTIONS.md](CONSTRUCTIONS.md) for the per-primitive construction descriptions.** The registry names (`areion256`, `areion512`, `blake2b256`, `blake2b512`, `blake2s`, `blake3`, `aescmac`, `siphash24`, `chacha20`) are short identifiers shared with the `hashes/` registry; here they select a counter-mode keystream construction, not the per-pixel hash wrapper of the same name. Read CONSTRUCTIONS.md before assuming a particular standard's exact byte layout.
 
-This package builds a counter-mode keystream from a registry primitive and is the **single source of truth for cipher key and nonce sizes**. It is consumed by the `wrapper/` package (the format-deniability outer cipher) and by the planned `parallax/` package; both rely on this package's `KeySize` / `NonceSize` declarations rather than hardcoding cipher dimensions of their own.
+This package builds a counter-mode keystream from a registry primitive and is the **single source of truth for cipher key and nonce sizes**. It is consumed by the `wrapper/` package (the format-deniability outer cipher) and by the `parallax/` package; both rely on this package's `KeySize` / `NonceSize` declarations rather than hardcoding cipher dimensions of their own.
 
 Each supported primitive maps to a standard counter-mode keystream. The package neither defines a new cipher nor claims security beyond what the underlying construction provides.
 
@@ -48,7 +48,7 @@ type ResettableKeystream interface {
 
 Every PRF-grade primitive in the registry is supported in counter mode. For the complete matrix of construction shapes, block sizes, key/nonce sizes, and collision bounds, see [CONSTRUCTIONS.md § Table of constructions](CONSTRUCTIONS.md#table-of-constructions).
 
-All registry primitives are supported; every entry point (`New`, `NewAt`, `KeySize`, `NonceSize`) returns an error for any name outside of supported primitives. `NewAt(name, key, nonce, byteOffset)` returns a keystream positioned at `byteOffset` of the `New` stream, so one logical stream can be XORed in parallel — each worker seeks to its chunk offset and emits a byte-identical disjoint range.
+Every outer-cipher-eligible / PRF-grade registry primitive is supported; every entry point (`New`, `NewAt`, `KeySize`, `NonceSize`) returns an error for any name outside of supported primitives. `NewAt(name, key, nonce, byteOffset)` returns a keystream positioned at `byteOffset` of the `New` stream, so one logical stream can be XORed in parallel — each worker seeks to its chunk offset and emits a byte-identical disjoint range.
 
 ## Usage
 

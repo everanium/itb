@@ -1,8 +1,9 @@
 // Package runtimecfg reads the ITB_GOMEMLIMIT, ITB_GOGC and
 // ITB_GOMAXPROCS env vars at libitb3 load time and applies them to the
 // Go runtime via runtime/debug and runtime.GOMAXPROCS. Programmatic
-// setters (itb.SetMemoryLimit, itb.SetGCPercent, ITB_SetMemoryLimit,
-// ITB_SetGCPercent, ITB_SetGOMAXPROCS) override the env-set values.
+// setters (itb.SetMemoryLimit, itb.SetGCPercent, itb.SetGOMAXPROCS,
+// ITB_SetMemoryLimit, ITB_SetGCPercent, ITB_SetGOMAXPROCS) override the
+// env-set values.
 package runtimecfg
 
 import (

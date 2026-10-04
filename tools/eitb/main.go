@@ -116,10 +116,11 @@ func cmdProfiles() {
 }
 
 // isStreamingProfile reports whether the profile routes through the
-// streaming cipher surface. Profiles whose canonical name begins with
-// "streaming-" carry no [triple.Pipeline.EncryptMessage] path — the
-// eitb dispatch therefore drives them through the one-shot streaming
-// buffered pair instead.
+// streaming cipher surface. While [triple.Pipeline.EncryptMessage] accepts
+// streaming profiles when payloads fit within a chunk, eitb dispatches
+// profiles beginning with "streaming-" through the streaming API
+// ([triple.Pipeline.EncryptStream]) to exercise the streaming path
+// symmetrically across all fleet implementations.
 func isStreamingProfile(profile string) bool {
 	return strings.HasPrefix(profile, "streaming-")
 }

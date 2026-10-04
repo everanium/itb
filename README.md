@@ -1037,17 +1037,17 @@ func init() {
 
 **Cross-process contract.** A seed blob exported under a custom MAC name records the name, not the construction. The opening process must have registered the same name with the same construction before `triple.Load` (or `Blob{N}.Import3Cfg` + `macs.Make`); a missing registration fails with `triple.ErrRecipePrimitiveUnknown` on the facade (an unknown-MAC error on the Low-Level path), and a divergent construction under the same name surfaces as a MAC failure at decrypt. `triple.Inspect` does not probe availability and returns the recorded name unchanged. Full API detail, closure contracts, and builder documentation live in [`macs/README.md`](macs/README.md).
 
-### Runtime tuning (memory / GC)
+### Runtime tuning (memory / GC / threads)
 
-Go-native callers reach the Go runtime memory / GC pacing knobs through `itb.SetMemoryLimit(N)` and `itb.SetGCPercent(P)`. Both are **process-global** — they call directly into `runtime/debug.SetMemoryLimit` and `runtime/debug.SetGCPercent` and therefore affect the entire Go runtime, including every concurrently-running `triple.Pipeline` (or Low-Level `*Cfg` call) in the same process. They are orthogonal to any per-Pipeline configuration on `*itb.Config` / `triple.Opts`; the Pipeline knobs govern per-instance encryption behaviour, not the runtime's heap-size or GC-trigger pacing. Pass `-1` to either setter to query the current value without changing it.
+Go-native callers reach the Go runtime memory / GC pacing and thread knobs through `itb.SetMemoryLimit(N)`, `itb.SetGCPercent(P)`, and `itb.SetGOMAXPROCS(T)`. All three are **process-global** — they call directly into `runtime/debug.SetMemoryLimit`, `runtime/debug.SetGCPercent`, and `runtime.GOMAXPROCS`, and therefore affect the entire Go runtime, including every concurrently-running `triple.Pipeline` (or Low-Level `*Cfg` call) in the same process. They are orthogonal to any per-Pipeline configuration on `*itb.Config` / `triple.Opts`; the Pipeline knobs govern per-instance encryption behaviour, not the runtime's heap-size, GC-trigger pacing, or thread count. Pass `-1` to `SetMemoryLimit` / `SetGCPercent` (or `0` to `SetGOMAXPROCS`) to query the current value without changing it.
 
-Bindings drive the same knobs over the C ABI via `ITB_SetMemoryLimit` and `ITB_SetGCPercent` (see `cmd/cshared/main.go`). Both mirror the Go signatures — `int64` limit in bytes, `int` percent — and negative arguments query without mutating.
+Bindings drive the same knobs over the C ABI via `ITB_SetMemoryLimit`, `ITB_SetGCPercent`, and `ITB_SetGOMAXPROCS` (see `cmd/cshared/main.go`). All mirror the Go signatures — `int64` limit in bytes, `int` percent, `int` threads — and non-positive arguments query without mutating.
 
-Both knobs are additionally readable from the environment at libitb3 load time via `ITB_GOMEMLIMIT` and `ITB_GOGC` (see [Memory](#memory)); any subsequent programmatic setter call from Go-native code or a binding overrides the env-set value.
+All three knobs are additionally readable from the environment at libitb3 load time via `ITB_GOMEMLIMIT`, `ITB_GOGC`, and `ITB_GOMAXPROCS` (see [Memory](#memory)); any subsequent programmatic setter call from Go-native code or a binding overrides the env-set value.
 
-**Per-Pipeline memory / GC control is not available.** The Go runtime does not expose per-goroutine or per-object memory-limit / GC-percent scopes, so the setters cannot be scoped to one `Pipeline` while another Pipeline in the same process observes a different setting. Applications that need distinct heap regimes for distinct workloads run them in separate processes.
+**Per-Pipeline runtime control is not available.** The Go runtime does not expose per-goroutine or per-object memory-limit, GC-percent, or thread scopes, so the setters cannot be scoped to one `Pipeline` while another Pipeline in the same process observes a different setting. Applications that need distinct runtime regimes for distinct workloads run them in separate processes.
 
-The `triple/` package does not re-export these setters; Go-native users who wire a `triple.Pipeline` and want the runtime tuners in the same call site `import "github.com/everanium/itb"` alongside `import "github.com/everanium/itb/triple"` to reach `itb.SetMemoryLimit` / `itb.SetGCPercent` directly.
+The `triple/` package does not re-export these setters; Go-native users who wire a `triple.Pipeline` and want the runtime tuners in the same call site `import "github.com/everanium/itb"` alongside `import "github.com/everanium/itb/triple"` to reach `itb.SetMemoryLimit` / `itb.SetGCPercent` / `itb.SetGOMAXPROCS` directly.
 
 ### Tuning microBatch and hash-pool
 

@@ -31,6 +31,9 @@ type TripleStreamHandle struct {
 
 // TripleStreamID is the opaque uintptr the FFI passes as a session
 // reference. Internally a runtime/cgo.Handle onto a *TripleStreamHandle.
+// An individual streaming session is single-owner: operations on a given
+// stream handle (Write, Read, End, Free) must be called sequentially
+// from a single thread or externally coordinated.
 type TripleStreamID uintptr
 
 // resolveTripleStream returns the *TripleStreamHandle behind an

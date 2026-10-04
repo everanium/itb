@@ -274,9 +274,8 @@ func TestRankToMaskTripleUnrank48VsScalar(t *testing.T) {
 }
 
 // TestRankToMaskTripleUnrank48Krem16Spillover directly exercises the
-// mask-merge broadcast path for the 17-th row entry (index 16 exceeds
-// VPERMI2Q's two-source 16-lane range and falls through to a scalar
-// VPBROADCASTQ under mask K5 == "krem == 16"). krem == 16 is only
+// 17-th row entry path (index 16 wraps to slot 0 of the packed 16-entry
+// row table holding C(p, 16)). krem == 16 is only
 // possible on the sequence of iterations before the first bit is set
 // (each success decrements krem), so this test constructs (idx0, idx1)
 // values that keep krem == 16 for several iterations at loop entry,
@@ -302,7 +301,7 @@ func TestRankToMaskTripleUnrank48Krem16Spillover(t *testing.T) {
 	}
 
 	// crow48Table[p][16] for p in [16, 47] — the exact spillover values
-	// that VPERMI2Q cannot reach and the mask-merge broadcast must supply.
+	// loaded at slot 0 of the packed row table.
 	// Explicit literal calls to crow48Table anchor the test against the
 	// live table.
 	//
@@ -310,7 +309,7 @@ func TestRankToMaskTripleUnrank48Krem16Spillover(t *testing.T) {
 	//   C(p,16) - 1 (branch not taken → krem stays 16)
 	//   C(p,16)     (branch taken exactly at the boundary → krem drops)
 	//   C(p,16) + 1 (branch taken above the boundary → krem drops)
-	// This forces both K5-broadcast-with-no-pick and K5-broadcast-with-pick
+	// This forces both wrap-with-no-pick and wrap-with-pick
 	// code paths on the same row.
 	type sample struct {
 		label string
@@ -542,9 +541,9 @@ func TestRankToMaskTripleUnrank48AVX2VsScalar(t *testing.T) {
 
 // TestRankToMaskTripleUnrank48AVX2Krem16Spillover is the AVX2-arm
 // mirror of TestRankToMaskTripleUnrank48Krem16Spillover: the C(p, 16)
-// value exceeds the VPERMD-reachable 16-entry window and merges through
-// the hi == 4 predicate path; the boundary ranks below force that path
-// under both branch outcomes on every reachable row.
+// value wraps to group 0 slot 0 in the packed 16-entry row;
+// the boundary ranks below exercise that path under both branch
+// outcomes on every reachable row.
 func TestRankToMaskTripleUnrank48AVX2Krem16Spillover(t *testing.T) {
 	defer forceAVX2RankMask(t)()
 	type sample struct {
@@ -642,7 +641,7 @@ func TestRankToMaskTripleUnrank48AVX2P48MaxRow(t *testing.T) {
 // TestRankToMaskTripleUnrank48AVX2Boundary is the AVX2-arm mirror of
 // TestRankToMaskTripleUnrank48Boundary: (idx0, idx1) corner values
 // across all 8 lanes, stressing the row lookup at every p and the
-// hi == 4 spillover merge at loop entry.
+// krem == 16 wrap path at loop entry.
 func TestRankToMaskTripleUnrank48AVX2Boundary(t *testing.T) {
 	defer forceAVX2RankMask(t)()
 	const A = uint64(2254848913647)

@@ -212,7 +212,7 @@ scripts both import from here.
 
 The REDTEAM re-verification for the shipped construction is delivered
 as **shipped Go tests**, not Python scripts. They compile with the
-release, run through `go test -count=1 ./...`, and require no external
+release, run through `go test -tags redteam -count=1 ./...`, and require no external
 Python environment; the re-verification tracks above consume their
 emitted records:
 

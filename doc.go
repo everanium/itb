@@ -125,7 +125,7 @@
 // multiple encryptors with distinct configurations coexist in one
 // process without any shared mutable state. Valid NonceBits: 0 (default
 // 512), 128, 256, 512. Valid BarrierFill: 0 (default 1), 1, 2, 4, 8, 16,
-// 32. Valid TagStubSize: 0 (disabled) or 16..64. Valid MaxWorkers: 0
+// 32. Valid TagStubSize: 0 (default 32) or 16..64. Valid MaxWorkers: 0
 // (runtime.NumCPU fallback) or positive integer (clamped to 256).
 //
 // # Wire format
@@ -155,13 +155,13 @@
 //
 // # Runtime tuning
 //
-// [SetMemoryLimit] and [SetGCPercent] wrap runtime/debug's
-// process-wide memory-limit and GC-percent pacing knobs. Both are
-// process-global; pass -1 to either setter to query the current value
-// without changing it. The knobs are also readable from the
-// environment at libitb3 load time via ITB_GOMEMLIMIT / ITB_GOGC, and
-// reachable through the C ABI as ITB_SetMemoryLimit /
-// ITB_SetGCPercent.
+// [SetMemoryLimit], [SetGCPercent], and [SetGOMAXPROCS] wrap the
+// Go runtime's process-wide memory-limit, GC-percent, and thread-count knobs.
+// All are process-global; pass -1 to [SetMemoryLimit] or [SetGCPercent]
+// (or 0 to [SetGOMAXPROCS]) to query the current value without changing it.
+// The knobs are also readable from the environment at libitb3 load time
+// via ITB_GOMEMLIMIT, ITB_GOGC, and ITB_GOMAXPROCS, and reachable through
+// the C ABI as ITB_SetMemoryLimit, ITB_SetGCPercent, and ITB_SetGOMAXPROCS.
 //
 // # See also
 //
