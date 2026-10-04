@@ -544,7 +544,7 @@ static inline __m512i deriveXorsX8AVX512VBMI(const uint64_t *xorMaskArr) {
 //
 // VPMADDUBSW treats the second operand as signed bytes; 7-bit-clean values
 // are <= 0x7F, so no saturation or sign issue arises. Bounds semantics
-// match 8 scalar pack56bits calls: pixel b's 7 bytes are stored iff the
+// match 8 scalar pack56bits calls: pixel b's 7 bytes are stored only if the
 // full 7-byte span fits inside dataLen, expressed by clamping the store
 // k-mask to the fitting prefix. The batched decode dispatch guarantees
 // bitIndex + 8 * 56 <= totalBits = dataLen * 8, so the hot path always

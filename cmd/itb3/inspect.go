@@ -4,7 +4,7 @@ package main
 // triple.Inspect — no Pipeline is opened — and prints the embedded
 // profile record as a human-readable metadata dump. Never emits secret
 // material: the record carries no key bytes, and master presence is
-// implied by the layer toggles (a producer emits a master iff the
+// implied by the layer toggles (a producer emits a master only if the
 // corresponding layer is on).
 
 import (

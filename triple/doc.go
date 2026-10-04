@@ -41,8 +41,8 @@
 //	v   schema version, always 2
 //	p   the Profile record (key set below)
 //	ib  the inner Blob{N} JSON object, embedded verbatim
-//	pm  parallax master, base64; present iff p.parallax
-//	wm  wrapper master, base64; present iff p.wrapper
+//	pm  parallax master, base64; present only if p.parallax
+//	wm  wrapper master, base64; present only if p.wrapper
 //
 // The decoder is strict: an unknown key or trailing content is
 // [ErrBlobMalformed]; any version other than 2 is [ErrBlobVersion]

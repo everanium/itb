@@ -49,7 +49,7 @@
 // heap-growth anomalies. The monitor is the one part of this harness
 // with no binding-side counterpart: nothing it reads is reachable
 // through the C ABI. The final summary reports totals, peak vs final
-// runtime state, and a PASS/FAIL verdict: PASS iff zero worker
+// runtime state, and a PASS/FAIL verdict: PASS only if zero worker
 // errors, the final goroutine count settles within +2 of the
 // pre-worker idle baseline, and the final heap stays below 2x the
 // post-warmup baseline.

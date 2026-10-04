@@ -593,7 +593,7 @@ func grantStartPixelsLabPeek(nonce []byte, regionPixels [3]int, ss1, ss2, ss3 *S
 
 // pixelExtractIsAllZero checks: for the given ciphertext-XOR pixel and a
 // (np, r) guess, does un-rotating extract7(byte, np) yield all-zero
-// 7-bit values across all 8 channels? Returns true iff the constraint
+// 7-bit values across all 8 channels? Returns true if the constraint
 // holds — which means "consistent with dataXOR = 0 at every channel of
 // this pixel", i.e., consistent with a quiet chunk under the guessed
 // (np, r).

@@ -582,7 +582,7 @@ Any field left at its zero value defers to the resolved profile's default; a nil
 | `KeyBits` | multiple of the primitive's native hash width (128 / 256 / 512), in `[512, 2048]`, or `0` = default | Common values `512` / `1024` / `2048`; any intermediate multiple in the range is accepted per the seed factory contract (640 / 768 / 896 / 1152 / 1280 / 1536 / 1792 for width-128 primitives, and the corresponding multiples for width-256 / width-512). Default `1024`. |
 | `OuterCipher` | one of the shipped primitive names below | Empty = profile default. Wrapper-off profiles ignore. |
 | `ParallaxPalette` | slice of primitive names from the set below | Empty = profile default palette. Order matters — parallax dispatches per-segment by slot. |
-| `ParallaxSegmentSize` | `int` in `[1, 65535]`, coprime to `504` (not divisible by 2, 3, or 7); or `0` = default | Default `4093` (prime). Sensible values: primes like `4093` / `4099` / `4111` / `4127`; any composite is fine iff coprime to 504. Parallax segment size. |
+| `ParallaxSegmentSize` | `int` in `[1, 65535]`, coprime to `504` (not divisible by 2, 3, or 7); or `0` = default | Default `4093`. Recommended values: primes such as `4093` / `4099` / `4111` / `4127`; composite values are accepted provided they are coprime to 504. |
 
 **Shipped primitive names.** The single canonical registry (`hashes/registry.go` — `hashes.Registry`, the `hashes.Cipher*` name constants, and the `hashes.Names()` snapshot that `wrapper.CipherNames` mirrors) uses the same string alphabet for `InnerHash`, `OuterCipher`, and each `ParallaxPalette` entry, excluding `aesitb128` which is not supported by parallax and wrapper:
 

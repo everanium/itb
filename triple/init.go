@@ -21,8 +21,8 @@ import (
 //	    sender's label
 //	ib  the inner Blob{N} JSON, embedded verbatim as an
 //	    object (the only carrier of seed / PRF-key / MAC-key material)
-//	pm  32-byte parallax master, base64; present iff p.parallax
-//	wm  32-byte wrapper master, base64; present iff p.wrapper
+//	pm  32-byte parallax master, base64; present only if p.parallax
+//	wm  32-byte wrapper master, base64; present only if p.wrapper
 //
 // The record is the sole structural source on the reopen path: [Load]
 // rebuilds every layer from it, and the profile registry is never
