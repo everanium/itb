@@ -40,7 +40,7 @@ func runEmptyMessageRejection(t *testing.T, profile string, parallax, wrapper bo
 	defer pipe.Close()
 	rx, err := Load(blob)
 	if err != nil {
-		t.Fatalf("Open: %v", err)
+		t.Fatalf("Load: %v", err)
 	}
 	defer rx.Close()
 
@@ -105,7 +105,7 @@ func TestEncryptStreamEmptyPayloadNoMAC(t *testing.T) {
 			defer pipe.Close()
 			rx, err := Load(blob)
 			if err != nil {
-				t.Fatalf("Open: %v", err)
+				t.Fatalf("Load: %v", err)
 			}
 			defer rx.Close()
 
@@ -166,7 +166,7 @@ func TestEncryptMessageSmallPayloadBoundaryMatrix(t *testing.T) {
 				defer pipe.Close()
 				rx, err := Load(blob)
 				if err != nil {
-					t.Fatalf("Open: %v", err)
+					t.Fatalf("Load: %v", err)
 				}
 				defer rx.Close()
 

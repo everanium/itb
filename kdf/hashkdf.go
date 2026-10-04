@@ -8,9 +8,9 @@ import (
 )
 
 // hashKDFMasterMin is the minimum master length accepted by every
-// hash-based derivation. The five 32-byte-keyed primitives take
-// master[:32] directly; areion512 stretches master[:32] to its 64-byte
-// key. ML-KEM shared secrets are 32 bytes, which this bound admits.
+// hash-based derivation. 32-byte-keyed primitives consume master[:32]
+// directly; wider primitives stretch master[:32] to their native key
+// width. ML-KEM shared secrets are 32 bytes, which this bound admits.
 const hashKDFMasterMin = 32
 
 // deriveHashPRF implements SP 800-108 Counter Mode with PRF = the named

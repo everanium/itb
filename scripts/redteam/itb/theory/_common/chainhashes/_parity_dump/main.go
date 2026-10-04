@@ -1,4 +1,4 @@
-// _parity_dump — emit (primitive, data_hex, seed_components, expected_lo_hex)
+// Emit (primitive, data_hex, seed_components, expected_lo_hex)
 // triples that the Python chainhashes/ mirrors must reproduce bit-for-bit.
 //
 // Usage:

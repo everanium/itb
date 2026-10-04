@@ -19,7 +19,7 @@ import (
 // pushed by the caller.
 //
 // The streaming surface is a per-chunk loop over the single-message
-// EncryptInPlace / DecryptInPlace path. Each chunk is one independent
+// EncryptInto / DecryptInto path. Each chunk is one independent
 // message with its own freshly drawn nonce, framed on the wire as a
 // u32 little-endian body length followed by the nonce-prefixed body.
 // The chunk size is read once at stream construction from the
@@ -145,7 +145,7 @@ const frameLenSize = 4
 
 // chunkedEncryptWriter accumulates plaintext bytes up to the
 // per-stream chunkCap, then emits one frame per full chunk through
-// EncryptInPlace. Close flushes any pending partial chunk and
+// EncryptInto. Close flushes any pending partial chunk and
 // releases the pooled accumulator. Once any underlying error has
 // surfaced (encrypt failure, dst.Write failure), the writer enters a
 // sticky-failed state: every subsequent Write returns the same error,
@@ -244,7 +244,7 @@ func (w *chunkedEncryptWriter) Close() error {
 
 // NewEncryptWriter returns an io.WriteCloser that encrypts every byte
 // written through it onto dst as a stream of per-chunk frames. Each
-// frame is one EncryptInPlace call's output: a 4-byte little-endian
+// frame is one EncryptInto call's output: a 4-byte little-endian
 // body-length prefix followed by a 16-byte CSPRNG nonce and the
 // encrypted body. The chunk size is taken from the Schedule's
 // ChunkSize at construction time; the writer accumulates until that
@@ -435,7 +435,7 @@ func (s *Schedule) NewDecryptWriter(cs *Cipherset, dst io.Writer) (io.WriteClose
 // ---------------------------------------------------------------------------
 
 // chunkedEncryptReader pulls plaintext from src in chunkCap-sized
-// reads, encrypts each chunk via EncryptInPlace, and serves the
+// reads, encrypts each chunk via EncryptInto, and serves the
 // resulting frame (length prefix, nonce, body) to the caller's p. The
 // outBuf holds the in-flight frame; outOff bracket the
 // already-served prefix.
@@ -560,7 +560,7 @@ func (r *chunkedEncryptReader) release() {
 }
 
 // NewEncryptReader returns an io.ReadCloser that draws plaintext from
-// src in chunkCap-sized reads, encrypts each chunk via EncryptInPlace,
+// src in chunkCap-sized reads, encrypts each chunk via EncryptInto,
 // and emits one frame per chunk through the returned Reader. When src
 // returns io.EOF the trailing partial chunk (if any) is encoded as a
 // final frame and served before the Reader returns io.EOF. Callers

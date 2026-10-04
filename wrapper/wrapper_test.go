@@ -769,18 +769,11 @@ func (d *dropIfNonceLen) Write(p []byte) (int, error) {
 // encoder write: any dst.Write whose payload happens to equal the
 // nonce length is silently swallowed once.
 //
-// With the batching fix, the first dst.Write from NewWrapWriter
-// carries both the nonce AND the first inner body — its payload is
-// strictly larger than the nonce, so the drop condition never fires
-// and the round-trip decodes back to the original plaintext.
-//
-// Without the fix (pre-patch shape), NewWrapWriter emits the nonce as
-// a standalone Write of exactly nonce length — the drop fires, the
-// wire loses its leading nonce, and NewUnwrapReader parses the first
-// nonce-length bytes of the XOR-encoded body as if they were the
-// nonce (or fails outright on siphash / aescmac / areion where the
-// wire is body-only). The recovered plaintext then diverges from the
-// original, catching the regression.
+// The first dst.Write from NewWrapWriter carries both the nonce AND
+// the first inner body — its payload is strictly larger than the nonce
+// length alone, ensuring the wire preserves its leading nonce across
+// chunk boundaries and NewUnwrapReader correctly decodes back to the
+// original plaintext.
 func TestWrapperNonceConcurrentDrain(t *testing.T) {
 	for _, name := range CipherNames {
 		t.Run(name, func(t *testing.T) {

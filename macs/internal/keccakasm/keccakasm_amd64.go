@@ -6,9 +6,9 @@
 //
 // Kernel construction (keccakf_amd64.s, generated fully unrolled): one
 // 64-bit lane per XMM register — 25 lanes across X0..X24 with five
-// rotating temporaries and one scratch register. The layout makes the
-// pi step pure register renaming (zero shuffle instructions across all
-// 24 rounds); theta column parities fold through VPTERNLOGQ $0x96
+// rotating temporaries and two scratch registers (X30/X31). The layout
+// makes the pi step pure register renaming (zero shuffle instructions
+// across all 24 rounds); theta column parities fold through VPTERNLOGQ $0x96
 // three-way XORs, chi is one VPTERNLOGQ $0xD2 (a ^ (~b & c)) per lane,
 // rho is immediate-count VPROLQ, and iota is a single VPXORQ.BCST from
 // the public round-constant table. EVEX 128-bit forms keep the ops on

@@ -581,7 +581,7 @@ func TestBlobImportRejectsOversizedMACKey(t *testing.T) {
 	// rather than on the hex-decode branch.
 	hugeHex := string(bytes.Repeat([]byte{'a'}, 258))
 	// One "0" component satisfies the KeyBits gate at KeyBits=512
-	// (want = 8, but we intentionally malform Components too — the
+	// (want = 8, but Components is intentionally malformed too — the
 	// MAC length gate fires before the component-count check on all
 	// three widths, so the test is decoupled from that path).
 	oneComp := `"key_n":"00","ns":["0"],"ds1":["0"],"ds2":["0"],"ds3":["0"],` +

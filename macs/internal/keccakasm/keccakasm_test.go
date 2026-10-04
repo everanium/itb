@@ -184,23 +184,39 @@ func TestCShake256Clone(t *testing.T) {
 
 // TestKeccakF1600BitSensitivity flips every one of the 1600 state
 // bits and checks the permutation output changes — a structural
-// sanity net over both arms.
+// sanity net over both arms (generic portable arm and AVX-512 when available).
 func TestKeccakF1600BitSensitivity(t *testing.T) {
-	var base [25]uint64
-	for i := range base {
-		base[i] = 0xA5A5A5A5A5A5A5A5 ^ uint64(i)*0x0123456789ABCDEF
+	arms := []struct {
+		name string
+		fn   func(*[25]uint64)
+	}{
+		{"generic", keccakF1600Generic},
 	}
-	ref := base
-	keccakF1600(&ref)
-	for lane := 0; lane < 25; lane++ {
-		for bit := 0; bit < 64; bit++ {
-			a := base
-			a[lane] ^= 1 << uint(bit)
-			keccakF1600(&a)
-			if a == ref {
-				t.Fatalf("flipping lane %d bit %d left permutation output unchanged", lane, bit)
+	if HasAVX512Fused {
+		arms = append(arms, struct {
+			name string
+			fn   func(*[25]uint64)
+		}{"avx512", keccakF1600})
+	}
+	for _, arm := range arms {
+		t.Run(arm.name, func(t *testing.T) {
+			var base [25]uint64
+			for i := range base {
+				base[i] = 0xA5A5A5A5A5A5A5A5 ^ uint64(i)*0x0123456789ABCDEF
 			}
-		}
+			ref := base
+			arm.fn(&ref)
+			for lane := 0; lane < 25; lane++ {
+				for bit := 0; bit < 64; bit++ {
+					a := base
+					a[lane] ^= 1 << uint(bit)
+					arm.fn(&a)
+					if a == ref {
+						t.Fatalf("%s: flipping lane %d bit %d left permutation output unchanged", arm.name, lane, bit)
+					}
+				}
+			}
+		})
 	}
 }
 

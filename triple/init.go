@@ -345,7 +345,7 @@ func prepareMasters(resolved Profile, opts Opts) (permMaster, wrapMaster []byte,
 // exportInnerBlob width-dispatches to the appropriate
 // [itb.Blob{128,256,512}.Export3Cfg] entry to produce the inner blob
 // bytes. The MAC material rides through [itb.Blob{N}Opts] when the
-// Pipeline carries a MAC; No MAC profiles pass a zero-value opts.
+// Pipeline carries a MAC; No MAC profiles leave MAC fields empty.
 func exportInnerBlob(width int, cfg *itb.Config, seeds [8]any, prfKeys [8][]byte, macKey []byte, macName string) ([]byte, error) {
 	switch width {
 	case 128:

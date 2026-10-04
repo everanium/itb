@@ -4,20 +4,20 @@
 >
 > PRF-grade hash functions are **required**. No warranty is provided.
 
-**No bespoke cryptography.** ITB introduces no cryptographic primitive of its own — no custom S-box, permutation, or round function. It is a construction over existing primitives, much as PGP composes standard ciphers rather than defining one. Such constructions are not the object of algorithm-level cryptographic certification: national regimes (NIST CAVP/FIPS in the US, GOST/FSB in Russia, OSCCA's SM-series in China, IC3S in India, SOG-IS/EUCC and national lists in the EU, ASD's ISM in Australia, CRYPTREC in Japan, KCMVP in South Korea) certify **primitives** and the **modules** built on them, not compositional schemes. Eligibility for regulated use is therefore inherited from the primitives ITB is configured with, not conferred by ITB itself.
+**No bespoke cryptography.** ITB composes established, standardized primitives rather than introducing new cryptographic designs. Security properties and regulatory status are inherited from the underlying primitives; see [README.md](../README.md) for jurisdictional certification details.
 
 Companion code for the ITB Quick Start. The examples below layer a thin outer cipher envelope over ITB's Triple 8-seed ciphertext so the on-wire bytes look like generic stream cipher output rather than ITB format pixel containers + per-chunk prefix.
 
 ## Threat model
 
-ITB encrypts content into RGBWYOPA pixel containers. The construction provides **content-deniability** unconditionally — no plaintext bit can be extracted from the wire. The wire pattern itself, however, is parseable by an observer who knows the ITB format:
+ITB provides **content-deniability** unconditionally — no plaintext bit can be extracted from the wire. The raw wire pattern itself, however, carries structural framing and headers parseable by an observer who knows the ITB specification:
 
-- Non-AEAD path: per-chunk header carries width / height / container layout.
-- Streaming AEAD path: a once per-stream 32-byte streamID prefix plus per-chunk `main_nonce || W || H || container || flag_byte`.
+- Non-AEAD path: structural dimension and layout framing headers.
+- Streaming AEAD path: a streamID prefix plus per-chunk framing and deniable termination indicators.
 
-A passive observer who knows ITB ships with an 8-channel pixel container and a 32-byte streamID prefix can pattern-match the bytes. The format-deniability wrap hides that surface under a generic outer cipher — any PRF-grade ITB registry primitive. After wrapping, the wire is `nonce || keystream-XOR(bytestream)` — the same shape used by countless other protocols. An observer sees a small leading nonce followed by pseudorandom-looking bytes; pattern-matching does not distinguish ITB from any other stream cipher payload.
+A passive observer searching for ITB signatures could identify these wire structures. The format-deniability wrap hides that surface under a generic outer cipher — any PRF-grade ITB registry primitive. After wrapping, the wire is `nonce || keystream-XOR(bytestream)` — the same shape used by standard stream ciphers. An observer sees a leading nonce followed by pseudorandom-looking bytes; pattern-matching does not distinguish ITB from any other stream cipher payload.
 
-This is **not** a random-oracle indistinguishability claim. It is a "looks like a different well-known cipher" claim. The wrap exists for format-deniability ONLY; ITB already provides confidentiality (content-deniability) and the AEAD path already provides per-stream and per-chunk integrity. The Non-AEAD streaming path has no integrity by design and the wrap does not add any.
+This is **not** a random-oracle indistinguishability claim. It is a "looks like a different well-known cipher" claim. The wrap exists for format-deniability **only**; ITB already provides confidentiality (content-deniability) and the AEAD path already provides per-stream and per-chunk integrity. The Non-AEAD streaming path has no integrity by design and the wrap does not add any.
 
 ## Public API
 
@@ -26,6 +26,7 @@ type Keystream = ctr.Keystream
 
 const (
     ParallelThreshold = 256 * 1024
+    MaxMasterKeySize  = 128
 )
 
 var CipherNames []string
@@ -44,21 +45,23 @@ func UnwrapInPlace(name string, key, wire []byte) ([]byte, error)
 
 func NewWrapWriter(name string, key []byte, dst io.Writer) (io.Writer, error)
 func NewUnwrapReader(name string, key []byte, src io.Reader) (io.Reader, error)
+func FinishWrapStream(w io.Writer) error
 
 func XORParallel(name string, key, nonce, dst, src []byte) error
 func XORParallelAt(name string, key, nonce []byte, base int, dst, src []byte) error
 ```
 
 - **`Keystream`** is the outer cipher's CTR-mode keystream interface, aliased directly from `ctr.Keystream`. The contract matches `crypto/cipher.Stream`: `XORKeyStream(dst, src)` xors one keystream segment over `src` into `dst` and advances the internal counter.
-- **`CipherNames`** enumerates the outer cipher palette in canonical primitive order as a snapshot of the shipped `hashes.Registry` names (`hashes.Names()`); it is the iteration source for cross-cipher tests and benchmarks. Each entry is named by a `hashes.Cipher*` constant; `hashes.CipherAES128CTR = "aescmac"` is the registry alias for AES-128 in CTR mode (identical to the underlying cipher behind the `aescmac` MAC entry).
+- **`CipherNames`** enumerates the outer cipher palette in canonical primitive order as a snapshot of the shipped `hashes.Registry` names (`hashes.KeystreamNames()`); it is the iteration source for cross-cipher tests and benchmarks. Each entry is named by a `hashes.Cipher*` constant; `hashes.CipherAES128CTR = "aescmac"` is the registry alias for AES-128 in CTR mode (identical to the underlying cipher behind the `aescmac` MAC entry).
 - **`ParallelThreshold`** is the byte cap below which `Wrap` / `Unwrap` / `WrapInPlace` / `UnwrapInPlace` keep the body XOR in the caller's goroutine. Above it the work is split across up to `min(32, GOMAXPROCS, chunks)` worker goroutines, each seeking its own keystream to the chunk's byte offset via `ctr.NewAt`. Exposed as a read-only constant for out-of-package tests and benchmarks.
 - **`KeySize` / `NonceSize`** report the per-cipher key and nonce widths in bytes; both delegate to [`ctr`](../ctr/), which is the single source of truth for the registered cipher sizing.
 - **`GenerateKey`** draws a fresh CSPRNG outer cipher key of the appropriate width. Use this in self-test contexts or when no out-of-band key material is available.
-- **`DeriveKey`** derives a deterministic outer cipher key from a high-entropy master via [`kdf.Derive`](../kdf/) under a wrapper-specific label. Use this when the application already holds a shared secret (an ML-KEM encapsulated key, an HKDF output, an out-of-band negotiated key) and wants the outer cipher key to be reproducible without re-distribution. The caller wipes the master after this returns.
+- **`DeriveKey`** derives a deterministic outer cipher key from a high-entropy master (`32 <= len(master) <= MaxMasterKeySize`) via [`kdf.Derive`](../kdf/) under a wrapper-specific label. Use this when the application already holds a shared secret (an ML-KEM encapsulated key, an HKDF output, an out-of-band negotiated key) and wants the outer cipher key to be reproducible without re-distribution. The caller wipes the master after this returns.
 - **`MakeKeystream` / `MakeKeystreamAt`** construct a `Keystream` ready to XOR data. `MakeKeystreamAt(name, key, nonce, offset)` is the byte-offset positioned variant; it returns a keystream as if `MakeKeystream` had been called and then advanced by `offset` bytes — used by the worker pool to split one logical keystream into disjoint parallel chunks that re-concatenate byte-identical to a serial pass.
 - **`Wrap` / `Unwrap`** are the blob (Single Message) round-trip pair. `Wrap` allocates a fresh `nonce(NonceSize(name)) || keystream-XOR(blob)` wire, drawing the nonce from `crypto/rand`. `Unwrap` reverses it.
-- **`WrapInPlace` / `UnwrapInPlace`** are the zero-body-allocation counterparts. `WrapInPlace` mutates `blob` to its ciphertext form and returns the assembled wire; on error `blob` is left unchanged.
+- **`WrapInPlace` / `UnwrapInPlace`** are the zero-body-allocation counterparts. `WrapInPlace` mutates `blob` to its ciphertext form in place and returns the per-stream nonce; the caller emits `nonce` followed by `blob` to the wire without allocating an intermediate wire buffer. `UnwrapInPlace` strips the leading nonce from `wire`, XOR-decrypts the body in place, and returns an aliased slice `wire[NonceSize(name):]` to the decrypted data.
 - **`NewWrapWriter` / `NewUnwrapReader`** are the streaming wrap surface. The wrap writer emits the nonce on its first underlying `dst.Write` then XORs every subsequent byte through the keystream; the unwrap reader is symmetric. One stream session uses one nonce and the keystream counter advances monotonically across every byte written.
+- **`FinishWrapStream`** flushes and finalises a stream created with `NewWrapWriter`, ensuring any pending nonce is emitted even if zero payload bytes were written.
 - **`XORParallel` / `XORParallelAt`** are the low-level parallel XOR helpers exposed for callers that want the wrap-style worker-pool split without the surrounding wrap envelope. `XORParallelAt(name, key, nonce, base, dst, src)` accepts a `base` byte offset so the leading chunk is positioned at the caller's intended starting point and the result stays byte-identical to a serial XOR over the same `(key, nonce, base, src)` tuple.
 
 ### Wire format
@@ -92,12 +95,14 @@ keystream), see [`ctr/CONSTRUCTIONS.md`](../ctr/CONSTRUCTIONS.md).
 
 ## Quick Start
 
-The wrapper composes on top of ITB's Triple 8-seed surface. Two canonical wrap shapes cover the surface:
+The wrapper composes on top of ITB's Triple 8-seed surface. Standard Triple profiles (`ProfileSingleMsgTripleMACV1`, `ProfileStreamingAEADTripleMACV1`) already engage the format-deniability wrapper automatically. Manual composition via `wrapper.Wrap` or `wrapper.NewWrapWriter` is intended for custom pipelines where the built-in wrapper is disengaged (`triple.Opts{WithWrapper: &noWrap}`), for Low-Level ITB entry points (`Encrypt3xNNNCfg`), or for external ciphertext streams. In the examples below, the pipeline's internal wrapper is explicitly disengaged (`withWrap := false`) to prevent double wrapping.
+
+Two canonical wrap shapes cover the surface:
 
 - **Blob wrap** (`Wrap` / `Unwrap`) — the Single Message pair. Wraps one ITB blob returned from `triple.Pipeline.EncryptMessage` (or the Low-Level `Encrypt3xNNNCfg`) with `nonce || keystream-XOR(blob)`.
 - **Stream wrap** (`NewWrapWriter` / `NewUnwrapReader`) — the streaming pair. Sits between the caller and the ITB Streaming AEAD / Streaming Non-AEAD reader / writer so every byte of the ITB wire passes through the outer keystream.
 
-Full end-to-end examples covering the canonical 4-triple / 2-Low-Level example set live in the [top-level ITB README](https://github.com/everanium/itb#readme); the two shapes below are the wrap-side snippets those examples plug in.
+Full end-to-end examples covering the canonical four-Triple / two-Low-Level example set live in the [top-level ITB README](https://github.com/everanium/itb#readme); the two shapes below are the wrap-side snippets those examples plug in.
 
 ### Blob wrap — Single Message
 
@@ -107,7 +112,11 @@ import (
     "github.com/everanium/itb/wrapper"
 )
 
-sender, blob, _ := triple.Init(triple.ProfileSingleMsgTripleMACV1, triple.Opts{})
+// Disengage internal wrapper to avoid double wrapping when wrapping manually:
+withWrap := false
+sender, blob, _ := triple.Init(triple.ProfileSingleMsgTripleMACV1, triple.Opts{
+    WithWrapper: &withWrap,
+})
 defer sender.Close()
 // Persist the session bundle for a receiver:
 //   _ = sender.SaveF("session.json")
@@ -140,7 +149,10 @@ import (
     "github.com/everanium/itb/wrapper"
 )
 
-sender, blob, _ := triple.Init(triple.ProfileStreamingAEADTripleMACV1, triple.Opts{})
+withWrap := false
+sender, blob, _ := triple.Init(triple.ProfileStreamingAEADTripleMACV1, triple.Opts{
+    WithWrapper: &withWrap,
+})
 defer sender.Close()
 // Persist the session bundle for a receiver:
 //   _ = sender.SaveF("session.json")
@@ -171,7 +183,7 @@ Callers driving the Low-Level `EncryptStreamAuth3xNNNCfg` / `Encrypt3xNNNCfg` en
 
 ## Verification matrix
 
-Every wrap shape × cipher combination round-trips against random plaintext (1 KiB for Single Message, 64 KiB for streaming) with sha256 byte-equality inside the wrapper's test suite. The wire-byte delta between cipher columns is exactly the per-stream nonce-size delta (16 vs 12 vs 16 bytes); the User-Driven Loop variants additionally include 4 bytes of keystream-XORed length prefix per chunk.
+Every wrap shape × cipher combination round-trips against random plaintext (1 KiB for Single Message, 64 KiB for streaming) with sha256 byte-equality inside the wrapper's test suite. The wire-byte delta between cipher columns is exactly the per-stream nonce-size delta (16 bytes for PRF-counter / AES-CTR vs 12 bytes for ChaCha20); the User-Driven Loop variants additionally include 4 bytes of keystream-XORed length prefix per chunk.
 
 ## Performance
 

@@ -14,19 +14,17 @@ import (
 	"github.com/everanium/itb/internal/forcetier"
 )
 
-// BLAKE2b512 returns a cached BLAKE2b-512 itb.HashFunc512 with a
-// freshly-generated 64-byte fixed key.
+// BLAKE2b512 returns a cached BLAKE2b-512 itb.HashFunc512 along with
+// the 64-byte fixed key the closure is bound to. With no argument a
+// fresh key is generated via crypto/rand; passing a single
+// caller-supplied [64]byte uses that key instead. Save the returned
+// key for cross-process persistence.
 //
 // BLAKE2b natively supports 512-bit output and up to a 64-byte key.
 // The construction is identical to BLAKE2b256 modulo widths:
 // H(key || data ^ seed) where the payload is zero-padded out to 64
 // bytes when shorter, ensuring all 8 seed uint64's contribute
 // regardless of how short the caller's data is.
-// BLAKE2b512 returns a cached BLAKE2b-512 itb.HashFunc512 along with
-// the 64-byte fixed key the closure is bound to. With no argument a
-// fresh key is generated via crypto/rand; passing a single
-// caller-supplied [64]byte uses that key instead. Save the returned
-// key for cross-process persistence.
 func BLAKE2b512(key ...[64]byte) (itb.HashFunc512, [64]byte) {
 	var k [64]byte
 	if len(key) > 0 {

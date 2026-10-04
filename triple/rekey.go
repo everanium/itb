@@ -23,12 +23,14 @@ import (
 // THREAD-SAFETY. Rekey mutates Pipeline state. The caller is
 // responsible for serialising this call against every concurrent
 // [Pipeline.EncryptStream] / [Pipeline.DecryptStream] /
+// [Pipeline.EncryptStreamBytes] / [Pipeline.DecryptStreamBytes] /
 // [Pipeline.EncryptMessage] / [Pipeline.DecryptMessage] on the same
 // Pipeline. Recommended pattern is a sync.RWMutex: acquire the read
 // lock for cipher-path calls, the write lock for Rekey.
 //
 // Sanity checks: [ErrClosed] if the Pipeline has been closed;
-// [ErrIdenticalMasters] if the two supplied masters compare
+// [ErrMissingMasters] if a master required by an enabled layer is
+// missing; [ErrIdenticalMasters] if the two supplied masters compare
 // bytewise-equal. When a layer is disabled for this Pipeline the
 // corresponding master argument is ignored (may be nil); Rekey
 // against a Pipeline with both layers off is a no-op that still

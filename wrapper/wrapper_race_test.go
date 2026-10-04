@@ -94,8 +94,8 @@ func TestWrapperNonceBodyBatching(t *testing.T) {
 				t.Fatal("no dst.Write calls recorded")
 			}
 			// Batching invariant: the first dst.Write must carry the
-			// nonce AND the first inner body. A first write of exactly
-			// nlen bytes is the pre-fix bug (standalone nonce write).
+			// nonce AND the first inner body (standalone nonce write
+			// without body is invalid).
 			if calls[0] <= nlen {
 				t.Fatalf("first dst.Write = %d bytes, want > %d "+
 					"(nonce batched with first inner body); "+

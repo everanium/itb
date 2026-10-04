@@ -4,9 +4,9 @@
 >
 > PRF-grade hash functions are **required**. No warranty is provided.
 
-**No bespoke cryptography.** ITB introduces no cryptographic primitive of its own — no custom S-box, permutation, or round function. It is a construction over existing primitives, much as PGP composes standard ciphers rather than defining one. Such constructions are not the object of algorithm-level cryptographic certification: national regimes (NIST CAVP/FIPS in the US, GOST/FSB in Russia, OSCCA's SM-series in China, IC3S in India, SOG-IS/EUCC and national lists in the EU, ASD's ISM in Australia, CRYPTREC in Japan, KCMVP in South Korea) certify **primitives** and the **modules** built on them, not compositional schemes. Eligibility for regulated use is therefore inherited from the primitives ITB is configured with, not conferred by ITB itself.
+**No bespoke cryptography.** ITB composes established, standardized primitives rather than introducing new cryptographic designs. Security properties and regulatory status are inherited from the underlying primitives; see [README.md](../README.md) for jurisdictional certification details.
 
-This document describes how each supported `Derive` construction turns a key-derivation key (the **master**) and a public **label** into an `outLen`-byte subkey. Each registry name maps to a standard, separately analysable construction. The names (`areion256`, `areion512`, `blake2b256`, `blake2b512`, `blake2s`, `blake3`, `aescmac`, `siphash24`, `chacha20`) are short identifiers; this document states the exact byte layout each one computes.
+This document describes how each supported `Derive` construction turns a key-derivation key (the **master**) and a public **label** into an `outLen`-byte subkey. Each registry name maps to a standard, separately analysable construction. The registry names are short identifiers; this document states the exact byte layout each supported primitive computes.
 
 Audience: external auditors, paper reviewers, downstream integrators reading the code wanting to know what is actually computed when `Derive` is called.
 
@@ -41,20 +41,7 @@ For the standards' own conformance, refer to the upstream specifications and lib
 - **`areion256`** — PRF = registry Areion-SoEM-256 keyed hash. The 32-byte master is the family key; each PRF call returns a 32-byte output.
 - **`areion512`** — PRF = registry Areion-SoEM-512 keyed hash, which requires a 64-byte family key. The 32-byte master is first stretched to 64 bytes by an internal key schedule — SP 800-108 Counter Mode over the `areion256` PRF (keyed by `master[:32]`) under a fixed family-internal label, producing 64 bytes — and the stretched key then keys the Areion-SoEM-512 PRF. The fixed internal label keeps the stretch isolated from any caller-chosen label. Each PRF call returns a 64-byte output.
 
-**Per-block PRF input.** Identical to the `aescmac` / `siphash24` layout: `[i]_32be || Label || 0x00 || Context || [L]_32be`, empty Context, `[L]_32be` the output length in bits. The subkey is the leftmost `outLen` bytes of the concatenated PRF outputs.
-
-**Output is NOT cross-length prefix-consistent.** As with every SP 800-108 construction here, the bound `[L]_32be` field makes the output specific to `outLen`; slicing a longer derivation does **not** equal deriving the shorter length directly.
-
-**Security claim.** SP 800-108 Counter Mode is a NIST-standard KDF; the Areion-SoEM keyed hash is a CBC-MAC over the SoEM keyed permutation, beyond-birthday-bound secure under the SoEM PRP assumption. The Areion-SoEM PRF is **not** NIST-approved, so the construction is sound under that PRP assumption without claiming NIST conformance.
-
-## SP 800-108 Counter Mode (registry: `aescmac`, `siphash24`)
-
-**Construction.** NIST SP 800-108 KDF in Counter Mode, fixed-input representation **r1**, over a fixed-output-length PRF. The two registry names differ only in which PRF fills the role:
-
-- **`aescmac`** — PRF = AES-CMAC (RFC 4493) over AES-128. The 16-byte master is the AES-128 key; the CMAC subkeys `K1`, `K2` are derived once per RFC 4493 §2.3 via GF(2^128) doubling with the reduction constant `0x87`. Each PRF call returns a 16-byte tag.
-- **`siphash24`** — PRF = SipHash-2-4 with 128-bit output. The 16-byte master is the SipHash key, split into the little-endian halves `(k0, k1)`. Each PRF call returns the 16-byte `(lo, hi)` SipHash-128 tag in little-endian order.
-
-**Per-block PRF input.** For each block index `i = 1, 2, ...` the PRF is evaluated over the fixed input
+**Per-block PRF input.** For each block index `i = 1, 2, ...` the PRF is evaluated over the fixed input:
 
 ```
 [i]_32be || Label || 0x00 || Context || [L]_32be
@@ -68,17 +55,15 @@ where:
 - **`Context`** is **empty** in this package (zero bytes),
 - **`[L]_32be`** is the requested output length **in bits** (`outLen * 8`) as a 32-bit big-endian integer.
 
-Only the leading 4 counter bytes change between blocks; the suffix `Label || 0x00 || [L]_32be` is built once and reused per block. The subkey is the leftmost `outLen` bytes of the concatenated PRF outputs `K(1) || K(2) || ...`.
+The subkey is the leftmost `outLen` bytes of the concatenated PRF outputs `K(1) || K(2) || ...`.
 
-**Key-separation property.** Distinct labels produce distinct PRF inputs at every block index, so subkeys derived under different labels are independent. The label is public; only distinctness is required.
+**Output is NOT cross-length prefix-consistent.** As with every SP 800-108 construction here, the bound `[L]_32be` field makes the output specific to `outLen`; slicing a longer derivation does **not** equal deriving the shorter length directly.
 
-**Output is NOT cross-length prefix-consistent.** Because the output length `L` is bound into **every** block input (the `[L]_32be` suffix), changing `outLen` under the same master and label changes every PRF block input and therefore the entire output. Deriving 64 bytes and then truncating to 32 does **not** equal deriving 32 bytes directly. A consumer that needs a 32-byte key must call `Derive` with `outLen = 32`; slicing a longer derivation yields different bytes.
-
-**Security claim.** SP 800-108 Counter Mode is a NIST-standard KDF; with PRF = AES-CMAC over AES-128 the construction is NIST-standard end to end, PRF-secure under the standard PRP assumption on AES-128. With PRF = SipHash-2-4 the SP 800-108 mode is unchanged, but SipHash-as-PRF is **not** NIST-approved; the construction is sound under SipHash-2-4's own PRF security argument, without claiming NIST conformance.
+**Security claim.** SP 800-108 Counter Mode is a NIST-standard KDF; the Areion-SoEM keyed hash is a CBC-MAC over the SoEM keyed permutation, beyond-birthday-bound secure under the SoEM PRP assumption. The Areion-SoEM PRF is **not** NIST-approved, so the construction is sound under that PRP assumption without claiming NIST conformance.
 
 ## SP 800-108 Counter Mode over native keyed BLAKE (registry: `blake2b256`, `blake2b512`, `blake2s`, `blake3`)
 
-**Construction.** NIST SP 800-108 KDF in Counter Mode, fixed-input representation **r1**, identical in shape to the `aescmac` / `siphash24` constructions above. The four registry names differ only in which keyed BLAKE hash fills the PRF role:
+**Construction.** NIST SP 800-108 KDF in Counter Mode, fixed-input representation **r1**, identical in shape to the SP 800-108 constructions above. These registered BLAKE primitives differ only in which keyed BLAKE hash fills the PRF role:
 
 - **`blake2b256`** — PRF = native keyed BLAKE2b-256 (RFC 7693). The 32-byte master is the BLAKE2b key; each PRF call returns the 32-byte keyed digest over the block input.
 - **`blake2b512`** — PRF = native keyed BLAKE2b-512 (RFC 7693). The 32-byte master is the BLAKE2b key; each PRF call returns the 64-byte keyed digest over the block input.
@@ -87,11 +72,27 @@ Only the leading 4 counter bytes change between blocks; the suffix `Label || 0x0
 
 The keyed mode here is the upstream **standard keyed PRF** (RFC 7693 keyed BLAKE2 / BLAKE3 keyed mode); it is **not** the ITB per-pixel registry hash wrapper of the same name, which derives its key differently. The 32-byte master keys the hash directly.
 
-**Per-block PRF input.** Identical to the `aescmac` / `siphash24` layout: for each block index `i = 1, 2, ...` the PRF is evaluated over `[i]_32be || Label || 0x00 || Context || [L]_32be`, with empty Context and `[L]_32be` the requested output length in bits. The subkey is the leftmost `outLen` bytes of `K(1) || K(2) || ...`.
+**Per-block PRF input.** Identical to the SP 800-108 layout: for each block index `i = 1, 2, ...` the PRF is evaluated over `[i]_32be || Label || 0x00 || Context || [L]_32be`, with empty Context and `[L]_32be` the requested output length in bits. The subkey is the leftmost `outLen` bytes of `K(1) || K(2) || ...`.
 
 **Output is NOT cross-length prefix-consistent.** As with every SP 800-108 construction here, the output length `L` is bound into every block input, so changing `outLen` under the same master and label changes the entire output. Slicing a longer derivation does **not** equal deriving the shorter length directly.
 
 **Security claim.** SP 800-108 Counter Mode is a NIST-standard KDF; the keyed BLAKE PRF is sound under the standard PRF assumption on keyed BLAKE2 / BLAKE3. The mode is NIST-standard but the BLAKE PRF is **not** NIST-approved, so the construction is sound under the keyed-BLAKE PRF security argument without claiming NIST conformance.
+
+## SP 800-108 Counter Mode (registry: `aescmac`, `siphash24`)
+
+**Construction.** NIST SP 800-108 KDF in Counter Mode, fixed-input representation **r1**, over a fixed-output-length PRF. These registry primitives differ only in which PRF fills the role:
+
+- **`aescmac`** — PRF = AES-CMAC (RFC 4493) over AES-128. The 16-byte master is the AES-128 key; the CMAC subkeys `K1`, `K2` are derived once per RFC 4493 §2.3 via GF(2^128) doubling with the reduction constant `0x87`. Each PRF call returns a 16-byte tag.
+- **`siphash24`** — PRF = SipHash-2-4 with 128-bit output. The 16-byte master is the SipHash key, split into the little-endian halves `(k0, k1)`. Each PRF call returns the 16-byte `(lo, hi)` SipHash-128 tag in little-endian order.
+
+**Per-block PRF input.** Identical to the SP 800-108 layout: for each block index `i = 1, 2, ...` the PRF is evaluated over `[i]_32be || Label || 0x00 || Context || [L]_32be`. Only the leading 4 counter bytes change between blocks; the suffix `Label || 0x00 || [L]_32be` is built once and reused per block. The subkey is the leftmost `outLen` bytes of the concatenated PRF outputs `K(1) || K(2) || ...`.
+
+**Key-separation property.** Distinct labels produce distinct PRF inputs at every block index, so subkeys derived under different labels are independent. The label is public; only distinctness is required.
+
+**Output is NOT cross-length prefix-consistent.** Because the output length `L` is bound into **every** block input (the `[L]_32be` suffix), changing `outLen` under the same master and label changes every PRF block input and therefore the entire output. Deriving 64 bytes and then truncating to 32 does **not** equal deriving 32 bytes directly. A consumer that needs a 32-byte key must call `Derive` with `outLen = 32`; slicing a longer derivation yields different bytes.
+
+**Security claim.** SP 800-108 Counter Mode is a NIST-standard KDF; with PRF = AES-CMAC over AES-128 the construction is NIST-standard end to end, PRF-secure under the standard PRP assumption on AES-128. With PRF = SipHash-2-4 the SP 800-108 mode is unchanged, but SipHash-as-PRF is **not** NIST-approved; the construction is sound under SipHash-2-4's own PRF security argument, without claiming NIST conformance.
+
 
 ## XChaCha20 keystream KDF (registry: `chacha20`)
 
@@ -115,6 +116,6 @@ The keyed mode here is the upstream **standard keyed PRF** (RFC 7693 keyed BLAKE
 
 **Determinism.** All constructions are deterministic in `(name, master, label, outLen)`. The same four inputs always produce the same output bytes; there is no internal randomness.
 
-**Labels are public.** In all constructions the label is a public domain-separation input. It feeds the SP 800-108 Label field (`aescmac`, `siphash24`, the four BLAKE names, `areion256`, `areion512`) or the XChaCha20 nonce (`chacha20`). Its only requirement is distinctness per intended subkey; it carries no secrecy requirement.
+**Labels are public.** In all constructions the label is a public domain-separation input. It feeds the SP 800-108 Label field (the SP 800-108 constructions) or the XChaCha20 nonce (`chacha20`). Its only requirement is distinctness per intended subkey; it carries no secrecy requirement.
 
-**Standards posture.** Only `aescmac` is a NIST-standard KDF over a NIST-standard PRF end to end. The four BLAKE names, `areion256`, `areion512`, and `siphash24` use the NIST-standard SP 800-108 mode over a non-NIST PRF; `chacha20` is a sound non-NIST keystream KDF. These distinctions are stated so an integrator selecting a construction for a regulated context knows which one inherits NIST conformance and which do not.
+**Standards posture.** Only `aescmac` is a NIST-standard KDF over a NIST-standard PRF end to end. The BLAKE, Areion-SoEM, and SipHash constructions use the NIST-standard SP 800-108 mode over a non-NIST PRF; `chacha20` is a sound non-NIST keystream KDF. These distinctions are stated so an integrator selecting a construction for a regulated context knows which one inherits NIST conformance and which do not.

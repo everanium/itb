@@ -1,4 +1,4 @@
-// Package itb — 4-way batched Areion-SoEM primitives.
+// 4-way batched Areion-SoEM primitives.
 //
 // AreionSoEM256x4 and AreionSoEM512x4 process four independent
 // (key, input) tuples simultaneously using the upstream
@@ -42,6 +42,7 @@
 // operations run entirely in the SoA layout so VAES instructions can
 // process four lanes per issued instruction without per-round
 // gather/scatter cost.
+
 package itb
 
 import (

@@ -9,8 +9,8 @@ import (
 	"github.com/everanium/itb/internal/hashprf"
 )
 
-// ciphers enumerates the three stream-capable registry primitives with their
-// expected key and nonce sizes.
+// ciphers enumerates the native-stream and dedicated-CTR registry primitives
+// with their expected key and nonce sizes.
 var ciphers = []struct {
 	name      string
 	keySize   int
@@ -70,8 +70,8 @@ func TestKeyNonceSizes(t *testing.T) {
 	}
 }
 
-// TestUnsupportedRegistryPrimitives confirms primitives outside the three
-// stream-capable names are rejected by every entry point.
+// TestUnsupportedRegistryPrimitives confirms non-outer primitives (such as
+// ClassNPRF lab helpers) are rejected by every entry point.
 func TestUnsupportedRegistryPrimitives(t *testing.T) {
 	for _, name := range []string{"crc128", "fnv1a"} {
 		if _, err := KeySize(name); err == nil {

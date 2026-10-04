@@ -11,10 +11,10 @@
 // encrypt call as an entropy source. Key / nonce / seed derivation
 // stays on crypto/rand.Read (natural CSPRNG, not this DRBG expansion).
 //
-// Fill acquires a fresh 48-byte seed from crypto/rand.Read on every call
-// (32-byte AES-256 key + 16-byte AES-CTR IV, or 32-byte key + 12-byte
-// ChaCha20 nonce depending on tier) and expands the seed into a
-// keystream that is XOR'd against dst in place. On the two production
+// Fill acquires a fresh seed from crypto/rand.Read on every call
+// (48 bytes for AES-CTR: 32-byte AES-256 key + 16-byte AES-CTR IV; or
+// 44 bytes for ChaCha20: 32-byte key + 12-byte RFC 8439 nonce) and
+// expands the seed into a keystream that is XOR'd against dst in place. On the two production
 // call sites dst is drawn from a bufferPool checkout or a fresh make()
 // slice, both of which are zero-initialised — the XOR against zero
 // yields raw keystream, matching the byte-for-byte semantic of
@@ -26,10 +26,10 @@
 //   - arm64 with ARMv8-AES  -> AES-CTR
 //   - Everything else       -> ChaCha20 (golang.org/x/crypto/chacha20)
 //
-// On 11700K the AES-CTR tier hits ~6.7 GB/s per goroutine (measured in
-// scratch/drbg-bench Phase A); the ChaCha20 tier matches crypto/rand's
-// vgetrandom throughput on hardware without AES acceleration. Either
-// tier is a strict throughput win over the syscall-backed baseline in
+// On 11700K the AES-CTR tier hits ~6.7 GB/s per goroutine (empirically
+// measured during reference hardware evaluation); the ChaCha20 tier matches
+// crypto/rand's vgetrandom throughput on hardware without AES acceleration.
+// Either tier is a strict throughput win over the syscall-backed baseline in
 // the three-goroutine container-fill shape because per-goroutine cost is
 // no longer serialised through the kernel's per-thread ChaCha20-DRBG
 // state.

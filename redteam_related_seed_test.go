@@ -461,7 +461,7 @@ func TestRedTeamRelatedSeedNoDeltaFloor(t *testing.T) {
 		mk := func() *Seed128 {
 			// Reuse the same baseline components across ALL 8 seeds
 			// for the invariant. Note: Encrypt3x128Cfg rejects seed
-			// pointer collisions, so we build 8 SEPARATE seed handles
+			// pointer collisions, so 8 SEPARATE seed handles are built
 			// carrying the SAME 8 baseline component vectors.
 			return mkSeed128RS(t, prim.hf, baseComponents["noiseSeed"])
 		}

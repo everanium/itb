@@ -17,7 +17,7 @@ import (
 //   - dataSeed → data rotation (0-6) + per-bit XOR masks (56 bits).
 //   - startSeed → pixel start offset.
 //
-// Uses blockHash256 (256-bit hash) per pixel, taking the low 64-bit half
+// Uses blockHash256 (256-bit hash) per pixel, taking the low 64-bit word
 // for noise/data configuration. Threads cfg through to [processChunk256]
 // so a non-nil cfg with an explicit NonceBits override is honoured at
 // the per-pixel buffer-allocation site.
@@ -119,9 +119,9 @@ func containerSizeAuth3_256Cfg(cfg *Config, noiseSeed *Seed256, dataSeed1, dataS
 }
 
 // Encrypt3x256Cfg encrypts data using Triple Ouroboros with 8 seeds
-// (256-bit variant). Plaintext is split into 3 parts (every 3rd byte),
-// each encrypted into 1/3 of the pixel data with independent dataSeed
-// and startSeed, sharing noiseSeed. The lockSeed keys the 48-bit
+// (256-bit variant). Plaintext is partitioned across 3 lanes by the
+// 48-bit Interlocked Barrier, each encrypted into 1/3 of the pixel data
+// with independent dataSeed and startSeed, sharing noiseSeed. The lockSeed keys the 48-bit
 // interlock overlay's per-chunk bit-permutation derivation, bound to a
 // second, independently drawn interlock nonce that travels split
 // across the three interlocked lanes rather than in the header. Output

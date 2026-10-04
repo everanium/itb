@@ -27,10 +27,11 @@ import (
 //   - key (16 bytes) is loaded once into a cipher.Block (AES-NI
 //     hardware path on amd64 / arm64 hosts that expose the AES round
 //     instructions; software AES fallback otherwise);
-//   - per call: seed0||seed1 is XOR'd into the first 16 data bytes,
-//     then encrypted in-place; remaining 16-byte data chunks are
-//     XOR'd into state and encrypted; the final 16-byte block is
-//     returned as (lo64, hi64).
+//   - per call: seed0 and seed1 are folded with a 64-bit length
+//     tag (seed0^lenTag, seed1^lenTag) to initialize the 16-byte
+//     state, the first data bytes (up to 16) are XOR'd on top and
+//     encrypted; remaining 16-byte data chunks are XOR'd into state
+//     and encrypted; the final 16-byte block is returned as (lo64, hi64).
 //
 // The cipher.Block is shared across all invocations of the closure
 // (it carries no per-call state), so concurrent goroutines may call

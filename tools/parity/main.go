@@ -34,13 +34,13 @@
 // on the same nonce space, so wire-shape divergence isolates to the
 // pixel kernel itself.
 //
-// -hash=H cycles the inner primitive. At startup the helper registers
-// one Single Message No MAC profile (parallax off, wrapper off) per
-// shipped [hashes.Registry] entry under the name "parity-<hash>-v1";
-// the pixel kernel is therefore exercised across every hash a C-side
-// or asm change can touch, not only the default Areion-SoEM. The
-// -profile flag accepts the derived parity-* name (typical) or any
-// shipped profile name (opportunistic use).
+// -hash=H cycles the inner primitive. For "parity-*" profile names, the
+// helper dynamically registers a Single Message No MAC profile (parallax
+// off, wrapper off) for the requested [hashes.Registry] entry under the
+// name "parity-<hash>-v1"; the pixel kernel is therefore exercised
+// across every hash a C-side or asm change can touch, not only the default
+// Areion-SoEM. The -profile flag accepts the derived parity-* name
+// (typical) or any shipped profile name (opportunistic use).
 //
 // The utility uses standard library only. No dependency on bindings.
 package main
@@ -204,8 +204,8 @@ func ensureProfile(profileName, hashName string) error {
 // crypto/rand-drawn seed material, then serialises the session blob to
 // -seed-file. Subsequent encrypt / decrypt calls on either build arm
 // consume the same blob, so both arms observe the identical seed state.
-// nonceBits selects the on-wire nonce width; the caller must pass the
-// same value to every encrypt / decrypt invocation against the blob.
+// nonceBits selects the on-wire nonce width embedded into the session blob;
+// subsequent encrypt / decrypt calls reconstruct this width via [triple.Load].
 func doInit(profileName, hashName, seedPath string, nonceBits int) error {
 	pipe, blob, err := triple.Init(profileName, triple.Opts{NonceBits: nonceBits})
 	if err != nil {
@@ -332,9 +332,9 @@ func readFile(path string) ([]byte, error) {
 }
 
 // writeFile is the counterpart to readFile. Uses 0o600 for the produced
-// files: seed material and its derived wire live under tmp/ which is
-// already gitignored, but a tighter perm on the individual files keeps
-// them unreadable to other users on multi-tenant hosts.
+// files: seed material and its derived wire live in dedicated
+// fixture / temporary output directories, but a tighter perm on the
+// individual files keeps them unreadable to other users on multi-tenant hosts.
 func writeFile(path string, data []byte) error {
 	return os.WriteFile(path, data, 0o600)
 }

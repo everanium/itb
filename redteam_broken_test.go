@@ -349,7 +349,7 @@ func TestRedTeamBrokenCRC128CribKPA(t *testing.T) {
 		t.Fatalf("Encrypt3x128Cfg: %v", err)
 	}
 	// Verify the barrier ciphertext round-trips (sanity: it IS a valid
-	// encryption, we are attacking the real thing).
+	// encryption targeting the production pipeline).
 	back, err := Decrypt3x128Cfg(nil, ns, ls, d1, d2, d3, s1, s2, s3, ct)
 	if err != nil {
 		t.Fatalf("Decrypt3x128Cfg: %v", err)

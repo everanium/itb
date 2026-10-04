@@ -119,9 +119,9 @@ func containerSizeAuth3_128Cfg(cfg *Config, noiseSeed *Seed128, dataSeed1, dataS
 }
 
 // Encrypt3x128Cfg encrypts data using Triple Ouroboros with 8 seeds
-// (128-bit variant). Plaintext is split into 3 parts (every 3rd byte),
-// each encrypted into 1/3 of the pixel data with independent dataSeed
-// and startSeed, sharing noiseSeed. The lockSeed keys the 48-bit
+// (128-bit variant). Plaintext is partitioned across 3 lanes by the
+// 48-bit Interlocked Barrier, each encrypted into 1/3 of the pixel data
+// with independent dataSeed and startSeed, sharing noiseSeed. The lockSeed keys the 48-bit
 // interlock overlay's per-chunk bit-permutation derivation, bound to a
 // second, independently drawn interlock nonce that travels split
 // across the three interlocked lanes rather than in the header. Output

@@ -237,9 +237,9 @@ func GenerateMasterKey() ([]byte, error) {
 // label "schedule:0".
 //
 // An error is returned when schedule is nil, when master is shorter
-// than MasterKeySize, when the anchor primitive's key size cannot be
-// resolved by the ctr registry, or when KDF derivation fails for the
-// scheduling subkey or any per-slot subkey.
+// than MasterKeySize or longer than MaxMasterKeySize, when the anchor
+// primitive's key size cannot be resolved by the ctr registry, or when
+// KDF derivation fails for the scheduling subkey or any per-slot subkey.
 func NewCipherset(master []byte, schedule *Schedule) (*Cipherset, error) {
 	if schedule == nil {
 		return nil, fmt.Errorf("parallax: nil schedule")

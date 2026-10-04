@@ -315,9 +315,9 @@ func (kr *keystreamReader) Read(p []byte) (int, error) {
 // leave the wrapper together — so a concurrent reader draining the
 // destination between separate writes cannot strand the nonce on its
 // own. The matching reader is NewUnwrapReader. Useful when the caller
-// needs an io.Writer to pass to ITB's EncryptStreamIO /
-// EncryptStreamAuthIO, or to drive a user-side loop that emits
-// caller-framed chunks (e.g. a u32_LE length prefix followed by the
+// needs an io.Writer to pass as destination to triple.Pipeline.EncryptStream
+// (or low-level itb.EncryptStreamAuth3xCfg), or to drive a user-side loop that
+// emits caller-framed chunks (e.g. a u32_LE length prefix followed by the
 // chunk body) through a single keystream so the framing bytes also
 // pass through the XOR.
 //
@@ -345,9 +345,10 @@ func NewWrapWriter(name string, key []byte, dst io.Writer) (io.Writer, error) {
 
 // NewUnwrapReader returns an io.Reader that consumes the per-stream nonce
 // from src on construction, then XOR-decrypts every subsequent byte read.
-// Useful when the caller needs an io.Reader to pass to ITB's
-// DecryptStreamIO / DecryptStreamAuthIO, or to read caller-framed chunks
-// emitted through NewWrapWriter back out of the keystream XOR.
+// Useful when the caller needs an io.Reader to pass as source to
+// triple.Pipeline.DecryptStream (or low-level itb.DecryptStreamAuth3xCfg), or
+// to read caller-framed chunks emitted through NewWrapWriter back out of the
+// keystream XOR.
 //
 // A fully empty src (zero bytes) is accepted symmetrically with
 // NewWrapWriter's zero-Write-emits-nothing behaviour: the returned
@@ -413,8 +414,9 @@ func (emptyUnwrapReader) Read(p []byte) (int, error) { return 0, io.EOF }
 // 128-bit primitives, the leading 32 bytes for 256-bit primitives and for
 // 512-bit primitives like BLAKE2b-512, and deterministically stretches the
 // leading 32 bytes to the 64 bytes for 512-bit primitives like Areion-SoEM-512.
-// A longer master is accepted and truncated the same way, so both endpoints
-// derive an identical key from any master of 32 bytes or more.
+// A longer master up to MaxMasterKeySize (128 bytes) is accepted and
+// truncated the same way, so both endpoints derive an identical key from any
+// master within [32, MaxMasterKeySize].
 func DeriveKey(name string, master []byte) ([]byte, error) {
 	if len(master) < 32 {
 		return nil, fmt.Errorf("wrapper: DeriveKey master must be at least 32 bytes, got %d", len(master))

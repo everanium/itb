@@ -4,9 +4,9 @@
 >
 > PRF-grade hash functions are **required**. No warranty is provided.
 
-**No bespoke cryptography.** ITB introduces no cryptographic primitive of its own — no custom S-box, permutation, or round function. It is a construction over existing primitives, much as PGP composes standard ciphers rather than defining one. Such constructions are not the object of algorithm-level cryptographic certification: national regimes (NIST CAVP/FIPS in the US, GOST/FSB in Russia, OSCCA's SM-series in China, IC3S in India, SOG-IS/EUCC and national lists in the EU, ASD's ISM in Australia, CRYPTREC in Japan, KCMVP in South Korea) certify **primitives** and the **modules** built on them, not compositional schemes. Eligibility for regulated use is therefore inherited from the primitives ITB is configured with, not conferred by ITB itself.
+**No bespoke cryptography.** ITB composes established, standardized primitives rather than introducing new cryptographic designs. Security properties and regulatory status are inherited from the underlying primitives; see [README.md](../README.md) for jurisdictional certification details.
 
-This document describes how each shipped MAC primitive is keyed and wrapped before it reaches `itb.MACFunc` (`func(data []byte) []byte`). Two of the three names are exact references to a standard; the third, `hmac-blake3`, diverges from its literal name in a deliberate, documented way. The names in `registry.go` (`kmac256`, `hmac-sha256`, `hmac-blake3`) are short FFI-stable identifiers, **not** in every case assertions of conformance with the standard of the same name.
+This document describes how each shipped MAC primitive is keyed and wrapped before it reaches `itb.MACFunc` (`func(data []byte) []byte`). Two shipped names are exact references to a standard; the third, `hmac-blake3`, diverges from its literal name in a deliberate, documented way. The names in `registry.go` (`kmac256`, `hmac-sha256`, `hmac-blake3`) are short FFI-stable identifiers, **not** in every case assertions of conformance with the standard of the same name.
 
 Audience: external auditors, paper reviewers, downstream integrators reading the code wanting to know what is actually computed when ITB calls into one of these MACs.
 
@@ -18,11 +18,11 @@ For the standards' own conformance, refer to the upstream specifications and lib
 - `crypto/hmac` + `crypto/sha256` — the stdlib HMAC-SHA-256.
 - `github.com/zeebo/blake3` — BLAKE3 native keyed mode (BLAKE3 spec §6).
 
-The primitive-math layer is the upstream libraries' (and the stdlib's) responsibility. This document describes the ITB-construction wrapping around those primitives, and `macs_test.go` pins that wrapping against regression (bit-exact KAT against pycryptodome's KMAC256, the RFC 4231 HMAC-SHA-256 vectors, the upstream BLAKE3 keyed-mode KAT, plus an `EncryptAuth` round-trip integration test).
+The primitive-math layer is the upstream libraries' (and the stdlib's) responsibility. This document describes the ITB-construction wrapping around those primitives, and `macs_test.go` pins that wrapping against regression (bit-exact KAT against pycryptodome's KMAC256, the RFC 4231 HMAC-SHA-256 vectors, the official BLAKE3 keyed-mode KAT, plus integration testing under `TestRegisterTripleIntegration` and `TestMakeIncrementalParity`).
 
 ## Table of constructions
 
-Listed in canonical registry order (referenced by `triple.Profile.MacName` and the per-call `triple.Opts.MacName` override, stable across releases). All three produce a **32-byte tag** and accept a 32-byte key.
+Listed in canonical registry order (referenced by `triple.Profile.MacName` and the per-call `triple.Opts.MacName` override, stable across releases). Every shipped primitive produces a **32-byte tag** and accepts a 32-byte key.
 
 | # | Registry name | Underlying primitive | Construction shape | Key (min / recommended) | Tag |
 |---|---|---|---|---|---|
@@ -79,7 +79,7 @@ The `left_encode` / `right_encode` / `encode_string` / `bytepad` helpers in `kma
 1. Once at construction: `template = blake3.NewKeyed(key)` (the 32-byte key replaces the IV constants in BLAKE3's chunk chaining values — the spec keyed-PRF mode, §6).
 2. Per call: clone the template (internal-state copy), `Write` the data, finalise to 32 bytes. Each clone is independent, so concurrent goroutines may call the closure in parallel.
 
-**Why this is not RFC 2104 HMAC.** The name `hmac-blake3` is a **deliberate misnomer**, not a claim of the nested `H(K ⊕ opad ‖ H(K ⊕ ipad ‖ M))` HMAC construction. BLAKE3-keyed mode is chosen here **precisely because the BLAKE3 authors recommend it instead of HMAC**: BLAKE3's keyed mode is itself a sound keyed PRF (BLAKE3 spec §6), so the nested HMAC wrapper RFC 2104 builds around an unkeyed Merkle-Damgård hash is unnecessary with BLAKE3 — and would only add cost without adding security. Wrapping BLAKE3 in literal RFC 2104 HMAC would be the wrong construction for this primitive, not the right one.
+**Why this is not RFC 2104 HMAC.** The name `hmac-blake3` is a **deliberate misnomer**, not a claim of the nested `H(K ⊕ opad ‖ H(K ⊕ ipad ‖ M))` HMAC construction. BLAKE3-keyed mode is chosen here **precisely because the BLAKE3 authors recommend it instead of HMAC**: BLAKE3's keyed mode is itself a sound keyed PRF (BLAKE3 spec §6), so the nested HMAC wrapper RFC 2104 builds around an unkeyed Merkle-Damgård hash is unnecessary with BLAKE3 — and would only add cost without adding security. Wrapping BLAKE3 in literal RFC 2104 HMAC is redundant for this primitive and adds cost without cryptographic benefit.
 
 The registry name is nonetheless kept as `hmac-blake3` for two reasons. First, **user familiarity and registry symmetry**: alongside `hmac-sha256`, the `hmac-` prefix marks the MAC role ("a keyed authentication tag") that integrators recognise and scan for, where a bare `blake3-keyed` would read as something unrelated to the MAC slot. Second, **wire-level stability**: the name is embedded in every `triple.Profile` and travels on the wire through `MacName`, so renaming would churn every binding, example, and test that references it. The standard-conformant name would be `blake3-keyed`; this section is where the divergence is stated rather than implied, so an auditor reads what is actually computed regardless of the label.
 
@@ -97,8 +97,8 @@ The registry name is nonetheless kept as `hmac-blake3` for two reasons. First, *
 
 **No AEAD claim from the MAC alone.** No shipped primitive claims AEAD security or ciphertext integrity on its own — each is only a keyed PRF / MAC on its tag output. ITB's authenticated-encryption surface is built **on top** via the MAC-Inside-Encrypt construction (`EncryptAuth*` and its streaming counterpart), not from these MACs directly.
 
-## Why these three, and why a sound keyed PRF suffices
+## Design rationale and PRF sufficiency
 
-ITB's MAC-Inside-Encrypt construction places the 32-byte tag **inside** the encrypted container, where the barrier dispersal (`process128` / `process256` / `process512`) already destroys any plaintext / tag boundary an attacker could see; the always-on 48-bit Interlocked Barrier overlay further obscures the payload region. The surrounding ITB construction therefore takes care of placement-hiding, replay-resistance (via the per-message nonce), and CCA-resistance, which means the MAC primitive itself only has to be a sound keyed PRF. All three shipped MACs meet that bar under standard assumptions, and the selection spans three independent primitive families (Keccak-sponge, SHA-2 Merkle-Damgård, BLAKE3 tree) so a structural weakness discovered in one family leaves the other two unaffected.
+ITB's MAC-Inside-Encrypt construction places the 32-byte tag **inside** the encrypted container, where the barrier dispersal (`process128` / `process256` / `process512`) already destroys any plaintext / tag boundary an attacker could see; the always-on 48-bit Interlocked Barrier overlay further obscures the payload region. The surrounding ITB construction therefore takes care of placement-hiding, replay-resistance (via the per-message nonce), and CCA-resistance, which means the MAC primitive itself only has to be a sound keyed PRF. Every shipped MAC meets that bar under standard assumptions, and the selection spans independent primitive families (Keccak-sponge, SHA-2 Merkle-Damgård, BLAKE3 tree) so a structural weakness discovered in one family leaves the remaining families unaffected.
 
-The set is curated, not pluggable: these three are the built-in factories for the C / FFI / mobile shared-library distribution. Users needing a different MAC supply their own `itb.MACFunc` to the `EncryptAuth*` path directly.
+The C shared-library ABI exports a curated, non-pluggable set serving the FFI / mobile distribution. In Go-native environments, custom MACs can be plugged via `macs.Register` and `macs.BuildHMAC` / `macs.BuildKeyedHash`, or supplied as a custom `itb.MACFunc` directly.

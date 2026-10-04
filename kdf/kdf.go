@@ -41,10 +41,10 @@ const maxOutLen = (1<<32)/8 - 1
 // the required key size Derive returns an error rather than fabricate
 // key entropy.
 //
-// label is a public domain-separation string. For "aescmac" and
-// "siphash24" it is the SP 800-108 Label field and may be any length.
-// For "chacha20" it becomes the XChaCha20 nonce and must be at most 24
-// bytes; longer labels are an error.
+// label is a public domain-separation string. For the SP 800-108
+// counter-mode constructions it feeds the Label field and may be any
+// length. For "chacha20" it becomes the XChaCha20 nonce and must be at
+// most 24 bytes; longer labels are an error.
 //
 // outLen is the exact number of subkey bytes returned. It must be
 // non-negative.

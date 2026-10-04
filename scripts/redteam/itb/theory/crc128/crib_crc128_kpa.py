@@ -332,10 +332,10 @@ def disambiguate_unobserved_bits(
 
     channelXOR exposes only bits 3..58 of hLo, so the initial algebraic
     recovery leaves 8 bits (3 low + 5 high) unconstrained. Those bits DO
-    affect `rotation = hLo mod 7`. Here we enumerate all 256 placements
-    of the unknown bits, keep only K_trial values where every pixel in
+    affect `rotation = hLo mod 7`. All 256 placements of the unknown bits
+    are enumerated, keeping only K_trial values where every pixel in
     the short-crib passes under some noise_pos (8-way brute force) with
-    deterministic rotation, and return the first survivor.
+    deterministic rotation, and returning the first survivor.
 
     Cryptographically, more than one K_trial can survive a short crib
     when const(p) bit 60/63 patterns happen to cancel the bit-60/bit-63

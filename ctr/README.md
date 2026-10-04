@@ -4,7 +4,7 @@
 >
 > PRF-grade hash functions are **required**. No warranty is provided.
 
-**No bespoke cryptography.** ITB introduces no cryptographic primitive of its own — no custom S-box, permutation, or round function. It is a construction over existing primitives, much as PGP composes standard ciphers rather than defining one. Such constructions are not the object of algorithm-level cryptographic certification: national regimes (NIST CAVP/FIPS in the US, GOST/FSB in Russia, OSCCA's SM-series in China, IC3S in India, SOG-IS/EUCC and national lists in the EU, ASD's ISM in Australia, CRYPTREC in Japan, KCMVP in South Korea) certify **primitives** and the **modules** built on them, not compositional schemes. Eligibility for regulated use is therefore inherited from the primitives ITB is configured with, not conferred by ITB itself.
+**No bespoke cryptography.** ITB composes established, standardized primitives rather than introducing new cryptographic designs. Security properties and regulatory status are inherited from the underlying primitives; see [README.md](../README.md) for jurisdictional certification details.
 
 > **See [CONSTRUCTIONS.md](CONSTRUCTIONS.md) for the per-primitive construction descriptions.** The registry names (`areion256`, `areion512`, `blake2b256`, `blake2b512`, `blake2s`, `blake3`, `aescmac`, `siphash24`, `chacha20`) are short identifiers shared with the `hashes/` registry; here they select a counter-mode keystream construction, not the per-pixel hash wrapper of the same name. Read CONSTRUCTIONS.md before assuming a particular standard's exact byte layout.
 
@@ -16,11 +16,16 @@ Each supported primitive maps to a standard counter-mode keystream. The package 
 
 ```go
 func New(name string, key, nonce []byte) (Keystream, error)
+func NewAt(name string, key, nonce []byte, byteOffset int) (Keystream, error)
+func NewResettable(name string, key, nonce []byte) (ResettableKeystream, error)
+func NewResettableAt(name string, key, nonce []byte, byteOffset int) (ResettableKeystream, error)
 func KeySize(name string) (int, error)
 func NonceSize(name string) (int, error)
 ```
 
 - **`New`** constructs a `Keystream` from the named cipher, the caller-provided key, and a per-stream nonce. The key length must equal `KeySize(name)` and the nonce length must equal `NonceSize(name)`; a mismatch is an error. An unknown name is an error.
+- **`NewAt`** constructs a `Keystream` positioned at `byteOffset` within the logical stream. Sub-block positioning is handled in O(1) time by setting the block counter and pre-discarding intra-block residual bytes.
+- **`NewResettable` / `NewResettableAt`** construct a `ResettableKeystream` that can rewind or realign its counter to any byte offset without re-keying.
 - **`KeySize`** returns the byte length of the key for the named cipher, or an error for an unknown name.
 - **`NonceSize`** returns the nonce byte length for the named cipher, or an error for an unknown name.
 
@@ -30,25 +35,20 @@ The `Keystream` interface is the minimal counter-mode surface:
 type Keystream interface {
     XORKeyStream(dst, src []byte)
 }
+
+type ResettableKeystream interface {
+    Keystream
+    ResetCounter(byteOffset int) error
+}
 ```
 
-`XORKeyStream` xors a keystream segment over `src` into `dst`, advancing the internal counter. The contract matches [`crypto/cipher.Stream`](https://pkg.go.dev/crypto/cipher#Stream); `dst` must be at least as long as `src`. The interface stays decoupled from `crypto/cipher.Stream` so the SipHash construction does not have to present itself as a stdlib type. As with any counter-mode stream, decryption is the same operation as encryption: XORing a fresh keystream built from the same `(name, key, nonce)` over the ciphertext recovers the plaintext.
+`XORKeyStream` xors a keystream segment over `src` into `dst`, advancing the internal counter. The contract matches [`crypto/cipher.Stream`](https://pkg.go.dev/crypto/cipher#Stream); `dst` must be at least as long as `src`. The interface stays decoupled from `crypto/cipher.Stream` so the SipHash construction does not have to present itself as a stdlib type. `ResetCounter` on `ResettableKeystream` realigns the stream to `byteOffset` in place, avoiding buffer reallocations in worker pools. As with any counter-mode stream, decryption is the same operation as encryption: XORing a fresh keystream built from the same `(name, key, nonce)` over the ciphertext recovers the plaintext.
 
 ## Supported primitives
 
-| Registry name | Construction | Key size | Nonce size | Notes |
-|---|---|---|---|---|
-| `areion256` | registry Areion-SoEM-256 keyed PRF in counter mode | 32 bytes | 16 bytes | PRF-counter construction; 32-byte keystream blocks, keystream-block collision bound 2^128. See CONSTRUCTIONS.md. |
-| `areion512` | registry Areion-SoEM-512 keyed PRF in counter mode | 64 bytes | 16 bytes | PRF-counter construction; 64-byte keystream blocks, keystream-block collision bound 2^256. See CONSTRUCTIONS.md. |
-| `blake2b256` | native keyed BLAKE2b-256 PRF in counter mode | 32 bytes | 16 bytes | PRF-counter construction; 32-byte keystream blocks, keystream-block collision bound 2^128. See CONSTRUCTIONS.md. |
-| `blake2b512` | native keyed BLAKE2b-512 PRF in counter mode | 32 bytes | 16 bytes | PRF-counter construction; 64-byte keystream blocks, keystream-block collision bound 2^256. See CONSTRUCTIONS.md. |
-| `blake2s` | native keyed BLAKE2s-256 PRF in counter mode | 32 bytes | 16 bytes | PRF-counter construction; 32-byte keystream blocks, keystream-block collision bound 2^128. See CONSTRUCTIONS.md. |
-| `blake3` | native keyed BLAKE3 PRF in counter mode | 32 bytes | 16 bytes | PRF-counter construction; 32-byte keystream blocks, keystream-block collision bound 2^128. See CONSTRUCTIONS.md. |
-| `aescmac` | AES-128 in CTR mode (`crypto/cipher.NewCTR` over `crypto/aes`) | 16 bytes | 16 bytes | Standard NIST CTR mode; AES-NI accelerated on supported hosts. The 16-byte nonce is the CTR initial counter block. |
-| `siphash24` | SipHash-2-4 PRF in counter mode, 128-bit output | 16 bytes | 16 bytes | PRF-counter construction; keystream-block collision bound is 2^64. See CONSTRUCTIONS.md. |
-| `chacha20` | ChaCha20 (RFC 8439) keystream (`golang.org/x/crypto/chacha20`) | 32 bytes | 12 bytes | Standard RFC 8439 ChaCha20 keystream. |
+Every PRF-grade primitive in the registry is supported in counter mode. For the complete matrix of construction shapes, block sizes, key/nonce sizes, and collision bounds, see [CONSTRUCTIONS.md § Table of constructions](CONSTRUCTIONS.md#table-of-constructions).
 
-All registry primitives are supported; every entry point (`New`, `NewAt`, `KeySize`, `NonceSize`) returns an error for any name outside of supported primitives above. `NewAt(name, key, nonce, byteOffset)` returns a keystream positioned at `byteOffset` of the `New` stream, so one logical stream can be XORed in parallel — each worker seeks to its chunk offset and emits a byte-identical disjoint range.
+All registry primitives are supported; every entry point (`New`, `NewAt`, `KeySize`, `NonceSize`) returns an error for any name outside of supported primitives. `NewAt(name, key, nonce, byteOffset)` returns a keystream positioned at `byteOffset` of the `New` stream, so one logical stream can be XORed in parallel — each worker seeks to its chunk offset and emits a byte-identical disjoint range.
 
 ## Usage
 

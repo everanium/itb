@@ -27,7 +27,7 @@ import (
 var version = "dev"
 
 // rootCmd is the top-level cobra command for the itb3 binary. Every
-// subcommand attaches to it in [buildRoot].
+// subcommand attaches to it.
 func rootCmd() *cobra.Command {
 	root := &cobra.Command{
 		Use:   "itb3",

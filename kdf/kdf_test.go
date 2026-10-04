@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// supported lists the registry names this package version derives from,
+// supported lists the non-hash registry names exercised by these tests,
 // in registry order.
 var supported = []string{"aescmac", "siphash24", "chacha20"}
 
@@ -199,15 +199,13 @@ func TestOutputLength(t *testing.T) {
 	}
 }
 
-// TestPrefixConsistency confirms that a shorter derivation is the prefix
-// of a longer one for the same arguments. The SP 800-108 Counter Mode
-// constructions encode the bit length L into every block input, so a
-// 64-byte derivation does not share a prefix with a 32-byte derivation;
-// only the XChaCha20 keystream construction is prefix-consistent across
-// lengths. The non-block-multiple split within a single fixed length is
-// checked for all primitives via the 20-of-32 prefix relation, which
-// holds because each construction emits a length-fixed byte stream that
-// is truncated to outLen.
+// TestPrefixConsistency confirms that repeated derivations at the same
+// length are deterministic in their prefixes (intra-length prefix
+// stability). The SP 800-108 Counter Mode constructions encode the bit
+// length L into every block input, so a 64-byte derivation does not share
+// a prefix with a 32-byte derivation; only the XChaCha20 keystream
+// construction is prefix-consistent across lengths (tested in
+// TestChaCha20PrefixConsistency).
 func TestPrefixConsistency(t *testing.T) {
 	for _, name := range supported {
 		t.Run(name, func(t *testing.T) {

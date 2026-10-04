@@ -4,12 +4,12 @@ package aescmacasm
 // schedule (11 × 16-byte round keys K0..K10) from a caller-supplied
 // 16-byte master key, following FIPS 197 §5.2 verbatim.
 //
-// Used by the AES-CMAC Pair factory: each Pair invocation expands
-// the fixed key once and passes a *[176]byte to the ZMM-batched
-// chain-absorb kernels. The kernels broadcast each round key to all
-// 4 lanes via VBROADCASTI32X4 at function entry; the actual VAESENC
-// per-pixel work consumes the broadcast keys without re-touching
-// the schedule buffer.
+// Used by NewSchedule: expands the 16-byte fixed key into the
+// 176-byte schedule in Schedule.roundKeys consumed by all assembly
+// tiers (AVX-512, VAES+AVX2, AES-NI) and references. In SIMD kernels,
+// the round keys are broadcast to lanes or loaded into registers at
+// kernel entry; the actual VAESENC / AESENC per-pixel work consumes
+// the round keys without re-touching the schedule buffer.
 //
 // The expansion is bit-identical to the round keys produced
 // internally by crypto/aes.NewCipher; the parity test in

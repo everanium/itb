@@ -51,14 +51,17 @@ func TestParseUnknownValue(t *testing.T) {
 
 // TestAccessorsReturnInitValues verifies that the exported accessors
 // report the values resolved at package init. The test process runs
-// with the production environment (variables unset), so both report
-// auto-dispatch unless the test invocation itself forces a tier.
+// with the production environment (variables unset), so all accessors
+// report auto-dispatch unless the test invocation itself forces a tier.
 func TestAccessorsReturnInitValues(t *testing.T) {
 	if got := HashTier(); got != hashTier {
 		t.Fatalf("HashTier() = %q, want package value %q", got, hashTier)
 	}
 	if got := InterlockTier(); got != interlockTier {
 		t.Fatalf("InterlockTier() = %q, want package value %q", got, interlockTier)
+	}
+	if got := InterlockPRFFillTier(); got != interlockPRFFillTier {
+		t.Fatalf("InterlockPRFFillTier() = %q, want package value %q", got, interlockPRFFillTier)
 	}
 }
 

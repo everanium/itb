@@ -26,11 +26,8 @@ paper-facing documentation:
   a barrier in the path. The shipped tree has none of those — Triple is
   the only construction, the 8-seed constellation is mandatory, and the
   48-bit Interlocked Barrier is non-disableable — so these scripts
-  require an archived tree to run. Check out the commit immediately
-  before the first shipped commit `2133136` (i.e. `git checkout
-  2133136^`) into a work tree and the scripts execute exactly as they
-  did on that release. Their historical results are also preserved
-  verbatim in [archive/REDTEAM.md](../../archive/REDTEAM.md) and
+  require an archived tree to run. Their historical results are preserved
+  in [archive/REDTEAM.md](../../archive/REDTEAM.md) and
   [archive/HARNESS.md](../../archive/HARNESS.md). The scripts remain in
   tree as templates for future Python probe sequences and as the
   attribution source `redteam_broken_test.go` cites when it ports
@@ -172,11 +169,11 @@ on the shipped Triple + always-on Interlocked Barrier container.
 ## Compatible with the archived tree only
 
 Cited from [archive/REDTEAM.md](../../archive/REDTEAM.md).
-Reproducible against a checked-out archived tree (`git checkout
-2133136^`); not against the shipped tree, where the single-region
-overlay-disengaged construction these attacks target no longer exists.
-Kept in tree as templates for future Python probe sequences and as
-attribution sources for the ported Go tests.
+Their historical results are preserved in
+[archive/REDTEAM.md](../../archive/REDTEAM.md) and
+[archive/HARNESS.md](../../archive/HARNESS.md). Kept in tree as templates
+for future Python probe sequences and as attribution sources for the
+ported Go tests.
 
 ### Broken-primitive attack scripts
 

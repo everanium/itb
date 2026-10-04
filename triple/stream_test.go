@@ -123,11 +123,11 @@ func runStreamRoundTrip(t *testing.T, w widthCase, n nonceCase, tog toggleCase, 
 	}
 	defer pipe.Close()
 
-	// Receiver-side Pipeline opened from the sender's blob using the
-	// same Opts so the toggle overrides reach both sides identically.
+	// Receiver-side Pipeline reconstructed from the sender's blob, which
+	// self-describes the toggle overrides and pipeline geometry.
 	rx, err := Load(blob)
 	if err != nil {
-		t.Fatalf("Open: %v", err)
+		t.Fatalf("Load: %v", err)
 	}
 	defer rx.Close()
 
@@ -180,7 +180,7 @@ func TestEncryptStreamDecryptStreamConcurrentSamePipeline(t *testing.T) {
 
 	rx, err := Load(blob)
 	if err != nil {
-		t.Fatalf("Open: %v", err)
+		t.Fatalf("Load: %v", err)
 	}
 	defer rx.Close()
 

@@ -59,13 +59,16 @@
 //     256 / 512 mirrors, plus the width-agnostic IO-Driven
 //     [EncryptStreamAuth3xCfg] / [DecryptStreamAuth3xCfg] entries.
 //
-// [ParseChunkLenCfg] inspects the first 20 bytes of a chunk header
-// and reports the chunk's total length on the wire, letting external
-// streaming consumers walk a concatenated chunk stream one chunk at a
-// time. The FFI shim reaches ITB streaming through the Triple family
-// (see the [github.com/everanium/itb/triple] package); external
-// tooling built directly against libitb3 reads chunk sizes via
-// [HeaderSize] combined with the width / height inline in the header.
+// [ParseChunkLenCfg] parses a chunk header (whose length depends on
+// [Config.NonceBits], defaulting to 68 bytes for 512-bit nonces: nonce
+// bytes + 4 bytes for W and H) and validates that the supplied buffer
+// contains the entire announced chunk, reporting the chunk's total
+// length on the wire, letting external streaming consumers walk a
+// concatenated chunk stream one chunk at a time. The FFI shim reaches
+// ITB streaming through the Triple family (see the
+// [github.com/everanium/itb/triple] package); external tooling built
+// directly against libitb3 reads chunk header sizes via the C ABI
+// ITB_HeaderSize combined with the width / height inline in the header.
 //
 // Empty input (nil or zero-length plaintext / wire) is rejected
 // uniformly with [ErrEmptyInput] across every Low-Level Cfg entry
@@ -102,8 +105,10 @@
 // [Blob128] / [Blob256] / [Blob512] pack the native-API encryptor
 // material (per-seed hash key + Components + dedicated lockSeed +
 // optional MAC key + name) plus the per-instance configuration into
-// one self-describing JSON blob. Export3Cfg produces the blob;
-// Import3Cfg reverses it, populating the struct's public Key* /
+// one self-describing JSON blob. The Export3Cfg methods
+// ([Blob128.Export3Cfg], [Blob256.Export3Cfg], [Blob512.Export3Cfg])
+// produce the blob; the matching Import3Cfg methods reverse it,
+// populating the struct's public Key* /
 // Components fields and returning the captured [Config]. The receiver
 // wires Hash / BatchHash from the saved key bytes through the
 // matching factory. The [github.com/everanium/itb/triple] facade is
@@ -116,11 +121,12 @@
 // A nil [*Config] falls through to the compile-in defaults
 // ([DefaultNonceBits] / [DefaultBarrierFill] and runtime.NumCPU for
 // parallelism). A non-nil cfg overrides NonceBits, BarrierFill,
-// MaxWorkers, and MACIncremental on a per-call basis; multiple
-// encryptors with distinct configurations coexist in one process
-// without any shared mutable state. Valid NonceBits: 128, 256, 512
-// (default 512). Valid BarrierFill: 1, 2, 4, 8, 16, 32 (default 1).
-// Valid MaxWorkers: 0 (runtime.NumCPU fallback) or 1..256.
+// TagStubSize, MaxWorkers, and MACIncremental on a per-call basis;
+// multiple encryptors with distinct configurations coexist in one
+// process without any shared mutable state. Valid NonceBits: 0 (default
+// 512), 128, 256, 512. Valid BarrierFill: 0 (default 1), 1, 2, 4, 8, 16,
+// 32. Valid TagStubSize: 0 (disabled) or 16..64. Valid MaxWorkers: 0
+// (runtime.NumCPU fallback) or positive integer (clamped to 256).
 //
 // # Wire format
 //
@@ -131,11 +137,14 @@
 // three fragments carried at the front of the three interlocked lanes
 // inside the container. W and H are unsigned 16-bit big-endian
 // container dimensions; the pixel container carries the RGBWYOPA
-// payload routed through the Interlocked Barrier. The byte layout is
-// identical across all three hash width variants and across Single
-// Message vs Streaming shapes at the byte level — a single-chunk
-// stream is byte-shape-identical to a Single Message wire. See
-// README.md for the offset-level table.
+// payload routed through the Interlocked Barrier. The byte layout of
+// each chunk is identical across all three hash width variants. At the
+// Low-Level layer, streaming outputs a 32-byte stream prefix ahead of
+// the chunk sequence, matching the Streaming AEAD shape bit-for-bit,
+// whereas standalone Low-Level Single Message functions omit this
+// prefix (the high-level [github.com/everanium/itb/triple.Pipeline]
+// unifies both shapes on the wire). See README.md for the offset-level
+// table.
 //
 // # Concurrency
 //

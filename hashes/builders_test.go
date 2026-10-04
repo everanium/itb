@@ -11,7 +11,7 @@ import (
 	"github.com/everanium/itb"
 )
 
-// builders_test.go — coverage for the safe pluggable PRF builders.
+// Coverage for the safe pluggable PRF builders.
 //
 // Each builder is tested against six invariants:
 //

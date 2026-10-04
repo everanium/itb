@@ -4,7 +4,7 @@
 >
 > PRF-grade hash functions are **required**. No warranty is provided.
 
-**No bespoke cryptography.** ITB introduces no cryptographic primitive of its own — no custom S-box, permutation, or round function. It is a construction over existing primitives, much as PGP composes standard ciphers rather than defining one. Such constructions are not the object of algorithm-level cryptographic certification: national regimes (NIST CAVP/FIPS in the US, GOST/FSB in Russia, OSCCA's SM-series in China, IC3S in India, SOG-IS/EUCC and national lists in the EU, ASD's ISM in Australia, CRYPTREC in Japan, KCMVP in South Korea) certify **primitives** and the **modules** built on them, not compositional schemes. Eligibility for regulated use is therefore inherited from the primitives ITB is configured with, not conferred by ITB itself.
+**No bespoke cryptography.** ITB composes established, standardized primitives rather than introducing new cryptographic designs. Security properties and regulatory status are inherited from the underlying primitives; see [README.md](README.md) for jurisdictional certification details.
 
 Formal security proofs for the ITB (Information-Theoretic Barrier) symmetric cipher construction.
 
@@ -38,23 +38,26 @@ C'[p,ch] = insert(rotate(data_bits ⊕ channelXOR, r), C[p,ch], noisePos)
 
 The `insert` operation preserves the original bit at position noisePos and writes 7 data bits at the remaining positions. The noise bit at noisePos retains its original value from C[p,ch].
 
-For any fixed h (determining noisePos, channelXOR, r) and fixed data:
-- The 7 data-bit positions are deterministic (function of data, channelXOR, r)
-- The 1 noise-bit position retains C[p,ch]'s original bit at noisePos
-- C[p,ch]'s bit at noisePos ~ Bernoulli(1/2) (uniform random bit)
-- Therefore C'[p,ch] has exactly 2 possible values (noise bit = 0 or 1), each with probability 1/2
-
-The attacker observes C'[p,ch] = v. For any candidate hash output h':
-- There exist data bits and a noise bit value consistent with v under h'
-- The observation v does not distinguish between hash outputs
-
-Since C[p,ch] is independent of h (container generated before embedding), and the noise bit is the only random element in C'[p,ch]:
+For any fixed hash configuration h (determining noisePos, channelXOR, r) and fixed plaintext data bits d:
+- The 7 data-bit positions are deterministic functions of d, channelXOR, and r
+- The 1 noise-bit position retains C[p,ch]'s original bit at noisePos, distributed as Bernoulli(1/2) (uniform random bit)
+- Conditional on (h, d), C'[p,ch] takes one of two possible byte values (differing only at noisePos), each with probability 1/2. Across an unknown uniform plaintext distribution under ciphertext-only attack (COA), every byte value v ∈ {0, ..., 255} is equiprobable:
 
 ```
-P(C'[p,ch] = v | h) = P(noise bit at noisePos matches v's bit at noisePos) = 1/2
+P(C'[p,ch] = v | h) = 1/256 = P(C'[p,ch] = v)
 ```
 
-This holds for any hash function H. The hash output h is consumed by modification of a random value and is not reconstructible from the observation. ∎
+Hence I(H(K); C') = 0 and H(H(K) | C') = H(H(K)). The observation v does not distinguish between candidate hash configurations.
+
+**Compatibility formula:**
+
+```
+∀ v ∈ {0, ..., 255}, ∀ h : ∃ (c, d) : embed(c, h, d) = v
+```
+
+For any observed byte value v and any candidate hash output h, there exist a container byte c and plaintext data bits d producing v. Under known plaintext (fixed d), a compatible XOR mask m exists for every candidate pair (noisePos, r) by Proof 2.
+
+Since C[p,ch] is independent of h (container generated before embedding), the hash output h is consumed by modification of a random container value and is unreconstructible from passive observation. ∎
 
 Note: this proof covers passive observation (Core ITB, MAC + Silent Drop). Under MAC + Reveal, noiseSeed config (3 bits/pixel) is additionally leaked via CCA oracle interaction — see [Proof 6](#proof-6-cca-leak-upper-bound).
 
@@ -86,7 +89,7 @@ The attacker with known plaintext d can compute a valid m for EVERY candidate po
 **Proof.** The 8 seeds are generated independently from crypto/rand and enforced pairwise-distinct at the API surface by byte-level `Components` comparison in addition to pointer identity, so byte-identical seed material reaching the API through blob import or the Low-Level constructors is rejected on the same gate. By construction:
 
 1. **noiseSeed → noisePos**: `noiseHash = ChainHash(counter||nonce, noiseSeed) & 7`
-2. **lockSeed → per-chunk Interlocked Barrier mask triple**: `rank = ChainHash(tag||groupIdx, deriveInterLockSeed(lockSeed, nonce) ‖ lockSeed)`; two-step unrank per [Proof 11](#proof-11-48-bit-interlocked-barrier-mask-space).
+2. **lockSeed → per-chunk Rank Barrier mask triple (Interlocked Barrier)**: `rank` evaluated over `[0x03 ‖ LE64(groupIdx) ‖ 4×0x00]` under `lockComps = [K, session components...]` with Round 1 primer round on `K = deriveInterLockSeed(lockSeed, nonce)` under domain tag `0x04`; two-step unrank per [Proof 11](#proof-11-48-bit-rank-barrier-mask-space-interlocked-barrier).
 3. **dataSeed_i → per-region rotation, XOR** (i ∈ {1,2,3}): `dataHash_i = ChainHash(counter||nonce, dataSeed_i)`
 4. **startSeed_i → per-region startPixel** (i ∈ {1,2,3}): `startPixel_i = ChainHash(0x02||nonce, startSeed_i) % totalPixels_i`
 
@@ -109,13 +112,13 @@ I(dataSeed_j ; startPixel_i) = 0    for every j ∈ {1,2,3}
 I(startSeed_j ; startPixel_i) = 0   for every j ≠ i
 ```
 
-**Combined compromise:** Even with any strict subset S ⊊ {noiseSeed, lockSeed, dataSeed_{1..3}, startSeed_{1..3}} fully known:
+**Combined compromise:** Let U = {noiseSeed, lockSeed, dataSeed_{1..3}, startSeed_{1..3}} denote the set of eight seeds. For any non-empty proper subset S ⊊ U:
 
 ```
-I(seed ∈ ({all 8} \ S) ; S) = 0
+I(X_{U \ S} ; X_S) = 0
 ```
 
-All 8 are independently generated (the pairwise independence between seeds is information-theoretic). The attacker knows whatever channels S controls but the remaining seeds' rotation, XOR masks, per-region pixel offsets, and per-chunk barrier permutation remain unrecoverable — computationally so under the PRF assumption via cascade PRF binding, not information-theoretically (total PRF inversion recovers them via the [Asymmetry note](#proof-4a-multi-factor-full-kpa-resistance) of Proof 4a). Seed pairwise independence is information-theoretic; individual seed unrecoverability under Full KPA is PRF-conditional.
+where I denotes Shannon mutual information and X_A denotes the joint distribution of seeds in subset A. All 8 are independently generated (the pairwise independence between seeds is information-theoretic). The attacker knows whatever channels S controls but the remaining seeds' rotation, XOR masks, per-region pixel offsets, and per-chunk barrier permutation remain unrecoverable — computationally so under the PRF assumption via cascade PRF binding, not information-theoretically (total PRF inversion recovers them via the [Asymmetry note](#proof-4a-multi-factor-full-kpa-resistance) of Proof 4a). Seed pairwise independence is information-theoretic; individual seed unrecoverability under Full KPA is PRF-conditional.
 
 **dataSeed_i side-channel:** each dataSeed's hash output is consumed only by:
 - `dataRotation = dataHash % 7` — register operation
@@ -191,7 +194,7 @@ The shipped construction instantiates the D and S domain types once per region a
 
 - **Observable + unobservable** (N or any S_i merged with L or any D_j): the observable domain's attack surface (CCA for N, cache for S_i) constrains the shared seed, leaking information about the unobservable domain — the pattern of pairings (a) and (c).
 - **Observable + observable** (N merged with an S_i, or S_i with S_j): two attack surfaces target one seed, and observations from one surface reduce the search space for the other domain — the pattern of pairing (b). For S_i + S_j the leak is additionally cross-region: one region's observed startPixel constrains another region's offset.
-- **Unobservable + unobservable** (L with a D_i, or D_i with D_j): no direct software-observable surface exists, but the merged domains lose statistical independence — under KPA, candidate constraints formulated against one region's rotation/XOR channel (or against the barrier's mask channel) would constrain the other domain derived from the same seed, defeating the independence that [Proof 3](#proof-3-8-seed-isolation) establishes and that the Full KPA composition ([Proof 4a](#proof-4a-multi-factor-full-kpa-resistance)) and the per-chunk mask-space argument ([Proof 11](#proof-11-48-bit-interlocked-barrier-mask-space)) treat as disjoint entropy sources.
+- **Unobservable + unobservable** (L with a D_i, or D_i with D_j): no direct software-observable surface exists, but the merged domains lose statistical independence — under KPA, candidate constraints formulated against one region's rotation/XOR channel (or against the barrier's mask channel) would constrain the other domain derived from the same seed, defeating the independence that [Proof 3](#proof-3-8-seed-isolation) establishes and that the Full KPA composition ([Proof 4a](#proof-4a-multi-factor-full-kpa-resistance)) and the per-chunk mask-space argument ([Proof 11](#proof-11-48-bit-rank-barrier-mask-space-interlocked-barrier)) treat as disjoint entropy sources.
 
 Every layout with at most 7 seeds merges at least two of the 8 domains (pigeonhole) and therefore contains at least one of the three patterns. 8 independent seeds are the minimum: any merge creates cross-domain or cross-region leakage, while 8 CSPRNG-generated independent keys achieve the pairwise independence of [Proof 3](#proof-3-8-seed-isolation). ∎
 
@@ -274,11 +277,11 @@ with 7^P (or 56^P without CCA) per-pixel encoding ambiguity as an additional fac
 
 **Composition conjecture.** Hash output bias and collisions are absorbed by the barrier ([Proof 7](#proof-7-bias-neutralization), BHT analysis). Occasional/sporadic PRF inversion events are additionally absorbed by startPixel isolation and per-pixel 1:1 ambiguity (obstacles 2, 3), plus gcd(7,8)=1 byte-splitting under Partial KPA (obstacle 4): recovered candidates become indistinguishable from the false-positive distribution. Systematic partial PRF inversion is a real (non-absorbed) threat that the barrier does not neutralize — the architecture raises cost but does not eliminate the attack — however, no such systematic weakness is currently known to reduce the Full KPA work factor below the theorem bound. Only total PRF inversion circumvents this via algorithmic seed recovery (see Asymmetry note).
 
-**Asymmetry note.** Obstacle (1) (PRF non-invertibility) is asymmetrically privileged: a complete failure of PRF (total hash inversion) allows obstacles (2)–(4) to be resolved algorithmically via recovered seeds, and the always-on Interlocked Barrier's per-chunk mask permutation ([Proof 11](#proof-11-48-bit-interlocked-barrier-mask-space)) similarly collapses via lockSeed recovery (cascade PRF inversion through the mask-derivation chain) or direct Full KPA observation of mask triples from plaintext-chunk to permuted-wire correspondence; whereas a complete failure of any architectural layer leaves PRF non-invertibility intact. The multi-factor property therefore protects against **partial** PRF weakening and **any degree** of architectural weakness, but not against **total** PRF inversion. ∎
+**Asymmetry note.** Obstacle (1) (PRF non-invertibility) is asymmetrically privileged: a complete failure of PRF (total hash inversion) allows obstacles (2)–(4) to be resolved algorithmically via recovered seeds, and the always-on Interlocked Barrier's Rank Barrier per-chunk mask permutation ([Proof 11](#proof-11-48-bit-rank-barrier-mask-space-interlocked-barrier)) similarly collapses via lockSeed recovery (cascade PRF inversion through the mask-derivation chain) or direct Full KPA observation of mask triples from plaintext-chunk to permuted-wire correspondence; whereas a complete failure of any architectural layer leaves PRF non-invertibility intact. The multi-factor property therefore protects against **partial** PRF weakening and **any degree** of architectural weakness, but not against **total** PRF inversion. ∎
 
-**SAT recovery.** SAT-based lockSeed recovery is structurally unmeasurable at attacker-realism. Any formulable SAT instance under the barrier requires granting seven of eight seeds via lab peek to strip the per-pixel stage; a granted-7/8 attacker is not the reuse-realistic attacker (who holds only the ciphertext pair and the public main nonce). Without stripping the per-pixel stage, the lockSeed → mask path runs through two consecutive live PRF cascades (`lockKey = ChainHash(0x04‖interlock_nonce, lockSeed)`, then per-chunk `prf_i = ChainHash(0x03‖⟨i⟩, lockKey ‖ lockSeed)`) and the instance reduces to PRF preimage recovery on the primitive, dominated by the primitive's SAT-hardness rather than the interlock's. The measurable instance and the reuse-realistic instance are disjoint by construction; the closure is PRF-conditional by construction.
+**SAT recovery.** SAT-based lockSeed recovery is structurally unmeasurable at attacker-realism. Any formulable SAT instance under the barrier requires granting seven of eight seeds via lab peek to strip the per-pixel stage; a granted-7/8 attacker is not the reuse-realistic attacker (who holds only the ciphertext pair and the public main nonce). Without stripping the per-pixel stage, the lockSeed → mask path runs through the two-stage cascade fill: setup derivation `K = ChainHash(0x04‖interlock_nonce, lockSeed)`, then per-chunk rank evaluation over `[0x03 ‖ LE64(groupIdx) ‖ 4×0x00]` under `lockComps = [K, session components...]` with Round 1 primer round on `K` and session feed-forward (`interlock48_cascade.go`), and the instance reduces to PRF preimage recovery on the primitive, dominated by the primitive's SAT-hardness rather than the interlock's. The measurable instance and the reuse-realistic instance are disjoint by construction; the closure is PRF-conditional by construction.
 
-**Dual-nonce carve-out.** Under the shipped dual-nonce wire format, simultaneous collision of both nonces across two messages is a degeneracy a production caller cannot reach: both nonces are drawn independently from CSPRNG per encryption with no caller-addressable override, so simultaneous collision requires a CSPRNG hardware fault. Under any partial-collision scenario (main-only or interlock-only), the un-collided axis provides fresh-nonce closure and the barrier's plaintext-recovery closure holds a fortiori.
+**Dual-nonce carve-out.** Under the dual-nonce mechanism, simultaneous collision of both nonces across two messages is a degeneracy an external caller cannot reach: both nonces are drawn independently from CSPRNG per encryption with no caller-addressable override, so simultaneous collision requires a CSPRNG hardware fault. Under any partial-collision scenario (main-only or interlock-only), the un-collided axis provides fresh-nonce closure and the barrier's plaintext-recovery closure holds a fortiori.
 
 ## Proof 5: Noise Barrier Bound
 
@@ -455,7 +458,9 @@ gap = capacity(s+1) - max_payload(s)
     = (2s + 1) × 7 bytes
 ```
 
-Since s ≥ 1: gap ≥ 21 bytes. For shipped values at 1024-bit key (per-region floor `MinPixels = 365` × 3 regions = 1095 total, `s = ⌈√1095⌉ = 34`): gap ≥ 483 bytes.
+Since s ≥ 1: gap ≥ 21 bytes. For shipped values at 1024-bit key:
+- Composite 3-region container (per-region floor `MinPixels = 365` × 3 regions = 1095 total, `s = ⌈√1095⌉ = 34`, container 35 × 35 = 1225): `gap ≥ (2 × 34 + 1) × 7 = 483 bytes`.
+- Theoretical single-region floor (`MinPixels = 400`, `s = ⌈√400⌉ = 20`, container 20 × 20 = 400): `gap ≥ (2 × 19 + 1) × 7 = 273 bytes` for payloads ≤ 19² = 361 pixels, and `(400 - 365) × 7 = 245 bytes` at the exact 365-pixel floor.
 
 **This gap is strictly positive for all s ≥ 1.** Perfect fill (gap = 0) is mathematically impossible. ∎
 
@@ -470,7 +475,8 @@ Both are encrypted identically by dataSeed (rotation + XOR). The attacker cannot
 
 | Data size | Side (s) | Min fill = 7×(2s+1) |
 |---|---|---|
-| shipped floor 1024-bit (per-region `MinPixels = 365` × 3 regions = 1095 total pixels floor) | 34 | 483 bytes |
+| theoretical single-region floor (1024-bit key, P = 400) | 19 / 20 | 273 / 245 bytes |
+| shipped floor 1024-bit (per-region `MinPixels = 365` × 3 regions = 1095 total pixels floor, s = 34) | 34 | 483 bytes |
 | 16 KB | 49 | 693 bytes |
 | 1 MB | 388 | 5,439 bytes |
 | 64 MB | 3,103 | 43,449 bytes |
@@ -479,9 +485,9 @@ The DRBG residue grows with data size: larger containers have proportionally mor
 
 ---
 
-## Proof 11: 48-bit Interlocked Barrier Mask Space
+## Proof 11: 48-bit Rank Barrier Mask Space (Interlocked Barrier)
 
-**Theorem.** For each 48-bit chunk of the interleaved payload, the Interlocked Barrier draws a mask triple `(m0, m1, m2)` of pairwise-disjoint 16-of-48 lanes from a per-chunk PRF-keyed space of
+**Theorem.** For each 48-bit chunk of the interleaved payload, the Rank Barrier (as the permutation layer of the Interlocked Barrier) draws a mask triple `(m0, m1, m2)` of pairwise-disjoint 16-of-48 lanes from a per-chunk PRF-keyed space of
 
 - A = C(48, 16) = **2,254,848,913,647** (log₂ ≈ 41.04) — choices for `m0`,
 - B = C(32, 16) = **601,080,390** (log₂ ≈ 29.16) — choices for `m1` from the remaining 32 bits (`m2` is then determined),
@@ -496,7 +502,7 @@ Under the PRF assumption, the per-chunk mask draws are computationally indisting
 
 **Proof.** Balanced-partition counting. A partition of a 48-bit word into three disjoint 16-bit lanes is fully specified by choosing `m0` (`C(48, 16) = A` ways), then `m1` from the remaining 32 bits (`C(32, 16) = B` ways); `m2` is the complement. The product `A · B` is the cardinality of Ω_chunk.
 
-PRF independence. The barrier derives each chunk's mask triple by consuming a domain tag plus the little-endian group index through the ChainHash cascade keyed by `deriveInterLockSeed(lockSeed, nonce) ‖ lockSeed` — a primer round over the derived key followed by `keyBits / width` rounds over the session components. Distinct chunks receive distinct PRF inputs and therefore distinct, PRF-independent output ranks. Under the PRF assumption these ranks are computationally indistinguishable from independent uniform selections from `[0, 2^128)`.
+PRF independence. The barrier derives each chunk's mask triple by evaluating the 13-byte input block `[0x03 ‖ LE64(groupIdx) ‖ 4×0x00]` through the ChainHash cascade keyed by `lockComps = [K, session components...]` — a primer round over derived intermediate key `K = deriveInterLockSeed(lockSeed, nonce)` under domain tag `0x04` followed by `keyBits / width` rounds over the session components. Distinct chunks receive distinct PRF inputs and therefore distinct, PRF-independent output ranks. Under the PRF assumption these ranks are computationally indistinguishable from independent uniform selections from `[0, 2^128)`.
 
 Preimage count. The unrank map `Ω_rank : [0, 2^128) → Ω_chunk` is the two-step `(idx0, idx1) = (⌊rank / B⌋ mod A, rank mod B)` applied to `rank`. Its preimage counts differ by at most 1: the `2^128 mod (A · B)` lowest-indexed pairs receive `⌈2^128 / (A · B)⌉ = ⌊2^128 / (A · B)⌋ + 1 ≈ 2^57.80` preimages, and the remainder receive `⌊2^128 / (A · B)⌋ ≈ 2^57.80` preimages (the two floors are equal at the 2^57.80 order). Every mask triple therefore has at least `⌊2^128 / (A · B)⌋ ≈ 2^57.80` PRF-output preimages, so any candidate mask triple is consistent with any observation.
 
@@ -524,9 +530,9 @@ Concretely, the reachable fraction of `(m0, m1)` pairs under the rejected same-r
 1 / 66861  ≈  1.5 × 10⁻⁵ ,
 ```
 
-so ≈ 99.998 % of the `A × B` mask space would be structurally excluded. An attacker exploiting the reduction structure would face a 66861×-restricted mask space through the back door — a substantial `log₂ 66861 ≈ 16.03`-bit erosion of the [Proof 11](#proof-11-48-bit-interlocked-barrier-mask-space) floor.
+so ≈ 99.998 % of the `A × B` mask space would be structurally excluded. An attacker exploiting the reduction structure would face a 66861×-restricted mask space through the back door — a substantial `log₂ 66861 ≈ 16.03`-bit erosion of the [Proof 11](#proof-11-48-bit-rank-barrier-mask-space-interlocked-barrier) floor.
 
-**Contrast with the chosen reduction.** The two-step map `rank ↦ (⌊rank / B⌋, rank mod B)` is a bijection `[0, 2^128) → [0, ⌊2^128 / B⌋) × [0, B)`. Reducing the first component `mod A` maps each pair `(a, b)` to `≈ ⌊2^128 / (A · B)⌋ = 2^57.80` preimages, differing by at most 1 — the deviation is granularity, not a distinguisher — so every pair in the full `[0, A) × [0, B)` is reached, with the near-uniformity bound of [Proof 11](#proof-11-48-bit-interlocked-barrier-mask-space). Full-space coverage is a deliberate property of the two-step reduction, not an accident.
+**Contrast with the chosen reduction.** The two-step map `rank ↦ (⌊rank / B⌋, rank mod B)` is a bijection `[0, 2^128) → [0, ⌊2^128 / B⌋) × [0, B)`. Reducing the first component `mod A` maps each pair `(a, b)` to `≈ ⌊2^128 / (A · B)⌋ = 2^57.80` preimages, differing by at most 1 — the deviation is granularity, not a distinguisher — so every pair in the full `[0, A) × [0, B)` is reached, with the near-uniformity bound of [Proof 11](#proof-11-48-bit-rank-barrier-mask-space-interlocked-barrier). Full-space coverage is a deliberate property of the two-step reduction, not an accident.
 
 **Constant-time note.** The qmod accumulator `qmod = (qmod · 2^64 + limb) mod A` computes `⌊rank / B⌋ mod A` incrementally during schoolbook division. Reduction commutes with the Horner form of the quotient, so the two-step reduction introduces no skew beyond the documented ±1 preimage deviation. ∎
 
@@ -544,7 +550,7 @@ The following theorems are well-known properties included for completeness. They
 
 **Part A: No spatial patterns.** The MAC covers the entire capacity: `tag = MAC(payload)` where `payload = [COBS data][0x00][DRBG fill]`.
 
-Under CCA, flipping any bit:
+Because the lane fragments of the interlock nonce `N_il` are prepended to the lane payloads prior to COBS framing, they reside within the authenticated lane buffers covered by the MAC tag; any active modification of `N_il` causes immediate MAC verification failure, eliminating unauthenticated context-commitment vulnerabilities. Flipping any data bit causes MAC failure. Only noise-bit flips produce "accept":
 - **COBS data bit** → payload changes → MAC(modified) ≠ tag → reject
 - **Null terminator bit** → payload changes → MAC(modified) ≠ tag → reject
 - **Fill byte bit** → payload changes → MAC(modified) ≠ tag → reject
@@ -575,11 +581,11 @@ P(collision) ≈ 1 - e^(-n²/2^(w+1)) ≈ n²/2^(w+1)
 
 At w = 512 (the shipped default): P reaches ~1/2 only at n ≈ 2^256, mathematically unreachable on foreseeable hardware. At w = 128 (the shortest supported width): P reaches ~1/2 at n ≈ 2^64.
 
-**Impact of collision:** The wire carries two independent per-message CSPRNG nonces — a main nonce `N_main` (bound to per-pixel noiseSeed / dataSeed_i derivations and per-region startSeed_i derivations) and an interlock nonce `N_il` (bound to the lockSeed's per-chunk mask draw through the `0x04` domain tag). A collision on one axis leaves the other axis re-parametrised. Under joint collision of both nonces with the same 8-seed tuple:
-- Same noiseSeed + `N_main` → identical noise positions for both messages.
+**Impact of collision:** The construction employs two independent per-message CSPRNG nonces — a public main nonce `N_m` on the wire header (bound to per-pixel noiseSeed / dataSeed_i derivations and per-region startSeed_i derivations) and an interlock nonce `N_il` embedded across the container lanes ahead of COBS under the Pixel Barrier (bound to the lockSeed's per-chunk mask draw through the `0x04` domain tag). A collision on one axis leaves the other axis re-parametrised. Under joint collision of both nonces with the same 8-seed tuple:
+- Same noiseSeed + `N_m` → identical noise positions for both messages.
 - Same lockSeed + `N_il` → identical per-chunk Interlocked Barrier permutations for both messages.
-- Same dataSeed_i + `N_main` → identical rotation and XOR masks per region.
-- Same startSeed_i + `N_main` → identical per-region startPixels.
+- Same dataSeed_i + `N_m` → identical rotation and XOR masks per region.
+- Same startSeed_i + `N_m` → identical per-region startPixels.
 - Different DRBG containers (generated independently).
 
 The attacker with two containers C₁, C₂ sharing the same configuration can extract corresponding data bits and XOR them: `data₁ ⊕ data₂` (two-time-pad structure at the bit level, after per-region reversal). This affects ONLY the colliding pair — all other messages with unique nonces remain secure.

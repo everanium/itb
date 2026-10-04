@@ -4,9 +4,9 @@
 >
 > PRF-grade hash functions are **required**. No warranty is provided.
 
-**No bespoke cryptography.** ITB introduces no cryptographic primitive of its own — no custom S-box, permutation, or round function. It is a construction over existing primitives, much as PGP composes standard ciphers rather than defining one. Such constructions are not the object of algorithm-level cryptographic certification: national regimes (NIST CAVP/FIPS in the US, GOST/FSB in Russia, OSCCA's SM-series in China, IC3S in India, SOG-IS/EUCC and national lists in the EU, ASD's ISM in Australia, CRYPTREC in Japan, KCMVP in South Korea) certify **primitives** and the **modules** built on them, not compositional schemes. Eligibility for regulated use is therefore inherited from the primitives ITB is configured with, not conferred by ITB itself.
+**No bespoke cryptography.** ITB composes established, standardized primitives rather than introducing new cryptographic designs. Security properties and regulatory status are inherited from the underlying primitives; see [README.md](../README.md) for jurisdictional certification details.
 
-> **See [CONSTRUCTIONS.md](CONSTRUCTIONS.md) for the per-primitive construction descriptions.**.
+> **See [CONSTRUCTIONS.md](CONSTRUCTIONS.md) for the per-primitive construction descriptions.**
 
 This package derives length-flexible subkeys from a **key-derivation key** (the **master**) under a public domain-separation **label**, with one construction per registry cipher name. The intended source of the master is a high-entropy, uniformly distributed secret — for example an ML-KEM shared secret — from which a caller wants several independent, named subkeys of arbitrary length.
 
@@ -41,9 +41,9 @@ Derivations are **deterministic** in `(name, master, label, outLen)`: the same f
 | `siphash24` | NIST SP 800-108 KDF in Counter Mode, PRF = SipHash-2-4 with 128-bit output | 16 bytes | `master` is the `(k0, k1)` SipHash key (little-endian halves). `label` any length. Output is **not** cross-length prefix-consistent. |
 | `chacha20` | XChaCha20 keystream KDF — `label` right-zero-padded to the 24-byte nonce | 32 bytes | `label` must be at most 24 bytes; longer is an error. Output **is** cross-length prefix-consistent. |
 
-All registry primitives are supported; `Derive` returns an error for any unknown name.
+Every PRF-grade and stream registry primitive is supported; `Derive` returns an error for any unsupported or unknown name.
 
-**Cross-length prefix-consistency.** The eight SP 800-108 constructions bind the requested output length `L` into every PRF block input, so deriving 64 bytes and truncating to 32 does **not** equal deriving 32 bytes directly — request the exact length needed. The XChaCha20 keystream construction does not bind a length into its input, so its output is prefix-consistent: the leading 32 bytes of a 64-byte derivation equal a 32-byte derivation under the same key and label. CONSTRUCTIONS.md states this distinction in full; do not slice a longer SP 800-108 derivation.
+**Cross-length prefix-consistency.** The SP 800-108 counter-mode constructions bind the requested output length `L` into every PRF block input, so deriving 64 bytes and truncating to 32 does **not** equal deriving 32 bytes directly — request the exact length needed. The XChaCha20 keystream construction does not bind a length into its input, so its output is prefix-consistent: the leading 32 bytes of a 64-byte derivation equal a 32-byte derivation under the same key and label. CONSTRUCTIONS.md states this distinction in full; do not slice a longer SP 800-108 derivation.
 
 ## Key separation via labels
 

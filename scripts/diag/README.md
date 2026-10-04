@@ -1,7 +1,7 @@
 ## ITB CPU Dispatch Diagnostics
 
-Two short bash utilities for investigating per-CPU throughput
-anomalies in the ITB dispatch matrix. Both scripts build a Go test
+Bash utilities for investigating per-CPU throughput
+anomalies in the ITB dispatch matrix. The scripts build a Go test
 binary at `/tmp/itb.test` (via `go test -c`) on first run, then reuse
 it across configurations to avoid Go-compile-time noise in the
 per-cell numbers.
@@ -30,8 +30,7 @@ The purpose is to identify a slow tier by comparison. When natural
 dispatch throughput is significantly below one of the forced arms,
 the auto-selected tier on this silicon underperforms and warrants a
 kernel investigation. Prefer fixing the offending kernel so every
-affected silicon runs the same shipped code; an SKU-scoped dispatch
-adjustment is a last-resort fallback.
+affected silicon runs the same shipped code with bit-exact parity.
 
 ```sh
 bash scripts/diag/tier_diag.sh                       # defaults
@@ -40,14 +39,14 @@ PAYLOAD=1MB BENCH_TIME=1s bash scripts/diag/tier_diag.sh
 
 ## hash_diag.sh
 
-Renders a per-registry-hash × three-nonce-width throughput matrix at
-a fixed tier configuration. The canonical hash set and three nonce
+Renders a per-registry-primitive × three-nonce-width throughput matrix at
+a fixed tier configuration. The canonical primitive set and three nonce
 widths cover every shipped fused-cascade kernel width (13 / 20 / 36 /
 68) across every registered inner primitive.
 
-A uniform host-vs-host ratio across all 27 cells signals general
+A uniform host-vs-host ratio across all cells signals general
 silicon performance difference; an outlier cell signals a
-hash-specific dispatch bug or a kernel regression on that CPU. Tier
+primitive-specific dispatch bug or a kernel regression on that CPU. Tier
 overrides let the same matrix run against different arm choices, so
 comparing e.g. `HASH_TIER=avx512` vs `HASH_TIER=avx2` on the same
 host quantifies the AVX-512 vs AVX2 hash kernel spread.
@@ -84,11 +83,7 @@ runs. Change these only if you understand the profile matters.
    arm (e.g. `INTERLOCK_TIER=avx2`) to check whether the other axes
    have any secondary regressions across the per-hash × per-nonce-width
    surface, or whether they are uniformly healthy on this silicon.
-3. If confirmed narrow (one tier axis, one CPU family), first attempt
-   to fix the offending kernel — rewrite so the affected silicon runs
-   the same shipped code as everyone else. The interlock rank-mask
-   kernel is the canonical example: an SKU blacklist against
-   Sapphire Rapids shipped briefly (commit `30c4ddd`) and was retired
-   once the underlying legacy-SSE-bridge issue was fixed at the
-   kernel level. An SKU-scoped runtime dispatch adjustment is a
-   last-resort fallback when kernel-level fixing is not tractable.
+3. If confirmed narrow (one tier axis, one CPU family), rewrite or
+   adjust the offending kernel so the affected silicon runs the standard
+   path with bit-exact parity.
+

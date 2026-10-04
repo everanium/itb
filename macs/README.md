@@ -4,15 +4,15 @@
 >
 > PRF-grade hash functions are **required**. No warranty is provided.
 
-**No bespoke cryptography.** ITB introduces no cryptographic primitive of its own — no custom S-box, permutation, or round function. It is a construction over existing primitives, much as PGP composes standard ciphers rather than defining one. Such constructions are not the object of algorithm-level cryptographic certification: national regimes (NIST CAVP/FIPS in the US, GOST/FSB in Russia, OSCCA's SM-series in China, IC3S in India, SOG-IS/EUCC and national lists in the EU, ASD's ISM in Australia, CRYPTREC in Japan, KCMVP in South Korea) certify **primitives** and the **modules** built on them, not compositional schemes. Eligibility for regulated use is therefore inherited from the primitives ITB is configured with, not conferred by ITB itself.
+**No bespoke cryptography.** ITB composes established, standardized primitives rather than introducing new cryptographic designs. Security properties and regulatory status are inherited from the underlying primitives; see [README.md](../README.md) for jurisdictional certification details.
 
 > **See [CONSTRUCTIONS.md](CONSTRUCTIONS.md) for the per-MAC construction descriptions.** Two names are exact (`kmac256` per NIST SP 800-185, `hmac-sha256` per RFC 2104); `hmac-blake3` is BLAKE3 native keyed mode, **not** RFC 2104 HMAC — the `hmac-` name is kept for registry symmetry with `hmac-sha256` and for FFI stability. Read CONSTRUCTIONS.md before assuming a particular standard's exact construction.
 
-Drop-in factories that produce `itb.MACFunc` closures for the three
-shipped MAC primitives. All three produce a 32-byte tag and accept
-a 32-byte (or longer for the HMAC variants) key. The fixed 32-byte
-tag size lets bindings size their authenticated payload buffer the
-same way regardless of which MAC was selected.
+Drop-in factories that produce `itb.MACFunc` closures for the
+shipped MAC primitives. Every shipped primitive produces a 32-byte
+tag and accepts a 32-byte (or longer for the HMAC variants) key. The
+fixed 32-byte tag size lets bindings size their authenticated
+payload buffer the same way regardless of which MAC was selected.
 
 Every factory pre-keys its primitive once at construction and is
 safe to call concurrently from multiple goroutines.
@@ -72,7 +72,7 @@ func main() {
     s2, keyS2, _ := hashes.NewSeed512(hashes.CipherAreion512, 2048)
     s3, keyS3, _ := hashes.NewSeed512(hashes.CipherAreion512, 2048)
 
-    // HMAC-BLAKE3 — fastest of the three MACs through the AVX-512 ASM kernel.
+    // HMAC-BLAKE3 — fastest shipped MAC through the AVX-512 ASM kernel.
     var macKey [32]byte
     if _, err := rand.Read(macKey[:]); err != nil {
         panic(err)
@@ -96,16 +96,17 @@ func main() {
     // describing JSON blob alongside the captured *itb.Config. The
     // lockSeed slot rides in the trailing Blob512Opts.
     bSrc := &itb.Blob512{}
-    blob, _ := bSrc.Export3Cfg(cfg, keyN, keyD1, keyD2, keyD3, keyS1, keyS2, keyS3,
+    blob, _ := bSrc.Export3Cfg(cfg, [64]byte(keyN), [64]byte(keyD1), [64]byte(keyD2), [64]byte(keyD3),
+        [64]byte(keyS1), [64]byte(keyS2), [64]byte(keyS3),
         ns, d1, d2, d3, s1, s2, s3,
-        itb.Blob512Opts{KeyL: keyL, LS: ls, MACKey: macKey[:], MACName: "hmac-blake3"})
+        itb.Blob512Opts{KeyL: [64]byte(keyL), LS: ls, MACKey: macKey[:], MACName: "hmac-blake3"})
     _ = blob // ship alongside the ciphertext
 }
 ```
 
-On the receiver, `Blob512.Import3Cfg` restores per-slot hash keys + Components + the MAC key + name AND returns the captured `*itb.Config`. `Hash` / `BatchHash` on each restored seed stay nil so the caller wires them from the saved `Key*` bytes through the matching factory (`Areion512PairWithKey`), then rebuilds the MAC via `macs.Make(bDst.MACName, bDst.MACKey)` and decrypts with `itb.DecryptAuthenticated3x512Cfg`.
+On the receiver, `bDst := &itb.Blob512{}; err := bDst.Import3Cfg(blob, cfg)` populates per-slot hash keys + Components + the MAC key + name into `bDst` and restores the captured `*itb.Config` into `cfg`. `Hash` / `BatchHash` on each restored seed stay nil so the caller wires them from the saved `Key*` bytes through the matching factory (`Areion512PairWithKey`), then rebuilds the MAC via `macs.Make(bDst.MACName, bDst.MACKey)` and decrypts with `itb.DecryptAuthenticated3x512Cfg`.
 
-BLAKE2b-512 paired with HMAC-SHA256 (universal interoperability standard, RFC 4231) follows the same shape — swap `hashes.CipherAreion512` for `hashes.CipherBLAKE2b512`, swap the MAC factory for `macs.HMACSHA256(macKey[:])`, and keep the rest identical. SipHash-2-4 has no internal fixed key (the seed components are the entire SipHash key), so `hashes.NewSeed128(hashes.CipherSipHash24, …)` returns a `nil` key and its paired constructor `hashes.SipHash24Pair()` returns just `(single, batched)`; every `Key*` argument passed to `Blob128.Export3Cfg` is a zero `[16]byte`.
+BLAKE2b-512 paired with HMAC-SHA256 (universal interoperability standard, RFC 4231) follows the same shape — swap `hashes.CipherAreion512` for `hashes.CipherBLAKE2b512`, swap the MAC factory for `macs.HMACSHA256(macKey[:])`, and keep the rest identical. SipHash-2-4 has no internal fixed key (the seed components are the entire SipHash key), so `hashes.NewSeed128(hashes.CipherSipHash24, …)` returns a `nil` key and its paired constructor `hashes.SipHash24Pair()` returns just `(single, batched)`; every `Key*` argument passed to `Blob128.Export3Cfg` is `nil`.
 
 Name-keyed dispatch (used by the FFI layer; works for any code that
 selects the MAC primitive at runtime). The key is `[]byte` (size
@@ -142,7 +143,7 @@ parity oracle and the bit-exact KAT.
 
 Callers who want the 8-seed constellation, MAC, parallax layer, and outer cipher wrapper composed for them in one step use the [`triple.Pipeline`](../triple/) facade. `triple.Init(profileName, opts)` allocates the full stack around one primitive selected by name; the MAC choice rides in `triple.Opts.MacName` (defaults to `hmac-blake3`). The [top-level ITB README](https://github.com/everanium/itb#readme) hosts the canonical Pipeline examples across the four cipher shapes (Single Message MAC / Single Message No MAC / Streaming AEAD / Streaming Non-AEAD).
 
-## Why these three
+## Curated primitive selection
 
 ITB's MAC-Inside-Encrypt construction places the 32-byte tag inside
 the encrypted container. The barrier dispersal
@@ -167,8 +168,8 @@ A curated primitive set keeps the choice tractable:
 
 - `hmac-sha256` is bit-exactly cross-checked against
   RFC 4231 test vectors in `macs_test.go`.
-- `hmac-blake3` rests on the upstream `github.com/zeebo/blake3`
-  project's own keyed-mode KAT.
+- `hmac-blake3` is bit-exactly cross-checked against official
+  BLAKE3 keyed-mode test vectors in `macs_test.go`.
 - `kmac256` is bit-exactly cross-checked against four KAT
   vectors generated from pycryptodome 3.23.0
   (`Crypto.Hash.KMAC256`, an audited NIST SP 800-185 reference
@@ -178,9 +179,9 @@ A curated primitive set keeps the choice tractable:
   `My Tagged Application`, sample 6 with the 200-byte
   `0x00..0xC7` message), plus a degenerate empty-message case.
   Reproduce via the python snippet shown in the test file.
-- Every shipped primitive passes `TestITBAuthIntegration` (every
-  registered MAC × every hash width × encrypt/decrypt round trip +
-  bit-flip tamper rejection).
+- Every shipped primitive passes integration testing under
+  `TestRegisterTripleIntegration` (pipeline integration across
+  authenticated round trip + bit-flip tamper rejection).
 
 ## User-pluggable custom MACs
 
@@ -399,13 +400,12 @@ form remains MAC-capable through the fully hand-rolled `Register`
 path (Example 3 below).
 
 Key geometry under `BuildKeyedHash` is caller-explicit: `KeySize` is
-required — a zero value returns a directive error, since implicit
-key-size discovery was removed to avoid hidden key-size selection in
-a cryptographic construction. The caller supplies a `KeySize` a
-length the primitive's keyed constructor accepts (BLAKE3's 32,
-SipHash-2-4's 16, BLAKE2b-256 up to 64, BLAKE2b-512 up to 64,
-HMAC-SHA-512-shaped primitives keyed at the hash's 128-byte block
-size, and so on). A zero `MinKeyBytes` defaults to 16 when the
+required — a zero value returns a directive error to prevent
+ambiguous key-size selection in a cryptographic construction. The
+caller supplies a `KeySize` of a length the primitive's keyed
+constructor accepts (BLAKE2b-256 up to 64, BLAKE2b-512 up to 64,
+BLAKE3's 32, SipHash-2-4's 16, HMAC-SHA-512-shaped primitives keyed at
+the hash's 128-byte block size, and so on). A zero `MinKeyBytes` defaults to 16 when the
 constructor accepts a 16-byte key and to `KeySize` otherwise
 (exact-length key contracts); explicit `KeySize` / `MinKeyBytes`
 values the constructor rejects fail eagerly at build time.

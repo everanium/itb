@@ -4,19 +4,17 @@
 >
 > PRF-grade hash functions are **required**. No warranty is provided.
 
-**No bespoke cryptography.** ITB introduces no cryptographic primitive of its own — no custom S-box, permutation, or round function. It is a construction over existing primitives, much as PGP composes standard ciphers rather than defining one. Such constructions are not the object of algorithm-level cryptographic certification: national regimes (NIST CAVP/FIPS in the US, GOST/FSB in Russia, OSCCA's SM-series in China, IC3S in India, SOG-IS/EUCC and national lists in the EU, ASD's ISM in Australia, CRYPTREC in Japan, KCMVP in South Korea) certify **primitives** and the **modules** built on them, not compositional schemes. Eligibility for regulated use is therefore inherited from the primitives ITB is configured with, not conferred by ITB itself.
+**No bespoke cryptography.** ITB composes established, standardized primitives rather than introducing new cryptographic designs. Security properties and regulatory status are inherited from the underlying primitives; see [README.md](README.md) for jurisdictional certification details.
 
-This FAQ is the plain-language companion to [REDTEAM.md](REDTEAM.md), [SCIENCE.md](SCIENCE.md), and [PROOFS.md](PROOFS.md). It walks a cryptanalyst through three concrete scenarios — a trivially invertible three-line `jokeHash`, a GF(2)-linear CRC128, and a T-function FNV-1a — and traces the reasoning arrows from primitive weakness on paper to wire observability in the shipped construction, and precisely which lab-only privileges (unreachable through the shipped API) would be required for each attack vector to engage. The canonical documents give the corresponding conclusions in formal notation; this file gives the reasoning arrows.
+This document provides an analytical walkthrough companion to [REDTEAM.md](REDTEAM.md), [SCIENCE.md](SCIENCE.md), and [PROOFS.md](PROOFS.md). It traces primitive-weakness absorption across a spectrum of broken primitives — from degenerate controls (`nullHash`, `quadHash`, `trainHash`, `jokeHash`) to GF(2)-linear CRC128 and T-function FNV-1a — mapping the boundary between primitive weakness on paper and wire observability in the shipped construction, and identifying the lab-only privileges required for theoretical attack vectors to engage.
 
-**Framing.** This document is an analytical walkthrough of the reasoning that leads to the null-recovery observations recorded in REDTEAM.md — not a security proof, not a certification claim, not a guarantee that no attack exists. The picture presented below is the current architectural understanding as seen from the reasoning steps listed here. Audit findings that contradict any arrow in the reasoning would supersede the corresponding conclusion. The framing is «this is what the analysis currently shows», not «this is what the construction guarantees».
-
-Four questions, four primitives, one shared architectural pattern.
+**Framing.** This document details the architectural reasoning that produces the null-recovery observations recorded in [REDTEAM.md](REDTEAM.md). It is an analytical specification of current architectural boundaries, not a formal security proof or guarantee. Six questions, six primitives, one shared architectural pattern.
 
 ---
 
 ## Question 1 — What if the primitive is even more degenerate than `trainHash` and `jokeHash`?
 
-**Reader's setup.** «What if I plug in a two-line primitive weaker than `jokeHash` — one that reads only `data[0]` and the low byte of each seed word, and discards everything else? Under the shipped Triple + Interlocked Barrier construction, is that finally the case where the barrier fails?»
+**Reader's setup.** «Suppose a two-line primitive weaker than `jokeHash` is evaluated — one reading only `data[0]` and the low byte of each seed word, discarding everything else. Under the shipped Triple Ouroboros + Interlocked Barrier construction, does the barrier fail?»
 
 ```
 nullHash(data, seed0, seed1):
@@ -55,13 +53,13 @@ Default output directory is `$HOME/scratch/redteam/nullhash/` per the shared red
 
 `nullHash` violates the entropy-floor reduction target: the barrier absorbs a primitive's algebraic weakness (T-function structure, GF(2)-linearity, poor multiplier diffusion) **when the primitive's cascade output does not collapse to a per-seed constant**. Once the primitive collapses, the barrier's per-chunk mask independence collapses with it and the attack surface reduces to the observable-bit budget on the wire (~42 bits out of 80 nominal for the shipped constellation), which is trivially brute-forceable under any KPA. The collapse is total at this floor: the surviving ~8 bits of `lockSeed` low byte are a functional don't-care, every value decrypting to the same true plaintext, so the barrier contributes nothing measurable once the primitive's cascade output degenerates to a constant. That is the point of the entropy floor — below it the barrier has nothing left to absorb.
 
-The `nullHash` attack path is structurally closed under stronger primitives whose cascade output stays per-pixel varying and whose per-round iteration preserves entropy relative to initial state (bijective per-iteration). See [Question 1a](#question-1a--what-if-the-primitive-is-quadhash-a-squaring-t-function) below for a parallel collapse mechanism — non-bijective iteration `x²` induces an attractor-collapse variant of `nullHash`'s linear identity collapse — and [Question 2](#question-2--what-if-the-primitive-is-trainhash-an-8-bit-per-lane-multiply-add) / [Question 3](#question-3--what-if-i-write-a-three-line-jokehash) for the bijective non-collapsing cases (`trainHash` at 8-bit-per-lane, `jokeHash` at 64-bit-per-lane).
+The `nullHash` attack path is structurally closed under stronger primitives whose cascade output stays per-pixel varying and whose per-round iteration preserves entropy relative to initial state (bijective per-iteration). See [Question 1a](#question-1a--what-if-the-primitive-is-quadhash-a-squaring-t-function) below for a parallel collapse mechanism — non-bijective iteration `x²` induces an attractor-collapse variant of `nullHash`'s linear identity collapse — and [Question 2](#question-2--what-if-the-primitive-is-trainhash-an-8-bit-per-lane-multiply-add) / [Question 3](#question-3--what-if-a-three-line-jokehash-is-evaluated) for the bijective non-collapsing cases (`trainHash` at 8-bit-per-lane, `jokeHash` at 64-bit-per-lane).
 
 ---
 
 ## Question 1a — What if the primitive is `quadHash`, a squaring T-function?
 
-**Reader's setup.** «`nullHash` collapses via linear XOR⁴ = identity into a per-seed constant. What if I use a non-linear squaring fold — same 8-bit-per-lane width as `trainHash`, T-function class, but non-bijective per iteration because `x² mod 256` has collisions on `±x`? Two-lane squaring:
+**Reader's setup.** «`nullHash` collapses via linear XOR⁴ = identity into a per-seed constant. What if a non-linear squaring fold is evaluated — same 8-bit-per-lane width as `trainHash`, T-function class, but non-bijective per iteration because `x² mod 256` has collisions on `±x`? Two-lane squaring:
 
 ```
 quadHash(data, seed0, seed1):
@@ -77,7 +75,7 @@ quadHash(data, seed0, seed1):
 
 ### Current analytical picture
 
-`quadHash`'s cascade collapses through a **buffer-length-dependent attractor mechanism** distinct from `nullHash`'s linear XOR cancellation. Under a 13-byte Interlock chunk buffer `[0x03 | LE64(groupIdx) | 4×0]`, 13 non-bijective iterations of `l = (l + b)² & 0xFF` drive the state fully into the attractor set — `Components[1..7]` effect on cascade output vanishes into the attractor, and the mask triples become effectively a function of the buffer alone. Under the shorter 4-byte external-Barrier per-pixel buffer `[LE32(pixel_idx)]`, only 4 iterations run — the attractor is partially reached and `Components[0]` still dominates per-pixel `(rotation, noisePos)` derivation. Both stages give the attacker a foothold: mask triples via `Components[1..7] = 0` synthetic seed, `Components[0]` via a 256-brute per seed under Full KPA byte-match feedback.
+`quadHash`'s cascade collapses through a **buffer-length-dependent attractor mechanism** distinct from `nullHash`'s linear XOR cancellation. Under a 13-byte Rank Barrier chunk buffer `[0x03 | LE64(groupIdx) | 4×0]`, 13 non-bijective iterations of `l = (l + b)² & 0xFF` drive the state fully into the attractor set — `Components[1..7]` effect on cascade output vanishes into the attractor, and the mask triples become effectively a function of the buffer alone. Under the shorter 4-byte Pixel Barrier per-pixel buffer `[LE32(pixel_idx)]`, only 4 iterations run — the attractor is partially reached and `Components[0]` still dominates per-pixel `(rotation, noisePos)` derivation. Both stages give the attacker a foothold: mask triples via `Components[1..7] = 0` synthetic seed, `Components[0]` via a 256-brute per seed under Full KPA byte-match feedback.
 
 ### Empirical measurement
 
@@ -95,7 +93,7 @@ Attack code: `redteam_quadhash_leak_test.go`, `TestRedTeamQuadHashLeak7of8` and 
 
 `nullHash`'s cascade collapses because `nullHash⁴(s, d) = s ⊕ d ⊕ d ⊕ d ⊕ d = s` — the data term algebraically cancels, and ChainHash output degenerates to a per-seed constant independent of buffer. `quadHash`'s cascade collapses because `x² mod 256` is many-to-one — repeated iteration loses entropy relative to initial state, and after enough rounds the state converges to a buffer-only function independent of `Components[1..7]`. The two mechanisms compose the same architectural break — mask triples become predictable — through opposite algebraic properties (`nullHash` cancels the data term keeping the seed term; `quadHash` cancels the seed term keeping the data term).
 
-The **buffer-length asymmetry** between Interlock (13 bytes → full attractor) and external Barrier (4 bytes → partial attractor) is what makes `quadHash` slightly less trivial than `nullHash`: attacker needs 256 sequential brutes per non-lockSeed slot for the residual `Components[0]` dependence, versus `nullHash`'s single-shot recovery. Both attacks resolve in under a second on commodity hardware.
+The **buffer-length asymmetry** between Rank Barrier (13 bytes → full attractor) and Pixel Barrier (4 bytes → partial attractor) is what makes `quadHash` slightly less trivial than `nullHash`: attacker needs 256 sequential brutes per non-lockSeed slot for the residual `Components[0]` dependence, versus `nullHash`'s direct recovery. Both attacks resolve in under a second on commodity hardware.
 
 ### Reproduction
 
@@ -132,7 +130,7 @@ Non-cancelling multiply-add per lane, so the `nullHash` XOR-cancellation collaps
 
 ### What the measurement shows
 
-**The Interlocked Barrier does not hold under a 48-byte Crib KPA.** The 8-bit lane width bounds the cascade's own key material: `trainHash` reduces each seed word to `seed & 0xFF` and carries no more than 8 bits of state per lane, so of the keying list `lockComps` — the `deriveInterLockSeed` pair followed by `Components` — only five bytes per lane reach the output. A meet-in-the-middle over those five, anchored on the lane prefix the crib pins, recovers the rank schedule for every chunk in about a second, with no seed, no `Components`, no interlock nonce and no `startPixel` entering the derivation. Start pixels are recovered rather than granted.
+**The Rank Barrier does not hold under a 48-byte Crib KPA.** The 8-bit lane width bounds the cascade's own key material: `trainHash` reduces each seed word to `seed & 0xFF` and carries no more than 8 bits of state per lane, so of the keying list `lockComps` — the `deriveInterLockSeed` pair followed by `Components` — only five bytes per lane reach the output. A meet-in-the-middle over those five, anchored on the lane prefix the crib pins, recovers the rank schedule for every chunk in about a second, with no seed, no `Components`, no interlock nonce and no `startPixel` entering the derivation. Start pixels are recovered rather than granted.
 
 The asymmetric fill design — primer round over `deriveInterLockSeed` output, then component rounds — does not close this path: an 8-bit-per-lane primitive never lets the cascade carry the key material the design assumes. The 2¹⁶ synthetic candidate space (`Components[2..7] = 0`) misses for the same reason, varying two of the five effective bytes and holding three at zero — a failure of parameterisation, not of hardness.
 
@@ -182,7 +180,7 @@ Stages 1 and 2 behave identically across all six; only the Stage 3 walk differs.
 
 How much plaintext comes out past the crib is a property of the model, not of the ciphertext, and three measurements separate the variables. With **no model** — uniform random binary — nothing is recovered: the walk does not advance past the crib at all, and the few correct bytes beyond its edge are the crib bleeding into the chunk it partially covers. With a **byte-wise printable model**, corpus structure alone changes nothing: structured JSON yields a lower median than uniform printable ASCII, because repeated keys and syntax are invisible to a model that scores one byte at a time against a chunk-independent test. What moves the number is the model's **resolving power** — narrowing the licensed alphabet from 95 characters to 75, `+0.34` bits per byte, shifts the median recovery about sevenfold on the same corpus, with the best single run reaching just over four fifths of the unknown region.
 
-A recovery percentage quoted without its plaintext model and its message length carries no information. The distribution is heavy-tailed rather than a plateau — roughly `4%` to `82%` across runs on one corpus and model, according to whether the per-region schedule classes collapse to a single candidate — and it falls by nearly an order of magnitude at eight times the plaintext size, because what comes out is approximately a fixed-length prefix rather than a share of the message. The archived 83-85% figure under `Question 1` is from a strictly weaker configuration — one region, no Interlocked Barrier, minimum key width — and is not a baseline for this one.
+A recovery percentage quoted without its plaintext model and its message length carries no information. The distribution is heavy-tailed rather than a plateau — roughly `4%` to `82%` across runs on one corpus and model, according to whether the per-region schedule classes collapse to a single candidate — and it falls by nearly an order of magnitude at eight times the plaintext size, because what comes out is approximately a fixed-length prefix rather than a share of the message.
 
 **Mechanical reach is not information gained**, which cuts against the highest figure: the structured corpus is fully determined by its own format, so the run reaching four fifths recovered content anyone holding that format could write out without the ciphertext at all. A real document sits between the two corpora — an alphabet as narrow as the structured one, content as unpredictable as the uniform one — and where that lands has not been measured.
 
@@ -190,9 +188,9 @@ A recovery percentage quoted without its plaintext model and its message length 
 
 ---
 
-## Question 3 — What if I write a three-line `jokeHash`?
+## Question 3 — What if a three-line `jokeHash` is evaluated?
 
-**Reader's setup.** «Suppose I plug into all eight ITB seed roles this three-line primitive — initialise the accumulator from `seed0`, mix each data byte via a small odd multiplier plus add, complement for the second lane:
+**Reader's setup.** «Suppose all eight ITB seed roles are configured with a three-line primitive — initializing the accumulator from `seed0`, mixing each data byte via a small odd multiplier plus add, complementing for the second lane:
 
 ```
 jokeHash(data, seed0, seed1):
@@ -201,7 +199,7 @@ jokeHash(data, seed0, seed1):
     return (lo, ~lo)
 ```
 
-T-function class (Klimov and Shamir 2002): output bit t depends only on input bits at position ≤ t, so recovery is polynomial per bit-plane. Trivially invertible for any single `(data, seed)` observation pair, catastrophically weak by any cryptographic standard — no round mixing, no diffusion, below spec compared with CRC128 or FNV-1a on the observation-channel-required stress axis. Ship it via `hashes.Register` as a custom primitive and encrypt real messages. Do I compromise the wire?»
+T-function class (Klimov and Shamir 2002): output bit t depends only on input bits at position ≤ t, so recovery is polynomial per bit-plane. Trivially invertible for any single `(data, seed)` observation pair, catastrophically weak by any cryptographic standard — no round mixing, no diffusion, below spec compared with CRC128 or FNV-1a on the observation-channel-required stress axis. If registered via `hashes.Register` as a custom primitive and used to encrypt messages, is the wire compromised?»
 
 ### Current analytical picture
 
@@ -221,7 +219,7 @@ observation on wire  →?→  reach jokeHash output  →?→  invert to seed
 
 - `noiseSeed.ChainHash(pixel, N_m)` → `& 7` → `noisePos` → used only as an insertion position, then folded into a container byte
 - `dataSeed_i.ChainHash(pixel, N_m)` → `hLo` low bits → rotation + `channelXOR` → applied to data bits → lane compression / rotation / XOR / noise-bit merge → wire byte
-- `lockSeed.deriveInterLockSeed(N_il)` → `lockKey` → per-chunk `ChainHash(0x03 ‖ ⟨i⟩, lockKey ‖ lockSeed)` → 128-bit `rank` → combinadic unrank → mask triple → applied via PEXT inside `chunk48lock` → 3 lane fragments → Pixel Barrier encoding
+- `lockSeed`: Stage 1 intermediate key `K = deriveInterLockSeed(N_il)` under tag `0x04`; Stage 2 hot-loop cascade over `[0x03 ‖ LE64(groupIdx) ‖ 4×0x00]` under `lockComps = [K, session components...]` with Round 1 primer on `K` and session feedforward → 128-bit `rank` → combinadic unrank → mask triple → applied via BMI2 `PEXTQ` inside `chunk48lock` → 3 lane fragments → Pixel Barrier encoding
 
 A wire byte at position `(p, ch)` has the shape:
 
@@ -233,7 +231,7 @@ where `lane_bits`, `r`, `channelXOR`, `noisePos` are all derived from hash outpu
 
 **The demasker gate.** To extract even one hash output the attacker must «demask» — strip Pixel Barrier encoding. Demasker fundamentally requires a Full KPA anchor to choose among 56 candidates per pixel. Without an anchor, [Proof 1](PROOFS.md#proof-1-information-theoretic-barrier) says all 56 are equiprobable, and the algorithm does not converge to a decisive answer.
 
-Under **Single Ouroboros**, an attacker with a Crib KPA anchor could sometimes demask successfully — that is the regime where archived scripts recovered `dataSeed` from a strong-primitive target. Under the current shipped construction (**Triple Ouroboros + Interlocked Barrier + dual-nonce**), the demasker fails empirically per [REDTEAM.md](REDTEAM.md), even under lab-forced Scenario A on FNV-1a on every seed role, because three unknown-offset region streams plus Rank Barrier lane scrambling give the demasker nothing to anchor on.
+In an unshielded single-region pipeline without the Rank Barrier, a Crib KPA anchor permits demasking. In the shipped construction (**Triple Ouroboros + Interlocked Barrier + dual-nonce**), the demasker fails empirically per [REDTEAM.md](REDTEAM.md), even under lab-forced Scenario A on FNV-1a on every seed role, because three unknown-offset region streams plus Rank Barrier lane scrambling give the demasker nothing to anchor on.
 
 So the attacker holding a shipped ciphertext, running `jokeHash` in an arbitrary seed role:
 
@@ -249,9 +247,14 @@ Both scenarios are unreachable through the shipped API and require adversary cap
 
 2. **Novel observation channel that exposes hash outputs directly.** A side channel that leaks primitive output bypassing PEXT / mask apply — cache timing on a software AES kernel without AES-NI is the classic example. The register-only ITB kernels (with mandatory hardware AES / GFNI / VAES paths for AES-family primitives) do not create this observation surface. `jokeHash` bias would help if the surface existed; the shipped construction denies the surface.
 
-### Why REDTEAM.md uses CRC128 and FNV-1a as stress controls
+### Role of CRC128 and FNV-1a as Stress Controls
 
-Not to «break ITB through them», but to demonstrate empirically that the barrier absorbs primitive weakness across a wide spectrum. If under CRC128 (worst primitive on the algebraic axis, GF(2)-linear compound-key recovery available on paper) the attacker gets null recovery, then any PRF-grade primitive automatically inherits at least the same outcome by a closure argument. The framing is «if the weakest works, all stronger work a fortiori» — a closure scoped to the plaintext-content-recovery axis on which CRC128 is the hardest realistic control. Among realistic below-spec primitives the barrier also absorbs output-distribution bias cleanly: CRC128 and FNV-1a both sit at the noise floor on every measurement in this file. jokeHash is a deliberately pathological stress case (popcount-2 multiplier, more poorly diffused than any real primitive would be), and it is the sole primitive that surfaces the plaintext-Hamming-weight residue documented in [§ Residual bias under repeat-plaintext CPA](#residual-bias-under-repeat-plaintext-cpa) below — a plaintext-structure distinguisher, not plaintext-content recovery, and one that CRC128 and FNV-1a do not exhibit.
+CRC128 and FNV-1a serve as bounding controls on specific algebraic vulnerability axes:
+
+- **CRC128:** Upper bound on GF(2)-linear exploitability. Total inversion is achievable in O(n³) via Gaussian elimination on paper.
+- **FNV-1a:** Upper bound on T-function exploitability. Invertible plane-by-plane in O(n²) via triangular carry propagation.
+
+Demonstrating null recovery under both algebraic bounds establishes closure: PRF-grade primitives with non-linear diffusion inherit at least equivalent resistance a fortiori. Furthermore, both primitives exhibit uniform output distributions (|z| < 3 across 152M bits), verifying that bias absorption operates cleanly. In contrast, jokeHash is a pathological stress control (popcount-2 multiplier, `0x101`) specifically included to measure output-bias leakage when diffusion is completely absent.
 
 ### General principle the `jokeHash` thought experiment illustrates
 
@@ -324,7 +327,7 @@ go test -tags redteam -run TestRedTeamJokeHashFullKPA ./ -v -count=1
 
 ---
 
-## Question 4 — CRC128 is GF(2)-linear. Can I use compound-key linear algebra to break ITB?
+## Question 4 — CRC128 is GF(2)-linear: does compound-key linear algebra break ITB?
 
 **Reader's setup.** «CRC128 admits full total inversion in polynomial time — one Gaussian elimination on a GF(2) system. The public script `scripts/redteam/itb/theory/crc128/compound_key_crc128.py` recovers a compound key `K` without any crib KPA on Single Ouroboros. Why does that path not carry into the shipped construction?»
 
@@ -360,54 +363,54 @@ Compound-key recovery assumes the pixel-to-observation-position mapping is known
 
 **2. Interlocked Barrier's Rank Barrier — per-chunk PRF-keyed permutation.**
 
-Even if the routing were solved hypothetically, the data in each region is no longer a direct projection of plaintext bytes to channels. Between the plaintext and the per-pixel encoder sits `chunk48lock`, which via PEXT under a mask triple `(m_0, m_1, m_2)` — drawn from `Ω_chunk ≈ 2^70.20` space keyed by `lockSeed + interlock_nonce` — redistributes the bits into three 16-bit lane fragments per 48-bit chunk. The attacker's `channelXOR(p, ch)` recovery under CRC128 would yield an XOR mask on channel bytes, but those channel bytes now carry PRF-permuted lane fragments, not plaintext bytes directly. The linear system recovers `K` → predicts `channelXOR` → recovers not plaintext, but `PEXT(chunk, m_N)` bits under an unknown mask. To go further requires `lockSeed → mask triple`, which is PRF-opaque under fresh `interlock_nonce`.
+Even if the routing were solved hypothetically, the data in each region is no longer a direct projection of plaintext bytes to channels. Between the plaintext and the per-pixel encoder sits `chunk48lock`, which via BMI2 `PEXTQ` under a mask triple `(m_0, m_1, m_2)` — drawn from `Ω_chunk ≈ 2^70.20` space keyed by `lockSeed` + fresh `interlock nonce` — redistributes the bits into three 16-bit lane fragments per 48-bit chunk in ~3 cycles in constant time. The attacker's `channelXOR(p, ch)` recovery under CRC128 would yield an XOR mask on channel bytes, but those channel bytes now carry PRF-permuted lane fragments, not plaintext bytes directly. The linear system recovers `K` → predicts `channelXOR` → recovers not plaintext, but `PEXT(chunk, m_N)` bits under an unknown mask. To go further requires `lockSeed → mask triple`, which is PRF-opaque under fresh `interlock nonce`.
 
 **3. Dual-nonce separation.**
 
-Compound-key recovery is pinned to a specific `(dataSeed, main_nonce)` pair. Fresh `main_nonce` → fresh `K` per message. `main_nonce` reuse is possible only through a test-only override, not the shipped API. Even under a lab-forced Scenario B (main-only collision), `K` is identical on the colliding pair, but the barrier's lane assignment depends on `interlock_nonce`, which is fresh → the attacker gets same `K`, same `channelXOR`, but different lane assignments → previously predictable channel bytes now map to unknown 48-bit chunk positions.
+Compound-key recovery is pinned to a specific `(dataSeed, main_nonce)` pair. Fresh `main_nonce` → fresh `K` per message. `main_nonce` reuse is possible only through a test-only override, not the shipped API. Even under a lab-forced Scenario B (main-only collision), `K` is identical on the colliding pair, but the barrier's lane assignment depends on `interlock nonce`, which is fresh → the attacker gets same `K`, same `channelXOR`, but different lane assignments → channel bytes now map to unknown 48-bit chunk positions.
 
 Honest phrasing of the verdict: the CRC128 linear-algebra path is closed not because «without KPA it is impossible at all» — that would be an over-claim — but because Triple splits the observation space into three unknown-offset streams, the Rank Barrier injects an unknown PRF-keyed permutation between the recoverable `channelXOR` and plaintext bytes, and dual-nonce guarantees fresh barrier keying even under a single-slot collision.
 
 ### But wait — what if CRC128 is also used inside the Rank Barrier?
 
-**Reader's setup, continued.** «Suppose `lockSeed` is fed by CRC128 too. Same primitive on both barrier layers. Doesn't the compound-key `K` recovered from the Pixel Barrier give me leverage on the Rank Barrier?»
+**Reader's setup, continued.** «Suppose `lockSeed` is fed by CRC128 too. Same primitive on both barrier layers. Does the compound-key `K` recovered from the Pixel Barrier provide leverage against the Rank Barrier?»
 
 **No.** Even under identical primitive, `K` from the Pixel Barrier is fundamentally not transferable to the Rank Barrier. There are five reasons at the algebra layer alone, before any observation gap:
 
 **Reason 1 — Seed independence ([Theorem 3](PROOFS.md#proof-3-8-seed-isolation)).**
 `lockSeed` and `dataSeed` are independent CSPRNG components, `I(lockSeed; dataSeed) = 0`. The compound-key script recovers `K_data = [M_L^1, ..., M_L^8] · [s_14, s_12, ..., s_0]` — a linear projection **inside** `dataSeed`'s ECMA-half components. `K_lock` would be a fundamentally different projection over `lockSeed` components. No overlap can produce a transfer.
 
-**Reason 2 — Different derivation-chain shape.**
+**Reason 2 — Different derivation-chain shape and depth.**
 The compound-key linear structure depends on the length-`L` CRC64 state-transfer matrix `M_L`:
 - `dataSeed → dataHash`: `data(p) = pixel_le_u32 ‖ nonce`, so `L = 4 + nonceBytes` — fixed per session at the caller's nonce size — and `M_L` stays constant at that `L` across all pixels; this is what the compound-key script exploits
-- `lockSeed` cascade: `lockKey = ChainHash(0x04 ‖ N_il, lockSeed)` with `L = 1 + nonceBytes`; then `prf_i = ChainHash(0x03 ‖ ⟨i⟩, lockKey ‖ lockSeed)` with `L = 13` (1 byte tag + 8-byte LE index + 4 zero bytes), a cascade of `1 + keyBits / width` calls under `lockKey` and the session components. **Different length constants → different matrix products → different compound-key algebra.**
+- `lockSeed` cascade: Stage 1 intermediate key `K = deriveInterLockSeed(N_il)` under tag `0x04` with `L = 1 + nonceBytes`; Stage 2 hot-loop cascade `prf_i = ChainHash(0x03 ‖ LE64(groupIdx) ‖ 4×0x00, lockComps)` with `L = 13` (1-byte tag + 8-byte LE index + 4 zero bytes), running a cascade of `1 + keyBits / width` calls (primer round 1 on `K` followed by session components; contrast with the Pixel Barrier which runs `keyBits / width` rounds). **Different length constants → different matrix products → different compound-key algebra.**
 
 **Reason 3 — Different domain tags.**
-`0x04` for `lockKey` derivation, `0x03` for per-chunk PRF, counter for `dataSeed`. Even with identical seed material, different tags yield different `const(data)` in the affine decomposition `hLo(p) = K XOR const(data(p))`. `K_data` cannot be re-used to predict `lockSeed`'s chain output.
+`0x04` for setup key derivation, `0x03` for per-chunk PRF, counter for `dataSeed`. Even with identical seed material, different tags yield different `const(data)` in the affine decomposition `hLo(p) = K XOR const(data(p))`. `K_data` cannot be re-used to predict `lockSeed`'s chain output.
 
 **Reason 4 — Different observation path.**
 `K_data` is recovered from `channelXOR` observations (post-demask or via KPA). The attacker physically sees container bytes → strips the Pixel Barrier (rotation + XOR + noise) → gets lane fragments. Lane fragments are not plaintext — they are `PEXT(chunk_48, m_N)` where `m_N` is a Rank Barrier mask. To recover the Rank Barrier via linear algebra the attacker needs observations of mask ranks — and **mask ranks never appear on the wire in cleartext.** They are applied opaquely inside `chunk48lock` and compress plaintext bits into 16-bit lanes. The attacker sees the compression result, not the permutation itself.
 
-**Reason 5 — Combinadic unrank is not GF(2)-linear.**
-Even if `lockKey` were hypothetically recovered (which already requires observation of hash outputs that are unobservable), unranking it into a mask triple runs through two-step divmod:
+**Reason 5 — Combinadic unrank is not GF(2)-linear and avoids the GCD anti-collapse trap.**
+Even if `lockKey` were hypothetically recovered (which already requires observation of hash outputs that are unobservable), unranking it into a mask triple runs through two-step native divmod:
 
 ```
-idx_0 = ⌊rank / B⌋ mod A
 idx_1 =  rank mod B
+idx_0 = ⌊rank / B⌋ mod A
 ```
 
-where `A = C(48, 16) = 2,254,848,913,647` and `B = C(32, 16) = 601,080,390`. This is pure arithmetic over `Z`, not GF(2)-linear. CRC128's GF(2)-linearity is useless here — combinadic reduction breaks linearity even if the primitive is linear.
+where `B = C(32, 16) = 601,080,390` and `A = C(48, 16) = 2,254,848,913,647`. This two-step division by `B` before reducing modulo `A` deliberately avoids the Chinese Remainder Theorem anti-collapse trap: because `gcd(A, B) = 66,861`, evaluating both indices directly as `rank mod A` and `rank mod B` would restrict reachable pairs to a 66861× smaller subspace (~16.03 bits lost). The division step breaks both linearity and the GCD trap over Z, rendering CRC128's GF(2)-linearity useless.
 
 **Bonus reason — cascade PRF binding across two live hash calls.**
-Per [Proof 11](PROOFS.md#proof-11-48-bit-interlocked-barrier-mask-space): `lockKey → per-chunk PRF chain` is two sequential hash calls. An attacker attacking the Rank Barrier via linear algebra must solve a system running through both chain calls simultaneously. The compound-key script composed an 8-round chain as a single affine XOR (`K = M_L^1·s_0 XOR M_L^2·s_2 XOR ...`) because 8 XOR-composed CRC64 rounds are still GF(2)-linear. A cascade of two chain calls with an intermediate unrank/mask draw is no longer a single-composition path — the attacker needs either a system with symbolic `mask` **and** `K_lock` (two unknowns interleaved), or per-chunk hash outputs as observations (which do not exist on wire).
+Per [Proof 11](PROOFS.md#proof-11-48-bit-rank-barrier-mask-space-interlocked-barrier): `lockKey → per-chunk PRF chain` is two sequential hash calls. An attacker attacking the Rank Barrier via linear algebra must solve a system running through both chain calls simultaneously. The compound-key script composed an 8-round chain as a single affine XOR (`K = M_L^1·s_0 XOR M_L^2·s_2 XOR ...`) because 8 XOR-composed CRC64 rounds are still GF(2)-linear. A cascade of two chain calls with an intermediate unrank/mask draw is no longer a single-composition path — the attacker needs either a system with symbolic `mask` **and** `K_lock` (two unknowns interleaved), or per-chunk hash outputs as observations (which do not exist on wire).
 
 **Summary.** Primitive is same. Seeds are independent. Chain-input structure differs. Observation path differs. Unrank arithmetic is non-linear. Across these five orthogonal structural differences no linear transfer path from `K_data` to any other seed / channel is apparent — combinadic-unrank non-linearity specifically blocks the GF(2) route that CRC128's linearity exploits on the Pixel Barrier. A non-linear bridge — a symbolic-SAT setup that carries `K` through unrank arithmetic, or a novel algebraic technique that couples the two layers through structure the walkthrough above did not surface — is not ruled out by the reasoning here, only unaddressed by known technique. What [Theorem 3a](PROOFS.md#proof-3a-8-seed-isolation-minimality)'s minimality argues is that the 8 independent seeds oblige the barrier layers to be architecturally separable at the algebra layer, independently of primitive strength or weakness.
 
 ### The `2^57.80` preimage math and cross-nonce non-collapsibility
 
-**Reader's setup, continued.** «Fine, but the mask triple has a fixed preimage count `≈ 2^57.80`. Can I collect enough observations across many nonces under a fixed `lockSeed`, using CRC128's linearity across the cascade, to collapse that ambiguity?»
+**Reader's setup, continued.** «Fine, but the mask triple has a fixed preimage count `≈ 2^57.80`. Can observations collected across many nonces under fixed `lockSeed` collapse that ambiguity?»
 
-**No.** Let me refine the math first, because «floating range» is a mischaracterisation.
+**No.** The underlying arithmetic clarifies this directly, as "floating range" mischaracterises the mechanism.
 
 The rank space is `2^128` (from 128-bit PRF output). The mask space is `Ω_chunk = A · B ≈ 2^70.20`. The reduction map `rank → (idx_0, idx_1)` is many-to-one, mapping `2^128` rank values into `2^70.20` mask triples. The preimage count per mask triple is either `⌊2^128 / (A · B)⌋` or `⌊2^128 / (A · B)⌋ + 1`:
 
@@ -417,7 +420,7 @@ The rank space is `2^128` (from 128-bit PRF output). The mask space is `Ω_chunk
 
 What actually «floats» is the per-chunk relative bias magnitude `2^-57.8` (the inverse of the preimage count). If every mask had identical preimages, the distribution would be uniform; the +1 extras produce a bias of magnitude `2^-57.8` per chunk. Accumulated linearly across `2^23.42` chunks in a maximum-length message, the per-message deviation is `≈ 2^-34.4`. The distinguisher budget needed to detect this bias with confidence is `≈ 2^115.6` chunk samples — not attainable.
 
-Now the attack model. Under CRC128 the cascade is fully affine over GF(2):
+Attack model: under CRC128 the cascade is fully affine over GF(2):
 
 ```
 lockKey_msg = M_L · lockSeed XOR const_lock(N_il) (linear in lockSeed for fixed N_il)
@@ -427,11 +430,11 @@ prf_i_msg   = M_pr · lockKey_msg XOR const_pr(i)
 
 If the attacker had many `rank_i_msg = prf_i_msg` observations under many `(N_il, i)` pairs at fixed `lockSeed`, this would be a trivial linear system `rank_j = A_j · lockSeed XOR b_j`. `n` unknowns (bits of `lockSeed`), `n` linearly independent observations, Gaussian elimination in `O(n^3)`. Broken in milliseconds.
 
-But the attacker does not observe `rank`. Rank is consumed opaquely inside combinadic unrank → mask triple → applied via PEXT to compress a plaintext chunk into 3 lane fragments → lane fragments pass Pixel Barrier encoding → container byte.
+But the attacker does not observe `rank`. Rank is consumed opaquely inside combinadic unrank → mask triple → applied via BMI2 `PEXTQ` to compress a plaintext chunk into 3 lane fragments in ~3 cycles in constant time → lane fragments pass Pixel Barrier encoding → container byte.
 
 The attacker's observation path to obtain a single `rank` observation is:
 
-1. **Strip the Pixel Barrier** from the container byte → need demask → need KPA anchor per pixel (56 candidates equiprobable without an anchor). Under Triple + Barrier the demask fails empirically per REDTEAM.md null verdict.
+1. **Strip the Pixel Barrier** from the container byte → need demask → need KPA anchor per pixel (56 candidates equiprobable without an anchor). Under Triple Ouroboros + Interlocked Barrier the demask fails empirically per REDTEAM.md null verdict.
 2. **Reassemble lane fragments** from Pixel-Barrier-stripped region payload bytes. Works fine if the Pixel Barrier is stripped.
 3. **Recover the mask triple** from `(known plaintext chunk, observed lane fragments)`. For candidate mask `m`, `PEXT(chunk, m) = lane_N` is under-determined. At 48 known plaintext bits and 48 output bits (16 × 3 lanes) the attacker gets 48 constraints on `≈ 2^70.20` candidate masks — approximately `2^22` masks remain consistent with the observation in the general case.
 4. **Recover `rank` from the mask triple** — inverse combinadic unrank. For each mask triple, `≈ 2^57.80` candidate ranks correspond (the preimage count). Even after fixing a candidate mask, `2^57.80` candidate ranks remain per chunk.
@@ -439,7 +442,7 @@ The attacker's observation path to obtain a single `rank` observation is:
 
 **The mathematical crux — steps 3–4 do not collapse by adding more observations under different nonces.**
 
-Each message yields its own per-chunk PRF-independent mask draw ([Proof 11](PROOFS.md#proof-11-48-bit-interlocked-barrier-mask-space)'s PRF-independence clause). Ambiguity from message `N` does not constrain ambiguity in message `N+1` — they are independent PRF draws. After `N` messages the attacker does not have «`2^57.80` initial ambiguity collapsing to `2^57.80 / N`»; the attacker has `N` independent instances of `2^57.80` ambiguity, none coupling to the others.
+Each message yields its own per-chunk PRF-independent mask draw ([Proof 11](PROOFS.md#proof-11-48-bit-rank-barrier-mask-space-interlocked-barrier)'s PRF-independence clause). Ambiguity from message `N` does not constrain ambiguity in message `N+1` — they are independent PRF draws. After `N` messages the attacker does not have «`2^57.80` initial ambiguity collapsing to `2^57.80 / N`»; the attacker has `N` independent instances of `2^57.80` ambiguity, none coupling to the others.
 
 Cross-message CRC128 linearity would help for the problem «recover `lockSeed` given multiple `rank` observations under different nonces». But each `rank` observation is itself under-determined with multiplier `2^57.80` (even with granted plaintext and granted Pixel Barrier stripping). Hypothetically:
 
@@ -462,17 +465,17 @@ Exactly this aspect makes the barrier «structurally unmeasurable at attacker-re
 
 ## Question 5 — FNV-1a has the T-function property. Doesn't that break the barrier?
 
-**Reader's setup.** «FNV-1a's round is `h = (h XOR byte) * FNV_PRIME`. Multiplication modulo `2^64` is not GF(2)-linear (carry chain), but it has the T-function property (Klimov & Shamir 2002) — output bit `t` depends only on input bits `0..t`, invertible plane-by-plane in `O(n^2)`. Under Single Ouroboros the archived Phase 2g SAT recovered `dataSeed` lo-lane in `~8h` single-core on 4 cribs + disclosed `startPixel` at `keyBits = 512`. Does that path carry into the shipped construction?»
+**Reader's setup.** «FNV-1a's round is `h = (h XOR byte) * FNV_PRIME`. Multiplication modulo `2^64` is not GF(2)-linear (carry chain), but it has the T-function property (Klimov & Shamir 2002) — output bit `t` depends only on input bits `0..t`, invertible plane-by-plane in `O(n^2)`. A standalone SAT solver targeting an unshielded single-region pipeline without the Rank Barrier can recover `dataSeed` lo-lane at `keyBits = 512` on 4 cribs plus disclosed `startPixel`. Does that attack path scale against the shipped construction?»
 
 ### Current analytical picture
 
-The reasoning tracks the CRC128 case, plus one primitive-specific arrow: **combinadic unrank appears to break T-function friendliness.** FNV-1a's T-function property gives the cryptanalyst a poly-time shortcut on direct hash inversion (given `h → seed`), but the analysis suggests there is no `h` to give — hash outputs appear to be consumed opaquely inside the pipeline before they reach the wire, and the pipeline component that would need inverting for the T-function shortcut to reach forward (combinadic unrank) appears to be neither GF(2)-linear nor T-function. The sections below trace each arrow.
+The reasoning tracks the CRC128 case, plus one primitive-specific arrow: **combinadic unrank breaks T-function friendliness.** FNV-1a's T-function property gives the cryptanalyst a poly-time shortcut on direct hash inversion (given `h → seed`), but there is no `h` to give — hash outputs are consumed opaquely inside the pipeline before reaching the wire, and the pipeline component that would need inverting for the T-function shortcut to reach forward (combinadic unrank) is neither GF(2)-linear nor a T-function. The sections below trace each arrow.
 
 ### The T-function property, on paper
 
 Multiplication by an odd constant modulo `2^64` is a T-function: carry propagates only LOW → HIGH, so output bit `t` is an affine function of input bits `0..t` with variable coefficients from the multiplier. This lets a solver work plane-by-plane from LSB to MSB via linear algebra on each bit plane, in `O(n^2)` instead of `2^n`.
 
-Under Single Ouroboros, this is exactly what enabled the archived Phase 2g result: Bitwuzla with T-function-aware handling of the multiply recovered `dataSeed` lo-lane at ITB's minimum `keyBits = 512` on 4 cribs plus disclosed `startPixel`. The regime was Single Ouroboros, no Interlocked Barrier, disclosed `startPixel`, Crib KPA — a partial-lab posture that the current shipped surface does not expose.
+In an unshielded single-region pipeline lacking the Rank Barrier and dual-nonce separation, Bitwuzla with T-function-aware handling of the multiply could recover `dataSeed` lo-lane at `keyBits = 512` on 4 cribs plus disclosed `startPixel`. That regime was single-region, unshielded, disclosed `startPixel`, Crib KPA — a partial-lab posture that the shipped surface does not expose.
 
 ### What happens when FNV-1a meets combinadic unrank in the Rank Barrier
 
@@ -480,17 +483,17 @@ The cascade is:
 
 ```
 lockKey  = ChainHash(0x04 ‖ N_il, lockSeed)
-prf_i    = ChainHash(0x03 ‖ ⟨i⟩, lockKey ‖ lockSeed)
+prf_i    = ChainHash(0x03 ‖ LE64(groupIdx) ‖ 4×0x00, lockComps)   ← Round 1 primer on lockKey, then session components (13 bytes)
 rank     = prf_i (128 bits)
-(m0,m1,m2) = combinadic_unrank(rank)  ← breaks T-function here
-lane_N   = PEXT(chunk_48, m_N)        ← 48 → 16 bit compression
-wire     = Part_2_encode(lane_N, dataSeed, noiseSeed, startSeed, container)
+(m0,m1,m2) = combinadic_unrank(rank)          ← breaks T-function here
+lane_N   = PEXT(chunk_48, m_N)                ← 48 → 16 bit compression via BMI2 PEXTQ (~3 cycles/chunk)
+wire     = PixelBarrierEncode(lane_N, dataSeed, noiseSeed, startSeed, container)  ← COBS + Pixel Barrier
 ```
 
 FNV-1a's T-function property covers the first two operations (the setup `ChainHash` and the per-chunk cascade). Unrank breaks T-function friendliness in three places at once:
 
-**Break 1 — Two-step divmod.**
-`idx_0 = ⌊rank / B⌋ mod A`, `idx_1 = rank mod B`, where `A = C(48, 16)` and `B = C(32, 16)`. Division by a non-power-of-2 constant, and modulo of a non-power-of-2, both involve carry propagation in both directions (multiply-by-reciprocal + shifts + subtract). Output bit `t` depends on input bits both above and below `t`. Not a T-function.
+**Break 1 — Two-step divmod (Theorem 12).**
+`idx_1 = rank mod B`, `idx_0 = ⌊rank / B⌋ mod A`, where `B = C(32, 16)` and `A = C(48, 16)` (avoiding the `gcd(A, B) = 66,861` anti-collapse trap, [Proof 12](PROOFS.md#proof-12-gcda-b-anti-collapse-trap)). Division by a non-power-of-2 constant, and modulo of a non-power-of-2, both involve carry propagation in both directions (multiply-by-reciprocal + shifts + subtract). Output bit `t` depends on input bits both above and below `t`. Not a T-function.
 
 **Break 2 — Combinadic cell-selection loop.**
 For each position `p ∈ [47, 46, ..., 0]`:
@@ -514,62 +517,58 @@ The attacker wants:
 observation  →  mask_triple  →  prf_i (rank)  →  lockKey  →  lockSeed
 ```
 
-Forward pipeline: `rank → unrank → mask_triple` (polynomially fast — that is what the encoder computes). Reverse: `mask_triple → rank` requires enumerating `C(48, 16) × C(32, 16) ≈ 2^70.20` preimages because unranks are many-to-one (`≈ 2^57.80` preimages per triple per [Proof 11](PROOFS.md#proof-11-48-bit-interlocked-barrier-mask-space)). Even given a `mask_triple`, backward inversion of combinadic reduction is essentially guessing rank among `2^57.80` preimages — not amenable to any T-function shortcut.
+Forward pipeline: `rank → unrank → mask_triple` (polynomially fast — that is what the encoder computes). Reverse: `mask_triple → rank` requires enumerating `C(48, 16) × C(32, 16) ≈ 2^70.20` preimages because unranks are many-to-one (`≈ 2^57.80` preimages per triple per [Proof 11](PROOFS.md#proof-11-48-bit-rank-barrier-mask-space-interlocked-barrier)). Even given a `mask_triple`, backward inversion of combinadic reduction is essentially guessing rank among `2^57.80` preimages — not amenable to any T-function shortcut.
 
-But the most important point remains: **the attacker never observes `mask_triple` directly.** The mask is applied opaquely inside `chunk48lock` via PEXT to compress a plaintext chunk into 3 lane fragments. The attacker sees on wire only post-Pixel-Barrier-encoded container bytes. To even start working backward to a mask triple:
+But the most important point remains: **the attacker never observes `mask_triple` directly.** The mask is applied opaquely inside `chunk48lock` via hardware BMI2 `PEXTQ` (or constant-time soft fallback) in ~3 cycles to compress a plaintext chunk into 3 lane fragments. The attacker sees on wire only post-Pixel-Barrier-encoded container bytes. To even start working backward to a mask triple:
 
 1. Strip the Pixel Barrier (rotation + `channelXOR` + noise) — requires Pixel Barrier demask, which requires KPA anchor.
 2. Recover lane fragments from Pixel-Barrier-stripped bytes.
 3. Compute candidate mask triples from lane fragments + known plaintext chunks.
 
-Each chunk observation gives `lane_N = PEXT(chunk, m_N)` — 16 output bits as a function of 48 input bits and mask `m_N`. Per [Proof 11](PROOFS.md#proof-11-48-bit-interlocked-barrier-mask-space), at 48 known plaintext bits per chunk the preimage count per candidate mask triple is `≈ 2^57.80` — an under-determined system regardless of how many chunks accumulate (masks per chunk are independent PRF draws — no coupling).
+Each chunk observation gives `lane_N = PEXT(chunk, m_N)` — 16 output bits as a function of 48 input bits and mask `m_N`. Per [Proof 11](PROOFS.md#proof-11-48-bit-rank-barrier-mask-space-interlocked-barrier), at 48 known plaintext bits per chunk the preimage count per candidate mask triple is `≈ 2^57.80` — an under-determined system regardless of how many chunks accumulate (masks per chunk are independent PRF draws — no coupling).
 
 ### Summary
 
-FNV-1a's T-function property protects the cryptanalyst under direct hash inversion, but:
+FNV-1a's T-function property assists direct hash inversion, but:
 
-- The attacker does not observe `h` — per-chunk PRF outputs are consumed opaquely inside unrank + PEXT
-- The attacker cannot recover mask triples from wire observations — the Pixel Barrier encoding + the Rank Barrier's lane compression prevent it
-- Combinadic unrank is non-linear over GF(2) **and** non-T-function — even a hypothetical T-function attack on the ChainHash cascade that recovered `lockKey` would still break at the unrank arithmetic reverse
-- Compound-key linear algebra in the CRC128 style does not transfer to FNV-1a anyway (multiplication carry structure defeats it)
+- Per-chunk PRF outputs are consumed opaquely inside unrank and `PEXTQ`, never surfacing on the wire.
+- Pixel Barrier encoding combined with Rank Barrier lane compression prevents mask triple recovery.
+- Combinadic unrank is non-linear over GF(2) and non-T-function — reversing it requires resolving an under-determined system with `2^57.80` preimages per chunk.
+- Compound-key linear algebra does not transfer across carry chains.
 
-REDTEAM.md § FNV-1a lo-lane SAT records precisely this: Bitwuzla UNSAT under maximum-peek regime — even when the attacker gets a lab peek stripping Pixel Barrier encoding, the full-coupled 8-chain SAT with symbolic mask triples is not formulable — not because the solver is too slow, but because the instance is under-determined without `lockSeed` under combinadic-unrank arithmetic that breaks the primitive's T-function / GF(2)-linear structure.
-
-The only path FNV-1a's T-function still leaves open is a hypothetical case where the attacker gets `prf_i` observations directly, bypassing PEXT compression — which is architecturally denied by the shipped construction.
-
-So: FNV-1a is technically «total inversion in poly time per T-function» on the bare hash, but unrank arithmetic + Pixel Barrier encoding + the observation gap make this structural shortcut inapplicable to shipped ITB. The tool exists; there is nowhere to apply it.
+Under the maximum-peek regime ([REDTEAM.md § FNV-1a lo-lane SAT](REDTEAM.md#fnv-1a-lo-lane-sat--architecturally-foreclosed)), Bitwuzla returns UNSAT: the instance is structurally under-determined. The T-function shortcut exists on paper, but the ITB architecture leaves no point of application.
 
 ---
 
 ## Closing Note — Why Standard Decomposition Attacks Do Not Apply
 
-The three questions above share a single architectural answer. A cryptanalyst reading REDTEAM.md's null recovery rows and asking «where is the leverage I would normally exploit» typically has one class of technique left: **meet-in-the-middle (MITM), also called divide-and-conquer or layer-peeling cryptanalysis.** The attacker tries to split the joint attack surface into two or more halves that meet at a known intermediate state. If each half is cheaper separately, MITM reduces complexity from `O(2^n)` to `O(2^(n/2))` or better. Classical breaker for composed ciphers.
+The questions above share a single architectural answer. A cryptanalyst reading [REDTEAM.md](REDTEAM.md)'s null-recovery results and evaluating conventional cryptanalytic leverage typically considers **meet-in-the-middle (MITM), divide-and-conquer, or layer-peeling cryptanalysis.** If an attack surface splits into two halves meeting at a known intermediate state, MITM reduces complexity from `O(2^n)` to `O(2^(n/2))` or better.
 
-ITB's «independent but interconnected» architecture blocks this class of attack at the design layer.
+ITB's independent-yet-interconnected architecture blocks decomposition at the structural design layer:
 
-**Independence — 8-seed isolation ([Theorem 3](PROOFS.md#proof-3-8-seed-isolation)).** For any `i ≠ j`, `I(seed_i; seed_j) = 0`. Cross-seed algebraic leverage is absent — if the attacker knows some bits of `noiseSeed` via CCA leak, this gives zero bits of information about `dataSeed / lockSeed / startSeed`. This blocks MITM «split by seed»: impossible to split the problem into «recover `noiseSeed` half» + «recover `dataSeed` half» at cheaper cost, because the halves do not share state space that MITM exploits.
+**Independence — 8-seed isolation ([Theorem 3](PROOFS.md#proof-3-8-seed-isolation)).** For any `i ≠ j`, `I(seed_i; seed_j) = 0`. Cross-seed algebraic leverage is absent: partial knowledge of `noiseSeed` via CCA leaks provides zero bits of information about `dataSeed`, `lockSeed`, or `startSeed`. A split-by-seed MITM cannot engage because the halves share zero state space.
 
 **Interconnectedness — compositional forward pipeline.** Layers apply sequentially in the encoder:
 
 ```
 plaintext
-   ↓ Rank Barrier (chunk48lock under lockSeed)
-lane_bits  ← never observable
+   ↓ Rank Barrier (chunk48lock under lockSeed via BMI2 PEXTQ)
+lane_bits  ← never observable on wire
    ↓ Pixel Barrier (channelXOR + rotate + noise under dataSeed / noiseSeed / startSeed)
 wire byte
 ```
 
-On wire the attacker sees only the composed result. This blocks MITM «split by layer»: impossible to observe the intermediate state (lane fragments after the Rank Barrier but before the Pixel Barrier) separately — they are consumed opaquely inside the next stage.
+On the wire, only the composed result is observable. A split-by-layer MITM cannot engage because intermediate states (`lane_bits`) are consumed opaquely within the pipeline.
 
 ### Classical MITM setup versus ITB
 
-Classical MITM (e.g. for 2-DES):
+Classical MITM (e.g. 2-DES):
 
 ```
 plain →[K1]→ intermediate →[K2]→ cipher
 ```
 
-Attacker guesses `K1`, computes forward to `intermediate`; guesses `K2`, computes backward from `cipher` to `intermediate`; matches guesses at the meeting point. `O(2^{2n}) → O(2^{n+1})`.
+The attacker computes forward from plaintext and backward from ciphertext, matching at the intermediate state in `O(2^{n+1})`.
 
 ITB pipeline:
 
@@ -577,41 +576,31 @@ ITB pipeline:
 plain →[lockSeed (Rank Barrier chunk48lock)]→ lane_bits →[dataSeed × noiseSeed × startSeed (Pixel Barrier)]→ wire byte
 ```
 
-Two potential meeting points, both blocked:
+Both potential meeting points are structurally blocked:
 
-- **Between the Rank Barrier and the Pixel Barrier (`lane_bits`).** Attacker guesses `lockSeed` → forward-computes `lane_bits` from known plaintext; guesses `(dataSeed × noiseSeed × startSeed)` → backward-computes `lane_bits` from wire byte; matches. Blocked two ways: (a) backward from wire byte requires stripping the Pixel Barrier — 56 candidates per pixel equiprobable per [Proof 1](PROOFS.md#proof-1-information-theoretic-barrier), backward step under-determined without anchor, so the attacker's «backward guess» produces 56 candidate lane fragments per pixel, none verifiable; (b) forward from plaintext through `lockSeed` applies `chunk48lock` per-chunk fresh PRF-keyed mask triple — `≈ 2^70.20` possible masks under the PRF assumption, and per-chunk mask uncertainty from `≈ 2^57.80` preimages per rank, so the attacker gets `2^(57.80 · C)` candidate lane sequences per `lockSeed` guess for `C` chunks.
-- **Between PRF chain and unrank (`rank_i` values).** Attacker guesses `lockSeed` → forward via cascade PRF chain → ranks; observes hypothetical rank → backward via combinadic unrank → mask triples → compares with observations. Blocked: mask triples are never observed directly (applied opaquely via PEXT). Forward step gives ranks trivially; backward step from observations to ranks via inverse unrank requires enumerating `≈ 2^57.80` candidates per chunk with no verification anchor.
+- **Between the Rank Barrier and the Pixel Barrier (`lane_bits`):** Backward computation from wire requires stripping the Pixel Barrier — 56 equiprobable candidates per pixel under [Proof 1](PROOFS.md#proof-1-information-theoretic-barrier), rendering the step under-determined. Forward computation through `chunk48lock` encounters the per-chunk mask space of `≈ 2^70.20` partitions and `2^57.80` preimages per rank, yielding `2^(57.80 · C)` candidate sequences across `C` chunks.
+- **Between PRF chain and unrank (`rank_i` values):** Forward cascade evaluation produces ranks, but backward inversion from wire observations requires inverting PEXT lane compression and combinadic unrank — an under-determined system with `≈ 2^57.80` preimages per chunk and no verification anchor.
 
 ### Other decomposition attempts
 
-Every standard «peel one layer while holding others» technique the analysis surveyed encounters the same underlying obstacle. The list below is a walkthrough, not a completeness claim over the attack space — a novel technique or a novel composition of the ones tabulated is not on the table by definition; each row states the specific assumption a known technique makes that the shipped architecture removes:
+Standard layer-peeling techniques encounter orthogonal structural obstacles:
 
 | Technique | What it needs | Why it fails on ITB |
 |---|---|---|
-| Slide attack | Repeating structure across rounds | ChainHash rounds are independent per component ([Theorem 3b](PROOFS.md#proof-3b-chainhash-full-component-utilization)) — no slide equivalence |
-| Related-key attack | Algebraic relation between keys | 8 CSPRNG-drawn seeds enforced pairwise-distinct at API — no relation |
+| Slide attack | Repeating structure across rounds | ChainHash rounds are independent per component ([Theorem 3b](PROOFS.md#proof-3b-chainhash-full-component-utilization)) |
+| Related-key attack | Algebraic relation between keys | 8 CSPRNG-drawn seeds enforced pairwise-distinct at API |
 | Boomerang | Composable differential paths through intermediate state | No observable intermediate state in the barrier |
 | Integral / square | Balanced property preserved across rounds | Random container destroys balance |
-| Linear cryptanalysis | Linear approximation input ↔ output | Pixel Barrier absorbs primitive output through DRBG noise; per-chunk mask permutation removes fixed bit-position anchor |
+| Linear cryptanalysis | Linear approximation input ↔ output | Pixel Barrier absorbs output through DRBG noise; Rank Barrier removes fixed bit-position anchor |
 
-Every standard tool assumes exactly one thing (fixed anchor, observation channel, exploitable primitive weakness, table-lookup side channel). The construction removes that thing at its specific layer while remaining layers work independently. A cryptanalyst attempting a standard workflow encounters: «my tool requires X; this layer removes X. Next layer removes Y, which I also need. Third layer removes Z.»
+Conventional cryptanalytic tools require a fixed anchor, observable output, or linear relation. ITB's architecture structurally denies these prerequisites:
 
-Not defense-in-depth in the sense of «stacking redundant walls» — because each wall protects against a structurally different attack class. They cannot be defeated by a single algebraic breakthrough, because they are not related layers in one algebra — they are orthogonal channels closed by independent seeds under disjoint domain tags through independent hash chains.
+1. **Independent seeds:** `I(seed_i; seed_j) = 0` eliminates cross-layer algebraic bridges.
+2. **Opaque composition:** intermediate states are never emitted on the wire.
+3. **Fresh PRF draws per chunk and pixel:** observations remain uncoupled across messages and positions.
 
-Architecturally, three properties compose:
+As codified in [Proof 4a](PROOFS.md#proof-4a-multi-factor-full-kpa-resistance): *«The obstacles are not sub-problems defeated sequentially but interlocking constraints.»* An adversary cannot peel layers sequentially; all obstacles must be breached simultaneously.
 
-1. **Layers keyed by independent seeds** — no cross-layer algebraic bridge
-2. **Layers composed such that only the final composition is observable** — no intermediate leak
-3. **Per-composition fresh PRF draws** — barrier mask per-chunk, `dataSeed` hash per-pixel; cross-observation constraints do not accumulate
+### Residual Risk
 
-[Proof 4a](PROOFS.md#proof-4a-multi-factor-full-kpa-resistance) codifies this in one sentence:
-
-> «The obstacles are not sub-problems defeated sequentially but interlocking constraints.»
-
-The word «interlocking» is a precise pointer to MITM-block. Sub-problems defeated sequentially = classical decomposition. Interlocking constraints = the attacker must simultaneously breach all obstacles in the same attempt, because none can be «peeled» to reveal another's intermediate state.
-
-### Honest positioning of the residual risk
-
-The construction has one exit that all of the above does not close: **total PRF inversion of a shipped primitive** — an assumption breach on primitive strength, not a decomposition attack. Historically this has never happened to a modern well-designed PRF in the open literature (MD5 collisions ≠ preimage inversion; SHA-1 same; DES key exhaustion ≠ inversion; A5/1 and RC4 are stream ciphers of specific design; reduced-round breaks are not full-round breaks). Should it ever happen to a specific shipped primitive, ITB mitigates via the shipped-primitive registry + custom primitive plug: the caller switches to another primitive via `hashes.Register + triple.Register` without changing the construction. No single-point-of-failure.
-
-Everything else is on the table. All theorems have formal derivations in PROOFS.md; all empirical measurements have reproducible harnesses in REDTEAM.md; all code is public. A cryptanalyst's reaction is more likely «this is architecturally different from anything I have analyzed» than «this hides something». Which is exactly the posture required for paper-oriented review.
+The construction has one fundamental assumption boundary: **total PRF inversion of a shipped primitive**. Should any shipped primitive suffer total preimage inversion, ITB mitigates through primitive agility: callers can select or register alternative primitives via `hashes.Register` and `triple.Register` without altering the wire format or construction architecture. All theorems have formal derivations in [PROOFS.md](PROOFS.md); all empirical bounds have reproducible harnesses in [REDTEAM.md](REDTEAM.md).

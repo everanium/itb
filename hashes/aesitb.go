@@ -212,7 +212,7 @@ func aesITB128FusedChainHash8(k [16]byte) itb.BatchFusedChainHashFunc128x8 {
 // aesITB128InterlockFillBatch16 is the [Spec.InterlockFillBatch16] factory.
 // Returns the batch-16 Interlocked Barrier fill kernel that synthesizes 16
 // consecutive 13-byte fill buffers (domain tag 0x03, group index at bytes
-// [1:9], PKCS#7 pad) and runs the whole AES-ITB ChainHash cascade over the
+// [1:9], 4 zero bytes, 3-byte PKCS#7 pad) and runs the whole AES-ITB ChainHash cascade over the
 // supplied components on every lane inside one internal/aesitbasm kernel
 // call (tier avx512, vaesavx2, vex, aesni, neon, or the scalar reference)
 // — the batch-16 arm of the cascade fill every lockSeed runs, see

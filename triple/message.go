@@ -276,9 +276,8 @@ func (p *Pipeline) decryptMessageDirect(wire []byte) ([]byte, bool, error) {
 	// header parses AND the announced chunk length equals the entire
 	// remaining body, the wire carries exactly one chunk and the fast
 	// path applies. Multi-chunk wires (produced by EncryptStream on
-	// plaintext larger than chunkSize, or by legacy Message encrypts
-	// pre-dating the direct path) fail this equality and route to the
-	// streaming fallback.
+	// plaintext larger than chunkSize) fail this equality and route to
+	// the streaming fallback.
 	chunkLen, perr := itb.ParseChunkLenCfg(p.cfg, body)
 	if perr != nil || chunkLen != len(body) {
 		return nil, false, nil

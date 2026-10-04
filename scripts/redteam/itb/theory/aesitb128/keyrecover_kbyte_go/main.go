@@ -1,4 +1,4 @@
-// keyrecover_kbyte_go — Go port of the classical 4-round Square kappa-byte
+// Go port of the classical 4-round Square kappa-byte
 // key-recovery engine through ChainHash<AES-ITB-128>, generalised to
 // order-N Lambda-sets and every cascade depth.
 //

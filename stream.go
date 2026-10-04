@@ -122,8 +122,7 @@ func EncryptStream3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed
 
 // DecryptStream3x128Cfg decrypts concatenated chunks produced by
 // [EncryptStream3x128Cfg]. Skips the 32-byte envelope prefix at the
-// front of data; an empty data slice is treated as a clean
-// end-of-stream before the prefix arrives.
+// front of data; empty data returns [ErrEmptyInput].
 func DecryptStream3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed128, data []byte, emit func(chunk []byte) error) error {
 	if err := checkEightSeeds128(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
 		return err

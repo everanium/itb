@@ -25,9 +25,9 @@
 
 ---
 
-A parameterized symmetric cipher construction library for Go that makes hash output unobservable under passive observation through independent barrier mechanisms: **noise absorption** (a random container filled by `internal/drbg` — AES-CTR or ChaCha20 seeded per call from CSPRNG — makes hash output unobservable), **encoding ambiguity** (secret rotation yields 7^P unverifiable configurations that survive CCA), and the **Interlocked Barrier** (a per-chunk PRF-keyed 48-bit permutation over three regions, with a per-chunk mask space of ≈ 2^70.20 balanced partitions). 8-Seed isolation ensures compromise of any one domain provides zero information about the others.
+A parameterized symmetric cipher construction library for Go that suppresses hash output under passive observation through independent barrier mechanisms: **noise absorption** (a random container filled by `internal/drbg` — AES-CTR or ChaCha20 seeded per call from CSPRNG — makes hash output unobservable), **encoding ambiguity** (secret rotation yields 7^P unverifiable configurations that survive CCA), and the **Interlocked Barrier** (the composite pair of the **Rank Barrier** — a per-chunk PRF-keyed 48-bit permutation over three regions with a per-chunk mask space of ≈ 2^70.20 balanced partitions executed in ~3 cycles in constant time via BMI2 PEXTQ/PDEPQ — and the **Pixel Barrier** — per-pixel whitening, rotation, and DRBG noise absorption). 8-seed isolation ensures compromise of any one domain provides zero information about the others.
 
-**Ambiguity-Based Security.** The number of observation-consistent **configurations** grows with data size — a property orthogonal to Shannon's key-entropy bound (distinct from Shannon's perfect-secrecy relationship on plaintext entropy; not a violation of it). The Interlocked Barrier converts known-plaintext cryptanalysis from a computational-hardness problem into an instance-formulation one under the PRF assumption: a known-plaintext crib does not fix any bit-position-to-lane mapping for a solver to anchor on.
+**Ambiguity-Based Security.** The number of observation-consistent **configurations** grows with data size — a property orthogonal to Shannon's key-entropy bound (distinct from Shannon's perfect-secrecy relationship on plaintext entropy; not a violation of it). The Interlocked Barrier (Rank Barrier + Pixel Barrier) converts known-plaintext cryptanalysis from a computational-hardness problem into an instance-formulation one under the PRF assumption: a known-plaintext crib reaches neither a fixed lane position (Rank Barrier) nor an observable byte (Pixel Barrier).
 
 **[Quick Start](#quick-start)**
 
@@ -193,7 +193,7 @@ Blob profile (no cipher surface; used by `Init` / `Rekey` to bundle session stat
 
 - `blob-triple-mac-v1` — MAC Authenticated blob-only bundle (no cipher surface; used by `Init` / `Rekey` to bundle session state).
 
-The single-primitive Triple, blob, and mixed-primitive profiles default to **parallax on (Pre-inner ciphers) + wrapper (Outer cipher) on**; AES-ITB-128 native profiles keep parallax and wrapper off, but can be used in conjuction with another PRF-grade primitives. Both toggles are opt-out via `triple.Opts` on the overlay-enabled profiles. Every seed component, PRF key, MAC key, and wrapper master is drawn from `crypto/rand` at `Init` time.
+The single-primitive Triple, blob, and mixed-primitive profiles default to **parallax on (Pre-inner ciphers) + wrapper (Outer cipher) on**; AES-ITB-128 native profiles keep parallax and wrapper off, but can be used in conjunction with other PRF-grade primitives. Both toggles are opt-out via `triple.Opts` on the overlay-enabled profiles. Every seed component, PRF key, MAC key, and wrapper master is drawn from `crypto/rand` at `Init` time.
 
 **The user's story.** Call `triple.Init(profile, opts)` to receive a `*triple.Pipeline` plus a `blob` byte slice. **The blob is the full session bundle** — the resolved `triple.Profile` record (the recipe: mode, width, primitives, key width, MAC, outer cipher, palette, chunk / segment sizes, layer toggles, and the sender's profile label), both masters, and the inner Blob{N} carrying the 8-seed components + per-slot PRF keys + optional MAC material + the `NonceBits` / `BarrierFill` snapshot. Ship the blob to the receiver out-of-band; the receiver calls `triple.Load(blob)` (or `triple.LoadF(path)` for a blob on disk) and reconstructs the same Pipeline from the recipe alone — no profile registration is needed on the receiving side, and no `Opts` are accepted because every structural field is fixed by the blob. Both sides then encrypt / decrypt against their Pipeline. The per-machine worker cap is the one runtime knob and is set after construction via `pipe.MaxWorkers(n)`.
 
@@ -512,7 +512,7 @@ enc, blob, err := triple.Init(triple.ProfileStreamingAEADTripleMACV1, triple.Opt
     ChunkSize:    16 << 20,     // streaming chunk-size budget
     WithParallax: &withParallax, // opt out of parallax
     WithWrapper:  &withWrapper,  // keep wrapper on (would default on anyway)
-    OuterCipher:  "aescmac",     // "aescmac" = AES-128-CTR outer cipher (legacy shared-alphabet string; see wrapper/README.md)
+    OuterCipher:  "aescmac",     // "aescmac" = AES-128-CTR outer cipher (registry identifier; see wrapper/README.md)
 })
 ```
 
@@ -584,13 +584,13 @@ Any field left at its zero value defers to the resolved profile's default; a nil
 | `ParallaxPalette` | slice of primitive names from the set below | Empty = profile default palette. Order matters — parallax dispatches per-segment by slot. |
 | `ParallaxSegmentSize` | `int` in `[1, 65535]`, coprime to `504` (not divisible by 2, 3, or 7); or `0` = default | Default `4093` (prime). Sensible values: primes like `4093` / `4099` / `4111` / `4127`; any composite is fine iff coprime to 504. Parallax segment size. |
 
-**Shipped primitive names.** The single canonical registry (`hashes/registry.go` — `hashes.Registry`, the `hashes.Cipher*` name constants, and the `hashes.Names()` snapshot that `wrapper.CipherNames` mirrors) uses the same string alphabet for `InnerHash`, `OuterCipher`, and each `ParallaxPalette` entry, excluding `aesitb128` that not supported by parallax and wrapper:
+**Shipped primitive names.** The single canonical registry (`hashes/registry.go` — `hashes.Registry`, the `hashes.Cipher*` name constants, and the `hashes.Names()` snapshot that `wrapper.CipherNames` mirrors) uses the same string alphabet for `InnerHash`, `OuterCipher`, and each `ParallaxPalette` entry, excluding `aesitb128` which is not supported by parallax and wrapper:
 
 ```
 aesitb128  areion256  areion512  blake2b256  blake2b512  blake2s  blake3  aescmac  siphash24  chacha20
 ```
 
-**Name reuse — legacy.** The string `"aescmac"` names two different primitives depending on which field it appears in:
+**Name reuse across layers.** The string `"aescmac"` names two different primitives depending on which field it appears in:
 
 - `InnerHash: "aescmac"` → **AES-CMAC** (the MAC-family primitive, `hashes/registry.go`).
 - `OuterCipher: "aescmac"` → **AES-128-CTR** (the stream cipher).
@@ -905,7 +905,7 @@ func main() {
 A user primitive is pluggable at the Low-Level surface in two shapes.
 
 - **Closure-directly-passed.** Construct `itb.HashFunc{N}` (single-call) and `itb.BatchHashFunc{N}` (batched-arm) closures per seed slot and pass them directly to the `*Cfg` Low-Level entry point. The primitive is responsible for its own keying and pooling; ITB's per-pixel dispatcher wires both arms through the seed's `Hash` and `BatchHash` fields. The primitive stays local to the constructing call site — `hashes.Find` does not resolve it.
-- **Registered by name via `hashes.Register(spec hashes.Spec) error`.** The custom primitive gains a canonical name that the `hashes.Find` / `hashes.Make{N}` / `hashes.Make{N}Pair` dispatchers resolve alongside shipped entries. The Spec carries `Name` (lowercase letters, digits, underscores; capped at `hashes.MaxNameLen = 12` characters — the cap matches `parallax.MaxCipherNameLen` so the registered primitive fits `"<name>:<index>"` inside a 16-byte 128-bit-PRF input block if the caller later wires it into a parallax palette entry), `Width` (`W128` / `W256` / `W512`), and exactly one `Make{N}Pair` factory field matching the width. Two further optional fields — `HashHash func() hash.Hash` and `KeyedHash func(key []byte) (hash.Hash, error)` — opt the primitive into cross-package MAC composition through `macs.BuildHMAC` / `macs.BuildKeyedHash` (see [Custom user-supplied MACs](#custom-user-supplied-macs)). Registration is process-wide, appended after the shipped Registry in `hashes.AllPrimitives`, and immutable — a second `Register` for the same name returns `hashes.ErrHashExists`. The shipped `hashes.Registry` itself is untouched, so the FFI iteration surface (`ITB_Triple_HashNames`) is unaffected. `hashes.Register` is a Go-native API only; bindings are triple-only and do not expose custom-primitive plug.
+- **Registered by name via `hashes.Register(spec hashes.Spec) error`.** The custom primitive gains a canonical name that the `hashes.Find` / `hashes.Make{N}` / `hashes.Make{N}Pair` dispatchers resolve alongside shipped entries. The Spec carries `Name` (lowercase letters, digits, underscores; capped at `hashes.MaxNameLen = 12` characters — the cap matches `parallax.MaxCipherNameLen` so the registered primitive fits `"<name>:<index>"` inside a 16-byte 128-bit-PRF input block if the caller later wires it into a parallax palette entry), `Width` (`W128` / `W256` / `W512`), and exactly one `Make{N}Pair` factory field matching the width. Two further optional fields — `HashHash func() hash.Hash` and `KeyedHash func(key []byte) (hash.Hash, error)` — opt the primitive into cross-package MAC composition through `macs.BuildHMAC` / `macs.BuildKeyedHash` (see [Custom user-supplied MACs](#custom-user-supplied-macs)). Registration is process-wide, appended after the shipped Registry in `hashes.AllPrimitives`, and immutable — a second `Register` for the same name returns `hashes.ErrHashExists`. The shipped `hashes.Registry` itself is untouched, so the FFI iteration surface (`ITB_Triple_HashNames`) is unaffected. `hashes.Register` is a Go-native API only; bindings are Triple-only and do not expose custom-primitive plug.
 
 The registered path composes with the `triple.Pipeline` facade: `triple.Init(profile, opts)` selects primitives by name via `hashes.Find`, so a registered name is reachable through the same facade the shipped primitives use. Closure-directly-passed primitives are reachable only through the Low-Level `*Cfg` entry points.
 
@@ -1077,7 +1077,7 @@ See [hashes/CONSTRUCTIONS.md](hashes/CONSTRUCTIONS.md) for per-primitive constru
 
 ## MACs (`macs/`)
 
-The `macs/` subpackage ships three MAC primitives with a fixed 32-byte tag and FFI-stable index order. All three pre-key the primitive once at construction and are safe to call concurrently. Each MAC also carries an incremental multi-slice arm (`MACIncrementalFunc`, name-keyed via `macs.MakeIncremental`) that the authenticated entry points use to absorb the MAC input parts directly instead of concatenating them into a scratch buffer first — wired automatically by `triple.Init` / `triple.Load`, worth roughly +7.5% end-to-end decrypt throughput on the hmac-blake3 default profile at 16 MB.
+The `macs/` subpackage ships PRF-grade MAC primitives with a fixed 32-byte tag and FFI-stable index order. All three pre-key the primitive once at construction and are safe to call concurrently. Each MAC also carries an incremental multi-slice arm (`MACIncrementalFunc`, name-keyed via `macs.MakeIncremental`) that the authenticated entry points use to absorb the MAC input parts directly instead of concatenating them into a scratch buffer first — wired automatically by `triple.Init` / `triple.Load`, worth roughly +7.5% end-to-end decrypt throughput on the hmac-blake3 default profile at 16 MB.
 
 | # | Factory | Returns | Key size | Tag size |
 |---|---|---|---|---|
@@ -1114,13 +1114,13 @@ Two properties matter. First, the input `data` never changes across rounds; only
 
 This is best read as **local key evolution** — each round derives a fresh effective key from the previous state plus new key material and re-keys the same PRF over the same input. The number of rounds is the key width divided by the native state width, so a 2048-bit key folds into 16 rounds at 128-bit, 8 rounds at 256-bit, or 4 rounds at 512-bit. The wider the primitive, the fewer rounds — which is why a wider PRF is both faster and gives a wider MITM bottleneck.
 
-| Hash width | Components/round | Rounds (at 512-bit key) | Hash calls/pixel |
-|---|---|---|---|
-| 128-bit | 2 | 4 | 4 |
-| 256-bit | 4 | **2** | **2** |
-| 512-bit | 8 | **1** | **1** |
+| Hash width | Components/round | Pixel Barrier rounds (at 512-bit key) | Rank Barrier cascade fill rounds (at 512-bit key) | Hash calls/pixel |
+|---|---|---|---|---|
+| 128-bit | 2 | 4 | 5 (1 primer + 4 session) | 4 |
+| 256-bit | 4 | **2** | **3** (1 primer + 2 session) | **2** |
+| 512-bit | 8 | **1** | **2** (1 primer + 1 session) | **1** |
 
-**What ChainHash does and does not include.** ChainHash returns the full native-width block. The narrowing is not part of ChainHash: the per-pixel encoder consumes only the low word (`hLo` / `h[0]`) and discards the rest, while the Interlocked Barrier's per-chunk mask draw consumes the full 128-bit `HashFunc128` output pair `(lo, hi)` as the rank input to `rankToMaskTriple48` — both words are load-bearing. So the output narrowing at 128 / 256 / 512-bit is an Pixel Barrier choice layered on top of ChainHash, not a property of ChainHash itself. Under the PRF assumption any consistent subset of a PRF's output is itself a PRF on those bits.
+**What ChainHash does and does not include.** ChainHash returns the full native-width block. The narrowing is not part of ChainHash: the per-pixel encoder consumes only the low word (`hLo` / `h[0]`) and discards the rest, while the Interlocked Barrier's per-chunk mask draw consumes the full 128-bit `HashFunc128` output pair `(lo, hi)` as the rank input to `rankToMaskTriple48` — both words are load-bearing. So the output narrowing at 128 / 256 / 512-bit is a Pixel Barrier choice layered on top of ChainHash, not a property of ChainHash itself. Under the PRF assumption any consistent subset of a PRF's output is itself a PRF on those bits.
 
 ## Wire format
 
@@ -1171,26 +1171,26 @@ The 8 mandatory seeds are drawn as independent CSPRNG components; the API surfac
 | Known-plaintext resistance (Crib / Full / Partial KPA) | Under the PRF assumption and fresh nonces, closed at the instance-formulation layer by the barrier's per-chunk ≈ 2^70.20 mask space + per-chunk PRF independence + 3-region enumeration dimension + 8-seed isolation (architectural claim) |
 | Chosen-plaintext resistance | Under the PRF assumption and fresh nonces, the always-on keyed permutation plus fresh per-message draws leave ciphertext at the statistical floor (architectural claim) |
 | Noise absorption | Core ITB / MAC + Silent Drop; bypassed via CCA in MAC + Reveal (DRBG residue in data positions survives) |
-| Hash function requirement | PRF required; PRF and barrier are complementary — neither sufficient alone; NPRF permitted with subject to strict quality requirements |
+| Hash function requirement | PRF required; PRF and barrier are complementary — neither sufficient alone; NPRF permitted subject to strict quality requirements |
 | Nonce | 128/256/512-bit per-message nonce, drawn internally from `crypto/rand` on every call (default 512-bit) |
 | Nonce reuse | Not architecturally closed by the barrier; closure of the CPA / KPA families is conditional on fresh nonces. The shipped API generates the nonce internally per call, which prevents caller-side reuse |
-| Storage overhead | ~1.14-1.27× (~2-20× for very small payloads < 2.5KB, ciphertext minimum size is always > 5KB) |
+| Storage overhead | ~1.14-1.27× (~2-20× for very small payloads < 2.5KB; ciphertext minimum size is > 9.8KB at default 1024-bit keys, > 5KB at 512-bit) |
 
-### Interlocked Barrier — combinadic unrank routing layer
+### Interlocked Barrier — composite defense architecture (Rank Barrier + Pixel Barrier)
 
-The always-on Rank Barrier is driven by a **combinadic unrank** step: a public, deterministic combinatorial algorithm that transforms one 128-bit PRF output (from the per-group `lockSeed` cascade under domain tag `0x03`, keyed by the per-container `0x04` derivation) into a pairwise-disjoint balanced three-lane bit-permutation over each 48-bit input chunk. Every region receives exactly 16 bits from each 48-bit chunk via its assigned mask; the three masks together cover the full 48 bits with no overlap.
+The always-on Rank Barrier is driven by a **combinadic unrank** step: a public, deterministic combinatorial algorithm that transforms one 128-bit PRF output (from the per-group `lockSeed` cascade under domain tag `0x03`, keyed by the per-container `0x04` derivation with a dedicated primer round 1 on intermediate key `K`) into a pairwise-disjoint balanced three-lane bit-permutation over each 48-bit input chunk. Every region receives exactly 16 bits from each 48-bit chunk via its assigned mask; the three masks together cover the full 48 bits with no overlap. On x86_64, execution is accelerated via three BMI2 `PEXTQ` instructions for compression into lanes and three `PDEPQ` instructions for reassembly in ~3 cycles in constant time.
 
 Four architectural properties emerge simultaneously from the same layer:
 
 - **Diffusion.** 48 input bits are dispersed across 3 × 16-bit output lanes, distributing every plaintext bit at 1-bit granularity across the three regions.
 - **Confusion.** The rank → mask mapping is non-linear over GF(2) — integer arithmetic through binomial-coefficient tables produces bit-plane dependencies that neither linear cryptanalysis nor T-function DFS can decompose.
-- **Balance.** Every mask carries exactly 16 set bits; a rank-space anti-collapse rejection at derivation time prevents same-index mask-triple degeneracies.
+- **Balance.** Every mask carries exactly 16 set bits; deterministic two-step divmod unranking prevents the gcd(A, B) = 66,861 anti-collapse trap without rejection sampling.
 - **Key-dependency.** A fresh mask triple is derived per chunk from the `lockSeed` cascade output, so attacker-guessed masks never amortise across chunks.
 
 Neither the combinadic unrank routing layer nor the surrounding composition layers of ITB are cryptographic primitives:
 
 - **ChainHash** composes PRF invocations with XOR feedforward between rounds — a pure composition over the underlying PRF's output, adding no cryptographic content of its own.
-- **Interlock** applies the unrank-derived three-lane bit-permutation over each 48-bit input chunk, routing plaintext bits across the three regions via PRF-derived masks.
+- **Rank Barrier** applies the unrank-derived three-lane bit-permutation over each 48-bit input chunk via BMI2 `PEXTQ`, routing plaintext bits across the three regions via PRF-derived masks.
 - **Pixel Barrier** applies channel XOR + 7-bit rotation + noise-bit insertion per pixel under PRF-derived per-channel parameters — bit-level routing over PRF-derived material.
 
 None of these layers create entropy; they consume the entropy delivered by the underlying PRF primitive and route it through the ITB construction. As pure combinatorial and bit-routing algorithms with no secret material of their own, they fall outside cryptographic certification regimes (Wassenaar 5A002 and national equivalents) — those regimes cover primitives and the modules built on them, not routing / composition layers over PRF output.
@@ -1227,7 +1227,7 @@ The binding fleet landed in two logical bands. Every band is a thin proxy over t
 - **Tier 1 Thin (23 bindings)** — direct in-process consumers of the C shared library through the language-native FFI mechanism (dlopen / `dynlib` / `dart:ffi` / `ccall` / P/Invoke / JNI / NIF / `foreign import ccall` / `ocaml-ctypes` / `.Call` C shim / language-specific C module). Each binding is a thin proxy: a language-idiomatic handle-lifetime wrapper + Opts URL-query builder + FFI shims for the `ITB_Triple_*` exports + status-code table + language-native `io.Reader` / `io.Writer` adapters for the stream-pump surface. Zero ITB construction logic; every hash-name / MAC-name / cipher-name / profile-name is an opaque string passed through to Go for validation.
 - **Tier 2 Relay (10 bindings)** — a small in-process relay speaks the `ITB_Triple_*` shim over another binding's build output (JVM jar / .NET assembly / Erlang NIF) and hands it to a language runtime that rides an existing runtime's binding rather than link the C shared library directly. Every relay is a thin proxy of a thin proxy; ITB's construction logic never lives outside the shipped Go core.
 
-Per-binding examples ship in each binding's own directory once the rework lands.
+Per-binding examples ship in each binding's own directory under `bindings/<lang>/`.
 
 ### Fleet listing
 

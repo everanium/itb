@@ -2,7 +2,8 @@ package triple
 
 // Close wipes every piece of secret material this [Pipeline] owns and
 // marks the Pipeline closed. Subsequent [Pipeline.EncryptStream] /
-// [Pipeline.DecryptStream] / [Pipeline.EncryptMessage] /
+// [Pipeline.DecryptStream] / [Pipeline.EncryptStreamBytes] /
+// [Pipeline.DecryptStreamBytes] / [Pipeline.EncryptMessage] /
 // [Pipeline.DecryptMessage] / [Pipeline.Rekey] / [Pipeline.SaveF]
 // calls return [ErrClosed]; [Pipeline.Save] returns nil.
 //
@@ -21,7 +22,7 @@ package triple
 func (p *Pipeline) Close() error {
 	// Serialise a racing second Close body against the first. The
 	// atomic flag below is the check-then-act guard that keeps the
-	// cipher-path stubs lock-free; the mutex here just makes the
+	// cipher-path methods lock-free; the mutex here just makes the
 	// wipe itself run once.
 	p.closeMu.Lock()
 	defer p.closeMu.Unlock()
@@ -65,7 +66,7 @@ func (p *Pipeline) Close() error {
 	p.parallaxSched = nil
 	p.parallaxCS = nil
 
-	// Publish the close via atomic-store so cipher-path stubs
+	// Publish the close via atomic-store so cipher-path methods
 	// consulting isClosed observe the transition without a lock.
 	p.closed.Store(true)
 	return nil

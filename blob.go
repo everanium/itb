@@ -64,8 +64,8 @@ func decodeBlobStrict(data []byte, out *blobV1) error {
 		return err
 	}
 	// After the first value, the decoder's stream must be empty.
-	// dec.More() reports true if any non-whitespace remains; we
-	// reject as malformed in that case.
+	// dec.More() reports true if any non-whitespace remains; the blob
+	// is rejected as malformed in that case.
 	if dec.More() {
 		return ErrBlobMalformed
 	}
@@ -247,9 +247,9 @@ func hexToBytes(s string) ([]byte, error) {
 	return decoded, nil
 }
 
-// validateSeedComponents{N} checks that a freshly parsed component
+// validateSeedComponentsLen checks that a freshly parsed component
 // slice has the expected key_bits length and matches the lengths
-// of its peers (e.g. all seven Triple-mode seeds carry the same
+// of its peers (e.g. all Triple-mode seeds carry the same
 // component count).
 func validateSeedComponentsLen(got, want int) error {
 	if got != want {

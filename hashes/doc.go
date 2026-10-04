@@ -23,7 +23,7 @@
 // harness, and documentation table refers back to [Registry] rather than
 // restating the roster inline.
 //
-// Each factory has an optional WithKey variant accepting a fixed key
+// Each factory has an optional WithKey or PairWithKey variant accepting a fixed key
 // of the primitive's native key length, intended for serialization /
 // deserialization of long-lived seeds across processes (Encrypt today,
 // Decrypt tomorrow). SipHash-2-4 has no WithKey variant — the seed
@@ -33,7 +33,7 @@
 // Every registry entry is described by a [Spec] record carrying its
 // canonical name, native intermediate-state [Width] (128 / 256 /
 // 512 bits) and — on every shipped entry — its outer cipher dispatch
-// [Class]. The shipped names are also exported as the [CipherAreion256]
+// [Class]. The shipped names are also exported as the [CipherAESITB128]
 // … [CipherChaCha20] constants, and [Names] / [ClassOf] / [FullView]
 // enumerate the shipped [Registry] without its factory hooks. [Find]
 // resolves a name to its Spec; the [Make128] /
@@ -62,8 +62,8 @@
 //
 // # Custom-primitive builders
 //
-// Beyond shipped primitives, the package exposes three
-// builder families for safely wrapping user-supplied PRFs:
+// Beyond shipped primitives, the package exposes builder
+// families for safely wrapping user-supplied PRFs:
 //
 //   - [BuildCBCMACChainAbsorb128] / [BuildCBCMACChainAbsorb256] /
 //     [BuildCBCMACChainAbsorb512] — wrap a keyed block cipher into a
@@ -75,6 +75,9 @@
 //     [BuildARXChainAbsorb512] — wrap a full hash function (such as
 //     [crypto/sha256.Sum256]) + fixed-key into a Merkle-Damgard-style
 //     HashFunc closure.
+//   - [BuildHMACChainAbsorb128] / [BuildHMACChainAbsorb256] /
+//     [BuildHMACChainAbsorb512] — wrap a hash function into an HMAC
+//     chain-absorb HashFunc closure.
 //
 // These builders exist primarily to close the silent-nonce-truncation
 // trap that a naive user wrapper falls into. A user who writes

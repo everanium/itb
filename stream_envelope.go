@@ -33,10 +33,9 @@ func nomacStreamPrefix() ([]byte, error) {
 // all emit 32-byte tags. User-pluggable custom MACs registered via
 // [github.com/everanium/itb/macs.Register] accept TagSize in
 // [16, 64] and therefore may emit tags of a different length; the
-// Low-Level
-// authenticated paths probe the closure's tag length at construction
-// and reserve the payload precisely, so correctness is preserved for
-// any tag size. A Low-Level No MAC caller pairing with a
+// Low-Level authenticated paths probe the closure's tag length at
+// construction and reserve the payload precisely, so correctness is
+// preserved for any tag size. A Low-Level No MAC caller pairing with a
 // custom-tag-size authenticated peer sets Config.TagStubSize to
 // the peer's MAC tag length so the envelope shapes stay matched; a
 // MAC-carrying triple.Pipeline populates the field from its profile's

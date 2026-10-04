@@ -4,7 +4,7 @@
 >
 > PRF-grade hash functions are **required**. No warranty is provided.
 
-**No bespoke cryptography.** ITB introduces no cryptographic primitive of its own — no custom S-box, permutation, or round function. It is a construction over existing primitives, much as PGP composes standard ciphers rather than defining one. Such constructions are not the object of algorithm-level cryptographic certification: national regimes (NIST CAVP/FIPS in the US, GOST/FSB in Russia, OSCCA's SM-series in China, IC3S in India, SOG-IS/EUCC and national lists in the EU, ASD's ISM in Australia, CRYPTREC in Japan, KCMVP in South Korea) certify **primitives** and the **modules** built on them, not compositional schemes. Eligibility for regulated use is therefore inherited from the primitives ITB is configured with, not conferred by ITB itself.
+**No bespoke cryptography.** ITB composes established, standardized primitives rather than introducing new cryptographic designs. Security properties and regulatory status are inherited from the underlying primitives; see [README.md](README.md) for jurisdictional certification details.
 
 Results below were collected at `ITB_NONCE_BITS=512` with `ITB_GOMEMLIMIT=4GiB` + `ITB_GOGC=100` capping the Go runtime heap. Every PRF-grade primitive in the shipped hash registry dispatches through hand-written AVX-512 / AVX2 chain-absorb ASM kernels (each primitive family at its natural active register width); AES-ITB-128 dispatches through the AES-NI-family kernels: the pixel-pipeline fused cascade and the batch-16 Interlocked Barrier fill cascade both auto-select the widest VAES tier the host offers (ZMM on VAES + AVX-512F, YMM on VAES + AVX2 without AVX-512F, VEX / legacy-SSE XMM on the remaining AES-NI hosts). The fused cascade tier is overridable via `ITB_FORCE_HASH_TIER`; the batch-16 fill cascade tier is separately overridable via `ITB_FORCE_INTERLOCK_PRF_FILL_TIER`.
 
@@ -157,41 +157,3 @@ The AES-ITB-128 rows appear here, in the AMD EPYC 9655P section further down, an
 | **AES-CMAC** | 128 | 2048 | PRF | 189 | 191 | 191 | 194 | 199 | 196 |
 | **SipHash-2-4** | 128 | 2048 | PRF | 65 | 65 | 65 | 66 | 65 | 67 |
 | **ChaCha20** | 256 | 2048 | PRF | 46 | 48 | 48 | 45 | 48 | 48 |
-
-## Intel Core i7-11700K 8C/16HT — New 48-bit Interlocked ITB vs Old ITB (Lock Soup + Lock Batch mode) — Delta
-
-Interlocked ITB with the nonce widens from 128 bits to 512 bits (secure default), and the overlay moves from an opt-in 24-bit Lock Soup + Lock Batch mask (roughly 2^33 mask space per chunk group) to an always-on 48-bit Interlocked Barrier (~ 2^70 mask space per chunk group). Previous "Lock Soup + Lock Batch" mode on the same i7-11700K host is the fair comparison point — both sides carry an overlay derivation cost per chunk, and the ratio isolates the ~ 2^37 mask-space widening plus the 4× nonce widening.
-
-Encrypt at 64 MB (MB/s per primitive per width; new / old ; **►** marks ratios ≥ 100%):
-
-| Primitive          | 512-bit E 64 MB     | 1024-bit E 64 MB    | 2048-bit E 64 MB    |
-|--------------------|:-------------------:|:-------------------:|:-------------------:|
-| **Areion-SoEM-256** | 530 / 198 (268%) ►  | 367 / 179 (205%) ►  | 228 / 141 (162%) ►  |
-| **Areion-SoEM-512** | 557 / 226 (246%) ►  | 398 / 198 (201%) ►  | 262 / 162 (162%) ►  |
-| **BLAKE2b-256**     | 319 / 118 (270%) ►  | 191 / 84 (227%) ►   | 106 / 54 (196%) ►   |
-| **BLAKE2b-512**     | 352 / 174 (202%) ►  | 218 / 134 (163%) ►  | 125 / 88 (142%) ►   |
-| **BLAKE2s**         | 281 / 130 (216%) ►  | 171 / 91 (188%) ►   | 97 / 59 (164%) ►    |
-| **BLAKE3**          | 343 / 130 (264%) ►  | 227 / 101 (225%) ►  | 132 / 69 (191%) ►   |
-| **AES-CMAC**        | 665 / 165 (403%) ►  | 505 / 153 (330%) ►  | 337 / 120 (281%) ►  |
-| **SipHash-2-4**     | 457 / 158 (289%) ►  | 296 / 126 (235%) ►  | 173 / 90 (192%) ►   |
-| **ChaCha20**        | 307 / 110 (279%) ►  | 195 / 86 (227%) ►   | 111 / 58 (191%) ►   |
-
-Decrypt at 64 MB (MB/s per primitive per width; new / old ; **►** marks ratios ≥ 100%):
-
-| Primitive          | 512-bit D 64 MB     | 1024-bit D 64 MB    | 2048-bit D 64 MB    |
-|--------------------|:-------------------:|:-------------------:|:-------------------:|
-| **Areion-SoEM-256** | 586 / 248 (236%) ►  | 383 / 215 (178%) ►  | 233 / 165 (141%) ►  |
-| **Areion-SoEM-512** | 598 / 280 (214%) ►  | 424 / 240 (177%) ►  | 272 / 187 (145%) ►  |
-| **BLAKE2b-256**     | 330 / 135 (244%) ►  | 197 / 93 (212%) ►   | 108 / 56 (193%) ►   |
-| **BLAKE2b-512**     | 369 / 211 (175%) ►  | 224 / 152 (147%) ►  | 126 / 96 (131%) ►   |
-| **BLAKE2s**         | 296 / 144 (206%) ►  | 175 / 100 (175%) ►  | 98 / 62 (158%) ►    |
-| **BLAKE3**          | 371 / 148 (251%) ►  | 231 / 110 (210%) ►  | 134 / 74 (181%) ►   |
-| **AES-CMAC**        | 758 / 211 (359%) ►  | 549 / 177 (310%) ►  | 345 / 137 (252%) ►  |
-| **SipHash-2-4**     | 481 / 187 (257%) ►  | 307 / 143 (215%) ►  | 176 / 98 (180%) ►   |
-| **ChaCha20**        | 326 / 133 (245%) ►  | 198 / 98 (202%) ►   | 113 / 64 (177%) ►   |
-
-**Every shipped primitive now sits well above the old ITB line at every width on both Encrypt and Decrypt.** Ratios span from **131%** (BLAKE2b-512 at 2048-bit Decrypt, the tightest cell) to **403%** (AES-CMAC at 512-bit Encrypt, the widest). The cumulative uplift covers the fused ChainHash cascade kernels landed across every PRF-grade primitive, CSPRNG-seeded DRBG bulk-fill on the encrypt hot path, bound-based sizing plus classical pipeline overlap in `buildTripleWire3`, and bridge-free ZMM Interlocked Barrier kernels — sustained through a 4× nonce widening (128 → 512 bit) and a ~2^37 mask-space widening (24-bit Lock Soup + Lock Batch → 48-bit Interlocked Barrier).
-
-**AES-CMAC leads the fleet** at 403% / 330% / 281% Encrypt and 359% / 310% / 252% Decrypt across the 512 / 1024 / 2048 bit widths — VAES + AVX-512 fused kernels amortise cleanly across the widened overlay. **BLAKE2b-256, BLAKE3, ChaCha20, SipHash-2-4, Areion-SoEM-256/512** cluster in the 200-270% band at 512-bit and stay ≥140% through the 2048-bit line. **BLAKE2b-512** and **BLAKE2s** carry the tightest cells (131-175% at 2048-bit Decrypt) — the wider container's higher per-chunk overhead relative to the per-byte hash cost still leaves every cell comfortably above the old ITB baseline.
-
-**Further rows** for other µarchs are scheduled — this table is a first-pass baseline pending maintainer-assisted runs on additional hardware.

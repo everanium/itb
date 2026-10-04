@@ -6,13 +6,11 @@ import (
 	"testing"
 )
 
-// TestChaCha20DigestDependsOnEveryByte locks in the fix for the
-// previous-version bug where the ChaCha20 hash truncated input to
-// the first 12 bytes (treating them as the cipher nonce). Under
-// the new CBC-MAC-style absorb construction every input byte
-// must contribute — flipping any single byte of `data` must
-// produce a different digest. The test runs at three input
-// lengths matching the buf shapes ITB uses internally with the
+// TestChaCha20DigestDependsOnEveryByte verifies that under the
+// CBC-MAC-style absorb construction every input byte contributes —
+// flipping any single byte of `data` must produce a different
+// digest, preventing truncation to standard cipher nonce length. The
+// test runs at three input lengths matching the buf shapes ITB uses internally with the
 // 128 / 256 / 512-bit nonce configurations:
 //
 //	20 bytes  — default (16-byte nonce + 4-byte block index)

@@ -1,4 +1,4 @@
-// order5_chainhash_go — 5th-order (2^40-text) Λ-set integral through
+// 5th-order (2^40-text) Λ-set integral through
 // ChainHash<AES-ITB-128>, every cascade depth r <= --rounds in one pass.
 //
 // Usage:

@@ -24,8 +24,8 @@ func setLastErr(s Status) {
 //
 // The caller pattern is `defer recoverPanic(&st, fallback)`. If
 // recover() returns a non-nil value, *st is overwritten with the
-// fallback Status and the last-error message is set to a generic
-// "internal error" string.
+// fallback Status and the last-error message is set to the
+// fallback status string (via fallback.String()).
 func recoverPanic(st *Status, fallback Status) {
 	if r := recover(); r != nil {
 		setLastErr(fallback)

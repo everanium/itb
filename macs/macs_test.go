@@ -18,7 +18,7 @@ import (
 // case. The shipped factory uses L = 256 bits (32-byte output);
 // NIST's published Annex A KAT samples are for L = 512 bits and
 // KMAC's right_encode(L) absorption makes the two outputs
-// deliberately unrelated, so we cross-check at the production L.
+// deliberately unrelated; this test cross-checks at the production L.
 //
 // Reproduce these vectors:
 //
@@ -165,11 +165,7 @@ func TestHMACSHA256Vectors(t *testing.T) {
 	}
 }
 
-// TestHMACBLAKE3KeyEnforcement verifies the 32-byte key requirement
-// (an HMAC-BLAKE3 KAT against an external reference value would be
-// nice but BLAKE3-keyed test vectors live in the upstream
-// blake3.test_vectors.json which we do not vendor; the keyed-mode
-// correctness is already covered by the upstream zeebo/blake3 tests).
+// TestHMACBLAKE3KeyEnforcement verifies the 32-byte key requirement.
 func TestHMACBLAKE3KeyEnforcement(t *testing.T) {
 	if _, err := HMACBLAKE3(make([]byte, 16)); err == nil {
 		t.Fatal("HMACBLAKE3 with 16-byte key must error")
@@ -184,6 +180,46 @@ func TestHMACBLAKE3KeyEnforcement(t *testing.T) {
 	tag := mac([]byte("hello"))
 	if len(tag) != 32 {
 		t.Fatalf("HMACBLAKE3 tag size = %d, want 32", len(tag))
+	}
+}
+
+// TestHMACBLAKE3KAT bit-exactly cross-checks the shipped HMACBLAKE3 factory
+// against the official BLAKE3 keyed-mode test vectors (blake3.test_vectors.json
+// from the upstream BLAKE3 team, keyed by the 32-byte phrase
+// "whats the Elvish word for friend").
+func TestHMACBLAKE3KAT(t *testing.T) {
+	key := []byte("whats the Elvish word for friend")
+	mac, err := HMACBLAKE3(key)
+	if err != nil {
+		t.Fatalf("HMACBLAKE3: %v", err)
+	}
+
+	makeInput := func(n int) []byte {
+		buf := make([]byte, n)
+		for i := range buf {
+			buf[i] = uint8(i % 251)
+		}
+		return buf
+	}
+
+	tests := []struct {
+		inputLen int
+		wantHex  string
+	}{
+		{0, "92b2b75604ed3c761f9d6f62392c8a9227ad0ea3f09573e783f1498a4ed60d26"},
+		{1, "6d7878dfff2f485635d39013278ae14f1454b8c0a3a2d34bc1ab38228a80c95b"},
+		{1023, "c951ecdf03288d0fcc96ee3413563d8a6d3589547f2c2fb36d9786470f1b9d6e"},
+		{1024, "75c46f6f3d9eb4f55ecaaee480db732e6c2105546f1e675003687c31719c7ba4"},
+		{1025, "357dc55de0c7e382c900fd6e320acc04146be01db6a8ce7210b7189bd664ea69"},
+		{2048, "879cf1fa2ea0e79126cb1063617a05b6ad9d0b696d0d757cf053439f60a99dd1"},
+	}
+
+	for _, tc := range tests {
+		input := makeInput(tc.inputLen)
+		got := mac(input)
+		if hex.EncodeToString(got) != tc.wantHex {
+			t.Errorf("inputLen=%d: got %x, want %s", tc.inputLen, got, tc.wantHex)
+		}
 	}
 }
 

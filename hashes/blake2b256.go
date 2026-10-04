@@ -14,8 +14,11 @@ import (
 	"github.com/everanium/itb/internal/forcetier"
 )
 
-// BLAKE2b256 returns a cached BLAKE2b-256 itb.HashFunc256 with a
-// freshly-generated 32-byte fixed key.
+// BLAKE2b256 returns a cached BLAKE2b-256 itb.HashFunc256 along with
+// the 32-byte fixed key the closure is bound to. With no argument a
+// fresh key is generated via crypto/rand; passing a single
+// caller-supplied [32]byte uses that key instead. Save the returned
+// key for cross-process persistence.
 //
 // Construction prepends the fixed key as a 32-byte prefix to the
 // hash input and mixes seed components by XOR over the next 32
@@ -27,11 +30,6 @@ import (
 // is shorter, ensuring all four seed uint64's contribute regardless
 // of how short the caller's data is — important for ITB which
 // hashes 20-byte (pixel_le + nonce) inputs in the inner loop.
-// BLAKE2b256 returns a cached BLAKE2b-256 itb.HashFunc256 along with
-// the 32-byte fixed key the closure is bound to. With no argument a
-// fresh key is generated via crypto/rand; passing a single
-// caller-supplied [32]byte uses that key instead. Save the returned
-// key for cross-process persistence.
 func BLAKE2b256(key ...[32]byte) (itb.HashFunc256, [32]byte) {
 	var k [32]byte
 	if len(key) > 0 {

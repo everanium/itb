@@ -1,4 +1,4 @@
-// order5_aes2r_go — 5th-order (2^40-text) Λ-set integral through
+// 5th-order (2^40-text) Λ-set integral through
 // ChainHash<aes2r>, every cascade depth r <= --rounds in one pass: the aes2r
 // counterpart of scripts/redteam/itb/theory/aesitb128/order5_chainhash_go.
 //

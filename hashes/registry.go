@@ -236,8 +236,9 @@ type Spec struct {
 	// selected tier carries no batch-32 kernel, which leaves the fill on
 	// the batch-16 hook and the four-lane / single-lane arms; a populated
 	// kernel must be bit-exact with the sequential cascades over the same
-	// components. Populated on the width-512 shipped entries only;
-	// see [Registry].
+	// components. InterlockFillBatch32x512 is populated on width-512
+	// shipped entries; InterlockFillBatch32x256 is nil across shipped entries
+	// (reserved for custom primitives); see [Registry].
 	InterlockFillBatch32x256 func(key []byte) (itb.InterlockFillFunc32x256, error) `json:"-"`
 	InterlockFillBatch32x512 func(key []byte) (itb.InterlockFillFunc32x512, error) `json:"-"`
 }

@@ -45,10 +45,9 @@
 //	wm  wrapper master, base64; present iff p.wrapper
 //
 // The decoder is strict: an unknown key or trailing content is
-// [ErrBlobMalformed]; any version other than 2 — blobs produced by
-// earlier releases carry version 1 — is [ErrBlobVersion] from every
-// entry point, with no fallback. The inner blob keeps its own schema
-// and its own strict decoder; the worker cap is not part of it.
+// [ErrBlobMalformed]; any version other than 2 is [ErrBlobVersion]
+// from every entry point, with no fallback. The inner blob keeps its
+// own schema and its own strict decoder; the worker cap is not part of it.
 //
 // # Profile record key set
 //
@@ -56,21 +55,23 @@
 // encoding shared by the wire, [Inspect], and the FFI register /
 // inspect entries:
 //
-//	name      Name                 omitted when empty
-//	mode      Mode                 always
-//	width     Width                always
-//	hash      InnerHash            omitted when empty (mixed profiles)
-//	hashes    MixedHashes          omitted when every slot is empty;
-//	                               otherwise exactly eight strings
-//	keybits   KeyBits              always
-//	mac       MacName              omitted when empty (No MAC)
-//	tagstub   TagStubSize          omitted when 0
-//	chunk     ChunkSize            omitted when 0
-//	wrapper   Wrapper              always
-//	outer     OuterCipher          omitted when empty
-//	parallax  Parallax             always
-//	palette   ParallaxPalette      omitted when empty
-//	segment   ParallaxSegmentSize  omitted when 0
+//	name         Name                 omitted when empty
+//	mode         Mode                 always
+//	width        Width                always
+//	hash         InnerHash            omitted when empty (mixed profiles)
+//	hashes       MixedHashes          omitted when every slot is empty;
+//	                                  otherwise exactly eight strings
+//	keybits      KeyBits              always
+//	nonce_bits   NonceBits            omitted when 0
+//	barrier_fill BarrierFill          omitted when 0
+//	mac          MacName              omitted when empty (No MAC)
+//	tagstub      TagStubSize          omitted when 0
+//	chunk        ChunkSize            omitted when 0
+//	wrapper      Wrapper              always
+//	outer        OuterCipher          omitted when empty
+//	parallax     Parallax             always
+//	palette      ParallaxPalette      omitted when empty
+//	segment      ParallaxSegmentSize  omitted when 0
 //
 // A producer clears the inert fields of a disabled layer (outer when
 // wrapper is false; palette and segment when parallax is false), so
@@ -86,10 +87,11 @@
 //
 // The Streaming AEAD IO-Driven surface is the primary use case. The
 // Single Message surface ([Pipeline.EncryptMessage] /
-// [Pipeline.DecryptMessage]) is a thin convenience wrapper around the
-// streaming surface plus a [bytes.Buffer]. Users who want the direct
-// per-call cipher surface consume the corresponding *Cfg-bearing free
-// functions in the itb root package.
+// [Pipeline.DecryptMessage]) provides a direct whole-buffer fast path
+// for non-parallax messages under 64 MiB, falling back to streaming
+// buffered execution for larger payloads or when parallax multiplexing
+// is active. Users who want the direct per-call cipher surface consume
+// the corresponding *Cfg-bearing free functions in the itb root package.
 //
 // The shipped catalogue covers both single-primitive and
 // mixed-primitive constellations. Single-primitive profiles bind one

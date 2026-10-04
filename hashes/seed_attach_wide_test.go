@@ -10,10 +10,11 @@ import (
 )
 
 // The width-256 / width-512 attach surface: attachFused256 /
-// attachInterlockBatch16x256 and their 512 twins. Every shipped entry
-// leaves the wide factory fields nil, so the helpers are pinned as
-// no-ops on the registry and exercised through custom primitives
-// registered with pure-Go whole-cascade factories.
+// attachInterlockBatch16x256 and their 512 twins. The helpers attach
+// the wide factory hooks when present in the Spec (as in all shipped
+// width-256 / width-512 registry entries) and remain no-ops otherwise,
+// also exercised through custom primitives registered with pure-Go
+// whole-cascade factories.
 
 // wideAttachCase is one width's attach surface, expressed through the
 // registry-agnostic operations the tests below need.

@@ -14,11 +14,12 @@ import (
 // computed via the batched dispatch match the single-call path
 // bit-exact (the parity invariant required by itb.BatchHashFunc256).
 //
-// On amd64 with VAES + AVX-512 the batched arm routes per-pixel
-// hashing four pixels per call through AreionSoEM256x4, yielding ~2×
-// throughput over the single-call path. On hosts without those
-// extensions the batched arm falls back to four single-call
-// invocations and remains bit-exact.
+// On hosts with hardware acceleration the batched arm routes
+// per-pixel hashing across four pixels per call through
+// AreionSoEM256x4 (or fused cascade kernels), yielding higher
+// throughput over the single-call path. On hosts without hardware
+// extensions the batched arm runs the four-lane CBC-MAC chain
+// via the portable Go permutation and remains bit-exact.
 //
 // This is a thin wrapper over the in-package itb.MakeAreionSoEM256Hash
 // helper; it exists so that Areion-SoEM-256 fits the same name-keyed

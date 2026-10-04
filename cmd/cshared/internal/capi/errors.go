@@ -18,13 +18,11 @@ const (
 	StatusBadMAC         Status = 9
 	StatusMACFailure     Status = 10
 
-	// Triple sentinel block 11..13. These slots previously carried the
-	// retired Easy encryptor surface's per-facade codes; the numeric
-	// values are reassigned to the triple-side blob-record sentinels
-	// (see triple.ErrBlobMalformedRecipe and
-	// triple.ErrRecipePrimitiveUnknown) and to the registry miss
-	// (triple.ErrUnknownProfile, returned by [TripleInit] and
-	// [TripleLookup]). 14..17 remain unassigned for future use.
+	// Triple sentinel block 11..13. These slots carry the Triple
+	// blob-record sentinels (see [triple.ErrBlobMalformedRecipe] and
+	// [triple.ErrRecipePrimitiveUnknown]) and the registry miss
+	// sentinel ([triple.ErrUnknownProfile], returned by [TripleInit]
+	// and [TripleLookup]). 14..17 remain unassigned for future use.
 	StatusBlobMalformedRecipe    Status = 11
 	StatusRecipePrimitiveUnknown Status = 12
 	StatusUnknownProfile         Status = 13

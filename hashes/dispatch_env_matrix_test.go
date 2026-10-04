@@ -25,7 +25,7 @@ import (
 	"github.com/everanium/itb/internal/forcetier"
 )
 
-// dispatch_env_matrix_test.go — the cross-primitive audit of the
+// Cross-primitive audit of the
 // dispatch-forcing environment: every kernel package of the registry ×
 // every ITB_FORCE_* variable × every token, one process per cell. The
 // variables are read once at init, so the parent test re-executes the

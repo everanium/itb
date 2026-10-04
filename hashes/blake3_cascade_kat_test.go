@@ -10,7 +10,7 @@ import (
 	"github.com/everanium/itb/internal/forcetier"
 )
 
-// blake3_cascade_kat_test.go — known-answer vectors of the BLAKE3
+// Known-answer vectors of the BLAKE3
 // ChainHash cascade, produced by the pure-Go cascade under the noitbasm
 // build tag and identical on every assembly tier. The vectors cover the
 // per-pixel cascade of the 512 / 1024 / 2048-bit keys at the four kernel

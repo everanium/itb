@@ -10,7 +10,7 @@ import (
 	"github.com/everanium/itb"
 )
 
-// register_cascade_test.go — user-registered primitives under the
+// User-registered primitives under the
 // universal Interlocked Barrier cascade fill. A custom primitive brings
 // its own arms and, optionally, its own whole-cascade factories; it
 // never reaches the shipped assembly. The tests pin that the attach

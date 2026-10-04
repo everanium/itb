@@ -33,8 +33,8 @@ func SipHash24() itb.HashFunc128 {
 // pair for itb.Seed128 integration. SipHash has no fixed key — the
 // per-call (seed0, seed1) pair is the entire SipHash key — so the
 // factory takes no arguments and returns no key, distinguishing it
-// from the AESCMACPair / AESCMACPairWithKey shape used by the other
-// W128 primitive in the registry.
+// from the AESCMACPair / AESCMACPairWithKey shape used by fixed-key
+// 128-bit primitives in the registry.
 //
 // The batched arm evaluates the four lanes through the single arm
 // under their per-lane seeds and is bit-exact with four single calls

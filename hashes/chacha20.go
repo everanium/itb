@@ -12,8 +12,11 @@ import (
 	"github.com/everanium/itb/internal/forcetier"
 )
 
-// ChaCha20 returns a cached ChaCha20 itb.HashFunc256 with a
-// freshly-generated 32-byte fixed key.
+// ChaCha20 returns a cached ChaCha20 itb.HashFunc256 along with the
+// 32-byte fixed key the closure is bound to. With no argument the
+// key is freshly generated via crypto/rand; passing a single
+// caller-supplied [32]byte uses that key instead. Save the returned
+// key for cross-process persistence.
 //
 // Construction (ARX-only PRF, no S-box / no table lookups): the
 // fixed key is XOR'd with the seed components to derive a per-call
@@ -31,11 +34,6 @@ import (
 // state, length tag, and chain feedback all live on the closure's
 // stack frame. Concurrent goroutines may invoke the returned
 // closure in parallel — there is no shared mutable state.
-// ChaCha20 returns a cached ChaCha20 itb.HashFunc256 along with the
-// 32-byte fixed key the closure is bound to. With no argument the
-// key is freshly generated via crypto/rand; passing a single
-// caller-supplied [32]byte uses that key instead. Save the returned
-// key for cross-process persistence.
 func ChaCha20(key ...[32]byte) (itb.HashFunc256, [32]byte) {
 	var k [32]byte
 	if len(key) > 0 {

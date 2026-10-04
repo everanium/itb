@@ -577,7 +577,7 @@ func BenchmarkAreionSoEM512x4_BatchedAvx2(b *testing.B) {
 //
 //  1. Upstream regressions in github.com/jedisct1/go-aes — if a future
 //     minor release subtly changes AreionSoEM256 / AreionSoEM512 in a
-//     way our fallback no longer mirrors, this test fails immediately.
+//     way the fallback no longer mirrors, this test fails immediately.
 //  2. Dispatch fall-through breakage in areion_amd64.go — if a future
 //     refactor accidentally stops routing the Default branch, the
 //     direct-call test still exercises it.

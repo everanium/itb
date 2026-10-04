@@ -1,4 +1,4 @@
-// order4_unrank_go — realistic order-4 Lambda-set integral through the
+// Realistic order-4 Lambda-set integral through the
 // full Interlocked Barrier fill chain on AES-ITB-128:
 //
 //	plain[0..3] = LE32(idx)     // the counter-byte cube {0,1,2,3}
@@ -8,8 +8,8 @@
 //	(idx0, idx1)= splitRank48(lo, hi)                (128 -> 42-bit A + 30-bit B)
 //	(m0, m1, m2)= rankToMaskTriple48(lo, hi)         (16-of-48 triple)
 //
-// Rather than the shipped observable of the encoder (lo(h_r) alone), we
-// score the balance of the mask triple that the interlock overlay
+// Rather than the shipped observable of the encoder (lo(h_r) alone),
+// this harness scores the balance of the mask triple that the interlock overlay
 // actually consumes downstream: the byte-level XOR-sum of every m_i
 // across the 2^32-text Lambda-set is expected zero if the set survived
 // the primitive; a floor is the empirical closure of the "unrank might

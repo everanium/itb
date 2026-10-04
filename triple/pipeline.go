@@ -22,10 +22,9 @@ var (
 	// accidentally passing the same slice to both master parameters.
 	ErrIdenticalMasters = errors.New("triple: perm master must differ from wrap master")
 
-	// ErrMissingMasters is returned by [Load] when the blob's record
-	// has parallax and/or wrapper enabled but neither the blob nor the
-	// trailing variadic argument supplies the master bytes required
-	// to rebuild the corresponding layer.
+	// ErrMissingMasters is returned by [Load] and [Pipeline.Rekey] when
+	// parallax and/or wrapper is enabled but the required master bytes
+	// to rebuild or rekey the corresponding layer are missing.
 	ErrMissingMasters = errors.New("triple: required masters absent from blob and no override supplied")
 
 	// ErrMastersArity is returned by [Load] when the trailing
@@ -68,10 +67,7 @@ var (
 	// not probe availability and returns the name unchanged.
 	ErrRecipePrimitiveUnknown = errors.New("triple: blob profile record names a primitive absent from the local registries")
 
-	// ErrNotYetImplemented is returned by the cipher-path stubs
-	// ([Pipeline.EncryptStream] / [Pipeline.DecryptStream] /
-	// [Pipeline.EncryptMessage] / [Pipeline.DecryptMessage]) until
-	// their implementations land in the follow-up phases.
+	// ErrNotYetImplemented is a reserved sentinel.
 	ErrNotYetImplemented = errors.New("triple: cipher path not yet implemented")
 
 	// ErrEmptyInput is returned by every [Pipeline] cipher entry point
@@ -293,7 +289,7 @@ type Pipeline struct {
 	// closed is set to true by [Pipeline.Close]; every method
 	// consulted checks it via atomic-load before touching seed / key
 	// material. Uses [sync/atomic] rather than a mutex so cipher-path
-	// stubs remain lock-free.
+	// methods remain lock-free.
 	closed atomic.Bool
 
 	// closeMu serialises the Close body against a racing second Close

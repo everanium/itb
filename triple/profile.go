@@ -86,16 +86,15 @@ const (
 
 	// ProfileSingleMsgTripleMACMixedV1 is the width-128 mixed-
 	// primitive counterpart to [ProfileSingleMsgTripleMACV1]. The
-	// constellation alternates the two PRF-grade width-128 primitives
-	// (aescmac + siphash24) across all eight slots — the inner-PRF-only
-	// aesitb128 entry is excluded from Triple slot assignment.
+	// constellation alternates the shipped PRF-grade width-128
+	// primitives across all eight slots — inner-PRF-only entries
+	// are excluded from Triple slot assignment.
 	ProfileSingleMsgTripleMACMixedV1 = "singlemsg-triple-mac-mixed-v1"
 
 	// ProfileSingleMsgTripleNoMACMixedV1 is the width-512 mixed-
-	// primitive counterpart to [ProfileSingleMsgTripleNoMACV1]. Only
-	// two shipped primitives sit at width 512 (areion512 +
-	// blake2b512); the constellation alternates the pair across all
-	// eight slots.
+	// primitive counterpart to [ProfileSingleMsgTripleNoMACV1]. The
+	// constellation alternates the shipped width-512 primitives
+	// across all eight slots.
 	ProfileSingleMsgTripleNoMACMixedV1 = "singlemsg-triple-nomac-mixed-v1"
 )
 
@@ -417,8 +416,8 @@ func init() {
 
 	// Blob-only bundle profile — MAC-authenticated inner Blob{N}
 	// with parallax + wrapper metadata carried through wrap-layer.
-	// No cipher surface: [Pipeline.EncryptStream] / friends return
-	// [ErrNotYetImplemented] regardless of implementation status.
+	// No cipher surface: streaming methods return [ErrProfileNotStreaming]
+	// and message methods return [ErrProfileNoCipher].
 	profileRegistry[ProfileBlobTripleMACV1] = Profile{
 		Name:                ProfileBlobTripleMACV1,
 		Mode:                modeBlobOnly,
@@ -480,7 +479,7 @@ func init() {
 	}
 
 	// Mixed-primitive Single Message Triple, MAC-authenticated,
-	// parallax on + wrapper on. Width 128; alternates the two shipped
+	// parallax on + wrapper on. Width 128; alternates the shipped
 	// width-128 primitives across every slot.
 	profileRegistry[ProfileSingleMsgTripleMACMixedV1] = Profile{
 		Name:      ProfileSingleMsgTripleMACMixedV1,

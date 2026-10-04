@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/everanium/itb"
 	"github.com/everanium/itb/triple"
 )
 
@@ -58,10 +57,6 @@ func TestParityMessageVsLowLevelToggleOff(t *testing.T) {
 	if !bytes.Equal(got, pt) {
 		t.Fatalf("parity mismatch: got %d bytes, want %d bytes", len(got), len(pt))
 	}
-	// Silence the itb import — reserved for the next parity layer
-	// (a manual Low-Level composition against the sender's 8 seeds
-	// once the triple package exports a seed-extraction hook).
-	_ = itb.MaxKeyBits
 }
 
 // TestParityStreamVsLowLevelToggleOff mirrors the message-form parity

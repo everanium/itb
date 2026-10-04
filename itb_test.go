@@ -205,8 +205,8 @@ func TestTripleKeySizes(t *testing.T) {
 	}
 }
 
-// TestTripleMaxKeySize verifies the maximum-permitted 1024-bit seed
-// width on the 128-bit primitive round-trips cleanly.
+// TestTripleMaxKeySize verifies that a 1024-bit seed (the shipping default)
+// on the 128-bit primitive round-trips cleanly.
 func TestTripleMaxKeySize(t *testing.T) {
 	n, l, d1, d2, d3, s1, s2, s3 := makeEightSeeds128(1024, sipHash128)
 	data := genTestPlaintext(t, 1024)
@@ -563,11 +563,8 @@ func TestContainerSizes(t *testing.T) {
 // TestBlakeWrappersAllSeedBitsAffectOutput verifies that every bit of
 // every seed component in the BLAKE cached-wrapper HashFuncs affects
 // the digest, even for short data inputs (e.g. ITB's internal 20-byte
-// pixel_le+nonce). Regression test: earlier versions of the wrappers
-// guarded the seed XOR with `if off+8 <= len(buf)` / `len(mixed)`,
-// which silently dropped seed[2..3] (and seed[2..7] for the 512
-// variant) when data was shorter than seedLen*8 bytes — halving the
-// effective ChainHash key.
+// pixel_le+nonce), ensuring all seed components participate when data
+// is shorter than seedLen*8 bytes.
 func TestBlakeWrappersAllSeedBitsAffectOutput(t *testing.T) {
 	data := []byte("hello world test 123") // 20 bytes, ITB-typical small input
 

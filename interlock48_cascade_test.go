@@ -12,7 +12,7 @@ import (
 	"github.com/everanium/itb/internal/forcetier"
 )
 
-// interlock48_cascade_test.go — the Interlocked Barrier cascade fill,
+// The Interlocked Barrier cascade fill,
 // one section per subject: the cascade fill of an aesitb128 lockSeed
 // ([buildLockBatchPRF48_128]) through the shipped aesitbasm kernels and
 // its golden rank pairs; the primitive-agnostic universal cascade fill

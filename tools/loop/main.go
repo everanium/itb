@@ -30,7 +30,7 @@
 // 512-bit nonce width.
 //
 // Overrides beyond that shape: --profile exercises one registered
-// triple profile in place of the shape-based pair; --key-bits /
+// Triple profile in place of the shape-based pair; --key-bits /
 // --nonce-bits / --chunk-size / --barrier-fill sweep the corresponding
 // [github.com/everanium/itb/triple.Opts] knobs; --gomaxprocs pins CPU
 // parallelism; --payload-mode swaps the plaintext content policy

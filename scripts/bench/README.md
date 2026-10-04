@@ -68,7 +68,7 @@ The runner prints a header (CPU model, policy name, active tier / pool overrides
 A one-time shell prep line covers the toolchain env every example below assumes:
 
 ```sh
-export GO111MODULE=on GOROOT=/usr/local/go GOPATH=/usr/local/go PATH=/usr/local/go/bin:$PATH
+export PATH=/usr/local/go/bin:$PATH
 ```
 
 ### Policy grid
@@ -114,10 +114,10 @@ CGO_ENABLED=1 ITB_INNER_HASH=areion512 POLICY_NAME="always-wide" \
     bash scripts/bench/sweep.sh
 ```
 
-Pre-adaptive baseline — single tier and single pool:
+Single-tier and single-pool baseline:
 
 ```sh
-CGO_ENABLED=1 ITB_INNER_HASH=areion512 POLICY_NAME="pre-adaptive" \
+CGO_ENABLED=1 ITB_INNER_HASH=areion512 POLICY_NAME="single-tier" \
     ITB_MICROBATCH_TIERS="-1:512" \
     ITB_HASHPOOL_STARTERS="512" \
     bash scripts/bench/sweep.sh

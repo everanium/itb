@@ -5,6 +5,6 @@
 // dance) and keeps the C-bridge file thin.
 //
 // The package is internal and is consumed only by cmd/cshared/main.go
-// (the //export wrappers) and the matching test file. External
+// (the //export wrappers) and the matching test suite. External
 // callers must go through the C ABI surface.
 package capi

@@ -87,7 +87,7 @@ def expand_key(K):
     if len(K) != 12:
         raise ValueError("master key must be 12 bundles")
     # k is the working array of bundle-keys; index k[12i+j] per the algorithm.
-    # We need indices up to 12*6+23 = 95, so allocate 96.
+    # Indices reach up to 12*6+23 = 95, so allocate 96.
     k = [0] * 96
     for j in range(12):
         k[j] = K[j] & MASK10

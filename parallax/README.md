@@ -4,7 +4,7 @@
 >
 > PRF-grade hash functions are **required**. No warranty is provided.
 
-**No bespoke cryptography.** ITB introduces no cryptographic primitive of its own — no custom S-box, permutation, or round function. It is a construction over existing primitives, much as PGP composes standard ciphers rather than defining one. Such constructions are not the object of algorithm-level cryptographic certification: national regimes (NIST CAVP/FIPS in the US, GOST/FSB in Russia, OSCCA's SM-series in China, IC3S in India, SOG-IS/EUCC and national lists in the EU, ASD's ISM in Australia, CRYPTREC in Japan, KCMVP in South Korea) certify **primitives** and the **modules** built on them, not compositional schemes. Eligibility for regulated use is therefore inherited from the primitives ITB and parallax are configured with, not conferred by either construction itself.
+**No bespoke cryptography.** ITB composes established, standardized primitives rather than introducing new cryptographic designs. Security properties and regulatory status are inherited from the underlying primitives; see [README.md](../README.md) for jurisdictional certification details.
 
 ## What parallax does
 
@@ -33,6 +33,7 @@ type Cipherset struct{ /* … */ }
 const (
     NonceSize          = 16
     MasterKeySize      = 32
+    MaxMasterKeySize   = 128
     DefaultSegmentSize = 4093
     DefaultChunkSize   = 16 << 20
     MinPaletteSize     = 3
@@ -57,6 +58,8 @@ func (s *Schedule) Encrypt(plaintext []byte, cs *Cipherset) ([]byte, error)
 func (s *Schedule) Decrypt(ciphertext []byte, cs *Cipherset) ([]byte, error)
 func (s *Schedule) EncryptInPlace(buf []byte, cs *Cipherset) ([]byte, error)
 func (s *Schedule) DecryptInPlace(wire []byte, cs *Cipherset) ([]byte, error)
+func (s *Schedule) EncryptInto(dst, src []byte, cs *Cipherset) ([]byte, error)
+func (s *Schedule) DecryptInto(dst, wire []byte, cs *Cipherset) ([]byte, error)
 
 func (s *Schedule) NewEncryptWriter(cs *Cipherset, dst io.Writer) (io.WriteCloser, error)
 func (s *Schedule) NewDecryptWriter(cs *Cipherset, dst io.Writer) (io.WriteCloser, error)
@@ -67,12 +70,13 @@ func (s *Schedule) NewDecryptReader(cs *Cipherset, src io.Reader) (io.ReadCloser
 - **`Schedule`** is the message-shaped half of the configuration: validated palette, segment size, and streaming chunk size. It is opaque; construct one with `NewSchedule`. Read-only accessors (`Palette`, `PaletteSize`, `SegmentSize`, `ChunkSize`) return its parameters; `SetSegmentSize` and `SetChunkSize` atomically swap one knob without affecting in-flight calls or in-flight streams.
 - **`Cipherset`** carries per-slot subkeys and a separate scheduling subkey derived from the master under the schedule's palette. It is opaque; construct one with `NewCipherset`. The same cipherset may be reused across many messages provided the master itself stays in scope and the schedule is unchanged.
 - **`NewSchedule`** validates the palette (size, name registry membership, per-name length) and the segment size (positive, at most `MaxSegmentSize`, coprime to the per-mode ITB pipeline period) and returns a `*Schedule` whose Single Message API and per-chunk streaming encrypts both route through the supplied `segmentSize`. The streaming chunk size is initialised to `DefaultChunkSize` and is independently adjustable via `SetChunkSize`. The palette is copied; the caller may free or mutate the input slice after the call returns.
-- **`GenerateMasterKey`** draws a fresh `MasterKeySize`-byte (32-byte) CSPRNG master secret suitable for `NewCipherset`. The 32-byte length is the **minimum** accepted by `NewCipherset`; callers that already hold a high-entropy secret of any length ≥ 32 bytes (an ML-KEM shared secret, a 64-byte HKDF output, a wrapped key from `wrapper/`) may pass that directly instead. `kdf.Derive` owns the per-anchor truncate / expand policy: bytes past the anchor primitive's KDF key length are not consumed, so passing a 64-byte master under a 32-byte anchor keys the schedule from the first 32 bytes.
+- **`GenerateMasterKey`** draws a fresh `MasterKeySize`-byte (32-byte) CSPRNG master secret suitable for `NewCipherset`. The 32-byte length is the **minimum** accepted by `NewCipherset` (`MasterKeySize <= len(master) <= MaxMasterKeySize`, up to 128 bytes); callers that already hold a high-entropy secret within this range (an ML-KEM shared secret, a 64-byte HKDF output, a wrapped key from `wrapper/`) may pass that directly instead. `kdf.Derive` owns the per-anchor truncate / expand policy: bytes past the anchor primitive's KDF key length are not consumed, so passing a 64-byte master under a 32-byte anchor keys the schedule from the first 32 bytes.
 - **`NewCipherset`** derives the scheduling subkey under the label `"schedule:0"` and one per-slot subkey per palette entry under the label `"<slot-name>:<1-based-index>"`. The anchor `palette[0]` is the KDF PRF for every derivation; identical palette entries in distinct slots produce distinct subkeys via the index suffix.
 - **`Encrypt`** allocates a fresh wire of the form `nonce ‖ ciphertext_body`, draws a 16-byte per-message nonce from `crypto/rand`, copies the plaintext into the body region, and XORs the segment keystreams over it. The returned slice owns its bytes; the input plaintext is untouched.
 - **`Decrypt`** reverses `Encrypt`. The 16-byte leading nonce is read from the wire and the body is decrypted into a freshly allocated buffer. A nonce-only wire round-trips as an empty plaintext.
 - **`EncryptInPlace`** mutates the supplied buffer: on success the buffer holds the ciphertext body, byte-identical to `wire[NonceSize:]`; on error the buffer is left unchanged. The returned wire is a fresh allocation that prepends the nonce. Suited to hot paths where the caller has just produced a plaintext that need not survive the call.
 - **`DecryptInPlace`** strips the leading 16-byte nonce from the wire and decrypts the remainder in place. The wire is mutated; the returned slice is `wire[NonceSize:]`, fully decrypted.
+- **`EncryptInto` / `DecryptInto`** are the pre-allocated buffer zero-wire-allocation counterparts. `EncryptInto` writes `nonce ‖ ciphertext_body` into `dst` without allocating wire buffers. `DecryptInto` decrypts the wire body into `dst`.
 - **`NewEncryptWriter` / `NewDecryptWriter` / `NewEncryptReader` / `NewDecryptReader`** — see "Streaming variants" below.
 
 ### Wire format
@@ -99,7 +103,7 @@ Any positive coprime value within the upper bound is accepted; prime choices in 
 
 ### Streaming chunk size
 
-The streaming surface operates as a loop over the Single Message path: each chunk is independently encrypted via `EncryptInPlace` and framed on the wire as a 4-byte little-endian body-length prefix followed by the 16-byte nonce and the encrypted body. The plaintext budget per chunk is the Schedule's `ChunkSize`, initialised to `DefaultChunkSize` (16 MiB) to mirror ITB's `DefaultChunkSize`. `SetChunkSize(n)` swaps the value for subsequently-constructed streams; in-flight streams keep the value captured at construction time, and `n` must satisfy `0 < n ≤ MaxChunkSize` (256 MiB). Each frame self-describes its body length, so the decrypt side does not need to know the encrypter's chunk size — a stream produced under any chunk size decrypts under any chunk size on the receiving Schedule.
+The streaming surface operates as a loop over the Single Message path: each chunk is independently encrypted via `EncryptInto` directly into the frame buffer and framed on the wire as a 4-byte little-endian body-length prefix followed by the 16-byte nonce and the encrypted body. The plaintext budget per chunk is the Schedule's `ChunkSize`, initialised to `DefaultChunkSize` (16 MiB) to mirror ITB's `DefaultChunkSize`. `SetChunkSize(n)` swaps the value for subsequently-constructed streams; in-flight streams keep the value captured at construction time, and `n` must satisfy `0 < n ≤ MaxChunkSize` (256 MiB). Each frame self-describes its body length, so the decrypt side does not need to know the encrypter's chunk size — a stream produced under any chunk size decrypts under any chunk size on the receiving Schedule.
 
 `MaxChunkSize` is a parallax-internal sanity cap and is independent of any surrounding transport's chunk-size limit. The two layers exchange a byte stream — parallax frame boundaries are invisible to the outer transport — so the chunk sizes do not need to match. For parallax composed under an authenticated transport (the `triple.Pipeline` authenticated surface or the Low-Level Streaming AEAD entry points), the effective ceiling is `min(parallax.MaxChunkSize, transport.MaxChunkSize)`; setting parallax's chunk size above the transport's cap pays memory pressure on the parallax writer's accumulator with no observable benefit downstream. A practical default for the composed case is to match parallax's chunk size to the surrounding transport's chunk size.
 
@@ -212,7 +216,7 @@ _ = recovered
 
 ### Streaming variants
 
-Four `io.ReadCloser` / `io.WriteCloser` constructors layer a per-chunk framing over the Single Message path. The Reader-shape pair (`NewEncryptReader` / `NewDecryptReader`) wraps an upstream `io.Reader`; the Writer-shape pair (`NewEncryptWriter` / `NewDecryptWriter`) wraps a downstream `io.Writer`. Each chunk of up to `ChunkSize` plaintext bytes is one independent `EncryptInPlace` call; its output on the wire is `u32_LE(body_len) || nonce(16) || encrypted_body(body_len)`, and the whole stream is the concatenation of those frames.
+Four `io.ReadCloser` / `io.WriteCloser` constructors layer a per-chunk framing over the Single Message path. The Reader-shape pair (`NewEncryptReader` / `NewDecryptReader`) wraps an upstream `io.Reader`; the Writer-shape pair (`NewEncryptWriter` / `NewDecryptWriter`) wraps a downstream `io.Writer`. Each chunk of up to `ChunkSize` plaintext bytes is encrypted via `EncryptInto` into the framed buffer; its output on the wire is `u32_LE(body_len) || nonce(16) || encrypted_body(body_len)`, and the whole stream is the concatenation of those frames.
 
 `Close` on the writer variants flushes any pending partial chunk and releases pooled scratch space; it must be called whenever the total plaintext is not a multiple of the chunk size. A second `Close` returns nil (idempotent). Once a writer surfaces an underlying error (encrypt failure, length-prefix outside the accepted range, `dst.Write` failure), it enters a sticky-failed state: every subsequent `Write` and the first `Close` return the same error and no further frames are emitted. `Close` on the reader variants releases pool buffers; callers that always read to `io.EOF` may omit it, but early-termination callers must call `Close` to avoid pool-buffer pressure. Repeated calls to `Close` are idempotent.
 
@@ -221,6 +225,12 @@ Four `io.ReadCloser` / `io.WriteCloser` constructors layer a per-chunk framing o
 // triple.Pipeline.EncryptStream src argument; parallax wraps the
 // plaintext side so each segment hits one cipher from the palette
 // before the inner construction sees it.
+//
+// Standard Triple profiles already engage parallax natively. When
+// composing a manual parallax reader with triple.Pipeline, disengage
+// the pipeline's built-in parallax layer:
+//   noParallax := false
+//   pipe, _, _ := triple.Init(profile, triple.Opts{WithParallax: &noParallax})
 src := bytes.NewReader(plaintext)
 encReader, err := schedule.NewEncryptReader(cs, src)
 if err != nil {
@@ -228,7 +238,7 @@ if err != nil {
 }
 defer encReader.Close() // releases pool buffers; harmless to call after EOF
 // Pass encReader as the src to pipe.EncryptStream(encReader, &dst),
-// where pipe is a *triple.Pipeline constructed earlier in the program.
+// where pipe is a *triple.Pipeline constructed with WithParallax: &noParallax.
 
 // Pre-inner ITB compose — Writer-side decrypt drains the recovered
 // plaintext from triple.Pipeline.DecryptStream into a parallax decrypt
@@ -240,12 +250,13 @@ if err != nil {
     panic(err)
 }
 defer decWriter.Close() // required to flush the trailing partial-chunk tail
-// Pass decWriter as the dst to pipe.DecryptStream(src, decWriter).
+// Pass decWriter as the dst to pipe.DecryptStream(src, decWriter),
+// where pipe is a *triple.Pipeline constructed with WithParallax: &noParallax.
 ```
 
 ## Notes on master-key management
 
-The package does not address master-key distribution; `GenerateMasterKey` exists for self-test and demonstration. In a real deployment the master is shared out-of-band or derived via a separate key-exchange step (an ML-KEM shared secret, for example) and is independent of any ITB seed material the surrounding pipeline carries. The master is passed verbatim to `NewCipherset`; per-primitive key sizing — truncating a longer master to the anchor's required width, or deterministically stretching a 32-byte master to 64 bytes for the wider PRFs — is the job of `kdf.Derive`, not of this package. Any high-entropy byte slice of at least `MasterKeySize` bytes is therefore a valid master regardless of the anchor primitive's native key width.
+The package does not address master-key distribution; `GenerateMasterKey` exists for self-test and demonstration. In a real deployment the master is shared out-of-band or derived via a separate key-exchange step (an ML-KEM shared secret, for example) and is independent of any ITB seed material the surrounding pipeline carries. The master is passed verbatim to `NewCipherset`; per-primitive key sizing — truncating a longer master to the anchor's required width, or deterministically stretching a 32-byte master to 64 bytes for the wider PRFs — is the job of `kdf.Derive`, not of this package. Any high-entropy byte slice satisfying `MasterKeySize <= len(master) <= MaxMasterKeySize` (32 to 128 bytes) is therefore a valid master regardless of the anchor primitive's native key width.
 
 The same master MAY be reused across many messages under one schedule provided each message draws a fresh CSPRNG nonce — the helpers always generate one internally, so the contract is enforced by construction. The master may be zeroized in caller scope as soon as `NewCipherset` returns; the cipherset retains only the derived subkeys. Rotating the master is a fresh `NewCipherset(newMaster, schedule)` against the unchanged schedule — the old cipherset is dropped along with its subkeys, and the schedule's palette and segment size are preserved.
 

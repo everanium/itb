@@ -38,7 +38,7 @@ func scratchAtLeast(pool *sync.Pool, need int) (*[]byte, []byte) {
 	return bp, (*bp)[:need]
 }
 
-// builders.go — safe pluggable PRF construction helpers for user primitives.
+// Safe pluggable PRF construction helpers for user primitives.
 //
 // The built-in primitives in this package each implement chain-absorb
 // or native variable-length absorb directly in their closure body, with
@@ -485,10 +485,10 @@ func BuildARXChainAbsorb256(hashFn Hash256Fn, fixedKey []byte) itb.HashFunc256 {
 // BuildARXChainAbsorb512 wraps a 64-byte full hash function into an
 // itb.HashFunc512 closure. Same construction as BuildARXChainAbsorb128
 // but uses a Hash512Fn (e.g. crypto/sha512.Sum512) so the full 64-byte
-// digest comes from a single hash call. The fixedKey + seed (4 of 8
-// components) + length + domain prefix is built once; the remaining
-// 4 seed components are mixed via a second hash call with a different
-// domain marker, and the two 32-byte halves are concatenated.
+// digest comes from a single hash call. The fixedKey + seed (all 8
+// components) + length + domain prefix is built once; all 8 seed
+// components are absorbed into the single hash call, which returns 64
+// bytes that are unpacked into the [8]uint64 return array.
 func BuildARXChainAbsorb512(hashFn Hash512Fn, fixedKey []byte) itb.HashFunc512 {
 	if hashFn == nil {
 		panic("hashes: BuildARXChainAbsorb512 requires non-nil hashFn")
@@ -496,10 +496,9 @@ func BuildARXChainAbsorb512(hashFn Hash512Fn, fixedKey []byte) itb.HashFunc512 {
 	prefixLen := len(fixedKey) + 8 + 8*8 + 1
 	pool := newScratchPool(prefixLen + 256)
 	return func(data []byte, seed [8]uint64) [8]uint64 {
-		// Single hash call carries all 8 seed components: 4 in the
-		// first half via arxAbsorbHash512First, 4 in the second half
-		// via the seed-tail injection inside the prefix. Single hashFn
-		// call returns 64 bytes which we marshal directly.
+		// Single hash call carries all 8 seed components in the
+		// canonical absorb prefix. The hashFn call returns 64 bytes
+		// which are unpacked directly.
 		bp, buf := scratchAtLeast(pool, prefixLen+len(data))
 		out := arxAbsorbHash512(hashFn, buf, fixedKey, data, seed, 0x24)
 		pool.Put(bp)

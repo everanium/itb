@@ -104,7 +104,7 @@ func New(name string, key, nonce []byte) (Keystream, error) {
 // (SipHash-2-4-128) drives the keystream. Building a keystream from a PRF is
 // the standard CTR construction:
 //
-//	keystream_block_i = SipHash128(K, nonce || counter_i)   (16 bytes per call)
+//	keystream_block_i = SipHash128(K, nonce_hi || (nonce_lo XOR counter_i))   (16 bytes per call)
 //
 // The combined PRF input is 16 bytes (a 16-byte nonce split into two 8-byte
 // halves, counter increments folded into the lower half). The construction is

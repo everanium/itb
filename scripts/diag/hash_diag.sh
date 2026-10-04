@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# 9-hash x 3-nonce-width throughput matrix at fixed tier
+# Throughput matrix per registered primitive x 3 nonce widths at fixed tier
 # configuration.
 #
-# Purpose: detect hash-specific or nonce-width-specific regressions on
-# a given CPU. Compares the same 27 cells across CPUs (or across tier
+# Purpose: detect primitive-specific or nonce-width-specific regressions on
+# a given CPU. Compares the cells across CPUs (or across tier
 # forcings on the same CPU). A uniform host-vs-host ratio across all
-# 27 cells indicates general silicon performance difference; an
-# outlier cell indicates a hash-specific dispatch bug or kernel
+# cells indicates general silicon performance difference; an
+# outlier cell indicates a primitive-specific dispatch bug or kernel
 # regression on the affected silicon.
 #
 # Usage:
@@ -46,7 +46,7 @@ BENCH_TIME="${BENCH_TIME:-300ms}"
 BENCH_COUNT="${BENCH_COUNT:-3}"
 KEY_BITS="${ITB_KEY_BITS:-512}"
 
-HASHES="areion256 areion512 blake2b256 blake2b512 blake2s blake3 aescmac siphash24 chacha20"
+HASHES="aesitb128 areion256 areion512 blake2b256 blake2b512 blake2s blake3 aescmac siphash24 chacha20"
 NONCE_WIDTHS="128 256 512"
 
 tier_env=""
@@ -61,8 +61,8 @@ echo "  KEY_BITS=$KEY_BITS  PAYLOAD=$PAYLOAD  BENCH_TIME=$BENCH_TIME  BENCH_COUN
 echo "  INTERLOCK_TIER=$INTERLOCK_TIER  PIXEL_TIER=$PIXEL_TIER  HASH_TIER=$HASH_TIER"
 echo ""
 
-echo "=== Encrypt MB/s  (rows = hash, cols = nonce bits) ==="
-printf "  %-12s | %8s | %8s | %8s\n" hash 128 256 512
+echo "=== Encrypt MB/s  (rows = primitive, cols = nonce bits) ==="
+printf "  %-12s | %8s | %8s | %8s\n" primitive 128 256 512
 printf "  %-12s-+-%8s-+-%8s-+-%8s\n" ------------ -------- -------- --------
 
 for hash in $HASHES; do
@@ -81,8 +81,8 @@ for hash in $HASHES; do
 done
 
 echo ""
-echo "=== Decrypt MB/s  (rows = hash, cols = nonce bits) ==="
-printf "  %-12s | %8s | %8s | %8s\n" hash 128 256 512
+echo "=== Decrypt MB/s  (rows = primitive, cols = nonce bits) ==="
+printf "  %-12s | %8s | %8s | %8s\n" primitive 128 256 512
 printf "  %-12s-+-%8s-+-%8s-+-%8s\n" ------------ -------- -------- --------
 
 for hash in $HASHES; do

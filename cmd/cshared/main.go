@@ -70,7 +70,7 @@ const libitb3Version = "0.5.1"
 
 func main() {} // required for buildmode=c-shared
 
-// maxSliceLen is the largest C buffer length we accept across the
+// maxSliceLen is the largest C buffer length accepted across the
 // FFI boundary, capped at the largest value Go's int type can
 // represent on the host. On 64-bit hosts this is ~9.2 EiB; on
 // 32-bit hosts it is 2 GiB minus 1. Larger values from the C side
@@ -298,8 +298,7 @@ func ITB_Channels() C.int { return C.int(capi.Channels()) }
 //
 // The parameter is explicit rather than implied by a process-global
 // setter. Bindings pass the value their Pipeline / Config selected.
-// Returns ITB_ERR_BAD_INPUT when nonce_bytes is not one of {16, 32,
-// 64}.
+// Returns -1 when nonce_bytes is not one of {16, 32, 64}.
 //
 // ITB_DefaultNonceBits exposes the compile-in default in bits (512);
 // divide by 8 to get the byte count.

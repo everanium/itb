@@ -4,7 +4,10 @@
 //
 // The intended source of the master key-derivation key is a
 // high-entropy, uniformly distributed secret such as an ML-KEM
-// shared secret. Each supported registry primitive maps to a
+// shared secret. Minimum master key length is 16 bytes for
+// "aescmac" and "siphash24", and 32 bytes for the remaining
+// primitives (longer masters are truncated to the primitive's
+// key size). Each supported registry primitive maps to a
 // standard, separately analysable construction:
 //
 //   - "areion256", "areion512" — SP 800-108 KDF in Counter Mode,

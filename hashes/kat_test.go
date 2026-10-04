@@ -153,6 +153,167 @@ var katLengths = []int{0, 1, 7, 16, 20, 24, 36, 64, 68, 100, 256, 1024}
 var katBatchedLengths = []int{20, 36, 68}
 
 // -----------------------------------------------------------------------------
+// Areion-SoEM-256 KAT.
+// -----------------------------------------------------------------------------
+
+// areion256RefClosure rebuilds the hashes.Areion256 closure body
+// using github.com/jedisct1/go-aes's exported AreionSoEM256 directly.
+// Construction: 64-byte SoEM key = fixedKey || seed_packed (4 LE
+// uint64); 32-byte state with state[0:8] = lenTag, state[8:32]
+// absorbs `data` in 24-byte chunks via state[8:8+r] ^= chunk;
+// state = AreionSoEM256(key, state) between rounds.
+func areion256RefClosure(fixedKey [32]byte, data []byte, seed [4]uint64) [4]uint64 {
+	var key [64]byte
+	copy(key[:32], fixedKey[:])
+	for i := 0; i < 4; i++ {
+		binary.LittleEndian.PutUint64(key[32+i*8:], seed[i])
+	}
+	var state [32]byte
+	binary.LittleEndian.PutUint64(state[:8], uint64(len(data)))
+	const chunkSize = 24
+	if len(data) <= chunkSize {
+		copy(state[8:8+len(data)], data)
+		state = stdaes.AreionSoEM256(&key, &state)
+	} else {
+		copy(state[8:8+chunkSize], data[0:chunkSize])
+		state = stdaes.AreionSoEM256(&key, &state)
+		off := chunkSize
+		for off < len(data) {
+			end := off + chunkSize
+			if end > len(data) {
+				end = len(data)
+			}
+			for i := 0; i < end-off; i++ {
+				state[8+i] ^= data[off+i]
+			}
+			state = stdaes.AreionSoEM256(&key, &state)
+			off = end
+		}
+	}
+	return [4]uint64{
+		binary.LittleEndian.Uint64(state[0:]),
+		binary.LittleEndian.Uint64(state[8:]),
+		binary.LittleEndian.Uint64(state[16:]),
+		binary.LittleEndian.Uint64(state[24:]),
+	}
+}
+
+func TestKAT_Areion256(t *testing.T) {
+	key := canonicalKey32()
+	single, batched, retKey := Areion256Pair(key)
+	if !bytes.Equal(retKey[:], key[:]) {
+		t.Fatalf("Pair returned key %x, want %x", retKey[:], key[:])
+	}
+
+	for _, n := range katLengths {
+		for flavor := 0; flavor < 4; flavor++ {
+			data := canonicalData(n)
+			seed := canonicalSeed4(flavor)
+			want := areion256RefClosure(key, data, seed)
+			got := single(data, seed)
+			expectAndAssertEqual4(t, label("Areion256 single", n, flavor), got, want)
+		}
+	}
+
+	if batched != nil {
+		for _, n := range katBatchedLengths {
+			var data4 [4][]byte
+			var seeds4 [4][4]uint64
+			var wants [4][4]uint64
+			for lane := 0; lane < 4; lane++ {
+				data4[lane] = canonicalData(n + lane)[:n]
+				seeds4[lane] = canonicalSeed4(lane)
+				wants[lane] = areion256RefClosure(key, data4[lane], seeds4[lane])
+			}
+			gots := batched(&data4, seeds4)
+			for lane := 0; lane < 4; lane++ {
+				expectAndAssertEqual4(t, labelLane("Areion256 batched", n, lane), gots[lane], wants[lane])
+			}
+		}
+	}
+}
+
+// -----------------------------------------------------------------------------
+// Areion-SoEM-512 KAT.
+// -----------------------------------------------------------------------------
+
+// areion512RefClosure rebuilds the hashes.Areion512 closure body
+// using github.com/jedisct1/go-aes's exported AreionSoEM512 directly.
+// Construction is structurally identical to AreionSoEM256 but scaled
+// to a 128-byte SoEM key (64-byte fixedKey || 64-byte seed_packed,
+// where seed_packed = 8 LE uint64) and a 64-byte state absorbing
+// 56-byte chunks per round.
+func areion512RefClosure(fixedKey [64]byte, data []byte, seed [8]uint64) [8]uint64 {
+	var key [128]byte
+	copy(key[:64], fixedKey[:])
+	for i := 0; i < 8; i++ {
+		binary.LittleEndian.PutUint64(key[64+i*8:], seed[i])
+	}
+	var state [64]byte
+	binary.LittleEndian.PutUint64(state[:8], uint64(len(data)))
+	const chunkSize = 56
+	if len(data) <= chunkSize {
+		copy(state[8:8+len(data)], data)
+		state = stdaes.AreionSoEM512(&key, &state)
+	} else {
+		copy(state[8:8+chunkSize], data[0:chunkSize])
+		state = stdaes.AreionSoEM512(&key, &state)
+		off := chunkSize
+		for off < len(data) {
+			end := off + chunkSize
+			if end > len(data) {
+				end = len(data)
+			}
+			for i := 0; i < end-off; i++ {
+				state[8+i] ^= data[off+i]
+			}
+			state = stdaes.AreionSoEM512(&key, &state)
+			off = end
+		}
+	}
+	var out [8]uint64
+	for i := 0; i < 8; i++ {
+		out[i] = binary.LittleEndian.Uint64(state[i*8:])
+	}
+	return out
+}
+
+func TestKAT_Areion512(t *testing.T) {
+	key := canonicalKey64()
+	single, batched, retKey := Areion512Pair(key)
+	if !bytes.Equal(retKey[:], key[:]) {
+		t.Fatalf("Pair returned key %x, want %x", retKey[:], key[:])
+	}
+
+	for _, n := range katLengths {
+		for flavor := 0; flavor < 4; flavor++ {
+			data := canonicalData(n)
+			seed := canonicalSeed8(flavor)
+			want := areion512RefClosure(key, data, seed)
+			got := single(data, seed)
+			expectAndAssertEqual8(t, label("Areion512 single", n, flavor), got, want)
+		}
+	}
+
+	if batched != nil {
+		for _, n := range katBatchedLengths {
+			var data4 [4][]byte
+			var seeds4 [4][8]uint64
+			var wants [4][8]uint64
+			for lane := 0; lane < 4; lane++ {
+				data4[lane] = canonicalData(n + lane)[:n]
+				seeds4[lane] = canonicalSeed8(lane)
+				wants[lane] = areion512RefClosure(key, data4[lane], seeds4[lane])
+			}
+			gots := batched(&data4, seeds4)
+			for lane := 0; lane < 4; lane++ {
+				expectAndAssertEqual8(t, labelLane("Areion512 batched", n, lane), gots[lane], wants[lane])
+			}
+		}
+	}
+}
+
+// -----------------------------------------------------------------------------
 // BLAKE2b-256 KAT.
 // -----------------------------------------------------------------------------
 
@@ -426,94 +587,6 @@ func TestKAT_BLAKE3(t *testing.T) {
 }
 
 // -----------------------------------------------------------------------------
-// ChaCha20 KAT.
-// -----------------------------------------------------------------------------
-
-// chacha20RefClosure rebuilds the hashes.ChaCha20 closure body:
-// per-call key = fixedKey ^ seed (LE uint64 over 4 components),
-// chacha20.NewUnauthenticatedCipher with zero nonce, then a CBC-MAC-
-// style absorb where state[0..8] holds the lenTag, state[8..32]
-// absorbs `data` in 24-byte chunks, with c.XORKeyStream applied after
-// each chunk's XOR-into-state.
-func chacha20RefClosure(fixedKey [32]byte, data []byte, seed [4]uint64) [4]uint64 {
-	var key [32]byte
-	copy(key[:], fixedKey[:])
-	for i := 0; i < 4; i++ {
-		off := i * 8
-		v := binary.LittleEndian.Uint64(key[off:]) ^ seed[i]
-		binary.LittleEndian.PutUint64(key[off:], v)
-	}
-	var nonce [12]byte
-	c, err := chacha20.NewUnauthenticatedCipher(key[:], nonce[:])
-	if err != nil {
-		panic(err)
-	}
-	var state [32]byte
-	binary.LittleEndian.PutUint64(state[:8], uint64(len(data)))
-	const chunkSize = 24
-	if len(data) <= chunkSize {
-		copy(state[8:8+len(data)], data)
-		c.XORKeyStream(state[:], state[:])
-	} else {
-		copy(state[8:8+chunkSize], data[0:chunkSize])
-		c.XORKeyStream(state[:], state[:])
-		off := chunkSize
-		for off < len(data) {
-			end := off + chunkSize
-			if end > len(data) {
-				end = len(data)
-			}
-			for i := 0; i < end-off; i++ {
-				state[8+i] ^= data[off+i]
-			}
-			c.XORKeyStream(state[:], state[:])
-			off = end
-		}
-	}
-	return [4]uint64{
-		binary.LittleEndian.Uint64(state[0:]),
-		binary.LittleEndian.Uint64(state[8:]),
-		binary.LittleEndian.Uint64(state[16:]),
-		binary.LittleEndian.Uint64(state[24:]),
-	}
-}
-
-func TestKAT_ChaCha20(t *testing.T) {
-	key := canonicalKey32()
-	single, batched, retKey := ChaCha20256Pair(key)
-	if !bytes.Equal(retKey[:], key[:]) {
-		t.Fatalf("Pair returned key %x, want %x", retKey[:], key[:])
-	}
-
-	for _, n := range katLengths {
-		for flavor := 0; flavor < 4; flavor++ {
-			data := canonicalData(n)
-			seed := canonicalSeed4(flavor)
-			want := chacha20RefClosure(key, data, seed)
-			got := single(data, seed)
-			expectAndAssertEqual4(t, label("ChaCha20 single", n, flavor), got, want)
-		}
-	}
-
-	if batched != nil {
-		for _, n := range katBatchedLengths {
-			var data4 [4][]byte
-			var seeds4 [4][4]uint64
-			var wants [4][4]uint64
-			for lane := 0; lane < 4; lane++ {
-				data4[lane] = canonicalData(n + lane)[:n]
-				seeds4[lane] = canonicalSeed4(lane)
-				wants[lane] = chacha20RefClosure(key, data4[lane], seeds4[lane])
-			}
-			gots := batched(&data4, seeds4)
-			for lane := 0; lane < 4; lane++ {
-				expectAndAssertEqual4(t, labelLane("ChaCha20 batched", n, lane), gots[lane], wants[lane])
-			}
-		}
-	}
-}
-
-// -----------------------------------------------------------------------------
 // AES-CMAC KAT.
 // -----------------------------------------------------------------------------
 
@@ -638,30 +711,37 @@ func TestKAT_SipHash24(t *testing.T) {
 }
 
 // -----------------------------------------------------------------------------
-// Areion-SoEM-256 KAT.
+// ChaCha20 KAT.
 // -----------------------------------------------------------------------------
 
-// areion256RefClosure rebuilds the hashes.Areion256 closure body
-// using github.com/jedisct1/go-aes's exported AreionSoEM256 directly.
-// Construction: 64-byte SoEM key = fixedKey || seed_packed (4 LE
-// uint64); 32-byte state with state[0:8] = lenTag, state[8:32]
-// absorbs `data` in 24-byte chunks via state[8:8+r] ^= chunk;
-// state = AreionSoEM256(key, state) between rounds.
-func areion256RefClosure(fixedKey [32]byte, data []byte, seed [4]uint64) [4]uint64 {
-	var key [64]byte
-	copy(key[:32], fixedKey[:])
+// chacha20RefClosure rebuilds the hashes.ChaCha20 closure body:
+// per-call key = fixedKey ^ seed (LE uint64 over 4 components),
+// chacha20.NewUnauthenticatedCipher with zero nonce, then a CBC-MAC-
+// style absorb where state[0..8] holds the lenTag, state[8..32]
+// absorbs `data` in 24-byte chunks, with c.XORKeyStream applied after
+// each chunk's XOR-into-state.
+func chacha20RefClosure(fixedKey [32]byte, data []byte, seed [4]uint64) [4]uint64 {
+	var key [32]byte
+	copy(key[:], fixedKey[:])
 	for i := 0; i < 4; i++ {
-		binary.LittleEndian.PutUint64(key[32+i*8:], seed[i])
+		off := i * 8
+		v := binary.LittleEndian.Uint64(key[off:]) ^ seed[i]
+		binary.LittleEndian.PutUint64(key[off:], v)
+	}
+	var nonce [12]byte
+	c, err := chacha20.NewUnauthenticatedCipher(key[:], nonce[:])
+	if err != nil {
+		panic(err)
 	}
 	var state [32]byte
 	binary.LittleEndian.PutUint64(state[:8], uint64(len(data)))
 	const chunkSize = 24
 	if len(data) <= chunkSize {
 		copy(state[8:8+len(data)], data)
-		state = stdaes.AreionSoEM256(&key, &state)
+		c.XORKeyStream(state[:], state[:])
 	} else {
 		copy(state[8:8+chunkSize], data[0:chunkSize])
-		state = stdaes.AreionSoEM256(&key, &state)
+		c.XORKeyStream(state[:], state[:])
 		off := chunkSize
 		for off < len(data) {
 			end := off + chunkSize
@@ -671,7 +751,7 @@ func areion256RefClosure(fixedKey [32]byte, data []byte, seed [4]uint64) [4]uint
 			for i := 0; i < end-off; i++ {
 				state[8+i] ^= data[off+i]
 			}
-			state = stdaes.AreionSoEM256(&key, &state)
+			c.XORKeyStream(state[:], state[:])
 			off = end
 		}
 	}
@@ -683,9 +763,9 @@ func areion256RefClosure(fixedKey [32]byte, data []byte, seed [4]uint64) [4]uint
 	}
 }
 
-func TestKAT_Areion256(t *testing.T) {
+func TestKAT_ChaCha20(t *testing.T) {
 	key := canonicalKey32()
-	single, batched, retKey := Areion256Pair(key)
+	single, batched, retKey := ChaCha20256Pair(key)
 	if !bytes.Equal(retKey[:], key[:]) {
 		t.Fatalf("Pair returned key %x, want %x", retKey[:], key[:])
 	}
@@ -694,9 +774,9 @@ func TestKAT_Areion256(t *testing.T) {
 		for flavor := 0; flavor < 4; flavor++ {
 			data := canonicalData(n)
 			seed := canonicalSeed4(flavor)
-			want := areion256RefClosure(key, data, seed)
+			want := chacha20RefClosure(key, data, seed)
 			got := single(data, seed)
-			expectAndAssertEqual4(t, label("Areion256 single", n, flavor), got, want)
+			expectAndAssertEqual4(t, label("ChaCha20 single", n, flavor), got, want)
 		}
 	}
 
@@ -708,91 +788,11 @@ func TestKAT_Areion256(t *testing.T) {
 			for lane := 0; lane < 4; lane++ {
 				data4[lane] = canonicalData(n + lane)[:n]
 				seeds4[lane] = canonicalSeed4(lane)
-				wants[lane] = areion256RefClosure(key, data4[lane], seeds4[lane])
+				wants[lane] = chacha20RefClosure(key, data4[lane], seeds4[lane])
 			}
 			gots := batched(&data4, seeds4)
 			for lane := 0; lane < 4; lane++ {
-				expectAndAssertEqual4(t, labelLane("Areion256 batched", n, lane), gots[lane], wants[lane])
-			}
-		}
-	}
-}
-
-// -----------------------------------------------------------------------------
-// Areion-SoEM-512 KAT.
-// -----------------------------------------------------------------------------
-
-// areion512RefClosure rebuilds the hashes.Areion512 closure body
-// using github.com/jedisct1/go-aes's exported AreionSoEM512 directly.
-// Construction is structurally identical to AreionSoEM256 but scaled
-// to a 128-byte SoEM key (64-byte fixedKey || 64-byte seed_packed,
-// where seed_packed = 8 LE uint64) and a 64-byte state absorbing
-// 56-byte chunks per round.
-func areion512RefClosure(fixedKey [64]byte, data []byte, seed [8]uint64) [8]uint64 {
-	var key [128]byte
-	copy(key[:64], fixedKey[:])
-	for i := 0; i < 8; i++ {
-		binary.LittleEndian.PutUint64(key[64+i*8:], seed[i])
-	}
-	var state [64]byte
-	binary.LittleEndian.PutUint64(state[:8], uint64(len(data)))
-	const chunkSize = 56
-	if len(data) <= chunkSize {
-		copy(state[8:8+len(data)], data)
-		state = stdaes.AreionSoEM512(&key, &state)
-	} else {
-		copy(state[8:8+chunkSize], data[0:chunkSize])
-		state = stdaes.AreionSoEM512(&key, &state)
-		off := chunkSize
-		for off < len(data) {
-			end := off + chunkSize
-			if end > len(data) {
-				end = len(data)
-			}
-			for i := 0; i < end-off; i++ {
-				state[8+i] ^= data[off+i]
-			}
-			state = stdaes.AreionSoEM512(&key, &state)
-			off = end
-		}
-	}
-	var out [8]uint64
-	for i := 0; i < 8; i++ {
-		out[i] = binary.LittleEndian.Uint64(state[i*8:])
-	}
-	return out
-}
-
-func TestKAT_Areion512(t *testing.T) {
-	key := canonicalKey64()
-	single, batched, retKey := Areion512Pair(key)
-	if !bytes.Equal(retKey[:], key[:]) {
-		t.Fatalf("Pair returned key %x, want %x", retKey[:], key[:])
-	}
-
-	for _, n := range katLengths {
-		for flavor := 0; flavor < 4; flavor++ {
-			data := canonicalData(n)
-			seed := canonicalSeed8(flavor)
-			want := areion512RefClosure(key, data, seed)
-			got := single(data, seed)
-			expectAndAssertEqual8(t, label("Areion512 single", n, flavor), got, want)
-		}
-	}
-
-	if batched != nil {
-		for _, n := range katBatchedLengths {
-			var data4 [4][]byte
-			var seeds4 [4][8]uint64
-			var wants [4][8]uint64
-			for lane := 0; lane < 4; lane++ {
-				data4[lane] = canonicalData(n + lane)[:n]
-				seeds4[lane] = canonicalSeed8(lane)
-				wants[lane] = areion512RefClosure(key, data4[lane], seeds4[lane])
-			}
-			gots := batched(&data4, seeds4)
-			for lane := 0; lane < 4; lane++ {
-				expectAndAssertEqual8(t, labelLane("Areion512 batched", n, lane), gots[lane], wants[lane])
+				expectAndAssertEqual4(t, labelLane("ChaCha20 batched", n, lane), gots[lane], wants[lane])
 			}
 		}
 	}

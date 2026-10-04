@@ -206,8 +206,8 @@ func TripleStreamEnd(id TripleStreamID) (st Status) {
 }
 
 // TripleStreamRead drains up to len(dst) produced bytes into dst.
-// The (n, finished) pair encodes drain state: finished == 1 once
-// the session has ended AND the spool is fully drained; 0
+// The (n, finished) pair encodes drain state: finished is true once
+// the session has ended AND the spool is fully drained; false
 // otherwise. Never returns StatusBufferTooSmall — partial drains
 // are the normal mode; remaining bytes stay spooled. After End,
 // a Read with an empty spool blocks until the terminal bytes
@@ -237,7 +237,7 @@ func TripleStreamRead(id TripleStreamID, dst []byte) (n int, finished bool, st S
 	endedFlag := sess.endCalled
 	sess.mu.Unlock()
 	got, drained := sess.spool.read(dst, endedFlag)
-	// If end-of-input has been signalled and we consumed the spool's
+	// If end-of-input has been signalled and the Read consumed the spool's
 	// currently-visible bytes, sync with the cipher goroutine's
 	// close(done) teardown step so `finished` accurately reflects
 	// reality. The goroutine's tail runs
@@ -258,8 +258,8 @@ func TripleStreamRead(id TripleStreamID, dst []byte) (n int, finished bool, st S
 	// caller loops for another Read without any teardown to sync).
 	//
 	// After the wait, the spool may have gained more bytes (the
-	// goroutine could have produced its final chunk while we were
-	// blocked). Re-check emptiness before reporting finished so the
+	// goroutine could have produced its final chunk during the wait).
+	// Re-check emptiness before reporting finished so the
 	// caller does not treat a mid-stream drain as end-of-stream and
 	// drop bytes that are still in the spool.
 	if drained && endedFlag {

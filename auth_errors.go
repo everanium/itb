@@ -6,8 +6,8 @@ import "errors"
 // point ([DecryptAuthenticated3x128Cfg] / [DecryptAuthenticated3x256Cfg] /
 // [DecryptAuthenticated3x512Cfg] and their [DecryptAuth3x128Cfg] /
 // [DecryptAuth3x256Cfg] / [DecryptAuth3x512Cfg] aliases) when the
-// embedded MAC tag does not match the recomputed tag over the recovered
-// plaintext.
+// embedded MAC tag does not match the recomputed tag over the
+// encrypted payload.
 //
 // The sentinel value lets capi / FFI layers detect the integrity
 // failure with [errors.Is] rather than substring-matching the

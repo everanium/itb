@@ -4,7 +4,7 @@
 >
 > PRF-grade hash functions are **required**. No warranty is provided.
 
-**No bespoke cryptography.** ITB introduces no cryptographic primitive of its own — no custom S-box, permutation, or round function. It is a construction over existing primitives, much as PGP composes standard ciphers rather than defining one. Such constructions are not the object of algorithm-level cryptographic certification: national regimes (NIST CAVP/FIPS in the US, GOST/FSB in Russia, OSCCA's SM-series in China, IC3S in India, SOG-IS/EUCC and national lists in the EU, ASD's ISM in Australia, CRYPTREC in Japan, KCMVP in South Korea) certify **primitives** and the **modules** built on them, not compositional schemes. Eligibility for regulated use is therefore inherited from the primitives ITB is configured with, not conferred by ITB itself.
+**No bespoke cryptography.** ITB composes established, standardized primitives rather than introducing new cryptographic designs. Security properties and regulatory status are inherited from the underlying primitives; see [README.md](../README.md) for jurisdictional certification details.
 
 > **See [CONSTRUCTIONS.md](CONSTRUCTIONS.md) for the per-primitive construction descriptions.** Several wrappers diverge from the canonical RFC / NIST form of the underlying primitive in deliberate, documented ways — the registry names (`aescmac`, `chacha20`, `blake2b256`, ...) are short identifiers, not assertions of conformance with the RFC / NIST specification of the same name. Read CONSTRUCTIONS.md before assuming RFC compatibility.
 
@@ -63,7 +63,7 @@ the four holds a name list of its own.
 
 ## Custom user-primitive builders
 
-Beyond the shipped primitives, the package exposes builder families that wrap a user-supplied PRF into an `itb.HashFunc{128|256|512}` closure **with correct ITB nonce width preservation by construction**. These are for "I want to plug in SHA-256 / Ascon-PRF / Camellia-CMAC / My Own Custom hash primitive as the ITB PRF" use cases.
+Beyond the shipped primitives, the package exposes builder families that wrap a user-supplied PRF into an `itb.HashFunc{128|256|512}` closure **with correct ITB nonce width preservation by construction**. These serve deployments integrating custom hash primitives such as SHA-256, Ascon-PRF, or Camellia-CMAC into the ITB PRF role.
 
 | Builder | Wraps | Use when |
 |---|---|---|
@@ -72,7 +72,7 @@ Beyond the shipped primitives, the package exposes builder families that wrap a 
 | `BuildARXChainAbsorb{128,256,512}` | `Hash256Fn` / `Hash512Fn` (full hash one-shot) | Caller has a full hash function (SHA-256, SM3, SHA-512, ...) and wants safe absorption |
 | `BuildHMACChainAbsorb{128,256,512}` | `Hash256Fn` / `Hash512Fn` (full hash one-shot) | Signature-driven semantic alias of `BuildARXChainAbsorb{128,256,512}` — reads naturally at the call site when the closure wraps `hmac.New(hashFn, key)` |
 
-**Why these matter for ITB security.** ITB supports nonce widths of 128, 256 or 512 bits via `Config.NonceBits` (threaded through any Cfg-suffixed entry point). The per-call buffer presented to a `HashFunc` closure carries a domain-tag byte plus the configured nonce material — 20, 36, or 68 bytes for the three nonce widths respectively. Every byte of the `data` parameter must reach the digest for ITB's advertised nonce strength to hold.
+**Why these matter for ITB security.** ITB supports nonce widths of 128, 256 or 512 bits via `Config.NonceBits` (threaded through any Cfg-suffixed entry point). The per-call buffer presented to a `HashFunc` closure carries 4 bytes of little-endian pixel index LE32(idx) plus the configured nonce material — 20, 36, or 68 bytes for the three nonce widths respectively. Every byte of the `data` parameter must reach the digest for ITB's advertised nonce strength to hold.
 
 A naive user-written wrapper can silently truncate the ITB nonce in several ways:
 
@@ -86,7 +86,7 @@ The builders sidestep all three traps by construction: the user supplies the pri
 
 The builders close the silent-truncation trap **constructively**, but they are not always strictly required. A user primitive is safely pluggable as a hand-written closure **without** a builder when **both** of these hold:
 
-1. The primitive has **native variable-length absorb** (Merkle-Damgard tree like BLAKE3, MD chaining like SHA-256/512, sponge with internal absorb loop like Keccak/Ascon — i.e. the primitive's own API accepts arbitrary input length and processes every byte).
+1. The primitive has **native variable-length absorb** (tree hash like BLAKE3, MD chaining like SHA-256/512, sponge with internal absorb loop like Keccak/Ascon — i.e. the primitive's own API accepts arbitrary input length and processes every byte).
 2. The primitive's **native output width is at least the required HashFunc width** (32 bytes for `HashFunc256`, 64 bytes for `HashFunc512`).
 
 The custom-primitive pattern in the main repo [README — "Custom user-supplied hashes"](../README.md#custom-user-supplied-hashes) is the canonical reference for this case: BLAKE3 via `blake3.NewKeyed` + `h.Write(mixed)` satisfies both conditions, so all four seed components are XOR'd into a zero-padded data buffer that BLAKE3 absorbs natively. No chain-absorb needed. The same pattern transfers to BLAKE2b/2s, SHA-256 (for HashFunc256), SHA-512 (for HashFunc512), KangarooTwelve, etc.
@@ -386,7 +386,7 @@ _ = keyBytes // persist alongside seed.Components for cross-process restore
 _ = seed
 ```
 
-**Fused-hook fields on the Spec are user-settable.** Beyond `Make{N}Pair`, `hashes.Spec` exposes optional fast-path fields — `FusedChainHash{N}` and `FusedChainHash{N}x8` (four- / eight-lane ChainAbsorb cascades for `hashes.NewSeed{N}` construction speed), `InterlockFillBatch16x{W}` and `InterlockFillBatch32x{W}` (batched Interlocked Barrier fill kernels on the per-pixel hot path). The factory above declares none of them, and the seed built from the closures alone produces and decrypts the same wire — the hooks are performance paths only. A registered primitive that ships alongside a hand-tuned AVX-512 / VAES / SHA-NI kernel populates these fields at Register time; the shipped registry entries all do this, which is what buys tier-1 throughput on their target microarchitectures. Users who care about throughput on a custom primitive follow the same pattern: write the batched kernel, stash the callback in the Spec at Register time.
+**Fused-hook fields on the Spec are user-settable.** Beyond `Make{N}Pair`, `hashes.Spec` exposes optional fast-path fields — `FusedChainHash{N}` and `FusedChainHash{N}x8` (four- / eight-lane ChainAbsorb cascades for `hashes.NewSeed{N}` construction speed), `InterlockFillBatch16x{W}` and `InterlockFillBatch32x{W}` (batched Interlocked Barrier fill kernels on the per-chunk hot path). The factory above declares none of them, and the seed built from the closures alone produces and decrypts the same wire — the hooks are performance paths only. A registered primitive that ships alongside a hand-tuned AVX-512 / VAES / SHA-NI kernel populates these fields at Register time; the shipped registry entries all do this, which is what buys tier-1 throughput on their target microarchitectures. Users who care about throughput on a custom primitive follow the same pattern: write the batched kernel, stash the callback in the Spec at Register time.
 
 The shipped `Registry` itself is immutable — user entries live in a separate mutex-guarded slice — so the FFI iteration surface (`ITB_Triple_HashNames`) is unaffected by runtime registrations. `hashes.Register` is a Go-native API only. Bindings are triple-only and do not expose custom-primitive plug; a binding caller who needs a custom PRF wires the Go-native surface directly.
 
@@ -443,14 +443,15 @@ func main() {
     // self-describing JSON blob. The lockSeed slot rides in the
     // trailing Blob512Opts.
     bSrc := &itb.Blob512{}
-    blob, _ := bSrc.Export3Cfg(cfg, keyN, keyD1, keyD2, keyD3, keyS1, keyS2, keyS3,
+    blob, _ := bSrc.Export3Cfg(cfg, [64]byte(keyN), [64]byte(keyD1), [64]byte(keyD2), [64]byte(keyD3),
+        [64]byte(keyS1), [64]byte(keyS2), [64]byte(keyS3),
         ns, d1, d2, d3, s1, s2, s3,
-        itb.Blob512Opts{KeyL: keyL, LS: ls})
+        itb.Blob512Opts{KeyL: [64]byte(keyL), LS: ls})
     _ = blob // ship alongside the ciphertext
 }
 ```
 
-`Blob{N}.Import3Cfg` on the receiver restores per-slot hash keys + Components AND returns the captured `*itb.Config`. `Hash` / `BatchHash` on each restored seed stay nil so the caller wires them from the saved `Key*` bytes through the matching factory (`Areion512PairWithKey` / `BLAKE2b512PairWithKey` / etc.). See the `itb.Blob512` doc-comment for the receiver-side wiring pattern.
+`bDst := &itb.Blob512{}; err := bDst.Import3Cfg(blob, cfg)` on the receiver restores per-slot hash keys + Components into `bDst` and restores the captured `*itb.Config` into `cfg`. `Hash` / `BatchHash` on each restored seed stay nil so the caller wires them from the saved `Key*` bytes through the matching factory (`Areion512PairWithKey` / `BLAKE2b512PairWithKey` / etc.). See the `itb.Blob512` doc-comment for the receiver-side wiring pattern.
 
 SipHash-2-4 has no internal fixed key — the paired (single, batched) constructor returns a 2-tuple without a key element; the caller passes `nil` for every `KeyN..KeyS3` argument when exporting via `Blob128.Export3Cfg`. BLAKE2b-512, BLAKE3, AES-CMAC, ChaCha20, and the remaining registry primitives all follow the shipped paired-factory shape used above.
 
@@ -485,14 +486,14 @@ closure (no key tuple element):
 | `AESITB128Pair(...key)`       | `AESITB128PairWithKey(key)`     |
 | `Areion256Pair(...key)`       | `Areion256PairWithKey(key)`     |
 | `Areion512Pair(...key)`       | `Areion512PairWithKey(key)`     |
-| `BLAKE2s(...key)`             | `BLAKE2sWithKey(key)`           |
 | `BLAKE2b256(...key)`          | `BLAKE2b256WithKey(key)`        |
 | `BLAKE2b512(...key)`          | `BLAKE2b512WithKey(key)`        |
+| `BLAKE2s(...key)`             | `BLAKE2sWithKey(key)`           |
 | `BLAKE3(...key)`              | `BLAKE3WithKey(key)`            |
 | `AESCMAC(...key)`             | `AESCMACWithKey(key)`           |
 | `ChaCha20(...key)`            | `ChaCha20WithKey(key)`          |
 
-`AESITB128Pair` takes a `[16]byte` fixed key (128-bit, matching AES key size), the rest take `[32]byte`. `SipHash24Pair()` is not in the table — it is keyed by seed components alone with no fixed-key element (`SipHash24Pair()` takes no argument and returns a 2-tuple without a key), so both the variadic and WithKey forms would be no-ops.
+Each `*WithKey` constructor accepts a fixed-size array matching the primitive's native key width. `SipHash24Pair()` is not in the table — it is keyed by seed components alone with no fixed-key element (`SipHash24Pair()` takes no argument and returns a 2-tuple without a key), so both the variadic and WithKey forms would be no-ops.
 
 The variadic short form delegates to `WithKey` (Go inliner removes
 the wrapper at compile time), so semantics are identical. Either

@@ -1,13 +1,11 @@
 // Package wrapper provides format-deniability envelopes for ITB ciphertext.
 //
-// ITB encrypts content into RGBWYOPA pixel containers and provides
-// content-deniability unconditionally — no plaintext bit can be extracted from
-// the wire. However, the ITB wire is parseable by an observer who knows the
-// format: nonce / W / H / container layout for Non-AEAD mode; 32-byte streamID
-// prefix + per-chunk metadata for Streaming AEAD. This package hides the ITB
-// wire pattern under a generic-cipher-looking envelope ("CTR cipher style
-// stream"), so an observer cannot pattern-match ITB-specific signatures
-// (W/H bounds, container layout, streamID prefix for AEAD streaming mode).
+// ITB provides content-deniability unconditionally — no plaintext bit can be
+// extracted from the wire. However, the raw ITB wire carries structural framing
+// and headers parseable by an observer who knows the ITB format. This package
+// hides the ITB wire pattern under a generic-cipher envelope ("CTR cipher
+// style stream"), so an observer sees standard pseudorandom stream cipher
+// bytes rather than ITB-specific wire framing.
 //
 // This is NOT a random-oracle indistinguishability claim — it is "looks like
 // some other well-known cipher's ciphertext, not specifically ITB". The outer
@@ -44,12 +42,12 @@
 //
 // # API surface
 //
-// One-shot blob envelopes: [Wrap] and [Unwrap] take an allocation-friendly
-// key + input pair and return a fresh output slice; [WrapInPlace] and
-// [UnwrapInPlace] transform the input buffer in place for callers who
-// want zero-allocation on the hot path (the caller supplies a buffer
-// large enough for the nonce prefix + payload; the return slice
-// references the same underlying storage).
+// Single Message blob envelopes: [Wrap] and [Unwrap] take an allocation-friendly
+// key + input pair and return a fresh output slice. For callers who want to
+// avoid reallocating on the hot path: [WrapInPlace] XORs the payload buffer
+// in place and returns a freshly-drawn nonce slice, while [UnwrapInPlace]
+// takes a wire buffer formatted as `[nonce][ciphertext]`, XORs the ciphertext
+// in place, and returns the payload slice referencing the same underlying storage.
 //
 // Streaming envelopes: [NewWrapWriter] wraps an [io.Writer] so bytes
 // written to the returned writer are XORed with the keystream and
@@ -60,10 +58,9 @@
 //
 // Parallel byte-range XOR: [XORParallel] and [XORParallelAt] drive
 // worker goroutines seeking disjoint keystream ranges via ctr.NewAt;
-// used by the Wrap/Unwrap blob paths when the input exceeds
-// [ParallelThreshold]. Callers who want serial-only behaviour set an
-// input smaller than that threshold or use the [NewWrapWriter] /
-// [NewUnwrapReader] streaming shape which is single-goroutine.
+// used by the Wrap/Unwrap blob paths and streaming chunk writes when
+// the input or chunk exceeds [ParallelThreshold]. Callers who want serial-only
+// behaviour process inputs smaller than that threshold.
 //
 // Registry access: [CipherNames] enumerates the canonical outer cipher
 // alphabet as a snapshot of the outer-cipher-eligible subset of the shared
@@ -77,7 +74,7 @@
 //
 // Key management: [GenerateKey] draws a fresh CSPRNG key of the
 // primitive's canonical size; [DeriveKey] runs the [github.com/everanium/itb/kdf]
-// counter-mode KDF over a supplied master with a fixed domain label
-// so wrapper keys stay orthogonal to other subkeys derived from the
-// same master.
+// counter-mode KDF over a supplied master in [32, MaxMasterKeySize] bytes with
+// a fixed domain label so wrapper keys stay orthogonal to other subkeys derived
+// from the same master.
 package wrapper

@@ -6,8 +6,7 @@ import (
 	"testing"
 )
 
-// hashSupported lists the six hash-based registry names this package
-// version derives from.
+// hashSupported lists the hash-based registry names exercised by these tests.
 var hashSupported = []string{
 	"areion256",
 	"areion512",

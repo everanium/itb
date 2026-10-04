@@ -793,7 +793,7 @@ func TestRedTeamNonceReuseLayerBRandomPair(t *testing.T) {
 
 	// Random-pair floor: count of (np, r) admitting all-zero extract per
 	// pixel across the whole region (payload-order irrelevant here
-	// because we are measuring the floor, not the recovery rate).
+	// because the floor is measured, not the recovery rate).
 	type regionResult struct {
 		Region              int     `json:"region"`
 		Pixels             int     `json:"region_pixels"`
@@ -924,7 +924,7 @@ func TestRedTeamNonceReuseLayerBMaskOraclePeek(t *testing.T) {
 	// (the terminator sits at position max(...) actually but the safer
 	// bound is min). Beyond that byte, region payload includes the 0x00
 	// terminator or DRBG fill; recovery there is undefined.
-	// Prefix bit length constrains how many pixel channels we probe.
+	// Prefix bit length constrains how many pixel channels are probed.
 	prefixBits := [3]int{
 		min3(len(regionCobs1[0]), len(regionCobs2[0])) * 8,
 		min3(len(regionCobs1[1]), len(regionCobs2[1])) * 8,
@@ -1063,10 +1063,10 @@ func TestRedTeamNonceReuseLayerDMultiPair(t *testing.T) {
 	// For each container-body byte position, pool all N byte values and
 	// measure the chi-square vs uniform (expected each of 256 values
 	// appears N/256 times — with N=30 the expected is 30/256 ≈ 0.117
-	// so cell chi-square is very high by definition unless we aggregate
+	// so cell chi-square is very high by definition unless aggregation is performed
 	// across many positions). Aggregate all bytes across the region
-	// body — statistics of the "always deterministic PRF pipeline" is
-	// what we test for leakage.
+	// body — statistics of the "always deterministic PRF pipeline"
+	// are evaluated for leakage.
 
 	// Alternative more meaningful measure at N=30: per byte position,
 	// count distinct byte values observed. If per-position pipeline is
@@ -1381,8 +1381,8 @@ func applyDemaskerToThirdMsg(c3Body []byte, regionPixels, regionBodyOffset, star
 	// c3Body is the full container body; regionPayloadC1 is the *known*
 	// region payload of C1 (from the mask-oracle peek's forward
 	// splitTriple+cobsEncode step). Given demask[p] = (np, r, chanXOR56),
-	// derived from C1 XOR C2 and the C1/C2 region payload XORs, we can
-	// convert C3's per-pixel channel bytes → C3's region payload bytes:
+	// derived from C1 XOR C2 and the C1/C2 region payload XORs, this
+	// converts C3's per-pixel channel bytes → C3's region payload bytes:
 	//   extract7(C3[c], np) → 7-bit rotated + chanXOR value
 	//   unrotate(..., r) → 7 bits of dataBits XOR chanXOR
 	//   XOR with chanXOR → 7 bits of dataBits (== C3 region payload bits)
@@ -1415,20 +1415,10 @@ func applyDemaskerToThirdMsg(c3Body []byte, regionPixels, regionBodyOffset, star
 			ext := extract7Broken(c3Body[pixelOff+ch], dp.Np)
 			unrot := rotateBits7(ext, 7-dp.R)
 			// unrot = dataBits_C3[ch] XOR chanXOR[ch]
-			// chanXOR[ch] = unrotate(extract7(C1[c], np), r) XOR C1_regionPayload_bits(pp, ch)
-			// (we ARE the caller's lab-peek pipeline so we can plumb this
-			// via regionPayloadC1). Instead of recomputing here, we
-			// require the caller to hand `chanXORPerPixel` in — but since
-			// the caller has both C1 body and C1 payload, the simplest
-			// wire is to compute chanXOR inline.
-			// For clarity: chanXOR_bits = extract7(C1[c], dp.Np) after
-			// un-rotate, XOR with regionPayloadC1's 7 bits at (pp, ch).
-			// Access to the C1 body is via c3Body arg — but c3Body IS C3;
-			// the caller passes C3 here. So we need a separate
-			// chanXORPerPixel slice from the caller. For simplicity we
-			// swap the interface: the caller computes chanXOR56[pp] from
-			// C1 + regionPayloadC1 and passes it in the demask slice.
-			// See dp.ChanXOR56 field.
+			// The caller computes chanXOR56[pp] from C1 + regionPayloadC1
+			// and supplies it in dp.ChanXOR56:
+			// chanXOR_bits = extract7(C1[c], dp.Np) after un-rotate,
+			// XOR with regionPayloadC1's 7 bits at (pp, ch).
 			raw7 := unrot ^ byte((dp.ChanXOR56>>uint(ch*DataBitsPerChannel))&0x7F)
 			packed |= uint64(raw7) << uint(ch*DataBitsPerChannel)
 		}
@@ -1681,12 +1671,12 @@ func TestRedTeamNonceReuseCrossMessageDecrypt(t *testing.T) {
 		// Interleave the recovered region payload bytes through the mask
 		// oracle to yield the framed plaintext. First need to peel COBS,
 		// then interleaveForTriple48LockedCfg. Because tail-fill differs
-		// per encryption and our recovered bytes past the COBS terminator
+		// per encryption and recovered bytes past the COBS terminator
 		// are garbage, restrict interleave to the C3 lane bytes' known
 		// deterministic prefix range.
 		//
 		// Compute the true C3 region payload lengths (via forward encode
-		// under mask peek) so we know where COBS terminates.
+		// under mask peek) to determine where COBS terminates.
 		n3 := tripleLaneLen(len(p3))
 		p3Lanes := [3][]byte{make([]byte, n3), make([]byte, n3), make([]byte, n3)}
 		splitForTriple48LockedInto(nil, p3, bp, p3Lanes[0], p3Lanes[1], p3Lanes[2])

@@ -34,8 +34,8 @@ type HMACSpec struct {
 	MinKeyBytes int
 }
 
-// KeyedHashSpec parameterises [BuildKeyedHash]. Only Name is
-// required; zero size fields take per-primitive defaults.
+// KeyedHashSpec parameterises [BuildKeyedHash]. Name and KeySize are
+// required; zero TagSize and MinKeyBytes take per-primitive defaults.
 type KeyedHashSpec struct {
 	// Name is the MAC name the returned Spec registers under —
 	// lowercase letters, digits, underscores, at most [MaxNameLen]

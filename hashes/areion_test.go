@@ -6,14 +6,10 @@ import (
 	"github.com/everanium/itb"
 )
 
-// TestAreion256DigestDependsOnEveryByte locks in the CBC-MAC chained
-// absorb fix for Areion-SoEM-256. The previous closure copy-truncated
-// `data` to the SoEM-256 input width (32 bytes), so anything past byte
-// 31 was silently dropped. Under a 256-bit ITB nonce the resulting buf
-// shape is 36 bytes (4 blockIdx + 32 nonce) — the last 4 nonce bytes
-// were lost. Under a 512-bit ITB nonce the resulting buf shape is 68
-// bytes — 36 nonce bytes were lost. The new chained absorb feeds
-// every input byte into the digest regardless of length.
+// TestAreion256DigestDependsOnEveryByte verifies that the CBC-MAC chained
+// absorb for Areion-SoEM-256 feeds every input byte into the digest
+// regardless of length, including nonce lengths exceeding 32 bytes
+// (36-byte buf for 256-bit nonces, 68-byte buf for 512-bit nonces).
 //
 // The test runs at three input lengths matching the three
 // nonce-bit configurations and confirms that flipping any single

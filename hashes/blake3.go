@@ -14,8 +14,11 @@ import (
 	"github.com/everanium/itb/internal/forcetier"
 )
 
-// BLAKE3 returns a cached BLAKE3-256 itb.HashFunc256 with a freshly-
-// generated 32-byte BLAKE3 key.
+// BLAKE3 returns a cached BLAKE3-256 itb.HashFunc256 along with the
+// 32-byte BLAKE3 key the closure is bound to. With no argument a
+// fresh key is generated via crypto/rand; passing a single
+// caller-supplied [32]byte uses that key instead. Save the returned
+// key for cross-process persistence.
 //
 // The pre-keyed BLAKE3 hasher template is created once via
 // blake3.NewKeyed; each call clones the template instead of
@@ -28,11 +31,6 @@ import (
 // first 32 bytes; the input is zero-padded out to 32 bytes when the
 // caller's data is shorter, so all four seed uint64's contribute
 // regardless of how short the caller's data is.
-// BLAKE3 returns a cached BLAKE3-256 itb.HashFunc256 along with the
-// 32-byte BLAKE3 key the closure is bound to. With no argument a
-// fresh key is generated via crypto/rand; passing a single
-// caller-supplied [32]byte uses that key instead. Save the returned
-// key for cross-process persistence.
 func BLAKE3(key ...[32]byte) (itb.HashFunc256, [32]byte) {
 	var k [32]byte
 	if len(key) > 0 {

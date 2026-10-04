@@ -19,8 +19,9 @@ import (
 	"github.com/everanium/itb/parallax"
 )
 
-// persistProfiles enumerates every shipped profile — single-primitive
-// and mixed — for the persistence round-trip matrix.
+// persistProfiles enumerates shipped profiles for the persistence
+// round-trip matrix. Dedicated aesitb128 profiles are exercised
+// separately across all key sizes in [TestAESITBCascadePersistRoundTrip].
 func persistProfiles() []string {
 	return append(allProfiles(),
 		ProfileStreamingAEADTripleMACMixedV1,

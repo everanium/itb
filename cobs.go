@@ -73,8 +73,7 @@ func cobsEncodeInto(dst, src []byte) []byte {
 			j = i + k
 		}
 		// Emit the zero-free run src[i:j], splitting at every 254-byte
-		// group boundary. The placeholder code byte at codeIdx is zeroed
-		// by make; only the finalised 0xFF is written back explicitly.
+		// group boundary.
 		for i < j {
 			take := j - i
 			if room := 254 - fill; take > room {

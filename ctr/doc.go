@@ -22,6 +22,6 @@
 // the keystream segment is XORed over src into dst while the internal
 // counter advances. Callers who need to rewind or re-seek to a
 // specific byte offset within a keystream draw the
-// [ResettableKeystream] variant instead — its Reset / Seek methods
-// realign the internal counter without redrawing the key.
+// [ResettableKeystream] variant instead — its [ResettableKeystream.ResetCounter]
+// method realigns the internal counter without redrawing the key.
 package ctr

@@ -60,8 +60,7 @@ func resolveTriple(id TripleHandleID) (h *TripleHandle, st Status) {
 // triple.Opts struct. Empty input returns a zero-value Opts (all
 // profile defaults). Unknown keys are rejected with a descriptive
 // error rather than silently ignored — silently-ignored keys are the
-// classic source of "why is my override not taking effect" bugs on
-// the binding-side.
+// classic source of silently dropped overrides on the binding-side.
 //
 // Accepted keys (mirror the [triple.Opts] fields):
 //

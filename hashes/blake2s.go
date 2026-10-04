@@ -14,18 +14,16 @@ import (
 	"github.com/everanium/itb/internal/forcetier"
 )
 
-// BLAKE2s returns a cached BLAKE2s-256 itb.HashFunc256 with a
-// freshly-generated 32-byte fixed key.
-//
-// Same construction as BLAKE2b256: H(key || data ^ seed) using
-// blake2s.Sum256 (no allocation, no keyed-mode handle). The payload
-// region is zero-padded to 32 bytes for short inputs so all four
-// seed uint64's contribute to the digest.
 // BLAKE2s returns a cached BLAKE2s-256 itb.HashFunc256 along with the
 // 32-byte fixed key the closure is bound to. With no argument a
 // fresh key is generated via crypto/rand; passing a single
 // caller-supplied [32]byte uses that key instead. Save the returned
 // key for cross-process persistence.
+//
+// Same construction as BLAKE2b256: H(key || data ^ seed) using
+// blake2s.Sum256 (no allocation, no keyed-mode handle). The payload
+// region is zero-padded to 32 bytes for short inputs so all four
+// seed uint64's contribute to the digest.
 func BLAKE2s(key ...[32]byte) (itb.HashFunc256, [32]byte) {
 	var k [32]byte
 	if len(key) > 0 {

@@ -10,7 +10,7 @@ import (
 //
 // The function accepts arbitrary-length data and two uint64 seed values,
 // returning two uint64 outputs (128-bit total). The 128-bit intermediate
-// state enables effective key sizes up to 1024 bits through ChainHash128.
+// state enables effective key sizes up to 2048 bits through ChainHash128.
 //
 // PRF-grade hash functions are required (see Definition 2 in SCIENCE.md).
 //

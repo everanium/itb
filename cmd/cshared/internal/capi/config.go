@@ -13,7 +13,7 @@ func Channels() int { return itb.Channels }
 // DefaultNonceBits returns the compile-in default nonce width in bits
 // used when a Config leaves NonceBits at zero. Bindings that need to
 // stream-parse without threading a Config value can pass this to
-// [HeaderSize] / [ParseChunkLen].
+// [HeaderSize].
 func DefaultNonceBits() int { return itb.DefaultNonceBits }
 
 // HeaderSize returns the ciphertext-chunk header size in bytes for
@@ -21,8 +21,7 @@ func DefaultNonceBits() int { return itb.DefaultNonceBits }
 // The interlock nonce is not a header field — it travels split across
 // the three interlocked lanes inside the container — so it contributes
 // nothing here.
-// nonceBytes must be 16, 32, or 64; other values yield StatusBadInput
-// via the caller-provided out-parameter contract of the FFI shim.
+// nonceBytes must be 16, 32, or 64; other values yield StatusBadInput.
 //
 // Callers driving the streaming decrypt path pass the nonceBytes
 // their Pipeline / Config selected (16 for 128-bit nonces, 32 for

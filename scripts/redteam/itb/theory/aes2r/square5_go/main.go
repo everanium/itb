@@ -1,4 +1,4 @@
-// square5_go — Go 5-round Square on the aes2r control primitive, the feasible
+// Go 5-round Square on the aes2r control primitive, the feasible
 // counterpart of the pure-Python higher_round_square_aes2r.py NR=5 cell (2^32
 // texts is ~36 h in Python, ~seconds here).
 //

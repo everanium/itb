@@ -161,7 +161,7 @@ func TestHashWrongNonceLength(t *testing.T) {
 // Areion primitives is byte-identical to the single-block PRF-CTR definition:
 // block i = PRF(nonce(16) || LE64(i)). The single-block reference is built
 // directly from hashprf.New so the test does not depend on the dispatch in
-// newPrfHashCTR (which now routes Areion through the batch path).
+// newPrfHashCTR (which routes Areion through the batch path).
 func TestBatchKeystreamParity(t *testing.T) {
 	for _, name := range []string{hashes.CipherAreion256, hashes.CipherAreion512} {
 		ksize, err := hashprf.KeySize(name)
@@ -190,7 +190,7 @@ func TestBatchKeystreamParity(t *testing.T) {
 			t.Logf("%s: no batched path on this host (%T); skipping parity check", name, ks)
 			continue
 		}
-		const total = 4096 // not a multiple of 64 — exercises the tail drain
+		const total = 4096 + 17 // not a multiple of 64 — exercises the tail drain
 		got := make([]byte, total)
 		ks.XORKeyStream(got, make([]byte, total))
 

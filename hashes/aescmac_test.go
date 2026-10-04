@@ -10,12 +10,10 @@ import (
 
 // TestAESCMACDigestDependsOnEveryByte locks in the contract that
 // the AES-CMAC closure absorbs every byte of input through its
-// CBC-MAC chain. The pre-fix variant only XOR'd seed components
-// when len(data) >= 16, so for short inputs (< 16 bytes) the seed
-// was silently dropped and the digest was constant. After the
-// audit-driven fix the seed is loaded into the first block
+// CBC-MAC chain: the seed is loaded into the first block
 // unconditionally, every byte of `data` is XOR'd into the chain
-// state, and subsequent 16-byte blocks chain via CBC-MAC.
+// state, and subsequent 16-byte blocks chain via CBC-MAC, ensuring
+// short inputs (< 16 bytes) absorb the seed properly.
 //
 // The test runs at three input lengths matching the buf shapes
 // ITB uses with each nonce-width configuration:

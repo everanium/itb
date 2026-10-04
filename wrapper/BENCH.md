@@ -4,7 +4,7 @@
 >
 > PRF-grade hash functions are **required**. No warranty is provided.
 
-**No bespoke cryptography.** ITB introduces no cryptographic primitive of its own — no custom S-box, permutation, or round function. It is a construction over existing primitives, much as PGP composes standard ciphers rather than defining one. Such constructions are not the object of algorithm-level cryptographic certification: national regimes (NIST CAVP/FIPS in the US, GOST/FSB in Russia, OSCCA's SM-series in China, IC3S in India, SOG-IS/EUCC and national lists in the EU, ASD's ISM in Australia, CRYPTREC in Japan, KCMVP in South Korea) certify **primitives** and the **modules** built on them, not compositional schemes. Eligibility for regulated use is therefore inherited from the primitives ITB is configured with, not conferred by ITB itself.
+**No bespoke cryptography.** ITB composes established, standardized primitives rather than introducing new cryptographic designs. Security properties and regulatory status are inherited from the underlying primitives; see [README.md](../README.md) for jurisdictional certification details.
 
 The wrapper layer prefixes a fresh CSPRNG nonce and XORs every byte of an ITB ciphertext under one of the outer keystream ciphers — one per PRF-grade ITB registry primitive. The keystream construction is delegated to the [`ctr`](../ctr/) package; AES-128-CTR and ChaCha20 (RFC 8439) use their native modes, the others run in PRF-counter mode. The wire format becomes `nonce || keystream-XOR(bytestream)`, indistinguishable from any generic stream-cipher payload by surface pattern; ITB's own content-deniability is unchanged.
 
@@ -107,6 +107,6 @@ Numbers below route through `triple.Pipeline` (Single Message via `EncryptMessag
 | **SipHash-2-4** | 477 | 514 |
 | **ChaCha20** | 489 | 522 |
 
-Decrypt runs 5–15 % faster than encrypt across ciphers (the encrypt path additionally derives per-pixel nonce material and the interlock barrier fill state). ITB's per-pixel hashing dominates the combined cost, so the outer cipher choice moves the totals only at the margin: AES-NI and PRF-counter ciphers span ~20 % top to bottom, with the smaller-state BLAKE variants at the low end and the AES / SipHash / ChaCha families at the high end.
+Decrypt runs 5–15 % faster than encrypt across ciphers (the encrypt path additionally derives per-pixel nonce material and the interlock-barrier fill state). ITB's per-pixel hashing dominates the combined cost, so the outer cipher choice moves the totals only at the margin: AES-NI and PRF-counter ciphers span ~20 % top to bottom, with the smaller-state BLAKE variants at the low end and the AES / SipHash / ChaCha families at the high end.
 
 This file is updated by re-running the reproduction command and pasting the bench output into the tables. Numbers above are rounded to MB/s.
