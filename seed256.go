@@ -124,7 +124,7 @@ type Seed256 struct {
 	// time via BatchChainHash256 instead of one pixel per ChainHash256
 	// call. The Hash field remains the bit-exact reference; BatchHash
 	// must agree with Hash on every input. nil disables batched
-	// dispatch and preserves the legacy single-call code path.
+	// dispatch and preserves the serial single-call code path.
 	BatchHash BatchHashFunc256
 
 	// FusedChain and BatchFusedChain optionally evaluate the whole

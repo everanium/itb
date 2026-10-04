@@ -145,14 +145,7 @@ Callers who want the 8-seed constellation, MAC, parallax layer, and outer cipher
 
 ## Curated primitive selection
 
-ITB's MAC-Inside-Encrypt construction places the 32-byte tag inside
-the encrypted container. The barrier dispersal
-(`process128 / 256 / 512`) destroys the plaintext / tag boundary an
-attacker could otherwise observe; the always-on 48-bit Interlocked
-Barrier overlay further obscures the payload region. So the MAC
-primitive itself only has to be a sound keyed PRF — the surrounding
-ITB construction handles placement-hiding, replay-resistance
-(per-message nonce), and CCA-resistance.
+ITB's MAC-Inside-Encrypt places the tag inside the encrypted container under the Interlocked Barrier, requiring only PRF security from the underlying MAC; see [CONSTRUCTIONS.md](CONSTRUCTIONS.md#design-rationale-and-prf-sufficiency) for design rationale.
 
 A curated primitive set keeps the choice tractable:
 
@@ -581,7 +574,7 @@ failure at decrypt — indistinguishable from tampering by design.
 ### Scope
 
 Runtime MAC registration is a **Go-native API only**. The bindings
-surface is triple-only over the frozen FFI shim: the shipped
+surface is Triple-only over the frozen FFI shim: the shipped
 `Registry` reaches bindings only through `triple.Profile.MacName` (and
 the per-call `triple.Opts.MacName` override) resolved by
 `ITB_Triple_Init`, and no binding exposes custom-primitive plug.

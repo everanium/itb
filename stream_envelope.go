@@ -29,8 +29,8 @@ func nomacStreamPrefix() ([]byte, error) {
 //
 // [Config.TagStubSize] sets the tag-size portion of the
 // reservation; zero (and a nil cfg) falls back to 32, which aligns
-// with every shipped MAC in macs/: HMAC-BLAKE3, HMAC-SHA256, KMAC-256
-// all emit 32-byte tags. User-pluggable custom MACs registered via
+// with each shipped MAC in macs/ (each emits a 32-byte tag). User-pluggable
+// custom MACs registered via
 // [github.com/everanium/itb/macs.Register] accept TagSize in
 // [16, 64] and therefore may emit tags of a different length; the
 // Low-Level authenticated paths probe the closure's tag length at

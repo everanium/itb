@@ -100,7 +100,7 @@ Per-chunk framing dominates below ~1 MiB. At chunkSize = 64 KiB every primitive 
 
 A 4 MiB plaintext at the default 16 MiB chunkSize emits exactly one frame per encrypt — the no-fragmentation baseline against which the chunked rows above can be read. The same homogeneous N=3 palette underlies every row. Source: `BenchmarkParallaxStream`.
 
-| Primitive | EncryptWriter | EncryptReader | DecryptWriter | DecryptReader | OneShotEncrypt |
+| Primitive | EncryptWriter | EncryptReader | DecryptWriter | DecryptReader | `OneShotEncrypt` |
 |---|---:|---:|---:|---:|---:|
 | Areion-SoEM-256 | 2011 | 2394 | **2516** | 1908 | 2099 |
 | Areion-SoEM-512 | 1824 | 2144 | **2360** | 1768 | 1977 |
@@ -147,9 +147,9 @@ The anchor primitive drives the per-slot KDF derivation and the schedule-seed ex
 
 | Anchor | MB/s @ 4 MiB | MB/s @ 16 MiB |
 |---|---:|---:|
+| BLAKE3 | **1398** | 1722 |
 | AES-128-CTR | 1351 | 1732 |
 | ChaCha20 | 1303 | **1744** |
-| BLAKE3 | **1398** | 1722 |
 
 At 4 MiB the three rows spread within ~7 % of each other; at 16 MiB they converge to within ~1 % — the schedule-seed work is fully amortised once steady-state per-segment work dominates the total.
 

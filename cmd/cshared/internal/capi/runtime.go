@@ -64,7 +64,7 @@ func PoolStats(dst []int64) (n int, st Status) {
 }
 
 // setLastErrMessage stores a raw diagnostic under the shared lastErr
-// slot for the runtime-family entries, which have no triple-side
+// slot for the runtime-family entries, which have no Triple-side
 // error to map and therefore no "triple:" prefix to carry.
 func setLastErrMessage(msg string) {
 	v := msg

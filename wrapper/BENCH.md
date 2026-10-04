@@ -107,6 +107,6 @@ Numbers below route through `triple.Pipeline` (Single Message via `EncryptMessag
 | **SipHash-2-4** | 477 | 514 |
 | **ChaCha20** | 489 | 522 |
 
-Decrypt runs 5–15 % faster than encrypt across ciphers (the encrypt path additionally derives per-pixel nonce material and the interlock-barrier fill state). ITB's per-pixel hashing dominates the combined cost, so the outer cipher choice moves the totals only at the margin: AES-NI and PRF-counter ciphers span ~20 % top to bottom, with the smaller-state BLAKE variants at the low end and the AES / SipHash / ChaCha families at the high end.
+Decrypt runs 5–15 % faster than encrypt across ciphers (the encrypt path additionally derives per-pixel nonce material and the Interlocked Barrier fill state). ITB's per-pixel hashing dominates the combined cost, so the outer cipher choice moves the totals only at the margin: AES-NI and PRF-counter ciphers span ~20 % top to bottom, with the smaller-state BLAKE variants at the low end and the AES / SipHash / ChaCha families at the high end.
 
 This file is updated by re-running the reproduction command and pasting the bench output into the tables. Numbers above are rounded to MB/s.

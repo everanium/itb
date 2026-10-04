@@ -8,7 +8,7 @@ package itb
 // inner loop dispatches per-pixel hashing four pixels at a time through
 // the batched ChainHash path; the per-pixel encoding/decoding work is
 // identical to the serial path. Non-batched primitives (BatchHash nil)
-// route directly to the legacy serial loop. The pure-Go counterpart of
+// route directly to the serial loop. The pure-Go counterpart of
 // the batched dispatch in process_cgo.go.
 func processChunk128(cfg *Config, noiseSeed, dataSeed *Seed128, nonce []byte, container []byte, data []byte, startPixel, totalPixels, startP, endP, totalBits, microBatch int, encode bool) {
 	_ = microBatch // adaptive CGO stride; unused on the non-cgo path (no C boundary to amortise)
@@ -269,7 +269,7 @@ func processChunk128(cfg *Config, noiseSeed, dataSeed *Seed128, nonce []byte, co
 // inner loop dispatches per-pixel hashing four pixels at a time through
 // the batched ChainHash path; the per-pixel encoding/decoding work is
 // identical to the serial path. Non-batched primitives (BatchHash nil)
-// route directly to the legacy serial loop. The pure-Go counterpart of
+// route directly to the serial loop. The pure-Go counterpart of
 // the batched dispatch in process_cgo.go.
 func processChunk256(cfg *Config, noiseSeed, dataSeed *Seed256, nonce []byte, container []byte, data []byte, startPixel, totalPixels, startP, endP, totalBits, microBatch int, encode bool) {
 	_ = microBatch // adaptive CGO stride; unused on the non-cgo path (no C boundary to amortise)

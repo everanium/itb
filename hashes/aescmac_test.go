@@ -49,11 +49,9 @@ func TestAESCMACDigestDependsOnEveryByte(t *testing.T) {
 	}
 }
 
-// TestAESCMACEmptyVsShortDistinct guards the seed-always-contributes
-// fix: empty input, 1-byte input, and 2-byte input must all produce
-// distinct digests. Pre-fix all three would collapse to AES_K(seed)
-// because the seed XOR was gated on len(data) >= 16 and short data
-// did not contribute either.
+// TestAESCMACEmptyVsShortDistinct verifies that empty input, 1-byte input,
+// and 2-byte input all produce distinct digests: the seed and short input
+// bytes always contribute to the final digest state.
 func TestAESCMACEmptyVsShortDistinct(t *testing.T) {
 	hashFn := AESCMACWithKey([16]byte{0xAA, 0xBB, 0xCC, 0xDD})
 	const seed0 uint64 = 1

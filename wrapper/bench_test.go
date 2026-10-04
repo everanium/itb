@@ -46,7 +46,7 @@ func benchOuterKey(b *testing.B, cn string) []byte {
 var benchTripleOnce sync.Once
 
 // benchTripleProfileName returns the deterministic name for a
-// bench-only triple profile keyed by (mode, outer cipher).
+// bench-only Triple profile keyed by (mode, outer cipher).
 func benchTripleProfileName(mode, cn string) string {
 	return "bench-" + mode + "-" + benchPrimitive + "-" + cn
 }

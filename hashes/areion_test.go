@@ -38,11 +38,9 @@ func TestAreion256DigestDependsOnEveryByte(t *testing.T) {
 	}
 }
 
-// TestAreion512DigestDependsOnEveryByte: same regression test for the
-// 512-bit variant. SoEM-512 input width is 64 bytes; pre-fix this
-// silently dropped bytes past offset 64 (so a 512-bit ITB nonce lost
-// the last 4 nonce bytes). The new chained absorb covers every byte
-// at every nonce-bit configuration.
+// TestAreion512DigestDependsOnEveryByte: regression test for the
+// 512-bit variant. SoEM-512 input width is 64 bytes; the chained absorb
+// covers every input byte across all nonce-bit configurations.
 func TestAreion512DigestDependsOnEveryByte(t *testing.T) {
 	hashFn, _, _ := Areion512Pair()
 	seed := [8]uint64{
@@ -170,10 +168,9 @@ func TestAreionEmptyVsShortDistinct(t *testing.T) {
 	}
 }
 
-// TestAreionEndToEndItb confirms the chain-rewritten Areion factories
-// still round-trip through the full ITB pipeline (Encrypt → Decrypt)
-// at every supported ITB key width, exercising the per-pixel hot path
-// that called into the broken truncation in production.
+// TestAreionEndToEndItb confirms the chained Areion factories round-trip
+// through the full ITB pipeline (Encrypt → Decrypt) at every supported
+// ITB key width, exercising the per-pixel hot path across widths.
 func TestAreionEndToEndItb(t *testing.T) {
 	plaintext := make([]byte, 4096)
 	for i := range plaintext {

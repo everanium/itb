@@ -28,17 +28,17 @@ func TestEncryptIntoWireIdentity(t *testing.T) {
 				pt := randomPlaintext(t, n)
 
 				buf := append([]byte(nil), pt...)
-				wireOld, err := s.EncryptInPlace(buf, cs)
+				wireRef, err := s.EncryptInPlace(buf, cs)
 				if err != nil {
 					t.Fatalf("EncryptInPlace: %v", err)
 				}
-				nonce := wireOld[:NonceSize]
+				nonce := wireRef[:NonceSize]
 
 				dst := make([]byte, n)
 				if err := transformInto(s, cs, nonce, dst, pt); err != nil {
 					t.Fatalf("transformInto: %v", err)
 				}
-				if !bytes.Equal(dst, wireOld[NonceSize:]) {
+				if !bytes.Equal(dst, wireRef[NonceSize:]) {
 					t.Fatal("EncryptInto core body differs from EncryptInPlace wire body under the same nonce")
 				}
 			})
@@ -47,8 +47,8 @@ func TestEncryptIntoWireIdentity(t *testing.T) {
 }
 
 // TestEncryptIntoRoundTripAgainstDecrypt round-trips EncryptInto
-// output through the pre-existing Decrypt entry, proving the
-// caller-assembled wire is consumed unchanged by the old path.
+// output through Decrypt, proving the caller-assembled wire is
+// consumed byte-identically by Decrypt.
 func TestEncryptIntoRoundTripAgainstDecrypt(t *testing.T) {
 	master := mustMaster(t)
 	for _, pp := range streamPaletteCases {

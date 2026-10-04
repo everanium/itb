@@ -19,7 +19,7 @@
 //
 //   - golang.org/x/crypto/blake2b — RFC 7693 vectors
 //   - golang.org/x/crypto/blake2s — RFC 7693 vectors
-//   - golang.org/x/crypto/chacha20 — RFC 7539 vectors
+//   - golang.org/x/crypto/chacha20 — RFC 8439 vectors
 //   - github.com/dchest/siphash — official SipHash test vectors
 //   - github.com/zeebo/blake3 — official BLAKE3 reference vectors
 //   - crypto/aes — NIST FIPS-197 vectors

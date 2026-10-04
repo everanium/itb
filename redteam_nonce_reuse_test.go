@@ -217,7 +217,7 @@ func xorBytes(a, b []byte) []byte {
 //
 // Under the archived (Single Ouroboros, barrier-off) construction, C1
 // XOR C2 concentrated recoverable structure into a narrow ~5.4x-floor
-// byte-histogram tilt that the demasker could exploit. Under 's
+// byte-histogram tilt that the demasker could exploit. Under ITB's
 // always-on 48-bit interlock, per-chunk mask triples permute plaintext
 // bits into 3 lane-scrambled region payloads BEFORE cobs + pixel encode,
 // so the C1 XOR C2 pixel bytes should carry no residual histogram tilt
@@ -356,9 +356,9 @@ func TestRedTeamNonceReuseLayerAHistogram(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Layer A' — Naive Crib-KPA XOR-constraint match on the wire.
+// Layer A' — Naive Crib KPA XOR-constraint match on the wire.
 //
-// The archived Single-Ouroboros nonce-reuse demasker enumerated 56
+// The archived Single Ouroboros nonce-reuse demasker enumerated 56
 // (noisePos, rotation) candidates per pixel; the correct pair extracts 7
 // data bits per channel matching the KNOWN plaintext XOR at (pixel,
 // channel). Under the shipped 3-region interlock split, the "known plaintext
@@ -367,7 +367,7 @@ func TestRedTeamNonceReuseLayerAHistogram(t *testing.T) {
 // across 3 lane-payloads under a per-chunk mask the attacker cannot
 // enumerate.
 //
-// This probe runs the naive Crib-KPA anyway (assuming — incorrectly —
+// This probe runs the naive Crib KPA anyway (assuming — incorrectly —
 // that plaintext byte b appears at region-payload-byte b, i.e. as if no
 // barrier were present). For each ciphertext pair, for each region, for
 // each candidate startPixel in [0, region_pixel_count) and each pixel of a

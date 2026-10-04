@@ -165,7 +165,7 @@ func run(args []string) int {
 // ensureProfile registers a parity-<hash>-v1 profile against the shipped
 // hashes.Registry entry for -hash. Names that do not start with the
 // "parity-" prefix are left untouched — the caller is expected to pass a
-// shipped profile whose registration already lives in the triple.
+// shipped profile whose registration already lives in the Triple registry.
 // [triple.ErrProfileExists] on a second call is not an error (an earlier
 // invocation of the same helper binary in the same test round already
 // registered the same profile).

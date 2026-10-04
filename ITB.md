@@ -66,10 +66,7 @@ Plaintext never reaches the regions as contiguous bytes. Every message first pas
 
 1. A 4-byte big-endian length prefix is prepended to the plaintext, allowing exact restoration of the original extent.
 2. The byte stream is processed in 48-bit (6-byte) chunks.
-3. For each chunk, lane distribution is evaluated through a **two-stage cascade fill** followed by combinadic unranking:
-   - **Stage 1 (Intermediate key derivation):** `lockSeed` and `interlock_nonce` derive intermediate key `K = deriveInterLockSeed(interlock_nonce)` under dedicated domain tag `0x04` via a full `ChainHash` cascade.
-   - **Stage 2 (Primer round + session feed-forward cascade):** The builder prepends `K` to form `lockComps = [K, Components...]`. Round 1 is a dedicated **primer round** seeded with intermediate key `K`; rounds `2 .. 1 + keyBits/width` feed forward through session components.
-   - **Combinadic unranking:** The per-chunk 13-byte input `[0x03 ‖ LE64(groupIdx) ‖ 4×0x00]` evaluated over `lockComps` yields a 128-bit rank, reduced via two-step divmod and combinadic unranking into balanced mask triple `(m0, m1, m2)` (§12).
+3. For each chunk, lane distribution is evaluated through a **two-stage cascade fill** (`lockSeed` + `interlock_nonce`) followed by combinadic unranking into balanced mask triple `(m0, m1, m2)` (see §12 for full derivation).
 4. `chunk48lock(x, m0, m1, m2)` compresses the 48-bit chunk into three 16-bit lane values `(l0, l1, l2)` using three BMI2 `PEXTQ` instructions on x86 (or portable fallback) in ~3 cycles per chunk in constant time.
 5. Region 0 receives `l0` (2 bytes), Region 1 receives `l1`, and Region 2 receives `l2`, advancing in lockstep.
 6. Each region's lane buffer begins with its respective fragment of the interlock nonce. The accumulated payload enters COBS encoding; these fragments sit inside the Pixel Barrier's encryption coverage and are authenticated under AEAD modes (MAC-Inside-Encrypt composition). Nonce splitting is derived deterministically from the configured nonce width, requiring no wire length metadata.
@@ -291,7 +288,7 @@ This reaches the full `[0, A) × [0, B)` space near-uniformly. The naive alterna
 
 **Why KPA candidates do not break the barrier.** An attacker can calculate 56 candidate hash outputs per pixel, but all 56 are equally consistent with observation. Without ChainHash inversion, the candidate space cannot be narrowed. Under an invertible primitive, inverting ChainHash bypasses the Pixel Barrier's per-pixel ambiguity, but the Rank Barrier's per-chunk permutation remains — the mapping from plaintext bits to lane positions is a hidden secret that primitive inversion cannot recover. Direct guessing of the 62-bit-per-pixel configuration map requires `2^(62·P)` attempts (≈ 2^75950 for 1024-bit keys), far exceeding the key space.
 
-**Cost and mandatory enforcement.** On x86 BMI2, the apply kernel executes via three PEXT (forward) and three PDEP (inverse) operations per chunk. Unranking runs on AVX-512F or AVX2 SIMD kernels, with portable Pure Go fallbacks. Every exported entrypoint of the `itb.Encrypt3x*` and `Decrypt*` families, as well as all shipped `triple` profiles, routes through the Interlocked Barrier unconditionally; no runtime bypass knob exists.
+**Cost and mandatory enforcement.** On x86 BMI2, the apply kernel executes via three PEXT (forward) and three PDEP (inverse) operations per chunk. Unranking runs on AVX-512F or AVX2 SIMD kernels, with portable Pure Go fallbacks. Every exported entrypoint of the `itb.Encrypt3x*` and `Decrypt*` families, as well as all shipped `Triple` profiles, routes through the Interlocked Barrier unconditionally; no runtime bypass knob exists.
 
 ## 13. Quantum Resistance
 

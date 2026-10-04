@@ -8,7 +8,7 @@ import (
 	"github.com/everanium/itb/hashes"
 )
 
-// prims enumerates the six primitives with their expected key and block
+// prims enumerates the supported primitives with their expected key and block
 // (output) widths.
 var prims = []struct {
 	name      string

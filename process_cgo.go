@@ -202,7 +202,7 @@ func callC(noiseHashes, dataHashes []uint64, container, data []byte, startPixel,
 //     unchanged — the batched path only changes how hashes are
 //     produced, not how container bytes are touched. Tail of 0–3
 //     leftover pixels falls back to single-call blockHash128.
-//   - Otherwise the legacy single-call blockHash128 loop is used
+//   - Otherwise the serial single-call blockHash128 loop is used
 //     verbatim. Backward compatible with all existing primitives that
 //     do not provide a BatchHash field.
 func processChunk128(cfg *Config, noiseSeed, dataSeed *Seed128, nonce []byte, container []byte, data []byte, startPixel, totalPixels, startP, endP, totalBits, microBatch int, encode bool) {
@@ -293,7 +293,7 @@ func processChunk128(cfg *Config, noiseSeed, dataSeed *Seed128, nonce []byte, co
 //     unchanged — the batched path only changes how hashes are
 //     produced, not how container bytes are touched. Tail of 0–3
 //     leftover pixels falls back to single-call blockHash256.
-//   - Otherwise the legacy single-call blockHash256 loop is used
+//   - Otherwise the serial single-call blockHash256 loop is used
 //     verbatim. Backward compatible with all existing primitives that
 //     do not provide a BatchHash field.
 func processChunk256(cfg *Config, noiseSeed, dataSeed *Seed256, nonce []byte, container []byte, data []byte, startPixel, totalPixels, startP, endP, totalBits, microBatch int, encode bool) {

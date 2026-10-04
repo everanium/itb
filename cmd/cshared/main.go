@@ -618,7 +618,7 @@ func ITB_Triple_Free(handle C.uintptr_t) C.int {
 
 // Encrypts a plaintext through the Pipeline's Streaming AEAD chain
 // (or Non-AEAD when the profile is No MAC) — parallax
-// encrypt-Reader → itb Triple 8-seed Streaming AEAD (or Non-AEAD) →
+// encrypt-Reader → itb Triple Streaming AEAD (or Non-AEAD) →
 // wrapper wrap-Writer. Buffer-in / buffer-out on the FFI side; the
 // Pipeline handles the streaming wiring internally via bytes.Reader /
 // bytes.Buffer.

@@ -160,8 +160,8 @@ func randomPlaintext(t *testing.T, n int) []byte {
 
 // TestStreamEnvelopeParityAEADvsNoMAC verifies that the wire byte
 // length of a Streaming AEAD stream equals the wire byte length of
-// the corresponding No MAC stream at every plaintext size — the D18
-// mode-ambiguity invariant. The dummy32MAC yields 32-byte tags,
+// the corresponding No MAC stream at every plaintext size — the
+// mode-ambiguity length-parity invariant. The dummy32MAC yields 32-byte tags,
 // matching the No MAC nomacTagStubSizeCfg default. A fixed nonce is
 // injected via testNonceOverride so the mask-driven byte
 // distribution across the three regions is identical on both paths,
@@ -612,8 +612,8 @@ func TestSingleMessageAEADRoundTripAfterStubReservation(t *testing.T) {
 	}
 }
 
-// TestStreamCfgEnvelopeParity_NoMACvsAEAD ratifies the D18
-// mode-ambiguity envelope invariants (items 1/2/3) via the Cfg
+// TestStreamCfgEnvelopeParity_NoMACvsAEAD ratifies the
+// mode-ambiguity envelope invariants via the Cfg
 // IO-Driven path. With a fixed plaintext + fixed 8 seeds
 // + fixed nonce + fixed chunkSize, encrypt through both
 // [EncryptStream3xCfg] (No MAC) and [EncryptStreamAuth3xCfg] (AEAD)

@@ -119,7 +119,7 @@ func usesMessage(shape string) bool {
 // and each worker pins payload-sized buffers for the whole run.
 const maxWorkersFlag = 10
 
-// profileSurface resolves a registered triple profile to the shape
+// profileSurface resolves a registered Triple profile to the shape
 // family its Mode exposes — shapeStream for the streaming modes,
 // shapeMessage for the Single Message modes — by reading the profile
 // record the registry holds, so every registered name (shipped or
@@ -129,7 +129,7 @@ const maxWorkersFlag = 10
 func profileSurface(name string) (string, error) {
 	p, err := triple.Lookup(name)
 	if err != nil {
-		return "", fmt.Errorf("--profile %q is not a registered triple profile", name)
+		return "", fmt.Errorf("--profile %q is not a registered Triple profile", name)
 	}
 	switch {
 	case strings.HasPrefix(p.Mode, "streaming"):
@@ -147,26 +147,13 @@ func profileSurface(name string) (string, error) {
 // primitive whose profiles need this fill.
 const keystreamFillCipher = "aescmac"
 
-// fillKeystreamLayers folds a keystream primitive into opts for any
-// layer the named profile leaves unfilled but the operator asked for.
-//
-// A profile built around a primitive that is safe only inside the
-// Interlocked Barrier ships with an empty parallax palette and no
-// outer cipher: both layers run outside the barrier, where that
-// primitive would stand bare, so the recipe leaves them unnamed
-// rather than naming a primitive that must not key them. Engaging
-// either layer therefore needs a keystream-capable primitive supplied
-// from outside the recipe; without it construction fails on a palette
-// below its minimum or an unnamed outer cipher, and the primitive
-// that most deserves stressing becomes the one that cannot be
-// stressed with those layers engaged.
-//
-// Overrides fold into the resolved record the blob carries, so the
-// receiver rebuilds the same shape from the blob alone.
+// fillKeystreamLayers injects a keystream primitive (keystreamFillCipher) into
+// opts for any parallax or outer-cipher layer requested by the operator that
+// the profile leaves unconfigured. Overrides fold into the resolved record.
 func fillKeystreamLayers(name string, opts *triple.Opts, wantParallax, wantWrapper bool) (bool, error) {
 	p, err := triple.Lookup(name)
 	if err != nil {
-		return false, fmt.Errorf("--profile %q is not a registered triple profile", name)
+		return false, fmt.Errorf("--profile %q is not a registered Triple profile", name)
 	}
 	filled := false
 	if wantParallax && len(p.ParallaxPalette) == 0 {
@@ -597,7 +584,7 @@ func parseFlags(argv []string) (config, error) {
 		parallaxStr = fs.String("parallax", "on", "parallax layer: on | off")
 		wrapperStr  = fs.String("wrapper", "on", "wrapper (Outer cipher) layer: on | off")
 
-		profile        = fs.String("profile", "", "exercise this single registered triple profile (overrides --shape with the profile's surface); empty = shape-based profile pair")
+		profile        = fs.String("profile", "", "exercise this single registered Triple profile (overrides --shape with the profile's surface); empty = shape-based profile pair")
 		keyBits        = fs.Int("key-bits", 0, "per-seed key width in bits: 512 | 1024 | 2048; 0 = profile default (1024)")
 		nonceBits      = fs.Int("nonce-bits", 0, "on-wire nonce width in bits: 128 | 256 | 512; 0 = profile default (512)")
 		chunkSizeStr   = fs.String("chunk-size", "0", "streaming chunk-size budget (e.g. 4MB); 0 = profile default; inert for pure message shape")

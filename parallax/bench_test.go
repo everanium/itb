@@ -948,7 +948,7 @@ func BenchmarkParallaxPaletteStreaming(b *testing.B) {
 // Each sub-bench runs one streaming entry over a 4 MiB plaintext
 // across each PRF-grade registry primitive at DefaultChunkSize. The
 // 4 MiB size matches bench_test.go so the streaming numbers contrast
-// directly with the parallel one-shot Encrypt numbers under the same
+// directly with the parallel Single Message Encrypt numbers under the same
 // fixed plaintext.
 func BenchmarkParallaxStream(b *testing.B) {
 	plaintext := streamBenchRandom(b, streamBenchPlaintextLen)
@@ -1053,8 +1053,8 @@ func BenchmarkParallaxStream(b *testing.B) {
 			}
 		})
 
-		// Companion one-shot Encrypt at the same primitive / palette
-		// so the streaming row can be read alongside the one-shot row
+		// Companion Single Message Encrypt at the same primitive / palette
+		// so the streaming row can be read alongside the Single Message row
 		// in the same go test -bench run output.
 		b.Run(fmt.Sprintf("%s/OneShotEncrypt", name), func(b *testing.B) {
 			b.ReportAllocs()

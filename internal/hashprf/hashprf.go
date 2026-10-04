@@ -1,7 +1,7 @@
 // Package hashprf builds keyed pseudo-random functions over hash-based
 // ITB registry primitives, exposing each as a fixed-output-width PRF.
 //
-// The six primitives split into two families:
+// The supported primitives split into two families:
 //
 //   - Areion family ("areion256", "areion512") — keyed via the ITB
 //     registry HashFunc factories (hashes.Areion256PairWithKey /

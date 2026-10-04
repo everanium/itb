@@ -82,12 +82,12 @@
 // resolves through [Find] / [Make] / [MakeIncremental] /
 // [MakeMACPair] exactly like a shipped one and — transitively —
 // through every consumer that resolves MACs by name, including
-// triple profile MacName resolution: a registered profile whose
+// Triple profile MacName resolution: a registered profile whose
 // MacName references the custom primitive initialises, encrypts,
 // decrypts, and round-trips seed blobs with no further plumbing.
 // [Registry] itself is not extended — user entries live in a
 // separate mutex-guarded store. Runtime registration is a Go-native
-// API only; bindings are triple-only and do not expose custom-MAC
+// API only; bindings are Triple-only and do not expose custom-MAC
 // plug.
 //
 // A seed blob exported under a custom MAC name records the name, not
@@ -117,7 +117,7 @@
 //		log.Fatal(err)
 //	}
 //	// "b2b512_mac" now resolves via Find / Make / MakeIncremental
-//	// and can serve as a registered triple profile's MacName.
+//	// and can serve as a registered Triple profile's MacName.
 //
 // [BuildHMAC] wraps a primitive's unkeyed hash.Hash form in the HMAC
 // construction (RFC 2104); [BuildKeyedHash] uses a primitive's

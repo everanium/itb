@@ -100,8 +100,7 @@ func AESCMACWithKey(aesKey [16]byte) itb.HashFunc128 {
 // compiler inline this at all call sites (CBC-MAC slow path in
 // the ChaCha20 closure here, AES-CMAC's per-block absorb).
 //
-// Lives in this file (alongside the AES-CMAC factory) because
-// AES-CMAC was the first user; the ChaCha20 closure shares it.
+// Shared across the AES-CMAC factory and the ChaCha20 CBC-MAC closure.
 // The Areion-SoEM closures in itb/areion.go carry an internal
 // copy with the same shape since they cannot import this
 // subpackage without a dependency cycle.

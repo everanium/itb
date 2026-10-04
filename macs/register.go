@@ -39,7 +39,7 @@ var (
 //
 // The registered primitive becomes visible through [Find], [Make],
 // [MakeIncremental], and [MakeMACPair], and — transitively — through
-// every consumer that resolves MACs by name, including triple profile
+// every consumer that resolves MACs by name, including Triple profile
 // MacName resolution. [Registry] itself is not extended — user
 // entries live in a separate mutex-guarded slice — and the FFI shim
 // reaches MACs only through the resolved [triple.Profile.MacName], so

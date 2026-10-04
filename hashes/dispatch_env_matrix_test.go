@@ -63,12 +63,6 @@ func matrixFamilies() []matrixFamily {
 			"HasVAESAVX512X16": &aesitbasm.HasVAESAVX512X16, "HasVAESAVX2X16": &aesitbasm.HasVAESAVX2X16,
 			"HasAVXAESNIX16": &aesitbasm.HasAVXAESNIX16, "HasAESNIX16": &aesitbasm.HasAESNIX16,
 			"FusedHasVAESAVX512X8": &aesitbasm.FusedHasVAESAVX512X8}},
-		{"aescmacasm", "aes", map[string]*bool{
-			"FusedHasVAESAVX512": &aescmacasm.FusedHasVAESAVX512, "FusedHasVAESAVX2": &aescmacasm.FusedHasVAESAVX2,
-			"FusedHasAVXAESNI": &aescmacasm.FusedHasAVXAESNI, "FusedHasAESNI": &aescmacasm.FusedHasAESNI,
-			"HasVAESAVX512X16": &aescmacasm.HasVAESAVX512X16, "HasVAESAVX2X16": &aescmacasm.HasVAESAVX2X16,
-			"HasAVXAESNIX16": &aescmacasm.HasAVXAESNIX16, "HasAESNIX16": &aescmacasm.HasAESNIX16,
-			"FusedHasVAESAVX512X8": &aescmacasm.FusedHasVAESAVX512X8}},
 		{"areionasm", "areion", map[string]*bool{
 			"HasVAESAVX512": &areionasm.HasVAESAVX512, "HasVAESAVX2NoAVX512": &areionasm.HasVAESAVX2NoAVX512, "HasARMAESBatched": &areionasm.HasARMAESBatched,
 			"FusedHasVAESAVX512": &areionasm.FusedHasVAESAVX512, "FusedHasVAESAVX2": &areionasm.FusedHasVAESAVX2, "FusedHasAESNI": &areionasm.FusedHasAESNI,
@@ -77,8 +71,14 @@ func matrixFamilies() []matrixFamily {
 		gpr("blake2basm", &blake2basm.FusedHasAVX512, &blake2basm.FusedHasAVX2, &blake2basm.FusedHasGPR, &blake2basm.HasAVX512X16, &blake2basm.HasAVX2X16, &blake2basm.HasGPRX16, &blake2basm.FusedHasAVX512X8),
 		gpr("blake2sasm", &blake2sasm.FusedHasAVX512, &blake2sasm.FusedHasAVX2, &blake2sasm.FusedHasGPR, &blake2sasm.HasAVX512X16, &blake2sasm.HasAVX2X16, &blake2sasm.HasGPRX16, &blake2sasm.FusedHasAVX512X8),
 		gpr("blake3asm", &blake3asm.FusedHasAVX512, &blake3asm.FusedHasAVX2, &blake3asm.FusedHasGPR, &blake3asm.HasAVX512X16, &blake3asm.HasAVX2X16, &blake3asm.HasGPRX16, &blake3asm.FusedHasAVX512X8),
-		gpr("chacha20asm", &chacha20asm.FusedHasAVX512, &chacha20asm.FusedHasAVX2, &chacha20asm.FusedHasGPR, &chacha20asm.HasAVX512X16, &chacha20asm.HasAVX2X16, &chacha20asm.HasGPRX16, &chacha20asm.FusedHasAVX512X8),
+		{"aescmacasm", "aes", map[string]*bool{
+			"FusedHasVAESAVX512": &aescmacasm.FusedHasVAESAVX512, "FusedHasVAESAVX2": &aescmacasm.FusedHasVAESAVX2,
+			"FusedHasAVXAESNI": &aescmacasm.FusedHasAVXAESNI, "FusedHasAESNI": &aescmacasm.FusedHasAESNI,
+			"HasVAESAVX512X16": &aescmacasm.HasVAESAVX512X16, "HasVAESAVX2X16": &aescmacasm.HasVAESAVX2X16,
+			"HasAVXAESNIX16": &aescmacasm.HasAVXAESNIX16, "HasAESNIX16": &aescmacasm.HasAESNIX16,
+			"FusedHasVAESAVX512X8": &aescmacasm.FusedHasVAESAVX512X8}},
 		gpr("siphashasm", &siphashasm.FusedHasAVX512, &siphashasm.FusedHasAVX2, &siphashasm.FusedHasGPR, &siphashasm.HasAVX512X16, &siphashasm.HasAVX2X16, &siphashasm.HasGPRX16, &siphashasm.FusedHasAVX512X8),
+		gpr("chacha20asm", &chacha20asm.FusedHasAVX512, &chacha20asm.FusedHasAVX2, &chacha20asm.FusedHasGPR, &chacha20asm.HasAVX512X16, &chacha20asm.HasAVX2X16, &chacha20asm.HasGPRX16, &chacha20asm.FusedHasAVX512X8),
 	}
 }
 

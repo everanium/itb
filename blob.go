@@ -322,9 +322,9 @@ type Blob512Opts struct {
 // ───────────────────────────────────────────────────────────────────
 
 // Blob256 is the 256-bit width counterpart of [Blob512]. Hash key
-// fields are [32]byte (areion256, blake3, blake2s, blake2b256,
-// chacha20 — all 32-byte fixed key). See [Blob512] for the full
-// API contract; the surface mirrors symmetrically across widths.
+// fields are [32]byte, matching 256-bit fixed-key registry primitives.
+// See [Blob512] for the full API contract; the surface mirrors symmetrically
+// across widths.
 type Blob256 struct {
 	Mode int
 

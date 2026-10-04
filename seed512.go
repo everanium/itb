@@ -120,7 +120,7 @@ type Seed512 struct {
 	Components []uint64
 	Hash       HashFunc512
 	// BatchHash is the optional 4-way batched counterpart of Hash. nil
-	// disables batched dispatch and preserves the legacy single-call
+	// disables batched dispatch and preserves the serial single-call
 	// code path; non-nil routes processChunk512 through
 	// BatchChainHash512 four pixels at a time.
 	BatchHash BatchHashFunc512

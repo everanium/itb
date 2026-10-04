@@ -11,8 +11,8 @@ import (
 // PRF-CTR keystreams.
 const hashCTRNonceSize = 16
 
-// newPrfHashCTR validates the key and nonce lengths for one of the six
-// hash-based primitives, builds the keyed PRF via internal/hashprf, and
+// newPrfHashCTR validates the key and nonce lengths for a hash-based
+// PRF primitive, builds the keyed PRF via internal/hashprf, and
 // returns a prfHashCTR keystream.
 func newPrfHashCTR(name string, key, nonce []byte) (Keystream, error) {
 	ksize, err := hashprf.KeySize(name)

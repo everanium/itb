@@ -9,7 +9,7 @@ package itb
 // scaffolding with a focused related-seed χ² histogram probe.
 //
 // The archived Phase 2e sweep (archived in
-// archive/archive/REDTEAM.md § Phase 2e) recorded, on a Single-Ouroboros
+// archive/REDTEAM.md § Phase 2e) recorded, on a Single Ouroboros
 // overlay-disengaged encode of the same plaintext under the same nonce,
 // a per-primitive axis-hit ciphertext-XOR χ² of **CRC128 ≈ 42.5M**
 // and **FNV-1a ≈ 56.7M** against a neutralised cluster near **6.1M**
@@ -398,15 +398,15 @@ func TestRedTeamRelatedSeedControl(t *testing.T) {
 			"bit_bal_mean_abs":  meanAbs,
 			"bit_bal_max_abs":   maxAbs,
 			"probe_shape":       "process128Cfg (Single Ouroboros, no barrier)",
-			"pre_v030_baseline": map[string]float64{"CRC128": 42454524, "FNV-1a": 56680753}[prim.name],
+			"archived_baseline": map[string]float64{"CRC128": 42454524, "FNV-1a": 56680753}[prim.name],
 		})
 	}
 
 	emitJSONRS(t, "related_seed_control", map[string]any{
 		"description":     "archived axis-hit reproduction via process128Cfg",
-		"pre_v030_source": "archive/archive/REDTEAM.md § Phase 2e",
-		"pre_v030_target": map[string]float64{"CRC128": 42454524, "FNV-1a": 56680753},
-		"pre_v030_floor":  6100000.0,
+		"archived_source": "archive/REDTEAM.md § Phase 2e",
+		"archived_target": map[string]float64{"CRC128": 42454524, "FNV-1a": 56680753},
+		"archived_floor":  6100000.0,
 		"cells":           results,
 	})
 }
@@ -707,8 +707,8 @@ func TestRedTeamRelatedSeedMatrix(t *testing.T) {
 			"max_chi2_all_axes_cell":    maxCell,
 			"max_chi2_excl_noise":       nonNoiseMaxChi,
 			"max_chi2_excl_noise_cell":  nonNoiseMaxCell,
-			"pre_v030_axis_hit_target":  map[string]float64{"CRC128": 42454524, "FNV-1a": 56680753}[prim.name],
-			"pre_v030_neutralised_band": 6100000.0,
+			"archived_axis_hit_target":  map[string]float64{"CRC128": 42454524, "FNV-1a": 56680753}[prim.name],
+			"archived_neutralised_band": 6100000.0,
 		}
 	}
 

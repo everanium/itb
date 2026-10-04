@@ -9,7 +9,7 @@ import (
 	"github.com/everanium/itb/internal/hashprf"
 )
 
-// hashCiphers enumerates the six hash-based PRF-CTR primitives with their
+// hashCiphers enumerates the hash-based PRF-CTR primitives with their
 // expected key and nonce sizes and PRF block (output) widths.
 var hashCiphers = []struct {
 	name      string
@@ -26,7 +26,7 @@ var hashCiphers = []struct {
 }
 
 // TestHashKeyNonceSizes verifies the declared key and nonce sizes for each
-// of the six hash-based PRF-CTR primitives.
+// hash-based PRF-CTR primitive.
 func TestHashKeyNonceSizes(t *testing.T) {
 	for _, c := range hashCiphers {
 		ks, err := KeySize(c.name)

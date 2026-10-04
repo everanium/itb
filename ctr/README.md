@@ -6,7 +6,7 @@
 
 **No bespoke cryptography.** ITB composes established, standardized primitives rather than introducing new cryptographic designs. Security properties and regulatory status are inherited from the underlying primitives; see [README.md](../README.md) for jurisdictional certification details.
 
-> **See [CONSTRUCTIONS.md](CONSTRUCTIONS.md) for the per-primitive construction descriptions.** The registry names (`areion256`, `areion512`, `blake2b256`, `blake2b512`, `blake2s`, `blake3`, `aescmac`, `siphash24`, `chacha20`) are short identifiers shared with the `hashes/` registry; here they select a counter-mode keystream construction, not the per-pixel hash wrapper of the same name. Read CONSTRUCTIONS.md before assuming a particular standard's exact byte layout.
+> **See [CONSTRUCTIONS.md](CONSTRUCTIONS.md) for the per-primitive construction descriptions.** The registry names are short identifiers shared with the `hashes/` registry; here they select a counter-mode keystream construction, not the per-pixel hash wrapper of the same name. Read CONSTRUCTIONS.md before assuming a particular standard's exact byte layout.
 
 This package builds a counter-mode keystream from a registry primitive and is the **single source of truth for cipher key and nonce sizes**. It is consumed by the `wrapper/` package (the format-deniability outer cipher) and by the `parallax/` package; both rely on this package's `KeySize` / `NonceSize` declarations rather than hardcoding cipher dimensions of their own.
 

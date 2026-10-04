@@ -630,9 +630,7 @@ func TestBlobImportRejectsOversizedMACKey(t *testing.T) {
 // one upper bound. Three boundary cases:
 //
 //   - 130 hex chars: one past the cap, rejected as malformed.
-//   - 1026 hex chars: comfortably past the cap, also rejected (the
-//     legacy 1024-byte-tolerated payload the earlier looser cap
-//     would have accepted).
+//   - 1026 hex chars: comfortably past the cap, also rejected.
 //   - 128 hex chars (exact cap): passes the hex-length gate — the
 //     Import still fails downstream on the intentionally-malformed
 //     Components / KeyBits shape, so the assertion is only that the

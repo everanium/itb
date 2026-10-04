@@ -388,7 +388,7 @@ _ = seed
 
 **Fused-hook fields on the Spec are user-settable.** Beyond `Make{N}Pair`, `hashes.Spec` exposes optional fast-path fields — `FusedChainHash{N}` and `FusedChainHash{N}x8` (four- / eight-lane ChainAbsorb cascades for `hashes.NewSeed{N}` construction speed), `InterlockFillBatch16x{W}` and `InterlockFillBatch32x{W}` (batched Interlocked Barrier fill kernels on the per-chunk hot path). The factory above declares none of them, and the seed built from the closures alone produces and decrypts the same wire — the hooks are performance paths only. A registered primitive that ships alongside a hand-tuned AVX-512 / VAES / SHA-NI kernel populates these fields at Register time; the shipped registry entries all do this, which is what buys tier-1 throughput on their target microarchitectures. Users who care about throughput on a custom primitive follow the same pattern: write the batched kernel, stash the callback in the Spec at Register time.
 
-The shipped `Registry` itself is immutable — user entries live in a separate mutex-guarded slice — so the FFI iteration surface (`ITB_Triple_HashNames`) is unaffected by runtime registrations. `hashes.Register` is a Go-native API only. Bindings are triple-only and do not expose custom-primitive plug; a binding caller who needs a custom PRF wires the Go-native surface directly.
+The shipped `Registry` itself is immutable — user entries live in a separate mutex-guarded slice — so the FFI iteration surface (`ITB_Triple_HashNames`) is unaffected by runtime registrations. `hashes.Register` is a Go-native API only. Bindings are Triple-only and do not expose custom-primitive plug; a binding caller who needs a custom PRF wires the Go-native surface directly.
 
 The `triple.Pipeline` facade selects primitives by name from `hashes.Find`, so a registered primitive is reachable through `triple.Init(profile, opts)` provided the profile's chosen inner-hash name resolves to the registered Spec. Custom primitives supplied directly as closures do not appear in `Find` and are not reachable through the Pipeline facade; use either the Register path or the Low-Level `*Cfg` entry points depending on which shape the surrounding call site prefers.
 
@@ -451,9 +451,9 @@ func main() {
 }
 ```
 
-`bDst := &itb.Blob512{}; err := bDst.Import3Cfg(blob, cfg)` on the receiver restores per-slot hash keys + Components into `bDst` and restores the captured `*itb.Config` into `cfg`. `Hash` / `BatchHash` on each restored seed stay nil so the caller wires them from the saved `Key*` bytes through the matching factory (`Areion512PairWithKey` / `BLAKE2b512PairWithKey` / etc.). See the `itb.Blob512` doc-comment for the receiver-side wiring pattern.
+`bDst := &itb.Blob512{}; err := bDst.Import3Cfg(blob, cfg)` on the receiver restores per-slot hash keys + Components into `bDst` and restores the captured `*itb.Config` into `cfg`. `Hash` / `BatchHash` on each restored seed stay nil so the caller wires them from the saved `Key*` bytes through the matching PairWithKey factory. See the `itb.Blob512` doc-comment for the receiver-side wiring pattern.
 
-SipHash-2-4 has no internal fixed key — the paired (single, batched) constructor returns a 2-tuple without a key element; the caller passes `nil` for every `KeyN..KeyS3` argument when exporting via `Blob128.Export3Cfg`. BLAKE2b-512, BLAKE3, AES-CMAC, ChaCha20, and the remaining registry primitives all follow the shipped paired-factory shape used above.
+SipHash-2-4 has no internal fixed key — the paired (single, batched) constructor returns a 2-tuple without a key element; the caller passes `nil` for every `KeyN..KeyS3` argument when exporting via `Blob128.Export3Cfg`. Every other registry primitive follows the shipped paired-factory shape used above.
 
 Name-keyed dispatch (used by the FFI layer; works for any code that
 selects the primitive at runtime). Same variadic key pattern, but key

@@ -8,7 +8,7 @@ import (
 )
 
 // shippedMixedProfileNamesCapi mirrors the shipped mixed profile
-// identifiers exposed by the triple package. Kept as a local literal
+// identifiers exposed by the Triple package. Kept as a local literal
 // slice so the test suite exercises the FFI-visible name shape
 // verbatim.
 var shippedMixedProfileNamesCapi = []string{

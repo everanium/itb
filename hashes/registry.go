@@ -285,7 +285,7 @@ const (
 // primitives added via [Register] live in a separate mutex-guarded
 // slice and are exposed together with Registry via [AllPrimitives].
 // The FFI iteration surface deliberately observes only Registry so
-// bindings — which are triple-only and cannot themselves call Register
+// bindings — which are Triple-only and cannot themselves call Register
 // — see a stable primitive set.
 var Registry = [10]Spec{
 	{Name: CipherAESITB128, Width: W128, Class: ClassNPRF, FusedChainHash128: aesITB128FusedChainHash, FusedChainHash128x8: aesITB128FusedChainHash128x8, InterlockFillBatch16: aesITB128InterlockFillBatch16},

@@ -31,8 +31,8 @@ import (
 // container floor at the shipped keyBits so per-Third pixel counts
 // clamp to MinPixels on every third. Above that floor the cobsLens
 // distribution begins to influence container width; that regime is
-// out of scope for this specific parity property (which is what the
-// D18 items 1/2/3 actually claim).
+// out of scope for this specific parity property (which addresses
+// the mode-ambiguity length-invariance invariants).
 func TestStreamModeAmbiguityParityAEADvsNoMAC(t *testing.T) {
 	// Small sizes so the per-Third pixel count clamps to MinPixels on
 	// every third — the container size is then a function only of
@@ -73,10 +73,10 @@ func TestStreamModeAmbiguityParityAEADvsNoMAC(t *testing.T) {
 				t.Fatalf("No-MAC EncryptStream: %v", err)
 			}
 
-			// Full-stream length parity. Ratifies D18 item 1
-			// ("streamID and dummy prefixes are the same length") +
-			// item 2 ("chunk containers pack tags and tag-stubs into
-			// symmetric positions") through the Pipeline layer.
+			// Full-stream length parity. Ratifies mode-ambiguity length
+			// parity ("streamID and dummy prefixes are the same length" +
+			// "chunk containers pack tags and tag-stubs into symmetric
+			// positions") through the Pipeline layer.
 			if aeadWire.Len() != plainWire.Len() {
 				t.Fatalf("wire byte-length mismatch at plaintext=%d: aead=%d nomac=%d (diff=%d)",
 					sz, aeadWire.Len(), plainWire.Len(), aeadWire.Len()-plainWire.Len())

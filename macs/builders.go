@@ -19,7 +19,7 @@ type HMACSpec struct {
 	Name string
 
 	// KeySize is the recommended key size in bytes; the key length
-	// triple session initialisation generates for the primitive.
+	// Triple session initialisation generates for the primitive.
 	// Zero defaults to 32. HMAC accepts keys of arbitrary length
 	// (RFC 2104).
 	KeySize int
@@ -44,8 +44,8 @@ type KeyedHashSpec struct {
 
 	// KeySize is the required key size in bytes — the caller must
 	// supply a value the primitive's keyed constructor accepts
-	// (BLAKE3's 32, SipHash-2-4's 16, BLAKE2b-256 up to 64,
-	// BLAKE2b-512 up to 64, HMAC-SHA-512-shaped primitives keyed at
+	// (BLAKE2b-256 up to 64, BLAKE2b-512 up to 64, BLAKE3's 32,
+	// SipHash-2-4's 16, HMAC-SHA-512-shaped primitives keyed at
 	// the hash's 128-byte block size, and so on). A zero KeySize
 	// returns a directive error from [BuildKeyedHash]; implicit
 	// probe-ladder discovery was removed to avoid hidden key-size
@@ -137,10 +137,10 @@ func BuildHMAC(hashName string, spec HMACSpec) (Spec, error) {
 // Explicit KeySize required — implicit ladder discovery removed to
 // avoid hidden key-size selection in a cryptographic construction.
 // KeyedHashSpec.KeySize must be non-zero and match a key length the
-// primitive's keyed constructor accepts (BLAKE3's 32, SipHash-2-4's
-// 16, BLAKE2b-256 up to 64, BLAKE2b-512 up to 64, HMAC-SHA-512-shaped
-// primitives keyed at the hash's 128-byte block size, and so on); a
-// zero KeySize returns a directive error, and any explicit value the
+// primitive's keyed constructor accepts (BLAKE2b-256 up to 64,
+// BLAKE2b-512 up to 64, BLAKE3's 32, SipHash-2-4's 16,
+// HMAC-SHA-512-shaped primitives keyed at the hash's 128-byte block
+// size, and so on); a zero KeySize returns a directive error, and any explicit value the
 // constructor rejects fails eagerly at build time. A zero MinKeyBytes
 // defaults to 16 (the [Register] floor) when the constructor accepts
 // a 16-byte key and to KeySize otherwise (exact-length key

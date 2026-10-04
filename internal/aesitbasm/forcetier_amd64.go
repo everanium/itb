@@ -10,7 +10,7 @@ import (
 
 // init applies the two forcing variables in order: ITB_FORCE_HASH_TIER
 // to every AES-ITB dispatch family (fused cascade and the batch-16
-// interlock fill), then ITB_FORCE_INTERLOCK_PRF_FILL_TIER to
+// Interlocked Barrier fill), then ITB_FORCE_INTERLOCK_PRF_FILL_TIER to
 // the batch-16 family alone, so the second variable can re-select a
 // batch-16 arm after the first has scalarised everything. Each variable
 // is handled by its own function; a forced arm the silicon cannot

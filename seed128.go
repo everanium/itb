@@ -16,11 +16,6 @@ import (
 //
 // Example wrappers:
 //
-//	// SipHash-2-4 (natural 128-bit keyed hash)
-//	func sipHash128(data []byte, seed0, seed1 uint64) (uint64, uint64) {
-//	    return siphash.Hash128(seed0, seed1, data)
-//	}
-//
 //	// AES-CMAC (128-bit, AES-NI hardware acceleration)
 //	func aesCMAC128(data []byte, seed0, seed1 uint64) (uint64, uint64) {
 //	    var key [16]byte
@@ -28,6 +23,11 @@ import (
 //	    binary.LittleEndian.PutUint64(key[8:], seed1)
 //	    // compute CMAC...
 //	    return lo, hi
+//	}
+//
+//	// SipHash-2-4 (natural 128-bit keyed hash)
+//	func sipHash128(data []byte, seed0, seed1 uint64) (uint64, uint64) {
+//	    return siphash.Hash128(seed0, seed1, data)
 //	}
 type HashFunc128 func(data []byte, seed0, seed1 uint64) (lo, hi uint64)
 
@@ -110,7 +110,7 @@ type Seed128 struct {
 	// time via BatchChainHash128 instead of one pixel per ChainHash128
 	// call. The Hash field remains the bit-exact reference; BatchHash
 	// must agree with Hash on every input. nil disables batched
-	// dispatch and preserves the legacy single-call code path.
+	// dispatch and preserves the serial single-call code path.
 	BatchHash BatchHashFunc128
 
 	// FusedChain and BatchFusedChain optionally evaluate the whole

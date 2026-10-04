@@ -111,12 +111,6 @@ func New(name string, key, nonce []byte) (Keystream, error) {
 // sound under the same PRF assumption that justifies AES-CTR — XORing PRF
 // output with plaintext is the canonical PRF-secure stream. The 128-bit
 // output places the keystream-block collision birthday at 2^64.
-//
-// The nonce is 16 bytes wide, partitioned as (nonce_hi||nonce_lo). Each
-// keystream block hashes a 16-byte input formed from
-// (nonce_hi || nonce_lo XOR counter_le). This binds every block to the
-// stream's nonce while injecting unique 64-bit counter material per block.
-
 type sipCTR struct {
 	k0, k1   uint64
 	nonceHi  uint64

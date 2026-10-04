@@ -37,7 +37,7 @@ const (
 
 // minPixelsDivisor7 is the scaled integer divisor for
 // ceil(keyBits / log2(7)) — the CCA-resistant container floor shared by
-// plain and MAC-authenticated modes at the small-message envelope.
+// plain and MAC Authenticated modes at the small-message envelope.
 // log2(7) ≈ 2.8074, scaled by 10000 for integer arithmetic.
 const (
 	minPixelsDivisor7 = 28074 // log2(7) * 10000, rounded up

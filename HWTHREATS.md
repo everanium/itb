@@ -83,7 +83,7 @@ Data sampling attacks extract transient state from internal CPU microarchitectur
 
 ### 5.1 Shipped Assembly Kernels & Coverage
 
-The accelerated execution engine spans 88 hand-crafted assembly kernels across multiple microarchitectural tiers:
+The accelerated execution engine spans hand-crafted assembly kernels across multiple microarchitectural tiers:
 
 1. **Pixel Processing (`process_pixels.c`):**
    - *Tier A:* AVX-512F + AVX-512BW + AVX-512VL + GFNI + AVX-512VBMI (8-pixel batches).
@@ -97,7 +97,7 @@ The accelerated execution engine spans 88 hand-crafted assembly kernels across m
 3. **Areion Permutation & Cascades (`internal/areionasm/`):**
    - VAES ZMM/YMM fused ChainHash cascade kernels, AES-NI XMM kernels, and ARM64 Crypto Extension `AESE` / `AESMC` kernels.
 4. **Registry Hash Families (`hashes/internal/`):**
-   - Fused ChainHash cascade kernels for AES-ITB-128, BLAKE2b-256 / -512, BLAKE2s, BLAKE3, AES-CMAC, SipHash-2-4, and ChaCha20 across AVX-512, AVX2, NEON, and 64-bit GPR scalar tiers.
+   - Fused ChainHash cascade kernels for each shipped registry primitive across AVX-512, AVX2, NEON, and 64-bit GPR scalar tiers.
 
 ### 5.2 Microarchitecture Floors & Tier Dispatch
 
@@ -127,7 +127,7 @@ The inventory below classifies each hardware instruction utilized in ITB by its 
 | `PEXTQ`<br>`PDEPQ` | `internal/interlock/`<br>(AMD64 BMI2) | Intel Haswell+<br>AMD Zen 3+<br>(Hardware BMI2) | Constant-time execution on specified floor. Pre-Zen-3 AMD microcode-emulated paths are excluded and fall back to software Go kernels. | Executes 48-bit Interlocked Barrier chunk-apply and unapply. Balanced 16-of-48 lane partition guarantees invariant popcount (16 bits) across all lanes. |
 | `VPERMT2Q`<br>`VPCMPUQ`<br>`VPTESTMQ` | `internal/interlock/`<br>(AVX-512 Unrank) | AVX-512F Baseline<br>Skylake-X+, Zen 4+ | Constant-time intra-register qword permute selecting binomial constants C(p, k). Register-only; no secret-indexed memory access. | Batched 8-lane and 16-lane Interlocked Barrier unrank kernels. Table row loads index by public loop counter p in [0, 48], never by secret values. |
 | `VPERMD`<br>`VPCMPEQQ`<br>`PDEPQ` | `internal/interlock/`<br>(AVX2 Unrank) | AVX2 + BMI2<br>Haswell+, Zen 3+ | Constant-time intra-register dword permutation over in-register sources. Mask generation uses branchless predicate masks. | 4-lane AVX2 unrank kernel for systems without AVX-512. Produces bit-exact `[3][8]uint64` mask triples matching the AVX-512 implementation. |
-| `VTBX`<br>`VCMHS`<br>`VUSHL` | `internal/interlock/`<br>(NEON Unrank) | ARMv8-A Baseline<br>(Advanced SIMD) | Constant-time register table lookups (`VTBX`) over in-register binomial tables. Data-oblivious variable register shifts (`VUSHL`). | 8-lane AArch64 unrank kernel (`RankToMaskTripleUnrank48NEON`). Produces bit-exact mask triples sharing one binomial row load across eight lanes. |
+| `VTBX`<br>`VCMHS`<br>`VUSHL` | `internal/interlock/`<br>(NEON Unrank) | ARMv8-A Baseline<br>(Advanced SIMD) | Constant-time register table lookups (`VTBX`) over in-register binomial tables. Data-oblivious variable register shifts (`VUSHL`). | 8-lane AArch64 unrank kernel (`rankToMaskTripleUnrank48NEON`). Produces bit-exact mask triples sharing one binomial row load across eight lanes. |
 | `BEXT`<br>`BDEP` | `internal/interlock/`<br>(SVE2 BitPerm) | ARMv8.5-A+ SVE2<br>(Graviton 4, Neoverse V2) | Vector bit-extract/deposit operating across 64-bit lanes under mask vectors. Register-only; no memory-indexed addressing. | Hardware-accelerated batched chunk-apply on ARM64 (`chunk48LockBatchSVE2`). Independent of vector length (processes two 48-bit chunks per step). |
 | `VPADDQ`, `VPXORQ`<br>`VPRORQ`, `VPTERNLOGQ` | `hashes/internal/*`<br>(AVX-512 AMD64) | AVX-512F+DQ<br>Skylake-X+, Zen 4+ | Single-cycle reciprocal throughput. Rotates use immediate compile-time constants. Embedded broadcasts (`.BCST`) read fixed stack offsets. | Fused cascade kernels for BLAKE2b, BLAKE2s, BLAKE3, SipHash-2-4, and ChaCha20. Operates in 4-lane and 8-lane vector strides. |
 | `VPADDQ`, `VPXOR`<br>`VPSHUFB`, `VPSLLQ` | `hashes/internal/*`<br>(AVX2 AMD64) | AVX2 Baseline<br>Haswell+, Zen 1+ | Constant-time integer arithmetic. Rotates are synthesized via compile-time shuffle masks (`VPSHUFB`) and immediate shift-OR pairs. | AVX2 fused cascade kernels for registry hashes. Message words spill to fixed-offset stack frames without secret-indexed addressing. |

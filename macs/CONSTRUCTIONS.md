@@ -6,7 +6,7 @@
 
 **No bespoke cryptography.** ITB composes established, standardized primitives rather than introducing new cryptographic designs. Security properties and regulatory status are inherited from the underlying primitives; see [README.md](../README.md) for jurisdictional certification details.
 
-This document describes how each shipped MAC primitive is keyed and wrapped before it reaches `itb.MACFunc` (`func(data []byte) []byte`). Two shipped names are exact references to a standard; the third, `hmac-blake3`, diverges from its literal name in a deliberate, documented way. The names in `registry.go` (`kmac256`, `hmac-sha256`, `hmac-blake3`) are short FFI-stable identifiers, **not** in every case assertions of conformance with the standard of the same name.
+This document describes how each shipped MAC primitive is keyed and wrapped before it reaches `itb.MACFunc` (`func(data []byte) []byte`). While `kmac256` and `hmac-sha256` are exact references to standards, `hmac-blake3` diverges from its literal name in a deliberate, documented way. The names in `registry.go` (`kmac256`, `hmac-sha256`, `hmac-blake3`) are short FFI-stable identifiers, **not** in every case assertions of conformance with the standard of the same name.
 
 Audience: external auditors, paper reviewers, downstream integrators reading the code wanting to know what is actually computed when ITB calls into one of these MACs.
 
