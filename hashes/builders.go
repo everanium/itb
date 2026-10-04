@@ -46,8 +46,9 @@ func scratchAtLeast(pool *sync.Pool, need int) (*[]byte, []byte) {
 // calls, and unsafe.Pointer escape-analysis tricks for hot-path
 // performance.
 //
-// The helpers in this file expose three generic patterns —
-// BuildCBCMACChainAbsorb, BuildSpongeChainAbsorb, BuildARXChainAbsorb —
+// The helpers in this file expose generic builder patterns —
+// BuildCBCMACChainAbsorb, BuildSpongeChainAbsorb, BuildARXChainAbsorb,
+// and BuildHMACChainAbsorb —
 // that wrap a user-supplied primitive (cipher.Block, unkeyed permutation,
 // or full hash function) into an itb.HashFunc{128,256,512} closure with
 // correct ITB-nonce-width preservation across every configured ITB
@@ -68,9 +69,9 @@ func scratchAtLeast(pool *sync.Pool, need int) (*[]byte, []byte) {
 // Why these matter for ITB security
 //
 // ITB supports nonce widths of 128, 256, or 512 bits per [Config]. The
-// per-call buffer presented to a HashFunc closure carries a domain-tag
-// byte plus the configured nonce material — 20, 36, or 68 bytes for the
-// three nonce widths respectively. Every byte of the data parameter
+// per-call buffer presented to a HashFunc closure carries 4 bytes of
+// little-endian pixel index LE32(idx) plus the configured nonce material —
+// 20, 36, or 68 bytes for the three nonce widths respectively. Every byte of the data parameter
 // must reach the digest for ITB's advertised nonce strength to hold.
 //
 // A naive user-written wrapper can silently truncate the ITB nonce in
@@ -565,9 +566,9 @@ func arxAbsorbHash512(hashFn Hash512Fn, scratch []byte, fixedKey []byte, data []
 // BuildARXChainAbsorb{128,256,512}. Both accept the same
 // Hash{256,512}Fn signature (a keyed one-shot hash closure) and
 // produce the same itb.HashFunc{N} output. The ARX name in the
-// primary form refers to the arithmetic-rotate-XOR family the
-// builder was first designed against (BLAKE / ChaCha / SipHash-shape
-// keyless permutations wrapped with a fixed-key prefix); the HMAC
+// primary form refers to the arithmetic-rotate-XOR family
+// (BLAKE / ChaCha / SipHash-shape keyless permutations wrapped with
+// a fixed-key prefix); the HMAC
 // alias is for callers wrapping an HMAC-style keyed hash (HMAC-SHA-256,
 // HMAC-SHA-512, KMAC, keyed BLAKE, keyed SHA-3) whose hashFn closes
 // over the HMAC key.

@@ -3,7 +3,7 @@ package hashes
 import "github.com/everanium/itb"
 
 // Name-keyed seed constructors, the constructor path of every shipped
-// seed: the triple package's seed builders and the C ABI seed
+// seed: the Triple package's seed builders and the C ABI seed
 // constructors call them. Each builds a seed of the named registry
 // primitive with every performance hook the primitive offers: the
 // (single, batched) arms from the width's Make<W>Pair, keyBits random

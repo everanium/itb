@@ -29,7 +29,7 @@ const MaxBlobJSONSize = 1 << 20
 const maxMACKeyHexLen = 256
 
 // maxBlob128KeyHexLen is the upper cap on the hex-encoded variable-
-// length key strings on [Blob128] (siphash24 empty, aescmac 16 bytes).
+// length key strings on [Blob128] (aescmac 16 bytes, siphash24 empty).
 // The 128-character cap covers 64 decoded bytes — matches the 64-byte
 // fixed cap enforced by hexToFixed64 for [Blob256] / [Blob512] Key*
 // fields — so the [Blob128] variable-length path shares the same
@@ -227,8 +227,8 @@ func hexToFixed32(s string) ([32]byte, error) {
 }
 
 // hexToBytes is the variable-length variant used by [Blob128] —
-// the 128-bit width covers both siphash24 (no fixed key, empty
-// bytes) and aescmac (16-byte key). Returns nil for an empty
+// the 128-bit width covers both aescmac (16-byte key) and
+// siphash24 (no fixed key, empty bytes). Returns nil for an empty
 // input string. Rejects any input longer than [maxBlob128KeyHexLen]
 // as [ErrBlobMalformed] so a hostile hex payload cannot force a
 // multi-megabyte decoded slice before the downstream key-length
@@ -408,8 +408,8 @@ type Blob128 struct {
 }
 
 // Blob128Opts is the 128-bit width counterpart of [Blob512Opts].
-// KeyL is a variable-length byte slice (empty for siphash24,
-// 16 bytes for aescmac).
+// KeyL is a variable-length byte slice (16 bytes for aescmac,
+// empty for siphash24).
 type Blob128Opts struct {
 	KeyL    []byte   // dedicated lockSeed
 	LS      *Seed128 // dedicated lockSeed

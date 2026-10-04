@@ -358,7 +358,7 @@ Concrete delta: ~5-15% throughput loss vs the inline implementations for the CBC
 
 The builders are an **additive** safety layer for the pluggable PRF surface. They do not replace any built-in primitive, do not change any existing API, and do not introduce new wire-format constraints. They exist so that:
 
-- Users who wrap their own primitive without reading every line of `aescmac.go` / `chacha20.go` / `areion.go` to crib the chain-absorb pattern still get correct nonce-width preservation.
+- Users who wrap their own primitive without reading every line of `areion256.go` / `aescmac.go` / `chacha20.go` to crib the chain-absorb pattern still get correct nonce-width preservation.
 - The built-in primitives keep their hand-tuned inline implementations with all their performance benefits intact.
 - The pluggable-primitive use case has a documented "correct way to do it" beyond just "make sure your closure absorbs all the bytes — good luck".
 

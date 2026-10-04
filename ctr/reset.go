@@ -28,16 +28,6 @@ type ResettableKeystream interface {
 // difference is the cached state that backs ResetCounter.
 func NewResettable(name string, key, nonce []byte) (ResettableKeystream, error) {
 	switch name {
-	case hashes.CipherSipHash24:
-		ks, err := newSipHashCTR(key, nonce)
-		if err != nil {
-			return nil, err
-		}
-		return ks.(*sipCTR), nil
-	case hashes.CipherAES128CTR:
-		return newAESResettable(key, nonce)
-	case hashes.CipherChaCha20:
-		return newChaCha20Resettable(key, nonce)
 	case hashes.CipherAreion256, hashes.CipherAreion512, hashes.CipherBLAKE2b256, hashes.CipherBLAKE2b512, hashes.CipherBLAKE2s, hashes.CipherBLAKE3:
 		ks, err := newPrfHashCTR(name, key, nonce)
 		if err != nil {
@@ -51,6 +41,16 @@ func NewResettable(name string, key, nonce []byte) (ResettableKeystream, error) 
 		default:
 			return nil, fmt.Errorf("ctr: %s keystream is not resettable", name)
 		}
+	case hashes.CipherAES128CTR:
+		return newAESResettable(key, nonce)
+	case hashes.CipherSipHash24:
+		ks, err := newSipHashCTR(key, nonce)
+		if err != nil {
+			return nil, err
+		}
+		return ks.(*sipCTR), nil
+	case hashes.CipherChaCha20:
+		return newChaCha20Resettable(key, nonce)
 	default:
 		return nil, fmt.Errorf("ctr: unknown cipher %q", name)
 	}

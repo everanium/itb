@@ -985,9 +985,9 @@ func TestTripleLockSeedMixedPrimitive256(t *testing.T) {
 	}
 }
 
-// --- Fleet-shape benches: triple facade Pipeline, binding-comparable ---
+// --- Fleet-shape benches: Triple facade Pipeline, binding-comparable ---
 //
-// The BenchmarkFleetGoNative_* cohort measures the Go-native triple
+// The BenchmarkFleetGoNative_* cohort measures the Go-native Triple
 // facade at the exact layer the binding shims drive: profile-based
 // [triple.Init] plus [triple.Pipeline.EncryptMessage] /
 // [triple.Pipeline.DecryptMessage] / [triple.Pipeline.EncryptStream] /
@@ -1204,9 +1204,9 @@ func BenchmarkFleetGoNative_Production_Stream_Decrypt_64MB(b *testing.B) {
 	benchFleetStreamDecrypt(b, triple.ProfileStreamingAEADTripleMACV1, true, 64<<20)
 }
 
-// --- Production-shape benches: full env-var surface, triple facade ---
+// --- Production-shape benches: full env-var surface, Triple facade ---
 //
-// The BenchmarkExtProduction_* cohort exercises the shipped triple
+// The BenchmarkExtProduction_* cohort exercises the shipped Triple
 // facade ([triple.Pipeline.EncryptMessage] / [triple.Pipeline.DecryptMessage]
 // / [triple.Pipeline.EncryptStream] / [triple.Pipeline.DecryptStream])
 // at whatever shape the ITB_* environment variables select, so a

@@ -47,9 +47,9 @@ type KeyedHashSpec struct {
 	// (BLAKE2b-256 up to 64, BLAKE2b-512 up to 64, BLAKE3's 32,
 	// SipHash-2-4's 16, HMAC-SHA-512-shaped primitives keyed at
 	// the hash's 128-byte block size, and so on). A zero KeySize
-	// returns a directive error from [BuildKeyedHash]; implicit
-	// probe-ladder discovery was removed to avoid hidden key-size
-	// selection in a cryptographic construction.
+	// returns a directive error from [BuildKeyedHash]; key sizes
+	// must be specified explicitly to prevent ambiguous key-size
+	// selection in cryptographic constructions.
 	KeySize int
 
 	// TagSize is the tag length in bytes. Zero defaults to the
@@ -134,8 +134,8 @@ func BuildHMAC(hashName string, spec HMACSpec) (Spec, error) {
 // keyed-mode soundness of a custom primitive is the registrant's
 // responsibility.
 //
-// Explicit KeySize required — implicit ladder discovery removed to
-// avoid hidden key-size selection in a cryptographic construction.
+// Explicit KeySize is required to prevent ambiguous key-size
+// selection in cryptographic constructions.
 // KeyedHashSpec.KeySize must be non-zero and match a key length the
 // primitive's keyed constructor accepts (BLAKE2b-256 up to 64,
 // BLAKE2b-512 up to 64, BLAKE3's 32, SipHash-2-4's 16,

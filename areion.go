@@ -99,7 +99,7 @@ func rcBlock4(rc *[16]byte) aes.Block4 {
 // areionZeroKey4 is a four-lane all-zero round key reused for every
 // `Round4HW` / `FinalRound4HW` call inside the Areion permutations.
 // Areion uses no-key AES rounds, but the upstream library only routes
-// the *keyed* `Round4HW` / `FinalRound4HW` to VAES instructions on
+// the **keyed** `Round4HW` / `FinalRound4HW` to VAES instructions on
 // x86_64 (`vaes_amd64.go:vaesRound4` / `vaesFinalRound4`); the
 // `RoundNoKey4HW` / `FinalRoundNoKey4HW` paths fall back to four
 // sequential single-block AES-NI invocations even when VAES is
@@ -112,7 +112,7 @@ var areionZeroKey4 aes.Key4
 
 // roundNoKey4Fast applies one 4-way AES "round-without-key" using the
 // VAES-accelerated keyed path with a constant zero key. Equivalent to
-// `roundNoKey4Fast(state)` byte-for-byte (verified by parity test on
+// `aes.RoundNoKey4HW(state)` byte-for-byte (verified by parity test on
 // every run) but ~4× faster on hardware with VAES + AVX-512 because the
 // upstream `RoundNoKey4HW` does not activate the VAES path.
 func roundNoKey4Fast(state *aes.Block4) {

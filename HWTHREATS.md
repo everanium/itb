@@ -86,14 +86,14 @@ Data sampling attacks extract transient state from internal CPU microarchitectur
 The accelerated execution engine spans hand-crafted assembly kernels across multiple microarchitectural tiers:
 
 1. **Pixel Processing (`process_pixels.c`):**
-   - *Tier A:* AVX-512F + AVX-512BW + AVX-512VL + GFNI + AVX-512VBMI (8-pixel batches).
-   - *Tier A′:* AVX-512F + AVX-512BW + AVX-512VL without GFNI/VBMI (Cascade Lake class).
-   - *Tier B:* AVX2 + GFNI (4-pixel batches).
-   - *Tier B′:* AVX2 baseline without GFNI (Haswell, Zen 3 class).
-   - *Tier C:* Portable scalar C fallback.
+   - **Tier A:** AVX-512F + AVX-512BW + AVX-512VL + GFNI + AVX-512VBMI (8-pixel batches).
+   - **Tier A′:** AVX-512F + AVX-512BW + AVX-512VL without GFNI/VBMI (Cascade Lake class).
+   - **Tier B:** AVX2 + GFNI (4-pixel batches).
+   - **Tier B′:** AVX2 baseline without GFNI (Haswell, Zen 3 class).
+   - **Tier C:** Portable scalar C fallback.
 2. **Interlocked Barrier (`internal/interlock/`):**
-   - *Combinadic Unrank:* AVX-512F 8/16-lane (`rankToMaskTripleUnrank48AVX512`), AVX2 4-lane (`rankToMaskTripleUnrank48AVX2`), NEON 8-lane (`rankToMaskTripleUnrank48NEON`).
-   - *Chunk Apply / Unapply:* BMI2 hardware `PEXTQ` / `PDEPQ` batched kernels (`interlockasm48_batch_amd64.s`), SVE2 BitPerm `BEXT` / `BDEP` (`interlockasm48_sve2_arm64.s`), and branchless scalar `softPEXT48` / `softPDEP48`.
+   - **Combinadic Unrank:** AVX-512F 8/16-lane (`rankToMaskTripleUnrank48AVX512`), AVX2 4-lane (`rankToMaskTripleUnrank48AVX2`), NEON 8-lane (`rankToMaskTripleUnrank48NEON`).
+   - **Chunk Apply / Unapply:** BMI2 hardware `PEXTQ` / `PDEPQ` batched kernels (`interlockasm48_batch_amd64.s`), SVE2 BitPerm `BEXT` / `BDEP` (`interlockasm48_sve2_arm64.s`), and branchless scalar `softPEXT48` / `softPDEP48`.
 3. **Areion Permutation & Cascades (`internal/areionasm/`):**
    - VAES ZMM/YMM fused ChainHash cascade kernels, AES-NI XMM kernels, and ARM64 Crypto Extension `AESE` / `AESMC` kernels.
 4. **Registry Hash Families (`hashes/internal/`):**

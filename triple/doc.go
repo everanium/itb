@@ -1,8 +1,8 @@
 // Package triple is a thin facade over the [github.com/everanium/itb]
 // root package, [github.com/everanium/itb/parallax], and
 // [github.com/everanium/itb/wrapper] plus [github.com/everanium/itb/macs].
-// One [Pipeline] bundles the Interlocked Barrier Triple 8-seed state,
-// an optional parallax layer, an optional wrapper (Outer cipher) layer,
+// One [Pipeline] bundles the Interlocked Barrier Triple state,
+// an optional parallax layer, an optional wrapper (outer cipher) layer,
 // and an optional MAC into a single object with a small lifecycle API
 // ([Init] / [Load] / [LoadF] / [Pipeline.Save] / [Pipeline.SaveF] /
 // [Pipeline.Rekey] / [Pipeline.Close]) plus the cipher entry points:

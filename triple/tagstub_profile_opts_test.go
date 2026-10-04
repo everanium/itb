@@ -40,7 +40,7 @@ func registerStub16MAC(t *testing.T) {
 // TestTagStubSizeProfileDriven verifies that a registered No MAC
 // profile carrying Profile.TagStubSize threads the value into the
 // Pipeline's itb.Config on both construction paths — Init from the
-// resolved profile shape and Open from the same resolution on the
+// resolved profile shape and Load from the same resolution on the
 // blob-reopen side (the inner blob's Config snapshot carries no stub
 // field, so the reopen re-derives it from the profile / Opts merge).
 func TestTagStubSizeProfileDriven(t *testing.T) {
@@ -68,7 +68,7 @@ func TestTagStubSizeProfileDriven(t *testing.T) {
 	}
 	defer receiver.Close()
 	if got := receiver.cfg.TagStubSize; got != 16 {
-		t.Fatalf("Open profile-driven: TagStubSize = %d, want 16", got)
+		t.Fatalf("Load profile-driven: TagStubSize = %d, want 16", got)
 	}
 
 	// The reserved stub is pure CSPRNG on the No MAC path — the pair

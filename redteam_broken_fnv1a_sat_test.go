@@ -10,7 +10,7 @@ package itb
 // Claim under test (REDTEAM.md § "FNV-1a lo-lane SAT — architecturally
 // foreclosed"): the archived SAT harness that recovered a functional
 // FNV-1a lo-lane compound key in ≈ 8 h on Single Ouroboros with the
-// barrier disengaged cannot be formulated under because the
+// barrier disengaged cannot be formulated under the shipped architecture because the
 // 48-bit interlock destroys the fixed bit-to-lane anchor the SAT
 // depends on. This file quantifies that closure at the anchoring layer.
 //
@@ -20,7 +20,7 @@ package itb
 //	                   channel K % 7
 //	                   → dataHash(pixel).lo >> 3
 //
-// which held under Single Ouroboros. Under the plaintext is
+// which held under Single Ouroboros. In the shipped construction, the plaintext is
 // first prepended with a 4-byte length, then split into three region
 // streams by the 48-bit interlock (a per-chunk PRF-keyed 16-of-48
 // balanced partition, ≈ 2^70.20 mask space). Lane i's bytes are then
@@ -387,7 +387,7 @@ func TestRedTeamBrokenFNV1aCribKPA(t *testing.T) {
 //
 // Under Single Ouroboros without barrier: at the true startPixel, all
 // cribPixels * Channels bytes match — this is the SAT anchor. Under
-// shipped barrier: the crib bytes are wrong at nearly every position,
+// the shipped barrier: the crib bytes are wrong at nearly every position,
 // so the recovered xor_mask56 does NOT equal the true dataHash even
 // under true (np, r). Match count drops to the same-symbol coincidence
 // floor per shift.
@@ -669,7 +669,7 @@ func TestRedTeamBrokenFNV1aCribKPAStartPixelPeek(t *testing.T) {
 		t.Logf("Region %d [lab-peek: sp_i]: sp=%d ch_matches_at_sp=%d/%d avg_ch_matches_all=%.3f",
 			si, sp, atSP, cribPixelsPerRegion*Channels, avg)
 	}
-	// Under barrier the true-sp count is not statistically above the
+	// Under the barrier the true-sp count is not statistically above the
 	// shift-averaged floor. Fail if any region shows a > 4x elevation
 	// (indicative that disclosing sp DID restore the anchor).
 	for _, r := range reports {

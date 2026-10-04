@@ -19,7 +19,7 @@ no per-chain observation channel exists.
 
 ## Files
 
-- `run.sh` — one-shot runner that invokes `go test -run
+- `run.sh` — one-shot runner that invokes `go test -tags redteam -run
   TestRedTeamBrokenFNV1a -v ./` from the repo root, then, if Bitwuzla
   is available, runs the Python SAT probe at the ITB_FNV1A_SAT_*
   environment-driven configuration and aggregates the emitted JSON

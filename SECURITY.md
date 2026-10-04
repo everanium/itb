@@ -65,7 +65,7 @@ For the CCA leak upper bound proof and ITB's noise-position-only bound, see [SCI
 
 ## 3. Attack Resistance Summary
 
-The always-on Interlocked Barrier ([SCIENCE.md § 1.2](SCIENCE.md#12-interlocked-barrier-architecture)) is the composite pair of the per-chunk 48-bit Rank Barrier permutation (drawn from a ≈ 2^70.20 mask space) and the per-pixel Pixel Barrier whitening stage. It applies uniformly across every column in the table below; the barrier's contribution to the KPA / Crib KPA / CPA columns is architectural and PRF-conditional, and stacks on top of the pixel-level obstacles listed per cell.
+The always-on Interlocked Barrier ([SCIENCE.md § 1.2](SCIENCE.md#12-interlocked-barrier-architecture)) is the composite pair of the per-chunk 48-bit Rank Barrier permutation (drawn from a ≈ 2^70.20 mask space) and the per-pixel Pixel Barrier channel-encoding stage. It applies uniformly across every column in the table below; the barrier's contribution to the KPA / Crib KPA / CPA columns is architectural and PRF-conditional, and stacks on top of the pixel-level obstacles listed per cell.
 
 | Attack | Core ITB | MAC + Silent Drop [5] | MAC + Reveal | MAC + Reveal + KPA |
 |---|---|---|---|---|

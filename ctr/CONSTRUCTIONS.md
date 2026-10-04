@@ -12,13 +12,12 @@ Audience: external auditors, paper reviewers, downstream integrators reading the
 
 For the standards' own conformance, refer to the upstream specifications and library tests:
 
-- NIST SP 800-38A — Counter (CTR) block-cipher mode of operation.
-- NIST FIPS-197 — the AES block cipher (`crypto/aes`).
-- RFC 8439 — ChaCha20 (`golang.org/x/crypto/chacha20`).
-- `github.com/dchest/siphash` — SipHash-2-4 test vectors.
+- `github.com/everanium/itb/hashes` — the registry Areion-SoEM-256 / Areion-SoEM-512 keyed hashes.
 - RFC 7693 — the BLAKE2 keyed-hash mode (BLAKE2b / BLAKE2s).
 - `github.com/zeebo/blake3` — BLAKE3 keyed mode.
-- `github.com/everanium/itb/hashes` — the registry Areion-SoEM-256 / Areion-SoEM-512 keyed hashes.
+- NIST FIPS-197 — the AES block cipher (`crypto/aes`); NIST SP 800-38A — Counter (CTR) block-cipher mode of operation.
+- `github.com/dchest/siphash` — SipHash-2-4 test vectors.
+- RFC 8439 — ChaCha20 (`golang.org/x/crypto/chacha20`).
 
 ## Table of constructions
 

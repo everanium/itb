@@ -9,8 +9,8 @@ package itb
 //
 // Scope: a three-line multiply-add fold, deliberately as trivial as a
 // primitive can be while still producing a per-pixel varying output. It
-// stands in for the FAQ.md thought experiment "what if I plugged the
-// dumbest hash imaginable into all eight seed roles". The primitive
+// stands in for the FAQ.md thought experiment of plugging the
+// dumbest hash imaginable into all eight seed roles. The primitive
 // belongs to the T-function class (Klimov and Shamir 2002): output bit t
 // depends only on input bits at position <= t, so recovery is polynomial
 // per bit-plane. It is deliberately below spec, must NEVER be plugged

@@ -73,8 +73,8 @@ func TestStreamPrefixBodyBatchingNonAuth(t *testing.T) {
 		t.Fatal("no dst.Write calls recorded")
 	}
 	// Batching invariant: the first dst.Write must carry the streamID
-	// prefix AND the first chunk body. A first write of exactly
-	// streamIDPrefixLen bytes is the pre-fix bug.
+	// prefix AND the first chunk body; a write of streamIDPrefixLen bytes
+	// or fewer violates the batching guarantee.
 	if calls[0] <= streamIDPrefixLen {
 		t.Fatalf("first dst.Write = %d bytes, want > %d (streamID prefix batched with first chunk body); "+
 			"per-Write breakdown: %v", calls[0], streamIDPrefixLen, calls)
@@ -85,7 +85,7 @@ func TestStreamPrefixBodyBatchingNonAuth(t *testing.T) {
 		t.Fatalf("DecryptStream3xCfg: %v", err)
 	}
 	if !bytes.Equal(pt, ptBuf.Bytes()) {
-		t.Fatal("Non-AEAD Triple-stream round-trip mismatch after prefix-batched write")
+		t.Fatal("Non-AEAD Triple stream round-trip mismatch after prefix-batched write")
 	}
 }
 
@@ -119,7 +119,7 @@ func TestStreamPrefixBodyBatchingAuth(t *testing.T) {
 		t.Fatalf("DecryptStreamAuth3xCfg: %v", err)
 	}
 	if !bytes.Equal(pt, ptBuf.Bytes()) {
-		t.Fatal("Streaming AEAD Triple-stream round-trip mismatch after prefix-batched write")
+		t.Fatal("Streaming AEAD Triple stream round-trip mismatch after prefix-batched write")
 	}
 }
 

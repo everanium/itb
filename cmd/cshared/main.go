@@ -329,8 +329,8 @@ func ITB_TripleProfileNameMaxLen() C.int { return C.int(triple.ProfileNameMaxLen
 // ─── Triple Pipeline (itb/triple facade) ───────────────────────────
 //
 // The ITB_Triple_* surface wraps the github.com/everanium/itb/triple
-// sub-package — one Pipeline handle collects the 8-seed constellation,
-// parallax layer, wrapper (Outer cipher) layer, and MAC behind a
+// sub-package — one Pipeline handle collects the inner ITB session state,
+// parallax layer, wrapper (outer cipher) layer, and MAC behind a
 // single lifecycle object. A fresh Pipeline is constructed against a
 // registered profile name (the shipped catalogue — see
 // triple/profile.go — or a name installed via ITB_Triple_Register);
@@ -647,7 +647,7 @@ func ITB_Triple_EncryptStream(
 }
 
 // Receive-side counterpart of ITB_Triple_EncryptStream. Reverses the
-// Pipeline chain: wrapper unwrap-Reader → itb Triple 8-seed Streaming
+// Pipeline chain: wrapper unwrap-Reader → itb Triple Streaming
 // AEAD (or Non-AEAD) decrypt → parallax decrypt-Writer.
 //
 //export ITB_Triple_DecryptStream
@@ -797,7 +797,7 @@ func ITB_Triple_Profiles(
 // The returned list observes only the shipped hashes.Registry —
 // runtime-registered custom primitives via hashes.Register live in a
 // separate slice not part of this enumeration (matching bindings'
-// triple-only surface where custom primitive plug is not exposed).
+// Triple-only surface where custom primitive plug is not exposed).
 //
 //export ITB_Triple_HashNames
 func ITB_Triple_HashNames(

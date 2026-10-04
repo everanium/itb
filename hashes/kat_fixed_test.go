@@ -17,13 +17,13 @@
 // against the canonical RFCs / NIST specs, refer to the upstream
 // library tests:
 //
+//   - github.com/jedisct1/go-aes — Areion paper vectors
 //   - golang.org/x/crypto/blake2b — RFC 7693 vectors
 //   - golang.org/x/crypto/blake2s — RFC 7693 vectors
-//   - golang.org/x/crypto/chacha20 — RFC 8439 vectors
-//   - github.com/dchest/siphash — official SipHash test vectors
 //   - github.com/zeebo/blake3 — official BLAKE3 reference vectors
 //   - crypto/aes — NIST FIPS-197 vectors
-//   - github.com/jedisct1/go-aes — Areion paper vectors
+//   - github.com/dchest/siphash — official SipHash test vectors
+//   - golang.org/x/crypto/chacha20 — RFC 8439 vectors
 //
 // The primitive-math layer is the upstream libraries' responsibility
 // (and they carry RFC-vector KAT for that purpose); this file pins

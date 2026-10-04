@@ -481,11 +481,6 @@ func Make128(name string, key ...[]byte) (itb.HashFunc128, []byte, error) {
 		}
 		h, _, ret := AESITB128Pair()
 		return h, ret[:], nil
-	case "siphash24":
-		if len(key) > 0 {
-			return nil, nil, fmt.Errorf("hashes: %q does not accept a fixed key (keyed by seed components)", name)
-		}
-		return SipHash24(), nil, nil
 	case "aescmac":
 		explicit, err := validateKey("aescmac", 16, key...)
 		if err != nil {
@@ -499,6 +494,11 @@ func Make128(name string, key ...[]byte) (itb.HashFunc128, []byte, error) {
 		}
 		fn, ret := AESCMAC()
 		return fn, ret[:], nil
+	case "siphash24":
+		if len(key) > 0 {
+			return nil, nil, fmt.Errorf("hashes: %q does not accept a fixed key (keyed by seed components)", name)
+		}
+		return SipHash24(), nil, nil
 	}
 	if s, ok := Find(name); ok {
 		if s.Width != W128 {
@@ -548,12 +548,6 @@ func Make128Pair(name string, key ...[]byte) (itb.HashFunc128, itb.BatchHashFunc
 		}
 		h, b, ret := AESITB128Pair()
 		return h, b, ret[:], nil
-	case "siphash24":
-		if len(key) > 0 {
-			return nil, nil, nil, fmt.Errorf("hashes: %q does not accept a fixed key (keyed by seed components)", name)
-		}
-		h, b := SipHash24Pair()
-		return h, b, nil, nil
 	case "aescmac":
 		explicit, err := validateKey("aescmac", 16, key...)
 		if err != nil {
@@ -567,6 +561,12 @@ func Make128Pair(name string, key ...[]byte) (itb.HashFunc128, itb.BatchHashFunc
 		}
 		h, b, ret := AESCMACPair()
 		return h, b, ret[:], nil
+	case "siphash24":
+		if len(key) > 0 {
+			return nil, nil, nil, fmt.Errorf("hashes: %q does not accept a fixed key (keyed by seed components)", name)
+		}
+		h, b := SipHash24Pair()
+		return h, b, nil, nil
 	}
 	if s, ok := Find(name); ok {
 		if s.Width != W128 {

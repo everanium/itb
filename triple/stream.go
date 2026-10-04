@@ -22,7 +22,7 @@ import (
 var ErrProfileNotStreaming = errors.New("triple: profile does not expose a streaming cipher surface")
 
 // EncryptStream reads plaintext bytes from plainSrc, runs them through
-// the full triple chain (parallax encrypt-Reader → itb Triple 8-seed
+// the full Triple chain (parallax encrypt-Reader → itb Triple
 // Streaming AEAD (or Non-AEAD) → wrapper wrap-Writer), and writes the
 // wire bytes to wireDst. Blocks until plainSrc returns [io.EOF] or an
 // error surfaces.
@@ -108,7 +108,7 @@ func (p *Pipeline) EncryptStream(plainSrc io.Reader, wireDst io.Writer) error {
 
 // DecryptStream is the receive-side counterpart of
 // [Pipeline.EncryptStream]. Reads wire bytes from wireSrc, reverses
-// the triple chain (wrapper unwrap-Reader → itb Triple 8-seed
+// the Triple chain (wrapper unwrap-Reader → itb Triple
 // Streaming AEAD (or Non-AEAD) decrypt → parallax decrypt-Writer),
 // and writes plaintext bytes to plainDst. Blocks until wireSrc
 // returns [io.EOF] or an error surfaces.

@@ -91,7 +91,7 @@ func TripleProfiles(jsonOut []byte) (n int, st Status) {
 // jsonOut under the same caller-allocated-buffer convention as
 // [TripleProfiles]. Runtime-registered custom primitives via
 // hashes.Register live in a separate slice and are not part of this
-// enumeration; the bindings' triple-only surface never exposes
+// enumeration; the bindings' Triple-only surface never exposes
 // custom-primitive plug.
 func TripleHashNames(jsonOut []byte) (n int, st Status) {
 	defer recoverPanic(&st, StatusInternal)

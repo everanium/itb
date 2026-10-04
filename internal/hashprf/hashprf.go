@@ -7,7 +7,7 @@
 //     registry HashFunc factories (hashes.Areion256PairWithKey /
 //     hashes.Areion512PairWithKey). The PRF hashes the input under a
 //     zero seed and serialises the resulting uint64 words little-endian.
-//   - BLAKE family ("blake2b256", "blake2s", "blake3", "blake2b512") —
+//   - BLAKE family ("blake2b256", "blake2b512", "blake2s", "blake3") —
 //     keyed via the upstream keyed-hash mode. The PRF output is the
 //     leading blockSize bytes of the keyed digest over the input.
 //

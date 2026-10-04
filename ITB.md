@@ -30,7 +30,7 @@ The DRBG does not know about the PRF, and the PRF does not know about the DRBG. 
 
 **Hash output bandwidth.** Each per-pixel ChainHash call produces 128, 256, or 512 bits depending on the primitive, but the encoder consumes only the low 64 bits. Of these, ~62 bits are actively used (3 for noise position, 56 for channel XOR, and ~3 for rotation); the remainder is discarded.
 
-A single `uint64` register fits the per-pixel requirement directly. This narrowing provides architectural defense-in-depth: any structural weakness or non-uniformity residing in the high bits of an underlying primitive is discarded on the encryption path (see [REDTEAM.md § Broken-primitive stress](REDTEAM.md#broken-primitive-stress--fnv-1a-and-crc128)). For PRF-grade primitives, truncation preserves PRF security under standard assumptions (see [SCIENCE.md § 1.2.2](SCIENCE.md#122-pixel-barrier-per-pixel-whitening--noise-absorption)).
+A single `uint64` register fits the per-pixel requirement directly. This narrowing provides architectural defense-in-depth: any structural weakness or non-uniformity residing in the high bits of an underlying primitive is discarded on the encryption path (see [REDTEAM.md § Broken-primitive stress](REDTEAM.md#broken-primitive-stress--fnv-1a-and-crc128)). For PRF-grade primitives, truncation preserves PRF security under standard assumptions (see [SCIENCE.md § 1.2.2](SCIENCE.md#122-pixel-barrier-per-pixel-channel-xor-rotation-and-noise-injection)).
 
 ## 3. Nonce: A New Universe Per Message
 
@@ -252,7 +252,7 @@ The only theoretical recovery path is a local cache side-channel on the CPU. Eve
 The Interlocked Barrier is an always-on layer composing two inseparable mechanisms:
 
 - **Rank Barrier** — a per-chunk 48-bit keyed permutation over the interleaved payload, drawn from a space of ≈ 2^70.20 balanced partitions keyed by `lockSeed` and `interlock_nonce`.
-- **Pixel Barrier** — a per-pixel absorption stage whitening each channel byte via channel XOR, 7-position rotation, and noise-bit insertion, keyed by `dataSeed` and `noiseSeed`.
+- **Pixel Barrier** — a per-pixel encoding stage masking each channel byte via channel XOR, 7-position rotation, and noise-bit insertion, keyed by `dataSeed` and `noiseSeed`.
 
 Rank Barrier denies a stable bit-to-lane mapping; Pixel Barrier denies a per-byte observation channel. Neither runs in isolation.
 
@@ -319,7 +319,7 @@ Estimates assume a 1024-bit key (~10 ns per hash round on modern hardware, 8 seq
 The barrier and the PRF primitive protect each other:
 
 - **PRF protects the barrier:** Non-invertibility prevents an attacker from resolving the 56-to-1 per-pixel ambiguity and the per-chunk ≈ 2^70.20 mask space.
-- **Barrier protects the PRF:** Two pixels with identical hash outputs receive different container bytes from the DRBG, so their observed bytes differ. The collision is absorbed. The inseparable Interlocked Barrier absorbs a broad spectrum of primitive weaknesses beneath its composite layers: output collisions, statistical non-uniformities, structural biases, and trapdoor effects (such as the BEA-1 partition trapdoors documented in [HARNESS.md](HARNESS.md)) are masked by DRBG noise absorption, independent rotation, and per-chunk lane scrambling. Even below-spec stress primitives exhibit zero observable leakage when enveloped by the full barrier.
+- **Barrier protects the PRF:** Two pixels with identical hash outputs receive different container bytes from the DRBG, so their observed bytes differ. The collision is absorbed. The inseparable Interlocked Barrier absorbs a broad spectrum of primitive weaknesses beneath its composite layers: output collisions, statistical non-uniformities, structural biases, and trapdoor effects (such as the BEA-1 partition trapdoors documented in [HARNESS.md](HARNESS.md)) are masked by random container noise insertion, independent rotation, and per-chunk lane scrambling. Even below-spec stress primitives exhibit zero observable leakage when enveloped by the full barrier.
 - **ChainHash architecture resists MITM:** Sequential component mixing ensures that partial key compromise reveals nothing about adjacent components.
 
 Together, non-invertibility blocks inversion, and the barrier absorbs primitive defects. Under passive observation, the composite cipher behaves as an ideal random permutation. Under active cryptanalysis and Full KPA, resistance remains strictly conditional on PRF non-invertibility, as total primitive inversion collapses the composite construction via algorithmic recovery.

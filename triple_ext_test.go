@@ -8,7 +8,7 @@ import (
 	"github.com/everanium/itb/triple"
 )
 
-// Parity tests between the triple facade and the Low-Level Cfg
+// Parity tests between the Triple facade and the Low-Level Cfg
 // entries. The invariant: [triple.Pipeline.EncryptMessage] wire bytes,
 // under a Pipeline built with parallax + wrapper toggles OFF, must be
 // bit-identical to the wire bytes a manual composition through

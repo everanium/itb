@@ -15,7 +15,7 @@ package itb
 // and **FNV-1a ≈ 56.7M** against a neutralised cluster near **6.1M**
 // (that cluster is the architectural `noisePos` permutation signal on
 // the `noise` axis, not a primitive leak). This file measures the same
-// statistic against the shipped's always-on barrier via the shipped
+// statistic against ITB's always-on barrier via the shipped
 // `Encrypt3x128Cfg` API to test whether the barrier absorbs the two
 // below-spec algebraic surfaces at their archived measurement angle.
 //

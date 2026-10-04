@@ -277,7 +277,7 @@ func TestEncryptStreamDecryptStreamConcurrentDistinctPipelines(t *testing.T) {
 
 		r, err := Load(blob)
 		if err != nil {
-			t.Fatalf("Open %s: %v", spec.name, err)
+			t.Fatalf("Load %s: %v", spec.name, err)
 		}
 		receivers[i] = r
 		t.Cleanup(func() { r.Close() })

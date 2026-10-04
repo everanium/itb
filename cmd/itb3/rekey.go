@@ -1,7 +1,7 @@
 package main
 
 // `itb3 rekey blob.json [-p] [-w] [-o ublob.json]` rotates the outer
-// parallax / wrapper masters, leaving the eight inner ITB seeds and
+// parallax / wrapper masters, leaving the inner ITB seeds and
 // the MAC key untouched. The `-p` / `-w` toggles are assertions
 // against the blob's recorded state; a mismatch is a hard error.
 

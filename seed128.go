@@ -150,7 +150,7 @@ type Seed128 struct {
 //
 // Directly-constructed seeds keep their optional fast-path hooks nil
 // and route hot paths through the sequential fallback; the name-keyed
-// constructor hashes.NewSeed128 (the path the triple package and the C
+// constructor hashes.NewSeed128 (the path the Triple package and the C
 // ABI take) attaches them. The
 // hooks are performance paths only: a seed produces the same wire with
 // and without them, including the Interlocked Barrier cascade fill,
@@ -220,7 +220,7 @@ func (s *Seed128) Bits() int {
 
 // MinPixels returns the minimum pixel count ensuring encoding ambiguity
 // exceeds the key space (2^keyBits). Aliases [MinPixelsAuth]'s CCA-
-// resistant formula so plain and MAC-authenticated modes share one
+// resistant formula so plain and MAC Authenticated modes share one
 // container envelope on small messages.
 func (s *Seed128) MinPixels() int {
 	return s.MinPixelsAuth()

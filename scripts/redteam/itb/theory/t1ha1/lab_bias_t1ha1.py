@@ -181,7 +181,7 @@ def sparse_keyset_test(n_bits_set_max: int, key_bytes: int,
     from itertools import combinations
 
     key_bits = key_bytes * 8
-    # Count how many keys we'll test.
+    # Count key candidate space.
     n_keys = 0
     for k in range(1, n_bits_set_max + 1):
         n_keys += len(list(combinations(range(key_bits), k)))

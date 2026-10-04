@@ -208,7 +208,7 @@ type Opts struct {
 	ParallaxSegmentSize int
 }
 
-// Pipeline is the opaque triple facade session. One Pipeline owns:
+// Pipeline is the opaque Triple facade session. One Pipeline owns:
 //
 //   - the resolved [Profile] record it was constructed from (the
 //     shape recorded in its blob);

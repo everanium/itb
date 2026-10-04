@@ -131,7 +131,7 @@ func aesITB128FusedChainHash(key []byte) (itb.FusedChainHashFunc128, itb.BatchFu
 // is returned; the seed is left unchanged. The hooks are a performance
 // path only: the seed produces the same wire with and without them.
 // [NewSeed128] and [SeedFromComponents128] — the constructor path of
-// the triple package's seed builders and the C ABI seed constructors —
+// the Triple package's seed builders and the C ABI seed constructors —
 // call attachFused128 and attachInterlockBatch16 together.
 func attachFused128(s *itb.Seed128, name string, key []byte) error {
 	spec, ok := Find(name)

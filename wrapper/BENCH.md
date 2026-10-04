@@ -13,7 +13,7 @@ The numbers below isolate the **outer cipher cost** that the wrapper layer adds 
 * **Wrapper only** — 16 MiB random buffer, no ITB call. Pure outer cipher round-trip throughput. The `WrapInPlace` row mutates the caller's buffer (no output-buffer allocation); the `Wrap` row allocates a fresh output buffer per call.
 * **Full ITB + wrapper** — encrypt and decrypt are timed **separately** (split sub-benches `…/encrypt` and `…/decrypt`) so the per-direction breakdown is visible. Single Message benches process a 16 MiB plaintext under one encrypt / wrap call (or one unwrap / decrypt call). Streaming benches process a 64 MiB plaintext through 16 MiB chunks via either ITB's `io.Reader` / `io.Writer` API or a User-Driven Loop emitting framed chunks through the wrapped writer.
 
-The blob `Wrap` / `Unwrap` paths split the keystream XOR across up to 32 worker goroutines (the effective count is `min(32, GOMAXPROCS, chunks)`), each seeking its own keystream to its chunk's byte offset via `ctr.NewAt`. One logical CTR stream is therefore evaluated in disjoint ranges concurrently, byte-identical to a serial pass. With this, the slowest outer cipher keystream in the wrapper only round-trip (BLAKE2b-256, ~598 MB/s) stays ahead of ITB's combined per-direction throughput on this host (~200–350 MB/s), so no outer cipher is the wrapper-path bottleneck. AES-128-CTR with hardware AES-NI remains the fastest. The worker cap is fixed, not user-configurable: ITB's own per-pixel hashing already saturates every core, so the wrapper's secondary, partly memory-bound XOR must not over-subscribe by spawning a goroutine per core a second time.
+The blob `Wrap` / `Unwrap` paths split the keystream XOR across up to 32 worker goroutines (the effective count is `min(32, GOMAXPROCS, chunks)`), each seeking its own keystream to its chunk's byte offset via `ctr.NewAt`. One logical CTR stream is therefore evaluated in disjoint ranges concurrently, byte-identical to a serial pass. With this, the slowest outer cipher keystream in the wrapper only round-trip (BLAKE2b-256, ~598 MB/s) stays ahead of ITB's combined per-direction throughput on this host (~200–350 MB/s), so no outer cipher is the wrapper-path bottleneck. AES-128-CTR with hardware AES-NI remains the fastest. The worker cap is fixed, not user-configurable: ITB's own inner pipeline hashing already saturates every core, so the wrapper's secondary, partly memory-bound XOR must not over-subscribe by spawning a goroutine per core a second time.
 
 Reproduction:
 
@@ -36,8 +36,8 @@ go test -run='^$' -bench='BenchmarkStreamingTriple/.*/aescmac' -benchtime=5s -co
 * Outer cipher path: every PRF-grade registry primitive, keystream built by the `ctr` package; blob XOR parallelised across up to 32 workers.
 * ITB primitive: Areion-SoEM-512.
 * ITB seed width: 1024 bits.
-* ITB cipher config: `NonceBits=128`, `BarrierFill=1` (minimum config so the outer cipher delta is not masked by per-pixel feature cost). The 48-bit Interlocked Barrier is always engaged and non-disableable by construction.
-* `MaxWorkers=0` on the shared `*itb.Config` (use every available HT for the per-pixel hash kernels).
+* ITB cipher config: `NonceBits=128`, `BarrierFill=1` (minimum config so the outer cipher delta is not masked by inner feature cost). The 48-bit Interlocked Barrier is always engaged and non-disableable by construction.
+* `MaxWorkers=0` on the shared `*itb.Config` (use every available HT for the inner hash kernels).
 * MAC factory: HMAC-BLAKE3, 32-byte CSPRNG key (where applicable).
 * Single Message plaintext: 16 MiB random.
 * Streaming plaintext: 64 MiB random; chunk size 16 MiB.
@@ -107,6 +107,6 @@ Numbers below route through `triple.Pipeline` (Single Message via `EncryptMessag
 | **SipHash-2-4** | 477 | 514 |
 | **ChaCha20** | 489 | 522 |
 
-Decrypt runs 5–15 % faster than encrypt across ciphers (the encrypt path additionally derives per-pixel nonce material and the Interlocked Barrier fill state). ITB's per-pixel hashing dominates the combined cost, so the outer cipher choice moves the totals only at the margin: AES-NI and PRF-counter ciphers span ~20 % top to bottom, with the smaller-state BLAKE variants at the low end and the AES / SipHash / ChaCha families at the high end.
+Decryption runs 5–15 % faster than encryption across ciphers (the encrypt path additionally derives interlock nonce material and the Interlocked Barrier fill state). ITB's inner pipeline hashing dominates the combined cost, so the outer cipher choice moves the totals only at the margin: AES-NI and PRF-counter ciphers span ~20 % top to bottom, with the smaller-state BLAKE variants at the low end and the AES / SipHash / ChaCha families at the high end.
 
 This file is updated by re-running the reproduction command and pasting the bench output into the tables. Numbers above are rounded to MB/s.

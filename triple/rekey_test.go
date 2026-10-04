@@ -8,7 +8,7 @@ import (
 )
 
 // TestPipelineRekeyRoundTrip verifies that after Rekey, the fresh
-// blob's masters differ from the pre-Rekey blob's, that Open with
+// blob's masters differ from the pre-Rekey blob's, that Load with
 // the fresh masters succeeds and reconstructs a Pipeline whose
 // wrapper key matches the post-Rekey sender.
 func TestPipelineRekeyRoundTrip(t *testing.T) {
@@ -50,10 +50,10 @@ func TestPipelineRekeyRoundTrip(t *testing.T) {
 		t.Fatalf("Rekey did not change WrapMaster")
 	}
 
-	// Receiver opens the fresh blob successfully.
+	// Receiver loads the fresh blob successfully.
 	receiver, err := Load(newBlob)
 	if err != nil {
-		t.Fatalf("Open(newBlob): %v", err)
+		t.Fatalf("Load(newBlob): %v", err)
 	}
 	defer receiver.Close()
 

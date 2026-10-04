@@ -753,7 +753,7 @@ func TestAESITBFusedX8LowLevelRoundTrip(t *testing.T) {
 // The generic bench{Encrypt,Decrypt}3x128CachedBatchedExt drivers wire
 // only the (Hash, BatchHash) pair per seed. The shipping aesitb128 path
 // additionally carries the fused ChainHash cascade hooks (FusedChain /
-// BatchFusedChain) that the triple package installs through
+// BatchFusedChain) that the Triple package installs through
 // hashes.NewSeed128 at Init time; without them the Low-Level entry
 // points fall back to the sequential per-round cascade. The drivers
 // below therefore build each of the eight seeds through the same
@@ -761,7 +761,7 @@ func TestAESITBFusedX8LowLevelRoundTrip(t *testing.T) {
 
 // newAESITB128SeedExt returns one independently-keyed aesitb128 seed at
 // the given ITB width with the single, batched, fused-cascade and
-// batch-16 interlock fill hooks attached — the same wiring the triple
+// batch-16 interlock fill hooks attached — the same wiring the Triple
 // package performs per slot.
 func newAESITB128SeedExt(b *testing.B, bits int) *itb.Seed128 {
 	b.Helper()

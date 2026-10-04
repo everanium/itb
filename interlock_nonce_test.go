@@ -368,7 +368,7 @@ func TestWireHeaderFormat(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(ctMAC) != len(ct) {
-		t.Fatalf("MAC/No-MAC envelope size drift (small, 8-byte tag): MAC=%d No-MAC=%d", len(ctMAC), len(ct))
+		t.Fatalf("MAC/No MAC envelope size drift (small, 8-byte tag): MAC=%d No MAC=%d", len(ctMAC), len(ct))
 	}
 
 	// Envelope-parity sanity beyond the MinPixels floor: 100 KiB
@@ -388,7 +388,7 @@ func TestWireHeaderFormat(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(ctLargeMAC) != len(ctLarge) {
-		t.Fatalf("MAC/No-MAC envelope size drift (large, 32-byte tag): MAC=%d No-MAC=%d", len(ctLargeMAC), len(ctLarge))
+		t.Fatalf("MAC/No MAC envelope size drift (large, 32-byte tag): MAC=%d No MAC=%d", len(ctLargeMAC), len(ctLarge))
 	}
 	// Round-trip the large 32-byte-MAC path to confirm the pair is
 	// wire-compatible end-to-end, not only length-equal.

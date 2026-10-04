@@ -33,7 +33,7 @@ func baseValidProfile() Profile {
 }
 
 // TestRegisterRoundTrip installs a fresh custom profile and
-// exercises Init → Open against it: the Pipeline reconstructs and
+// exercises Init → Load against it: the Pipeline reconstructs and
 // decrypts a message-shape round-trip identical to the shipped
 // profile behaviour.
 func TestRegisterRoundTrip(t *testing.T) {
@@ -52,7 +52,7 @@ func TestRegisterRoundTrip(t *testing.T) {
 
 	receiver, err := Load(blob)
 	if err != nil {
-		t.Fatalf("Open(%q): %v", name, err)
+		t.Fatalf("Load(%q): %v", name, err)
 	}
 	defer receiver.Close()
 
@@ -321,7 +321,7 @@ func TestRegisterNoMacMode(t *testing.T) {
 	p.Mode = modeStreamingNoAEAD
 	p.MacName = ""
 	if err := Register("userns-triple-nomac-v1", p); err != nil {
-		t.Fatalf("Register No-MAC: %v", err)
+		t.Fatalf("Register No MAC: %v", err)
 	}
 }
 

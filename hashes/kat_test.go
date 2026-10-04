@@ -1,10 +1,10 @@
 // Pair-level Known-Answer Tests (KAT) for every PRF-grade hash
 // primitive in the registry. Each primitive's closure construction
 // is independently re-executed in this file using only the upstream
-// library imports (golang.org/x/crypto/blake2b, blake2s, chacha20;
-// github.com/zeebo/blake3; github.com/dchest/siphash;
-// github.com/jedisct1/go-aes for Areion-SoEM; crypto/aes for the
-// AES round on AES-CMAC) — bypassing the closure's pool, template-
+// library imports (github.com/jedisct1/go-aes for Areion-SoEM;
+// golang.org/x/crypto/blake2b, blake2s; github.com/zeebo/blake3;
+// crypto/aes for the AES round on AES-CMAC; github.com/dchest/siphash;
+// golang.org/x/crypto/chacha20) — bypassing the closure's pool, template-
 // clone caching, and per-call-amortisation paths. The closure's
 // public single arm and the ZMM-batched arm (when present) must
 // produce bit-identical output to the in-test reference for a fixed

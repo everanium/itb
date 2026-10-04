@@ -40,7 +40,7 @@ const (
 	// No MAC full-stack (parallax on, wrapper on).
 	ProfileSingleMsgTripleNoMACV1 = "singlemsg-triple-nomac-v1"
 
-	// ProfileBlobTripleMACV1 is the MAC-authenticated blob-only
+	// ProfileBlobTripleMACV1 is the MAC Authenticated blob-only
 	// bundle profile: [Init] and [Pipeline.Rekey] produce blob wire,
 	// but the Pipeline exposes no cipher surface.
 	ProfileBlobTripleMACV1 = "blob-triple-mac-v1"
@@ -288,7 +288,7 @@ func isMixedProfile(p Profile) bool {
 var profileRegistry = map[string]Profile{}
 
 func init() {
-	// Streaming AEAD Triple, MAC-authenticated, parallax on + wrapper on.
+	// Streaming AEAD Triple, MAC Authenticated, parallax on + wrapper on.
 	profileRegistry[ProfileStreamingAEADTripleMACV1] = Profile{
 		Name:                ProfileStreamingAEADTripleMACV1,
 		Mode:                modeStreamingAEAD,
@@ -320,7 +320,7 @@ func init() {
 		Wrapper:             true,
 	}
 
-	// Single Message Triple, MAC-authenticated, parallax on + wrapper on.
+	// Single Message Triple, MAC Authenticated, parallax on + wrapper on.
 	profileRegistry[ProfileSingleMsgTripleMACV1] = Profile{
 		Name:                ProfileSingleMsgTripleMACV1,
 		Mode:                modeSingleMsgMAC,
@@ -414,7 +414,7 @@ func init() {
 		Wrapper:             false,
 	}
 
-	// Blob-only bundle profile — MAC-authenticated inner Blob{N}
+	// Blob-only bundle profile — MAC Authenticated inner Blob{N}
 	// with parallax + wrapper metadata carried through wrap-layer.
 	// No cipher surface: streaming methods return [ErrProfileNotStreaming]
 	// and message methods return [ErrProfileNoCipher].
@@ -433,7 +433,7 @@ func init() {
 		Wrapper:             true,
 	}
 
-	// Mixed-primitive Streaming AEAD Triple, MAC-authenticated, parallax
+	// Mixed-primitive Streaming AEAD Triple, MAC Authenticated, parallax
 	// on + wrapper on. Width 256; slot roster spreads across every
 	// shipped width-256 primitive.
 	profileRegistry[ProfileStreamingAEADTripleMACMixedV1] = Profile{
@@ -478,7 +478,7 @@ func init() {
 		},
 	}
 
-	// Mixed-primitive Single Message Triple, MAC-authenticated,
+	// Mixed-primitive Single Message Triple, MAC Authenticated,
 	// parallax on + wrapper on. Width 128; alternates the shipped
 	// width-128 primitives across every slot.
 	profileRegistry[ProfileSingleMsgTripleMACMixedV1] = Profile{

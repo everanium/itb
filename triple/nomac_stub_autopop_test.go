@@ -39,7 +39,7 @@ func registerStub48MAC(t *testing.T) {
 // TestTagStubSizeAutoPopulation verifies that a MAC-carrying
 // Pipeline auto-populates itb.Config.TagStubSize from its
 // profile's MAC tag length on both construction paths — Init probes
-// the freshly built MAC closure, Open mirrors the probe from the
+// the freshly built MAC closure, Load mirrors the probe from the
 // blob's resolved MAC — so the No MAC stub reservation a Pipeline's
 // Config would drive always matches the profile's authenticated
 // envelope shape, for custom tag sizes beyond the shipped 32.
@@ -65,11 +65,11 @@ func TestTagStubSizeAutoPopulation(t *testing.T) {
 
 	receiver, err := Load(blob)
 	if err != nil {
-		t.Fatalf("Open(%q): %v", name, err)
+		t.Fatalf("Load(%q): %v", name, err)
 	}
 	defer receiver.Close()
 	if got := receiver.cfg.TagStubSize; got != 48 {
-		t.Fatalf("Open auto-population: TagStubSize = %d, want 48", got)
+		t.Fatalf("Load auto-population: TagStubSize = %d, want 48", got)
 	}
 
 	// End-to-end round trip under the 48-byte-tag MAC confirms the

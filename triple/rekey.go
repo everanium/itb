@@ -8,8 +8,8 @@ import (
 	"github.com/everanium/itb/wrapper"
 )
 
-// Rekey swaps this Pipeline's parallax and wrapper masters. The eight
-// ITB seeds and the MAC key are NOT rotated — Rekey targets only the
+// Rekey swaps this Pipeline's parallax and wrapper masters. The inner
+// ITB seeds and the MAC key are not rotated — Rekey targets only the
 // two outer-layer master secrets.
 //
 // The returned blob carries the new masters + the unchanged inner

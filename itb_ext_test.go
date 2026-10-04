@@ -122,7 +122,7 @@ type lowLevelConstellation struct {
 }
 
 // newLowLevelConstellation builds the eight seeds through the
-// name-keyed constructors — the path the triple package runs for every
+// name-keyed constructors — the path the Triple package runs for every
 // slot.
 func newLowLevelConstellation(t *testing.T, name string, bits int) lowLevelConstellation {
 	t.Helper()

@@ -268,7 +268,7 @@ func TestMake128WrongWidth(t *testing.T) {
 // "has width N, not 256" error distinguishable from the unknown-name
 // path.
 func TestMake256WrongWidth(t *testing.T) {
-	for _, name := range []string{"areion512", "blake2b512", "aescmac", "siphash24"} {
+	for _, name := range []string{"aesitb128", "areion512", "blake2b512", "aescmac", "siphash24"} {
 		_, _, err := Make256(name)
 		if err == nil {
 			t.Errorf("Make256(%q): nil error, want wrong-width error", name)
@@ -285,7 +285,7 @@ func TestMake256WrongWidth(t *testing.T) {
 // "has width N, not 512" error distinguishable from the unknown-name
 // path.
 func TestMake512WrongWidth(t *testing.T) {
-	for _, name := range []string{"areion256", "blake2b256", "blake2s", "blake3", "aescmac", "siphash24", "chacha20"} {
+	for _, name := range []string{"aesitb128", "areion256", "blake2b256", "blake2s", "blake3", "aescmac", "siphash24", "chacha20"} {
 		_, _, err := Make512(name)
 		if err == nil {
 			t.Errorf("Make512(%q): nil error, want wrong-width error", name)

@@ -420,8 +420,8 @@ func checkFullAbsorption512(t *testing.T, hash itb.HashFunc512, name string) {
 
 func TestBuildersPanicOnBadParams(t *testing.T) {
 	// CBC-MAC: tiny block cipher would be rejected by aes.NewCipher
-	// anyway, so we just sanity-check the panic for a hypothetical
-	// 8-byte block via a stub. We use the recover pattern to validate.
+	// anyway, verifying the panic for a hypothetical 8-byte block
+	// via a stub. The recover pattern validates this behavior.
 
 	t.Run("Sponge128-rate-too-small", func(t *testing.T) {
 		defer func() {

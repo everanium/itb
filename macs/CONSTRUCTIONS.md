@@ -18,7 +18,7 @@ For the standards' own conformance, refer to the upstream specifications and lib
 - `crypto/hmac` + `crypto/sha256` — the stdlib HMAC-SHA-256.
 - `github.com/zeebo/blake3` — BLAKE3 native keyed mode (BLAKE3 spec §6).
 
-The primitive-math layer is the upstream libraries' (and the stdlib's) responsibility. This document describes the ITB-construction wrapping around those primitives, and `macs_test.go` pins that wrapping against regression (bit-exact KAT against pycryptodome's KMAC256, the RFC 4231 HMAC-SHA-256 vectors, the official BLAKE3 keyed-mode KAT, plus integration testing under `TestRegisterTripleIntegration` and `TestMakeIncrementalParity`).
+The primitive-math layer is the upstream libraries' (and the stdlib's) responsibility. This document describes the ITB-construction wrapping around those primitives, and the `macs/` test suite pins that wrapping (bit-exact KAT against pycryptodome's KMAC256, the RFC 4231 HMAC-SHA-256 vectors, the official BLAKE3 keyed-mode KAT, plus integration testing under `TestRegisterTripleIntegration` and `TestMakeIncrementalParity`).
 
 ## Table of constructions
 

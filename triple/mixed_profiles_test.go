@@ -32,7 +32,7 @@ func TestShippedMixedProfilesMessageRoundTrip(t *testing.T) {
 
 			receiver, err := Load(blob)
 			if err != nil {
-				t.Fatalf("Open(%q): %v", name, err)
+				t.Fatalf("Load(%q): %v", name, err)
 			}
 			defer receiver.Close()
 
@@ -74,7 +74,7 @@ func TestShippedMixedProfilesStreamRoundTrip(t *testing.T) {
 
 			receiver, err := Load(blob)
 			if err != nil {
-				t.Fatalf("Open(%q): %v", name, err)
+				t.Fatalf("Load(%q): %v", name, err)
 			}
 			defer receiver.Close()
 
@@ -164,7 +164,7 @@ func TestShippedMixedProfilesRekeyRoundTrip(t *testing.T) {
 
 	receiver, err := Load(rekeyBlob)
 	if err != nil {
-		t.Fatalf("Open post-Rekey: %v", err)
+		t.Fatalf("Load post-Rekey: %v", err)
 	}
 	defer receiver.Close()
 

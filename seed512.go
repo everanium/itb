@@ -213,7 +213,7 @@ func (s *Seed512) Bits() int {
 
 // MinPixels returns the minimum pixel count ensuring encoding ambiguity
 // exceeds the key space (2^keyBits). Aliases [MinPixelsAuth]'s CCA-
-// resistant formula so plain and MAC-authenticated modes share one
+// resistant formula so plain and MAC Authenticated modes share one
 // container envelope on small messages.
 func (s *Seed512) MinPixels() int {
 	return s.MinPixelsAuth()

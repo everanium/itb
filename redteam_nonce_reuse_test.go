@@ -1024,7 +1024,7 @@ func min3(a, b int) int {
 //
 // If the attacker collects N > 2 nonce-reuse ciphertexts under the same
 // seeds, do statistics across pairs reveal any deterministic per-pixel
-// residue the barrier fails to whiten? Measure: per-pixel byte-value
+// residue the barrier fails to mask? Measure: per-pixel byte-value
 // histogram, chi-square, per-pixel entropy pooled across pairs. If some
 // pixel positions have a "sticky" pattern across pairs, that leaks
 // per-pixel PRF structure (channelXOR + noisePos + rotation are
@@ -1070,7 +1070,7 @@ func TestRedTeamNonceReuseLayerDMultiPair(t *testing.T) {
 
 	// Alternative more meaningful measure at N=30: per byte position,
 	// count distinct byte values observed. If per-position pipeline is
-	// deterministic and DRBG-whitened, distinct count should be
+	// deterministic and DRBG-masked, distinct count should be
 	// binomially distributed around 1 - (1 - 1/256)^N ≈ 0.111 * 256 ≈
 	// 28.5 per position for N=30 (near-perfectly random). If pipeline
 	// leaks a fixed bit, distinct count drops sharply on the leaked bit.
@@ -1392,7 +1392,7 @@ func applyDemaskerToThirdMsg(c3Body []byte, regionPixels, regionBodyOffset, star
 	//
 	// Note: chanXOR56 is derived within this function from a known-XOR
 	// crib on C1: chanXOR56[ch] = unrotate(extract7(C1[c], np), r) XOR
-	// region_payload_C1_bits(pp, ch). We use regionPayloadC1 for the
+	// region_payload_C1_bits(pp, ch). The regionPayloadC1 slice provides the
 	// canonical crib.
 	_ = regionPayloadC1 // computed from mask peek at caller; retained for
 	// contract clarity — the per-pixel chanXOR reveal happens on the

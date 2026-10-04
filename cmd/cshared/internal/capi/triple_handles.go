@@ -13,7 +13,7 @@ import (
 )
 
 // TripleHandle wraps a single *triple.Pipeline behind an opaque
-// uintptr crossing the cgo boundary. The Pipeline owns its own eight
+// uintptr crossing the cgo boundary. The Pipeline owns its inner
 // ITB seeds, per-instance [github.com/everanium/itb.Config] snapshot,
 // optional parallax + wrapper layers, and MAC closure — the FFI
 // layer just pins it via runtime/cgo.Handle so the value survives

@@ -129,8 +129,8 @@ func pumpEncryptCollect(t *testing.T, sID TripleHandleID, pt []byte) []byte {
 // remaining tail of dst. Returns the total bytes drained and the
 // finished flag returned by the final Read. If the final Read
 // consumed the full remaining tail without seeing finished == true,
-// returns (used, false) — that is the exact regression the sync
-// closes.
+// returns (used, false), signaling that completion was not reported
+// concurrently with the final byte payload.
 func drainExact(t *testing.T, id TripleStreamID, dst []byte) (int, bool) {
 	t.Helper()
 	used := 0
@@ -153,6 +153,6 @@ func drainExact(t *testing.T, id TripleStreamID, dst []byte) (int, bool) {
 	}
 	// dst is full; the finished flag must have arrived in the same
 	// Read that consumed the last byte. If it did not, do NOT make a
-	// probe call — the regression under test is exactly that lag.
+	// probe call — the contract requires finished to arrive synchronously.
 	return used, false
 }

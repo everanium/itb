@@ -12,8 +12,7 @@ import (
 // and the per-message nonce. The seed is the injective nonce-dependent
 // core of the schedule derivation: any change to nonce or subkey
 // flows into a keystream difference and hence a different seed
-// byte-for-byte, since the anchor cipher (AES-128-CTR by default) is
-// a keyed permutation on 128-bit inputs. Callers that need the derived
+// byte-for-byte. Callers that need the derived
 // [Fisher-Yates permutation](fisherYates) go through [buildPermutation]
 // which layers Fisher-Yates on top of this seed.
 func buildScheduleSeed(s *Schedule, cs *Cipherset, nonce []byte) ([scheduleSeedSize]byte, error) {

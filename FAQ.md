@@ -329,7 +329,7 @@ go test -tags redteam -run TestRedTeamJokeHashFullKPA ./ -v -count=1
 
 ## Question 4 — CRC128 is GF(2)-linear: does compound-key linear algebra break ITB?
 
-**Reader's setup.** «CRC128 admits full total inversion in polynomial time — one Gaussian elimination on a GF(2) system. The public script `scripts/redteam/itb/theory/crc128/compound_key_crc128.py` recovers a compound key `K` without any crib KPA on Single Ouroboros. Why does that path not carry into the shipped construction?»
+**Reader's setup.** «CRC128 admits full total inversion in polynomial time — one Gaussian elimination on a GF(2) system. The public script `scripts/redteam/itb/theory/crc128/compound_key_crc128.py` recovers a compound key `K` without any Crib KPA on Single Ouroboros. Why does that path not carry into the shipped construction?»
 
 ### Current analytical picture
 

@@ -257,7 +257,7 @@ func FreeTriple(id TripleHandleID) (st Status) {
 
 // TripleEncryptStream drives one Streaming AEAD / Non-AEAD encrypt
 // pass across the Pipeline's full chain: parallax encrypt-Reader → itb
-// Triple 8-seed Streaming AEAD (or Non-AEAD) → wrapper wrap-Writer.
+// Triple Streaming AEAD (or Non-AEAD) → wrapper wrap-Writer.
 //
 // Buffer convention is the standard caller-allocated one used across
 // every cipher entry: the caller supplies a plaintext src slice + a
@@ -467,7 +467,7 @@ func mapTripleError(err error) Status {
 // the shared lastErr slot so [LastError] surfaces the raw diagnostic
 // alongside the mapped Status code.
 func setLastErrMessageTriple(msg string) {
-	// Errors raised inside the triple package already carry the
+	// Errors raised inside the Triple package already carry the
 	// package prefix; adding a second one reads as a stutter in the
 	// text every binding surfaces to its caller.
 	v := msg

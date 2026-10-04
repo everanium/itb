@@ -67,14 +67,14 @@ def main(argv=None) -> int:
     f1 = load(args.dir / "f1_pre_anchor_structure.json")
     if f1:
         rows = []
-        for s in f1["per_snake"]:
-            rows.append([s["snake"], s["snake_pixels"],
+        for s in f1.get("per_region", f1.get("per_snake", [])):
+            rows.append([s.get("region", s.get("snake")), s.get("region_pixels", s.get("snake_pixels")),
                          f"{s['per_pixel_set_size_mean']:.2f}",
                          s["per_pixel_set_size_min"],
                          s["per_pixel_set_size_max"],
                          s["max_intersection_over_startpixel"]])
         print(fmt_table(
-            ["snake", "snake_pixels", "pp_mean", "pp_min", "pp_max", "max_intersection"],
+            ["region", "region_pixels", "pp_mean", "pp_min", "pp_max", "max_intersection"],
             rows))
         print("Note:", f1.get("note", ""))
     else:
@@ -84,14 +84,14 @@ def main(argv=None) -> int:
     f2 = load(args.dir / "f2_true_anchor.json")
     if f2:
         rows = []
-        for s in f2["per_snake"]:
-            rows.append([s["snake"], s["snake_pixels"],
+        for s in f2.get("per_region", f2.get("per_snake", [])):
+            rows.append([s.get("region", s.get("snake")), s.get("region_pixels", s.get("snake_pixels")),
                          s["full_true_anchor_shifts"],
                          f"{s['max_channel_matches']}/{s['crib_channels_budget']}",
                          f"{s['avg_channel_matches']:.3f}",
                          f"{s['chance_floor_per_channel']:.4f}"])
         print(fmt_table(
-            ["snake", "snake_pixels", "full_anchor_shifts", "max_matches",
+            ["region", "region_pixels", "full_anchor_shifts", "max_matches",
              "avg_matches", "chance_floor"],
             rows))
         print("Note:", f2.get("note", ""))
@@ -108,12 +108,12 @@ def main(argv=None) -> int:
     f4 = load(args.dir / "f4_startpixel_peek.json")
     if f4:
         rows = []
-        for s in f4["per_snake"]:
-            rows.append([s["snake"], s["startpixel_disclosed"],
+        for s in f4.get("per_region", f4.get("per_snake", [])):
+            rows.append([s.get("region", s.get("snake")), s["startpixel_disclosed"],
                          f"{s['channel_matches_at_sp']}/{s['crib_channels_budget']}",
                          f"{s['avg_channel_matches_all_shifts']:.3f}"])
         print(fmt_table(
-            ["snake", "sp_disclosed", "matches_at_sp", "avg_matches_all"],
+            ["region", "sp_disclosed", "matches_at_sp", "avg_matches_all"],
             rows))
         print("Note:", f4.get("note", ""))
 
@@ -121,12 +121,12 @@ def main(argv=None) -> int:
     f5 = load(args.dir / "f5_displacement.json")
     if f5:
         rows = []
-        for s in f5["per_snake"]:
-            rows.append([s["snake"],
+        for s in f5.get("per_region", f5.get("per_snake", [])):
+            rows.append([s.get("region", s.get("snake")),
                          f"{s['matched']}/{s['compared']}",
                          f"{s['fraction']:.4f}",
                          f"{s['chance_at_alphabet']:.4f}"])
-        print(fmt_table(["snake", "matched/compared", "fraction", "chance"], rows))
+        print(fmt_table(["region", "matched/compared", "fraction", "chance"], rows))
 
     print("\n=== SAT probe (Bitwuzla, N-pixel joint) ===")
     sat = load(args.dir / "sat_probe.json")
@@ -144,11 +144,12 @@ def main(argv=None) -> int:
                           f"{a['bit0_62_matches']}/{a['lanes_total']}")
         if "barrier" in sat:
             print("\nBarrier (shipped Triple + always-on 48-bit interlock):")
-            for snake_report in sat["barrier"]:
-                print(f"  snake {snake_report['snake']}: sp_scan={snake_report['sp_scan_count']} "
-                      f"sat={snake_report['sat']} unsat={snake_report['unsat']} "
-                      f"unknown={snake_report['unknown']}  true_sp={snake_report['true_sp']}")
-                for sp_res in snake_report["per_sp"]:
+            for report in sat["barrier"]:
+                r_id = report.get("region", report.get("snake"))
+                print(f"  region {r_id}: sp_scan={report['sp_scan_count']} "
+                      f"sat={report['sat']} unsat={report['unsat']} "
+                      f"unknown={report['unknown']}  true_sp={report['true_sp']}")
+                for sp_res in report["per_sp"]:
                     xv = sp_res.get("cross_validation", {})
                     xv_note = ""
                     if xv:

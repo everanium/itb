@@ -59,7 +59,7 @@ func TestStreamModeAmbiguityParityAEADvsNoMAC(t *testing.T) {
 			defer aead.Close()
 			nomac, _, err := Init(ProfileStreamingNoAEADTripleV1, commonOpts)
 			if err != nil {
-				t.Fatalf("Init No-MAC: %v", err)
+				t.Fatalf("Init No MAC: %v", err)
 			}
 			defer nomac.Close()
 
@@ -70,7 +70,7 @@ func TestStreamModeAmbiguityParityAEADvsNoMAC(t *testing.T) {
 				t.Fatalf("AEAD EncryptStream: %v", err)
 			}
 			if err := nomac.EncryptStream(bytes.NewReader(plaintext), &plainWire); err != nil {
-				t.Fatalf("No-MAC EncryptStream: %v", err)
+				t.Fatalf("No MAC EncryptStream: %v", err)
 			}
 
 			// Full-stream length parity. Ratifies mode-ambiguity length

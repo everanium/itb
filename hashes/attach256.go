@@ -19,7 +19,7 @@ import (
 // running. A factory error is returned; the seed is left unchanged.
 // The hooks are a performance path only: the seed produces the same
 // wire with and without them. [NewSeed256] and [SeedFromComponents256] —
-// the constructor path of the triple package's seed builders and the C
+// the constructor path of the Triple package's seed builders and the C
 // ABI seed constructors — call attachFused256, attachInterlockBatch16x256
 // and attachInterlockBatch32x256 together.
 func attachFused256(s *itb.Seed256, name string, key []byte) error {
