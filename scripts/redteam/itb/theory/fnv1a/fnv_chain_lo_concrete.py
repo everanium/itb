@@ -188,7 +188,7 @@ def fnv_chain_lo_z3(z3, lo_lane_seeds_syms, data_bytes: bytes, rounds: int):
     def mul_z3(state):
         # Modular addition of shifted copies, NOT XOR (see pure-Python
         # counterpart for the reasoning). `+` on Z3 BitVec(64) wraps
-        # mod 2^64, which is exactly the semantics we need.
+        # mod 2^64, matching the required semantics.
         return (
             (state << 8)
             + (state << 5)

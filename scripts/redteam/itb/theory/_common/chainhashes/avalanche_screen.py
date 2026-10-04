@@ -173,7 +173,7 @@ def screen(prim128, rounds: int, data: bytes, samples: int,
     probe = rng.sample(range(nbits), min(probe_bits, nbits))
 
     # Per probed input bit: count of distinct output differences (capped at 2
-    # — we only need to know "constant" vs "varies"), one representative diff,
+    # — only "constant" vs "varies" is needed), one representative diff,
     # and per-output-bit flip counts for SAC.
     distinct_first = [None] * len(probe)
     is_constant = [True] * len(probe)

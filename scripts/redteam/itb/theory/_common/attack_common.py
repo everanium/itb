@@ -46,7 +46,7 @@ def safe_rmtree(target: Path, expected_parent: Path) -> None:
 
     Raises:
         ValueError: if target.resolve() is not inside expected_parent.resolve().
-        OSError: if the rmtree itself fails (we never catch these silently).
+        OSError: if the rmtree itself fails (not caught silently).
     """
     target = target.resolve()
     expected_parent = expected_parent.resolve()
@@ -110,7 +110,7 @@ def cobs_encode_with_mask(src: bytes, src_mask: bytes) -> Tuple[bytes, bytes]:
     group's length = 1 + (len(src) % 254) — both fully attacker-derivable
     from the public plaintext length. Hence every code byte is marked known.
 
-    For plaintexts that contain 0x00 bytes (not our case for Partial KPA) the
+    For plaintexts that contain 0x00 bytes (not applicable to Partial KPA) the
     code values still depend only on 0x00 positions in src; those positions
     are KNOWN only if every byte up to the next 0x00 is known. The logic
     here is slightly conservative — marks the code byte known iff EVERY src

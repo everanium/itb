@@ -26,7 +26,7 @@ Structural differences vs the FNV-1a / MD5 / mx3 / SeaHash calibrations:
   SipRounds + message-mix XORs + final XOR): ≈ 96 operations,
   dominated by adds. Bit-blast: every 64-bit add is ~64 clauses
   (ripple-carry); rotations and XORs are free.
-- Per chain round at our 20-byte data: ~96 ARX ops × 2 lanes = 192 ops
+- Per chain round at 20-byte data: ~96 ARX ops × 2 lanes = 192 ops
   (only lo-lane observed; hi-lane formula stays in symbolic form
   because of the dead-vars elision). Per 8-observation cell at r = 1:
   ~768 ARX ops, an order of magnitude smaller bit-blast than mx3 r = 1
@@ -641,9 +641,9 @@ def _run_cell_cnc(
     else:
         statuses = {r["status"] for r in cube_results}
         if statuses == {"unsat"}:
-            # Mathematically impossible — at least one cube must
-            # contain the GT top-3-bits. If we get here, the SAT
-            # encoding is broken.
+            # Inconsistent with theory — at least one cube must
+            # contain the GT top-3-bits. Reaching this point indicates
+            # the SAT encoding is broken.
             print(
                 "  [C&C] WARNING: ALL cubes UNSAT — SAT encoding drift "
                 "suspected (≥1 cube must contain ground truth)",

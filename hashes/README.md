@@ -157,7 +157,7 @@ Camellia / SM4 / ARIA and every other 128-bit-block cipher exposing `cipher.Bloc
 
 #### 2. `BuildSpongeChainAbsorb256` — Ascon-p over 320-bit state
 
-The builder takes an unkeyed `Permute` callback plus `(rate, capacity, fixedKey)`. Ascon-p's 320-bit state maps cleanly onto `rate=16` + `capacity=24`. The permutation is inlined below (Ascon v1.2 reference, ~20 lines); Keccak-f[1600] or any other sponge permutation drops in the same way behind the closure.
+The builder takes an unkeyed `Permute` callback plus `(rate, capacity, fixedKey)`. Ascon-p's 320-bit state maps cleanly onto `rate=16` + `capacity=24`. The permutation is inlined below (Ascon reference, ~20 lines); Keccak-f[1600] or any other sponge permutation drops in the same way behind the closure.
 
 ```go
 import (

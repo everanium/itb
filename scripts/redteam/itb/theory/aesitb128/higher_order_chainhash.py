@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Higher-order integral probe (aes2r higher_order_chainhash.py port): does
-a 2nd-order Λ-set (2 active data bytes, 2^16 texts) leave a balanced
+"""Higher-order integral probe: does a 2nd-order Λ-set (2 active data bytes,
+2^16 texts) leave a balanced
 signature through ChainHash<AES-ITB-128> at any r ∈ R_SET where the
 1st-order integral died? Higher order reaches deeper rounds — the natural
 escalation. Three observables per depth (see screens_common)."""

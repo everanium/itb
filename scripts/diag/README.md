@@ -6,8 +6,8 @@ binary at `/tmp/itb.test` (via `go test -c`) on first run, then reuse
 it across configurations to avoid Go-compile-time noise in the
 per-cell numbers.
 
-Neither script writes anything to the repository or to any persistent
-storage; both are read-only benches suitable for running on a fresh
+The diagnostic scripts write nothing to the repository or to any persistent
+storage; they are read-only benches suitable for running on a fresh
 target CPU without side effects.
 
 ## tier_diag.sh
@@ -58,7 +58,7 @@ HASH_TIER=avx2 bash scripts/diag/hash_diag.sh              # narrow to AVX2 hash
 INTERLOCK_TIER=natural bash scripts/diag/hash_diag.sh      # observe natural dispatch on this host
 ```
 
-## Env inputs shared by both scripts
+## Env inputs shared by the scripts
 
 | Var                 | Default        | Purpose                                            |
 |---------------------|----------------|----------------------------------------------------|

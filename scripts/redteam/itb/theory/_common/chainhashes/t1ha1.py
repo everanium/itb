@@ -8,7 +8,7 @@ at .../t1ha_bits.h. Cross-language parity verified via `_parity_test.py`
 against the Go-generated vector dump.
 
 Native primitive produces a 64-bit output. For ITB's ChainHash128 wrapping
-we use a parallel two-lane construction:
+a parallel two-lane construction is used:
 
     t1ha1Hash128(data, seed0, seed1) = (t1ha1_64le(data, seed0),
                                         t1ha1_64le(data, seed1))

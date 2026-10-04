@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Can the standalone AES-ITB-128 break be converted into KEY RECOVERY
-through ChainHash? (aes2r keyrecover_r2.py port.) The standalone break is
-the one-pair inversion (integral_aesitb128.py Screen B), so the engine here
+through ChainHash? The standalone break is
+the one-pair inversion (integral screen B), so the engine here
 is P^-1, not the integral peel.
 
 Engine: from one (data, full output) pair compute

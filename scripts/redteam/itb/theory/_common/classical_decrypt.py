@@ -84,7 +84,7 @@ def cobs_decode_tolerant(encoded: bytes, expect_len: int,
     """Gap-tolerant COBS decoder.
 
     Standard COBS expects no interior 0x00 bytes in the encoded stream (only
-    terminator at end). If we hit an unexpected 0x00 (gap from an ambiguous
+    terminator at end). If an unexpected 0x00 is encountered (gap from an ambiguous
     pixel), emit `gap_marker` bytes and try to resync by skipping the zero
     run, then resume decoding.
 
@@ -96,7 +96,7 @@ def cobs_decode_tolerant(encoded: bytes, expect_len: int,
     while i < len(encoded) and len(out) < expect_len:
         code = encoded[i]
         if code == 0:
-            # Gap (or true terminator). If we've reached expected length,
+            # Gap (or true terminator). If the expected length is reached,
             # treat as terminator. Otherwise mark and skip zeros.
             if len(out) >= expect_len:
                 break

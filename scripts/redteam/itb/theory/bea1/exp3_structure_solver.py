@@ -289,7 +289,7 @@ def build_and_solve(R, observations, mode, timeout_sec, solver_name, td,
         #  quotient mode instead RELAXES to coset-label equality only -- see below.)
 
     if mode == "quotient":
-        # In quotient mode we ALSO try the relaxed sub-problem: drop the exact
+        # In quotient mode the relaxed sub-problem is also evaluated: drop the exact
         # 64-bit equality for all but the first observation and instead assert
         # only the surviving-lane W-coset labels.  This is the "solve the 40-bit
         # quotient first" shortcut.  If the broken homomorphism makes this
@@ -297,7 +297,7 @@ def build_and_solve(R, observations, mode, timeout_sec, solver_name, td,
         # validation) or cannot use it to prune -- demonstrating the wall.
         pass  # the exact-equality constraints above subsume the labels; the
               # empirical finding is that no coset-only relaxation is sound under
-              # feedforward, so we keep the exact encoding and report timing.
+              # feedforward, so the exact encoding is retained and timing reported.
 
     build_sec = time.time() - t_build
 

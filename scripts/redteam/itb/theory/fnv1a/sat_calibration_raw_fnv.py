@@ -138,8 +138,8 @@ def _run_cell(
         BitVecVal = z3.BitVecVal
 
         # Fresh solver context — used for constraint building under either
-        # backend. Z3's in-process timeout is set only when we actually
-        # call `solver.check()` (i.e. the Z3 path); under bitwuzla the
+        # backend. Z3's in-process timeout is set only when actually
+        # calling `solver.check()` (i.e. the Z3 path); under bitwuzla the
         # subprocess timeout is the operative cap.
         solver = z3.Solver()
         if solver_backend == "z3":

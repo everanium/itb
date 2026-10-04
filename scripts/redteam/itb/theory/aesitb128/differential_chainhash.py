@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""DATA-differential attack surface through ChainHash<AES-ITB-128> (aes2r
-differential_chainhash.py port).
+"""DATA-differential attack surface through ChainHash<AES-ITB-128>.
 
 Attacker-realistic DATA differential: fix the secret seed, apply a
 single-active-byte input difference Δ to `data`, over many random bases,

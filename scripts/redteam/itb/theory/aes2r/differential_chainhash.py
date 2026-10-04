@@ -2,8 +2,7 @@
 """Direction 1: DATA-differential attack surface through ChainHash<2-round-AES>.
 
 The differential pre-screen flagged aes2r (ddt8_max=1.0) on SEED differences;
-here we measure the attacker-realistic DATA differential: fix the secret seed,
-apply a single-active-byte input difference Δ to `data`, over many random bases,
+Attacker-realistic DATA differential: fix the secret seed, apply a single-active-byte input difference Δ to `data`, over many random bases,
 and measure two differential distinguishers of the output:
 
   * max_dp   — max over (output byte, δ) of P(out_byte_diff = δ).  Random ~ 1/256.

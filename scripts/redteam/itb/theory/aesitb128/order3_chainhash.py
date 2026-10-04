@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""3rd-order integral (aes2r order3_chainhash.py port): 2^24 texts per set
+"""3rd-order integral probe: 2^24 texts per set
 through ChainHash<AES-ITB-128> at every r ∈ R_SET, three observables per
 depth. One set per cell; evaluated in 2^20-text chunks. Slow-ish (minutes
 per deep cell); run detached and log."""

@@ -167,7 +167,7 @@ def _murmur3_x64_128_h1_z3(z3, seed_sym, data: bytes):
     h1 = _fmix64_z3(z3, h1)
     h2 = _fmix64_z3(z3, h2)
     h1 = h1 + h2
-    # h2 = h2 + h1  — not needed; we return only h1 (the low half).
+    # h2 = h2 + h1  — not needed; only h1 (the low half) is returned.
     return h1
 
 

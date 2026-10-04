@@ -165,7 +165,7 @@ func TestBLAKE2sMakePairBadKeySize(t *testing.T) {
 // returns only the single-arm closure (no batched dispatch). Calling
 // BLAKE2s(key) followed by BLAKE2s(key) with the same explicit key must
 // produce bit-exact identical digests, and the resulting closure must
-// be parity-equivalent to lane 0 of BLAKE2s256Pair(key)'s single arm.
+// be parity-equivalent to the single arm of BLAKE2s256Pair(key).
 func TestBLAKE2sSingleArmDirect(t *testing.T) {
 	var key [32]byte
 	if _, err := rand.Read(key[:]); err != nil {

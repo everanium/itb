@@ -238,8 +238,8 @@ def run_cell(size: int, bf: int, n_samples: int, worker_id: int) -> Dict[str, fl
     tprint(f"[w{worker_id}] >> {label}  (n_samples={n_samples})")
     t0 = time.time()
 
-    # Step 0 — single probe encrypt to discover container_bytes, so we can
-    # start /dev/urandom concurrently.
+    # Step 0 — single probe encrypt to discover container_bytes, enabling
+    # starting /dev/urandom concurrently.
     run_cmd(
         ["go", "test", "-tags", "redteam", "-run",
          "TestRedTeamGenerateTripleMassive", "-timeout", "14400s"],

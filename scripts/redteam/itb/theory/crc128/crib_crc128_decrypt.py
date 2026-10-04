@@ -116,12 +116,12 @@ def try_decrypt_full(
                 printable_count += 1
                 break
         if best is None:
-            # fall back to np=0 so we can continue counting
+            # fall back to np=0 to continue counting
             best = decrypt_pixel(k_trial, cb, p_idx, const_all, 0, rot)
         out.extend(best)
     # Attach printable_count via side effect trick: embed as header byte? No —
     # return (bytes, count) pair caller can inspect. Simpler: caller will
-    # recompute printability post-hoc; we just return the raw stream.
+    # recompute printability post-hoc; return the raw stream.
     return bytes(out)
 
 

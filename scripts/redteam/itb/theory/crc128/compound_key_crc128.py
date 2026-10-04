@@ -65,7 +65,7 @@ only primitive, never used in shipped ITB.
 1. Read the demasked `.datahash.bin` stream + its `.index` sidecar.
 2. For each observation `(data_pixel_idx, channel, observed_7bit)`:
     * Compute `const_p = ChainHash(pixel_le(data_pixel_idx + shift) || nonce,
-      seed=0)` using our Python mirror of Go's CRC64 (`chainhashes/crc128.py`).
+      seed=0)` using the Python mirror of Go's CRC64 (`chainhashes/crc128.py`).
     * `K_bits_at_(3+7*ch..3+7*ch+6) = observed_7bit XOR (const_p >> (3+7*ch)) & 0x7F`
     * Majority-vote per K bit across all observations.
 3. After aggregating, the attacker has the full observable slice of K.

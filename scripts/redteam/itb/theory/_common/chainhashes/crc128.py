@@ -77,7 +77,7 @@ def compute_expected_K(meta: dict, nonce: bytes) -> int:
 
     Because K is pixel-independent and nonce-independent (only the length
     of the chainhash input matters, not its content), ANY pixel index
-    produces the same K. We use pixel 0 for simplicity."""
+    produces the same K; pixel 0 is used for simplicity."""
     import struct
     true_ds = list(meta["data_seed"])
     pixel_le = struct.pack("<I", 0)

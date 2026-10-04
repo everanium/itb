@@ -2,8 +2,7 @@
 """
 Does the AES-ITB-128 integral structure SURVIVE ChainHash wrapping?
 
-Structure-agnostic distinguisher (the aes2r distinguisher_chainhash.py
-port): feed a Λ-set (data byte 0 active, 256 values) through the cascade at
+Structure-agnostic distinguisher: feed a Λ-set (data byte 0 active, 256 values) through the cascade at
 r ∈ {1, 2, 3, 4, 5, 6, 7, 8, 12, 16} primitive calls and measure, for each
 attacker observable,
   * #active output bytes (vary over the set) — random fn ~= all bytes active

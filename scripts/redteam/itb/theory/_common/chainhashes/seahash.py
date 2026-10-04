@@ -7,7 +7,7 @@ https://github.com/ticki/tfs/tree/master/seahash/src (reference.rs +
 helper.rs).
 
 Native primitive produces a 64-bit output. For ITB's ChainHash128 wrapping
-we use the same parallel two-lane construction as t1ha1: lo lane =
+the implementation uses the same parallel two-lane construction as t1ha1: lo lane =
 seahash64 under seed_lo, hi lane = seahash64 under seed_hi.
 
 Expected HARNESS.md Axis A signature: PerlinNoise catastrophic

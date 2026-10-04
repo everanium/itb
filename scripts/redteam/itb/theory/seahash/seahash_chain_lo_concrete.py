@@ -331,7 +331,7 @@ def _self_parity(rounds_list: List[int], num_vectors: int, seed_rng: int) -> int
         for i in range(num_vectors):
             data = bytes(rng.getrandbits(8) for _ in range(20))
             # Generate non-zero seed components (canonical SeaHash
-            # has a separate seed=0 path that we don't model).
+            # has a separate seed=0 path not modeled here).
             seed_components = []
             for _ in range(2 * rounds):
                 while True:

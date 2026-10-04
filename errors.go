@@ -3,11 +3,8 @@ package itb
 import "errors"
 
 // ErrEmptyInput is returned by Low-Level Cfg entry points
-// (Encrypt3x{128,256,512}Cfg / Decrypt3x{128,256,512}Cfg /
-// EncryptAuth3x{128,256,512}Cfg / DecryptAuth3x{128,256,512}Cfg /
-// EncryptStream3x{128,256,512}Cfg / DecryptStream3x{128,256,512}Cfg /
-// EncryptStreamAuth3x{128,256,512}Cfg / DecryptStreamAuth3x{128,256,512}Cfg)
-// when the supplied plaintext or wire payload is nil or zero-length.
+// (Single Message and Streaming, plain and authenticated) when the
+// supplied plaintext or wire payload is nil or zero-length.
 //
 // This sentinel is the Low-Level surface's peer to
 // [github.com/everanium/itb/triple.ErrEmptyInput]; both signal the

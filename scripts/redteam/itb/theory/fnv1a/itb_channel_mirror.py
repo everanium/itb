@@ -311,7 +311,7 @@ def parity_check_corpus(fnvstress_dir: Path) -> bool:
     rounds = summary["rounds"]
     data_lo = [int(h, 16) for h in summary["data_lo_lane_hex"]]
     noise_lo = [int(h, 16) for h in summary["noise_lo_lane_hex"]]
-    # We also need the startSeed lo-lane components. summary.json stores
+    # Also extract the startSeed lo-lane components. summary.json stores
     # the full 16-uint64 start_seed_hex; extract even-indexed for lo lane.
     full_start = [int(h, 16) for h in summary["start_seed_hex"]]
     start_lo = full_start[0::2]

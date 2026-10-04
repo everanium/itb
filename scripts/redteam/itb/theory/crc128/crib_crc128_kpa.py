@@ -87,7 +87,7 @@ MASK64 = (1 << 64) - 1
 # Full format-derived plaintext prefix the attacker reconstructs from
 # public API docs. First pixel = bytes 0..6, pixel 1 = bytes 7..13, etc.
 # ITB encodes data through COBS (Consistent Overhead Byte Stuffing) before
-# the rotation + channelXOR + noisePos layers. Our JSON plaintext never
+# the rotation + channelXOR + noisePos layers. Structured JSON plaintext never
 # contains 0x00 bytes, so COBS always starts with 0xFF (maximum overhead
 # header = 255 bytes follow without a 0x00), then the raw bytes. The
 # attacker reads ITB source (open source) to know the COBS wrapping, and

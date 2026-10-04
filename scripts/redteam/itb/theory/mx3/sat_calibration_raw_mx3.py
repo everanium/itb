@@ -639,9 +639,9 @@ def _run_cell_cnc(
     else:
         statuses = {r["status"] for r in cube_results}
         if statuses == {"unsat"}:
-            # Mathematically impossible — at least one cube must
-            # contain the GT top-3-bits. If we get here, the SAT
-            # encoding is broken.
+            # Inconsistent with theory — at least one cube must
+            # contain the GT top-3-bits. Reaching this point indicates
+            # the SAT encoding is broken.
             print(
                 "  [C&C] WARNING: ALL cubes UNSAT — SAT encoding drift "
                 "suspected (≥1 cube must contain ground truth)",

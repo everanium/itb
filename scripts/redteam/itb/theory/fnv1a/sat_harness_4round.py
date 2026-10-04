@@ -179,7 +179,7 @@ def _build_cell_context(
     # meta["cribs"] is a list of {record_index, byte_start_in_plaintext,
     # byte_len, expected_hex, anchor_kind?}. The byte_start is relative
     # to raw plaintext (pre-COBS). After COBS framing they shift by the
-    # overhead bytes; we re-derive the encoded-stream offsets below.
+    # overhead bytes; encoded-stream offsets are re-derived below.
     cribs_meta: List[dict] = meta["cribs"]
 
     # Build record cribs (anchor_kind == "") first; anchor handled separately.
@@ -202,7 +202,7 @@ def _build_cell_context(
     # --- Anchor: the COBS overhead byte at encoded-stream offset 0. ---
     # For plaintexts containing no 0x00, cobs_encode output starts with
     # byte 0xFF when the first run length > 254 (always true here at
-    # keyBits=512 / ~1641 B JSON and ~1845 B HTML). We verify and expose
+    # keyBits=512 / ~1641 B JSON and ~1845 B HTML). Verify and expose
     # the anchor as 7 consecutive plaintext bytes (0xFF plus the first
     # 6 bytes of record 0 — all public-schema).
     if anchor_cribs and cobs_encoded[0] == 0xFF:
@@ -238,7 +238,7 @@ def _build_cell_context(
     # Each record crib's public prefix sits in the RAW plaintext at
     # byte_start_in_plaintext. After COBS framing it shifts by 1 (the
     # initial 0xFF overhead) plus 1 extra for every 254-byte group
-    # boundary it has crossed. We re-derive per-crib encoded offset by
+    # boundary it has crossed. Per-crib encoded offset is re-derived by
     # searching cobs_encoded for the known byte sequence — unambiguous
     # when the sequence contains the record's 8-digit hex index (unique
     # per record).
@@ -248,12 +248,12 @@ def _build_cell_context(
         # Encoded offset: plaintext byte N at index N in original plaintext
         # becomes cobs_encoded[N + 1 + (N // 254)] — because each 254-byte
         # group of non-zero bytes starts with one overhead byte.
-        # (Our structured plaintext has no 0x00, so groups are exactly
+        # (Structured plaintext has no 0x00, so groups are exactly
         # 254 non-zero runs.)
         encoded_offset = pt_offset + 1 + (pt_offset // 254)
         # Sanity: verify that cobs_encoded[encoded_offset : encoded_offset +
         # byte_len] == expected; skip the crib otherwise (a group boundary
-        # might split it — we don't handle that edge case in the first pass).
+        # might split it — unhandled in the first pass).
         if encoded_offset + len(expected) > len(cobs_encoded):
             continue
         if cobs_encoded[encoded_offset:encoded_offset + len(expected)] != expected:
@@ -271,8 +271,8 @@ def _build_cell_context(
         bit_end = (encoded_offset + len(expected)) * 8
 
         # Enumerate every 7-bit ITB window that lies ENTIRELY within
-        # the crib-byte-range. A window at bit_index i spans i..i+7; we
-        # need all 7 bits of its plaintext to come from known bytes,
+        # the crib-byte-range. A window at bit_index i spans i..i+7;
+        # all 7 bits of its plaintext must come from known bytes,
         # which means both cobs_encoded[i//8] and cobs_encoded[(i+7)//8]
         # are inside [encoded_offset, encoded_offset+len(expected)).
         first_window = (bit_start + DATA_BITS_PER_CHANNEL - 1) // DATA_BITS_PER_CHANNEL * DATA_BITS_PER_CHANNEL
@@ -305,8 +305,8 @@ def _build_cell_context(
 
 
 # ============================================================================
-# Python-side sanity: do the observations we collected satisfy the plaintext
-# when we plug in the lab-audit ground-truth seeds? Without this the SAT is
+# Python-side sanity: do the collected observations satisfy the plaintext
+# when plugging in the lab-audit ground-truth seeds? Without this the SAT is
 # on sand. This check is LAB ONLY — never runs in the SAT logic.
 # ============================================================================
 
@@ -524,7 +524,7 @@ def _solve_via_bitwuzla(
     import tempfile
     import re
 
-    # Z3's `to_smt2()` already appends `(check-sat)`. We append only
+    # Z3's `to_smt2()` already appends `(check-sat)`. Append only
     # `(get-value ...)` queries after it (and optional `(exit)`).
     # Double `(check-sat)` caused Bitwuzla to evaluate get-value
     # against a stale model state, which surfaced as wrong seed bytes
@@ -753,7 +753,7 @@ def solve(
 
     if solver_backend == "bitwuzla":
         # Dump the Z3-built formula as SMT-LIB2, ship it to the
-        # `bitwuzla` CLI via subprocess. This gives us Bitwuzla's
+        # `bitwuzla` CLI via subprocess. This yields Bitwuzla's
         # faster QF_BV bit-blaster + CaDiCaL / Kissat / CryptoMiniSat
         # SAT backends and — crucially — a hard subprocess timeout that
         # is honored across every solver phase (unlike Z3's `timeout`

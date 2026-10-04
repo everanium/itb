@@ -61,7 +61,7 @@ DRIVER_LOG="${RESULTS_ROOT}/matrix.log"
 : > "$DRIVER_LOG"
 
 echo "==========================================================================="
-echo "t1ha1 harness bias-neutralization audit (HARNESS.md § 4.1, Axis B)"
+echo "t1ha1 harness bias-neutralization audit (HARNESS.md § 5.1, Axis B)"
 echo "==========================================================================="
 echo "  primitive    : t1ha1_64le (shelf harness track)"
 echo "  sizes        : $SIZES"

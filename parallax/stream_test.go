@@ -22,7 +22,7 @@ var streamPaletteCases = []struct {
 	// PRF-counter family: small-block keyed-PRF slots.
 	{"prf-only", []string{hashes.CipherBLAKE3, hashes.CipherSipHash24, hashes.CipherBLAKE2s}},
 	// Native-block family: AES-NI and ChaCha20 keystreams.
-	{"rebuild-only", []string{hashes.CipherAES128CTR, hashes.CipherChaCha20, hashes.CipherAES128CTR}},
+	{"native-only", []string{hashes.CipherAES128CTR, hashes.CipherChaCha20, hashes.CipherAES128CTR}},
 	// Mixed palette spanning both families.
 	{"mixed", []string{hashes.CipherAES128CTR, hashes.CipherChaCha20, hashes.CipherBLAKE3, hashes.CipherSipHash24}},
 }

@@ -271,7 +271,7 @@ Rank Barrier denies a stable bit-to-lane mapping; Pixel Barrier denies a per-byt
 - `B = C(32, 16) = 601,080,390` (log₂ ≈ 29.16) — choices for `m1` from remaining bits (`m2` complement).
 - `A · B = 1,355,345,464,406,015,082,330` (log₂ ≈ 70.20).
 
-Under the PRF assumption, recovered masks carry zero information about neighboring chunks: a known crib chunk multiplies candidate enumeration by ≈ 2^70.20 without coupling constraints across chunks, turning cryptanalysis into an instance-formulation impossibility.
+Under the PRF assumption, recovered masks carry zero information about neighboring chunks: a known crib chunk multiplies candidate enumeration by ≈ 2^70.20 without coupling constraints across chunks, turning cryptanalysis into an instance-formulation closure ([Proof 11](PROOFS.md#proof-11-48-bit-rank-barrier-mask-space-interlocked-barrier)).
 
 **Algebraic under-determination at 48 known bits.** Even granting an attacker all 48 known plaintext bits of a chunk under Full KPA, the observation does not determine the chunk's mask: the number of preimages per mask triple is `⌊2^128 / (A · B)⌋ ≈ 2^57.80`, and every candidate mask remains consistent with the observation. Combined with the Pixel Barrier's 1:1 signal/noise ambiguity, the attacker has no ranking signal among the ≈ 2^70.20 masks.
 

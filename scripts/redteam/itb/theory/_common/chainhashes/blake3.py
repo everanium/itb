@@ -51,7 +51,7 @@ def init_from_meta(meta: dict) -> None:
             "BLAKE3 bias audit requires `blake3_key_hex` in cell.meta.json. "
             "Regenerate the corpus with the REDTEAM-mode generator that emits "
             "this field (the public-API hash registration does not expose its "
-            "internal BLAKE3 key; we need the lab-emitted value)."
+            "internal BLAKE3 key; requires the lab-emitted value)."
         )
     key = bytes.fromhex(key_hex)
     if len(key) != 32:

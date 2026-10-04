@@ -10,7 +10,7 @@ startPixel candidate, brute-forces `noise_pos` per pixel (8 candidates)
 constrained by COBS framing structure of the encoded stream:
 
   - Byte 0 of the encoded stream MUST be `0xFF` (COBS overhead for the
-    first 254-byte run; holds for our structured JSON/HTML plaintext
+    first 254-byte run; holds for structured JSON/HTML plaintext
     which contains no `0x00` bytes).
   - Byte 255, 510, 765, ... MUST also be `0xFF` (subsequent COBS code
     bytes for contiguous non-zero runs).

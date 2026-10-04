@@ -6,7 +6,7 @@
 
 **No bespoke cryptography.** ITB composes established, standardized primitives rather than introducing new cryptographic designs. Security properties and regulatory status are inherited from the underlying primitives; see [README.md](../README.md) for jurisdictional certification details.
 
-Companion code for the ITB Quick Start. The examples below layer a thin outer cipher envelope over ITB's Triple 8-seed ciphertext so the on-wire bytes look like generic stream cipher output rather than ITB format pixel containers + per-chunk prefix.
+Companion code for the ITB Quick Start. The examples below layer a thin outer cipher envelope over ITB ciphertext so the on-wire bytes look like generic stream cipher output rather than recognizable wire framing.
 
 ## Threat model
 
@@ -95,7 +95,7 @@ keystream), see [`ctr/CONSTRUCTIONS.md`](../ctr/CONSTRUCTIONS.md).
 
 ## Quick Start
 
-The wrapper composes on top of ITB's Triple 8-seed surface. Standard Triple profiles (`ProfileSingleMsgTripleMACV1`, `ProfileStreamingAEADTripleMACV1`) already engage the format-deniability wrapper automatically. Manual composition via `wrapper.Wrap` or `wrapper.NewWrapWriter` is intended for custom pipelines where the built-in wrapper is disengaged (`triple.Opts{WithWrapper: &noWrap}`), for Low-Level ITB entry points (`Encrypt3xNNNCfg`), or for external ciphertext streams. In the examples below, the pipeline's internal wrapper is explicitly disengaged (`withWrap := false`) to prevent double wrapping.
+The wrapper composes on top of ITB's Triple surface. Standard Triple profiles (`ProfileSingleMsgTripleMACV1`, `ProfileStreamingAEADTripleMACV1`) already engage the format-deniability wrapper automatically. Manual composition via `wrapper.Wrap` or `wrapper.NewWrapWriter` is intended for custom pipelines where the built-in wrapper is disengaged (`triple.Opts{WithWrapper: &noWrap}`), for Low-Level ITB entry points (`Encrypt3xNNNCfg`), or for external ciphertext streams. In the examples below, the pipeline's internal wrapper is explicitly disengaged (`withWrap := false`) to prevent double wrapping.
 
 Two canonical wrap shapes cover the surface:
 
@@ -179,7 +179,7 @@ Non-AEAD streaming picks `triple.ProfileStreamingNoAEADTripleV1` at `triple.Init
 
 ### Low-Level wrap
 
-Callers driving the Low-Level `EncryptStreamAuth3xNNNCfg` / `Encrypt3xNNNCfg` entry points directly compose the same wrap shapes above around the caller-produced byte slice or `io.Reader` / `io.Writer` — the wrapper sees only bytes and does not care whether the source is the facade or the Low-Level entry points. The 8-seed constellation (`noiseSeed, lockSeed, dataSeed1..3, startSeed1..3`) is threaded through the Low-Level call in the usual way.
+Callers driving the Low-Level `EncryptStreamAuth3xNNNCfg` / `Encrypt3xNNNCfg` entry points directly compose the same wrap shapes above around the caller-produced byte slice or `io.Reader` / `io.Writer` — the wrapper sees only bytes and does not care whether the source is the facade or the Low-Level entry points. Session seed material is threaded through the Low-Level call in the usual way.
 
 ## Verification matrix
 

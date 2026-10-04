@@ -24,9 +24,9 @@ POLICY_NAME="${POLICY_NAME:-default}"
 BENCH_TIME="${BENCH_TIME:-1s}"
 BENCH_COUNT="${BENCH_COUNT:-1}"
 
-# Canonical bench profile — matches the pre-adaptive sweep configuration
-# so cross-run comparability holds. Every knob below is set only when the
-# caller has not already exported an override.
+# Canonical bench profile — baseline configuration for cross-run
+# comparability. Every knob below is set only when the caller has not
+# already exported an override.
 : "${ITB_INNER_HASH:=areion512}"
 : "${ITB_KEY_BITS:=512}"
 : "${ITB_NONCE_BITS:=512}"

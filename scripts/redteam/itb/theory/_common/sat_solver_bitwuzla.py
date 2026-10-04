@@ -71,7 +71,7 @@ def solve_via_bitwuzla(
     """
     mask = (1 << var_bit_width) - 1
 
-    # Z3's `to_smt2()` already appends `(check-sat)`. We append only
+    # Z3's `to_smt2()` already appends `(check-sat)`. Append only
     # `(get-value ...)` queries after it (and an optional `(exit)`).
     # Double `(check-sat)` causes Bitwuzla to evaluate get-value
     # against a stale model state.

@@ -66,7 +66,7 @@ def build_payload_known(plaintext: bytes, capacity_bytes: int) -> bytes:
     Layout matches Encrypt128:
         payload = cobs_encode(plaintext) + [0x00] + random_fill
     The attacker knows cobs_encode(plaintext) and the 0x00 null byte.
-    Everything from there on is random crypto/rand fill — we fill with zeros
+    Everything from there on is random crypto/rand fill — zeros are filled
     here as a placeholder (real fill is not known to the attacker); the helper
     only uses the first (len(cobs) + 1) bytes for constraint matching.
     """
@@ -469,7 +469,7 @@ def any_candidate_matches_partial(
         return False
     extracted = EXTRACT7_TABLE[:, xor_bytes_8]  # (8_np, 8_ch)
     expected = ROT7_TABLE[:, d_xor_7bits_8]     # (7_rot, 8_ch)
-    # For unknown channels we want the comparison to vacuously succeed.
+    # For unknown channels the comparison should vacuously succeed.
     # Trick: compare `(ex == eq) | ~channel_known_bcast` so unknown channels
     # are always "matched" and .all() along axis 2 only requires known ones.
     cmp = (extracted[:, None, :] == expected[None, :, :])
@@ -1133,7 +1133,7 @@ def main() -> int:
             truth = load_config_truth(cell_dir)
             if is_partial:
                 # Account for any period-shift Layer 2 settled on. The
-                # emitted (p, ch) pair at our "data pixel p" corresponds to
+                # emitted (p, ch) pair at "data pixel p" corresponds to
                 # ground-truth pixel (p + shift) mod data_pixels.
                 shift_r = (start_pixel_used - meta["start_pixel"]) % tp1
                 expected_accum = 0

@@ -335,8 +335,8 @@ done
 # ---------------------------------------------------------------------------
 # Section 4 — interlock-tier sweep × nonce widths, two lockSeed widths.
 # Forces the 48-bit interlock rank-mask tier on the cgo arm against the
-# scalar-forced nocgo arm, both directions. 4 tiers × 2 hashes × 48 =
-# 384 cells. areion512 drives the 512-bit lockSeed (x4 fill, 8-lane
+# scalar-forced nocgo arm, both directions. 7 tiers × 2 hashes × 48 =
+# 672 cells. areion512 drives the 512-bit lockSeed (x4 fill, 8-lane
 # unrank passes); aesitb128 drives the 128-bit lockSeed whose batch-16
 # fill runs the 16-chunk unrank pass — the only shape that reaches the
 # 16-lane AVX-512 kernel. avx512x8 keeps the AVX-512 kernel but runs

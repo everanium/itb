@@ -24,7 +24,7 @@ HERE = Path(__file__).resolve().parent
 PROJ = HERE.parents[5]
 GO_DUMP = HERE / "_parity_dump" / "main.go"
 
-# Add itb/theory/_common to sys.path so we can import chainhashes.<name>
+# Add itb/theory/_common to sys.path to allow importing chainhashes.<name>
 sys.path.insert(0, str(HERE.parent))
 
 

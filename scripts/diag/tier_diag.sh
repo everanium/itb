@@ -21,9 +21,8 @@
 # dispatch throughput vs each forced arm. When natural dispatch is
 # significantly slower than one of the forced arms, the auto-selected
 # tier has a silicon-specific regression on this host and warrants
-# either a kernel-level fix (preferred: rewrite the offending arm to
-# be neutral across the affected microarchitecture) or an SKU-scoped
-# runtime dispatch adjustment as a last resort.
+# a kernel-level fix (rewrite the offending arm to be neutral
+# across the affected microarchitecture).
 #
 # Usage:
 #   bash scripts/diag/tier_diag.sh                     # defaults

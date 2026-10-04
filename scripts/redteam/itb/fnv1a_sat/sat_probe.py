@@ -78,7 +78,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 # Reuse the vetted symbolic FNV-1a lo-lane chain from the archived
-# arsenal. The concrete evaluator gives us cross-check parity; the
+# arsenal. The concrete evaluator provides cross-check parity; the
 # symbolic form is re-implemented against Bitwuzla below (the
 # arsenal's symbolic implementation targets Z3).
 _ARSENAL = Path(__file__).resolve().parents[2] / "itb" / "theory" / "fnv1a"

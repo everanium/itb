@@ -61,7 +61,7 @@ DRIVER_LOG="${RESULTS_ROOT}/matrix.log"
 : > "$DRIVER_LOG"
 
 echo "==========================================================================="
-echo "seahash harness bias-neutralization audit (HARNESS.md § 4.1, Axis B)"
+echo "seahash harness bias-neutralization audit (HARNESS.md § 5.2, Axis B)"
 echo "==========================================================================="
 echo "  primitive    : seahash_64le (shelf harness track)"
 echo "  sizes        : $SIZES"
