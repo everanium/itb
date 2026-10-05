@@ -267,4 +267,38 @@ private
    with Import => True, Convention => C,
         External_Name => "ITB_Triple_StreamFree";
 
+   ---------------------------------------------------------------------
+   --  Hash-registry enumeration and the remaining Go runtime knobs.
+   --  ITB_Triple_HashNames follows the caller-allocated-buffer
+   --  convention of the other JSON entries; ITB_PoolStats follows it
+   --  over a vector of int64 counters, counted in elements rather
+   --  than bytes.
+   ---------------------------------------------------------------------
+
+   function ITB_Triple_HashNames
+     (JSON_Out : System.Address;
+      JSON_Cap : Size_T;
+      JSON_Len : access Size_T) return C_Int
+   with Import => True, Convention => C,
+        External_Name => "ITB_Triple_HashNames";
+
+   function ITB_SetGOMAXPROCS (N : C_Int) return C_Int
+   with Import => True, Convention => C,
+        External_Name => "ITB_SetGOMAXPROCS";
+
+   function ITB_WriteHeapProfile (Path : System.Address) return C_Int
+   with Import => True, Convention => C,
+        External_Name => "ITB_WriteHeapProfile";
+
+   function ITB_PoolStatsLen return C_Int
+   with Import => True, Convention => C,
+        External_Name => "ITB_PoolStatsLen";
+
+   function ITB_PoolStats
+     (Out_Buf   : System.Address;
+      Cap_Elems : Size_T;
+      Len_Elems : access Size_T) return C_Int
+   with Import => True, Convention => C,
+        External_Name => "ITB_PoolStats";
+
 end Itb3;

@@ -15,6 +15,7 @@ with Itb3;
 with Itb3.Error;
 with Itb3.Opts;
 with Itb3.Pipeline;
+with Itb3.Runtime;
 with Itb3.Status;
 with Itb3.Stream;
 
@@ -931,5 +932,112 @@ package body Test_Cases is
             Plain, "workers round trip");
       end;
    end Persist;
+
+   ---------------------
+   -- Runtime_Surface --
+   ---------------------
+
+   procedure Runtime_Surface is
+      use type Interfaces.Integer_64;
+
+      use type Ada.Streams.Stream_IO.Count;
+
+      Previous : Integer;
+      Slots    : Natural;
+      Written  : Natural;
+      Tiers    : Natural;
+      Path     : constant String := "itb_ada_heap.prof";
+   begin
+      --  GOMAXPROCS: the query form reads back what the setter
+      --  installed, and the setter reports nothing of its own.
+      Previous := Itb3.Runtime.GOMAXPROCS;
+      Check (Previous > 0, "gomaxprocs query is positive");
+      Itb3.Runtime.Set_GOMAXPROCS (2);
+      Check (Itb3.Runtime.GOMAXPROCS = 2, "gomaxprocs reads back 2");
+      Itb3.Runtime.Set_GOMAXPROCS (Previous);
+      Check (Itb3.Runtime.GOMAXPROCS = Previous, "gomaxprocs restored");
+
+      Check (Itb3.Runtime.Memory_Limit /= 0, "memory limit query non-zero");
+
+      --  Pool counters: the length query sizes the destination, the
+      --  first slot carries the tier count, and the whole vector is
+      --  1 + 5*T + 8 slots long.
+      Slots := Itb3.Runtime.Pool_Stats_Len;
+      Check (Slots > 0, "pool stats length positive");
+      declare
+         Snapshot : Itb3.Runtime.Pool_Counters (1 .. Slots);
+         Later    : Itb3.Runtime.Pool_Counters (1 .. Slots);
+      begin
+         Itb3.Runtime.Pool_Stats (Snapshot, Written);
+         Check (Written = Slots, "pool stats fills every slot");
+         Check (Snapshot (1) > 0, "slot 1 carries a tier count");
+         Tiers := Natural (Snapshot (1));
+         Check (1 + 5 * Tiers + 8 = Slots, "length is 1 + 5*T + 8");
+
+         --  A destination shorter than the reported length is refused
+         --  with Buffer_Too_Small.
+         declare
+            Narrow : Itb3.Runtime.Pool_Counters (1 .. 1);
+            Got    : Integer := -1;
+         begin
+            begin
+               Itb3.Runtime.Pool_Stats (Narrow, Written);
+               Check (False, "a short pool buffer must raise");
+            exception
+               when E : Itb3.Error.Itb_Error =>
+                  Got := Itb3.Error.Status_Code (E);
+            end;
+            Check (Got = Itb3.Status.Buffer_Too_Small,
+                   "short pool buffer status");
+            Check (Written = Slots, "short pool buffer reports the need");
+         end;
+
+         --  The counters are monotonic totals since library load, so
+         --  a second snapshot after a round trip never goes
+         --  backwards.
+         declare
+            Options : Itb3.Opts.Opts;
+            Pipe    : Itb3.Pipeline.Pipeline;
+            Plain   : constant Itb3.Byte_Array :=
+              Test_Support.Payload (4096, 24);
+         begin
+            Pipe.Init ("singlemsg-triple-nomac-v1", Options);
+            Check_Eq (Pipe.Decrypt_Message (Pipe.Encrypt_Message (Plain)),
+                      Plain, "pool traffic round trip");
+         end;
+         Itb3.Runtime.Pool_Stats (Later, Written);
+         for I in 1 .. Slots loop
+            Check (Later (I) >= Snapshot (I), "pool counters never decrease");
+         end loop;
+         Check (Later (3) > Snapshot (3), "tier 0 checkouts advanced");
+      end;
+
+      --  Heap profile: the file lands on disk and carries bytes.
+      Itb3.Runtime.Write_Heap_Profile (Path);
+      declare
+         F : Ada.Streams.Stream_IO.File_Type;
+      begin
+         Ada.Streams.Stream_IO.Open
+           (F, Ada.Streams.Stream_IO.In_File, Path);
+         Check (Ada.Streams.Stream_IO.Size (F) > 0,
+                "heap profile is non-empty");
+         Ada.Streams.Stream_IO.Delete (F);
+      end;
+
+      --  The hash registry is the authority the "innerHash" opts key
+      --  is validated against.
+      declare
+         JSON : constant String := Itb3.Pipeline.Hash_Names;
+      begin
+         Check (JSON'Length > 2, "hash registry is non-empty");
+         Check (JSON (JSON'First) = '[', "hash registry is a JSON array");
+         Check (Ada.Strings.Fixed.Index (JSON, """areion512""") > 0,
+                "registry lists areion512");
+         Check (Ada.Strings.Fixed.Index (JSON, """aesitb128""") > 0,
+                "registry lists aesitb128");
+         Check (Ada.Strings.Fixed.Index (JSON, """nope""") = 0,
+                "registry omits a made-up name");
+      end;
+   end Runtime_Surface;
 
 end Test_Cases;

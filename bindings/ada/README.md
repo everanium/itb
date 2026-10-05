@@ -257,6 +257,26 @@ rotates outer masters, and inspects stored blobs. See
 [`cmd/itb3/README.md`](https://github.com/everanium/itb/blob/main/cmd/itb3/README.md) for the full
 subcommand reference.
 
+## loop utility
+
+A long-run stress harness under `bindings/ada/loop/` holds one
+Pipeline handle for minutes, cycles encrypt → decrypt → compare
+round-trips through it, rotates the outer masters and reopens the
+handle from its session blob on a schedule, and reports whether the
+process survived with every byte intact. It is the binding-side
+counterpart of the Go harness under `tools/loop`: same flags, same
+round structure, same summary in both renderings.
+
+```bash
+cd bindings/ada && ./build.sh
+./run_loop.sh --duration 2m --shape both
+```
+
+`./loop/loop -h` lists every flag. Concurrency mode:
+**shared-handle** — Ada tasks call into one Pipeline handle
+concurrently, which libitb3 permits once the handle is constructed,
+so `--goroutines` is the task count verbatim.
+
 ## eitb utility
 
 A small CLI under `bindings/ada/eitb/` mirrors the shipped Go
@@ -285,6 +305,14 @@ pair.
   diagnostic attached to an `Itb_Error` occurrence may belong to a
   different call under concurrent FFI use. The status code is always
   attributable.
+- GNAT bounds `Ada.Exceptions.Exception_Message`, so a long
+  diagnostic read back with `Message (E)` arrives truncated.
+  `Itb3.Error.Last_Error` is not bounded — it asks the library for the
+  required length and reads the whole sentence. A rejected primitive
+  name of 1200 characters produces a 1334-character diagnostic, which
+  `Last_Error` returns in full and identically to the C binding. Read
+  it for the full text; the status code on the occurrence is
+  unaffected either way.
 - `Rekey` must not run concurrently with cipher calls or open stream
   sessions on the same `Pipeline`.
 - A stream session borrows its parent `Pipeline` by handle only; the

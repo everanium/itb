@@ -70,4 +70,74 @@ package body Itb3.Runtime is
       return Integer (ITB_SetGCPercent (-1));
    end GC_Percent;
 
+   ---------------------
+   -- Set_GOMAXPROCS --
+   ---------------------
+
+   procedure Set_GOMAXPROCS (N : Integer) is
+      Previous : constant C_Int := ITB_SetGOMAXPROCS (C_Int (N));
+      pragma Unreferenced (Previous);
+   begin
+      null;
+   end Set_GOMAXPROCS;
+
+   -----------------
+   -- GOMAXPROCS --
+   -----------------
+
+   function GOMAXPROCS return Integer is
+   begin
+      --  Zero or negative queries; the setter takes the positive
+      --  values, so zero is the query form here rather than -1.
+      return Integer (ITB_SetGOMAXPROCS (0));
+   end GOMAXPROCS;
+
+   ------------------------
+   -- Write_Heap_Profile --
+   ------------------------
+
+   procedure Write_Heap_Profile (Path : String) is
+      Path_C : aliased constant char_array := To_C (Path);
+      St     : constant C_Int := ITB_WriteHeapProfile (Path_C'Address);
+   begin
+      if Integer (St) /= Itb3.Status.OK then
+         Itb3.Error.Raise_For (Integer (St));
+      end if;
+   end Write_Heap_Profile;
+
+   --------------------
+   -- Pool_Stats_Len --
+   --------------------
+
+   function Pool_Stats_Len return Natural is
+      N : constant C_Int := ITB_PoolStatsLen;
+   begin
+      return (if N > 0 then Natural (N) else 0);
+   end Pool_Stats_Len;
+
+   ----------------
+   -- Pool_Stats --
+   ----------------
+
+   procedure Pool_Stats (Dst : out Pool_Counters; Written : out Natural) is
+      Len : aliased Size_T := 0;
+      St  : C_Int;
+   begin
+      Dst := [others => 0];
+      if Dst'Length = 0 then
+         --  An empty destination has no first element to take the
+         --  address of, so the probe form goes over as a null pointer
+         --  with capacity zero; libitb3 then reports the requirement
+         --  through Len without writing anywhere.
+         St := ITB_PoolStats (System.Null_Address, 0, Len'Access);
+      else
+         St := ITB_PoolStats
+           (Dst'Address, Size_T (Dst'Length), Len'Access);
+      end if;
+      Written := Natural (Len);
+      if Integer (St) /= Itb3.Status.OK then
+         Itb3.Error.Raise_For (Integer (St));
+      end if;
+   end Pool_Stats;
+
 end Itb3.Runtime;

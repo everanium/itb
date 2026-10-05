@@ -297,6 +297,51 @@ module itb_ffi
       integer(c_int)             :: rc
     end function
 
+    ! ---- hash registry + remaining runtime knobs -------------------
+    !
+    ! ITB_Triple_HashNames follows the caller-allocated-buffer
+    ! convention of the other JSON entries; ITB_PoolStats follows it
+    ! over a vector of int64 counters, counted in elements rather
+    ! than bytes.
+
+    function c_itb_triple_hash_names(json_out, json_cap, json_len) &
+        bind(C, name="ITB_Triple_HashNames") result(rc)
+      import
+      type(c_ptr), value       :: json_out
+      integer(c_size_t), value :: json_cap
+      integer(c_size_t)        :: json_len
+      integer(c_int)           :: rc
+    end function
+
+    function c_itb_set_gomaxprocs(n) &
+        bind(C, name="ITB_SetGOMAXPROCS") result(prev)
+      import
+      integer(c_int), value :: n
+      integer(c_int)        :: prev
+    end function
+
+    function c_itb_write_heap_profile(path) &
+        bind(C, name="ITB_WriteHeapProfile") result(rc)
+      import
+      type(c_ptr), value :: path
+      integer(c_int)     :: rc
+    end function
+
+    function c_itb_pool_stats_len() &
+        bind(C, name="ITB_PoolStatsLen") result(n)
+      import
+      integer(c_int) :: n
+    end function
+
+    function c_itb_pool_stats(out, cap_elems, len_elems) &
+        bind(C, name="ITB_PoolStats") result(rc)
+      import
+      type(c_ptr), value       :: out
+      integer(c_size_t), value :: cap_elems
+      integer(c_size_t)        :: len_elems
+      integer(c_int)           :: rc
+    end function
+
   end interface
 
 contains

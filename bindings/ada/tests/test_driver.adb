@@ -55,6 +55,7 @@ begin
    Run ("opts", Test_Cases.Opts_Render'Access);
    Run ("opts_inner_hashes",
         Test_Cases.Opts_Inner_Hashes_Round_Trip'Access);
+   Run ("runtime", Test_Cases.Runtime_Surface'Access);
 
    Ada.Text_IO.Put_Line
      ("ran" & Ran'Image & " tests --"

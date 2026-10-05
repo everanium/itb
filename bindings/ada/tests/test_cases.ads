@@ -47,6 +47,12 @@ package Test_Cases is
    --  builder).
    procedure Opts_Render;
 
+   --  Go runtime knobs and the hash-registry enumeration: the
+   --  setters report through their query forms, the heap profile
+   --  reaches the file system, and the pool counters come back at the
+   --  length the library reports and in the layout it documents.
+   procedure Runtime_Surface;
+
    --  Per-call constellation override via the typed
    --  Set_Inner_Hashes helper: register a bare width-512 profile,
    --  Init with an 8-entry constellation, round-trip a Single

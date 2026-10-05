@@ -494,4 +494,22 @@ package body Itb3.Pipeline is
       Release (P);
    end Finalize;
 
+   ----------------
+   -- Hash_Names --
+   ----------------
+
+   function Hash_Names return String is
+      function Call
+        (Out_Buf : System.Address;
+         Out_Cap : Size_T;
+         Out_Len : access Size_T) return C_Int is
+      begin
+         return ITB_Triple_HashNames (Out_Buf, Out_Cap, Out_Len);
+      end Call;
+
+      function Run is new Buffer_Call (Call);
+   begin
+      return To_JSON (Run);
+   end Hash_Names;
+
 end Itb3.Pipeline;

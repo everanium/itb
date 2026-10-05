@@ -139,6 +139,11 @@ package Itb3.Pipeline is
    --  sessions against this Pipeline.
    function Raw (P : Pipeline) return Handle;
 
+   --  The shipped hash-primitive registry in canonical order, as a
+   --  JSON array of strings. The registry is the authority on which
+   --  names Init accepts for the "innerHash" opts key.
+   function Hash_Names return String;
+
 private
 
    type Pipeline is new Ada.Finalization.Limited_Controlled with record
