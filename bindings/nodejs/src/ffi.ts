@@ -73,6 +73,14 @@ export const ITB_SetMemoryLimit = lib.func(
   'int64_t ITB_SetMemoryLimit(int64_t limit)',
 );
 export const ITB_SetGCPercent = lib.func('int ITB_SetGCPercent(int pct)');
+export const ITB_SetGOMAXPROCS = lib.func('int ITB_SetGOMAXPROCS(int n)');
+export const ITB_WriteHeapProfile = lib.func(
+  'int ITB_WriteHeapProfile(const char *path)',
+);
+export const ITB_PoolStatsLen = lib.func('int ITB_PoolStatsLen()');
+export const ITB_PoolStats = lib.func(
+  'int ITB_PoolStats(int64_t *out, size_t capElems, _Out_ size_t *outLen)',
+);
 
 // ─── Triple Pipeline surface ───────────────────────────────────────
 
@@ -133,6 +141,9 @@ export const ITB_Triple_Lookup = lib.func(
 );
 export const ITB_Triple_Profiles = lib.func(
   'int ITB_Triple_Profiles(uint8_t *jsonOut, size_t jsonCap, _Out_ size_t *jsonLen)',
+);
+export const ITB_Triple_HashNames = lib.func(
+  'int ITB_Triple_HashNames(uint8_t *jsonOut, size_t jsonCap, _Out_ size_t *jsonLen)',
 );
 
 export const ITB_Triple_EncryptStreamBegin = lib.func(

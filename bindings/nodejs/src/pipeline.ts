@@ -9,6 +9,7 @@ import {
   ITB_Triple_EncryptMessage,
   ITB_Triple_EncryptStream,
   ITB_Triple_Free,
+  ITB_Triple_HashNames,
   ITB_Triple_Init,
   ITB_Triple_Inspect,
   ITB_Triple_Load,
@@ -391,4 +392,13 @@ export function lookup(name: string): Profile {
 /** The sorted list of every registered profile name. */
 export function profiles(): string[] {
   return jsonOut<string[]>((buf, len) => ITB_Triple_Profiles(buf, buf.length, len));
+}
+
+/**
+ * The shipped inner-hash registry as a list of primitive names, in
+ * registry order. Runtime-registered custom primitives are not part of
+ * this enumeration.
+ */
+export function hashNames(): string[] {
+  return jsonOut<string[]>((buf, len) => ITB_Triple_HashNames(buf, buf.length, len));
 }

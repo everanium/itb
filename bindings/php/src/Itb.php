@@ -170,6 +170,21 @@ final class Itb
         });
     }
 
+    /**
+     * The shipped inner-hash registry as a list of primitive names, in
+     * registry order. Runtime-registered custom primitives are not part
+     * of this enumeration.
+     *
+     * @return list<string>
+     */
+    public static function hashNames(): array
+    {
+        $ffi = FFIBridge::get();
+        return self::jsonOut(static function ($buf, int $cap, $lenPtr) use ($ffi): int {
+            return $ffi->ITB_Triple_HashNames($buf, $cap, $lenPtr);
+        });
+    }
+
     /** The libitb3 library version string. */
     public static function version(): string
     {
@@ -204,6 +219,74 @@ final class Itb
     public static function setGcPercent(int $pct): int
     {
         return (int) FFIBridge::get()->ITB_SetGCPercent($pct);
+    }
+
+    /**
+     * Sets the Go runtime's GOMAXPROCS — the number of OS threads
+     * executing Go code simultaneously inside the library — and returns
+     * the previous value. $n <= 0 queries without changing.
+     */
+    public static function setGomaxprocs(int $n): int
+    {
+        return (int) FFIBridge::get()->ITB_SetGOMAXPROCS($n);
+    }
+
+    /**
+     * Writes a Go runtime heap profile (pprof format, readable with
+     * `go tool pprof`) to $path after one forced garbage collection. An
+     * empty path falls back to the ITB_MEMPROFILE environment variable;
+     * a file-system failure throws ItbException carrying the os
+     * diagnostic.
+     */
+    public static function writeHeapProfile(string $path): void
+    {
+        FFIBridge::check(FFIBridge::get()->ITB_WriteHeapProfile($path));
+    }
+
+    /**
+     * The number of int64 slots poolStats() fills. A caller sizes its
+     * buffer from this value rather than a constant: the slot count
+     * grows if the library adds a pool.
+     */
+    public static function poolStatsLen(): int
+    {
+        return (int) FFIBridge::get()->ITB_PoolStatsLen();
+    }
+
+    /**
+     * The library's pool hit / miss counters, every one a monotonically
+     * increasing total since library load (a consumer differences two
+     * snapshots).
+     *
+     * Slot layout, with T the hash-array pool tier count in slot 0: for
+     * tier i the five slots at 1 + 5*i hold the starter width (0 for an
+     * unused tier), checkouts, constructor misses, regrow replacements
+     * and bytes allocated by misses + regrows; the four slots at
+     * 1 + 5*T hold the scratch byte pool's get / new / regrow /
+     * regrow-bytes and the four after them the parallax chunk pool's,
+     * in the same order.
+     *
+     * @return list<int>
+     */
+    public static function poolStats(): array
+    {
+        $ffi = FFIBridge::get();
+        // The capacity this entry takes is counted in int64 slots, not
+        // in bytes, so the array is declared by element count and the
+        // same count is handed over.
+        $cap = (int) $ffi->ITB_PoolStatsLen();
+        if ($cap <= 0) {
+            return [];
+        }
+        $buf = $ffi->new("int64_t[$cap]");
+        $len = $ffi->new('size_t');
+        FFIBridge::check($ffi->ITB_PoolStats($buf, $cap, \FFI::addr($len)));
+        $n = \min((int) $len->cdata, $cap);
+        $out = [];
+        for ($i = 0; $i < $n; $i++) {
+            $out[] = (int) $buf[$i];
+        }
+        return $out;
     }
 
     /**

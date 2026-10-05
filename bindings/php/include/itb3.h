@@ -20,6 +20,10 @@ int ITB_Version(char* out, size_t capBytes, size_t* outLen);
 int ITB_LastError(char* out, size_t capBytes, size_t* outLen);
 int64_t ITB_SetMemoryLimit(int64_t limit);
 int ITB_SetGCPercent(int pct);
+int ITB_SetGOMAXPROCS(int n);
+int ITB_WriteHeapProfile(const char* path);
+int ITB_PoolStatsLen(void);
+int ITB_PoolStats(int64_t* out, size_t capElems, size_t* outLen);
 
 /* Triple Pipeline lifecycle. */
 int ITB_Triple_Init(const char* profile, const char* opts, char* blobOut, size_t blobCap, size_t* blobLen, uintptr_t* outHandle);
@@ -35,6 +39,7 @@ int ITB_Triple_Free(uintptr_t handle);
 int ITB_Triple_Register(const char* name, const char* profileJSON);
 int ITB_Triple_Lookup(const char* name, char* jsonOut, size_t jsonCap, size_t* jsonLen);
 int ITB_Triple_Profiles(char* jsonOut, size_t jsonCap, size_t* jsonLen);
+int ITB_Triple_HashNames(char* jsonOut, size_t jsonCap, size_t* jsonLen);
 
 /* Buffer-in / buffer-out cipher calls. */
 int ITB_Triple_EncryptStream(uintptr_t handle, const char* plaintext, size_t ptlen, char* out, size_t outCap, size_t* outLen);

@@ -149,14 +149,14 @@ go build -trimpath "${TAGS[@]}" -buildmode=c-shared \
     -o dist/linux-amd64/libitb3.so ./cmd/cshared
 
 cd "$REPO_ROOT/bindings/php"
-echo "==> lint-checking the PHP sources, the tests, the bench and eitb"
-for d in src tests bench eitb; do
+echo "==> lint-checking the PHP sources, the tests, the bench, eitb and loop"
+for d in src tests bench eitb loop; do
     if [[ ! -d "$d" ]]; then
         echo "build.sh: expected directory '$d' is missing" >&2
         exit 1
     fi
 done
-find src tests bench eitb -name '*.php' -print0 | while IFS= read -r -d '' f; do
+find src tests bench eitb loop -name '*.php' -print0 | while IFS= read -r -d '' f; do
     php -l "$f" > /dev/null
 done
 php -l autoload.php > /dev/null

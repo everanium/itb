@@ -21,11 +21,21 @@ export {
   type Masters,
   Pipeline,
   type Profile,
+  hashNames,
   inspect,
   lookup,
   profiles,
   register,
 } from './pipeline.js';
-export { bindingVersion, setGCPercent, setMemoryLimit, version } from './runtime.js';
+export {
+  bindingVersion,
+  poolStats,
+  poolStatsLen,
+  setGCPercent,
+  setGOMAXPROCS,
+  setMemoryLimit,
+  version,
+  writeHeapProfile,
+} from './runtime.js';
 export { Status } from './status.js';
 export { DecryptStream, EncryptStream } from './stream.js';

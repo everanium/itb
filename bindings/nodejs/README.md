@@ -223,6 +223,27 @@ rotates outer masters, and inspects stored blobs. See
 [`cmd/itb3/README.md`](https://github.com/everanium/itb/blob/main/cmd/itb3/README.md) for the full
 subcommand reference.
 
+## loop utility
+
+A long-run stress harness under `bindings/nodejs/loop/` holds one
+Pipeline handle for minutes, cycles encrypt → decrypt → compare
+round-trips through it, rotates the outer masters and reopens the
+handle from its session blob on a schedule, and reports whether the
+process survived with every byte intact. It is the binding-side
+counterpart of the Go harness under `tools/loop`: same flags, same
+round structure, same summary in both renderings.
+
+```bash
+./bindings/nodejs/build.sh
+./bindings/nodejs/run_loop.sh --duration 2m --shape both
+```
+
+`./bindings/nodejs/run_loop.sh -h` lists every flag. Concurrency mode:
+**independent-handles** — a worker thread is a separate isolate with
+its own instance of the FFI addon and no entry on the public surface
+adopts an existing native handle, so each of the `--goroutines`
+workers opens its own Pipeline from the Init blob.
+
 ## eitb utility
 
 A small CLI under `bindings/nodejs/eitb/` mirrors the shipped Go
