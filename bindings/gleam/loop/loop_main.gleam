@@ -203,7 +203,7 @@ fn flag_table() -> List(Flag) {
       KString,
       "cipher surface to exercise: stream | message | stream_one_shot | both",
     ),
-    Flag("wrapper", "string", KString, "wrapper (Outer cipher) layer: on | off"),
+    Flag("wrapper", "string", KString, "wrapper layer: on | off"),
   ]
 }
 

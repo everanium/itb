@@ -194,7 +194,7 @@ flag_table() ->
      {"shape", "string", string,
       "cipher surface to exercise: stream | message | stream_one_shot | both"},
      {"wrapper", "string", string,
-      "wrapper (Outer cipher) layer: on | off"}].
+      "wrapper layer: on | off"}].
 
 defaults() ->
     #{"barrier-fill" => 0, "blob-cycle-every" => 0, "chunk-size" => "0",

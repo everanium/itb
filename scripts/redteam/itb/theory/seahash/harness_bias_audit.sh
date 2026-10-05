@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# HARNESS.md § 5.2 (SeaHash) — Axis B ITB-wrapped bias audit.
+# HARNESS.md § 5.1 (SeaHash) — Axis B ITB-wrapped bias audit.
 #
 # Single-primitive driver that generates ITB corpora under known_ascii
 # plaintext mode with seahash wrapped into ChainHash128 (via the parallel
@@ -61,7 +61,7 @@ DRIVER_LOG="${RESULTS_ROOT}/matrix.log"
 : > "$DRIVER_LOG"
 
 echo "==========================================================================="
-echo "seahash harness bias-neutralization audit (HARNESS.md § 5.2, Axis B)"
+echo "seahash harness bias-neutralization audit (HARNESS.md § 5.1, Axis B)"
 echo "==========================================================================="
 echo "  primitive    : seahash_64le (shelf harness track)"
 echo "  sizes        : $SIZES"

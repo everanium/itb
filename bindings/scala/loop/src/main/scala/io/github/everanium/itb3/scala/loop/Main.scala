@@ -418,7 +418,7 @@ object Main:
       ),
       Flag(
         "wrapper", "string",
-        "wrapper (Outer cipher) layer: on | off",
+        "wrapper layer: on | off",
         false, defaultOf(d.wrapper),
         (f, s) => { f.wrapper = s; true }
       )

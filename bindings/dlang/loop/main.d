@@ -278,7 +278,7 @@ private Flag[] flagTable(ref RawFlags f) @trusted
             "deterministic plaintext RNG seed for bug reproduction, NOT for security testing (pipeline keys stay CSPRNG-drawn); 0 = crypto/rand plaintexts");
     addString("shape", "string", &f.shape,
             "cipher surface to exercise: stream | message | stream_one_shot | both");
-    addString("wrapper", "string", &f.wrapper, "wrapper (Outer cipher) layer: on | off");
+    addString("wrapper", "string", &f.wrapper, "wrapper layer: on | off");
     return t;
 }
 

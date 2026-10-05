@@ -457,7 +457,7 @@ final class Main {
                 false, defaultOfString(d.shape),
                 { RawFlags f, String s -> f.shape = s; true } as Closure<Boolean>),
             new Flag('wrapper', 'string',
-                'wrapper (Outer cipher) layer: on | off',
+                'wrapper layer: on | off',
                 false, defaultOfString(d.wrapper),
                 { RawFlags f, String s -> f.wrapper = s; true } as Closure<Boolean>),
         ] as List<Flag>

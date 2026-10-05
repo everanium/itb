@@ -196,7 +196,7 @@ proc flagTable(f: ptr RawFlags): seq[Flag] =
     "deterministic plaintext RNG seed for bug reproduction, NOT for security testing (pipeline keys stay CSPRNG-drawn); 0 = crypto/rand plaintexts")
   t.addString("shape", "string", addr f.shape,
     "cipher surface to exercise: stream | message | stream_one_shot | both")
-  t.addString("wrapper", "string", addr f.wrapper, "wrapper (Outer cipher) layer: on | off")
+  t.addString("wrapper", "string", addr f.wrapper, "wrapper layer: on | off")
   t
 
 proc usage(table: seq[Flag]) =

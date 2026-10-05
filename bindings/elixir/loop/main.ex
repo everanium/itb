@@ -201,7 +201,7 @@ defmodule Loop.Main do
      "deterministic plaintext RNG seed for bug reproduction, NOT for security testing (pipeline keys stay CSPRNG-drawn); 0 = crypto/rand plaintexts"},
     {"shape", "string", :string,
      "cipher surface to exercise: stream | message | stream_one_shot | both"},
-    {"wrapper", "string", :string, "wrapper (Outer cipher) layer: on | off"}
+    {"wrapper", "string", :string, "wrapper layer: on | off"}
   ]
 
   @defaults %{

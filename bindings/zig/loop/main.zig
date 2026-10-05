@@ -285,7 +285,7 @@ const flag_table = [_]Flag{
     .{ .name = "rekey-every", .type_label = "int", .kind = .int64, .help = "rotate the parallax + wrapper masters via Rekey every N iterations per worker; 0 = never" },
     .{ .name = "seed", .type_label = "uint", .kind = .uint64, .help = "deterministic plaintext RNG seed for bug reproduction, NOT for security testing (pipeline keys stay CSPRNG-drawn); 0 = crypto/rand plaintexts" },
     .{ .name = "shape", .type_label = "string", .kind = .string, .help = "cipher surface to exercise: stream | message | stream_one_shot | both" },
-    .{ .name = "wrapper", .type_label = "string", .kind = .string, .help = "wrapper (Outer cipher) layer: on | off" },
+    .{ .name = "wrapper", .type_label = "string", .kind = .string, .help = "wrapper layer: on | off" },
 };
 
 fn usage() void {

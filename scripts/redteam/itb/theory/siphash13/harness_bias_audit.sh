@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# HARNESS.md § 5.4 (SipHash-1-3) — Axis B ITB-wrapped bias audit.
+# HARNESS.md § 5.1 (SipHash-1-3) — Axis B ITB-wrapped bias audit.
 #
 # Single-primitive driver that generates ITB corpora under known_ascii
 # plaintext mode with siphash13 wrapped into ChainHash128 (via the parallel
@@ -61,7 +61,7 @@ DRIVER_LOG="${RESULTS_ROOT}/matrix.log"
 : > "$DRIVER_LOG"
 
 echo "==========================================================================="
-echo "siphash13 harness bias-neutralization audit (HARNESS.md § 5.4, Axis B)"
+echo "siphash13 harness bias-neutralization audit (HARNESS.md § 5.1, Axis B)"
 echo "==========================================================================="
 echo "  primitive    : siphash13 (shelf harness track)"
 echo "  sizes        : $SIZES"

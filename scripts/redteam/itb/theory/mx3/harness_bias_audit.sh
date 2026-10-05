@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# HARNESS.md § 5.3 (mx3) — Axis B ITB-wrapped bias audit.
+# HARNESS.md § 5.1 (mx3) — Axis B ITB-wrapped bias audit.
 #
 # Single-primitive driver that generates ITB corpora under known_ascii
 # plaintext mode with mx3 wrapped into ChainHash128 (via the parallel
@@ -61,7 +61,7 @@ DRIVER_LOG="${RESULTS_ROOT}/matrix.log"
 : > "$DRIVER_LOG"
 
 echo "==========================================================================="
-echo "mx3 harness bias-neutralization audit (HARNESS.md § 5.3, Axis B)"
+echo "mx3 harness bias-neutralization audit (HARNESS.md § 5.1, Axis B)"
 echo "==========================================================================="
 echo "  primitive    : mx3 (shelf harness track)"
 echo "  sizes        : $SIZES"

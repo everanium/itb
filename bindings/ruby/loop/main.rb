@@ -127,7 +127,7 @@ module Loop
     ["shape", "string", STRING, "stream",
      "cipher surface to exercise: stream | message | stream_one_shot | both"],
     ["wrapper", "string", STRING, "on",
-     "wrapper (Outer cipher) layer: on | off"]
+     "wrapper layer: on | off"]
   ].freeze
 
   # The resolved command line.

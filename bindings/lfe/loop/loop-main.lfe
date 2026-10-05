@@ -184,7 +184,7 @@
      "deterministic plaintext RNG seed for bug reproduction, NOT for security testing (pipeline keys stay CSPRNG-drawn); 0 = crypto/rand plaintexts")
    (tuple "shape" "string" 'string
      "cipher surface to exercise: stream | message | stream_one_shot | both")
-   (tuple "wrapper" "string" 'string "wrapper (Outer cipher) layer: on | off")))
+   (tuple "wrapper" "string" 'string "wrapper layer: on | off")))
 
 (defun defaults ()
   (map "barrier-fill" 0 "blob-cycle-every" 0 "chunk-size" "0"

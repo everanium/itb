@@ -184,7 +184,7 @@ static struct flag *flag_table(struct raw_flags *f, size_t *count)
         { "shape", "string", FLAG_STRING, NULL,
           "cipher surface to exercise: stream | message | stream_one_shot | both" },
         { "wrapper", "string", FLAG_STRING, NULL,
-          "wrapper (Outer cipher) layer: on | off" },
+          "wrapper layer: on | off" },
     };
     void *dsts[23] = {
         &f->barrier_fill, &f->blob_cycle_every, &f->chunk_size, &f->duration,

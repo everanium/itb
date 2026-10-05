@@ -308,10 +308,18 @@ def main() -> int:
 
     ref_path = Path(args.reference)
     if not ref_path.is_file():
+        # The Go harness that once emitted this file is no longer in the
+        # tree, so the message names the shape required instead of a
+        # command to run. Naming the retired command was worse than
+        # naming nothing: `go test -run` matches no test, exits 0 and
+        # prints "no tests to run", so an operator following the recipe
+        # saw a success, got no file, and arrived back at this same
+        # error with nothing learned.
         print(
             f"[FATAL] reference not found: {ref_path}\n"
-            "  generate it first with:\n"
-            "  ITB_FNV_REF=1 go test -tags redteam -run TestRedTeamEmitFNV1aChainHashReference -v",
+            "  no harness in this tree emits it; supply one with --reference\n"
+            "  required shape: {\"hash\": \"fnv1a\", \"key_bits\": N, \"rounds\": N,\n"
+            "                   \"lo_lane_seeds_hex\": [...], \"vectors\": [...]}",
             file=sys.stderr,
         )
         return 2

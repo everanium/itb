@@ -239,7 +239,7 @@ std::vector<Flag> flag_table(RawFlags &f)
                "deterministic plaintext RNG seed for bug reproduction, NOT for security testing (pipeline keys stay CSPRNG-drawn); 0 = crypto/rand plaintexts");
     add_string("shape", "string", f.shape,
                "cipher surface to exercise: stream | message | stream_one_shot | both");
-    add_string("wrapper", "string", f.wrapper, "wrapper (Outer cipher) layer: on | off");
+    add_string("wrapper", "string", f.wrapper, "wrapper layer: on | off");
     return t;
 }
 

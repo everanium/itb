@@ -155,7 +155,7 @@ FLAGS: tuple[tuple[str, str, int, object, str], ...] = (
     ("shape", "string", STRING, "stream",
      "cipher surface to exercise: stream | message | stream_one_shot | both"),
     ("wrapper", "string", STRING, "on",
-     "wrapper (Outer cipher) layer: on | off"),
+     "wrapper layer: on | off"),
 )
 
 _INT32_MAX = 2147483647

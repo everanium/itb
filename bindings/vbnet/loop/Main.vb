@@ -420,7 +420,7 @@ Friend Module Program
                     Return True
                 End Function),
             New Flag("wrapper", "string",
-                "wrapper (Outer cipher) layer: on | off",
+                "wrapper layer: on | off",
                 False, DefaultOf(d.Wrapper),
                 Function(f, s)
                     f.Wrapper = s

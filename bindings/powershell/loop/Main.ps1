@@ -96,7 +96,7 @@ $script:LoopFlags = @(
     @{ Name = 'shape'; Type = 'string'; Kind = 'string'; Default = 'stream'
        Help = 'cipher surface to exercise: stream | message | stream_one_shot | both' }
     @{ Name = 'wrapper'; Type = 'string'; Kind = 'string'; Default = 'on'
-       Help = 'wrapper (Outer cipher) layer: on | off' }
+       Help = 'wrapper layer: on | off' }
 )
 
 function Write-LoopUsage {

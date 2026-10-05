@@ -131,7 +131,7 @@ FLAGS <- list(
   list("shape", "string", KIND_STRING, "stream",
     "cipher surface to exercise: stream | message | stream_one_shot | both"),
   list("wrapper", "string", KIND_STRING, "on",
-    "wrapper (Outer cipher) layer: on | off")
+    "wrapper layer: on | off")
 )
 
 INT32_MAX <- 2147483647

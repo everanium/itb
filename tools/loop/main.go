@@ -129,7 +129,7 @@ const maxWorkersFlag = 10
 func profileSurface(name string) (string, error) {
 	p, err := triple.Lookup(name)
 	if err != nil {
-		return "", fmt.Errorf("--profile %q is not a registered Triple profile", name)
+		return "", fmt.Errorf("--profile %q is not a registered triple profile", name)
 	}
 	switch {
 	case strings.HasPrefix(p.Mode, "streaming"):
@@ -153,7 +153,7 @@ const keystreamFillCipher = "aescmac"
 func fillKeystreamLayers(name string, opts *triple.Opts, wantParallax, wantWrapper bool) (bool, error) {
 	p, err := triple.Lookup(name)
 	if err != nil {
-		return false, fmt.Errorf("--profile %q is not a registered Triple profile", name)
+		return false, fmt.Errorf("--profile %q is not a registered triple profile", name)
 	}
 	filled := false
 	if wantParallax && len(p.ParallaxPalette) == 0 {
@@ -582,9 +582,9 @@ func parseFlags(argv []string) (config, error) {
 		memlimitStr = fs.String("memlimit", "auto", "Go heap soft limit: auto (1GiB when goroutines <= 3, else 256MiB, applied only when the runtime has no limit) or a size (e.g. 512MB)")
 		gogc        = fs.Int("gogc", 0, "GC trigger percentage; 0 = leave the runtime default")
 		parallaxStr = fs.String("parallax", "on", "parallax layer: on | off")
-		wrapperStr  = fs.String("wrapper", "on", "wrapper (Outer cipher) layer: on | off")
+		wrapperStr  = fs.String("wrapper", "on", "wrapper layer: on | off")
 
-		profile        = fs.String("profile", "", "exercise this single registered Triple profile (overrides --shape with the profile's surface); empty = shape-based profile pair")
+		profile        = fs.String("profile", "", "exercise this single registered triple profile (overrides --shape with the profile's surface); empty = shape-based profile pair")
 		keyBits        = fs.Int("key-bits", 0, "per-seed key width in bits: 512 | 1024 | 2048; 0 = profile default (1024)")
 		nonceBits      = fs.Int("nonce-bits", 0, "on-wire nonce width in bits: 128 | 256 | 512; 0 = profile default (512)")
 		chunkSizeStr   = fs.String("chunk-size", "0", "streaming chunk-size budget (e.g. 4MB); 0 = profile default; inert for pure message shape")

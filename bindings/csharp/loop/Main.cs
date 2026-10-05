@@ -375,7 +375,7 @@ internal static class Program
                 false, DefaultOf(d.Shape),
                 (f, s) => { f.Shape = s; return true; }),
             new Flag("wrapper", "string",
-                "wrapper (Outer cipher) layer: on | off",
+                "wrapper layer: on | off",
                 false, DefaultOf(d.Wrapper),
                 (f, s) => { f.Wrapper = s; return true; }),
         ];

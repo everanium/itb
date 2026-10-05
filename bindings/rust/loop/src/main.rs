@@ -440,7 +440,7 @@ const FLAGS: [Flag; 23] = [
     Flag {
         name: "wrapper",
         type_label: "string",
-        help: "wrapper (Outer cipher) layer: on | off",
+        help: "wrapper layer: on | off",
         slot: Slot::Str(|f| &mut f.wrapper),
         show_default: true,
     },

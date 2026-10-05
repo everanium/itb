@@ -212,7 +212,7 @@
     :suffix (default-suffix-str (:shape raw-defaults))
     :store (store-string :shape)}
    {:name "wrapper" :type "string"
-    :help "wrapper (Outer cipher) layer: on | off"
+    :help "wrapper layer: on | off"
     :suffix (default-suffix-str (:wrapper raw-defaults))
     :store (store-string :wrapper)}])
 

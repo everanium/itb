@@ -406,7 +406,7 @@ module Loop
     add_str.call("shape", "string", ->{ f.shape }, ->(v : String) { f.shape = v; nil },
       "cipher surface to exercise: stream | message | stream_one_shot | both")
     add_str.call("wrapper", "string", ->{ f.wrapper }, ->(v : String) { f.wrapper = v; nil },
-      "wrapper (Outer cipher) layer: on | off")
+      "wrapper layer: on | off")
     t
   end
 

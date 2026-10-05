@@ -342,7 +342,7 @@ let flagTable: [Flag] = [
     Flag(name: "shape", typeLabel: "string", kind: .string,
          help: "cipher surface to exercise: stream | message | stream_one_shot | both"),
     Flag(name: "wrapper", typeLabel: "string", kind: .string,
-         help: "wrapper (Outer cipher) layer: on | off"),
+         help: "wrapper layer: on | off"),
 ]
 
 // MARK: - Signals
