@@ -397,9 +397,8 @@ func TestBlobImportRejectsBadKeyBits(t *testing.T) {
 			return &itb.Blob128{}
 		}},
 	}
-	// One "0" component would pass the (broken) "want := KeyBits/64"
-	// gate at KeyBits=64 (want=1), which is precisely the panic bait
-	// the new pre-validation blocks.
+	// A single component at non-standard or floor key sizes must be
+	// rejected by pre-validation before reaching downstream constructors.
 	oneComp := `"key_n":"00","ns":["0"],"ds1":["0"],"ds2":["0"],"ds3":["0"],` +
 		`"ss1":["0"],"ss2":["0"],"ss3":["0"]`
 	globals := `"globals":{"nonce_bits":128,"barrier_fill":1}`

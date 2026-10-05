@@ -518,17 +518,16 @@ func TestInterlockDomainTagDecorrelated(t *testing.T) {
 
 // TestValueDistinctSeedsRejected confirms that byte-identical Components
 // in two different-pointer seed slots are rejected by checkEightSeeds on
-// every width and on both the encrypt and decrypt entry points. This is
-// the value-distinct fix: pointer-only comparison would pass such a pair
-// (fresh pointers wrap identical material — exactly what blob import and
-// the low-level constructors can produce), collapsing the per-slot
-// derivations that keep the seed roles independent.
+// every width and on both the encrypt and decrypt entry points. Value-distinct
+// validation ensures distinct pointers wrapping identical material are
+// rejected, preventing the collapse of per-slot derivations that keep
+// the seed roles independent.
 func TestValueDistinctSeedsRejected(t *testing.T) {
 	t.Run("128", func(t *testing.T) {
 		ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeeds128(512, sipHash128)
 		// lockSeed made byte-identical to startSeed1 via a fresh slice
-		// (distinct pointer, identical content) — the collision the
-		// pointer-only check missed.
+		// (distinct pointer, identical content) to ensure value equivalence
+		// is detected.
 		ls.Components = slices.Clone(ss1.Components)
 		if _, err := Encrypt3x128Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, []byte("hello world")); err == nil {
 			t.Fatal("Encrypt3x128Cfg accepted byte-identical lock/start seeds")

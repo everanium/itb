@@ -1,4 +1,4 @@
-// libitb3 — C ABI shared-library entry points for ITB.
+// C ABI shared-library entry points for ITB.
 //
 // Build:
 //

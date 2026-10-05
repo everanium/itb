@@ -28,7 +28,7 @@ package triple
 //     rotates / XOR-masks / noise-inserts every byte inside the container
 //     before it reaches the wire, so the actual terminator byte value is
 //     indistinguishable from the surrounding container bytes.
-//   - the outer-cipher wrapper (format-deniability layer). Engaging it whitens
+//   - the outer-cipher wrapper (format-deniability layer). Engaging it masks
 //     the container signature to the finite-sample uniform floor.
 //
 // The mode-ambiguity claim these probes test is that the AEAD and Non-AEAD

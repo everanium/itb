@@ -149,7 +149,7 @@ import (
 func main() {
     // Three-slot palette mixing two families. Pick a strong anchor —
     // palette[0] is doubly loaded (KDF PRF + schedule keystream).
-    palette := []string{"areion512", "chacha20", "aescmac"}
+    palette := []string{"areion512", "aescmac", "chacha20"}
 
     schedule, err := parallax.NewSchedule(palette, parallax.DefaultSegmentSize)
     if err != nil {

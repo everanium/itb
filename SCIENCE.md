@@ -8,7 +8,7 @@
 
 ## Abstract
 
-ITB (Information-Theoretic Barrier) is a parameterized symmetric cipher construction that renders the hash output unreconstructible from ciphertext-only observation. **Noise absorption** interposes a random container — filled by `internal/drbg` (AES-CTR or ChaCha20, seeded per call from CSPRNG) — between the PRF hash output and the observer; each byte retains one random noise bit at an unknown position. Under known-plaintext, chosen-plaintext, and chosen-ciphertext attacks the closure is computational and PRF-conditional; the information-theoretic property scopes to the noise-absorption layer under passive observation (Theorem 1). **Encoding ambiguity** applies a secret rotation (0–6) from an independent per-region dataSeed to each pixel's data bits, creating 7^P unverifiable configurations across P pixels.
+ITB (Information-Theoretic Barrier) is a parameterized symmetric cipher construction that renders the hash output unreconstructible from ciphertext-only observation. **Noise insertion** interposes a random container — filled by `internal/drbg` (AES-CTR or ChaCha20, seeded per call from CSPRNG) — between the PRF hash output and the observer; each byte retains one random noise bit at an unknown position. Under known-plaintext, chosen-plaintext, and chosen-ciphertext attacks the closure is computational and PRF-conditional; the information-theoretic property scopes to the noise-insertion layer under passive observation (Theorem 1). **Encoding ambiguity** applies a secret rotation (0–6) from an independent per-region dataSeed to each pixel's data bits, creating 7^P unverifiable configurations across P pixels.
 
 The construction establishes the **Interlocked Barrier** as a mandatory, always-on composite of two indivisible layers: the **Rank Barrier** partitions each 48-bit chunk of the payload into three disjoint 16-of-48 lane payloads via a PRF-keyed balanced mask triple drawn from a space of cardinality ≈ 2^70.20 per chunk (executed in ~3 cycles in constant time via BMI2 PEXTQ/PDEPQ), and the **Pixel Barrier** performs per-pixel channel XOR masking, rotation, and noise insertion. Even if the noise mechanism is bypassed via CCA (which reveals noise positions), the rotation barrier, the per-chunk mask permutation, and DRBG residue in data positions survive through 8-seed isolation.
 
@@ -99,8 +99,8 @@ Each encryption draws two nonces independently from `crypto/rand`:
 ### 1.4 Pipeline Flow
 
 The end-to-end execution flow strictly preserves the following order:
-- **Encryption:** `Plaintext` → **Rank Barrier** (BMI2 `PEXTQ` partitions 48-bit chunks into three 16-bit lane streams) → **Lane COBS framing** (lane prefix prepends interlock-nonce fragment) → **Pixel Barrier** (channelXOR + rotate7 + DRBG noise insertion into RGBWYOPA container) → **Outer Cipher** (optional wrapper for format deniability) → `Wire`.
-- **Decryption:** `Wire` → **Outer Cipher** (if enabled) → **Inverse Pixel Barrier** (noise extraction, inverse rotate7, XOR demask) → **Lane COBS deframing** → **Inverse Rank Barrier** (BMI2 `PDEPQ` + `ORQ` reassembles 16-bit lane fragments into 48-bit plaintext chunks) → `Plaintext`.
+- **Encryption:** `Plaintext` → **Rank Barrier** (BMI2 `PEXTQ` partitions 48-bit chunks into three 16-bit lane streams) → **Lane COBS framing** (lane prefix prepends interlock-nonce fragment) → **Pixel Barrier** (channelXOR + rotate7 + DRBG noise insertion into RGBWYOPA container) → **Outer cipher** (optional wrapper for format deniability) → `Wire`.
+- **Decryption:** `Wire` → **Outer cipher** (if enabled) → **Inverse Pixel Barrier** (noise extraction, inverse rotate7, XOR demask) → **Lane COBS deframing** → **Inverse Rank Barrier** (BMI2 `PDEPQ` + `ORQ` reassembles 16-bit lane fragments into 48-bit plaintext chunks) → `Plaintext`.
 
 ## 2. Security Analysis
 
@@ -122,9 +122,9 @@ Hence `I(H(K); C') = 0` and `H(H(K) | C') = H(H(K))`.
 ∀ v ∈ {0, …, 255}, ∀ h : ∃ (c, d) : embed(c, h, d) = v
 ```
 
-For any observed byte value `v` and any candidate hash output `h`, there exist a container byte `c` and plaintext data bits `d` producing `v`. Under known plaintext (fixed `d`), a compatible XOR mask `m` exists for every candidate pair `(noisePos, r)` by Theorem 2. This is the information-theoretic core of the barrier and applies to the noise-absorption layer (Pixel Barrier of the Interlocked Barrier composition) under passive observation. Full derivation: [PROOFS.md § Proof 1](PROOFS.md#proof-1-information-theoretic-barrier).
+For any observed byte value `v` and any candidate hash output `h`, there exist a container byte `c` and plaintext data bits `d` producing `v`. Under known plaintext (fixed `d`), a compatible XOR mask `m` exists for every candidate pair `(noisePos, r)` by Theorem 2. This is the information-theoretic core of the barrier and applies to the noise-insertion layer (Pixel Barrier of the Interlocked Barrier composition) under passive observation. Full derivation: [PROOFS.md § Proof 1](PROOFS.md#proof-1-information-theoretic-barrier).
 
-**Scope.** The IT property scopes to the noise-absorption layer under passive observation (COA / KPA). Under CCA the noise-position channel is revealed via oracle interaction (§2.8, Theorem 6); the closure of KPA / CPA / CCA is computational and PRF-conditional through the multi-factor defense of §2.6 (Theorem 4a). The Rank Barrier of the compound (the per-chunk permutation) is PRF-conditional throughout — its mask-space cardinality bound is Theorem 11 (§2.15).
+**Scope.** The IT property scopes to the noise-insertion layer under passive observation (COA / KPA). Under CCA the noise-position channel is revealed via oracle interaction (§2.8, Theorem 6); the closure of KPA / CPA / CCA is computational and PRF-conditional through the multi-factor defense of §2.6 (Theorem 4a). The Rank Barrier of the compound (the per-chunk permutation) is PRF-conditional throughout — its mask-space cardinality bound is Theorem 11 (§2.15).
 
 ### 2.2 Per-Bit XOR KPA Resistance (Theorem 2)
 
@@ -378,7 +378,7 @@ All verdicts are sample-bounded and, where they invoke primitive strength, PRF-c
 
 ### 3.3 Quantum Resistance (Conjectured)
 
-The noise-absorption layer under passive observation is computation-model-independent: a quantum computer cannot extract information absent from the observation (the Theorem 1 property is not conditional on the computation model). Under active seed-recovery attacks the closure is computational and admits Grover speedup; the bounds below assume the standard Grover-oracle model applied to seed-space brute-force.
+The noise-insertion layer under passive observation is computation-model-independent: a quantum computer cannot extract information absent from the observation (the Theorem 1 property is not conditional on the computation model). Under active seed-recovery attacks the closure is computational and admits Grover speedup; the bounds below assume the standard Grover-oracle model applied to seed-space brute-force.
 
 - **Grover**: no oracle (Core ITB) or expensive oracle (MAC-Inside: full decryption per query). Core ITB: `√P × 2^keyBits` (~2^1028 at 1024-bit for theoretical floor P = 400; ~2^1029 at composite P = 1225). MAC + Reveal: `√P × 2^(keyBits/2)` (~2^516 at 1024-bit for P = 400; ~2^517 at composite P = 1225), with `O(P)` per-query decryption cost.
 - **Simon**: needs periodicity; config map is aperiodic (dual-nonce per message).

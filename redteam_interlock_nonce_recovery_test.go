@@ -2,18 +2,16 @@
 
 package itb
 
-// Attacker-side handling of the interlock nonce after it left the wire
-// header.
+// Attacker-side handling of the interlock nonce, which travels inside the
+// container rather than in the wire header.
 //
-// The interlock nonce is no longer a header field: it is split into three
+// The interlock nonce is not exposed in the wire header: it is split into three
 // fragments sized by [nonceSplit] and prepended to the three interlocked
 // lanes ahead of the COBS stage, inside the Pixel Barrier's coverage. A
-// passive observer can therefore no longer transcribe it off the wire, so
-// a red-team harness that reads `interlock_nonce_hex` out of the fixture
-// metadata and feeds it to a candidate derivation is consuming secret
-// material the lab handed it — the same class of lab peek as reading a
-// true seed component. The helpers here replace that grant with the three
-// things an attacker can actually do:
+// passive observer cannot transcribe it off the wire; reading
+// `interlock_nonce_hex` out of fixture metadata would constitute an
+// out-of-band secret grant equivalent to reading a seed component.
+// The helpers here model realistic capabilities available to an attacker:
 //
 //  1. Measure, entirely on attacker-chosen material, whether the interlock
 //     nonce reaches the Rank Barrier at all under the primitive in hand

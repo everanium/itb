@@ -53,8 +53,7 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Below-spec lab primitives (ported verbatim from the retired
-// redteam_lab_test.go / redteam_test.go at commit 44c6fc5~1). Namespaced
+// Below-spec lab primitives used to evaluate barrier sensitivity. Namespaced
 // with a "BrokenLab" suffix so they cannot collide with any other test
 // file in package itb.
 // ---------------------------------------------------------------------------

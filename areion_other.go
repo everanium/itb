@@ -26,7 +26,7 @@ func areion512Permutex4SoA(b0, b1, b2, b3 *aes.Block4) {
 	*b0, *b1, *b2, *b3 = pack512x4SoA(&states)
 }
 
-// areionSoEM256Permutex4SoA — non-amd64 fallback. Mirrors the AVX-2
+// areionSoEM256Permutex4SoA — non-amd64 fallback. Mirrors the AVX2
 // branch of the amd64 dispatcher: two separate per-half permutes (each
 // dispatching to the platform's best available AES path inside
 // areion256Permutex4SoA) plus a manual XOR loop. Bit-exact identical

@@ -162,10 +162,8 @@ func getHashArraysFor(microBatch, n int) *hashArrays {
 
 func putHashArrays(ha *hashArrays) {
 	// Wipe ChainHash outputs before returning to pool. clear() lowers to
-	// runtime.memclrNoHeapPointers — observable side-effect that the
-	// compiler cannot elide, replacing the prior manual-loop + KeepAlive
-	// pattern with a single intrinsic that the runtime widens to vector
-	// stores on amd64.
+	// runtime.memclrNoHeapPointers — an observable side-effect that the
+	// compiler cannot elide, widening to vector stores on amd64.
 	clear(ha.noise)
 	clear(ha.data)
 	hashPools[ha.poolIdx].Put(ha)

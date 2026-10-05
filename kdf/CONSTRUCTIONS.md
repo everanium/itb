@@ -13,12 +13,12 @@ Audience: external auditors, paper reviewers, downstream integrators reading the
 For the standards' own conformance, refer to the upstream specifications and library tests:
 
 - NIST SP 800-108r1 — KDF in Counter Mode.
+- `github.com/everanium/itb/hashes` — the registry Areion-SoEM-256 / Areion-SoEM-512 keyed hashes.
+- RFC 7693 — the BLAKE2 keyed-hash mode (BLAKE2b / BLAKE2s).
+- `github.com/zeebo/blake3` — BLAKE3 keyed mode.
 - RFC 4493 — the AES-CMAC algorithm (AES-128).
 - `github.com/dchest/siphash` — SipHash-2-4 test vectors.
 - `golang.org/x/crypto/chacha20` — XChaCha20 (24-byte nonce variant).
-- RFC 7693 — the BLAKE2 keyed-hash mode (BLAKE2b / BLAKE2s).
-- `github.com/zeebo/blake3` — BLAKE3 keyed mode.
-- `github.com/everanium/itb/hashes` — the registry Areion-SoEM-256 / Areion-SoEM-512 keyed hashes.
 
 ## Table of constructions
 
@@ -118,4 +118,4 @@ The keyed mode here is the upstream **standard keyed PRF** (RFC 7693 keyed BLAKE
 
 **Labels are public.** In all constructions the label is a public domain-separation input. It feeds the SP 800-108 Label field (the SP 800-108 constructions) or the XChaCha20 nonce (`chacha20`). Its only requirement is distinctness per intended subkey; it carries no secrecy requirement.
 
-**Standards posture.** Only `aescmac` is a NIST-standard KDF over a NIST-standard PRF end to end. The BLAKE, Areion-SoEM, and SipHash constructions use the NIST-standard SP 800-108 mode over a non-NIST PRF; `chacha20` is a sound non-NIST keystream KDF. These distinctions are stated so an integrator selecting a construction for a regulated context knows which one inherits NIST conformance and which do not.
+**Standards posture.** Only `aescmac` is a NIST-standard KDF over a NIST-standard PRF end to end. The Areion-SoEM, BLAKE, and SipHash constructions use the NIST-standard SP 800-108 mode over a non-NIST PRF; `chacha20` is a sound non-NIST keystream KDF. These distinctions are stated so an integrator selecting a construction for a regulated context knows which one inherits NIST conformance and which do not.

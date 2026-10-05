@@ -157,9 +157,9 @@ func TestRandomMixedConstellation(t *testing.T) {
 	}
 }
 
-// TestVerifyRejectsEarlierSchema confirms a version-1 wrap-layer is
-// reported as a structural (exit 2) failure by verify.
-func TestVerifyRejectsEarlierSchema(t *testing.T) {
+// TestVerifyRejectsUnsupportedSchema confirms an unsupported (version-1)
+// wrap-layer is reported as a structural (exit 2) failure by verify.
+func TestVerifyRejectsUnsupportedSchema(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "v1.blob")
 	if err := os.WriteFile(path, []byte(`{"v":1,"p":"singlemsg-triple-mac-v1","ib":"e30="}`), 0o600); err != nil {
 		t.Fatal(err)

@@ -30,7 +30,7 @@ The DRBG does not know about the PRF, and the PRF does not know about the DRBG. 
 
 **Hash output bandwidth.** Each per-pixel ChainHash call produces 128, 256, or 512 bits depending on the primitive, but the encoder consumes only the low 64 bits. Of these, ~62 bits are actively used (3 for noise position, 56 for channel XOR, and ~3 for rotation); the remainder is discarded.
 
-A single `uint64` register fits the per-pixel requirement directly. This narrowing provides architectural defense-in-depth: any structural weakness or non-uniformity residing in the high bits of an underlying primitive is discarded on the encryption path (see [REDTEAM.md § Broken-primitive stress](REDTEAM.md#broken-primitive-stress--fnv-1a-and-crc128)). For PRF-grade primitives, truncation preserves PRF security under standard assumptions (see [SCIENCE.md § 1.2.2](SCIENCE.md#122-pixel-barrier-per-pixel-channel-xor-rotation-and-noise-injection)).
+A single `uint64` register fits the per-pixel requirement directly. This narrowing provides architectural defense-in-depth: any structural weakness or non-uniformity residing in the high bits of an underlying primitive is discarded on the encryption path (see [REDTEAM.md § Broken-primitive stress](REDTEAM.md#broken-primitive-stress--crc128-and-fnv-1a)). For PRF-grade primitives, truncation preserves PRF security under standard assumptions (see [SCIENCE.md § 1.2.2](SCIENCE.md#122-pixel-barrier-per-pixel-channel-xor-rotation-and-noise-injection)).
 
 ## 3. Nonce: A New Universe Per Message
 

@@ -296,7 +296,7 @@ func myBrokenHash(data []byte, seed [8]uint64) [8]uint64 {
     for i := 0; i < 4; i++ {
         out[i] = binary.LittleEndian.Uint64(h[i*8:])
     }
-    // out[4:8] stays zero — disaster.
+    // out[4:8] remains zero — intermediate state entropy lost.
     // ChainHash's per-call XOR chain in ITB consumes the full 64-byte
     // intermediate state; a constant upper half across calls destroys
     // half the entropy of the seed-mix chain.
@@ -360,6 +360,6 @@ The builders are an **additive** safety layer for the pluggable PRF surface. The
 
 - Users who wrap their own primitive without reading every line of `areion256.go` / `aescmac.go` / `chacha20.go` to crib the chain-absorb pattern still get correct nonce-width preservation.
 - The built-in primitives keep their hand-tuned inline implementations with all their performance benefits intact.
-- The pluggable-primitive use case has a documented "correct way to do it" beyond just "make sure your closure absorbs all the bytes — good luck".
+- The pluggable-primitive use case has a documented reference approach guaranteeing complete input absorption without relying on ad-hoc closure implementations.
 
 The KAT-test surface in `builders_test.go` includes a "full nonce absorption" check that verifies every byte of a 68-byte input affects the digest output, providing automated regression detection if the builders are ever modified in a way that reintroduces silent truncation.

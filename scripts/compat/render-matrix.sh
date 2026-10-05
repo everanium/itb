@@ -24,11 +24,15 @@ PROFILES=(
     singlemsg-triple-nomac-v1
     singlemsg-triple-mac-mixed-v1
     singlemsg-triple-nomac-mixed-v1
+    singlemsg-aesitb-mac-v1
+    singlemsg-aesitb-nomac-v1
     blob-triple-mac-v1
     streaming-aead-triple-mac-v1
     streaming-noaead-triple-v1
     streaming-aead-triple-mac-mixed-v1
     streaming-noaead-triple-mixed-v1
+    streaming-aead-aesitb-mac-v1
+    streaming-noaead-aesitb-v1
 )
 
 LANGS=(

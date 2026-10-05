@@ -567,7 +567,7 @@ func arxAbsorbHash512(hashFn Hash512Fn, scratch []byte, fixedKey []byte, data []
 // Hash{256,512}Fn signature (a keyed one-shot hash closure) and
 // produce the same itb.HashFunc{N} output. The ARX name in the
 // primary form refers to the arithmetic-rotate-XOR family
-// (BLAKE / ChaCha / SipHash-shape keyless permutations wrapped with
+// (BLAKE / SipHash / ChaCha-shape keyless permutations wrapped with
 // a fixed-key prefix); the HMAC
 // alias is for callers wrapping an HMAC-style keyed hash (HMAC-SHA-256,
 // HMAC-SHA-512, KMAC, keyed BLAKE, keyed SHA-3) whose hashFn closes

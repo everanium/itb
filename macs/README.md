@@ -150,7 +150,8 @@ ITB's MAC-Inside-Encrypt places the tag inside the encrypted container under the
 A curated primitive set keeps the choice tractable:
 
 - **`kmac256`** — modern NIST-standard keyed XOF (SP 800-185), based
-  on the well-vetted Keccak permutation. But slowest.
+  on the well-vetted Keccak permutation, exhibiting the lowest throughput
+  among the shipped set.
 - **`hmac-sha256`** — universal interoperability standard,
   hardware-accelerated through SHA-NI on amd64 / arm64 where the
   underlying CPU exposes the SHA-256 round instructions.

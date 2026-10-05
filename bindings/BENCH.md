@@ -318,13 +318,13 @@ Every binding accepts the same env vars:
 | `ITB_WITH_PARALLAX` | `false`                       |
 | `ITB_WITH_WRAPPER`  | `false`                       |
 | `ITB_PROFILE`       | Message: `singlemsg-triple-nomac-v1` / Stream: `streaming-noaead-triple-v1` (both switch to `-mac-v1` / `-aead-triple-mac-v1` when `ITB_WITH_MAC=true`) |
-| `ITB_MSG_PROFILE`   | Message-shape override — falls back to `ITB_PROFILE`, then the derived MAC/no-MAC default |
+| `ITB_MSG_PROFILE`   | Message-shape override — falls back to `ITB_PROFILE`, then the derived MAC / No MAC default |
 | `ITB_STREAM_PROFILE`| Stream-shape override — same fallback chain as `ITB_MSG_PROFILE` |
 | `ITB_BENCH_MIN_SEC` | `5`                           |
 | `ITB_GOMEMLIMIT`    | `4GiB`                        |
 | `ITB_GOGC`          | `100`                         |
 
-`ITB_WITH_MAC=true` is the single knob that switches Message from the no-MAC profile to the MAC Authenticated profile AND simultaneously switches Stream from the non-AEAD profile to the AEAD profile — one boolean covers "authentication ON" on both shapes symmetrically. Expert callers pass `ITB_PROFILE=<name>` to force any specific profile (bypasses derivation), or `ITB_MSG_PROFILE` / `ITB_STREAM_PROFILE` for per-shape fine-grained overrides (e.g. MAC Message + non-AEAD Stream in one call). The full-production tables above run with `ITB_WITH_MAC=true ITB_WITH_PARALLAX=true ITB_WITH_WRAPPER=true`.
+`ITB_WITH_MAC=true` is the single knob that switches Message from the No MAC profile to the MAC Authenticated profile AND simultaneously switches Stream from the Non-AEAD profile to the AEAD profile — one boolean covers "authentication ON" on both shapes symmetrically. Expert callers pass `ITB_PROFILE=<name>` to force any specific profile (bypasses derivation), or `ITB_MSG_PROFILE` / `ITB_STREAM_PROFILE` for per-shape fine-grained overrides (e.g. MAC Message + Non-AEAD Stream in one call). The full-production tables above run with `ITB_WITH_MAC=true ITB_WITH_PARALLAX=true ITB_WITH_WRAPPER=true`.
 
 Per-binding run scripts:
 

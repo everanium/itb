@@ -23,7 +23,7 @@ import (
 // On AVX-512 + VAES this dispatches to a single fused kernel
 // (`Areion256SoEMPermutex4Interleaved`) that runs both 10-round
 // permutations interleaved for ILP and computes the output XOR in
-// registers. On AVX-2 + VAES, and on hosts without VAES, the function
+// registers. On AVX2 + VAES, and on hosts without VAES, the function
 // falls back to two separate permutex4 calls + a manual XOR loop —
 // bit-exact identical result, just no interleave/fuse benefit.
 func areionSoEM256Permutex4SoA(s1b0, s1b1, s2b0, s2b1 *aes.Block4) {
@@ -64,7 +64,7 @@ func areionSoEM256Permutex4SoA(s1b0, s1b1, s2b0, s2b1 *aes.Block4) {
 //
 // On AVX-512 + VAES this dispatches to `Areion512SoEMPermutex4Interleaved`,
 // which interleaves both 15-round permutations and folds the final
-// cyclic state rotation into the SoEM XOR. On AVX-2 + VAES, and on
+// cyclic state rotation into the SoEM XOR. On AVX2 + VAES, and on
 // hosts without VAES, the function falls back to two separate
 // permutex4 calls + a manual XOR loop — bit-exact identical result.
 func areionSoEM512Permutex4SoA(a1, b1, c1, d1, a2, b2, c2, d2 *aes.Block4) {

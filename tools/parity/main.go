@@ -226,7 +226,7 @@ func doInit(profileName, hashName, seedPath string, nonceBits int) error {
 	if err := os.WriteFile(seedPath, buf, 0o600); err != nil {
 		return fmt.Errorf("write seed file %q: %w", seedPath, err)
 	}
-	// Sanity check: the CSPRNG entropy really came out of crypto/rand
+	// Verification probe: confirm host crypto/rand is functional
 	// (the library's Init already draws from crypto/rand; the following
 	// discard read confirms rand is functional on this host, which
 	// avoids masking a rare pathological case as a parity failure).

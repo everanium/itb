@@ -185,7 +185,7 @@ for profile in "${PROFILES[@]}"; do
         # Strip whitespace; the eitb contract puts nothing on stderr
         # except the hex blob (and a trailing newline).
         tr -d '[:space:]' < "$out_blob.raw" > "$out_blob"
-        # Sanity check: hex-only, non-empty.
+        # Format validation: hex-only, non-empty.
         if ! grep -qE '^[0-9a-fA-F]+$' "$out_blob"; then
             echo "   FAIL enc  $enc / $profile: stderr not pure hex" >&2
             head -c 120 "$out_blob.raw" >&2; echo >&2

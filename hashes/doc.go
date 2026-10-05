@@ -55,7 +55,8 @@
 // [SeedFromComponents512] counterparts rebuild such a seed from saved
 // components under its key.
 //
-// All primitives in this package are PRF-grade. The below-spec lab
+// Shipped registry primitives are PRF-grade (with AES-ITB-128 as the
+// ITB-native inner-role Non-PRF exception — see [ClassNPRF]). The below-spec lab
 // stress controls (CRC128, FNV-1a) used in REDTEAM.md / SCIENCE.md
 // are intentionally absent here — they are research instruments, not
 // shippable cipher primitives.

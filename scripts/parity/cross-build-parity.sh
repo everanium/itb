@@ -241,7 +241,7 @@ arm_env() {
 #     (hashes/internal/chacha20asm) — so the pseudo-arm applies to all.
 #   * aesni: only the AES-based primitives carry AES-NI XMM fused
 #     cascade kernels (aesitb128 / areion256 / areion512 / aescmac).
-#   * vaesavx2: aesitb128, aescmac, areion256 and areion512 carry VAES
+#   * vaesavx2: aesitb128, areion256, areion512 and aescmac carry VAES
 #     YMM fused cascade kernels; every other primitive is skipped.
 #   * avx2: aesitb128 and aescmac map the avx2 token to their VAES YMM
 #     tier; areion256 / areion512 run their VAES-on-YMM batched
@@ -344,7 +344,7 @@ done
 # is validated against the 16-lane pass on the same host.
 # ---------------------------------------------------------------------------
 ILTIERS=(avx512 avx512x8 avx2 sve2 sve neon scalar)
-ILHASHES=(areion512 aesitb128)
+ILHASHES=(aesitb128 areion512)
 IL_CELLS=$(( ${#ILTIERS[@]} * ${#ILHASHES[@]} * ${#NONCEBITS[@]} * ${#SIZES[@]} * 2 ))
 
 for ILHASH in "${ILHASHES[@]}"; do
@@ -465,12 +465,12 @@ FILLRUNGS=(seq x1 x4 x16)
 # fill_tier_applicable HASH TIER — succeeds when the (hash, PRF-fill
 # tier) pair names a real batch-16 fill kernel on this build.
 #   * avx512 / scalar — every primitive has both
-#   * vaesavx2 / vex / aesni — AES-family only (aesitb128 / aescmac /
-#     areion256 / areion512)
+#   * vaesavx2 / vex / aesni — AES-family only (aesitb128 / areion256 /
+#     areion512 / aescmac)
 #   * avx2 — non-AES ARX family (blake2b / blake2s / blake3 /
-#     chacha20 / siphash24)
-#   * gpr — ARX family (blake2b / blake2s / blake3 / chacha20 /
-#     siphash24), single-lane general-purpose-register kernels
+#     siphash24 / chacha20)
+#   * gpr — ARX family (blake2b / blake2s / blake3 / siphash24 /
+#     chacha20), single-lane general-purpose-register kernels
 #   * neon — arm64 only, all primitives (skipped here — the amd64
 #     forcetier init rejects the token with a stderr note)
 fill_tier_applicable() {
@@ -478,12 +478,12 @@ fill_tier_applicable() {
         avx512|scalar) return 0 ;;
         vaesavx2|vex|aesni)
             case "$1" in
-                aesitb128|aescmac|areion256|areion512) return 0 ;;
+                aesitb128|areion256|areion512|aescmac) return 0 ;;
                 *) return 1 ;;
             esac ;;
         avx2|gpr)
             case "$1" in
-                blake2b256|blake2b512|blake2s|blake3|chacha20|siphash24) return 0 ;;
+                blake2b256|blake2b512|blake2s|blake3|siphash24|chacha20) return 0 ;;
                 *) return 1 ;;
             esac ;;
     esac

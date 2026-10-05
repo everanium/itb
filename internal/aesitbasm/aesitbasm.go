@@ -20,7 +20,7 @@
 //     in-register from a group index base.
 //
 // The four-lane dispatchers [AESITB128ChainAbsorb13x4] and siblings
-// evaluate one round of the sponge per lane through the pure-Go
+// evaluate one sponge absorption per lane through the pure-Go
 // reference on every build.
 //
 // Each family runs the same sponge. Per lane, with key = the primitive's

@@ -36,8 +36,7 @@ const MaxKeyBits = 2048
 
 // secureWipe zeroes a byte slice to minimize sensitive data exposure in memory.
 // clear() lowers to runtime.memclrNoHeapPointers — an observable side-effect
-// the compiler cannot elide, replacing the prior manual-loop + KeepAlive
-// pattern with a single intrinsic that widens to vector stores on amd64.
+// the compiler cannot elide, widening to vector stores on amd64.
 func secureWipe(b []byte) {
 	clear(b)
 }

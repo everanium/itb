@@ -92,7 +92,7 @@ func TestAESCMACDeterminism(t *testing.T) {
 			a1, a0, b1, b0)
 	}
 
-	// Different seed must change the digest (sanity).
+	// Different seed must change the digest (invariance check).
 	c0, c1 := hashFn(data, seed0^1, seed1)
 	if a0 == c0 && a1 == c1 {
 		t.Errorf("seed change did not change digest")
