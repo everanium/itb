@@ -308,9 +308,9 @@ Unlike AES or ChaCha20 where testing a key takes nanoseconds on a single block, 
 | Data size | P (pixels) | Time per attempt | vs AES |
 |---|---|---|---|
 | Min container (payload ≤ ~7.5 KB, 1024-bit key) | 1,225 | ~196 µs | ~196,000× slower |
-| 4 MB | 602,176 | ~96 ms | ~96 million× slower |
-| 16 MB | 2,408,704 | ~385 ms | ~385 million× slower |
-| 64 MB | 9,628,609 | ~1.5 s | ~1.5 billion× slower |
+| 4 MB | 603,729 | ~96 ms | ~96 million× slower |
+| 16 MB | 2,411,809 | ~385 ms | ~385 million× slower |
+| 64 MB | 9,634,816 | ~1.5 s | ~1.5 billion× slower |
 
 Estimates assume a 1024-bit key (~10 ns per hash round on modern hardware, 8 sequential ChainHash rounds per pixel) plus per-chunk combinadic unranking. ChainHash rounds are strictly sequential and cannot be parallelized.
 

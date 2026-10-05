@@ -14,7 +14,7 @@ The construction establishes the **Interlocked Barrier** as a mandatory, always-
 
 The 8-seed architecture (noiseSeed, lockSeed, three per-region dataSeeds, three per-region startSeeds) ensures that compromise of any single configuration domain provides zero information about the remaining domains; the lockSeed → per-chunk mask path is bound to the primitive through cascade PRF binding (two consecutive live PRF cascades). A dual-nonce wire format carries two independently CSPRNG-drawn nonces per message, producing independent configurations per encryption with no caller-addressable override.
 
-The construction exhibits **ambiguity-based security**: the number of observation-consistent **configurations** grows exponentially with data size. This property is orthogonal to Shannon's key-entropy bound and distinct from Shannon's perfect-secrecy relationship on plaintext entropy. Above a threshold P_th = ⌈k / log₂ C⌉ (C = 56 without CCA, C = 7 under CCA), encoding ambiguity exceeds the 2^k key space. At 64 KB plaintext, ambiguity reaches 2^26,414; its exponent is 25.8× the 1024-bit key-space exponent. An attacker-realistic audit suite in the reference implementation confirms the barrier's absorption across multiple trapdoor mechanism classes at the tested sample sizes (see [REDTEAM.md](REDTEAM.md)).
+The construction exhibits **ambiguity-based security**: the number of observation-consistent **configurations** grows exponentially with data size. This property is orthogonal to Shannon's key-entropy bound and distinct from Shannon's perfect-secrecy relationship on plaintext entropy. Above a threshold P_th = ⌈k / log₂ C⌉ (C = 56 without CCA, C = 7 under CCA), encoding ambiguity exceeds the 2^k key space. At 64 KB plaintext, ambiguity reaches 2^27,515; its exponent is 26.9× the 1024-bit key-space exponent. An attacker-realistic audit suite in the reference implementation confirms the barrier's absorption across multiple trapdoor mechanism classes at the tested sample sizes (see [REDTEAM.md](REDTEAM.md)).
 
 All core operations are elementary: XOR, bitwise AND, modular reduction, and bit shifts, executed without secret-dependent table lookups or field inversions. The security architecture composes around a pluggable PRF hash function; the construction's own operations are elementary, while the closures under KPA/CPA/CCA remain computational and PRF-conditional on the primitive.
 
@@ -441,7 +441,7 @@ Direct from candidate arithmetic: `56^P_region > 2^k ⇔ P_region > k / log₂(5
 
 The reference implementation sets the unified per-region floor `MinPixels = ⌈k / log₂(7)⌉` for all modes (plain and authenticated), applied to each of three regions by `calcContainerSize3Cfg`, so per-region ambiguity dominance holds in all composition modes at the stricter CCA threshold.
 
-Both columns below are computed at `DefaultBarrierFill = 1` and a 128-bit nonce; a wider `BarrierFill` or nonce raises `P` and every ambiguity figure with it.
+Both columns below are computed at `DefaultBarrierFill = 1` and `DefaultNonceBits = 512`; a wider `BarrierFill` raises `P` and every ambiguity figure with it.
 
 **Encoding ambiguity by data size (1024-bit key):**
 
@@ -449,11 +449,10 @@ Both columns below are computed at `DefaultBarrierFill = 1` and a 128-bit nonce;
 |---|---|---|---|---|---|
 | Theoretical single-region floor (~2.5 KB) | 400 | `2^1,123` | 1.1× | `2^2,323` | 2.3× |
 | Composite floor (payload ≤ ~7.5 KB, 1024-bit key) | 1,225 | `2^3,439` | 3.4× | `2^7,114` | 6.9× |
-| 8 KB | 1,225 | `2^3,439` | 3.4× | `2^7,114` | 6.9× |
-| 64 KB | 9,409 | `2^26,414` | 25.8× | `2^54,641` | 53.4× |
-| 1 MB | 150,544 | `2^422,630` | 413× | `2^874,262` | 854× |
+| 64 KB | 9,801 | `2^27,515` | 26.9× | `2^56,918` | 55.6× |
+| 1 MB | 151,321 | `2^424,812` | 415× | `2^878,775` | 858× |
 
-At 64 KB, encoding ambiguity alone is `2^26,414`, whose exponent is 25.8× the 1024-bit key-space exponent. No computational model can perform **blind enumeration** of `2^26,414` configurations. This bounds enumeration cost, not resistance to structural attacks; ambiguity dominance is orthogonal to the PRF-conditional multi-factor defense (Theorem 4a). Noise barrier (`2^(8P)`) and key brute-force are independent additional enumeration layers.
+At 64 KB, encoding ambiguity alone is `2^27,515`, whose exponent is 26.9× the 1024-bit key-space exponent. No computational model can perform **blind enumeration** of `2^27,515` configurations. This bounds enumeration cost, not resistance to structural attacks; ambiguity dominance is orthogonal to the PRF-conditional multi-factor defense (Theorem 4a). Noise barrier (`2^(8P)`) and key brute-force are independent additional enumeration layers.
 
 **Per-candidate decryption cost.** Each brute-force candidate requires full container decryption: `P × 2R` hash calls (where `R` = ChainHash rounds). This cost applies to all modes and grows linearly with `P`. At 64 MB (`P ≈ 9.6 × 10⁶`), each candidate costs ~154 million hash calls — orders of magnitude more expensive than AES, in which verification costs a single block operation.
 
