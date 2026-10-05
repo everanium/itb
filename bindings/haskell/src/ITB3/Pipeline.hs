@@ -26,6 +26,7 @@ module ITB3.Pipeline
   , register
   , lookupProfile
   , profiles
+  , hashNames
     -- * Internal (used by "ITB3.Stream")
   , withPipelineHandle
   , pipelineForeignPtr
@@ -316,6 +317,23 @@ profiles :: IO [String]
 profiles = do
   json <- BC.unpack <$> retryOnce blobCap (\buf cap lenP ->
     c_ITB_Triple_Profiles buf cap lenP)
+  pure (odds (splitOn '"' json))
+  where
+    splitOn c str = case break (== c) str of
+      (a, [])     -> [a]
+      (a, _:rest) -> a : splitOn c rest
+    odds (_:x:xs) = x : odds xs
+    odds _        = []
+
+-- | The names of every hash primitive the shipped registry carries,
+-- in registry order. A name outside this list is not one the local
+-- build can key an 'ITB3.Opts.innerHash' with. libitb3 returns a JSON
+-- array of strings; names match @^[a-z][a-z0-9-]+$@, so the array
+-- splits on the quote characters alone.
+hashNames :: IO [String]
+hashNames = do
+  json <- BC.unpack <$> retryOnce blobCap (\buf cap lenP ->
+    c_ITB_Triple_HashNames buf cap lenP)
   pure (odds (splitOn '"' json))
   where
     splitOn c str = case break (== c) str of

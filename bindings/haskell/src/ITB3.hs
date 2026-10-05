@@ -34,6 +34,7 @@ module ITB3
   , register
   , lookupProfile
   , profiles
+  , hashNames
     -- * Incremental stream sessions
   , StreamEncryptor
   , StreamDecryptor
@@ -71,6 +72,10 @@ module ITB3
   , version
   , setMemoryLimit
   , setGcPercent
+  , setGomaxprocs
+  , writeHeapProfile
+  , poolStatsLen
+  , poolStats
   , bindingVersion
   ) where
 
@@ -81,6 +86,7 @@ import Data.Int (Int64)
 import Foreign.C.Types (CChar, CInt, CSize)
 import Foreign.ForeignPtr (withForeignPtr)
 import Foreign.Marshal.Alloc (alloca)
+import Foreign.Marshal.Array (allocaArray, peekArray)
 import Foreign.Ptr (Ptr, castPtr, nullPtr)
 import Foreign.Storable (peek, poke)
 
@@ -131,3 +137,47 @@ readCStr call = do
         fromIntegral <$> peek lenP
       pure . BC.unpack . BS.take (max 0 (written - 1)) $
         BSI.fromForeignPtr fp 0 (min written need)
+
+-- | Sets the Go runtime's GOMAXPROCS and returns the previous value.
+-- A value of zero or below queries without changing.
+setGomaxprocs :: Int -> IO Int
+setGomaxprocs = fmap fromIntegral . c_ITB_SetGOMAXPROCS . fromIntegral
+
+-- | Writes a Go runtime heap profile (pprof format, readable with
+-- @go tool pprof@) to the given path after one forced garbage
+-- collection, so the in-use figures describe the live heap at the
+-- call. An empty path lets libitb3 fall back to its own
+-- @ITB_MEMPROFILE@ environment variable; when that is empty too the
+-- call fails with 'statusBadInput'.
+writeHeapProfile :: FilePath -> IO ()
+writeHeapProfile path =
+  BS.useAsCString (BC.pack path) $ \p ->
+    c_ITB_WriteHeapProfile p >>= check
+
+-- | The number of @Int64@ slots 'poolStats' reports. The slot count
+-- grows if libitb3 adds a pool, so a consumer sizes its own storage
+-- from this call rather than from a constant of its own.
+poolStatsLen :: IO Int
+poolStatsLen = fromIntegral <$> c_ITB_PoolStatsLen
+
+-- | The library's pool hit \/ miss counters, every one a monotonically
+-- increasing total since library load — a consumer differences two
+-- snapshots.
+--
+-- With @T@ the hash-array pool tier count carried in slot 0, tier @i@
+-- occupies the five slots at @1 + 5*i@ (starter width, checkouts,
+-- constructor misses, regrow replacements, bytes allocated), and the
+-- scratch byte pool and the parallax chunk pool occupy the four slots
+-- each at @1 + 5*T@ (checkouts, constructor misses, regrows, regrow
+-- bytes).
+poolStats :: IO [Int64]
+poolStats = do
+  n <- poolStatsLen
+  if n <= 0
+    then pure []
+    else allocaArray n $ \buf -> alloca $ \lenP -> do
+      poke lenP 0
+      rc <- c_ITB_PoolStats buf (fromIntegral n) lenP
+      check rc
+      written <- fromIntegral <$> peek lenP
+      peekArray (min n written) buf

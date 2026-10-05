@@ -82,8 +82,8 @@ ITB ships two pixel-processing backends selected automatically at compile time, 
 
 | Mode | Command | Pixel Processing | Requirements |
 |---|---|---|---|
-| **CGO (default)** | <code>-buildmode=c-shared</code> | C with runtime-dispatched SIMD tiers | C compiler (GCC/Clang); runtime SIMD auto-dispatch (AVX-512 / AVX2 / scalar), any x86-64 host, no minimum |
-| **No ITB ASM** (CGO) | <code>-buildmode=c-shared&nbsp;-tags=noitbasm</code> | C with SIMD auto-vectorization; ITB-native ASM off, upstream stdlib ASM on | C compiler (GCC/Clang) |
+| **CGO (default)** | <code>-buildmode=c-shared</code> | C with runtime-dispatched SIMD tiers | GCC 8+ with binutils 2.30+, or Clang 8+ (GFNI intrinsics and mnemonics); runtime SIMD auto-dispatch on any x86-64 host |
+| **No ITB ASM** (CGO) | <code>-buildmode=c-shared&nbsp;-tags=noitbasm</code> | C with SIMD auto-vectorization; ITB-native ASM off, upstream stdlib ASM on | Same C compiler floor as above |
 | **Pure Go** | `CGO_ENABLED=0 ...` | Portable Go pipeline (`process_generic.go`) | None (any GOOS / GOARCH the Go compiler supports) |
 
 ### CPU baseline for the shipped assembly kernels

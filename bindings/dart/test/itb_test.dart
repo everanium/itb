@@ -485,4 +485,69 @@ void main() {
       pipe.free();
     });
   });
+  group('runtime surface', () {
+    final plain = payload(2048, 97);
+
+    test('hash registry enumerates in registry order', () {
+      final names = Itb.hashNames();
+      expect(names, isNotEmpty);
+      expect(names.first, 'aesitb128');
+      expect(names, contains('areion512'));
+      expect(names, contains('blake3'));
+      // Every name resolves as an inner-hash override on a profile of
+      // the matching width, so the list is the registry rather than an
+      // arbitrary set of strings.
+      expect(names, isNot(contains('nope')));
+    });
+
+    test('GOMAXPROCS queries and restores', () {
+      final before = Itb.setGomaxprocs(0);
+      expect(before, greaterThan(0));
+      final prev = Itb.setGomaxprocs(2);
+      expect(prev, before);
+      expect(Itb.setGomaxprocs(0), 2);
+      Itb.setGomaxprocs(before);
+      expect(Itb.setGomaxprocs(0), before);
+    });
+
+    test('pool counters report the advertised slot count and grow', () {
+      final n = Itb.poolStatsLen();
+      expect(n, greaterThan(8));
+      final before = Itb.poolStats();
+      expect(before, hasLength(n));
+      final tiers = before[0];
+      expect(tiers, greaterThan(0));
+      expect(n, 1 + 5 * tiers + 8);
+      final pipe = Itb.create('singlemsg-triple-mac-v1');
+      pipe.decryptMessage(pipe.encryptMessage(plain));
+      pipe.free();
+      final after = Itb.poolStats();
+      // Slot 1 + 5*i + 1 is tier i's checkout count; at least one tier
+      // was checked out by the round trip above.
+      var moved = false;
+      for (var i = 0; i < tiers; i++) {
+        if (after[1 + 5 * i + 1] > before[1 + 5 * i + 1]) moved = true;
+      }
+      expect(moved, isTrue);
+    });
+
+    test('heap profile is written and is non-empty', () {
+      final dir = Directory.systemTemp.createTempSync('itb-dart-heap');
+      try {
+        final path = '${dir.path}/heap.prof';
+        Itb.writeHeapProfile(path);
+        expect(File(path).lengthSync(), greaterThan(0));
+      } finally {
+        dir.deleteSync(recursive: true);
+      }
+    });
+
+    test('heap profile with no path and no env fallback is BadInput', () {
+      expect(
+        () => Itb.writeHeapProfile(''),
+        throwsA(isA<ItbException>()
+            .having((e) => e.statusCode, 'statusCode', Status.badInput)),
+      );
+    });
+  });
 }

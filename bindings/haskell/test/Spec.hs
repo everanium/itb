@@ -355,6 +355,56 @@ main = hspec $ do
       freePipeline receiver
       freePipeline sender
 
+  describe "runtime surface" $ do
+    it "hash registry enumerates in registry order" $ do
+      names <- hashNames
+      names `shouldNotBe` []
+      head names `shouldBe` "aesitb128"
+      names `shouldSatisfy` elem "areion512"
+      names `shouldSatisfy` elem "blake3"
+      names `shouldSatisfy` notElem "nope"
+
+    it "GOMAXPROCS queries and restores" $ do
+      before <- setGomaxprocs 0
+      before `shouldSatisfy` (> 0)
+      prev <- setGomaxprocs 2
+      prev `shouldBe` before
+      setGomaxprocs 0 >>= (`shouldBe` 2)
+      _ <- setGomaxprocs before
+      setGomaxprocs 0 >>= (`shouldBe` before)
+
+    it "pool counters report the advertised slot count and grow" $ do
+      n <- poolStatsLen
+      n `shouldSatisfy` (> 8)
+      before <- poolStats
+      length before `shouldBe` n
+      let tiers = fromIntegral (head before) :: Int
+      tiers `shouldSatisfy` (> 0)
+      n `shouldBe` 1 + 5 * tiers + 8
+      pipe <- newPipeline "singlemsg-triple-mac-v1"
+      let plain = payload 2048 97
+      wire <- encryptMessage pipe plain
+      back <- decryptMessage pipe wire
+      back `shouldBe` plain
+      freePipeline pipe
+      after <- poolStats
+      -- Slot 1 + 5*i + 1 is tier i's checkout count; at least one tier
+      -- was checked out by the round trip above.
+      let moved = or [ after !! (1 + 5 * i + 1) > before !! (1 + 5 * i + 1)
+                     | i <- [0 .. tiers - 1] ]
+      moved `shouldBe` True
+
+    it "heap profile is written and is non-empty" $ do
+      dir <- getTemporaryDirectory
+      let path = dir ++ "/itb-haskell-heap.prof"
+      writeHeapProfile path
+      bytes <- BS.readFile path
+      BS.length bytes `shouldSatisfy` (> 0)
+      removeFile path
+
+    it "heap profile with no path and no env fallback is statusBadInput" $
+      writeHeapProfile "" `shouldFailWithStatus` [statusBadInput]
+
 -- | Splits a ByteString into slices of at most @n@ bytes (zero-copy).
 chunksOf :: Int -> BS.ByteString -> [BS.ByteString]
 chunksOf n bs

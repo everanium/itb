@@ -261,6 +261,29 @@ rotates outer masters, and inspects stored blobs. See
 [`cmd/itb3/README.md`](https://github.com/everanium/itb/blob/main/cmd/itb3/README.md) for the full
 subcommand reference.
 
+## loop utility
+
+A long-run stress harness under `bindings/haskell/loop/` holds one
+Pipeline handle for minutes, cycles encrypt → decrypt → compare
+round-trips through it, rotates the outer masters and reopens the
+handle from its session blob on a schedule, and reports whether the
+process survived with every byte intact. It is the binding-side
+counterpart of the Go harness under `tools/loop`: same flags, same
+round structure, same summary in both renderings.
+
+```bash
+./bindings/haskell/build.sh
+./bindings/haskell/run_loop.sh --duration 2m --shape both
+```
+
+`./bindings/haskell/run_loop.sh -h` lists every flag. Concurrency
+mode: **shared-handle** — every foreign import in the binding releases
+the capability for the whole of a call, so the runtime knows the thread
+has left Haskell code and the `--goroutines` threads call into one
+Pipeline handle at the same time on the capabilities `-N` provides;
+cipher calls hold a read lock and the two maintenance operations a
+write lock, so no handle changes under a call in flight.
+
 ## eitb utility
 
 ```bash

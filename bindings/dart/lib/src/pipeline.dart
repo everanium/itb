@@ -403,3 +403,12 @@ List<String> profiles() {
       (buf, cap, len) => FfiBridge.instance.tripleProfiles(buf, cap, len));
   return stringsFromJson(utf8.decode(json));
 }
+
+/// The names of every hash primitive the shipped registry carries, in
+/// registry order. A name outside this list is not a primitive the
+/// local build can key an [Opts] with.
+List<String> hashNames() {
+  final json = _retryOnce(_jsonCap,
+      (buf, cap, len) => FfiBridge.instance.tripleHashNames(buf, cap, len));
+  return stringsFromJson(utf8.decode(json));
+}
