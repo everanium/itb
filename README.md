@@ -1197,24 +1197,21 @@ None of these layers create entropy; they consume the entropy delivered by the u
 
 ## Formal security model
 
-A simulation-based proof is a purely mathematical construction: "for every adversary A in the real world, there exists a simulator S in the ideal world such that the outputs of A and S are indistinguishable." This is proven logically, not computationally. It is independent of hardware, logic system, or computational model.
+A simulation-based proof is a purely mathematical construction: "for every adversary A in the real world, there exists a simulator S in the ideal world such that the outputs of A and S are indistinguishable." This is proven logically, not computationally, and is independent of hardware, logic system, or computational model.
 
-ITB does not fit cleanly into the standard binary security model:
+The construction addresses security across two distinct regimes:
 
-- **Standard model.** The adversary either distinguishes (break) or does not (secure). Binary.
-- **ITB.** The adversary always receives output. The output is always "valid." There is no point where the system returns accept/reject. Instead, the result is a **spectrum of plausibility** — every key produces output, and there is no way to rank candidates without external context.
-
-The semantics of decryption are ternary:
-1. Correct key → correct plaintext.
-2. Wrong key → garbage indistinguishable from plaintext.
-3. Observer → cannot determine which of the two cases is present.
+- **Standard AEAD model (MAC Authenticated).** Standard binary accept/reject semantics: authentic messages verify; tampered or unauthenticated ciphertexts are rejected. Under CCA (MAC + Reveal), the oracle leaks at most 3 bits per pixel (`noisePos`, Theorem 6); 8-seed isolation shields `dataSeed`, `lockSeed`, and `startSeed` from leakage.
+- **Plausible deniability model (Core ITB / MAC + Silent Drop, Theorem 8).** The adversary always receives output without an accept/reject signal. Decryption produces a **spectrum of plausibility**: every candidate key yields syntactically valid COBS-decoded output, and without external redundancy, wrong-key candidates cannot be ranked against the true plaintext.
 
 Possible formalization paths:
-- **Indistinguishability-based** definitions (standard in cryptography, binary logic — sufficient).
-- **Simulation-based** proof with an ideal functionality that always returns random bytes: the noise-insertion layer's output is information-theoretically indistinguishable from random under passive observation (Theorem 1), and computationally indistinguishable from a CSPRNG-generated cover under the PRF and CSPRNG assumptions.
-- **Quantitative information flow**: the per-byte noise-insertion barrier leaks 0 bits about the hash output per observation under COA / KPA (Theorem 1 marginal uniformity + Theorem 2 candidate equiprobability); under CCA the noise position leaks 3 bits per pixel from noiseSeed (Theorem 6), bounded to that channel — dataSeed, lockSeed, and startSeed channels remain unaffected.
 
-All three approaches use standard mathematics. The formal relationship between ITB's Ambiguity-Based Security and Shannon's framework remains an open research question (see [SCIENCE.md](SCIENCE.md)).
+- **Indistinguishability-based definitions (IND-CPA / IND-CCA).** Passive observation is information-theoretically secure (Theorem 1, Theorem 2). Active resistance under Crib / Full KPA and CPA/CCA is computational and PRF-conditional: the 4-factor defense (Theorem 4a; byte-splitting gcd(7, 8) = 1 acts as an auxiliary 5th factor specifically under Partial KPA) pairs PRF one-wayness with startPixel isolation, per-pixel ambiguity, and the Rank Barrier's per-chunk mask space of ≈ 2^70.20 balanced partitions (Theorem 11; gcd anti-collapse Theorem 12).
+- **Simulation-based proof.** Under passive observation, an ideal functionality returns uniform random bytes: the Pixel Barrier's output is information-theoretically indistinguishable from random (Theorem 1), and computationally indistinguishable from a CSPRNG-generated cover under the PRF and CSPRNG assumptions.
+- **Quantitative information flow (QIF).** The per-byte noise-insertion barrier leaks 0 bits about hash output per observation under COA (Theorem 1 marginal uniformity + Theorem 2 candidate equiprobability). Under CCA, leakage is strictly bounded to 3 bits per pixel from `noiseSeed` (Theorem 6), leaving data, lock, and start channels unaffected.
+- **Ambiguity-based security (Theorems 9 and 10).** Fix key size `k` bits and container size `P` pixels. Above threshold `P_th = ⌈k / log₂ C⌉` (`C = 56` without CCA, `C = 7` under CCA), observation-consistent configurations exceed the key space: `C^P > 2^k`. Furthermore, container dimensions `(s+1) × (s+1)` where `s = ⌈√max(dataPixels, MinPixels)⌉` guarantee `gap ≥ (2s + 1) × 7` bytes of CSPRNG-seeded DRBG residue in data bit positions (Theorem 10), preserving configuration ambiguity even under CCA.
+
+The formal relationship between ITB's Ambiguity-Based Security and Shannon's framework remains an open research question (see [SCIENCE.md](SCIENCE.md)).
 
 ## Bindings
 
