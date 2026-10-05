@@ -206,7 +206,7 @@ subcommand reference.
 
 ## loop utility
 
-A long-run stress harness under `bindings/csharp/loop/` holds one
+A long-run stress harness under `bindings/csharp/Everanium.LibItb3.Loop/` holds one
 Pipeline handle for minutes, cycles encrypt → decrypt → compare
 round-trips through it, rotates the outer masters and reopens the
 handle from its session blob on a schedule, and reports whether the

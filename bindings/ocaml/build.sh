@@ -110,7 +110,7 @@ if command -v opam >/dev/null 2>&1; then
     eval "$(opam env 2>/dev/null)" || true
 fi
 
-echo "==> building the dune project (library, tests, bench, eitb)"
+echo "==> building the dune project (library, tests, bench, eitb, loop)"
 dune build
 
 # `dune build` covers every target in the project, eitb/itb_eitb.exe

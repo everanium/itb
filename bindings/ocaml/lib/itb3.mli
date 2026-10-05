@@ -217,3 +217,39 @@ val write_sub : 'a stream -> bytes -> int -> int -> unit
     large constant factor). A [dst] sized with it never trips
     BUFFER_TOO_SMALL on the shipped profiles. *)
 val message_out_cap : int -> int
+
+(** [set_gomaxprocs n] sets the Go runtime's [GOMAXPROCS] and returns
+    the previous value. A value of [n <= 0] queries without changing. *)
+val set_gomaxprocs : int -> int
+
+(** The Go heap soft limit currently in force, in bytes. The library
+    reports [Int64.max_int] when no limit is installed, which is why
+    the figure is an [int64] rather than an [int]. *)
+val memory_limit : unit -> int64
+
+(** The Go GC trigger percentage currently in force. *)
+val gc_percent : unit -> int
+
+(** [write_heap_profile path] writes a Go runtime heap profile (pprof
+    format) to [path] after one forced collection inside the library.
+    A path the library cannot open raises [ITB_error] carrying the
+    diagnostic. *)
+val write_heap_profile : string -> unit
+
+(** The number of slots [pool_stats] fills. Size a consumer from this
+    call rather than from a constant: the slot count follows the number
+    of hash-array pool tiers the library was built with. *)
+val pool_stats_len : unit -> int
+
+(** The library's pool counters. Every entry is a monotonically
+    increasing total since library load, so a consumer differences two
+    snapshots. Slot 0 carries the hash-array tier count [t]; tier [i]
+    occupies the five slots at [1 + 5*i] (starter width, checkouts,
+    constructor misses, regrows, bytes allocated); the scratch byte
+    pool and the parallax chunk pool occupy the eight slots at
+    [1 + 5*t]. *)
+val pool_stats : unit -> int array
+
+(** The shipped inner-hash registry as a list of names, in registry
+    order. *)
+val hash_names : unit -> string list

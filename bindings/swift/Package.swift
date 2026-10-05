@@ -53,7 +53,7 @@ let package = Package(
         // The stress harness keeps its sources next to eitb/ and
         // benches/ rather than under Sources/, so the target carries
         // an explicit path.
-        .executableTarget(name: "loop", dependencies: ["Itb3"], path: "loop"),
+        .executableTarget(name: "loop", dependencies: ["Itb3"]),
         .testTarget(name: "Itb3Tests", dependencies: ["Itb3"]),
     ]
 )

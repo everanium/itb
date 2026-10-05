@@ -136,6 +136,6 @@ dotnet build Everanium.LibItb3.sln -c Release
 require_built "$BINDING_DIR/Everanium.LibItb3/bin/Release/net*/Everanium.LibItb3.dll"
 require_built "$BINDING_DIR/Everanium.LibItb3.Eitb/bin/Release/net*/Everanium.LibItb3.Eitb.dll"
 require_built "$BINDING_DIR/Everanium.LibItb3.Bench/bin/Release/net*/Everanium.LibItb3.Bench.dll"
-require_built "$BINDING_DIR/loop/bin/Release/net*/Everanium.LibItb3.Loop.dll"
+require_built "$BINDING_DIR/Everanium.LibItb3.Loop/bin/Release/net*/Everanium.LibItb3.Loop.dll"
 
 echo "==> ready: ./run_tests.sh"

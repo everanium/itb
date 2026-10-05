@@ -13,9 +13,9 @@ set -o pipefail
 
 cd "$(dirname "$0")"
 
-dotnet build loop/Everanium.LibItb3.Loop.csproj -c Release --nologo -v quiet >/dev/null
+dotnet build Everanium.LibItb3.Loop/Everanium.LibItb3.Loop.csproj -c Release --nologo -v quiet >/dev/null
 
-ARTIFACT=(loop/bin/Release/net*/Everanium.LibItb3.Loop)
+ARTIFACT=(Everanium.LibItb3.Loop/bin/Release/net*/Everanium.LibItb3.Loop)
 if [ "${#ARTIFACT[@]}" -ne 1 ] || [ ! -x "${ARTIFACT[0]}" ]; then
     echo "run_loop.sh: expected exactly one loop executable, found ${#ARTIFACT[@]}" >&2
     exit 1

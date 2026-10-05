@@ -11,7 +11,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Everanium.LibItb3.Bench", "
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Everanium.LibItb3.Eitb", "Everanium.LibItb3.Eitb\Everanium.LibItb3.Eitb.csproj", "{B51A7BD3-6305-4E57-B003-ED5CA11115D8}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Everanium.LibItb3.Loop", "loop\Everanium.LibItb3.Loop.csproj", "{7C1E4A63-5B0D-4B2E-9D3A-6F0C2E8A4D11}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Everanium.LibItb3.Loop", "Everanium.LibItb3.Loop\Everanium.LibItb3.Loop.csproj", "{7C1E4A63-5B0D-4B2E-9D3A-6F0C2E8A4D11}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

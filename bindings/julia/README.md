@@ -251,6 +251,28 @@ rotates outer masters, and inspects stored blobs. See
 [`cmd/itb3/README.md`](https://github.com/everanium/itb/blob/main/cmd/itb3/README.md) for the full
 subcommand reference.
 
+## loop utility
+
+A long-run stress harness under `bindings/julia/loop/` holds one
+Pipeline handle for minutes, cycles encrypt → decrypt → compare
+round-trips through it, rotates the outer masters and reopens the
+handle from its session blob on a schedule, and reports whether the
+process survived with every byte intact. It is the binding-side
+counterpart of the Go harness under `tools/loop`: same flags, same
+round structure, same summary in both renderings.
+
+```bash
+./bindings/julia/build.sh
+./bindings/julia/run_loop.sh --duration 2m --shape both
+```
+
+`./bindings/julia/run_loop.sh -h` lists every flag. Concurrency mode:
+**shared-handle** — the binding's calls cross the FFI boundary with no
+interpreter-wide lock to release, so `--goroutines` tasks on separate
+threads of the default pool call into one Pipeline handle at once; the
+pool is fixed at process start, so the launcher requests it at the
+harness's worker ceiling and the flag is the worker count verbatim.
+
 ## eitb utility
 
 A small CLI under `bindings/julia/eitb/` mirrors the shipped Go

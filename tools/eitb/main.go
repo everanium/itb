@@ -3,9 +3,9 @@
 //
 // Subcommands:
 //
-//	eitb version                                   library + binding versions
-//	eitb profiles                                  registered profile catalogue
-//	eitb encrypt <profile> <in-file> <out-file>    encrypt a file
+//	eitb version
+//	eitb profiles
+//	eitb encrypt <profile> <in-file> <out-file>
 //	eitb decrypt <profile> <blob-hex> <in-file> <out-file>
 //
 // `encrypt` prints the session blob to stderr as hex; feed that hex

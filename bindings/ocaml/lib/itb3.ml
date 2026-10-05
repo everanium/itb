@@ -83,3 +83,57 @@ let decrypt_message_into = Pipeline.decrypt_message_into
 let read_into = Stream.read_into
 let write_sub = Stream.write_sub
 let message_out_cap = Ffi_bridge.out_cap
+
+(* ---------------------------------------------------------------- *)
+(* Runtime observation                                              *)
+(* ---------------------------------------------------------------- *)
+
+let set_gomaxprocs n =
+  let s = Ffi_bridge.rt_syms () in
+  s.set_gomaxprocs n
+
+(* The query form of the heap-limit setter. The reported ceiling is
+   [Int64.max_int] when no limit is in force, which does not fit an
+   OCaml [int], so the value is handed back as [int64] rather than
+   narrowed. *)
+let memory_limit () =
+  let s = Ffi_bridge.syms () in
+  s.set_memory_limit (-1L)
+
+(* The query form of the GC-percent setter. Zero is a real value to
+   that setter, so the query passes a negative. *)
+let gc_percent () =
+  let s = Ffi_bridge.syms () in
+  s.set_gc_percent (-1)
+
+let write_heap_profile path =
+  let s = Ffi_bridge.rt_syms () in
+  Ffi_bridge.check (s.write_heap_profile path)
+
+let pool_stats_len () =
+  let s = Ffi_bridge.rt_syms () in
+  s.pool_stats_len ()
+
+let pool_stats () =
+  let s = Ffi_bridge.rt_syms () in
+  let n = s.pool_stats_len () in
+  if n <= 0 then [||]
+  else begin
+    let buf = CArray.make int64_t n in
+    let need = Ffi_bridge.new_size_out () in
+    Ffi_bridge.check (s.pool_stats (CArray.start buf) (Ffi_bridge.sz n) need);
+    let written = min n (Ffi_bridge.sz_int !@need) in
+    Array.init written (fun i -> Int64.to_int (CArray.get buf i))
+  end
+
+(* The shipped inner-hash registry. libitb3 returns a JSON array of
+   strings; names match [^[a-z][a-z0-9-]+$], so the array splits on
+   the quote characters alone -- the same reading [profiles] uses. *)
+let hash_names () =
+  let s = Ffi_bridge.rt_syms () in
+  let json =
+    Bytes.to_string
+      (Ffi_bridge.retry_once 4096 (fun buf cap need ->
+           s.triple_hash_names (Ffi_bridge.bs buf) (Ffi_bridge.sz cap) need))
+  in
+  List.filteri (fun i _ -> i mod 2 = 1) (String.split_on_char '"' json)

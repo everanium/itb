@@ -296,3 +296,47 @@ let load_ext () =
    force. *)
 let ext_syms_lazy = lazy (load_ext ())
 let ext_syms () = Lazy.force ext_syms_lazy
+
+(* ---------------------------------------------------------------- *)
+(* Runtime observation symbol table                                 *)
+(* ---------------------------------------------------------------- *)
+
+(* The runtime-family entries added after the first two records, kept
+   in a third of their own for the same reason the second exists: the
+   shapes already published stay untouched. The pool-counter vector is
+   the one output here that is not a byte buffer, so it crosses as a
+   [ptr int64_t] over C-allocated storage rather than as [ocaml_bytes];
+   the element count comes from the library's own length query. *)
+type rt_syms = {
+  set_gomaxprocs : int -> int;
+  write_heap_profile : string -> int;
+  pool_stats_len : unit -> int;
+  pool_stats : int64 ptr -> Unsigned.size_t -> Unsigned.size_t ptr -> int;
+  triple_hash_names : Bytes.t ocaml -> Unsigned.size_t -> Unsigned.size_t ptr -> int;
+}
+
+let load_rt () =
+  let path = resolve_library_path () in
+  let lib =
+    try Dl.dlopen ~filename:path ~flags:[ Dl.RTLD_NOW ]
+    with e ->
+      raise
+        (ITB_error
+           (-1, Printf.sprintf "failed to load libitb3 (%s): %s" path (Printexc.to_string e)))
+  in
+  let f name typ = Foreign.foreign ~from:lib name typ in
+  {
+    set_gomaxprocs = f "ITB_SetGOMAXPROCS" (int @-> returning int);
+    write_heap_profile = f "ITB_WriteHeapProfile" (string @-> returning int);
+    pool_stats_len = f "ITB_PoolStatsLen" (void @-> returning int);
+    pool_stats =
+      f "ITB_PoolStats" (ptr int64_t @-> size_t @-> ptr size_t @-> returning int);
+    triple_hash_names =
+      f "ITB_Triple_HashNames" (ocaml_bytes @-> size_t @-> ptr size_t @-> returning int);
+  }
+
+(* Lazy for the same reason as [syms_lazy]: a resolve failure surfaces
+   at the first runtime-observation call and is re-raised on every
+   later force. *)
+let rt_syms_lazy = lazy (load_rt ())
+let rt_syms () = Lazy.force rt_syms_lazy

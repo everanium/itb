@@ -83,4 +83,70 @@ negative value queries without changing.
 """
 set_gc_percent(pct::Integer) = Int(_ITB_SetGCPercent(pct))
 
+export set_gomaxprocs, write_heap_profile, pool_stats_len, pool_stats, hash_names
+
+"""
+    set_gomaxprocs(n::Integer) -> Int
+
+Sets the Go runtime's `GOMAXPROCS` and returns the previous value. A
+value of `n <= 0` queries without changing.
+"""
+set_gomaxprocs(n::Integer) = Int(_ITB_SetGOMAXPROCS(n))
+
+"""
+    write_heap_profile(path::AbstractString)
+
+Writes a Go runtime heap profile (pprof format) to `path` after one
+forced collection inside the library. A failure throws
+[`ITBError`](@ref) carrying the diagnostic.
+"""
+function write_heap_profile(path::AbstractString)
+    check(_ITB_WriteHeapProfile(path))
+    return nothing
+end
+
+"""
+    pool_stats_len() -> Int
+
+The number of `Int64` slots [`pool_stats`](@ref) fills. Size a buffer
+from this call rather than from a constant: the slot count follows the
+number of hash-array pool tiers the library was built with.
+"""
+pool_stats_len() = Int(_ITB_PoolStatsLen())
+
+"""
+    pool_stats() -> Vector{Int64}
+
+The library's pool counters as one `Int64` vector. Every entry is a
+monotonically increasing total since library load, so a consumer
+differences two snapshots. Slot 0 carries the hash-array tier count
+`T`; tier `i` occupies the five slots at `1 + 5i` (starter width,
+checkouts, constructor misses, regrows, bytes allocated); the scratch
+byte pool and the parallax chunk pool occupy the eight slots at
+`1 + 5T`.
+"""
+function pool_stats()::Vector{Int64}
+    cap = pool_stats_len()
+    cap <= 0 && return Int64[]
+    buf = Vector{Int64}(undef, cap)
+    need = Ref{Csize_t}(0)
+    check(_ITB_PoolStats(buf, length(buf), need))
+    resize!(buf, Int(need[]))
+    return buf
+end
+
+"""
+    hash_names() -> Vector{String}
+
+The shipped inner-hash registry as a list of names. libitb3 writes a
+JSON array of strings; primitive names are restricted to `[a-z0-9-]`,
+so the array unpacks by collecting the quoted items.
+"""
+function hash_names()::Vector{String}
+    text = String(_retry_once(_JSON_CAP) do buf, need
+        _ITB_Triple_HashNames(buf, length(buf), need)
+    end)
+    return [String(m.captures[1]) for m in eachmatch(r"\"([^\"]*)\"", text)]
+end
+
 end # module LibItb3
