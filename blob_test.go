@@ -684,12 +684,10 @@ func TestBlob128ImportRejectsOversizedKeyN(t *testing.T) {
 }
 
 // TestBlobImportModeDiscriminator pins the accepted set of blob mode
-// discriminators. 1 names the shipped 48-bit Interlocked Barrier and 2
-// the 120-bit variant; the two load identically here because the
-// 120-bit barrier does not exist on this tree, so the mode is carried
-// through to the receiver rather than normalised. Every other value —
-// 3 included — names a construction this tree cannot build seeds for
-// and is rejected before any receiver field is written.
+// discriminators: 1 is the shipped Per-Region container floor and 2
+// is the Per-Container compact floor. Every other value —
+// 3 included — names an unsupported mode and is rejected before any
+// receiver field is written.
 //
 // The fixtures below are malformed past the mode gate (one "0"
 // component against a KeyBits=512 want of 8), which is what makes the
@@ -754,9 +752,9 @@ func TestBlobImportModeDiscriminator(t *testing.T) {
 	}
 }
 
-// TestBlobExportEmitsMode1 pins the emitted discriminator. Export is
-// the only side that chooses a mode; 2 is import-only until the
-// 120-bit barrier ships.
+// TestBlobExportEmitsMode1 pins the emitted discriminator. Mode 1
+// (Per-Region container sizing) is the default when no Mode override
+// is specified in Config or BlobOpts.
 func TestBlobExportEmitsMode1(t *testing.T) {
 	ks := makeAreion512Keys(t, 8)
 	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeed512Triple(t, ks)
@@ -795,8 +793,7 @@ func TestBlobExportEmitsMode1(t *testing.T) {
 // the wire's mode to 2, import, and assert the receiver reports 2.
 // Import must carry the value it received rather than the value Export
 // would have written, because the discriminator names which
-// Interlocked Barrier chunk width the seed material was drawn for and
-// that is the sender's fact, not the receiver's.
+// container floor sizing mode was selected by the sender.
 func TestBlobImportCarriesMode2Through(t *testing.T) {
 	ks := makeAreion512Keys(t, 8)
 	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeed512Triple(t, ks)
@@ -836,5 +833,78 @@ func TestBlobImportCarriesMode2Through(t *testing.T) {
 	// confirms the mode gate is the only thing the rewrite moved.
 	if fresh.NonceBits != 256 || fresh.BarrierFill != 4 {
 		t.Fatalf("fresh Cfg = %+v, want {NonceBits:256 BarrierFill:4}", fresh)
+	}
+	if fresh.Mode != 2 {
+		t.Fatalf("fresh Mode = %d, want 2", fresh.Mode)
+	}
+}
+
+// TestBlobExportMode2Direct confirms that supplying Mode: 2 via
+// Blob{N}Opts or via Config emits mode=2 into the blob and sets Mode=2
+// on the exported receiver struct, and that Import3Cfg preserves it.
+func TestBlobExportMode2Direct(t *testing.T) {
+	ks := makeAreion512Keys(t, 8)
+	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeed512Triple(t, ks)
+
+	// Subtest A: via Blob512Opts.Mode = 2
+	{
+		cfg := &itb.Config{NonceBits: 128, BarrierFill: 1}
+		bSrc := &itb.Blob512{}
+		data, err := bSrc.Export3Cfg(cfg,
+			ks[0], ks[2], ks[3], ks[4], ks[5], ks[6], ks[7],
+			ns, ds1, ds2, ds3, ss1, ss2, ss3,
+			itb.Blob512Opts{KeyL: ks[1], LS: ls, Mode: 2},
+		)
+		if err != nil {
+			t.Fatalf("Export3Cfg with Mode=2 in opts: %v", err)
+		}
+		if bSrc.Mode != 2 {
+			t.Fatalf("bSrc.Mode = %d, want 2", bSrc.Mode)
+		}
+
+		var probe struct {
+			Mode int `json:"mode"`
+		}
+		if err := json.Unmarshal(data, &probe); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		if probe.Mode != 2 {
+			t.Fatalf("JSON mode = %d, want 2", probe.Mode)
+		}
+
+		freshCfg := &itb.Config{}
+		bDst := &itb.Blob512{}
+		if err := bDst.Import3Cfg(data, freshCfg); err != nil {
+			t.Fatalf("Import3Cfg: %v", err)
+		}
+		if bDst.Mode != 2 || freshCfg.Mode != 2 {
+			t.Fatalf("imported bDst.Mode=%d freshCfg.Mode=%d, want 2/2", bDst.Mode, freshCfg.Mode)
+		}
+	}
+
+	// Subtest B: via Config.Mode = 2
+	{
+		cfg := &itb.Config{NonceBits: 256, BarrierFill: 2, Mode: 2}
+		bSrc := &itb.Blob512{}
+		data, err := bSrc.Export3Cfg(cfg,
+			ks[0], ks[2], ks[3], ks[4], ks[5], ks[6], ks[7],
+			ns, ds1, ds2, ds3, ss1, ss2, ss3,
+			itb.Blob512Opts{KeyL: ks[1], LS: ls},
+		)
+		if err != nil {
+			t.Fatalf("Export3Cfg with Mode=2 in cfg: %v", err)
+		}
+		if bSrc.Mode != 2 {
+			t.Fatalf("bSrc.Mode = %d, want 2", bSrc.Mode)
+		}
+
+		freshCfg := &itb.Config{}
+		bDst := &itb.Blob512{}
+		if err := bDst.Import3Cfg(data, freshCfg); err != nil {
+			t.Fatalf("Import3Cfg: %v", err)
+		}
+		if bDst.Mode != 2 || freshCfg.Mode != 2 {
+			t.Fatalf("imported bDst.Mode=%d freshCfg.Mode=%d, want 2/2", bDst.Mode, freshCfg.Mode)
+		}
 	}
 }

@@ -108,5 +108,10 @@ func validateConfigCfg(cfg *Config) error {
 	if cfg.MaxWorkers < 0 {
 		return fmt.Errorf("itb: cfg.MaxWorkers=%d must be >= 0", cfg.MaxWorkers)
 	}
+	switch cfg.Mode {
+	case 0, 1, 2:
+	default:
+		return fmt.Errorf("itb: cfg.Mode=%d must be 0, 1 (per-region), or 2 (per-container)", cfg.Mode)
+	}
 	return nil
 }

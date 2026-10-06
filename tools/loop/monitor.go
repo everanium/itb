@@ -323,6 +323,7 @@ type summaryReport struct {
 	Seed             uint64              `json:"seed"`
 	KeyBits          int                 `json:"key_bits"`
 	NonceBits        int                 `json:"nonce_bits"`
+	BlobMode         int                 `json:"blob_mode,omitempty"`
 	ChunkSizeBytes   int64               `json:"chunk_size_bytes"`
 	BarrierFill      int                 `json:"barrier_fill"`
 	Parallax         string              `json:"parallax"`
@@ -529,6 +530,7 @@ func printJSONSummary(r *runState, elapsed time.Duration, finalHeap uint64, fina
 		Seed:                r.cfg.seed,
 		KeyBits:             r.cfg.keyBits,
 		NonceBits:           r.cfg.nonceBits,
+		BlobMode:            func() int { if r.cfg.blobMode != 1 { return r.cfg.blobMode }; return 0 }(),
 		ChunkSizeBytes:      r.cfg.chunkSize,
 		BarrierFill:         r.cfg.barrierFill,
 		Parallax:            onOff(r.cfg.parallax),

@@ -252,6 +252,10 @@ func validateProfileFields(p Profile) error {
 		return fmt.Errorf("triple: Register: BarrierFill must be 0 in a Register-time profile (got %d); barrier fill is set at Init via Opts.BarrierFill, not in the profile literal — the field is populated by Inspect / Load from the blob's inner Blob{N}.Globals snapshot",
 			p.BarrierFill)
 	}
+	if p.ContainerMode != 0 {
+		return fmt.Errorf("triple: Register: ContainerMode must be 0 in a Register-time profile (got %d); container mode is set via blob options, not in the profile literal — the field is populated by Inspect / Load from the blob's inner mode field",
+			p.ContainerMode)
+	}
 	if p.MacName != "" {
 		if len(p.MacName) > hashes.MaxNameLen {
 			return fmt.Errorf("triple: Register: MacName %q length %d exceeds hashes.MaxNameLen=%d",

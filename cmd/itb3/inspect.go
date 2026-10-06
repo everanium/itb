@@ -78,6 +78,11 @@ func renderInspect(prof triple.Profile, blobLen int, out io.Writer) {
 	fmt.Fprintf(out, "key_bits: %d\n", prof.KeyBits)
 	fmt.Fprintf(out, "nonce_bits: %d\n", prof.NonceBits)
 	fmt.Fprintf(out, "barrier_fill: %d\n", prof.BarrierFill)
+	if prof.ContainerMode == 2 {
+		fmt.Fprintf(out, "container_mode: per-container (2)\n")
+	} else {
+		fmt.Fprintf(out, "container_mode: per-region (1)\n")
+	}
 	if prof.MacName != "" {
 		fmt.Fprintf(out, "mac_name: %s\n", prof.MacName)
 	} else {

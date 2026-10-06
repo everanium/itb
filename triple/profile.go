@@ -202,6 +202,15 @@ type Profile struct {
 	// when [Opts.BarrierFill] is zero at Init.
 	BarrierFill int
 
+	// ContainerMode is the container floor sizing mode (1 for Per-Region,
+	// 2 for Per-Container) this Pipeline runs with. Same lifecycle as
+	// [Profile.NonceBits] and [Profile.BarrierFill] — populated by
+	// [Inspect] / [Load] from the blob's inner mode field only; zero on
+	// a Register-time Profile; a non-zero value at Register time is
+	// rejected fail-fast. 1 is the fallback when mode is left at zero or
+	// omitted in the blob.
+	ContainerMode int
+
 	// MacName is the MAC primitive name (e.g. "hmac-blake3"). Empty
 	// for No MAC modes; otherwise must resolve via
 	// [github.com/everanium/itb/macs.Find].
@@ -628,6 +637,7 @@ type profileWire struct {
 	KeyBits             int      `json:"keybits"`
 	NonceBits           int      `json:"nonce_bits,omitempty"`
 	BarrierFill         int      `json:"barrier_fill,omitempty"`
+	ContainerMode       int      `json:"container_mode,omitempty"`
 	MacName             string   `json:"mac,omitempty"`
 	TagStubSize         int      `json:"tagstub,omitempty"`
 	ChunkSize           int      `json:"chunk,omitempty"`
@@ -641,34 +651,34 @@ type profileWire struct {
 // MarshalJSON encodes p as the documented recipe object. Key set and
 // presence rules:
 //
-//	name         Name                 omitted when empty
-//	mode         Mode                 always
-//	width        Width                always
-//	hash         InnerHash            omitted when empty (mixed profiles)
-//	hashes       MixedHashes          omitted when every slot is empty;
-//	                                  otherwise exactly eight strings
-//	keybits      KeyBits              always
-//	nonce_bits   NonceBits            omitted when 0 (Register-time
-//	                                  profile); present when populated
-//	                                  by Inspect / Load from the blob's
-//	                                  inner Blob{N}.Globals
-//	barrier_fill BarrierFill          same shape as nonce_bits
-//	mac          MacName              omitted when empty (No MAC)
-//	tagstub      TagStubSize          omitted when 0
-//	chunk        ChunkSize            omitted when 0
-//	wrapper      Wrapper              always
-//	outer        OuterCipher          omitted when empty
-//	parallax     Parallax             always
-//	palette      ParallaxPalette      omitted when empty
-//	segment      ParallaxSegmentSize  omitted when 0
+//	name           Name                 omitted when empty
+//	mode           Mode                 always
+//	width          Width                always
+//	hash           InnerHash            omitted when empty (mixed profiles)
+//	hashes         MixedHashes          omitted when every slot is empty;
+//	                                    otherwise exactly eight strings
+//	keybits        KeyBits              always
+//	nonce_bits     NonceBits            omitted when 0 (Register-time
+//	                                    profile); present when populated
+//	                                    by Inspect / Load from the blob's
+//	                                    inner Blob{N}.Globals
+//	barrier_fill   BarrierFill          same shape as nonce_bits
+//	container_mode ContainerMode        same shape as nonce_bits
+//	mac            MacName              omitted when empty (No MAC)
+//	tagstub        TagStubSize          omitted when 0
+//	chunk          ChunkSize            omitted when 0
+//	wrapper        Wrapper              always
+//	outer          OuterCipher          omitted when empty
+//	parallax       Parallax             always
+//	palette        ParallaxPalette      omitted when empty
+//	segment        ParallaxSegmentSize  omitted when 0
 //
-// The nonce_bits / barrier_fill keys are inspection-only (not part of
-// the recipe): [Register] rejects a non-zero value on either field
-// fail-fast, so a wrap-layer recipe emitted from marshalWrap never
-// carries them. [Inspect] populates the two fields from the blob's
-// inner Blob{N}.Globals snapshot, so the JSON output surfaced through
-// the CAPI Inspect entry (and downstream bindings that read that
-// JSON) carries them there.
+// The nonce_bits / barrier_fill / container_mode keys are inspection-only
+// (not part of the recipe): [Register] rejects a non-zero value on any
+// of them fail-fast, so a wrap-layer recipe emitted from marshalWrap never
+// carries them. [Inspect] populates them from the blob's inner
+// snapshot, so the JSON output surfaced through the CAPI Inspect entry
+// (and downstream bindings that read that JSON) carries them there.
 //
 // No semantic validation is applied by the codec; the field rules are
 // enforced by [Register] on the registry side and by [Load] on the
@@ -682,6 +692,7 @@ func (p Profile) MarshalJSON() ([]byte, error) {
 		KeyBits:             p.KeyBits,
 		NonceBits:           p.NonceBits,
 		BarrierFill:         p.BarrierFill,
+		ContainerMode:       p.ContainerMode,
 		MacName:             p.MacName,
 		TagStubSize:         p.TagStubSize,
 		ChunkSize:           p.ChunkSize,
@@ -705,11 +716,11 @@ func (p Profile) MarshalJSON() ([]byte, error) {
 // unchanged.
 //
 // Future additive fields (like [Profile.NonceBits] /
-// [Profile.BarrierFill]) are placed in [profileWire] alongside the
-// existing keys, so the decoder knows them and does not reject a blob
-// carrying them; the strictness applies to keys the current build
-// does not know about, catching malformed input rather than silently
-// swallowing it.
+// [Profile.BarrierFill] / [Profile.ContainerMode]) are placed in
+// [profileWire] alongside the existing keys, so the decoder knows them
+// and does not reject a blob carrying them; the strictness applies to
+// keys the current build does not know about, catching malformed input
+// rather than silently swallowing it.
 func (p *Profile) UnmarshalJSON(data []byte) error {
 	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
 		return nil
@@ -734,6 +745,7 @@ func (p *Profile) UnmarshalJSON(data []byte) error {
 		KeyBits:             w.KeyBits,
 		NonceBits:           w.NonceBits,
 		BarrierFill:         w.BarrierFill,
+		ContainerMode:       w.ContainerMode,
 		MacName:             w.MacName,
 		TagStubSize:         w.TagStubSize,
 		ChunkSize:           w.ChunkSize,

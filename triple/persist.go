@@ -144,9 +144,9 @@ func (p *Pipeline) SaveF(path string) error {
 // Inspect decodes the wrap-layer of blob and returns the embedded
 // [Profile] record — every structural field the sender's Pipeline was
 // built with, Init-time Opts overrides folded in, Name carrying the
-// sender's profile label. [Profile.NonceBits] and [Profile.BarrierFill]
-// are additionally populated from the blob's inner Blob{N}.Globals
-// snapshot (a lightweight read of the two integer fields — nothing
+// sender's profile label. [Profile.NonceBits], [Profile.BarrierFill],
+// and [Profile.ContainerMode] are additionally populated from the blob's
+// inner snapshot (a lightweight read of the integer fields — nothing
 // else in the inner blob is decoded). No Pipeline is opened.
 //
 // Inspect is a pure decode: it does not read the profile registry,
@@ -155,13 +155,13 @@ func (p *Pipeline) SaveF(path string) error {
 // lacks are returned unchanged so a metadata viewer can display them;
 // availability and field validity are enforced by [Load]. Callers who
 // want the record registered call [Register] with prof.Name and the
-// result — with the two Inspect-populated fields zeroed first,
+// result — with the inspection-populated fields zeroed first,
 // otherwise Register refuses them fail-fast.
 //
-// A malformed inner blob leaves [Profile.NonceBits] and
-// [Profile.BarrierFill] at zero and is not surfaced as an error here;
-// the same malformation surfaces cleanly through [Load]'s structural
-// decoder.
+// A malformed inner blob leaves [Profile.NonceBits],
+// [Profile.BarrierFill], and [Profile.ContainerMode] at zero and is not
+// surfaced as an error here; the same malformation surfaces cleanly
+// through [Load]'s structural decoder.
 //
 // Errors: [ErrBlobMalformed] (size cap, JSON parse failure, unknown
 // wrap-layer key, trailing content, record not decodable),
@@ -176,6 +176,7 @@ func Inspect(blob []byte) (Profile, error) {
 	}
 	prof := wrap.Profile
 	var innerProbe struct {
+		Mode    int `json:"mode"`
 		Globals struct {
 			NonceBits   int `json:"nonce_bits"`
 			BarrierFill int `json:"barrier_fill"`
@@ -184,6 +185,11 @@ func Inspect(blob []byte) (Profile, error) {
 	if err := json.Unmarshal(wrap.Inner, &innerProbe); err == nil {
 		prof.NonceBits = innerProbe.Globals.NonceBits
 		prof.BarrierFill = innerProbe.Globals.BarrierFill
+		if innerProbe.Mode == 0 {
+			prof.ContainerMode = 1
+		} else {
+			prof.ContainerMode = innerProbe.Mode
+		}
 	}
 	return prof, nil
 }

@@ -839,3 +839,94 @@ func TestConfigMaxWorkersRespected(t *testing.T) {
 		}
 	}
 }
+
+// TestContainerSizePerRegionVsPerContainer verifies that Mode 1 enforces
+// the Per-Region floor independently within each third, while Mode 2
+// enforces the Per-Container floor jointly across the container.
+func TestContainerSizePerRegionVsPerContainer(t *testing.T) {
+	for _, tc := range []struct {
+		keyBits   int
+		wantW1    int // Mode 1 grid side (small payload)
+		wantW2    int // Mode 2 grid side (small payload)
+	}{
+		{512, 25, 15},
+		{1024, 35, 21},
+		{2048, 48, 29},
+	}{
+		t.Run(fmt.Sprintf("%d-bit", tc.keyBits), func(t *testing.T) {
+			n, l, d1, d2, d3, s1, s2, s3 := makeEightSeeds512(tc.keyBits, makeBlake2bHash512())
+			_ = l
+			cobsLensSmall := [3]int{10, 10, 10}
+
+			cfg1 := &Config{Mode: 1}
+			w1, h1 := containerSize3_512Cfg(cfg1, n, d1, d2, d3, s1, s2, s3, cobsLensSmall)
+			if w1 != tc.wantW1 || h1 != tc.wantW1 {
+				t.Fatalf("Mode 1 small container = %dx%d, want %dx%d", w1, h1, tc.wantW1, tc.wantW1)
+			}
+
+			cfg2 := &Config{Mode: 2}
+			w2, h2 := containerSize3_512Cfg(cfg2, n, d1, d2, d3, s1, s2, s3, cobsLensSmall)
+			if w2 != tc.wantW2 || h2 != tc.wantW2 {
+				t.Fatalf("Mode 2 small container = %dx%d, want %dx%d", w2, h2, tc.wantW2, tc.wantW2)
+			}
+		})
+	}
+}
+
+// TestMode2EncryptDecryptRoundTrip tests roundtrip encryption and
+// decryption in Mode 2 for both plain and authenticated modes, and
+// confirms that decryptors decode Mode 2 ciphertexts without needing
+// explicit mode configuration.
+func TestMode2EncryptDecryptRoundTrip(t *testing.T) {
+	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeeds512(512, makeBlake2bHash512())
+
+	payload := genTestPlaintext(t, 1400)
+	cfg2 := &Config{Mode: 2}
+
+	// Plain 3x512
+	ctPlain, err := Encrypt3x512Cfg(cfg2, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, payload)
+	if err != nil {
+		t.Fatalf("Encrypt3x512Cfg(Mode=2): %v", err)
+	}
+
+	// Decrypt with cfg2
+	ptPlain, err := Decrypt3x512Cfg(cfg2, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, ctPlain)
+	if err != nil {
+		t.Fatalf("Decrypt3x512Cfg(Mode=2): %v", err)
+	}
+	if !bytes.Equal(payload, ptPlain) {
+		t.Fatalf("Plain round-trip payload mismatch")
+	}
+
+	// Decrypt with nil cfg (default Mode 1) — confirms decryptor mode independence
+	ptPlainNil, err := Decrypt3x512Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, ctPlain)
+	if err != nil {
+		t.Fatalf("Decrypt3x512Cfg(nil): %v", err)
+	}
+	if !bytes.Equal(payload, ptPlainNil) {
+		t.Fatalf("Cross-mode decrypt mismatch")
+	}
+
+	// Authenticated 3x512
+	mac := macFuncForTest([32]byte{0x11, 0x22, 0x33, 0x44})
+	ctAuth, err := EncryptAuthenticated3x512Cfg(cfg2, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, payload, mac)
+	if err != nil {
+		t.Fatalf("EncryptAuthenticated3x512Cfg(Mode=2): %v", err)
+	}
+
+	ptAuth, err := DecryptAuthenticated3x512Cfg(cfg2, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, ctAuth, mac)
+	if err != nil {
+		t.Fatalf("DecryptAuthenticated3x512Cfg(Mode=2): %v", err)
+	}
+	if !bytes.Equal(payload, ptAuth) {
+		t.Fatalf("Auth round-trip payload mismatch")
+	}
+
+	ptAuthNil, err := DecryptAuthenticated3x512Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, ctAuth, mac)
+	if err != nil {
+		t.Fatalf("DecryptAuthenticated3x512Cfg(nil): %v", err)
+	}
+	if !bytes.Equal(payload, ptAuthNil) {
+		t.Fatalf("Auth cross-mode decrypt mismatch")
+	}
+}

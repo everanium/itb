@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/everanium/itb/hashes"
@@ -168,5 +169,90 @@ func TestVerifyRejectsUnsupportedSchema(t *testing.T) {
 	var ce *cliError
 	if !errors.As(err, &ce) || ce.code != exitRuntime {
 		t.Fatalf("got %v, want exit %d", err, exitRuntime)
+	}
+}
+
+// TestGenblobBlobMode2AndInspect verifies generating a blob with Mode 2
+// (Per-Container floor), inspecting it with runInspect, and roundtripping
+// encryption and decryption through the loaded pipeline.
+func TestGenblobBlobMode2AndInspect(t *testing.T) {
+	dir := t.TempDir()
+	pathMode2 := filepath.Join(dir, "mode2.blob")
+	opts2 := genblobOpts{
+		keyBits:     512,
+		nonceBits:   128,
+		barrierFill: 1,
+		blobMode:    2,
+		output:      pathMode2,
+	}
+	if err := runGenblob("nomac", "blake3", opts2, genblobFlagsSet{}); err != nil {
+		t.Fatalf("runGenblob mode=2: %v", err)
+	}
+
+	blob2, err := os.ReadFile(pathMode2)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	prof2, err := triple.Inspect(blob2)
+	if err != nil {
+		t.Fatalf("Inspect mode=2: %v", err)
+	}
+	if prof2.ContainerMode != 2 {
+		t.Fatalf("prof2.ContainerMode = %d, want 2", prof2.ContainerMode)
+	}
+
+	var buf bytes.Buffer
+	renderInspect(prof2, len(blob2), &buf)
+	inspectText := buf.String()
+	if !strings.Contains(inspectText, "container_mode: per-container (2)") {
+		t.Fatalf("inspectText does not contain 'container_mode: per-container (2)':\n%s", inspectText)
+	}
+
+	pipe2, err := triple.LoadF(pathMode2)
+	if err != nil {
+		t.Fatalf("LoadF mode=2: %v", err)
+	}
+	defer pipe2.Close()
+
+	plain := []byte("testing mode 2 network tunnel container sizing")
+	ct, err := pipe2.EncryptMessage(plain)
+	if err != nil {
+		t.Fatalf("EncryptMessage: %v", err)
+	}
+	got, err := pipe2.DecryptMessage(ct)
+	if err != nil {
+		t.Fatalf("DecryptMessage: %v", err)
+	}
+	if !bytes.Equal(plain, got) {
+		t.Fatalf("payload mismatch: got %q, want %q", got, plain)
+	}
+
+	// Verify Mode 1 default inspect output
+	pathMode1 := filepath.Join(dir, "mode1.blob")
+	opts1 := genblobOpts{
+		keyBits:     512,
+		nonceBits:   128,
+		barrierFill: 1,
+		blobMode:    1,
+		output:      pathMode1,
+	}
+	if err := runGenblob("nomac", "blake2b512", opts1, genblobFlagsSet{}); err != nil {
+		t.Fatalf("runGenblob mode=1: %v", err)
+	}
+	blob1, err := os.ReadFile(pathMode1)
+	if err != nil {
+		t.Fatalf("ReadFile mode=1: %v", err)
+	}
+	prof1, err := triple.Inspect(blob1)
+	if err != nil {
+		t.Fatalf("Inspect mode=1: %v", err)
+	}
+	if prof1.ContainerMode != 1 {
+		t.Fatalf("prof1.ContainerMode = %d, want 1", prof1.ContainerMode)
+	}
+	buf.Reset()
+	renderInspect(prof1, len(blob1), &buf)
+	if !strings.Contains(buf.String(), "container_mode: per-region (1)") {
+		t.Fatalf("inspectText does not contain 'container_mode: per-region (1)':\n%s", buf.String())
 	}
 }

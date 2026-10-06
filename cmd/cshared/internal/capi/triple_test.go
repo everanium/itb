@@ -590,12 +590,11 @@ func TestTripleMaxWorkersCapi(t *testing.T) {
 }
 
 // TestTripleLoadBlobModeMismatchCapi pins the status a blob naming an
-// Interlocked Barrier chunk width this build cannot construct surfaces
-// as. The inner Blob{N}.Import3Cfg mode gate accepts 1 and 2; anything
-// else must reach the caller as StatusBlobModeMismatch rather than the
-// StatusInternal fallthrough, because a binding that receives a bare
-// "internal error" has no way to tell a rejected blob from a genuine
-// library fault.
+// unsupported container floor sizing mode surfaces as. The inner
+// Blob{N}.Import3Cfg mode gate accepts 1 and 2; anything else must reach
+// the caller as StatusBlobModeMismatch rather than the StatusInternal
+// fallthrough, because a binding that receives a bare "internal error"
+// has no way to tell a rejected blob from a genuine library fault.
 //
 // The edit targets the inner blob's own mode field, not the outer
 // profile record's Mode string — the two are unrelated discriminators

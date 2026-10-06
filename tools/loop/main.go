@@ -66,6 +66,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -204,6 +205,7 @@ type config struct {
 	profile        string // non-empty = exercise this single registered profile
 	keyBits        int    // 0 = profile default
 	nonceBits      int    // 0 = profile default
+	blobMode       int    // container floor sizing mode: 1 (per-region, default) | 2 (per-container)
 	chunkSize      int64  // 0 = profile default
 	barrierFill    int    // 0 = profile default
 	gomaxprocs     int    // 0 = inherit from the environment
@@ -364,9 +366,13 @@ func run() int {
 	logf("start: duration=%s iterations=%d goroutines=%d workers=%d concurrency=%s shape=%s hash=%s mac=%s payload=%s memlimit=%s parallax=%s wrapper=%s",
 		cfg.duration, cfg.iterations, cfg.workers, cfg.workers, concurrencyMode, cfg.shape, cfg.hash, cfg.mac,
 		humanBytes(cfg.payload), humanBytes(cfg.memlimit), onOff(cfg.parallax), onOff(cfg.wrapper))
-	logf("overrides: profile=%q key-bits=%d nonce-bits=%d chunk-size=%s barrier-fill=%d gomaxprocs=%d rekey-every=%d blob-cycle-every=%d payload-mode=%s seed=%d json-output=%v",
+	overridesLine := fmt.Sprintf("overrides: profile=%q key-bits=%d nonce-bits=%d chunk-size=%s barrier-fill=%d gomaxprocs=%d rekey-every=%d blob-cycle-every=%d payload-mode=%s seed=%d json-output=%v",
 		cfg.profile, cfg.keyBits, cfg.nonceBits, humanBytes(cfg.chunkSize), cfg.barrierFill,
 		cfg.gomaxprocs, cfg.rekeyEvery, cfg.blobCycleEvery, cfg.payloadMode, cfg.seed, cfg.jsonOutput)
+	if cfg.blobMode != 1 {
+		overridesLine += fmt.Sprintf(" blob-mode=%d", cfg.blobMode)
+	}
+	logf("%s", overridesLine)
 	logf("policy: microbatch-tiers=%s hashpool-starters=%s",
 		policyLabel(os.Getenv("ITB_MICROBATCH_TIERS")), policyLabel(os.Getenv("ITB_HASHPOOL_STARTERS")))
 
@@ -407,6 +413,21 @@ func run() int {
 			fmt.Fprintf(os.Stderr, "loop: triple.Init(%s): %v\n", r.streamProfile, ierr)
 			return 1
 		}
+		if cfg.blobMode == 2 {
+			newBlob, err := editInnerBlobMode(blob, 2)
+			if err != nil {
+				pipe.Close()
+				fmt.Fprintf(os.Stderr, "loop: rewrite blob mode: %v\n", err)
+				return 1
+			}
+			pipe.Close()
+			pipe, err = triple.Load(newBlob)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "loop: reload Mode 2 blob: %v\n", err)
+				return 1
+			}
+			blob = newBlob
+		}
 		// Close via the runState pointer: blob-cycle swaps fresh
 		// pipelines in (closing the ones they replace), so the
 		// instance live at exit is whatever the pointer holds then.
@@ -424,6 +445,21 @@ func run() int {
 		if ierr != nil {
 			fmt.Fprintf(os.Stderr, "loop: triple.Init(%s): %v\n", r.msgProfile, ierr)
 			return 1
+		}
+		if cfg.blobMode == 2 {
+			newBlob, err := editInnerBlobMode(blob, 2)
+			if err != nil {
+				pipe.Close()
+				fmt.Fprintf(os.Stderr, "loop: rewrite blob mode: %v\n", err)
+				return 1
+			}
+			pipe.Close()
+			pipe, err = triple.Load(newBlob)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "loop: reload Mode 2 blob: %v\n", err)
+				return 1
+			}
+			blob = newBlob
 		}
 		defer func() {
 			r.pipeMu.Lock()
@@ -587,6 +623,7 @@ func parseFlags(argv []string) (config, error) {
 		profile        = fs.String("profile", "", "exercise this single registered triple profile (overrides --shape with the profile's surface); empty = shape-based profile pair")
 		keyBits        = fs.Int("key-bits", 0, "per-seed key width in bits: 512 | 1024 | 2048; 0 = profile default (1024)")
 		nonceBits      = fs.Int("nonce-bits", 0, "on-wire nonce width in bits: 128 | 256 | 512; 0 = profile default (512)")
+		blobMode       = fs.Int("blob-mode", 1, "container floor sizing mode: 1 (per-region, default) | 2 (per-container)")
 		chunkSizeStr   = fs.String("chunk-size", "0", "streaming chunk-size budget (e.g. 4MB); 0 = profile default; inert for pure message shape")
 		barrierFill    = fs.Int("barrier-fill", 0, "DRBG barrier fill margin: 1 | 2 | 4 | 8 | 16 | 32; 0 = profile default (1)")
 		gomaxprocs     = fs.Int("gomaxprocs", 0, "Go runtime GOMAXPROCS override; 0 = inherit from the environment")
@@ -615,6 +652,7 @@ func parseFlags(argv []string) (config, error) {
 		profile:        *profile,
 		keyBits:        *keyBits,
 		nonceBits:      *nonceBits,
+		blobMode:       *blobMode,
 		barrierFill:    *barrierFill,
 		gomaxprocs:     *gomaxprocs,
 		rekeyEvery:     *rekeyEvery,
@@ -700,6 +738,11 @@ func parseFlags(argv []string) (config, error) {
 	default:
 		return config{}, fmt.Errorf("--nonce-bits must be 128 | 256 | 512 (or 0 = profile default), got %d", cfg.nonceBits)
 	}
+	switch cfg.blobMode {
+	case 1, 2:
+	default:
+		return config{}, fmt.Errorf("--blob-mode must be 1 (per-region) | 2 (per-container), got %d", cfg.blobMode)
+	}
 	switch cfg.barrierFill {
 	case 0, 1, 2, 4, 8, 16, 32:
 	default:
@@ -749,9 +792,13 @@ func logPipelineInitialised(profile string, blob []byte) {
 		logf("pipeline initialised: profile=%s blob=%d bytes (inspect: %v)", profile, len(blob), err)
 		return
 	}
-	logf("pipeline initialised: profile=%s blob=%d bytes hash=%s key-bits=%d nonce-bits=%d barrier-fill=%d chunk-size=%d mac=%s parallax=%s wrapper=%s",
+	initLine := fmt.Sprintf("pipeline initialised: profile=%s blob=%d bytes hash=%s key-bits=%d nonce-bits=%d barrier-fill=%d chunk-size=%d mac=%s parallax=%s wrapper=%s",
 		profile, len(blob), dash(rec.InnerHash), rec.KeyBits, rec.NonceBits, rec.BarrierFill,
 		rec.ChunkSize, dash(rec.MacName), onOff(rec.Parallax), onOff(rec.Wrapper))
+	if rec.ContainerMode == 2 {
+		initLine += fmt.Sprintf(" container-mode=%d", rec.ContainerMode)
+	}
+	logf("%s", initLine)
 }
 
 // dash renders an empty record value as "-".
@@ -773,4 +820,29 @@ func onOff(b bool) string {
 // logf prints one prefixed status line to stdout.
 func logf(format string, args ...any) {
 	fmt.Printf("[loop] "+format+"\n", args...)
+}
+
+// editInnerBlobMode parses a wrap-layer session blob, sets the inner blob's
+// "mode" field to targetMode (1 = per-region, 2 = per-container), and returns
+// the re-encoded wrap-layer blob.
+func editInnerBlobMode(blob []byte, targetMode int) ([]byte, error) {
+	var wrap map[string]json.RawMessage
+	if err := json.Unmarshal(blob, &wrap); err != nil {
+		return nil, fmt.Errorf("unmarshal wrap blob: %w", err)
+	}
+	var inner map[string]json.RawMessage
+	if err := json.Unmarshal(wrap["ib"], &inner); err != nil {
+		return nil, fmt.Errorf("unmarshal inner blob: %w", err)
+	}
+	inner["mode"] = json.RawMessage(fmt.Sprintf("%d", targetMode))
+	ib, err := json.Marshal(inner)
+	if err != nil {
+		return nil, fmt.Errorf("marshal inner blob: %w", err)
+	}
+	wrap["ib"] = ib
+	newBlob, err := json.Marshal(wrap)
+	if err != nil {
+		return nil, fmt.Errorf("marshal wrap blob: %w", err)
+	}
+	return newBlob, nil
 }

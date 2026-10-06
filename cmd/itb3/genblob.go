@@ -9,8 +9,12 @@ package main
 
 import (
 	"crypto/rand"
+	"encoding/json"
 	"fmt"
 	"math/big"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -29,6 +33,7 @@ type genblobOpts struct {
 	keyBits     int
 	nonceBits   int
 	barrierFill int
+	blobMode    int
 	mac         string
 	palette     []string
 	segment     int
@@ -113,6 +118,7 @@ Flag semantics:
 	f.StringSliceVarP(&opts.palette, "palette", "p", nil, "parallax palette (comma-list)")
 	f.IntVarP(&opts.segment, "segment", "s", parallax.DefaultSegmentSize, "parallax segment size (positive, coprime-504)")
 	f.StringVarP(&opts.wrapper, "wrapper", "w", "", "wrapper outer cipher")
+	f.IntVar(&opts.blobMode, "blob-mode", 1, "container floor sizing mode — 1 (per-region, default) | 2 (per-container)")
 	f.StringVarP(&opts.output, "output", "o", "", "output blob file (default stdout)")
 	return cmd
 }
@@ -121,6 +127,9 @@ Flag semantics:
 // the flag-parsing side stays boilerplate and the crypto path is
 // linear.
 func runGenblob(modeArg string, hashArg string, opts genblobOpts, set genblobFlagsSet) error {
+	if opts.blobMode != 0 && opts.blobMode != 1 && opts.blobMode != 2 {
+		return usageErr("genblob", "--blob-mode must be 1 (per-region) or 2 (per-container), got %d", opts.blobMode)
+	}
 	mode, err := parseCLIMode(modeArg)
 	if err != nil {
 		return usageErr("genblob", "%v", err)
@@ -245,15 +254,44 @@ func runGenblob(modeArg string, hashArg string, opts genblobOpts, set genblobFla
 		return runtimeErr("genblob", "triple.Init: %v", err)
 	}
 	defer pipe.Close()
-	defer clear(blob)
+	defer func() { clear(blob) }()
+
+	if opts.blobMode == 2 {
+		blob2, rerr := rewriteBlobMode(blob, 2)
+		if rerr != nil {
+			return runtimeErr("genblob", "rewrite blob-mode: %v", rerr)
+		}
+		clear(blob)
+		blob = blob2
+	}
 
 	if opts.output != "" {
-		if err := pipe.SaveF(opts.output); err != nil {
+		if err := os.WriteFile(filepath.Clean(opts.output), blob, 0600); err != nil {
 			return runtimeErr("genblob", "write %q: %v", opts.output, err)
 		}
 		return nil
 	}
 	return writeOutputBytes("genblob", "", blob)
+}
+
+// rewriteBlobMode modifies the inner blob's mode field within a
+// wrap-layer session blob without disturbing any secret material.
+func rewriteBlobMode(blob []byte, targetMode int) ([]byte, error) {
+	var wrap map[string]json.RawMessage
+	if err := json.Unmarshal(blob, &wrap); err != nil {
+		return nil, err
+	}
+	var inner map[string]json.RawMessage
+	if err := json.Unmarshal(wrap["ib"], &inner); err != nil {
+		return nil, err
+	}
+	inner["mode"] = json.RawMessage(strconv.Itoa(targetMode))
+	ib, err := json.Marshal(inner)
+	if err != nil {
+		return nil, err
+	}
+	wrap["ib"] = ib
+	return json.Marshal(wrap)
 }
 
 // registerGenblobProfile installs prof in the profile catalogue under

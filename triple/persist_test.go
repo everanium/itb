@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -281,10 +282,11 @@ func TestLoadCustomProfileRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Inspect: %v", err)
 	}
-	// Inspect populates NonceBits / BarrierFill from the blob's inner
-	// Globals; those two fields are not part of the recipe and Register
-	// rejects them fail-fast. Zero them before handing back to Register.
-	got.NonceBits, got.BarrierFill = 0, 0
+	// Inspect populates NonceBits / BarrierFill / ContainerMode from
+	// the blob's inner snapshot; those fields are not part of the
+	// recipe and Register rejects them fail-fast. Zero them before
+	// handing back to Register.
+	got.NonceBits, got.BarrierFill, got.ContainerMode = 0, 0, 0
 	if err := Register("userns-persist-custom-copy-v1", got); err != nil && !errors.Is(err, ErrProfileExists) {
 		t.Fatalf("Register(Inspect result): %v", err)
 	}
@@ -759,22 +761,25 @@ func TestInspectShippedEqualsLookup(t *testing.T) {
 			if !want.Parallax {
 				want.ParallaxPalette, want.ParallaxSegmentSize = nil, 0
 			}
-			// Inspect additionally populates NonceBits / BarrierFill
-			// from the blob's inner Blob{N}.Globals snapshot; the
+			// Inspect additionally populates NonceBits / BarrierFill /
+			// ContainerMode from the blob's inner snapshot; the
 			// catalogue-side Lookup returns a Register-time Profile
-			// with both fields zero. The two are semantically distinct
+			// with these fields zero. The two are semantically distinct
 			// (recipe rules vs runtime snapshot); pin the runtime values
-			// against the DefaultNonceBits / DefaultBarrierFill fallback
-			// that Init resolved from the empty Opts, then zero them
-			// on the "got" side so the remaining recipe fields compare
-			// against Lookup verbatim.
+			// against the DefaultNonceBits / DefaultBarrierFill / Mode 1
+			// fallbacks that Init resolved from the empty Opts, then zero
+			// them on the "got" side so the remaining recipe fields
+			// compare against Lookup verbatim.
 			if got.NonceBits != itb.DefaultNonceBits {
 				t.Fatalf("Inspect NonceBits = %d, want %d (DefaultNonceBits)", got.NonceBits, itb.DefaultNonceBits)
 			}
 			if got.BarrierFill != itb.DefaultBarrierFill {
 				t.Fatalf("Inspect BarrierFill = %d, want %d (DefaultBarrierFill)", got.BarrierFill, itb.DefaultBarrierFill)
 			}
-			got.NonceBits, got.BarrierFill = 0, 0
+			if got.ContainerMode != 1 {
+				t.Fatalf("Inspect ContainerMode = %d, want 1 (default per-region)", got.ContainerMode)
+			}
+			got.NonceBits, got.BarrierFill, got.ContainerMode = 0, 0, 0
 			if !reflect.DeepEqual(got, want) {
 				t.Fatalf("Inspect:\n got  %+v\n want %+v", got, want)
 			}
@@ -1157,5 +1162,146 @@ func TestLoadAppliesTagStubFromRecord(t *testing.T) {
 	defer rxM.Close()
 	if rxM.cfg.TagStubSize != txM.cfg.TagStubSize || rxM.cfg.TagStubSize == 0 {
 		t.Fatalf("TagStubSize tx %d rx %d", txM.cfg.TagStubSize, rxM.cfg.TagStubSize)
+	}
+}
+
+// TestRegisterRejectsNonZeroContainerMode verifies that Register rejects
+// any profile specification where ContainerMode != 0, as container_mode
+// is an inspection-only property populated by Inspect from the inner blob.
+func TestRegisterRejectsNonZeroContainerMode(t *testing.T) {
+	for _, badMode := range []int{1, 2, 99} {
+		p := Profile{
+			Mode:          "singlemsg-mac",
+			Width:         512,
+			InnerHash:     "areion512",
+			KeyBits:       1024,
+			MacName:       "hmac-blake3",
+			ContainerMode: badMode,
+		}
+		err := Register(fmt.Sprintf("test-bad-containermode-%d", badMode), p)
+		if err == nil {
+			t.Fatalf("Register accepted non-zero ContainerMode=%d", badMode)
+		}
+		if !strings.Contains(err.Error(), "ContainerMode must be 0") {
+			t.Fatalf("Register error %q does not mention inspection-only container_mode", err)
+		}
+	}
+}
+
+// TestInspectSurfacesContainerMode2 verifies that Inspect surfaces
+// ContainerMode == 2 when the inner blob specifies Mode 2, and that
+// Load, Save, and Rekey preserve Mode 2 across pipeline operations.
+func TestInspectSurfacesContainerMode2(t *testing.T) {
+	pipe, blob, err := Init(ProfileSingleMsgTripleMACV1, Opts{})
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	defer pipe.Close()
+
+	// Default blob inspect reports ContainerMode 1 (per-region).
+	rec1, err := Inspect(blob)
+	if err != nil {
+		t.Fatalf("Inspect default: %v", err)
+	}
+	if rec1.ContainerMode != 1 {
+		t.Fatalf("default ContainerMode = %d, want 1", rec1.ContainerMode)
+	}
+
+	// Rewrite inner blob mode to 2 (per-container).
+	blob2 := editInner(t, blob, func(ib map[string]json.RawMessage) {
+		ib["mode"] = json.RawMessage("2")
+	})
+
+	// Inspect rewritten blob reports ContainerMode 2.
+	rec2, err := Inspect(blob2)
+	if err != nil {
+		t.Fatalf("Inspect mode 2: %v", err)
+	}
+	if rec2.ContainerMode != 2 {
+		t.Fatalf("rewritten ContainerMode = %d, want 2", rec2.ContainerMode)
+	}
+
+	// Load mode 2 blob into fresh pipeline.
+	pipe2, err := Load(blob2)
+	if err != nil {
+		t.Fatalf("Load mode 2: %v", err)
+	}
+	defer pipe2.Close()
+
+	if pipe2.cfg.Mode != 2 {
+		t.Fatalf("loaded pipe2 cfg.Mode = %d, want 2", pipe2.cfg.Mode)
+	}
+
+	// Verify Save() preserves ContainerMode 2.
+	savedBlob := pipe2.Save()
+	recSaved, err := Inspect(savedBlob)
+	if err != nil {
+		t.Fatalf("Inspect savedBlob: %v", err)
+	}
+	if recSaved.ContainerMode != 2 {
+		t.Fatalf("savedBlob ContainerMode = %d, want 2", recSaved.ContainerMode)
+	}
+
+	// Verify Rekey preserves ContainerMode 2.
+	rekeyedBlob, err := pipe2.Rekey(freshBytes(t, 32), freshBytes(t, 32))
+	if err != nil {
+		t.Fatalf("pipe2.Rekey: %v", err)
+	}
+	recRekeyed, err := Inspect(rekeyedBlob)
+	if err != nil {
+		t.Fatalf("Inspect rekeyedBlob: %v", err)
+	}
+	if recRekeyed.ContainerMode != 2 {
+		t.Fatalf("rekeyedBlob ContainerMode = %d, want 2", recRekeyed.ContainerMode)
+	}
+
+	// Verify encryption and decryption round-trip under mode 2.
+	msg := []byte("mode 2 vpn payload test data")
+	ciphertext, err := pipe2.EncryptMessage(msg)
+	if err != nil {
+		t.Fatalf("pipe2.EncryptMessage: %v", err)
+	}
+	decrypted, err := pipe2.DecryptMessage(ciphertext)
+	if err != nil {
+		t.Fatalf("pipe2.DecryptMessage: %v", err)
+	}
+	if !bytes.Equal(decrypted, msg) {
+		t.Fatalf("decrypted %q != original %q", decrypted, msg)
+	}
+
+	// Cross-mode decrypt: a Mode 1 pipe loaded with identical keys/masters
+	// should decrypt Mode 2 ciphertext because wire format contains container
+	// dimensions W, H in the header, and decrypt is mode-agnostic.
+	blobCross := editInner(t, rekeyedBlob, func(ib map[string]json.RawMessage) {
+		ib["mode"] = json.RawMessage("1")
+	})
+	pipeCross, err := Load(blobCross)
+	if err != nil {
+		t.Fatalf("Load pipeCross: %v", err)
+	}
+	defer pipeCross.Close()
+	if pipeCross.cfg.Mode != 1 {
+		t.Fatalf("pipeCross cfg.Mode = %d, want 1", pipeCross.cfg.Mode)
+	}
+
+	decryptedCross, err := pipeCross.DecryptMessage(ciphertext)
+	if err != nil {
+		t.Fatalf("pipeCross(Mode 1).DecryptMessage(Mode 2 wire): %v", err)
+	}
+	if !bytes.Equal(decryptedCross, msg) {
+		t.Fatalf("cross-mode decrypted %q != original %q", decryptedCross, msg)
+	}
+
+	// And reverse: Mode 1 encrypted message decrypts under Mode 2 pipe
+	ciphertext1, err := pipeCross.EncryptMessage(msg)
+	if err != nil {
+		t.Fatalf("pipeCross.EncryptMessage: %v", err)
+	}
+	decrypted2, err := pipe2.DecryptMessage(ciphertext1)
+	if err != nil {
+		t.Fatalf("pipe2.DecryptMessage(Mode 1 wire): %v", err)
+	}
+	if !bytes.Equal(decrypted2, msg) {
+		t.Fatalf("reverse cross-mode decrypted %q != original %q", decrypted2, msg)
 	}
 }

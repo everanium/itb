@@ -95,10 +95,10 @@ func decodeBlobStrict(data []byte, out *blobV1) error {
 
 // ErrBlobModeMismatch is returned by [Blob128.Import3Cfg] /
 // [Blob256.Import3Cfg] / [Blob512.Import3Cfg] when the JSON blob
-// carries a mode outside {1, 2} — the two Interlocked Barrier chunk
-// widths. Any other value names a construction this tree cannot
-// build seeds for.
-var ErrBlobModeMismatch = errors.New("itb: blob mode mismatch (expected mode=1 or mode=2)")
+// carries a mode outside {1, 2} — the two container floor sizing
+// modes: 1 = Per-Region (default), 2 = Per-Container. Any other value
+// names a construction this tree cannot build seeds for.
+var ErrBlobModeMismatch = errors.New("itb: blob mode mismatch (expected mode=1 for per-region or mode=2 for per-container)")
 
 // ErrBlobMalformed is returned when the JSON blob fails to parse
 // or carries fields outside the documented shape (zero-length
@@ -120,16 +120,14 @@ var ErrBlobTooManyOpts = errors.New("itb: Export accepts at most one options str
 // shape changes bump the version.
 const blobVersionV1 = 1
 
-// Blob mode discriminators. The mode names which Interlocked Barrier
-// chunk width the blob's seed material was drawn for: 1 is the shipped
-// 48-bit barrier, 2 is reserved for the 120-bit variant. Only 1 is
-// emitted on this tree — 2 is accepted on import and carries no
-// behavioural difference, because the 120-bit barrier does not exist
-// here yet, so a blob written under either discriminator loads
-// identically.
+// Blob mode discriminators. The mode names which container floor sizing
+// formula the blob uses: 1 is the shipped Per-Region floor (enforced
+// independently within each third), 2 is the Per-Container floor
+// (enforced jointly across the container for network tunnel / VPN
+// compact sizing).
 const (
-	blobModeInterlock48  = 1
-	blobModeInterlock120 = 2
+	blobModePerRegion   = 1
+	blobModePerContainer = 2
 )
 
 // blobV1 is the JSON-encoded shape shared by every width. uint64
@@ -140,7 +138,7 @@ const (
 // types stay zero / nil after Import3Cfg when the blob omits them.
 type blobV1 struct {
 	Version int    `json:"v"`
-	Mode    int    `json:"mode"` // 1 = 48-bit interlock (emitted), 2 = 120-bit (accepted)
+	Mode    int    `json:"mode"` // 1 = per-region (default), 2 = per-container
 	KeyBits int    `json:"key_bits"`
 	KeyN    string `json:"key_n"`
 	KeyL    string `json:"key_l,omitempty"` // dedicated lockSeed
@@ -267,10 +265,11 @@ func validateSeedComponentsLen(got, want int) error {
 // [Blob512.Import3Cfg]; the caller wires Hash / BatchHash closures
 // from the saved Key* bytes through the appropriate 512-bit factory.
 //
-// [Blob512.Mode] names the Interlocked Barrier chunk width the seed
-// material was drawn for. Export3Cfg emits 1 (48-bit); Import3Cfg
-// accepts 1 or 2 (120-bit) and reports back whichever the blob
-// carried.
+// [Blob512.Mode] names the container floor sizing mode: 1 is the
+// canonical Per-Region floor, 2 is the Per-Container compact floor.
+// Export3Cfg emits 1 by default (or 2 when Opts.Mode or Config.Mode is
+// set to 2); Import3Cfg accepts 1 or 2 and reports back whichever the
+// blob carried.
 //
 // Not safe for concurrent invocation — Export3Cfg / Import3Cfg
 // calls on the same Blob512 instance must be serialised by the
@@ -306,15 +305,20 @@ type Blob512 struct {
 	MACName string
 }
 
-// Blob512Opts carries the dedicated lockSeed material and optional
-// MAC material for [Blob512.Export3Cfg]. Zero-valued MAC fields
-// signal "absent" — pass an empty struct, or omit the opts
-// argument entirely, when no MAC is in use.
+// Blob512Opts carries the dedicated lockSeed material, optional
+// MAC material, and optional container floor sizing mode for
+// [Blob512.Export3Cfg]. Zero-valued MAC fields signal "absent" — pass
+// an empty struct, or omit the opts argument entirely, when no MAC is
+// in use.
 type Blob512Opts struct {
 	KeyL    [64]byte // dedicated lockSeed
 	LS      *Seed512 // dedicated lockSeed
 	MACKey  []byte   // nil / empty if no MAC
 	MACName string   // empty if no MAC
+
+	// Mode selects the container floor sizing mode: 0 or 1 = per-region (default),
+	// 2 = per-container.
+	Mode int
 }
 
 // ───────────────────────────────────────────────────────────────────
@@ -362,6 +366,10 @@ type Blob256Opts struct {
 	LS      *Seed256 // dedicated lockSeed
 	MACKey  []byte   // nil / empty if no MAC
 	MACName string   // empty if no MAC
+
+	// Mode selects the container floor sizing mode: 0 or 1 = per-region (default),
+	// 2 = per-container.
+	Mode int
 }
 
 // ───────────────────────────────────────────────────────────────────
@@ -415,6 +423,10 @@ type Blob128Opts struct {
 	LS      *Seed128 // dedicated lockSeed
 	MACKey  []byte   // nil / empty if no MAC
 	MACName string   // empty if no MAC
+
+	// Mode selects the container floor sizing mode: 0 or 1 = per-region (default),
+	// 2 = per-container.
+	Mode int
 }
 
 // ───────────────────────────────────────────────────────────────────
@@ -519,9 +531,22 @@ func (b *Blob512) Export3Cfg(
 		}
 	}
 
+	mode := blobModePerRegion
+	if o.Mode != 0 {
+		if o.Mode != blobModePerRegion && o.Mode != blobModePerContainer {
+			return nil, ErrBlobModeMismatch
+		}
+		mode = o.Mode
+	} else if cfg != nil && cfg.Mode != 0 {
+		if cfg.Mode != blobModePerRegion && cfg.Mode != blobModePerContainer {
+			return nil, ErrBlobModeMismatch
+		}
+		mode = cfg.Mode
+	}
+
 	blob := blobV1{
 		Version: blobVersionV1,
-		Mode:    blobModeInterlock48,
+		Mode:    mode,
 		KeyBits: n * 64,
 		KeyN:    hex.EncodeToString(keyN[:]),
 		KeyD1:   hex.EncodeToString(keyD1[:]),
@@ -551,7 +576,7 @@ func (b *Blob512) Export3Cfg(
 		blob.MACKey = hex.EncodeToString(o.MACKey)
 		blob.MACName = o.MACName
 	}
-	b.Mode = blobModeInterlock48
+	b.Mode = mode
 	return json.Marshal(blob)
 }
 
@@ -575,7 +600,7 @@ func (b *Blob512) Import3Cfg(data []byte, cfg *Config) error {
 	if blob.Version > blobVersionV1 {
 		return ErrBlobVersionTooNew
 	}
-	if blob.Mode != blobModeInterlock48 && blob.Mode != blobModeInterlock120 {
+	if blob.Mode != blobModePerRegion && blob.Mode != blobModePerContainer {
 		return ErrBlobModeMismatch
 	}
 	// KeyBits pre-validation — mirrors the [NewSeed512] /
@@ -682,6 +707,7 @@ func (b *Blob512) Import3Cfg(data []byte, cfg *Config) error {
 	if err := applyGlobalsV1ToCfg(blob.Globals, cfg); err != nil {
 		return err
 	}
+	cfg.Mode = blob.Mode
 
 	*b = Blob512{
 		Mode:    blob.Mode,
@@ -752,9 +778,22 @@ func (b *Blob256) Export3Cfg(
 		}
 	}
 
+	mode := blobModePerRegion
+	if o.Mode != 0 {
+		if o.Mode != blobModePerRegion && o.Mode != blobModePerContainer {
+			return nil, ErrBlobModeMismatch
+		}
+		mode = o.Mode
+	} else if cfg != nil && cfg.Mode != 0 {
+		if cfg.Mode != blobModePerRegion && cfg.Mode != blobModePerContainer {
+			return nil, ErrBlobModeMismatch
+		}
+		mode = cfg.Mode
+	}
+
 	blob := blobV1{
 		Version: blobVersionV1,
-		Mode:    blobModeInterlock48,
+		Mode:    mode,
 		KeyBits: n * 64,
 		KeyN:    hex.EncodeToString(keyN[:]),
 		KeyD1:   hex.EncodeToString(keyD1[:]),
@@ -783,7 +822,7 @@ func (b *Blob256) Export3Cfg(
 		blob.MACKey = hex.EncodeToString(o.MACKey)
 		blob.MACName = o.MACName
 	}
-	b.Mode = blobModeInterlock48
+	b.Mode = mode
 	return json.Marshal(blob)
 }
 
@@ -800,7 +839,7 @@ func (b *Blob256) Import3Cfg(data []byte, cfg *Config) error {
 	if blob.Version > blobVersionV1 {
 		return ErrBlobVersionTooNew
 	}
-	if blob.Mode != blobModeInterlock48 && blob.Mode != blobModeInterlock120 {
+	if blob.Mode != blobModePerRegion && blob.Mode != blobModePerContainer {
 		return ErrBlobModeMismatch
 	}
 	// KeyBits pre-validation — mirrors the [NewSeed256] /
@@ -907,6 +946,7 @@ func (b *Blob256) Import3Cfg(data []byte, cfg *Config) error {
 	if err := applyGlobalsV1ToCfg(blob.Globals, cfg); err != nil {
 		return err
 	}
+	cfg.Mode = blob.Mode
 
 	*b = Blob256{
 		Mode:    blob.Mode,
@@ -977,9 +1017,22 @@ func (b *Blob128) Export3Cfg(
 		}
 	}
 
+	mode := blobModePerRegion
+	if o.Mode != 0 {
+		if o.Mode != blobModePerRegion && o.Mode != blobModePerContainer {
+			return nil, ErrBlobModeMismatch
+		}
+		mode = o.Mode
+	} else if cfg != nil && cfg.Mode != 0 {
+		if cfg.Mode != blobModePerRegion && cfg.Mode != blobModePerContainer {
+			return nil, ErrBlobModeMismatch
+		}
+		mode = cfg.Mode
+	}
+
 	blob := blobV1{
 		Version: blobVersionV1,
-		Mode:    blobModeInterlock48,
+		Mode:    mode,
 		KeyBits: n * 64,
 		KeyN:    hex.EncodeToString(keyN),
 		KeyD1:   hex.EncodeToString(keyD1),
@@ -1008,7 +1061,7 @@ func (b *Blob128) Export3Cfg(
 		blob.MACKey = hex.EncodeToString(o.MACKey)
 		blob.MACName = o.MACName
 	}
-	b.Mode = blobModeInterlock48
+	b.Mode = mode
 	return json.Marshal(blob)
 }
 
@@ -1029,7 +1082,7 @@ func (b *Blob128) Import3Cfg(data []byte, cfg *Config) error {
 	if blob.Version > blobVersionV1 {
 		return ErrBlobVersionTooNew
 	}
-	if blob.Mode != blobModeInterlock48 && blob.Mode != blobModeInterlock120 {
+	if blob.Mode != blobModePerRegion && blob.Mode != blobModePerContainer {
 		return ErrBlobModeMismatch
 	}
 	// KeyBits pre-validation — mirrors the [NewSeed128] /
@@ -1136,6 +1189,7 @@ func (b *Blob128) Import3Cfg(data []byte, cfg *Config) error {
 	if err := applyGlobalsV1ToCfg(blob.Globals, cfg); err != nil {
 		return err
 	}
+	cfg.Mode = blob.Mode
 
 	*b = Blob128{
 		Mode:    blob.Mode,

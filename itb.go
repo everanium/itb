@@ -127,10 +127,46 @@ func configuredWorkerCount(cfg *Config) int {
 func headerSizeCfg(cfg *Config) int { return currentNonceSizeCfg(cfg) + 4 }
 
 // calcContainerSize3Cfg computes square container dimensions for
-// Triple Ouroboros. Each third must hold its part's COBS data and
-// satisfy MinPixels independently. Consults [currentBarrierFillCfg]
-// for the DRBG barrier margin.
+// Triple Ouroboros. In Per-Region mode (default, Mode 1), each third
+// must hold its part's COBS data and satisfy MinPixels independently.
+// In Per-Container mode (Mode 2), each third holds its COBS data, and
+// the ambiguity floor is evaluated jointly across the container.
+// Consults [currentBarrierFillCfg] for the DRBG barrier margin.
 func calcContainerSize3Cfg(cfg *Config, cobsLens [3]int, minPxNoise int, minPxData [3]int, minPxStart [3]int) (width, height int) {
+	if currentContainerModeCfg(cfg) == blobModePerContainer {
+		maxDataThirdPixels := 0
+		for i := 0; i < 3; i++ {
+			needed := cobsLens[i] + 1 // +1 for null terminator
+			pixels := (needed*8 + DataBitsPerPixel - 1) / DataBitsPerPixel
+			if pixels > maxDataThirdPixels {
+				maxDataThirdPixels = pixels
+			}
+		}
+
+		minPxJoint := minPxNoise
+		for i := 0; i < 3; i++ {
+			if minPxData[i] > minPxJoint {
+				minPxJoint = minPxData[i]
+			}
+			if minPxStart[i] > minPxJoint {
+				minPxJoint = minPxStart[i]
+			}
+		}
+
+		totalDataPixels := 3 * maxDataThirdPixels
+		totalPixels := totalDataPixels
+		if totalPixels < minPxJoint {
+			totalPixels = minPxJoint
+		}
+
+		side := 1
+		for side*side < totalPixels {
+			side++
+		}
+		side += currentBarrierFillCfg(cfg)
+		return side, side
+	}
+
 	maxThirdPixels := 0
 	for i := 0; i < 3; i++ {
 		needed := cobsLens[i] + 1 // +1 for null terminator

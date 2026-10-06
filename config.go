@@ -32,6 +32,11 @@ type Config struct {
 	BarrierFill int // 0 = inherit DefaultBarrierFill; otherwise 1 / 2 / 4 / 8 / 16 / 32
 	MaxWorkers  int // 0 = runtime.NumCPU; otherwise 1..256
 
+	// Mode selects the container floor sizing mode:
+	// 0 or 1 = Per-Region container floor (default);
+	// 2 = Per-Container container floor (network tunnel / VPN compact mode).
+	Mode int
+
 	// MACIncremental is the optional multi-slice MAC arm consulted by
 	// the authenticated entry points. When non-nil it must compute the
 	// same tag as the macFunc passed to the same call, per the
@@ -91,6 +96,17 @@ func currentBarrierFillCfg(cfg *Config) int {
 		return cfg.BarrierFill
 	}
 	return DefaultBarrierFill
+}
+
+// currentContainerModeCfg returns the container floor sizing mode the
+// caller should use. Consults cfg when non-nil and the Mode field
+// carries blobModePerContainer (2); otherwise falls back to
+// blobModePerRegion (1).
+func currentContainerModeCfg(cfg *Config) int {
+	if cfg != nil && cfg.Mode == blobModePerContainer {
+		return blobModePerContainer
+	}
+	return blobModePerRegion
 }
 
 // generateNonceCfg returns a fresh cryptographic nonce of the
