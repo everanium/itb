@@ -16,7 +16,7 @@ string passed through to Go for validation; the binding carries no
 ITB construction logic, and buffer sizing plus the BufferTooSmall
 retry-once dance live in the C layer. The public surface is an
 allocator-parametric `Pipeline` (init / load / save / rekey / deinit,
-Single Message encrypt / decrypt, whole-buffer stream entries
+Single Message encrypt / decrypt, one-shot stream entries
 (`encryptStreamOneShot` and the pumps), incremental
 `EncryptStream` / `DecryptStream` sessions with write / end / read /
 drainAll), an `Opts` query-string builder for init overrides, the

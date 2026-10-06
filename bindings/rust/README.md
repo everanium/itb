@@ -13,8 +13,8 @@ compiler at install time, no compile-time link; the `.so` / `.dylib`
 MAC-name / cipher-name / profile-name is an opaque string passed
 through to Go for validation; the binding carries no ITB construction
 logic. The public surface is one `Pipeline` type (Init / Load / Save
-/ Rekey / Close, Single Message encrypt / decrypt, buffered and
-incremental stream sessions with `io::Read` / `io::Write` pumps), an
+/ Rekey / Close, Single Message encrypt / decrypt, one-shot stream calls,
+buffered and incremental stream sessions with `io::Read` / `io::Write` pumps), an
 `OptsBuilder` query-string builder for Init overrides, the `Profile`
 record with `register` / `lookup` / `profiles` / `inspect`, and the Go
 runtime knobs.

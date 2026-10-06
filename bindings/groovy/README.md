@@ -269,7 +269,7 @@ counterpart of the Go harness under `tools/loop`: same flags, same
 round structure, same summary in both renderings.
 
 ```bash
-./build.sh
+cd bindings/groovy && ./build.sh
 ./run_loop.sh --duration 2m --shape both
 ```
 

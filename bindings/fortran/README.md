@@ -14,7 +14,7 @@ MAC-name / cipher-name / profile-name is an opaque `character(*)`
 passed through to Go for validation; the binding carries no ITB
 construction logic. The public surface is one `itb_pipeline_t`
 handle (init / load / save / rekey / close / free, Single Message
-encrypt / decrypt, whole-buffer stream pumps, incremental
+encrypt / decrypt, one-shot and whole-buffer stream pumps, incremental
 `itb_stream_t` sessions with write / end / read), an `itb_opts_t`
 query-string builder for init overrides, the profile-record entries
 (`itb_register` / `itb_lookup` / `itb_profiles` / `itb_inspect`),

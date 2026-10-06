@@ -14,7 +14,7 @@ loading. Every hash-name / MAC-name / cipher-name / profile-name is an
 opaque `std::string` passed through to Go for validation; the binding
 carries no ITB construction logic. The public surface is one
 RAII-managed `itb::Pipeline` (init / load / save / rekey / close, Single
-Message encrypt / decrypt, whole-buffer stream pumps, incremental
+Message encrypt / decrypt, one-shot and whole-buffer stream pumps, incremental
 `itb::EncryptStream` / `itb::DecryptStream` sessions with write / end /
 read), an `itb::Opts` query-string builder, `itb::register_profile`,
 and the Go runtime knobs. Every fallible entry throws `itb::Error`

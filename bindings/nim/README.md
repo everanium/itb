@@ -17,7 +17,7 @@ ITB construction logic. The public surface is the `itb3` module
 `Profile` record with `register` / `lookup` / `profiles` / `inspect`,
 and the Go runtime knobs), the `Pipeline`
 type (Single Message encrypt / decrypt, save / saveF, rekey,
-maxWorkers, close, incremental stream sessions), the
+maxWorkers, close, one-shot and incremental stream sessions), the
 `StreamEncryptor` / `StreamDecryptor` session types, an `Opts`
 query-string builder for init overrides, and an `ItbError` exception
 carrying the `Status` code plus the `ITB_LastError` diagnostic.

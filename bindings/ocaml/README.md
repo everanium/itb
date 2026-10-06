@@ -14,7 +14,8 @@ profile-name is an opaque string passed through to Go for validation;
 the binding carries no ITB construction logic. The public surface is
 the `Itb` module: `create` / `load` / `load_f` / `save` / `save_f`,
 Single Message `encrypt_message` / `decrypt_message`, `rekey` /
-`max_workers` / `close`, incremental stream sessions
+`max_workers` / `close`, one-shot `encrypt_stream_one_shot` /
+`decrypt_stream_one_shot`, incremental stream sessions
 (`encrypt_stream` / `decrypt_stream` with `write` / `end_` / `read` /
 `drain_all`), the profile-record entries `inspect` / `register` /
 `lookup` / `profiles`, the `version` introspection helper, and the

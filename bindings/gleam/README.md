@@ -20,7 +20,7 @@ public surface is `itb3_gleam` (version, the profile catalogue
 `inspect` / `register` / `lookup` / `profiles`, Go runtime knobs),
 `itb3/pipeline` (`new` / `load` / `load_f` / `save` /
 `save_f` / `rekey` / `max_workers` / `free`, Single Message encrypt
-/ decrypt), and
+/ decrypt, one-shot stream encrypt / decrypt), and
 `itb3/stream` (incremental sessions with `write` / `finish` /
 `read`). Handles are opaque NIF resources; the cipher entries run
 on dirty CPU schedulers so multi-megabyte calls never stall the
@@ -336,7 +336,7 @@ counterpart of the Go harness under `tools/loop`: same flags, same
 round structure, same summary in both renderings.
 
 ```bash
-./build.sh
+cd bindings/gleam && ./build.sh
 ./run_loop.sh --duration 2m --shape both
 ```
 

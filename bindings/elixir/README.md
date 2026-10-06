@@ -15,8 +15,8 @@ hash-name / MAC-name / cipher-name / profile-name is an opaque
 string passed through to Go for validation; the binding carries no
 ITB construction logic. The public surface is the `ITB` module
 (`init` / `load` / `load_f` / `save` / `save_f` / `rekey` /
-`max_workers` / `free`, Single Message encrypt / decrypt,
-incremental stream sessions with `stream_write` / `stream_end` /
+`max_workers` / `free`, Single Message encrypt / decrypt, one-shot
+and incremental stream sessions with `stream_write` / `stream_end` /
 `stream_read`, bang variants raising `ITB.Error`), lazy `Stream`
 adapters in `ITB.Stream`, the profile catalogue (`inspect` /
 `register` / `lookup` / `profiles`), and the Go runtime knobs.
@@ -331,7 +331,7 @@ counterpart of the Go harness under `tools/loop`: same flags, same
 round structure, same summary in both renderings.
 
 ```bash
-./build.sh
+cd bindings/elixir && ./build.sh
 ./run_loop.sh --duration 2m --shape both
 ```
 

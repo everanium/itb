@@ -17,8 +17,8 @@ for validation; the binding carries no ITB construction logic.
 
 The public surface is the `itb3-lfe` module (`init` / `load` /
 `load-f` / `save` / `save-f` / `rekey` / `max-workers` / `free`,
-Single Message encrypt / decrypt, incremental stream sessions with
-`stream-write` / `stream-end` / `stream-read`), the profile
+Single Message encrypt / decrypt, one-shot and incremental stream sessions
+with `stream-write` / `stream-end` / `stream-read`), the profile
 catalogue (`inspect` / `register` / `lookup` / `profiles`), and the
 Go runtime knobs — the Erlang surface under LFE-idiomatic kebab-case
 names. The module is named `itb3-lfe`
@@ -299,7 +299,7 @@ counterpart of the Go harness under `tools/loop`: same flags, same
 round structure, same summary in both renderings.
 
 ```bash
-./build.sh
+cd bindings/lfe && ./build.sh
 ./run_loop.sh --duration 2m --shape both
 ```
 
