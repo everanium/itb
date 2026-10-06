@@ -160,12 +160,10 @@ same name before opening. Attempting to `load` such a blob through
 this binding throws `itb::Error` with
 `itb::Status::RecipePrimitiveUnknown`.
 
-**Runtime tuning.** The worker cap is per-machine and never travels
-in the blob; the receiver may pick its own after `load`:
-
-```cpp
-receiver.max_workers(4);   // clamped by libitb3; <= 0 selects auto
-```
+**Runtime tuning.** `receiver.max_workers(n)` sets the worker cap for
+every subsequent cipher call (`n <= 0` selects auto, `n > 256` is
+clamped to 256); the receiver may pick its own worker cap after
+`load` — the cap is per-machine and never written to the blob.
 
 ## Profile registry
 
@@ -245,7 +243,9 @@ reported as an MB/s table on stdout. Each size case drives the
 reusable-buffer entry with one scratch buffer sized to the expansion
 bound, so the measurement excludes per-iteration allocation churn. The runner exports `ITB_GOMEMLIMIT=4GiB`
 + `ITB_GOGC=100` defaults (respecting caller overrides) and the bench
-binaries apply the same caps programmatically.
+binaries apply the same caps programmatically. See
+[`bindings/BENCH.md`](https://github.com/everanium/itb/blob/main/bindings/BENCH.md)
+for the fleet-wide configuration authority and comparison tables.
 
 ## itb3 CLI
 

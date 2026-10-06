@@ -10,7 +10,7 @@ import itb3 as itb
 
 
 def main() -> None:
-    # Bench-scale allocation churn leaks Go scratch heap unboundedly
+    # Bench-scale allocation churn grows Go scratch heap unboundedly
     # without a soft memory cap + aggressive GC; the return values
     # report the previous settings, not an error.
     itb.set_memory_limit(4 << 30)

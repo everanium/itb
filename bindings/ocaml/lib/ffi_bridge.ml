@@ -242,10 +242,10 @@ let retry_once cap (call : Bytes.t -> int -> Unsigned.size_t ptr -> int) =
     Bytes.sub buf 0 n)
 
 (* Pre-allocation formula for Message output buffers:
-   [max 65536 (payload * 5/4 + 65536)] -- small plaintexts expand by
+   [max 131072 (payload * 5/4 + 131072)] -- small plaintexts expand by
    a large constant factor, so the retry-once path stays available as
    the safety net. *)
-let out_cap payload = max 65536 ((payload + (payload / 4)) + 65536)
+let out_cap payload = max 131072 ((payload + (payload / 4)) + 131072)
 
 (* ---------------------------------------------------------------- *)
 (* Extended symbol table                                            *)

@@ -143,6 +143,12 @@ library directly and register the same custom primitive under the
 same name before opening. Attempting to `load/1` such a blob
 through this binding returns `#(error #(recipe_primitive_unknown _))`.
 
+**Runtime tuning.** `max-workers/2` sets the worker cap on a live
+Pipeline (`n =< 0` selects auto, values above 256 are clamped to 256);
+the receiver may pick its own worker cap after `load` — the cap is
+per-machine and never written to the blob. The `maxWorkers` opts key
+sets the same cap at `init/2`.
+
 ### Profile registry
 
 ```lisp
@@ -166,14 +172,6 @@ if present, must be empty or equal to the name argument. Every rule
 — name pattern, reserved prefixes, field constraints, primitive
 names — is enforced by libitb3; a duplicate name returns
 `#(error #(profile_exists _))`.
-
-### Runtime tuning
-
-`max-workers/2` sets the worker cap on a live Pipeline (`n =< 0`
-selects auto, values above 256 are clamped). The cap is per-machine
-tuning and is never written to the blob, so the receiver may pick
-its own worker cap after `load/1`. The `maxWorkers` opts key sets
-the same cap at `init/2`.
 
 ### One-shot streams
 
@@ -274,7 +272,9 @@ Micro-benches: `message` (encrypt-message) and `stream_pump`
 `ITB_GOMEMLIMIT=4GiB` + `ITB_GOGC=100` defaults (respecting caller
 overrides) and the bench module applies the same caps
 programmatically. `./run_bench.sh message` / `./run_bench.sh
-stream` runs one shape.
+stream` runs one shape. See
+[`bindings/BENCH.md`](https://github.com/everanium/itb/blob/main/bindings/BENCH.md)
+for the fleet-wide configuration authority and comparison tables.
 
 ## itb3 CLI
 

@@ -314,7 +314,7 @@ let test_message_into_round_trip () =
   let wire = Bytes.sub wire_buf 0 n in
   Alcotest.(check bool) "into wire matches allocating wire length" true
     (Bytes.length (Itb3.encrypt_message sender plain) > 0);
-  let back_buf = Bytes.create (Bytes.length plain + 65536) in
+  let back_buf = Bytes.create (Bytes.length plain + 131072) in
   let m = Itb3.decrypt_message_into receiver wire back_buf in
   Alcotest.(check bool)
     (Printf.sprintf "message _into round trip (%d vs %d bytes)"

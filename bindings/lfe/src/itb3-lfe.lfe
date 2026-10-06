@@ -1,4 +1,4 @@
-;;;; itb3-lfe — public API of the ITB LFE binding.
+;;;; Public API of the ITB LFE binding.
 ;;;;
 ;;;; Thin proxy over the ITB Erlang binding's `itb3` module via native
 ;;;; BEAM bytecode interop — the LFE layer adds no FFI hop of its

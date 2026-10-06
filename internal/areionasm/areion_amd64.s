@@ -372,7 +372,7 @@ TEXT ·Areion512Permutex4(SB), NOSPLIT, $0-32
 
 // ─── AVX2 + VAES path (YMM, 256-bit registers, 2 AES blocks per VAES) ────
 //
-// Drop-in alternative to the AVX-512 functions above for x86_64 CPUs that
+// Drop-in alternative to the AVX-512 functions above for x86-64 CPUs that
 // have VAES but no AVX-512 (e.g. Intel Alder Lake E-cores when isolated,
 // some AMD Zen 3 SKUs). The same 4-way batched API; instead of packing
 // all four lanes into one ZMM, the four lanes are split into two pairs

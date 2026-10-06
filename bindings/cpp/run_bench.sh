@@ -50,7 +50,7 @@ fi
 
 # Build every bench binary via make (no run), then invoke each with
 # its shape-appropriate ITB_PROFILE so the two shapes can carry
-# independent MAC / no-MAC profiles in a single script pass.
+# independent MAC / No MAC profiles in a single script pass.
 make benches/build/bench_message benches/build/bench_stream \
      benches/build/bench_stream_one_shot
 export ITB_PROFILE="${ITB_MSG_PROFILE_DEFAULT}"

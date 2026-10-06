@@ -133,6 +133,10 @@ incremental session; the explicit `itb_pipeline_encrypt_stream_begin`
 `itb_stream_write` / `itb_stream_end` / `itb_stream_read` for
 caller-driven loops.
 
+Profile names, opts keys, and every primitive name are validated by
+the Go side; a rejected string surfaces as a non-OK `itb_status` with
+the diagnostic available via `itb_last_error()`.
+
 ## Persisting sessions
 
 The blob returned by `itb_pipeline_save` is a self-describing session
@@ -165,12 +169,10 @@ library directly and register the same custom primitive under the
 same name before opening. Attempting to load such a blob through this
 binding surfaces `ITB_STATUS_RECIPE_PRIMITIVE_UNKNOWN`.
 
-**Runtime tuning.** The worker cap is per-machine and never travels
-in the blob; the receiver may pick its own after load:
-
-```c
-itb_pipeline_max_workers(receiver, 4);   /* clamped by libitb3; <= 0 selects auto */
-```
+**Runtime tuning.** `itb_pipeline_max_workers(receiver, n)` sets the
+worker cap for every subsequent cipher call (`n <= 0` selects auto,
+`n > 256` is clamped to 256); the receiver may pick its own worker cap
+after load — the cap is per-machine and never written to the blob.
 
 ## Profile registry
 
@@ -190,10 +192,6 @@ itb_string_free(json);
 itb_profiles(&json);                   /* ["blob-triple-mac-v1", ...] */
 itb_string_free(json);
 ```
-
-Profile names, opts keys, and every primitive name are validated by
-the Go side; a rejected string surfaces as a non-OK `itb_status` with
-the diagnostic available via `itb_last_error()`.
 
 ## Memory
 
@@ -254,12 +252,14 @@ binding's own C frames are never suppressed.
 ./bindings/c/run_bench.sh
 ```
 
-Micro-benches: `message` (EncryptMessage) and `stream_pump`
-(encrypt stream pump) throughput at 1 KiB / 64 KiB / 1 MiB / 16 MiB,
-reported as an MB/s table on stdout. The runner exports
-`ITB_GOMEMLIMIT=4GiB` + `ITB_GOGC=100` defaults (respecting caller
-overrides) and the bench binaries apply the same caps
-programmatically.
+Micro-benches: `message` (EncryptMessage), `stream_pump` (encrypt
+stream pump), and `stream_one_shot` (EncryptStream) throughput at
+1 MiB / 16 MiB / 64 MiB, reported as an MB/s table on stdout. The
+runner exports `ITB_GOMEMLIMIT=4GiB` + `ITB_GOGC=100` defaults
+(respecting caller overrides) and the bench binaries apply the same
+caps programmatically. See
+[`bindings/BENCH.md`](https://github.com/everanium/itb/blob/main/bindings/BENCH.md)
+for the fleet-wide configuration authority and comparison tables.
 
 ## itb3 CLI
 

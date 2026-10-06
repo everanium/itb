@@ -140,7 +140,7 @@ proc maxWorkers*(p: Pipeline, n: int) =
   ## Sets the worker cap for every subsequent cipher call. ``n`` is
   ## clamped by libitb3 (``<= 0`` selects auto, ``> 256`` becomes 256);
   ## only the handle state is reported. The cap is per-machine and
-  ## never travels in the blob.
+  ## never written to the blob.
   check(ITB_Triple_MaxWorkers(p.raw.h, cint(n)))
 
 proc rekey*(p: Pipeline, perm, wrap: openArray[byte]): seq[byte] {.discardable.} =

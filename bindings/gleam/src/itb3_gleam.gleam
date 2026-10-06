@@ -1,7 +1,7 @@
-//// itb3_gleam — public entry point of the ITB Gleam binding.
+//// Public entry point of the ITB Gleam binding.
 ////
 //// Thin proxy over the ITB Erlang binding's Triple Pipeline surface
-//// (bindings/erlang, module `itb`) via native BEAM bytecode interop
+//// (bindings/erlang, module `itb3`) via native BEAM bytecode interop
 //// — the Gleam layer calls the Erlang module directly through the
 //// shape-normalising FFI adapter (src/itb3_gleam_ffi.erl) and adds no
 //// FFI hop of its own. The only native code in the stack is the
@@ -9,8 +9,8 @@
 //// this binding: profile names, opts keys, and every primitive name
 //// are opaque strings passed through to Go for validation.
 ////
-//// The top-level module is named `itb3_gleam` rather than `itb`
-//// because the BEAM module name `itb` belongs to the Erlang backend
+//// The top-level module is named `itb3_gleam` rather than `itb3`
+//// because the BEAM module name `itb3` belongs to the Erlang backend
 //// this binding proxies; the pipeline / stream surface lives under
 //// `itb3/pipeline` and `itb3/stream`.
 ////

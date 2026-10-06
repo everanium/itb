@@ -146,15 +146,10 @@ library directly and register the same custom primitive under the
 same name before opening. Attempting to `load` such a blob through
 this binding surfaces `ItbStatus::RecipePrimitiveUnknown`.
 
-**Runtime tuning.** The worker cap is per-machine and never travels
-in the blob; the receiver may pick its own after `load`:
-
-```rust,no_run
-# use itb3::{OptsBuilder, Pipeline};
-# let receiver = Pipeline::init("singlemsg-triple-mac-v1", &OptsBuilder::new())?;
-receiver.max_workers(4)?;   // clamped by libitb3; <= 0 selects auto
-# Ok::<(), itb3::ItbError>(())
-```
+**Runtime tuning.** `receiver.max_workers(n)` sets the worker cap for
+every subsequent cipher call (`n <= 0` selects auto, `n > 256` is
+clamped to 256); the receiver may pick its own worker cap after
+`load` — the cap is per-machine and never written to the blob.
 
 ## Profile registry
 
@@ -212,9 +207,11 @@ under the shipped tree.
 ```
 
 Criterion micro-benches: `encrypt_message` and `encrypt_stream_pump`
-throughput at 1 KiB / 64 KiB / 1 MiB / 16 MiB. Positional arguments
+throughput at 1 MiB / 16 MiB / 64 MiB. Positional arguments
 are forwarded to the Criterion harness (e.g.
-`./run_bench.sh --measurement-time 5`).
+`./run_bench.sh --measurement-time 5`). See
+[`bindings/BENCH.md`](https://github.com/everanium/itb/blob/main/bindings/BENCH.md)
+for the fleet-wide configuration authority and comparison tables.
 
 ## itb3 CLI
 

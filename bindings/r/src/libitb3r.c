@@ -60,7 +60,7 @@
  * R/errors.R.
  *
  * Output-buffer discipline: variable-size outputs pre-allocate
- * len + len/4 + 65536 bytes (R_alloc scratch, reclaimed on .Call exit)
+ * len + len/4 + 131072 bytes (R_alloc scratch, reclaimed on .Call exit)
  * and retry once with the exact reported size when the call returns
  * BUFFER_TOO_SMALL with outLen strictly greater than the offered
  * capacity.
@@ -233,8 +233,8 @@ static uintptr_t check_handle(SEXP ptr, SEXP tag, const char *what) {
 
 /* Pre-allocation formula for message / one-shot stream outputs. */
 static size_t out_cap(size_t payload) {
-    size_t cap = payload + payload / 4 + 65536;
-    return cap < 65536 ? 65536 : cap;
+    size_t cap = payload + payload / 4 + 131072;
+    return cap < 131072 ? 131072 : cap;
 }
 
 typedef int (*cipher_fn)(uintptr_t, void *, size_t, void *, size_t, size_t *);

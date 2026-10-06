@@ -57,9 +57,9 @@ blobCap :: Int
 blobCap = 64 * 1024
 
 -- | Pre-allocation formula for Message \/ one-shot stream outputs:
--- @payload * 5\/4 + 65536@.
+-- @payload * 5\/4 + 131072@.
 outCap :: Int -> Int
-outCap payload = payload + payload `div` 4 + 65536
+outCap payload = payload + payload `div` 4 + 131072
 
 -- | A Triple Pipeline session. 'save' exports the session bundle the
 -- receiver feeds to 'loadPipeline'; 'rekey' refreshes it.
@@ -215,7 +215,7 @@ saveF p path =
 -- | Sets the worker cap for every subsequent cipher call. The value is
 -- clamped by libitb3 (@<= 0@ selects auto, @> 256@ becomes 256); only
 -- the handle state is reported. The cap is per-machine and never
--- travels in the blob. (Named 'setMaxWorkers' because 'ITB3.Opts.maxWorkers'
+-- written to the blob. (Named 'setMaxWorkers' because 'ITB3.Opts.maxWorkers'
 -- is the Init-time opts setter.)
 setMaxWorkers :: Pipeline -> Int -> IO ()
 setMaxWorkers p n =

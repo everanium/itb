@@ -16,7 +16,7 @@
 !
 ! This module is internal plumbing: the public binding surface lives
 ! in itb_pipeline / itb_stream / itb_runtime / itb_opts / itb_error,
-! re-exported by the root module itb.
+! re-exported by the root module itb3.
 
 module itb_ffi
   use, intrinsic :: iso_c_binding

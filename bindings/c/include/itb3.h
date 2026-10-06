@@ -367,7 +367,7 @@ itb_status itb_pool_stats(int64_t *out, size_t cap, size_t *len_out);
 void itb_bytes_free(uint8_t *bytes);
 
 /* Releases a JSON string allocated by itb_inspect / itb_lookup /
- * itb_profiles. NULL-safe. */
+ * itb_profiles / itb_hash_names. NULL-safe. */
 void itb_string_free(char *str);
 
 #ifdef __cplusplus

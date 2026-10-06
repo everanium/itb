@@ -1,4 +1,4 @@
-// Gradle build for the ITB Kotlin binding — a Tier 1 Thin proxy
+// Gradle build for the ITB Kotlin binding — a Tier 2 relay
 // over the Java binding (JVM bytecode interop, no FFI hop of its
 // own). The Java binding's library jar is consumed straight from the
 // sibling build's output directory; libitb3.so + the JNI shim are

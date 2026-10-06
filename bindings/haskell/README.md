@@ -137,13 +137,11 @@ library directly and register the same custom primitive under the
 same name before opening. Attempting to load such a blob through this
 binding throws `ITBError` with `statusRecipePrimitiveUnknown`.
 
-**Runtime tuning.** The worker cap is per-machine and never travels
-in the blob; the receiver may pick its own after load (`setMaxWorkers`
-— the Init-time opts setter is `maxWorkers` on the `Opts` record):
-
-```haskell
-setMaxWorkers receiver 4   -- clamped by libitb3; <= 0 selects auto
-```
+**Runtime tuning.** `setMaxWorkers pipe n` sets the worker cap for
+every subsequent cipher call (`n <= 0` selects auto, `n > 256` is
+clamped to 256); the receiver may pick its own worker cap after
+`load` — the cap is per-machine and never written to the blob. The
+Init-time opts setter is `maxWorkers` on the `Opts` record.
 
 ## Profile registry
 
@@ -188,9 +186,9 @@ Errors are thrown as `ITBError { statusCode, lastError }` (an
 constants exported by `ITB3.Errors`:
 
 ```haskell
-r <- try (newPipeline "no-such-profile" Nothing)
+r <- try (newPipeline "no-such-profile")
 case r of
-  Left e | statusCode e == statusBadInput -> putStrLn "rejected"
+  Left e | statusCode e == statusUnknownProfile -> putStrLn "rejected"
   _ -> pure ()
 ```
 
@@ -247,8 +245,8 @@ canonical env vars (`ITB_INNER_HASH`, `ITB_KEY_BITS`,
 `ITB_NONCE_BITS`, `ITB_WITH_PARALLAX`, `ITB_WITH_WRAPPER`,
 `ITB_PROFILE`, `ITB_BENCH_MIN_SEC`); the harness caps the Go runtime
 via `setMemoryLimit (4 * 1024 * 1024 * 1024)` and `setGcPercent 100`. See
-`bindings/BENCH.md` for the fleet-wide configuration authority and
-comparison tables.
+[`bindings/BENCH.md`](https://github.com/everanium/itb/blob/main/bindings/BENCH.md)
+for the fleet-wide configuration authority and comparison tables.
 
 ## itb3 CLI
 
@@ -315,7 +313,7 @@ the Single Message or streaming cipher pair.
   call `freePipeline` / `freeStream` (or `closePipeline`)
   deterministically rather than relying on collection to release
   Go-side sessions.
-- **Streaming decrypt caveat.** Chunked Streaming AEAD verifies per
+- **Streaming-decrypt caveat.** Chunked Streaming AEAD verifies per
   chunk, so plaintext of verified chunks is released before a later
   chunk can fail authentication.
 - The binding exposes the Triple Pipeline surface only; the Low-Level

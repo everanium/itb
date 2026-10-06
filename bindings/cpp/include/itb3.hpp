@@ -298,7 +298,7 @@ public:
     /* Sets the worker cap for every subsequent cipher call. n is
      * clamped by libitb3 (<= 0 selects auto, > 256 becomes 256); only
      * the handle state is reported. The cap is per-machine and never
-     * travels in the blob. */
+     * written to the blob. */
     void max_workers(int n) const;
 
     /* Rotates the parallax + wrapper masters and returns the fresh

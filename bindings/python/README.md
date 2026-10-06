@@ -97,6 +97,20 @@ rotated = sender.rekey(b"\x11" * 32, b"\x22" * 32)
 receiver = itb.Pipeline.load(rotated)
 ```
 
+`Pipeline` and the stream sessions are context managers, so a `with`
+block frees the Go-side handle deterministically (garbage collection
+via `__del__` covers the non-`with` path). For bounded-memory
+streaming, `encrypt_stream_pump` / `decrypt_stream_pump` move any
+readable file object into any writable one through an incremental
+session; the explicit `encrypt_stream()` / `decrypt_stream()`
+sessions expose `write` / `end` / `read` / `drain_all` for
+caller-driven loops. Byte inputs accept `bytes`, `bytearray`, and
+`memoryview`.
+
+Profile names, opts keys, and every primitive name are validated by
+the Go side; a rejected string raises `itb.ItbError` carrying the
+status code (`itb.Status`) plus the `ITB_LastError` diagnostic.
+
 ## Persisting sessions
 
 The blob is self-describing: it carries the profile record (mode,
@@ -124,6 +138,12 @@ same name before opening. Attempting to `load` such a blob through
 this binding raises `itb.ItbError` with
 `itb.Status.RECIPE_PRIMITIVE_UNKNOWN`.
 
+**Runtime tuning.** `Pipeline.max_workers(n)` sets the worker cap on
+a live Pipeline (`n <= 0` selects auto, values above 256 are
+clamped). The cap is per-machine tuning and is never written to the
+blob, so the receiver may pick its own worker cap after `load`.
+`Opts.with_max_workers` sets the same cap at `init`.
+
 ## Profile registry
 
 ```python
@@ -148,28 +168,6 @@ rule — name pattern, reserved prefixes, field constraints, primitive
 names — is enforced by libitb3; a duplicate name raises
 `itb.Status.PROFILE_EXISTS`.
 
-## Runtime tuning
-
-`Pipeline.max_workers(n)` sets the worker cap on a live Pipeline
-(`n <= 0` selects auto, values above 256 are clamped). The cap is
-per-machine tuning and is never written to the blob, so the receiver
-may pick its own worker cap after `load`. `Opts.with_max_workers`
-sets the same cap at `init`.
-
-`Pipeline` and the stream sessions are context managers, so a `with`
-block frees the Go-side handle deterministically (garbage collection
-via `__del__` covers the non-`with` path). For bounded-memory
-streaming, `encrypt_stream_pump` / `decrypt_stream_pump` move any
-readable file object into any writable one through an incremental
-session; the explicit `encrypt_stream()` / `decrypt_stream()`
-sessions expose `write` / `end` / `read` / `drain_all` for
-caller-driven loops. Byte inputs accept `bytes`, `bytearray`, and
-`memoryview`.
-
-Profile names, opts keys, and every primitive name are validated by
-the Go side; a rejected string raises `itb.ItbError` carrying the
-status code (`itb.Status`) plus the `ITB_LastError` diagnostic.
-
 ## Memory
 
 Two process-wide knobs constrain Go runtime arena pacing, readable at
@@ -186,7 +184,7 @@ Three further knobs sit on the same surface: `set_gomaxprocs(n)`
 (`n <= 0` queries), `write_heap_profile(path)` (a pprof heap profile
 after one forced collection) and `pool_stats()` with its
 `pool_stats_len()` companion, which returns the library's monotonic
-pool checkout / miss counters as an `int64` vector a consumer
+pool checkout / miss counters as an `int64` vector that a consumer
 differences between two snapshots. `hash_names()` enumerates the
 shipped inner-hash registry next to `profiles()`.
 
@@ -217,7 +215,9 @@ Micro-benches: `encrypt_message` and `encrypt_stream_pump` throughput
 at 1 MiB / 16 MiB / 64 MiB. Shape and budget are driven by env vars
 (`ITB_PROFILE`, `ITB_INNER_HASH`, `ITB_KEY_BITS`, `ITB_NONCE_BITS`,
 `ITB_WITH_PARALLAX`, `ITB_WITH_WRAPPER`, `ITB_BENCH_MIN_SEC`); the
-script pins the same defaults as the root Go BENCH3.md table.
+script pins the same defaults as the root Go BENCH3.md table. See
+[`bindings/BENCH.md`](https://github.com/everanium/itb/blob/main/bindings/BENCH.md)
+for the fleet-wide configuration authority and comparison tables.
 
 ## itb3 CLI
 

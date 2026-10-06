@@ -40,8 +40,8 @@ builds as `libitb3.dll`.
 ## Build
 
 The convenience driver builds `libitb3.so` plus the solution (the C#
-`Itb` library project is a solution member, so one dotnet build
-covers both layers):
+`Everanium.LibItb3` library project is a solution member, so one
+dotnet build covers both layers):
 
 ```bash
 ./bindings/fsharp/build.sh
@@ -172,10 +172,10 @@ Pipeline.register "my-profile" custom |> ItbError.get      // validated by Go; d
 on the binding side. `inspect` / `lookup` return it; `register`
 accepts it; an unknown name at `init` / `lookup` surfaces `Status.UnknownProfile`.
 
-Runtime tuning: `Pipeline.maxWorkers pipe n` sets the worker cap for every
-subsequent cipher call (`n <= 0` selects auto, `n > 256` is clamped
-to 256); the receiver may pick its own worker cap after `load` — the
-cap is per-machine and never written to the blob.
+**Runtime tuning.** `Pipeline.maxWorkers pipe n` sets the worker cap for
+every subsequent cipher call (`n <= 0` selects auto, `n > 256` is
+clamped to 256); the receiver may pick its own worker cap after `load`
+— the cap is per-machine and never written to the blob.
 
 ## Memory
 
@@ -217,7 +217,9 @@ tree.
 throughput at 1 MiB / 16 MiB / 64 MiB. Shape and budget are driven
 by the `ITB_*` env vars listed in
 `bench/Everanium.LibItb3.FSharp.Bench/BenchUtil.fs`; defaults match the
-root Go BENCH3.md pin.
+root Go BENCH3.md pin. See
+[`bindings/BENCH.md`](https://github.com/everanium/itb/blob/main/bindings/BENCH.md)
+for the fleet-wide configuration authority and comparison tables.
 
 ## itb3 CLI
 

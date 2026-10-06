@@ -417,7 +417,7 @@ public final class Pipeline implements AutoCloseable, Destroyable {
             // The writable window is dst.position()..dst.limit(); the
             // slice's own base address carries the position offset, and
             // its capacity caps the native write — libitb3 never writes
-            // past it (Ruby-style out-of-bounds guard).
+            // past it (out-of-bounds guard via direct buffer capacity).
             ByteBuffer window = dst.slice();
             long[] len = new long[1];
             ItbException.check(call.invoke(handle, in, src.length,

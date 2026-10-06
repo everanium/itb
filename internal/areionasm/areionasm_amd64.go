@@ -102,7 +102,7 @@ func Areion256Permutex4(x0, x1 *aes.Block4)
 func Areion512Permutex4(x0, x1, x2, x3 *aes.Block4)
 
 // Areion256Permutex4Avx2 is the AVX2 + VAES variant of
-// Areion256Permutex4, written for x86_64 CPUs that have VAES but no
+// Areion256Permutex4, written for x86-64 CPUs that have VAES but no
 // AVX-512 (some Intel Alder Lake / Raptor Lake E-core configurations
 // when isolated, certain AMD Zen 3 SKUs). Same SoA layout and bit-exact
 // parity invariant as the AVX-512 path; the only difference is the
@@ -129,7 +129,7 @@ func Areion512Permutex4Avx2(x0, x1, x2, x3 *aes.Block4)
 // to be selected.
 var HasVAESAVX512 = aes.CPU.HasVAES && aes.CPU.HasAVX512
 
-// HasVAESAVX2NoAVX512 is true for x86_64 CPUs that have VAES + AVX2 but
+// HasVAESAVX2NoAVX512 is true for x86-64 CPUs that have VAES + AVX2 but
 // lack AVX-512. The runtime dispatcher in the parent itb package picks
 // this path when HasVAESAVX512 is false but VAES is still available, so
 // the YMM assembly variants run instead of falling all the way back to

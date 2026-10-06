@@ -1,4 +1,4 @@
-%% itb3 — public API of the ITB Erlang binding.
+%% Public API of the ITB Erlang binding.
 %%
 %% Thin proxy over the ITB C binding's Triple Pipeline surface
 %% (bindings/c, itb3.h) through the NIF shim in c_src/libitb3_nif.c. No

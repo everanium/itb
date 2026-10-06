@@ -12,7 +12,7 @@ C compiler at install time, no compile-time link; the `.so` /
 `.dylib` / `.dll` is resolved at the first FFI call. Every hash-name
 / MAC-name / cipher-name / profile-name is an opaque string passed
 through to Go for validation; the binding carries no ITB construction
-logic. The public surface is the `ITB` module (`load` / `load_f` /
+logic. The public surface is the `LibItb3` module (`load` / `load_f` /
 `save` / `save_f` / `inspect` / `register` / `lookup` / `profiles` /
 `version` and the Go runtime knobs), the `Pipeline` type
 (Single Message encrypt / decrypt, rekey, max_workers, close,
@@ -104,6 +104,34 @@ rotated = rekey!(sender, fill(UInt8(0x11), 32), fill(UInt8(0x22), 32))
 receiver2 = load(rotated)
 ```
 
+`encrypt_stream` / `decrypt_stream` open incremental sessions
+exposing `write!` / `end_stream!` / `read!` / `drain_all!` for
+caller-driven loops, plus a `pump!(session, src, dst)` helper that
+moves any readable `IO` into any writable one with bounded memory.
+The `do`-block form frees the session on return:
+
+```julia
+pipe = Pipeline("streaming-noaead-triple-v1")
+wire = encrypt_stream(pipe) do enc
+    write!(enc, chunk_a)
+    write!(enc, chunk_b)
+    drain_all!(enc)
+end
+```
+
+`Pipeline` and the stream sessions register GC finalizers, so
+un-freed handles are reclaimed eventually; explicit `free!` (or the
+`do`-block form) releases the Go-side state deterministically. Stream
+sessions hold their parent `Pipeline` in a `parent` field, so the
+parent cannot be garbage-collected while a session is live.
+
+Profile names, opts keys, and every primitive name are validated by
+the Go side; a rejected string throws `ITBError` carrying the status
+code (`status_code`, values in the `LibItb3.STATUS_*` constants) plus the
+`ITB_LastError` diagnostic (`last_error`). Opts are built fluently
+(`Opts()` + `with_key_bits!` / `with_inner_hash!` / `with_raw!` / …)
+or passed as a `Dict` / raw query string.
+
 ## Persisting sessions
 
 The blob is self-describing: it carries the profile record (mode,
@@ -133,6 +161,12 @@ same name before opening. Attempting to `load` such a blob through
 this binding throws `ITBError` with
 `LibItb3.STATUS_RECIPE_PRIMITIVE_UNKNOWN`.
 
+**Runtime tuning.** `max_workers!(pipe, n)` sets the worker cap on a
+live Pipeline (`n <= 0` selects auto, values above 256 are clamped).
+The cap is per-machine tuning and is never written to the blob, so
+the receiver may pick its own worker cap after `load`.
+`with_max_workers!` sets the same cap at construction.
+
 ## Profile registry
 
 ```julia
@@ -155,42 +189,6 @@ return; a `name` key inside it, if present, must be empty or equal to
 the name argument. Every rule — name pattern, reserved prefixes,
 field constraints, primitive names — is enforced by libitb3; a
 duplicate name throws `LibItb3.STATUS_PROFILE_EXISTS`.
-
-## Runtime tuning
-
-`max_workers!(pipe, n)` sets the worker cap on a live Pipeline
-(`n <= 0` selects auto, values above 256 are clamped). The cap is
-per-machine tuning and is never written to the blob, so the receiver
-may pick its own worker cap after `load`. `with_max_workers!` sets
-the same cap at construction.
-
-`encrypt_stream` / `decrypt_stream` open incremental sessions
-exposing `write!` / `end_stream!` / `read!` / `drain_all!` for
-caller-driven loops, plus a `pump!(session, src, dst)` helper that
-moves any readable `IO` into any writable one with bounded memory.
-The `do`-block form frees the session on return:
-
-```julia
-pipe = Pipeline("streaming-noaead-triple-v1")
-wire = encrypt_stream(pipe) do enc
-    write!(enc, chunk_a)
-    write!(enc, chunk_b)
-    drain_all!(enc)
-end
-```
-
-`Pipeline` and the stream sessions register GC finalizers, so
-un-freed handles are reclaimed eventually; explicit `free!` (or the
-`do`-block form) releases the Go-side state deterministically. Stream
-sessions hold their parent `Pipeline` in a `parent` field, so the
-parent cannot be garbage-collected while a session is live.
-
-Profile names, opts keys, and every primitive name are validated by
-the Go side; a rejected string throws `ITBError` carrying the status
-code (`status_code`, values in the `LibItb3.STATUS_*` constants) plus the
-`ITB_LastError` diagnostic (`last_error`). Opts are built fluently
-(`Opts()` + `with_key_bits!` / `with_inner_hash!` / `with_raw!` / …)
-or passed as a `Dict` / raw query string.
 
 ## Memory
 
@@ -239,6 +237,9 @@ env vars (`ITB_PROFILE`, `ITB_INNER_HASH`, `ITB_KEY_BITS`,
 `ITB_BENCH_MIN_SEC`); the script pins the same defaults as the root
 Go BENCH3.md table. Each case runs one untimed warm-up iteration
 first, which also absorbs Julia's first-call JIT compile latency.
+See
+[`bindings/BENCH.md`](https://github.com/everanium/itb/blob/main/bindings/BENCH.md)
+for the fleet-wide configuration authority and comparison tables.
 
 ## itb3 CLI
 

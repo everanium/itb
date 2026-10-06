@@ -264,7 +264,7 @@ void main() {
   });
 
   test('large plaintext exercises the pre-allocate + retry path', () {
-    // > 1 MiB payload: the 1.25x + 65536 pre-allocation covers the
+    // > 1 MiB payload: the 1.25x + 131072 pre-allocation covers the
     // envelope for large payloads in one call; a tiny payload
     // (handled above) exercises the small-input expansion. Both must
     // round-trip byte-exact.
@@ -282,7 +282,7 @@ void main() {
     final sender = Itb.create('singlemsg-triple-nomac-v1');
     final receiver = Itb.load(sender.save());
     final plain = payload(256 * 1024 + 777, 29);
-    final wireBuf = Uint8List(plain.length + (plain.length >> 2) + 65536);
+    final wireBuf = Uint8List(plain.length + (plain.length >> 2) + 131072);
     final backBuf = Uint8List(wireBuf.length);
 
     // Two rewrites of the same scratch pair must both round-trip

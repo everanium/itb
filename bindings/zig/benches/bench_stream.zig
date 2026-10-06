@@ -1,4 +1,4 @@
-//! encryptStreamPump throughput vs plaintext size (streaming
+//! encryptStreamPump throughput vs plaintext size (Streaming
 //! Non-AEAD profile) at 1 MiB / 16 MiB / 64 MiB.
 
 const std = @import("std");
@@ -26,7 +26,7 @@ fn runStreamPumpDec(ctx: *const DecCtx) !void {
 }
 
 pub fn main(init: std.process.Init) !void {
-    // Bench-scale allocation churn leaks Go scratch heap unboundedly
+    // Bench-scale allocation churn grows Go scratch heap unboundedly
     // without a soft memory cap + aggressive GC; the return values
     // report the previous settings, not an error.
     _ = itb.setMemoryLimit(4 << 30); // 4 GiB soft cap

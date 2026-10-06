@@ -114,6 +114,22 @@ $rotated = $sender->rekey(str_repeat("\x11", 32), str_repeat("\x22", 32));
 $receiver = Itb::load($rotated);
 ```
 
+`Pipeline` and the stream sessions free their Go-side handles on
+garbage collection via `__destruct`; an explicit `free()` releases
+them deterministically. For streaming, `encryptStream()` /
+`decryptStream()` open incremental sessions exposing `write` / `end`
+/ `read` / `drainAll` / `isFinished` for caller-driven loops; the
+`encryptStreamOneShot` / `decryptStreamOneShot` calls cover
+whole-buffer streaming wires in a single call each. A live session holds a reference to its
+parent `Pipeline`, so the parent cannot be collected out from under
+it. All byte inputs and outputs are plain PHP byte-strings.
+
+Profile names, opts keys, and every primitive name are validated by
+the Go side; a rejected string throws
+`Everanium\Itb3\ItbException` carrying the status code
+(`Everanium\Itb3\Status` constants, via `getStatus()`) plus the
+`ITB_LastError` diagnostic (via `getDetail()`).
+
 ## Persisting sessions
 
 The blob is self-describing: it carries the profile record (mode,
@@ -142,6 +158,12 @@ same name before opening. Attempting to `load` such a blob through
 this binding throws `ItbException` with
 `Status::RECIPE_PRIMITIVE_UNKNOWN`.
 
+**Runtime tuning.** `Pipeline::maxWorkers($n)` sets the worker cap on
+a live Pipeline (`n <= 0` selects auto, values above 256 are
+clamped). The cap is per-machine tuning and is never written to the
+blob, so the receiver may pick its own worker cap after `load`. The
+`maxWorkers` opts key sets the same cap at `create`.
+
 ## Profile registry
 
 ```php
@@ -165,30 +187,6 @@ key inside it, if present, must be empty or equal to the name
 argument. Every rule — name pattern, reserved prefixes, field
 constraints, primitive names — is enforced by libitb3; a duplicate
 name throws `Status::PROFILE_EXISTS`.
-
-## Runtime tuning
-
-`Pipeline::maxWorkers($n)` sets the worker cap on a live Pipeline
-(`n <= 0` selects auto, values above 256 are clamped). The cap is
-per-machine tuning and is never written to the blob, so the receiver
-may pick its own worker cap after `load`. The `maxWorkers` opts key
-sets the same cap at `create`.
-
-`Pipeline` and the stream sessions free their Go-side handles on
-garbage collection via `__destruct`; an explicit `free()` releases
-them deterministically. For streaming, `encryptStream()` /
-`decryptStream()` open incremental sessions exposing `write` / `end`
-/ `read` / `drainAll` / `isFinished` for caller-driven loops; the
-`encryptStreamOneShot` / `decryptStreamOneShot` calls cover
-whole-buffer streaming wires in a single call each. A live session holds a reference to its
-parent `Pipeline`, so the parent cannot be collected out from under
-it. All byte inputs and outputs are plain PHP byte-strings.
-
-Profile names, opts keys, and every primitive name are validated by
-the Go side; a rejected string throws
-`Everanium\Itb3\ItbException` carrying the status code
-(`Everanium\Itb3\Status` constants, via `getStatus()`) plus the
-`ITB_LastError` diagnostic (via `getDetail()`).
 
 ## Memory
 
@@ -234,7 +232,9 @@ Micro-benches: `encryptMessage` and stream-session encrypt throughput
 at 1 MiB / 16 MiB / 64 MiB. Shape and budget are driven by env vars
 (`ITB_PROFILE`, `ITB_INNER_HASH`, `ITB_KEY_BITS`, `ITB_NONCE_BITS`,
 `ITB_WITH_PARALLAX`, `ITB_WITH_WRAPPER`, `ITB_BENCH_MIN_SEC`); the
-script pins the same defaults as the root Go BENCH3.md table.
+script pins the same defaults as the root Go BENCH3.md table. See
+[`bindings/BENCH.md`](https://github.com/everanium/itb/blob/main/bindings/BENCH.md)
+for the fleet-wide configuration authority and comparison tables.
 
 ## itb3 CLI
 

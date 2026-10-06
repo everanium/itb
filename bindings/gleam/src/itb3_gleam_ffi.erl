@@ -1,4 +1,4 @@
-%% itb3_gleam_ffi — FFI adapter for the ITB Gleam binding.
+%% FFI adapter for the ITB Gleam binding.
 %%
 %% Normalises the Erlang binding's return shapes into the tuple
 %% layouts Gleam's type system expects, and lazily puts the Erlang

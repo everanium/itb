@@ -123,7 +123,7 @@ Hot-loop callers that own their buffers use the caller-buffer
 siblings: `encryptMessageInto(plain, dst)` / `decryptMessageInto(wire,
 dst)` write into a reusable `Uint8List` and return the byte count
 (no retry — an undersized `dst` throws `Status.bufferTooSmall`; the
-pre-allocation formula `payload * 5 / 4 + 65536` typically suffices),
+pre-allocation formula `payload * 5 / 4 + 131072` typically suffices),
 and the session `read(dst)` drains into a reusable buffer. Every
 cipher / stream call runs on grow-only pooled native scratch owned by
 its `Pipeline` / session, so steady-state dispatch performs no native
@@ -157,6 +157,13 @@ library directly and register the same custom primitive under the
 same name before opening. Attempting to load such a blob through
 this binding surfaces `Status.recipePrimitiveUnknown`.
 
+**Runtime tuning.** `pipeline.maxWorkers(n)` sets the worker cap for
+every subsequent cipher call (`n <= 0` selects auto, `n > 256` is
+clamped to 256); the receiver may pick its own worker cap after
+`load` — the cap is per-machine and never written to the blob.
+
+## Profile registry
+
 The profile registry is reachable through the same `Profile`
 record:
 
@@ -173,11 +180,6 @@ Itb.register('my-profile', custom);             // validated by Go; duplicate ->
 `Profile` is a plain record plus JSON codec — no validation happens
 on the binding side. `inspect` / `lookup` return it; `register`
 accepts it; an unknown name at `create` / `lookup` surfaces `Status.unknownProfile`.
-
-Runtime tuning: `pipeline.maxWorkers(n)` sets the worker cap for every
-subsequent cipher call (`n <= 0` selects auto, `n > 256` is clamped
-to 256); the receiver may pick its own worker cap after `load` — the
-cap is per-machine and never written to the blob.
 
 ## Memory
 
@@ -216,7 +218,9 @@ Micro-benches: `encryptMessageInto` and stream-pump throughput at 1 MiB /
 16 MiB / 64 MiB. Shape and budget are driven by env vars
 (`ITB_PROFILE`, `ITB_INNER_HASH`, `ITB_KEY_BITS`, `ITB_NONCE_BITS`,
 `ITB_WITH_PARALLAX`, `ITB_WITH_WRAPPER`, `ITB_BENCH_MIN_SEC`); the
-script pins the same defaults as the root Go BENCH3.md table.
+script pins the same defaults as the root Go BENCH3.md table. See
+[`bindings/BENCH.md`](https://github.com/everanium/itb/blob/main/bindings/BENCH.md)
+for the fleet-wide configuration authority and comparison tables.
 
 ## itb3 CLI
 

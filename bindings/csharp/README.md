@@ -145,7 +145,7 @@ Pipeline.Register("my-profile", custom);        // validated by Go; duplicate ->
 on the binding side. `Inspect` / `Lookup` return it; `Register`
 accepts it; an unknown name at `Init` / `Lookup` surfaces `Status.UnknownProfile`.
 
-Runtime tuning: `pipeline.MaxWorkers(n)` sets the worker cap for every
+**Runtime tuning.** `pipeline.MaxWorkers(n)` sets the worker cap for every
 subsequent cipher call (`n <= 0` selects auto, `n > 256` is clamped
 to 256); the receiver may pick its own worker cap after `Load` — the
 cap is per-machine and never written to the blob.
@@ -191,7 +191,9 @@ lives in Go under the shipped tree.
 `Stopwatch`-timed micro-benches: `EncryptMessage` and stream-pump
 throughput at 1 MiB / 16 MiB / 64 MiB. Shape and budget are driven
 by the `ITB_*` env vars listed in `Everanium.LibItb3.Bench/BenchUtil.cs`; defaults
-match the root Go BENCH3.md pin.
+match the root Go BENCH3.md pin. See
+[`bindings/BENCH.md`](https://github.com/everanium/itb/blob/main/bindings/BENCH.md)
+for the fleet-wide configuration authority and comparison tables.
 
 ## itb3 CLI
 

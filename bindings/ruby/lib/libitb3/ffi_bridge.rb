@@ -54,7 +54,7 @@ module ITB
       cands = []
       env = ENV["ITB_LIBITB3_PATH"].to_s
       cands << env unless env.empty?
-      # lib/itb/ffi_bridge.rb -> repo root is four levels up.
+      # lib/libitb3/ffi_bridge.rb -> repo root is four levels up.
       repo = File.expand_path("../../../..", __dir__)
       in_repo = File.join(repo, "dist", dist_subdir, lib_filename)
       cands << in_repo if File.file?(in_repo)

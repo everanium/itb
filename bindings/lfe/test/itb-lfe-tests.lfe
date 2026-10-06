@@ -1,4 +1,4 @@
-;;;; itb-lfe-tests — EUnit suite for the LFE binding, written with
+;;;; EUnit suite for the LFE binding, written with
 ;;;; the ltest macros. Covers: version, the hash primitive roster
 ;;;; (canonical registry order), the Single Message round trip, the
 ;;;; incremental stream pump round trip, runtime knobs, profile

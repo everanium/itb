@@ -8,7 +8,7 @@
 // through to Go for validation; the binding carries no ITB
 // construction logic of its own.
 //
-//   import { Opts, Pipeline } from 'itb';
+//   import { Opts, Pipeline } from 'libitb3';
 //
 //   const sender = Pipeline.init('singlemsg-triple-mac-v1', new Opts());
 //   const receiver = Pipeline.load(sender.save());

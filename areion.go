@@ -2,7 +2,7 @@
 //
 // AreionSoEM256x4 and AreionSoEM512x4 process four independent
 // (key, input) tuples simultaneously using the upstream
-// `github.com/jedisct1/go-aes` parallel AES-round primitives. On x86_64
+// `github.com/jedisct1/go-aes` parallel AES-round primitives. On x86-64
 // CPUs with VAES (AVX-512) the inner loop dispatches to a single
 // `vaesenc` instruction processing four AES blocks in one ZMM register;
 // without VAES the same Block4 path falls back to four sequential
@@ -100,7 +100,7 @@ func rcBlock4(rc *[16]byte) aes.Block4 {
 // `Round4HW` / `FinalRound4HW` call inside the Areion permutations.
 // Areion uses no-key AES rounds, but the upstream library only routes
 // the **keyed** `Round4HW` / `FinalRound4HW` to VAES instructions on
-// x86_64 (`vaes_amd64.go:vaesRound4` / `vaesFinalRound4`); the
+// x86-64 (`vaes_amd64.go:vaesRound4` / `vaesFinalRound4`); the
 // `RoundNoKey4HW` / `FinalRoundNoKey4HW` paths fall back to four
 // sequential single-block AES-NI invocations even when VAES is
 // available. Calling `Round4HW(state, &areionZeroKey4)` instead is
@@ -211,7 +211,7 @@ func areion256Permutex4Default(states *[4][32]byte) {
 //
 // The function is `crypto/rand`-equivalent in security to four serial
 // `aes.AreionSoEM256` calls — output is bit-exact identical (verified
-// in `TestAreionSoEM256x4Parity`). Throughput is faster on x86_64 with
+// in `TestAreionSoEM256x4Parity`). Throughput is faster on x86-64 with
 // VAES (AVX-512) because the four lanes share VAES instruction issue;
 // on hardware without VAES the function falls back to per-lane AES-NI
 // at near-identical cost to four serial calls.

@@ -89,7 +89,7 @@ Each keystream block hashes a 24-byte PRF input (`nonce(16) || LE64(counter)`) a
 2. The 16-byte nonce is the CTR initial counter block — the IV passed to `cipher.NewCTR(block, nonce)`.
 3. `XORKeyStream` produces the keystream by encrypting successive counter blocks under AES-128 and XORing the result over the input; the standard library advances the 128-bit counter internally.
 
-**Standards posture.** This is the stdlib's CTR mode over the stdlib's AES; it is standard NIST CTR mode end to end. On hosts with the AES instruction set (`crypto/aes` AES-NI on x86, the ARM Crypto Extension on AArch64) the block calls are hardware-accelerated.
+**Standards posture.** This is the stdlib's CTR mode over the stdlib's AES; it is standard NIST CTR mode end to end. On hosts with the AES instruction set (`crypto/aes` AES-NI on x86, the ARM Crypto Extension on ARM64) the block calls are hardware-accelerated.
 
 **Stream shape.** AES is a pseudorandom permutation, so each counter value yields a distinct 16-byte keystream block; there is no keystream-block collision until the 128-bit counter space is exhausted. This is the standard CTR-mode property.
 

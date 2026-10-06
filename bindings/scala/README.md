@@ -18,13 +18,15 @@ idiom: every fallible call returns `Either[ItbError, _]` (the error
 value is also a `RuntimeException`, so throw-based interop stays a
 one-liner), results are case classes, `Opts` is an immutable
 chainable value, and `Pipeline` / stream sessions are `AutoCloseable`
-for `scala.util.Using.resource`. The stream sessions additionally
-expose `Iterator[Array[Byte]] => Iterator[Array[Byte]]` /
-`LazyList` chunk adapters for functional pipelines; an `fs2.Stream`
-/ ZIO wrapper is a straightforward lift of the iterator adapter or
-the `Either`-surface `write` / `end` / `read` calls into the effect
-type of choice, and is deliberately left to the consumer so the
-binding stays dependency-free.
+for `scala.util.Using.resource`. The surface includes a `Profile` record
+with the registry entries `Pipeline.register` / `lookup` / `profiles`
+and the blob reader `Pipeline.inspect`, plus the Go runtime knobs on
+`Runtime`. The stream sessions additionally expose
+`Iterator[Array[Byte]] => Iterator[Array[Byte]]` / `LazyList` chunk
+adapters for functional pipelines; an `fs2.Stream` / ZIO wrapper is a
+straightforward lift of the iterator adapter or the `Either`-surface
+`write` / `end` / `read` calls into the effect type of choice, and is
+deliberately left to the consumer so the binding stays dependency-free.
 
 ## Prerequisites (Arch Linux)
 
@@ -160,7 +162,7 @@ Pipeline.register("my-profile", custom)                  // validated by Go; dup
 on the binding side. `inspect` / `lookup` return it; `register`
 accepts it; an unknown name at `init` / `lookup` surfaces `Status.UnknownProfile`.
 
-Runtime tuning: `pipeline.maxWorkers(n)` sets the worker cap for every
+**Runtime tuning.** `pipeline.maxWorkers(n)` sets the worker cap for every
 subsequent cipher call (`n <= 0` selects auto, `n > 256` is clamped
 to 256); the receiver may pick its own worker cap after `load` — the
 cap is per-machine and never written to the blob.
@@ -189,8 +191,9 @@ The harness builds everything, exports `ITB_JNI_PATH`, and invokes
 `sbt test` (MUnit). The suite covers Single Message round trips per
 shipped profile, stream pumps and the chunk-iterator adapters,
 incremental sessions with pathological batch sizes, tampered-wire
-failure stickiness, mid-flight cancellation, rekey, session persistence (save / load, saveF / loadF, inspect, lookup / profiles / register, maxWorkers),
-and error mapping — surface parity checks; the deep
+failure stickiness, mid-flight cancellation, rekey, session persistence
+(save / load, saveF / loadF, inspect, lookup / profiles / register,
+maxWorkers), and error mapping — surface parity checks; the deep
 test suite lives in Go under the shipped tree.
 
 ## Benchmarking
@@ -205,7 +208,8 @@ Wall-clock micro-benches: `encryptMessage` and stream-pump
 throughput at 1 MiB / 16 MiB / 64 MiB. Shape and budget are driven
 by the `ITB_*` env vars listed in
 `bench/src/main/scala/io/github/everanium/itb3/scala/bench/BenchUtil.scala`;
-defaults match the root Go BENCH3.md pin.
+defaults match the root Go BENCH3.md pin. See
+[`bindings/BENCH.md`](https://github.com/everanium/itb/blob/main/bindings/BENCH.md) for the fleet-wide configuration authority and comparison tables.
 
 ## itb3 CLI
 

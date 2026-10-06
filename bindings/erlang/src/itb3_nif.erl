@@ -1,4 +1,4 @@
-%% itb3_nif — raw NIF stub declarations for the ITB Erlang binding.
+%% Raw NIF stub declarations for the ITB Erlang binding.
 %%
 %% Private module: consumers use the `itb3` module. Every function here
 %% is replaced by its C implementation from priv/libitb3_nif.so at load

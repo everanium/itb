@@ -43,7 +43,7 @@ function Script:Resolve-ItbAssembly {
         "(bindings/csharp/build.sh) or point ITB_CSHARP_DLL at the assembly.")
 }
 
-if (-not ('Itb.Pipeline' -as [type])) {
+if (-not ('Everanium.Itb3.Pipeline' -as [type])) {
     Add-Type -Path (Script:Resolve-ItbAssembly)
 }
 
@@ -51,7 +51,7 @@ if (-not ('Itb.Pipeline' -as [type])) {
 # Private helpers
 # --------------------------------------------------------------------
 
-# Re-throws the Itb.ItbException buried inside PowerShell's
+# Re-throws the Everanium.Itb3.ItbException buried inside PowerShell's
 # MethodInvocationException wrapper so callers catch the structural
 # status code directly ($_.Exception.Status).
 function Script:Get-ItbInnerException {
@@ -89,8 +89,9 @@ function Script:Write-ItbSpool {
     }
 }
 
-# Normalizes the -Opts argument: $null passes through, Itb.Opts passes
-# through, a hashtable is rendered via New-ItbOpts.
+# Normalizes the -Opts argument: $null passes through,
+# Everanium.Itb3.Opts passes through, a hashtable is rendered via
+# New-ItbOpts.
 function Script:ConvertTo-ItbOpts {
     param([object]$Opts)
     if ($null -eq $Opts) {
@@ -105,8 +106,8 @@ function Script:ConvertTo-ItbOpts {
     throw 'Opts must be an [Everanium.Itb3.Opts], a hashtable, or $null.'
 }
 
-# Normalizes the -Profile argument: Itb.Profile passes through, a
-# hashtable is rendered via New-ItbProfile.
+# Normalizes the -Profile argument: Everanium.Itb3.Profile passes
+# through, a hashtable is rendered via New-ItbProfile.
 function Script:ConvertTo-ItbProfile {
     param([object]$Profile)
     if ($Profile -is [Everanium.Itb3.Profile]) {

@@ -175,8 +175,8 @@ library directly and register the same custom primitive under the
 same name before opening. Attempting to load such a blob through
 this binding surfaces `[Everanium.Itb3.Status]::RecipePrimitiveUnknown`.
 
-The profile registry is reachable through the same `Itb.Profile`
-record:
+The profile registry is reachable through the same
+`Everanium.Itb3.Profile` record:
 
 ```powershell
 $names = Get-ItbProfileName                                # sorted registry names
@@ -188,14 +188,14 @@ Register-ItbProfile -Name 'other-profile' -Profile @{ Mode = 'singlemsg-nomac'; 
                                                       Hash = 'areion512'; KeyBits = 1024 }
 ```
 
-`Itb.Profile` is a plain record plus JSON codec — no validation happens
+`Everanium.Itb3.Profile` is a plain record plus JSON codec — no validation happens
 on the binding side. `Get-ItbProfile -Blob` / `Get-ItbProfile -Name` return it; `Register-ItbProfile`
 accepts it; an unknown name at `New-ItbPipeline` / `Get-ItbProfile -Name` surfaces `[Everanium.Itb3.Status]::UnknownProfile`.
 
-Runtime tuning: `Set-ItbMaxWorkers -Pipeline $pipe -Count $n` sets the worker cap for every
-subsequent cipher call (`n <= 0` selects auto, `n > 256` is clamped
-to 256); the receiver may pick its own worker cap after `Import-ItbPipeline` — the
-cap is per-machine and never written to the blob.
+**Runtime tuning.** `Set-ItbMaxWorkers -Pipeline $pipe -Count $n` sets
+the worker cap for every subsequent cipher call (`n <= 0` selects auto,
+`n > 256` is clamped to 256); the receiver may pick its own worker cap
+after `Import-ItbPipeline` — the cap is per-machine and never written to the blob.
 
 ## Memory
 
@@ -238,7 +238,9 @@ throughput at 1 MiB / 16 MiB / 64 MiB. Shape and budget are driven
 by the `ITB_*` env vars listed in `Bench/BenchUtil.ps1`; defaults
 match the root Go BENCH3.md pin. The cipher work runs on the .NET /
 Go side, so PowerShell adds one scriptblock hop per whole-payload
-iteration — negligible at MiB scale.
+iteration — negligible at MiB scale. See
+[`bindings/BENCH.md`](https://github.com/everanium/itb/blob/main/bindings/BENCH.md)
+for the fleet-wide configuration authority and comparison tables.
 
 ## itb3 CLI
 
@@ -291,8 +293,9 @@ cd bindings/powershell/eitb
   the shipped Go core for those.
 - PowerShell cannot hold ByRef-like values (`ReadOnlySpan` /
   `Span`); every C# entry consumed by the module returns `byte[]` /
-  `Itb.Profile` / `string` values. Passing `byte[]` arguments into
-  span-typed parameters is handled by the PowerShell binder.
+  `Everanium.Itb3.Profile` / `string` values. Passing `byte[]`
+  arguments into span-typed parameters is handled by the PowerShell
+  binder.
 - Cipher cmdlets return `byte[]` as a single pipeline item
   (`Write-Output -NoEnumerate`); when piping a byte array INTO a
   cmdlet, prefix with a comma (`,$wire | Invoke-ItbDecrypt ...`) or

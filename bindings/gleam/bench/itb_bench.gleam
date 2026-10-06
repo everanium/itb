@@ -1,4 +1,4 @@
-//// itb_bench — Message + Stream throughput micro-benchmarks.
+//// Message + Stream throughput micro-benchmarks.
 ////
 //// Shapes:
 ////   message          encrypt_message throughput vs plaintext size
@@ -62,9 +62,9 @@ const min_iters = 3
 const mib = 1_048_576
 
 pub fn main() {
-  // Bench-scale allocation churn leaks Go scratch heap unboundedly
-  // without a soft memory cap + aggressive GC; the return values
-  // report the previous settings, not an error.
+  // Bench-scale allocation churn grows the Go scratch heap
+  // unboundedly without a soft memory cap + aggressive GC; the
+  // return values report the previous settings, not an error.
   let _ = itb3_gleam.set_memory_limit(4_294_967_296)
   let _ = itb3_gleam.set_gc_percent(100)
 
@@ -204,11 +204,8 @@ fn drain(session: stream.Session) -> Nil {
 // consumed, and drain_ready between feed slices can catch and drop
 // those chunks before drain_collect at end sees them.
 //
-// Go core wrapper-nonce batching fix (streams.go +
-// wrapper.NewWrapWriter) closes the earlier wrapper-nonce
-// split-write race so a single-chunk pump_all with plain feed would
-// now produce a wire whose nonce is not stranded, but drain_ready's
-// byte-dropping behaviour remains fundamentally incompatible with
+// Single-chunk plain feed produces a wire whose nonce is not stranded,
+// but drain_ready's byte-dropping behaviour remains incompatible with
 // wire collection across chunk boundaries.
 fn pump_all(pipe: Pipeline, plain: BitArray) -> BitArray {
   let assert Ok(session) = stream.encrypt(pipe)

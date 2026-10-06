@@ -23,10 +23,12 @@ rekey / destroy, Single Message encrypt / decrypt, one-shot and
 incremental stream sessions with `java.io` stream pumps), an `Opts`
 builder, a `Profile` record with the registry entries
 `Pipeline.register` / `lookup` / `profiles` and the blob reader
-`Pipeline.inspect`, and the Go runtime knobs on `ItbRuntime`. Stream sessions pin their parent `Pipeline` (the
-`parent` property), so a pipeline stays reachable while a session
-on it is live; unreachable un-closed handles are reclaimed by the
-Java layer's `Cleaner` backstop.
+`Pipeline.inspect`, and the Go runtime knobs on `ItbRuntime`.
+
+Stream sessions pin their parent `Pipeline` (the `parent` property), so
+a pipeline stays reachable while a session on it is live;
+unreachable un-closed handles are reclaimed by the Java layer's
+`Cleaner` backstop.
 
 ## Prerequisites (Arch Linux)
 
@@ -186,7 +188,7 @@ Pipeline.register("my-profile", custom)        // validated by Go; duplicate -> 
 on the binding side. `inspect` / `lookup` return it; `register`
 accepts it; an unknown name at `init` / `lookup` surfaces `Status.UnknownProfile`.
 
-Runtime tuning: `pipeline.maxWorkers(n)` sets the worker cap for every
+**Runtime tuning.** `pipeline.maxWorkers(n)` sets the worker cap for every
 subsequent cipher call (`n <= 0` selects auto, `n > 256` is clamped
 to 256); the receiver may pick its own worker cap after `load` — the
 cap is per-machine and never written to the blob.
@@ -214,7 +216,8 @@ through Gradle (arguments forwarded, e.g. `./run_tests.sh --tests
 '*SmokeTest'`). The suite covers Single Message round trips, stream
 pumps, incremental sessions with pathological batch sizes,
 tampered-wire failure stickiness, mid-flight cancellation, rekey,
-session persistence (save / load, saveF / loadF, inspect, lookup / profiles / register, maxWorkers), error mapping, the Result variants, and the
+session persistence (save / load, saveF / loadF, inspect, lookup /
+profiles / register, maxWorkers), error mapping, the Result variants, and the
 coroutine surface — surface parity checks; the deep suite lives in
 Go under the shipped tree.
 
@@ -229,7 +232,8 @@ Go under the shipped tree.
 Wall-clock micro-benches: `encryptMessage` and stream-pump
 throughput at 1 MiB / 16 MiB / 64 MiB. Shape and budget are driven
 by the `ITB_*` env vars listed in `bench/BenchUtil.kt`; defaults
-match the root Go BENCH3.md pin.
+match the root Go BENCH3.md pin. See
+[`bindings/BENCH.md`](https://github.com/everanium/itb/blob/main/bindings/BENCH.md) for the fleet-wide configuration authority and comparison tables.
 
 ## itb3 CLI
 

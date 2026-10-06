@@ -1,5 +1,5 @@
 ! Coverage for the reusable-buffer *_into cipher entries: wire
-! compatibility with the legacy exact-size paths (both directions,
+! compatibility with the exact-size paths (both directions,
 ! all three surfaces), cross-call buffer reuse with dirty tails, and
 ! caller-pre-allocated oversized scratch.
 

@@ -48,7 +48,7 @@ go build -trimpath -buildmode=c-shared \
 
 The gem is loadable directly from `bindings/ruby/lib` (no build step —
 the `ffi` gem loads the shared library at load time); a local gem
-build is `gem build itb.gemspec`.
+build is `gem build libitb3.gemspec`.
 
 ## Library lookup order
 
@@ -101,6 +101,32 @@ rotated = sender.rekey("\x11".b * 32, "\x22".b * 32)
 receiver = ITB.load(rotated)
 ```
 
+`encrypt_stream` / `decrypt_stream` open incremental sessions
+exposing `write` / `end_stream` / `read` / `drain_all` for
+caller-driven loops, plus a `pump(src, dst)` helper that moves any
+readable IO into any writable one with bounded memory. With a block,
+the session is freed on return:
+
+```ruby
+pipe = ITB.create("streaming-noaead-triple-v1")
+wire = pipe.encrypt_stream do |enc|
+  enc.write(chunk_a)
+  enc.write(chunk_b)
+  enc.drain_all
+end
+```
+
+`Pipeline` and the stream sessions register GC finalizers, so
+un-freed handles are reclaimed eventually; explicit `free` (or the
+block form) releases the Go-side state deterministically. Stream
+sessions hold a reference to their parent `Pipeline`, so the parent
+cannot be garbage-collected while a session is live.
+
+Profile names, opts keys, and every primitive name are validated by
+the Go side; a rejected string raises `ITB::Error` carrying the
+status code (`status_code`, values in `ITB::Status`) plus the
+`ITB_LastError` diagnostic (`last_error`).
+
 ## Persisting sessions
 
 The blob is self-describing: it carries the profile record (mode,
@@ -130,6 +156,12 @@ same name before opening. Attempting to `load` such a blob through
 this binding raises `ITB::Error` with
 `ITB::Status::RECIPE_PRIMITIVE_UNKNOWN`.
 
+**Runtime tuning.** `Pipeline#max_workers(n)` sets the worker cap on
+a live Pipeline (`n <= 0` selects auto, values above 256 are
+clamped). The cap is per-machine tuning and is never written to the
+blob, so the receiver may pick its own worker cap after `load`. The
+`"maxWorkers"` opts key sets the same cap at `create`.
+
 ## Profile registry
 
 ```ruby
@@ -153,40 +185,6 @@ Every rule — name pattern, reserved prefixes, field constraints,
 primitive names — is enforced by libitb3; a duplicate name raises
 `ITB::Status::PROFILE_EXISTS`.
 
-## Runtime tuning
-
-`Pipeline#max_workers(n)` sets the worker cap on a live Pipeline
-(`n <= 0` selects auto, values above 256 are clamped). The cap is
-per-machine tuning and is never written to the blob, so the receiver
-may pick its own worker cap after `load`. The `"maxWorkers"` opts key
-sets the same cap at `create`.
-
-`encrypt_stream` / `decrypt_stream` open incremental sessions
-exposing `write` / `end_stream` / `read` / `drain_all` for
-caller-driven loops, plus a `pump(src, dst)` helper that moves any
-readable IO into any writable one with bounded memory. With a block,
-the session is freed on return:
-
-```ruby
-pipe = ITB.create("streaming-noaead-triple-v1")
-wire = pipe.encrypt_stream do |enc|
-  enc.write(chunk_a)
-  enc.write(chunk_b)
-  enc.drain_all
-end
-```
-
-`Pipeline` and the stream sessions register GC finalizers, so
-un-freed handles are reclaimed eventually; explicit `free` (or the
-block form) releases the Go-side state deterministically. Stream
-sessions hold a reference to their parent `Pipeline`, so the parent
-cannot be garbage-collected while a session is live.
-
-Profile names, opts keys, and every primitive name are validated by
-the Go side; a rejected string raises `ITB::Error` carrying the
-status code (`status_code`, values in `ITB::Status`) plus the
-`ITB_LastError` diagnostic (`last_error`).
-
 ## Memory
 
 Two process-wide knobs constrain Go runtime arena pacing, readable at
@@ -203,8 +201,8 @@ Three further knobs sit on the same surface: `ITB.set_gomaxprocs(n)`
 (a value of zero or below queries), `ITB.write_heap_profile(path)` (a
 pprof heap profile after one forced collection) and `ITB.pool_stats`
 with its `ITB.pool_stats_len` companion, which returns the library's
-monotonic pool checkout / miss counters as an Array of Integer a
-consumer differences between two snapshots. `ITB.hash_names`
+monotonic pool checkout / miss counters as an Array of Integer that
+a consumer differences between two snapshots. `ITB.hash_names`
 enumerates the shipped inner-hash registry next to `ITB.profiles`.
 
 ## Testing
@@ -233,7 +231,9 @@ throughput at 1 MiB / 16 MiB / 64 MiB. Shape and budget are driven by
 env vars (`ITB_PROFILE`, `ITB_INNER_HASH`, `ITB_KEY_BITS`,
 `ITB_NONCE_BITS`, `ITB_WITH_PARALLAX`, `ITB_WITH_WRAPPER`,
 `ITB_BENCH_MIN_SEC`); the script pins the same defaults as the root
-Go BENCH3.md table.
+Go BENCH3.md table. See
+[`bindings/BENCH.md`](https://github.com/everanium/itb/blob/main/bindings/BENCH.md)
+for the fleet-wide configuration authority and comparison tables.
 
 ## itb3 CLI
 

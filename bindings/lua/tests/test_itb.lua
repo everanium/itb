@@ -1,4 +1,4 @@
---- test_itb.lua — assert-based test suite for the ITB Lua binding.
+--- Assert-based test suite for the ITB Lua binding.
 --
 -- Plain Lua 5.4 asserts (no external test framework dependency); each
 -- case prints "ok - <name>" on success, and the process exits non-zero

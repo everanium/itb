@@ -6,7 +6,7 @@ Imports Everanium.Itb3.VisualBasic
 Friend Module Program
 
     Friend Function Main(args As String()) As Integer
-        ' Bench-scale allocation churn leaks Go scratch heap
+        ' Bench-scale allocation churn grows the Go scratch heap
         ' unboundedly without a soft memory cap + aggressive GC; the
         ' return values report the previous settings, not an error.
         Library.SetMemoryLimit(4L * 1024 * 1024 * 1024)

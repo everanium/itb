@@ -13,7 +13,7 @@ public final class BenchMessage {
     }
 
     public static void main(String[] args) {
-        // Bench-scale allocation churn leaks Go scratch heap
+        // Bench-scale allocation churn grows Go scratch heap
         // unboundedly without a soft memory cap + aggressive GC; the
         // return values report the previous settings, not an error.
         io.github.everanium.itb3.Runtime.setMemoryLimit(4L << 30);

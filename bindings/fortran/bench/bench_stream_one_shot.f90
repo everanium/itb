@@ -24,7 +24,7 @@ program bench_stream_one_shot
   integer(c_int)     :: prev_gc
   integer :: i
 
-  ! Bench-scale allocation churn leaks Go scratch heap unboundedly
+  ! Bench-scale allocation churn grows Go scratch heap unboundedly
   ! without a soft memory cap + aggressive GC; the return values
   ! report the previous settings, not an error.
   prev_limit = itb_set_memory_limit(int(4, c_int64_t) * 1024 * 1024 * 1024)

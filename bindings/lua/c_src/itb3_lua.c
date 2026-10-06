@@ -48,7 +48,7 @@
  * err.status against itb.status.*.
  *
  * Output-buffer discipline: variable-size outputs pre-allocate
- * len + len/4 + 65536 bytes and retry once with the exact reported
+ * len + len/4 + 131072 bytes and retry once with the exact reported
  * size when the call returns BUFFER_TOO_SMALL with outLen > cap.
  */
 
@@ -213,8 +213,8 @@ static lstream *check_stream(lua_State *L, int idx) {
 
 /* Pre-allocation formula for message / one-shot stream outputs. */
 static size_t out_cap(size_t payload) {
-    size_t cap = payload + payload / 4 + 65536;
-    return cap < 65536 ? 65536 : cap;
+    size_t cap = payload + payload / 4 + 131072;
+    return cap < 131072 ? 131072 : cap;
 }
 
 typedef int (*cipher_fn)(uintptr_t, void *, size_t, void *, size_t, size_t *);

@@ -122,6 +122,22 @@ override pair on load: `itb.Pipeline.load(allocator, blob, .{ .perm
 = &perm, .wrap = &wrap })` reopens the blob with fresh masters folded
 in.
 
+Every cipher output is allocated from the `Allocator` handed to
+`Pipeline.init` / `Pipeline.load` and owned by the caller — release
+with `allocator.free`. `encryptStreamOneShot` /
+`decryptStreamOneShot` put a whole in-memory payload through the
+stream chain in a single call. For bounded-memory streaming,
+`encryptStreamPump` / `decryptStreamPump` move a whole buffer through
+an incremental session; the explicit `encryptStream` /
+`decryptStream` sessions expose `write` / `end` / `read` /
+`drainAll` for caller-driven loops. A session holds a `parent`
+pointer to its Pipeline and must be deinited before it.
+
+Profile names, opts keys, and every primitive name are validated by
+the Go side; a rejected string surfaces as a Zig error (for example
+`error.BadInput`) with the diagnostic available via
+`itb.lastError()`.
+
 ## Persisting sessions
 
 The blob returned by `save` is a self-describing session bundle: it
@@ -151,12 +167,10 @@ library directly and register the same custom primitive under the
 same name before opening. Attempting to `load` such a blob through
 this binding surfaces `error.RecipePrimitiveUnknown`.
 
-**Runtime tuning.** The worker cap is per-machine and never travels
-in the blob; the receiver may pick its own after `load`:
-
-```zig
-try receiver.maxWorkers(4);   // clamped by libitb3; <= 0 selects auto
-```
+**Runtime tuning.** `receiver.maxWorkers(n)` sets the worker cap for
+every subsequent cipher call (`n <= 0` selects auto, `n > 256` is
+clamped to 256); the receiver may pick its own worker cap after
+`load` — the cap is per-machine and never written to the blob.
 
 ## Profile registry
 
@@ -174,22 +188,6 @@ try itb.register("my-nomac-plain",
 const record = try itb.lookup(allocator, "my-nomac-plain"); // record with "name" filled in
 const names = try itb.profiles(allocator);                  // ["blob-triple-mac-v1", ...]
 ```
-
-Every cipher output is allocated from the `Allocator` handed to
-`Pipeline.init` / `Pipeline.load` and owned by the caller — release
-with `allocator.free`. `encryptStreamOneShot` /
-`decryptStreamOneShot` put a whole in-memory payload through the
-stream chain in a single call. For bounded-memory streaming,
-`encryptStreamPump` / `decryptStreamPump` move a whole buffer through
-an incremental session; the explicit `encryptStream` /
-`decryptStream` sessions expose `write` / `end` / `read` /
-`drainAll` for caller-driven loops. A session holds a `parent`
-pointer to its Pipeline and must be deinited before it.
-
-Profile names, opts keys, and every primitive name are validated by
-the Go side; a rejected string surfaces as a Zig error (for example
-`error.BadInput`) with the diagnostic available via
-`itb.lastError()`.
 
 ## Memory
 
@@ -235,7 +233,9 @@ Micro-benches (always ReleaseFast): `message` (encryptMessage) and
 bench-shape env vars (`ITB_NONCE_BITS` / `ITB_KEY_BITS` /
 `ITB_WITH_PARALLAX` / `ITB_WITH_WRAPPER` / `ITB_INNER_HASH` /
 `ITB_PROFILE` / `ITB_BENCH_MIN_SEC`), respecting caller overrides;
-the bench binaries apply the same heap caps programmatically.
+the bench binaries apply the same heap caps programmatically. See
+[`bindings/BENCH.md`](https://github.com/everanium/itb/blob/main/bindings/BENCH.md)
+for the fleet-wide configuration authority and comparison tables.
 
 ## itb3 CLI
 

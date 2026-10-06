@@ -7,9 +7,9 @@ open Everanium.Itb3.FSharp
 
 [<EntryPoint>]
 let main args =
-    // Bench-scale allocation churn leaks Go scratch heap unboundedly
-    // without a soft memory cap + aggressive GC; the return values
-    // report the previous settings, not an error.
+    // Bench-scale allocation churn grows the Go scratch heap
+    // unboundedly without a soft memory cap + aggressive GC; the
+    // return values report the previous settings, not an error.
     Runtime.setMemoryLimit (4L * 1024L * 1024L * 1024L) |> ignore
     Runtime.setGCPercent 100 |> ignore
 

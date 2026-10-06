@@ -312,7 +312,7 @@ class ItbTest < Minitest::Test
     sender = ITB.create("singlemsg-triple-nomac-v1")
     receiver = ITB.load(sender.save)
     plain = payload(64 * 1024, 5)
-    cap = plain.bytesize + (plain.bytesize / 4) + 65_536
+    cap = plain.bytesize + (plain.bytesize / 4) + 131_072
     wire_buf = FFI::MemoryPointer.new(:char, cap, false)
     back_buf = FFI::MemoryPointer.new(:char, cap, false)
     n = sender.encrypt_message_into(plain, wire_buf)

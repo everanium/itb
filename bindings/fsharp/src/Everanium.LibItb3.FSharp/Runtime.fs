@@ -30,7 +30,7 @@ module Runtime =
     /// <c>path</c> after one forced garbage collection. An empty path
     /// falls back to the <c>ITB_MEMPROFILE</c> environment variable
     /// inside libitb3; a path that is still empty, or a file-system
-    /// failure, yields <c>ItbStatus.BadInput</c>.
+    /// failure, yields <c>Status.BadInput</c>.
     let writeHeapProfile (path: string) : Result<unit, ItbError> =
         ItbError.attempt (fun () -> Everanium.Itb3.Runtime.WriteHeapProfile path)
 

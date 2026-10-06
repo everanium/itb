@@ -1,12 +1,12 @@
 #!/usr/bin/env escript
-%% eitb — command-line demonstrator for the ITB Erlang binding.
+%% Command-line demonstrator for the ITB Erlang binding.
 %%
 %% Subcommands:
 %%
-%%   eitb version                                   library + binding versions
-%%   eitb profiles                                  registered profile catalogue
-%%   eitb inspect <blob-hex>                        profile record of a blob
-%%   eitb encrypt <profile> <in-file> <out-file>    Single Message encrypt
+%%   eitb version
+%%   eitb profiles
+%%   eitb inspect <blob-hex>
+%%   eitb encrypt <profile> <in-file> <out-file>
 %%   eitb decrypt <profile> <blob-hex> <in-file> <out-file>
 %%
 %% `encrypt` prints the session blob (itb3:save/1) to stderr as hex;
@@ -15,6 +15,7 @@
 %% routes Single Message versus streaming). `profiles` lists the
 %% registered profile catalogue one name per line; the profiles that
 %% carry a cipher surface are the ones `encrypt` / `decrypt` accept.
+%% `inspect` prints the profile record a blob carries, as JSON.
 %%
 %% The compiled binding (./build.sh in bindings/erlang) is resolved
 %% relative to this script's location: ../_build/default/lib/libitb3/ebin.

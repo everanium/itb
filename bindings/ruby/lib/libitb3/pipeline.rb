@@ -149,7 +149,7 @@ module ITB
     # across calls) and returns the wire byte count. Raises
     # ITB::Error with Status::BUFFER_TOO_SMALL when +cap+ is
     # insufficient; the pre-allocation formula
-    # payload * 5/4 + 65536 typically suffices for large payloads,
+    # payload * 5/4 + 131072 typically suffices for large payloads,
     # but small payloads may still expand past it -- on
     # BUFFER_TOO_SMALL the caller re-issues with a larger +dst+ or
     # falls back to #encrypt_message (the String-returning variant,
@@ -253,9 +253,9 @@ module ITB
     end
 
     # Pre-allocation formula for Message output buffers:
-    # max(65536, payload * 5/4 + 65536).
+    # max(131072, payload * 5/4 + 131072).
     def out_cap(payload)
-      payload + (payload / 4) + 65_536
+      payload + (payload / 4) + 131_072
     end
 
     # Uncleared native output buffer for one Message call: libitb3

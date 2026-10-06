@@ -50,7 +50,7 @@ fi
 
 # `zig build` compiles and installs every bench binary into
 # zig-out/bin/; running each binary directly (rather than `zig build
-# bench`) lets the two shapes carry independent MAC / no-MAC profiles
+# bench`) lets the two shapes carry independent MAC / No MAC profiles
 # in a single script pass.
 zig build
 export ITB_PROFILE="${ITB_MSG_PROFILE_DEFAULT}"

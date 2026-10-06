@@ -4,7 +4,7 @@
  * output is a fixed-width table:
  *
  *   bench             size     mb_per_sec
- *   message           1 KiB    <n>
+ *   message           1 MiB    <n>
  *   ...
  */
 

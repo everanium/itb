@@ -1,7 +1,7 @@
 # Condition class for the ITB R binding.
 #
 # Every libitb3 failure surfaces as a condition of class
-# c("itb_error", "error", "condition") carrying three extra fields:
+# c("itb_error", "error", "condition") carrying two extra fields:
 #
 #   status  integer status code (see the `itb_status` constant list)
 #   detail  the ITB_LastError diagnostic string

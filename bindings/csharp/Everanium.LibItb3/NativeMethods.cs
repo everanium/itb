@@ -1,7 +1,7 @@
 // Source-generated P/Invoke surface over the libitb3 C ABI, restricted
 // to the ITB_Triple_* Pipeline entries plus the version / last-error /
-// Go-runtime-knob accessors (and the hash-registry iteration triple
-// consumed internally by the eitb diagnostic CLI).
+// Go-runtime-knob accessors (and the hash-names enumeration
+// consumed by the loop harness).
 //
 // Every signature mirrors a prototype in cmd/cshared/libitb3.h. Type
 // mapping:

@@ -82,7 +82,7 @@ val save_f : pipeline -> string -> unit
 (** [max_workers p n] sets the worker cap for every subsequent cipher
     call. [n] is clamped by libitb3 ([<= 0] selects auto, [> 256]
     becomes 256); only the handle state is reported. The cap is
-    per-machine and never travels in the blob. *)
+    per-machine and never written to the blob. *)
 val max_workers : pipeline -> int -> unit
 
 (** Single Message encrypt: one call, one self-contained wire. *)
@@ -213,7 +213,7 @@ val write_sub : 'a stream -> bytes -> int -> int -> unit
 
 (** [message_out_cap n] is the standard Message output-buffer
     pre-allocation formula for an [n]-byte payload
-    ([max 65536 (n * 5/4 + 65536)] — small plaintexts expand by a
+    ([max 131072 (n * 5/4 + 131072)] — small plaintexts expand by a
     large constant factor). A [dst] sized with it never trips
     BUFFER_TOO_SMALL on the shipped profiles. *)
 val message_out_cap : int -> int

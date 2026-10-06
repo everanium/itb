@@ -14,7 +14,7 @@ foreign-function API) keeps the binding compatible with JDK 17 LTS and
 Android-class runtimes. Every hash-name / MAC-name / cipher-name /
 profile-name is an opaque string passed through to Go for validation;
 the binding carries no ITB construction logic. The public surface is
-one `Pipeline` type (init / load / save / rekey / destroy, Single
+one `Pipeline` type (init / load / save / rekey / close / destroy, Single
 Message encrypt / decrypt, whole-buffer and incremental stream
 sessions with `InputStream` / `OutputStream` pumps), an `Opts`
 query-string builder, a `Profile` record with the registry entries
@@ -108,6 +108,29 @@ byte[] rotated = sender.rekey(perm, wrap);
 Pipeline receiver2 = Pipeline.load(rotated);
 ```
 
+For bounded-memory streaming, `encryptStreamPump` / `decryptStreamPump`
+move any `InputStream` source into any `OutputStream` sink through an
+incremental session; the explicit `encryptStream()` / `decryptStream()`
+sessions expose `write` / `end` / `read` / `isFinished` for
+caller-driven loops.
+
+For allocation-free hot loops, every cipher entry has an `*Into`
+variant (`encryptMessageInto`, `decryptMessageInto`,
+`encryptStreamOneShotInto`, `decryptStreamOneShotInto`) that writes
+the output between `position()` and `limit()` of a caller-supplied
+writable direct `ByteBuffer` — no output allocation, no copy-out, and
+libitb3 never writes past the limit. Stream sessions likewise accept a
+direct-buffer feed (`write(ByteBuffer)`) and drain
+(`readInto(ByteBuffer)`), both zero-copy at the FFI boundary. Size
+Message / one-shot output buffers for the wire-expansion envelope
+`max(131072, len * 5/4 + 131072)`; an undersized buffer fails with
+`Status.BUFFER_TOO_SMALL`, and a heap, read-only, or spent buffer is
+rejected with `IllegalArgumentException`.
+
+Profile names, opts keys, and every primitive name are validated by
+the Go side; a rejected string surfaces as an `ItbException` carrying
+the status code plus the `ITB_LastError` diagnostic.
+
 ## Persisting sessions
 
 The blob `save()` returns is self-describing: it carries the profile
@@ -146,33 +169,10 @@ Pipeline.register("my-profile", custom);        // validated by Go; duplicate ->
 in Java. `inspect` / `lookup` return it; `register` accepts it; an
 unknown name at `init` / `lookup` surfaces `Status.UNKNOWN_PROFILE`.
 
-Runtime tuning: `pipeline.maxWorkers(n)` sets the worker cap for
-every subsequent cipher call (`n <= 0` selects auto, `n > 256` is
-clamped to 256); the receiver may pick its own worker cap after
-`load` — the cap is per-machine and never written to the blob.
-
-For bounded-memory streaming, `encryptStreamPump` / `decryptStreamPump`
-move any `InputStream` source into any `OutputStream` sink through an
-incremental session; the explicit `encryptStream()` / `decryptStream()`
-sessions expose `write` / `end` / `read` / `isFinished` for
-caller-driven loops.
-
-For allocation-free hot loops, every cipher entry has an `*Into`
-variant (`encryptMessageInto`, `decryptMessageInto`,
-`encryptStreamOneShotInto`, `decryptStreamOneShotInto`) that writes
-the output between `position()` and `limit()` of a caller-supplied
-writable direct `ByteBuffer` — no output allocation, no copy-out, and
-libitb3 never writes past the limit. Stream sessions likewise accept a
-direct-buffer feed (`write(ByteBuffer)`) and drain
-(`readInto(ByteBuffer)`), both zero-copy at the FFI boundary. Size
-Message / one-shot output buffers for the wire-expansion envelope
-`max(131072, len * 5/4 + 131072)`; an undersized buffer fails with
-`Status.BUFFER_TOO_SMALL`, and a heap, read-only, or spent buffer is
-rejected with `IllegalArgumentException`.
-
-Profile names, opts keys, and every primitive name are validated by
-the Go side; a rejected string surfaces as an `ItbException` carrying
-the status code plus the `ITB_LastError` diagnostic.
+**Runtime tuning.** `pipeline.maxWorkers(n)` sets the worker cap for every
+subsequent cipher call (`n <= 0` selects auto, `n > 256` is clamped
+to 256); the receiver may pick its own worker cap after `load` — the
+cap is per-machine and never written to the blob.
 
 ## Memory
 
@@ -217,7 +217,8 @@ exports the canonical bench env defaults (`ITB_GOMEMLIMIT=4GiB`,
 `ITB_GOGC=100`, `ITB_NONCE_BITS=512`, `ITB_KEY_BITS=1024`,
 `ITB_WITH_PARALLAX=false`, `ITB_WITH_WRAPPER=false`,
 `ITB_INNER_HASH=areion512`); override any of them before invocation.
-`ITB_BENCH_MIN_SEC` adjusts the per-case wall-clock budget.
+`ITB_BENCH_MIN_SEC` adjusts the per-case wall-clock budget. See
+[`bindings/BENCH.md`](https://github.com/everanium/itb/blob/main/bindings/BENCH.md) for the fleet-wide configuration authority and comparison tables.
 
 ## itb3 CLI
 

@@ -54,7 +54,7 @@ The Core API and the Go C ABI are consolidated around the `triple/` facade and t
 
 <!-- preserved-verbatim: cross-platform verification block; do not paraphrase; re-runs after bindings rework produce fresh numbers -->
 
-**Cross-platform verified.** Encrypt / Decrypt round-trip validated between x86_64 (Intel / AMD) and AArch64 (Graviton 4).
+**Cross-platform verified.** Encrypt / Decrypt round-trip validated between x86-64 (Intel / AMD) and ARM64 (Graviton 4).
 
 **Cross-binding interop verified.** All implementations (Go Core + 33 bindings) produce byte-identical wire format and decrypt every other implementation's output.
 
@@ -1178,7 +1178,7 @@ The 8 mandatory seeds are drawn as independent CSPRNG components; the API surfac
 
 ### Interlocked Barrier — composite defense architecture (Rank Barrier + Pixel Barrier)
 
-The always-on Rank Barrier is driven by a **combinadic unrank** step: a public, deterministic combinatorial algorithm that transforms one 128-bit PRF output (from the per-group `lockSeed` cascade under domain tag `0x03`, keyed by the per-container `0x04` derivation with a dedicated primer round 1 on intermediate key `K`) into a pairwise-disjoint balanced three-lane bit-permutation over each 48-bit input chunk. Every region receives exactly 16 bits from each 48-bit chunk via its assigned mask; the three masks together cover the full 48 bits with no overlap. On x86_64, execution is accelerated via three BMI2 `PEXTQ` instructions for compression into lanes and three `PDEPQ` instructions for reassembly in ~3 cycles in constant time.
+The always-on Rank Barrier is driven by a **combinadic unrank** step: a public, deterministic combinatorial algorithm that transforms one 128-bit PRF output (from the per-group `lockSeed` cascade under domain tag `0x03`, keyed by the per-container `0x04` derivation with a dedicated primer round 1 on intermediate key `K`) into a pairwise-disjoint balanced three-lane bit-permutation over each 48-bit input chunk. Every region receives exactly 16 bits from each 48-bit chunk via its assigned mask; the three masks together cover the full 48 bits with no overlap. On x86-64, execution is accelerated via three BMI2 `PEXTQ` instructions for compression into lanes and three `PDEPQ` instructions for reassembly in ~3 cycles in constant time.
 
 Four architectural properties emerge simultaneously from the same layer:
 

@@ -97,6 +97,19 @@ const rotated = sender.rekey(Buffer.alloc(32, 0x11), Buffer.alloc(32, 0x22));
 const receiver2 = Pipeline.load(rotated);
 ```
 
+For bounded-memory streaming, `encryptStreamPump` /
+`decryptStreamPump` move any iterable of byte chunks into a sink
+callback through an incremental session; the explicit
+`encryptStream` / `decryptStream` sessions expose `write` / `end` /
+`read` / `drainAll` for caller-driven loops. `Pipeline` and the
+stream sessions implement `Symbol.dispose` (`using` declarations,
+Node 20+) alongside explicit `free()`; a `FinalizationRegistry`
+backstop releases handles the caller dropped without freeing.
+
+Profile names, opts keys, and every primitive name are validated by
+the Go side; a rejected string surfaces as `ItbError` carrying the
+status code plus the `ITB_LastError` diagnostic.
+
 ## Persisting sessions
 
 The blob is self-describing: it carries the profile record (mode,
@@ -124,6 +137,12 @@ library directly and register the same custom primitive under the
 same name before opening. Attempting to `load` such a blob through
 this binding throws `ItbError` with `Status.RecipePrimitiveUnknown`.
 
+**Runtime tuning.** `Pipeline.maxWorkers(n)` sets the worker cap on a
+live Pipeline (`n <= 0` selects auto, values above 256 are clamped).
+The cap is per-machine tuning and is never written to the blob, so
+the receiver may pick its own worker cap after `load`.
+`Opts.withMaxWorkers` sets the same cap at `init`.
+
 ## Profile registry
 
 ```ts
@@ -147,27 +166,6 @@ key inside it, if present, must be empty or equal to the name
 argument. Every rule — name pattern, reserved prefixes, field
 constraints, primitive names — is enforced by libitb3; a duplicate
 name throws `Status.ProfileExists`.
-
-## Runtime tuning
-
-`Pipeline.maxWorkers(n)` sets the worker cap on a live Pipeline
-(`n <= 0` selects auto, values above 256 are clamped). The cap is
-per-machine tuning and is never written to the blob, so the receiver
-may pick its own worker cap after `load`. `Opts.withMaxWorkers` sets
-the same cap at `init`.
-
-For bounded-memory streaming, `encryptStreamPump` /
-`decryptStreamPump` move any iterable of byte chunks into a sink
-callback through an incremental session; the explicit
-`encryptStream` / `decryptStream` sessions expose `write` / `end` /
-`read` / `drainAll` for caller-driven loops. `Pipeline` and the
-stream sessions implement `Symbol.dispose` (`using` declarations,
-Node 20+) alongside explicit `free()`; a `FinalizationRegistry`
-backstop releases handles the caller dropped without freeing.
-
-Profile names, opts keys, and every primitive name are validated by
-the Go side; a rejected string surfaces as `ItbError` carrying the
-status code plus the `ITB_LastError` diagnostic.
 
 ## Memory
 
@@ -210,7 +208,9 @@ root Go BENCH3.md pin (`ITB_INNER_HASH=areion512`,
 `ITB_KEY_BITS=1024`, `ITB_NONCE_BITS=512`, parallax + wrapper off);
 override via the env vars documented in each script's header.
 `ITB_BENCH_MIN_SEC` (default 5) sets the per-case wall-clock
-budget.
+budget. See
+[`bindings/BENCH.md`](https://github.com/everanium/itb/blob/main/bindings/BENCH.md)
+for the fleet-wide configuration authority and comparison tables.
 
 ## itb3 CLI
 

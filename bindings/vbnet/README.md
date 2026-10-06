@@ -173,7 +173,7 @@ Pipeline.Register("my-profile", custom)            ' validated by Go; duplicate 
 on the binding side. `Inspect` / `Lookup` return it; `Register`
 accepts it; an unknown name at `Init` / `Lookup` surfaces `Status.UnknownProfile`.
 
-Runtime tuning: `pipeline.MaxWorkers(n)` sets the worker cap for every
+**Runtime tuning.** `pipeline.MaxWorkers(n)` sets the worker cap for every
 subsequent cipher call (`n <= 0` selects auto, `n > 256` is clamped
 to 256); the receiver may pick its own worker cap after `Load` — the
 cap is per-machine and never written to the blob.
@@ -218,7 +218,9 @@ lives in Go under the shipped tree.
 throughput at 1 MiB / 16 MiB / 64 MiB. Shape and budget are driven
 by the `ITB_*` env vars listed in
 `bench/Everanium.LibItb3.VisualBasic.Bench/BenchUtil.vb`; defaults match
-the root Go BENCH3.md pin.
+the root Go BENCH3.md pin. See
+[`bindings/BENCH.md`](https://github.com/everanium/itb/blob/main/bindings/BENCH.md)
+for the fleet-wide configuration authority and comparison tables.
 
 ## itb3 CLI
 
@@ -281,9 +283,9 @@ dotnet run -c Release --project eitb/Everanium.LibItb3.VisualBasic.Eitb -- decry
   sessions on the same `Pipeline`.
 - `Pipeline.Save()` returns a fresh `Byte()` on each call (the C#
   layer reads the blob from libitb3 on every call).
-- The sibling C# binding source (`bindings/csharp/Itb`) must be
-  present — the solution builds it via ProjectReference — and libitb3
-  must be reachable at runtime through the lookup order above.
+- The sibling C# binding source (`bindings/csharp/Everanium.LibItb3`)
+  must be present — the solution builds it via ProjectReference — and
+  libitb3 must be reachable at runtime through the lookup order above.
 
 ## License
 

@@ -135,10 +135,10 @@ abstract class StreamSession implements AutoCloseable {
      * into a caller-supplied writable direct {@link ByteBuffer} — no
      * drain-side allocation and no copy-out; the position advances by
      * the returned count and libitb3 never writes past the limit
-     * (Ruby-style out-of-bounds guard). Same blocking / completion
-     * semantics as {@link #read}; {@link #isFinished} reports whether
-     * the session output is complete. A heap, read-only, or spent
-     * buffer is rejected with {@link IllegalArgumentException}. */
+     * (out-of-bounds guard via direct buffer capacity). Same blocking /
+     * completion semantics as {@link #read}; {@link #isFinished} reports
+     * whether the session output is complete. A heap, read-only, or
+     * spent buffer is rejected with {@link IllegalArgumentException}. */
     public int readInto(ByteBuffer dst) {
         if (dst == null || !dst.isDirect() || dst.isReadOnly()) {
             throw new IllegalArgumentException(

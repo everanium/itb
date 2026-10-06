@@ -171,6 +171,13 @@ library directly and register the same custom primitive under the
 same name before opening. Attempting to load such a blob through
 this binding surfaces `ITB::Status::RecipePrimitiveUnknown`.
 
+**Runtime tuning.** `pipe.max_workers(n)` sets the worker cap for every
+subsequent cipher call (`n <= 0` selects auto, `n > 256` is clamped
+to 256); the receiver may pick its own worker cap after `load` — the
+cap is per-machine and never written to the blob.
+
+## Profile registry
+
 The profile registry is reachable through the same `ITB::Profile`
 record:
 
@@ -187,11 +194,6 @@ ITB.register("my-profile", custom)              # validated by Go; duplicate -> 
 `ITB::Profile` is a plain record plus JSON codec — no validation happens
 on the binding side. `ITB.inspect` / `ITB.lookup` return it; `ITB.register`
 accepts it; an unknown name at `Pipeline.new` / `ITB.lookup` surfaces `ITB::Status::UnknownProfile`.
-
-Runtime tuning: `pipe.max_workers(n)` sets the worker cap for every
-subsequent cipher call (`n <= 0` selects auto, `n > 256` is clamped
-to 256); the receiver may pick its own worker cap after `load` — the
-cap is per-machine and never written to the blob.
 
 ## Memory
 
@@ -219,7 +221,7 @@ Message and incremental-stream round trips
 (including pathological 17-byte feed / 23-byte drain batches), a
 large-plaintext round trip past 1 MiB, error mapping (unknown
 profile, unknown opts key, tampered wire, closed pipeline), rekey,
-session persistence (save / load, saveF / loadF, inspect, lookup / profiles / register, maxWorkers), opts encoding, and the stream-session
+session persistence (save / load, save_f / load_f, inspect, lookup / profiles / register, max_workers), opts encoding, and the stream-session
 parent-pin.
 
 ## Benchmarking
@@ -233,7 +235,7 @@ Message encrypt and incremental Streaming encrypt throughput at
 1 MiB / 16 MiB / 64 MiB under the canonical fleet configuration
 (Areion-SoEM-512, 1024-bit key, 512-bit nonce, parallax and wrapper
 off, No MAC profiles, 5 s wall-clock per case; see
-[BENCH.md](https://github.com/everanium/itb/blob/main/bindings/BENCH.md)). Shape overrides via `ITB_INNER_HASH`,
+[`bindings/BENCH.md`](https://github.com/everanium/itb/blob/main/bindings/BENCH.md)). Shape overrides via `ITB_INNER_HASH`,
 `ITB_KEY_BITS`, `ITB_NONCE_BITS`, `ITB_WITH_PARALLAX`,
 `ITB_WITH_WRAPPER`, `ITB_PROFILE`, `ITB_BENCH_MIN_SEC`.
 

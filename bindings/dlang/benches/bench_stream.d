@@ -20,7 +20,7 @@ import itb3;
 
 void main()
 {
-    // Bench-scale allocation churn leaks Go scratch heap unboundedly
+    // Bench-scale allocation churn grows Go scratch heap unboundedly
     // without a soft memory cap + aggressive GC; the return values
     // report the previous settings, not an error.
     cast(void) setMemoryLimit(4L * 1024 * 1024 * 1024); // 4 GiB soft cap

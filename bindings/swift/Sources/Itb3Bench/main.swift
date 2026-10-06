@@ -1,7 +1,7 @@
 /*
  * Bench driver: `Itb3Bench [message|stream|stream_one_shot|all]`.
  *
- * Bench-scale allocation churn leaks Go scratch heap unboundedly
+ * Bench-scale allocation churn grows Go scratch heap unboundedly
  * without a soft memory cap + aggressive GC; the setters report the
  * previous values, not an error.
  */

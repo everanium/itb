@@ -1,3 +1,5 @@
+// Incremental encrypt session over an open Pipeline.
+
 package io.github.everanium.itb3;
 
 /**

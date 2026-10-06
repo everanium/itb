@@ -175,7 +175,7 @@ roster) is a plain data map — no validation happens
 on the binding side. `inspect` / `lookup` return it; `register!`
 accepts it; an unknown name at `init` / `lookup` surfaces `:unknown-profile`.
 
-Runtime tuning: `(itb/max-workers! pipe n)` sets the worker cap for every
+**Runtime tuning.** `(itb/max-workers! pipe n)` sets the worker cap for every
 subsequent cipher call (`n <= 0` selects auto, `n > 256` is clamped
 to 256); the receiver may pick its own worker cap after `load` — the
 cap is per-machine and never written to the blob.
@@ -205,9 +205,10 @@ suite (arguments narrow the run, e.g. `./run_tests.sh smoke-test`).
 The suite covers Single Message round trips across every shipped
 cipher profile, stream pumps, incremental sessions with
 pathological batch sizes, tampered-wire failure stickiness,
-mid-flight cancellation, rekey, session persistence (save / load, saveF / loadF, inspect, lookup / profiles / register, maxWorkers), and error
-mapping — surface parity checks; the deep suite lives in Go under
-the shipped tree.
+mid-flight cancellation, rekey, session persistence (save / load,
+save-f / load-f, inspect, lookup / profiles / register!,
+max-workers!), and error mapping — surface parity checks; the deep
+suite lives in Go under the shipped tree.
 
 ## Benchmarking
 
@@ -220,7 +221,8 @@ the shipped tree.
 Wall-clock micro-benches: `encrypt-message` and stream-pump
 throughput at 1 MiB / 16 MiB / 64 MiB. Shape and budget are driven
 by the `ITB_*` env vars listed in `bench/.../bench_util.clj`;
-defaults match the root Go BENCH3.md pin.
+defaults match the root Go BENCH3.md pin. See
+[`bindings/BENCH.md`](https://github.com/everanium/itb/blob/main/bindings/BENCH.md) for the fleet-wide configuration authority and comparison tables.
 
 ## itb3 CLI
 

@@ -70,7 +70,7 @@ package Itb3.Pipeline is
    --  Sets the worker cap for every subsequent cipher call. N is
    --  clamped by libitb3 (<= 0 selects auto, > 256 becomes 256); only
    --  the handle state is reported. The cap is per-machine and never
-   --  travels in the blob.
+   --  written to the blob.
    procedure Max_Workers (P : Pipeline; N : Integer);
 
    --  Rotates the parallax + wrapper masters; the fresh blob is

@@ -65,7 +65,7 @@ The derivation runs a two-stage cascade:
    - **Pixel Barrier:** depth `r = keyBits / width` (4 / 8 / 16 rounds at width 128 for 512 / 1024 / 2048-bit keys).
    - **Rank Barrier cascade fill:** depth `r = 1 + keyBits / width` (5 / 9 / 17 rounds at width 128; 3 / 5 / 9 at width 256; 2 / 3 / 5 at width 512). The Rank Barrier cascade fill is **exactly 1 round deeper** than the Pixel Barrier cascade.
 5. **Divmod anti-collapse:** The 128-bit rank is converted to mask indices via `(q, idx_1) = divmod_128(rank, B)` and `idx_0 = q mod A`. This two-step division defeats the `gcd(A, B) = 66,861` collapse trap that would reduce the reachable space to `1 / 66,861 ≈ 1.5 × 10^-5` under naive double-modulo.
-6. **Hardware execution:** On AMD64/x86_64, `chunk48LockBatch` executes three BMI2 `PEXTQ` instructions to compress each 48-bit chunk into three 16-bit lane payloads in ~3 cycles in constant time; decryption unpacks lanes via three BMI2 `PDEPQ` instructions and pairwise `ORQ`.
+6. **Hardware execution:** On x86-64, `chunk48LockBatch` executes three BMI2 `PEXTQ` instructions to compress each 48-bit chunk into three 16-bit lane payloads in ~3 cycles in constant time; decryption unpacks lanes via three BMI2 `PDEPQ` instructions and pairwise `ORQ`.
 
 #### 1.2.2 Pixel Barrier (Per-Pixel Channel XOR, Rotation, and Noise Injection)
 

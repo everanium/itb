@@ -214,11 +214,12 @@ hash_names <- function() {
 
 #' Builds the URL-query opts string consumed by `pipeline_create` from
 #' named arguments (or a single named list). (Profile registration
-#' takes a JSON record — see `register` — not an opts string.) No validation is performed here — every key and
-#' value passes through to Go verbatim (percent-encoded); libitb3
-#' rejects unknown keys or bad values with a diagnostic surfaced
-#' through the `itb_error` condition. Keys are emitted in sorted order
-#' so the rendered string is deterministic.
+#' takes a JSON record — see `register` — not an opts string.)
+#' No validation is performed here — every key and value passes
+#' through to Go verbatim (percent-encoded); libitb3 rejects unknown
+#' keys or bad values with a diagnostic surfaced through the
+#' `itb_error` condition. Keys are emitted in sorted order so the
+#' rendered string is deterministic.
 #' @export
 itb_opts <- function(...) {
   args <- list(...)

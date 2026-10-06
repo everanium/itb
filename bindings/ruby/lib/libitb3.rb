@@ -141,7 +141,7 @@ module ITB
     # Writes a Go runtime heap profile (pprof format, readable with
     # `go tool pprof`) to +path+ after one forced garbage collection. An
     # empty path falls back to the ITB_MEMPROFILE environment variable;
-    # a file-system failure raises ITB::Error carrying the os
+    # a file-system failure raises ITB::Error carrying the OS
     # diagnostic.
     def write_heap_profile(path)
       FFIBridge.check(FFIBridge.ITB_WriteHeapProfile(path.to_s))
