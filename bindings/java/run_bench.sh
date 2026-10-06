@@ -20,11 +20,9 @@ cd "$(dirname "$0")"
 
 export ITB_JNI_PATH="$PWD/build/jni/libitb3_jni.so"
 
-# Bench-hostile Go runtime defaults are capped at libitb3 load time
-# via env vars so a bench crash before the benches' own
-# setMemoryLimit / setGCPercent calls still runs under a bounded
-# heap. The benches themselves reassert these via the API for
-# self-contained reproducibility.
+# Go-runtime pacing defaults for bench-scale allocation churn; the
+# `:-` form respects any override set by the caller. The bench mains
+# apply the same caps programmatically.
 export ITB_GOMEMLIMIT="${ITB_GOMEMLIMIT:-4GiB}"
 export ITB_GOGC="${ITB_GOGC:-100}"
 

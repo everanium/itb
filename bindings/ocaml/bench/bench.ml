@@ -197,8 +197,8 @@ let bench_stream_one_shot () =
   Itb3.close pipe
 
 let () =
-  (* Bench-scale allocation churn grows Go scratch heap unboundedly
-     without a soft memory cap + aggressive GC. *)
+  (* Bench-scale allocation churn grows the Go scratch heap
+     unboundedly without a soft memory cap + aggressive GC. *)
   Itb3.set_memory_limit (4 * 1024 * 1024 * 1024);
   Itb3.set_gc_percent 100;
   Printf.printf "%-17s %-8s %s\n%!" "bench" "size" "mb_per_sec";

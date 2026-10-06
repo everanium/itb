@@ -106,9 +106,9 @@ function bench_case(string $name, int $size, callable $fn): void
 
 function main(): void
 {
-    // Bench-scale allocation churn grows Go scratch heap unboundedly
-    // without a soft memory cap + aggressive GC; the return values
-    // report the previous settings, not an error.
+    // Bench-scale allocation churn grows the Go scratch heap
+    // unboundedly without a soft memory cap + aggressive GC; the
+    // return values report the previous settings, not an error.
     Itb::setMemoryLimit(4 << 30);
     Itb::setGcPercent(100);
 

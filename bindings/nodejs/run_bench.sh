@@ -17,11 +17,9 @@ DIST_DIR="$REPO_ROOT/dist/linux-amd64"
 
 export ITB_LIBITB3_PATH="$DIST_DIR/libitb3.so"
 
-# Bench-hostile Go runtime defaults are capped at libitb3 load time
-# via env vars so a bench crash before the benches' own
-# setMemoryLimit / setGCPercent calls still runs under a bounded
-# heap. The benches themselves reassert these via the API for
-# self-contained reproducibility.
+# Go-runtime pacing defaults for bench-scale allocation churn; the
+# `:-` form respects any override set by the caller. The bench
+# scripts apply the same caps programmatically.
 export ITB_GOMEMLIMIT="${ITB_GOMEMLIMIT:-4GiB}"
 export ITB_GOGC="${ITB_GOGC:-100}"
 

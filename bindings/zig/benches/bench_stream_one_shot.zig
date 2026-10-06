@@ -28,9 +28,9 @@ fn runStreamOneShotDec(ctx: *const DecCtx) !void {
 }
 
 pub fn main(init: std.process.Init) !void {
-    // Bench-scale allocation churn grows Go scratch heap unboundedly
-    // without a soft memory cap + aggressive GC; the return values
-    // report the previous settings, not an error.
+    // Bench-scale allocation churn grows the Go scratch heap
+    // unboundedly without a soft memory cap + aggressive GC; the
+    // return values report the previous settings, not an error.
     _ = itb.setMemoryLimit(4 << 30); // 4 GiB soft cap
     _ = itb.setGcPercent(100); // balanced GC
 

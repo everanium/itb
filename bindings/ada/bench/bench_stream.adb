@@ -27,8 +27,8 @@ procedure Bench_Stream is
    Pipe : Itb3.Pipeline.Pipeline;
 
 begin
-   --  Bench-scale allocation churn grows Go scratch heap unboundedly
-   --  without a soft memory cap + aggressive GC.
+   --  Bench-scale allocation churn grows the Go scratch heap
+   --  unboundedly without a soft memory cap + aggressive GC.
    Itb3.Runtime.Set_Memory_Limit (4_294_967_296);  --  4 GiB soft cap
    Itb3.Runtime.Set_GC_Percent (100);
 

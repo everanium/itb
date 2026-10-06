@@ -20,10 +20,9 @@ DIST_DIR="$REPO_ROOT/dist/linux-amd64"
 
 export LD_LIBRARY_PATH="$DIST_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
-# Bench-hostile Go runtime defaults are capped at libitb3 load time via
-# env vars so a bench crash before the harness's own setMemoryLimit /
-# setGcPercent calls still runs under a bounded heap. The harness
-# reasserts these via the API for self-contained reproducibility.
+# Go-runtime pacing defaults for bench-scale allocation churn; the
+# `:-` form respects any override set by the caller. The bench binary
+# applies the same caps programmatically.
 export ITB_GOMEMLIMIT="${ITB_GOMEMLIMIT:-4GiB}"
 export ITB_GOGC="${ITB_GOGC:-100}"
 

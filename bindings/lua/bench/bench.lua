@@ -163,9 +163,9 @@ local function stream_encrypt_all(pipe, plain)
 end
 
 local function main()
-    -- Bench-scale allocation churn grows Go scratch heap unboundedly
-    -- without a soft memory cap + aggressive GC; the return values
-    -- report the previous settings, not an error.
+    -- Bench-scale allocation churn grows the Go scratch heap
+    -- unboundedly without a soft memory cap + aggressive GC; the
+    -- return values report the previous settings, not an error.
     itb.set_memory_limit(4 * 1024 * 1024 * 1024)
     itb.set_gc_percent(100)
 

@@ -190,9 +190,9 @@ proc benchStream() =
   pipe.free()
 
 when isMainModule:
-  # Bench-scale allocation churn grows Go scratch heap unboundedly
-  # without a soft memory cap + aggressive GC; the return values
-  # report the previous settings, not an error.
+  # Bench-scale allocation churn grows the Go scratch heap
+  # unboundedly without a soft memory cap + aggressive GC; the
+  # return values report the previous settings, not an error.
   discard setMemoryLimit(4 * 1024 * 1024 * 1024)
   discard setGcPercent(100)
 
