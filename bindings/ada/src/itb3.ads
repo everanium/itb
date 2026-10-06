@@ -1,4 +1,4 @@
---  Itb3 — root of the Ada thin-proxy binding over the libitb3 shared
+--  Root of the Ada thin-proxy binding over the libitb3 shared
 --  library's Triple Pipeline C ABI surface (cmd/cshared).
 --
 --  The binding carries no ITB construction logic of its own: every

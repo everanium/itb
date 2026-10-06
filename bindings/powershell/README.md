@@ -160,11 +160,13 @@ a receiver reconstructs the session from the blob alone.
 
 ```powershell
 $blob = Save-ItbPipeline -Pipeline $sender                 # current session blob
-Save-ItbPipeline -Pipeline $sender -Path /path/session.blob # same bytes, written by the library (mode 0600)
+Save-ItbPipeline -Pipeline $sender -Path /path/session.blob # same bytes, written by
+the library (mode 0600)
 $a = Import-ItbPipeline -Blob $blob                        # reopen from bytes
 $b = Import-ItbPipeline -Path /path/session.blob           # reopen from a file
 $c = Import-ItbPipeline -Blob $blob -PermMaster $perm -WrapMaster $wrap # master override
-$p = Get-ItbProfile -Blob $blob                            # a Profile object; no Pipeline opened
+$p = Get-ItbProfile -Blob $blob                            # a Profile object; no
+Pipeline opened
 ```
 
 Load works for blobs generated with shipped primitives (every entry
@@ -183,14 +185,18 @@ $names = Get-ItbProfileName                                # sorted registry nam
 $shipped = Get-ItbProfile -Name 'singlemsg-triple-nomac-v1'
 $custom = New-ItbProfile @{ Mode = 'singlemsg-nomac'; Width = 512; Hash = 'areion512'
                             KeyBits = 1024; Wrapper = $false; Parallax = $false }
-Register-ItbProfile -Name 'my-profile' -Profile $custom    # validated by Go; duplicate -> ProfileExists
-Register-ItbProfile -Name 'other-profile' -Profile @{ Mode = 'singlemsg-nomac'; Width = 512
+Register-ItbProfile -Name 'my-profile' -Profile $custom    # validated by Go;
+duplicate -> ProfileExists
+Register-ItbProfile -Name 'other-profile' -Profile @{ Mode = 'singlemsg-nomac';
+Width = 512
                                                       Hash = 'areion512'; KeyBits = 1024 }
 ```
 
 `Everanium.Itb3.Profile` is a plain record plus JSON codec — no validation happens
-on the binding side. `Get-ItbProfile -Blob` / `Get-ItbProfile -Name` return it; `Register-ItbProfile`
-accepts it; an unknown name at `New-ItbPipeline` / `Get-ItbProfile -Name` surfaces `[Everanium.Itb3.Status]::UnknownProfile`.
+on the binding side. `Get-ItbProfile -Blob` / `Get-ItbProfile -Name` return it;
+`Register-ItbProfile`
+accepts it; an unknown name at `New-ItbPipeline` / `Get-ItbProfile -Name` surfaces
+`[Everanium.Itb3.Status]::UnknownProfile`.
 
 **Runtime tuning.** `Set-ItbMaxWorkers -Pipeline $pipe -Count $n` sets
 the worker cap for every subsequent cipher call (`n <= 0` selects auto,
@@ -221,21 +227,24 @@ the run to matching test files (e.g. `./run_tests.sh Smoke`). The
 suite covers Single Message round trips per shipped profile, stream
 pumps (file and stream shapes), incremental sessions with
 pathological batch sizes, tampered-wire failure stickiness,
-mid-flight cancellation, rekey, session persistence (save / load, saveF / loadF, inspect, lookup / profiles / register, maxWorkers), error mapping,
+mid-flight cancellation, rekey, session persistence (save / load, saveF / loadF,
+inspect, lookup / profiles / register, maxWorkers), error mapping,
 and opts rendering — surface parity checks; the deep suite lives in
 Go under the shipped tree.
 
 ## Benchmarking
 
 ```bash
-./bindings/powershell/run_bench.sh            # both shapes
-./bindings/powershell/run_bench.sh message    # Single Message shape only
-./bindings/powershell/run_bench.sh stream     # stream-pump shape only
+./bindings/powershell/run_bench.sh                    # all shapes
+./bindings/powershell/run_bench.sh message            # Single Message shape only
+./bindings/powershell/run_bench.sh stream             # stream-pump shape only
+./bindings/powershell/run_bench.sh stream_one_shot    # one-shot stream shape only
 ```
 
-`Stopwatch`-timed micro-benches: `EncryptMessage` and stream-pump
-throughput at 1 MiB / 16 MiB / 64 MiB. Shape and budget are driven
-by the `ITB_*` env vars listed in `Bench/BenchUtil.ps1`; defaults
+`Stopwatch`-timed micro-benches: `EncryptMessage`, stream-pump and
+one-shot stream throughput at 1 MiB / 16 MiB / 64 MiB. Shape and
+budget are driven by the `ITB_*` env vars listed in
+`Bench/BenchUtil.ps1`; defaults
 match the root Go BENCH3.md pin. The cipher work runs on the .NET /
 Go side, so PowerShell adds one scriptblock hop per whole-payload
 iteration — negligible at MiB scale. See
@@ -268,7 +277,8 @@ cd bindings/powershell
 ./run_loop.sh --duration 2m --shape both
 ```
 
-`pwsh -NoProfile -File loop/Main.ps1 -h` lists every flag. Concurrency mode: **shared-handle** —
+`pwsh -NoProfile -File loop/Main.ps1 -h` lists every flag. Concurrency
+mode: **shared-handle** —
 worker runspaces call into one Pipeline handle concurrently, because a
 runspace boundary is in-process and hands the object over rather than
 copying it, so `--goroutines` is the runspace count verbatim.

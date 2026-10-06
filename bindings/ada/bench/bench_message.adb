@@ -1,4 +1,4 @@
---  bench_message — Encrypt_Message throughput vs plaintext size
+--  Encrypt_Message throughput vs plaintext size
 --  (Single Message profile) at 1 MiB / 16 MiB / 64 MiB.
 
 with Ada.Streams;

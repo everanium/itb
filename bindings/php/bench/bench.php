@@ -181,7 +181,7 @@ function main(): void
     unset($slice);
     $pipe->free();
 
-    // Whole-buffer stream: one FFI round trip through
+    // One-shot stream: one FFI round trip through
     // encryptStreamOneShot / decryptStreamOneShot per iteration.
     $pipe = Itb::create(profile_name('ITB_STREAM_PROFILE', 'streaming-noaead-triple-v1'), build_opts());
     foreach (SIZES as $size) {

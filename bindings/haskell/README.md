@@ -12,7 +12,7 @@ through `foreign import ccall`. Every hash-name / MAC-name /
 cipher-name / profile-name is an opaque string passed through to Go
 for validation — the binding carries no ITB construction logic. The
 public surface is a `Pipeline` (init / load / save / rekey /
-setMaxWorkers / close, Single Message encrypt / decrypt, whole-buffer
+setMaxWorkers / close, Single Message encrypt / decrypt, one-shot
 and incremental stream sessions), an opts query-string builder for
 init overrides, the profile-record entries `register` /
 `lookupProfile` / `profiles` / `inspect`, and the Go runtime knobs.
@@ -140,7 +140,7 @@ binding throws `ITBError` with `statusRecipePrimitiveUnknown`.
 **Runtime tuning.** `setMaxWorkers pipe n` sets the worker cap for
 every subsequent cipher call (`n <= 0` selects auto, `n > 256` is
 clamped to 256); the receiver may pick its own worker cap after
-`load` — the cap is per-machine and never written to the blob. The
+load — the cap is per-machine and never written to the blob. The
 Init-time opts setter is `maxWorkers` on the `Opts` record.
 
 ## Profile registry
@@ -225,7 +225,7 @@ setGcPercent 100                         -- balanced GC
 ```
 
 hspec suite: version and profile-list checks, Single Message and
-incremental Streaming round trips, a whole-buffer stream round trip,
+incremental streaming round trips, a one-shot stream round trip,
 a > 1 MiB payload through the pre-allocate/retry path, error mapping
 (unknown profile, unknown opts key, tampered wire, closed Pipeline,
 duplicate profile registration), rekey blob refresh, save / load
@@ -239,8 +239,9 @@ rendering.
 ITB_BENCH_MIN_SEC=1 ./bindings/haskell/run_bench.sh   # quick smoke
 ```
 
-Single Message encrypt and incremental Streaming encrypt (No MAC
-profiles) at 1 MiB / 16 MiB / 64 MiB, configured through the fleet's
+Single Message encrypt, incremental streaming encrypt and one-shot
+Streaming encrypt (No MAC profiles) at 1 MiB / 16 MiB / 64 MiB,
+configured through the fleet's
 canonical env vars (`ITB_INNER_HASH`, `ITB_KEY_BITS`,
 `ITB_NONCE_BITS`, `ITB_WITH_PARALLAX`, `ITB_WITH_WRAPPER`,
 `ITB_PROFILE`, `ITB_BENCH_MIN_SEC`); the harness caps the Go runtime

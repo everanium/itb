@@ -67,7 +67,7 @@ LDFLAGS = -L$(LIBITB3_DIR) -litb3 -Wl,-rpath,$(RPATH)
 
 # Source-side declaration order. Module dependencies are linear:
 # status / ffi / opts -> error -> runtime -> pipeline -> stream ->
-# itb (root re-export). The list is in compile order so every
+# itb3 (root re-export). The list is in compile order so every
 # dependent module has its prerequisite .mod already on disk when
 # the compiler reaches it.
 SRC_FILES = \
@@ -108,7 +108,7 @@ $(BUILD_DIR)/itb_error.o:    $(BUILD_DIR)/itb_status.o $(BUILD_DIR)/itb_ffi.o
 $(BUILD_DIR)/itb_runtime.o:  $(BUILD_DIR)/itb_status.o $(BUILD_DIR)/itb_ffi.o $(BUILD_DIR)/itb_error.o
 $(BUILD_DIR)/itb_pipeline.o: $(BUILD_DIR)/itb_status.o $(BUILD_DIR)/itb_ffi.o $(BUILD_DIR)/itb_error.o $(BUILD_DIR)/itb_opts.o
 $(BUILD_DIR)/itb_stream.o:   $(BUILD_DIR)/itb_status.o $(BUILD_DIR)/itb_ffi.o $(BUILD_DIR)/itb_error.o $(BUILD_DIR)/itb_pipeline.o
-$(BUILD_DIR)/itb.o:          $(BUILD_DIR)/itb_status.o $(BUILD_DIR)/itb_error.o $(BUILD_DIR)/itb_opts.o $(BUILD_DIR)/itb_runtime.o $(BUILD_DIR)/itb_pipeline.o $(BUILD_DIR)/itb_stream.o
+$(BUILD_DIR)/itb3.o:         $(BUILD_DIR)/itb_status.o $(BUILD_DIR)/itb_error.o $(BUILD_DIR)/itb_opts.o $(BUILD_DIR)/itb_runtime.o $(BUILD_DIR)/itb_pipeline.o $(BUILD_DIR)/itb_stream.o
 
 # Test helper module compiles into tests/build/.
 $(HELPER_OBJ): $(HELPER_SRC) $(SRC_OBJS) | $(TESTS_BUILD)

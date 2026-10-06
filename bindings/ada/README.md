@@ -13,7 +13,7 @@ in-repo layout. Every hash-name / MAC-name / cipher-name /
 profile-name is an opaque `String` passed through to Go for
 validation; the binding carries no ITB construction logic. The public
 surface is the `Itb.Pipeline.Pipeline` controlled type (Init / Load /
-Save / Rekey / Close, Single Message encrypt / decrypt, whole-buffer
+Save / Rekey / Close, Single Message encrypt / decrypt, one-shot
 stream ciphers, the profile-record entries Inspect / Register /
 Lookup / Profiles), incremental sessions in `Itb.Stream`, the
 `Itb.Opts.Opts` query-string builder for Init overrides, and the Go
@@ -239,7 +239,7 @@ checks; the deep suite lives in Go under the shipped tree.
 
 Runs `bench_message` (Single Message shape), `bench_stream`
 (incremental stream-pump shape) and `bench_stream_one_shot`
-(whole-buffer stream shape) at 1 MiB / 16 MiB / 64 MiB, one
+(one-shot stream shape) at 1 MiB / 16 MiB / 64 MiB, one
 fixed-width table row per case. Defaults pin the canonical bench
 shape (`ITB_INNER_HASH=areion512`, `ITB_KEY_BITS=1024`,
 `ITB_NONCE_BITS=512`, parallax + wrapper off,

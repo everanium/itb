@@ -4,14 +4,14 @@
 # the C binding archive + the Erlang backend + the LFE application
 # via build.sh, compiles the bench module with the hex-fetched LFE
 # compiler, then runs the message, stream and stream_one_shot
-# shapes: encrypt-message, stream-pump and whole-buffer stream
+# shapes: encrypt-message, stream-pump and one-shot stream
 # throughput at 1 MiB / 16 MiB / 64 MiB.
 #
 # Usage:
 #   ./run_bench.sh                        # all shapes
 #   ./run_bench.sh message                # Single Message shape only
 #   ./run_bench.sh stream                 # stream-pump shape only
-#   ./run_bench.sh stream_one_shot        # whole-buffer stream shape only
+#   ./run_bench.sh stream_one_shot        # one-shot stream shape only
 
 set -eu
 set -o pipefail

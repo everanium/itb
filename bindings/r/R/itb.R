@@ -357,7 +357,7 @@ pipeline_decrypt_message <- function(pipe, wire) {
   .Call(C_r_pipeline_decrypt_message, pipe$ptr, .as_bytes(wire, "wire"))
 }
 
-#' Whole-buffer Streaming encrypt (the entire stream in one call).
+#' One-shot streaming encrypt (the entire stream in one call).
 #' @export
 pipeline_encrypt_stream_one_shot <- function(pipe, plaintext) {
   .check_pipeline(pipe)
@@ -367,7 +367,7 @@ pipeline_encrypt_stream_one_shot <- function(pipe, plaintext) {
   )
 }
 
-#' Whole-buffer Streaming decrypt (the entire wire in one call).
+#' One-shot streaming decrypt (the entire wire in one call).
 #' @export
 pipeline_decrypt_stream_one_shot <- function(pipe, wire) {
   .check_pipeline(pipe)
@@ -408,13 +408,13 @@ pipeline_free <- function(pipe) {
 
 # ---- stream sessions ---------------------------------------------------
 
-#' Opens an incremental Streaming encrypt session on the Pipeline.
+#' Opens an incremental streaming encrypt session on the Pipeline.
 #' @export
 stream_encryptor <- function(pipe) {
   .new_stream(pipe, TRUE)
 }
 
-#' Opens an incremental Streaming decrypt session on the Pipeline.
+#' Opens an incremental streaming decrypt session on the Pipeline.
 #' @export
 stream_decryptor <- function(pipe) {
   .new_stream(pipe, FALSE)

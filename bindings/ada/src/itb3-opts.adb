@@ -1,4 +1,4 @@
---  Itb3.Opts body — percent-encoding + typed-setter rendering.
+--  Percent-encoding + typed-setter rendering.
 
 with Ada.Strings;
 with Ada.Strings.Fixed;

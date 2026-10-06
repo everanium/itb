@@ -1,6 +1,6 @@
 # Micro-benchmarks for the ITB R binding.
 #
-# Single Message encrypt and incremental Streaming encrypt throughput
+# Single Message encrypt and incremental streaming encrypt throughput
 # at 1 MiB / 16 MiB / 64 MiB. Wall-clock via the binding's monotonic
 # itb_now() (proc.time()'s user+sys over-count the Go runtime's worker
 # threads); output is a fixed-width table:
@@ -189,7 +189,7 @@ main <- function() {
   }
   pipeline_free(pipe)
 
-  # Whole-buffer stream: one FFI round trip through
+  # One-shot stream: one FFI round trip through
   # pipeline_encrypt_stream_one_shot / pipeline_decrypt_stream_one_shot
   # per iteration.
   pipe <- pipeline_create(profile_env("ITB_STREAM_PROFILE", "streaming-noaead-triple-v1"), opts = opts)

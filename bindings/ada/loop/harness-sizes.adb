@@ -1,4 +1,6 @@
---  Harness.Sizes body.
+--  The size and duration parsers, the clock_gettime binding behind
+--  the monotonic clock, and the fixed-decimal renderings of sizes,
+--  rates and durations.
 
 with Ada.Characters.Handling;
 with Ada.Long_Float_Text_IO;

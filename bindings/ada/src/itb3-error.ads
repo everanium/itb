@@ -1,4 +1,4 @@
---  Itb3.Error — the exception raised by every binding subprogram on a
+--  The exception raised by every binding subprogram on a
 --  non-OK libitb3 status, plus accessors over its structured payload.
 --
 --  The Exception_Message attached to every raise carries a

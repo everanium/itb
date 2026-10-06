@@ -94,8 +94,9 @@ static uint8_t *read_file(const char *path, size_t *len_out)
 }
 
 /* Profiles whose canonical name begins with "streaming-" route
- * through the one-shot streaming buffered pair instead of the Single
- * Message pair. */
+ * through the buffered stream-pump pair instead of the Single
+ * Message pair. The pump drives an incremental session internally
+ * and hands back the whole output in one buffer. */
 static int is_streaming_profile(const char *profile)
 {
     return strncmp(profile, "streaming-", 10) == 0;

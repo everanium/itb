@@ -1,4 +1,6 @@
---  Harness.Summary body.
+--  The procfs read behind the resident-set figures, the pool-counter
+--  snapshot layout and its differencing, and the rendering of the
+--  final summary.
 
 with Interfaces;
 with Interfaces.C;

@@ -75,7 +75,7 @@
 
 ;; Profiles whose canonical name begins with "streaming-" route
 ;; through the streaming session pair instead of the Single Message
-;; pair. A one-shot Streaming call opens a session, feeds the whole
+;; pair. A one-shot streaming call opens a session, feeds the whole
 ;; payload, signals end, and drains until finished.
 (defun streaming-profile? (profile)
   (lists:prefix "streaming-" profile))

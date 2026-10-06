@@ -91,7 +91,7 @@
     (let ((`ok (itb3-lfe:free pipe)))
       'ok)))
 
-;; Whole-buffer stream: one FFI round trip through
+;; One-shot stream: one FFI round trip through
 ;; encrypt-stream-one-shot / decrypt-stream-one-shot per iteration.
 (defun run-stream-one-shot ()
   (cap-go-runtime)

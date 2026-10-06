@@ -165,13 +165,13 @@ round_trip(W, Iter, StreamPipe, MsgPipe) ->
 
 %% Shape dispatch. message is one whole-buffer call on the Single
 %% Message Pipeline; stream_one_shot is one whole-buffer call on the
-%% streaming Pipeline (the binding's one-shot stream entry, which the
-%% shared library routes to the same whole-buffer stream method the Go
-%% harness calls by name); stream opens a session on the same
-%% streaming Pipeline and drives the chunk loop from here. Under both
-%% the three rotate by iteration number so the session path and the
-%% whole-buffer path alternate on one handle inside every worker — the
-%% cross-path state-reuse hazard this harness exists to catch.
+%% streaming Pipeline (the C ABI's ITB_Triple_EncryptStream, which
+%% routes to the same one-shot stream entry the Go harness calls by
+%% name); stream opens a session on the same streaming Pipeline and
+%% drives the chunk loop from here. Under both the three rotate by
+%% iteration number so the session path and the whole-buffer path
+%% alternate on one handle inside every worker — the cross-path
+%% state-reuse hazard this harness exists to catch.
 select_shape(#cfg{shape = both}, Iter) ->
     case Iter rem 3 of
         0 -> stream;

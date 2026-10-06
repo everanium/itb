@@ -295,7 +295,7 @@ Throughput in MB/s. The canonical Message and Stream one-shot Go native rows com
 
 Per-binding throughputs across every shape sit in a band as a percentage of native Go at 64 MB; the raw numbers are the tables above. Ruby sits at the fleet floor — the MRI FFI allocator plus the per-call `ObjectSpace.define_finalizer` handle chain is the language ceiling, documented in the Ruby binding's Limitations section. The top of the band tracks languages with the leanest FFI crossing (Haskell / C++ / Fortran on Message and Stream one-shot; Haskell / Fortran / OCaml / R on Stream).
 
-The whole-buffer Message and Stream one-shot shapes cluster together — both reach the direct fast path in `triple.Pipeline` when parallax is off — while the Stream shape sits ~15-20 MB/s below at the same primitive because the incremental session pays per-chunk container and MAC-binding costs. Under production overlays the parallax multiplexer engages on every path and the three shapes converge into a single band.
+The Message and Stream one-shot shapes cluster together — both reach the direct fast path in `triple.Pipeline` when parallax is off — while the Stream shape sits ~15-20 MB/s below at the same primitive because the incremental session pays per-chunk container and MAC-binding costs. Under production overlays the parallax multiplexer engages on every path and the three shapes converge into a single band.
 
 The residual vs native Go at the top of the band traces to the c-shared / cgo runtime boundary itself: signal handling, scheduler mechanics, and GC work when the main thread is external — not addressable with a Go-side patch.
 

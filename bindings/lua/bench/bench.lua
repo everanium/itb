@@ -1,6 +1,6 @@
 --- Micro-benchmarks for the ITB Lua binding.
 --
--- Single Message encrypt and incremental Streaming encrypt throughput
+-- Single Message encrypt and incremental streaming encrypt throughput
 -- at 1 MiB / 16 MiB / 64 MiB. Wall-clock via the module's monotonic
 -- itb.now() (os.clock reports process CPU time, which over-counts the
 -- Go runtime's worker threads); output is a fixed-width table:

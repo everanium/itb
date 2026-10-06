@@ -1,4 +1,4 @@
-! Stream one-shot encrypt throughput vs plaintext size at
+! One-shot stream encrypt throughput vs plaintext size at
 ! 1 MiB / 16 MiB / 64 MiB. Times the whole-buffer path (a single FFI
 ! round trip through the Pipeline's stream chain).
 

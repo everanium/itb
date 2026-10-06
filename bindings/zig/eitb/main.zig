@@ -49,8 +49,9 @@ fn capGoRuntime() void {
 }
 
 /// Profiles whose canonical name begins with "streaming-" route
-/// through the one-shot streaming buffered pair instead of the
-/// Single Message pair.
+/// through the buffered stream-pump pair instead of the Single
+/// Message pair. The pump drives an incremental session internally
+/// and hands back the whole output in one buffer.
 fn isStreamingProfile(profile: []const u8) bool {
     return std.mem.startsWith(u8, profile, "streaming-");
 }

@@ -105,7 +105,7 @@ proc benchMessage() =
   pipe.free()
 
 proc benchStreamOneShot() =
-  ## Whole-buffer stream: one FFI round trip through
+  ## One-shot stream: one FFI round trip through
   ## encryptStreamOneShot / decryptStreamOneShot per iteration.
   let pipe = initPipeline(profileName("ITB_STREAM_PROFILE",
                                       "streaming-noaead-triple-v1"),

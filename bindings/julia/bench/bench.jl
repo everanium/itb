@@ -179,7 +179,7 @@ set_memory_limit(4 << 30)
 set_gc_percent(100)
 
 function bench_stream_one_shot()
-    # Whole-buffer stream: one FFI round trip through
+    # One-shot stream: one FFI round trip through
     # encrypt_stream_one_shot / decrypt_stream_one_shot per iteration.
     pipe = Pipeline(profile_name("ITB_STREAM_PROFILE", "streaming-noaead-triple-v1"); opts=build_opts())
     for size in SIZES

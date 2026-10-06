@@ -1,4 +1,4 @@
---  bench_stream_one_shot — Encrypt_Stream_One_Shot throughput vs
+--  Encrypt_Stream_One_Shot throughput vs
 --  plaintext size (Streaming Non-AEAD profile by default) at
 --  1 MiB / 16 MiB / 64 MiB. Times the whole-buffer path (a single
 --  FFI round trip through the Pipeline's stream chain).

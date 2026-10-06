@@ -226,9 +226,10 @@ parity checks; the deep suite lives in Go under the shipped tree.
 ./bindings/zig/run_bench.sh
 ```
 
-Micro-benches (always ReleaseFast): `message` (encryptMessage) and
-`stream_pump` (encrypt stream pump) throughput at 1 MiB / 16 MiB /
-64 MiB, reported as an MB/s table on stdout. The runner exports
+Micro-benches (always ReleaseFast): `message` (encryptMessage),
+`stream_pump` (encrypt stream pump) and `stream_one_shot`
+(encryptStreamOneShot) throughput at 1 MiB / 16 MiB / 64 MiB,
+reported as an MB/s table on stdout. The runner exports
 `ITB_GOMEMLIMIT=4GiB` + `ITB_GOGC=100` defaults plus the canonical
 bench-shape env vars (`ITB_NONCE_BITS` / `ITB_KEY_BITS` /
 `ITB_WITH_PARALLAX` / `ITB_WITH_WRAPPER` / `ITB_INNER_HASH` /

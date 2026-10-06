@@ -24,8 +24,9 @@ and incremental stream sessions with `java.io` stream pumps),
 keyword opts maps rendered by the `opts` namespace,
 the profile map codec in the `profile` namespace with the registry
 entries `register!` / `lookup` / `profiles` and the blob reader
-`inspect`, and the Go runtime knobs in the `runtime`
-namespace. Stream sessions pin their parent `Pipeline` (the
+`inspect`, and the Go runtime knobs in the `runtime` namespace.
+
+Stream sessions pin their parent `Pipeline` (the
 `session-parent` accessor), so a pipeline stays reachable while a
 session on it is live; unreachable un-closed handles are reclaimed
 by the Java layer's `Cleaner` backstop.
@@ -213,15 +214,17 @@ suite lives in Go under the shipped tree.
 ## Benchmarking
 
 ```bash
-./bindings/clojure/run_bench.sh            # both shapes
-./bindings/clojure/run_bench.sh message    # Single Message shape only
-./bindings/clojure/run_bench.sh stream     # stream-pump shape only
+./bindings/clojure/run_bench.sh                    # all shapes
+./bindings/clojure/run_bench.sh message            # Single Message shape only
+./bindings/clojure/run_bench.sh stream             # stream-pump shape only
+./bindings/clojure/run_bench.sh stream_one_shot    # one-shot stream shape only
 ```
 
-Wall-clock micro-benches: `encrypt-message` and stream-pump
-throughput at 1 MiB / 16 MiB / 64 MiB. Shape and budget are driven
-by the `ITB_*` env vars listed in `bench/.../bench_util.clj`;
-defaults match the root Go BENCH3.md pin. See
+Wall-clock micro-benches: `encrypt-message`, stream-pump and
+one-shot stream throughput at 1 MiB / 16 MiB / 64 MiB. Shape and
+budget are driven by the `ITB_*` env vars listed in
+`bench/.../bench_util.clj`; defaults match the root Go BENCH3.md pin.
+See
 [`bindings/BENCH.md`](https://github.com/everanium/itb/blob/main/bindings/BENCH.md) for the fleet-wide configuration authority and comparison tables.
 
 ## itb3 CLI

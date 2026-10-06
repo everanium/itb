@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 #
 # Micro-benchmark runner for the Nim binding. Builds libitb3.so via
-# build.sh, then compiles and runs bench/bench.nim: encryptMessage
-# and stream-session encrypt throughput at 1 MiB / 16 MiB / 64 MiB.
+# build.sh, then compiles and runs bench/bench.nim: encryptMessage,
+# stream-session encrypt and one-shot stream throughput at 1 MiB /
+# 16 MiB / 64 MiB.
 #
 # Usage:
 #   ./run_bench.sh

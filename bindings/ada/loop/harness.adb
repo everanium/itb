@@ -1,4 +1,4 @@
---  Harness body: the shared primitives the whole utility calls into.
+--  The shared primitives the whole utility calls into.
 
 with Ada.Environment_Variables;
 with Ada.Streams;

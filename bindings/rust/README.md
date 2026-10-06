@@ -197,7 +197,8 @@ cargo (e.g. `./run_tests.sh --test smoke`). The suite covers Single
 Message round trips per shipped profile, stream pumps, incremental
 sessions with pathological batch sizes, tampered-wire failure
 stickiness, mid-flight cancellation, rekey, save / load persistence,
-inspect, profile registration, and error mapping — surface parity checks; the deep suite lives in Go
+inspect, profile registration, and error mapping — surface parity
+checks; the deep suite lives in Go
 under the shipped tree.
 
 ## Benchmarking
@@ -206,9 +207,9 @@ under the shipped tree.
 ./bindings/rust/run_bench.sh
 ```
 
-Criterion micro-benches: `encrypt_message` and `encrypt_stream_pump`
-throughput at 1 MiB / 16 MiB / 64 MiB. Positional arguments
-are forwarded to the Criterion harness (e.g.
+Criterion micro-benches: `encrypt_message`, `encrypt_stream_pump` and
+`encrypt_stream_one_shot` throughput at 1 MiB / 16 MiB / 64 MiB.
+Positional arguments are forwarded to the Criterion harness (e.g.
 `./run_bench.sh --measurement-time 5`). See
 [`bindings/BENCH.md`](https://github.com/everanium/itb/blob/main/bindings/BENCH.md)
 for the fleet-wide configuration authority and comparison tables.

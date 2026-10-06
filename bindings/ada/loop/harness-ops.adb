@@ -1,4 +1,6 @@
---  Harness.Ops body.
+--  Master rotation and blob reopen across every active Pipeline under
+--  the write lock, and the per-iteration scheduling that triggers
+--  them.
 
 with Ada.Streams;
 with Ada.Unchecked_Deallocation;

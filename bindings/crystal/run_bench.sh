@@ -2,8 +2,9 @@
 #
 # Micro-benchmark runner for the Crystal binding. Builds via
 # build.sh, compiles bench/bench.cr with --release, then runs it:
-# Single Message encrypt and incremental Streaming encrypt
-# throughput at 1 MiB / 16 MiB / 64 MiB.
+# Single Message encrypt, incremental streaming encrypt and
+# one-shot streaming encrypt throughput at 1 MiB / 16 MiB /
+# 64 MiB.
 #
 # Usage:
 #   ./run_bench.sh

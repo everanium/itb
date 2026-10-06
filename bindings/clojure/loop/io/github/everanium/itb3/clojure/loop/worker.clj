@@ -122,11 +122,11 @@
 (defn- select-shape
   "Shape dispatch. message is one whole-buffer call on the Single
   Message Pipeline; stream_one_shot is one whole-buffer call on the
-  streaming Pipeline (the C ABI's whole-plaintext stream entry, which
-  routes to the same whole-buffer stream method the Go harness calls
-  by name); stream opens a session on that same streaming Pipeline and
-  drives the chunk loop from the utility. Under both the three rotate
-  by iteration number so the session path and the whole-buffer path
+  streaming Pipeline (the C ABI's ITB_Triple_EncryptStream, which
+  routes to the same one-shot stream entry the Go harness calls by
+  name); stream opens a session on the same streaming Pipeline and
+  drives the chunk loop from here. Under both the three rotate by
+  iteration number so the session path and the whole-buffer path
   alternate on one handle inside every worker — the cross-path
   state-reuse hazard this harness exists to catch."
   [shape ^long iter]

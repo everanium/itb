@@ -21,7 +21,7 @@ on `BUFFER_TOO_SMALL`) lives in the C layer; the Swift layer moves
 opaque bytes and relays status codes.
 
 The public surface is one `Pipeline` class (init / load / save /
-rekey / maxWorkers, Single Message encrypt / decrypt, whole-buffer
+rekey / maxWorkers, Single Message encrypt / decrypt, one-shot
 stream entries (`encryptStreamOneShot` and the pumps), incremental
 `EncryptStream` / `DecryptStream` sessions with
 write / end / read), an `Opts` query-string builder for init
@@ -233,9 +233,10 @@ tree.
 ## Benchmarking
 
 ```bash
-./bindings/swift/run_bench.sh            # all shapes
-./bindings/swift/run_bench.sh message    # Single Message only
-./bindings/swift/run_bench.sh stream     # stream pump only
+./bindings/swift/run_bench.sh                    # all shapes
+./bindings/swift/run_bench.sh message            # Single Message only
+./bindings/swift/run_bench.sh stream             # stream pump only
+./bindings/swift/run_bench.sh stream_one_shot    # one-shot stream only
 ```
 
 Micro-benches: `message` (encryptMessage), `stream_pump`

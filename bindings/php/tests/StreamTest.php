@@ -8,9 +8,10 @@ use Everanium\Itb3\Itb;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Incremental stream session round trips on the Streaming Non-AEAD
- * profile: whole-buffer, chunked writes with interleaved reads, and
- * the one-shot stream calls.
+ * Stream round trips on the Streaming Non-AEAD profile: a single
+ * whole-buffer write and chunked writes with interleaved reads
+ * through an incremental session, the one-shot stream calls, and a
+ * session outliving its parent's local scope.
  */
 final class StreamTest extends TestCase
 {

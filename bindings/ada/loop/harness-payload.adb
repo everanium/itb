@@ -1,4 +1,6 @@
---  Harness.Payload body.
+--  Payload-mode naming and parsing, the per-worker seed derivation,
+--  the SplitMix64 generator, and the fill that selects between the
+--  operating-system CSPRNG, the seeded generator and the patterns.
 
 with Ada.Streams;
 

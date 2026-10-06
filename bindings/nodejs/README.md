@@ -17,7 +17,8 @@ construction logic. The public surface is one `Pipeline` class
 Single Message encrypt / decrypt, one-shot and incremental stream
 sessions with chunk-iterable pumps), an `Opts` query-string builder
 for `init`, the profile-catalogue functions (`inspect` / `register`
-/ `lookup` / `profiles`), and the Go runtime knobs. TypeScript-first: `.ts` sources compiled to `.js`
+/ `lookup` / `profiles`), and the Go runtime knobs.
+TypeScript-first: `.ts` sources compiled to `.js`
 + `.d.ts` under strict mode.
 
 ## Prerequisites (Arch Linux)
@@ -201,8 +202,9 @@ the deep suite lives in Go under the shipped tree.
 ./bindings/nodejs/run_bench.sh
 ```
 
-Two bench scripts (`bench_message` + `bench_stream`) measure
-`encryptMessage` and `encryptStreamPump` throughput at 1 / 16 /
+The bench scripts (`bench_message` + `bench_stream` +
+`bench_stream_one_shot`) measure `encryptMessage`,
+`encryptStreamPump` and `encryptStreamOneShot` throughput at 1 / 16 /
 64 MiB with `performance.now()` timing. Shape defaults match the
 root Go BENCH3.md pin (`ITB_INNER_HASH=areion512`,
 `ITB_KEY_BITS=1024`, `ITB_NONCE_BITS=512`, parallax + wrapper off);

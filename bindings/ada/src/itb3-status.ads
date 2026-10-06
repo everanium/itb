@@ -1,4 +1,4 @@
---  Itb3.Status — numeric status codes mirrored from the libitb3 C ABI
+--  Numeric status codes mirrored from the libitb3 C ABI
 --  (cmd/cshared/internal/capi/errors.go). Numeric values are stable
 --  across releases. Codes 11..13 are the Triple blob-record /
 --  registry sentinels; the reserved block 14..17 is intentionally

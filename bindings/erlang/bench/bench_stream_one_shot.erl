@@ -1,4 +1,4 @@
-%% Whole-buffer stream throughput vs plaintext
+%% One-shot stream throughput vs plaintext
 %% size (Streaming Non-AEAD profile) at 1 MiB / 16 MiB / 64 MiB. Each
 %% iteration issues one itb3:encrypt_stream_one_shot/2 or
 %% itb3:decrypt_stream_one_shot/2 call for callers holding the full

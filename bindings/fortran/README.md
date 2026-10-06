@@ -244,8 +244,9 @@ the shipped tree.
 ./bindings/fortran/run_bench.sh
 ```
 
-`bench_message` (Single Message encrypt) and `bench_stream`
-(stream-pump encrypt) throughput at 1 MiB / 16 MiB / 64 MiB.
+`bench_message` (Single Message encrypt), `bench_stream` (stream-pump
+encrypt) and `bench_stream_one_shot` (one-shot stream encrypt)
+throughput at 1 MiB / 16 MiB / 64 MiB.
 Wall-clock via `system_clock`; plaintext is CSPRNG-filled via
 `getrandom(2)` outside the timing loop. Shape env vars
 (`ITB_INNER_HASH`, `ITB_KEY_BITS`, `ITB_NONCE_BITS`,

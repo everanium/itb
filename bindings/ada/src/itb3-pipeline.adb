@@ -1,4 +1,4 @@
---  Itb3.Pipeline body — handle lifecycle + buffer-in / buffer-out
+--  Handle lifecycle + buffer-in / buffer-out
 --  relay with the retry-once convention: pre-allocate, and on
 --  Buffer_Too_Small retry once with the exact size libitb3 reported
 --  through the length out-parameter.

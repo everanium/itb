@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 #
 # Micro-benchmark runner for the Clojure binding. Builds everything
-# via build.sh, then runs the bench namespaces: encrypt-message and
-# stream-pump throughput at 1 MiB / 16 MiB / 64 MiB.
+# via build.sh, then runs the bench namespaces: encrypt-message,
+# stream-pump and one-shot stream throughput at 1 MiB / 16 MiB /
+# 64 MiB.
 #
 # build.sh wipes the compiled target directory and the Clojure CLI
 # classpath cache, and delegates the Java layer to
@@ -12,9 +13,10 @@
 # incrementally instead.
 #
 # Usage:
-#   ./run_bench.sh             # both shapes
-#   ./run_bench.sh message     # Single Message shape only
-#   ./run_bench.sh stream      # stream-pump shape only
+#   ./run_bench.sh                        # all shapes
+#   ./run_bench.sh message                # Single Message shape only
+#   ./run_bench.sh stream                 # stream-pump shape only
+#   ./run_bench.sh stream_one_shot        # one-shot stream shape only
 
 set -eu
 set -o pipefail

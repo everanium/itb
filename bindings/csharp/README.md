@@ -17,7 +17,8 @@ Rekey / Close, Single Message encrypt / decrypt, one-shot and
 incremental stream sessions with `System.IO.Stream` pumps), an
 `Opts` query-string builder, a `Profile` record with the registry
 entries `Pipeline.Register` / `Lookup` / `Profiles` and the blob
-reader `Pipeline.Inspect`, and the Go runtime knobs on `Runtime`. Native handles ride on `SafeHandle` subclasses,
+reader `Pipeline.Inspect`, and the Go runtime knobs on `Runtime`.
+Native handles ride on `SafeHandle` subclasses,
 so an undisposed Pipeline or stream session is reclaimed by the
 finalizer; `IDisposable` gives the deterministic path.
 
@@ -176,21 +177,25 @@ to dotnet test (e.g. `./run_tests.sh --filter
 FullyQualifiedName~Smoke`). The suite covers Single Message round
 trips per shipped profile, stream pumps, incremental sessions with
 pathological batch sizes, tampered-wire failure stickiness,
-mid-flight cancellation, rekey, session persistence (save / load, saveF / loadF, inspect, lookup / profiles / register, maxWorkers), error mapping,
+mid-flight cancellation, rekey, session persistence (save / load,
+saveF / loadF, inspect, lookup / profiles / register, maxWorkers),
+error mapping,
 and Opts query rendering — surface parity checks; the deep suite
 lives in Go under the shipped tree.
 
 ## Benchmarking
 
 ```bash
-./bindings/csharp/run_bench.sh            # both shapes
-./bindings/csharp/run_bench.sh message    # Single Message shape only
-./bindings/csharp/run_bench.sh stream     # stream-pump shape only
+./bindings/csharp/run_bench.sh                    # all shapes
+./bindings/csharp/run_bench.sh message            # Single Message shape only
+./bindings/csharp/run_bench.sh stream             # stream-pump shape only
+./bindings/csharp/run_bench.sh stream_one_shot    # one-shot stream shape only
 ```
 
-`Stopwatch`-timed micro-benches: `EncryptMessage` and stream-pump
-throughput at 1 MiB / 16 MiB / 64 MiB. Shape and budget are driven
-by the `ITB_*` env vars listed in `Everanium.LibItb3.Bench/BenchUtil.cs`; defaults
+`Stopwatch`-timed micro-benches: `EncryptMessage`, stream-pump and
+one-shot stream throughput at 1 MiB / 16 MiB / 64 MiB. Shape and
+budget are driven by the `ITB_*` env vars listed in
+`Everanium.LibItb3.Bench/BenchUtil.cs`; defaults
 match the root Go BENCH3.md pin. See
 [`bindings/BENCH.md`](https://github.com/everanium/itb/blob/main/bindings/BENCH.md)
 for the fleet-wide configuration authority and comparison tables.
@@ -221,7 +226,8 @@ cd bindings/csharp
 ./run_loop.sh --duration 2m --shape both
 ```
 
-`loop/bin/Release/net*/Everanium.LibItb3.Loop -h` lists every flag. Concurrency mode: **shared-handle** —
+`loop/bin/Release/net*/Everanium.LibItb3.Loop -h` lists every flag.
+Concurrency mode: **shared-handle** —
 CLR threads call into one Pipeline handle concurrently, which the
 `SafeHandle` wrapper and every entry behind it permit once the handle
 is constructed, so `--goroutines` is the thread count verbatim.

@@ -2,8 +2,8 @@
 #
 # Micro-benchmark runner for the C# / .NET binding. Builds libitb3.so + the
 # solution via build.sh, points ITB_LIBITB3_PATH at the freshly-built shared
-# library, then runs the Everanium.LibItb3.Bench binary: EncryptMessage and
-# stream-pump throughput at 1 MiB / 16 MiB / 64 MiB.
+# library, then runs the Everanium.LibItb3.Bench binary: EncryptMessage,
+# stream-pump and one-shot stream throughput at 1 MiB / 16 MiB / 64 MiB.
 #
 # build.sh wipes the bin/ and obj/ tree of every project in the
 # solution before it builds and asserts the bench assembly was written
@@ -13,9 +13,10 @@
 # incrementally instead.
 #
 # Usage:
-#   ./run_bench.sh             # both shapes
-#   ./run_bench.sh message     # Single Message shape only
-#   ./run_bench.sh stream      # stream-pump shape only
+#   ./run_bench.sh                        # all shapes
+#   ./run_bench.sh message                # Single Message shape only
+#   ./run_bench.sh stream                 # stream-pump shape only
+#   ./run_bench.sh stream_one_shot        # one-shot stream shape only
 
 set -eu
 set -o pipefail

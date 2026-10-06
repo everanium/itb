@@ -237,11 +237,13 @@ model; errors in the binding's own C++ frames are never suppressed.
 ./bindings/cpp/run_bench.sh
 ```
 
-Micro-benches: `message` (`encrypt_message_into`) and `stream_pump`
-(`encrypt_stream_pump_into`) throughput at 1 MiB / 16 MiB / 64 MiB,
-reported as an MB/s table on stdout. Each size case drives the
+Micro-benches: `message` (`encrypt_message_into`), `stream_pump`
+(`encrypt_stream_pump_into`) and `stream_one_shot`
+(`encrypt_stream_one_shot_into`) throughput at 1 MiB / 16 MiB /
+64 MiB, reported as an MB/s table on stdout. Each size case drives the
 reusable-buffer entry with one scratch buffer sized to the expansion
-bound, so the measurement excludes per-iteration allocation churn. The runner exports `ITB_GOMEMLIMIT=4GiB`
+bound, so the measurement excludes per-iteration allocation churn. The runner
+exports `ITB_GOMEMLIMIT=4GiB`
 + `ITB_GOGC=100` defaults (respecting caller overrides) and the bench
 binaries apply the same caps programmatically. See
 [`bindings/BENCH.md`](https://github.com/everanium/itb/blob/main/bindings/BENCH.md)

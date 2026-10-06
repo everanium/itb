@@ -17,7 +17,8 @@ module (`init` / `load` / `load_f` / `save` / `save_f` / `rekey` /
 `max_workers` / `free`, Single Message encrypt / decrypt, incremental
 stream sessions with `stream_write` / `stream_end` / `stream_read`),
 the profile catalogue (`inspect` / `register` / `lookup` /
-`profiles`), and the Go runtime knobs. Handles are opaque NIF resources; the cipher entries run on
+`profiles`), and the Go runtime knobs. Handles are opaque NIF resources;
+the cipher entries run on
 dirty CPU schedulers so multi-megabyte calls never stall the regular
 Erlang schedulers. This is also the primary BEAM backend: Elixir /
 Gleam / LFE bindings call the same `itb3` module over native BEAM
@@ -262,13 +263,14 @@ tree.
 ./bindings/erlang/run_bench.sh
 ```
 
-Micro-benches: `message` (encrypt_message) and `stream_pump`
-(incremental encrypt session) throughput at 1 MiB / 16 MiB / 64 MiB,
+Micro-benches: `message` (encrypt_message), `stream_pump`
+(incremental encrypt session) and `stream_one_shot` (one-shot
+encrypt call) throughput at 1 MiB / 16 MiB / 64 MiB,
 reported as an MB/s table on stdout. The runner exports
 `ITB_GOMEMLIMIT=4GiB` + `ITB_GOGC=100` defaults (respecting caller
 overrides) and the bench modules apply the same caps
-programmatically. `./run_bench.sh message` / `./run_bench.sh stream`
-runs one shape. See
+programmatically. `./run_bench.sh message` / `./run_bench.sh stream` /
+`./run_bench.sh stream_one_shot` runs one shape. See
 [`bindings/BENCH.md`](https://github.com/everanium/itb/blob/main/bindings/BENCH.md)
 for the fleet-wide configuration authority and comparison tables.
 

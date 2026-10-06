@@ -15,7 +15,7 @@ use. Every hash-name / MAC-name / cipher-name / profile-name is an
 opaque string passed through to Go for validation; the binding
 carries no ITB construction logic. The public surface is one
 `Pipeline` class (create / load / save / rekey / close, Single
-Message encrypt / decrypt, whole-buffer and incremental stream
+Message encrypt / decrypt, one-shot and incremental stream
 sessions with chunk pumps), the `Itb` facade (create / load / loadF /
 inspect / register / lookup / profiles / version / runtime
 knobs), an `Opts` query-string builder, the `Profile` record, and
@@ -205,7 +205,9 @@ invokes `dart test`. Positional arguments are forwarded (e.g.
 surface, Single Message round trips per shipped
 cipher profile, incremental stream sessions with pathological batch
 sizes, stream pumps, rekey, tampered-wire failure,
-session persistence (save / load, saveF / loadF, inspect, lookup / profiles / register, maxWorkers), and error mapping — surface parity checks; the deep
+session persistence (save / load, saveF / loadF, inspect, lookup /
+profiles / register, maxWorkers), and error mapping — surface
+parity checks; the deep
 suite lives in Go under the shipped tree.
 
 ## Benchmarking
@@ -214,8 +216,9 @@ suite lives in Go under the shipped tree.
 ./bindings/dart/run_bench.sh
 ```
 
-Micro-benches: `encryptMessageInto` and stream-pump throughput at 1 MiB /
-16 MiB / 64 MiB. Shape and budget are driven by env vars
+Micro-benches: `encryptMessageInto`, stream-pump and one-shot
+stream throughput at 1 MiB / 16 MiB / 64 MiB. Shape and budget
+are driven by env vars
 (`ITB_PROFILE`, `ITB_INNER_HASH`, `ITB_KEY_BITS`, `ITB_NONCE_BITS`,
 `ITB_WITH_PARALLAX`, `ITB_WITH_WRAPPER`, `ITB_BENCH_MIN_SEC`); the
 script pins the same defaults as the root Go BENCH3.md table. See

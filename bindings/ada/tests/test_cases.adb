@@ -1,7 +1,7 @@
---  Test_Cases body. Translated from bindings/rust/tests (smoke.rs,
+--  Translated from bindings/rust/tests (smoke.rs,
 --  message.rs, stream_pump.rs, stream_incremental.rs,
---  stream_sticky.rs, stream_cancel.rs, rekey.rs, errors.rs, plus the
---  opts.rs unit tests).
+--  stream_sticky.rs, stream_cancel.rs, rekey.rs, errors.rs,
+--  persist.rs, runtime.rs, plus the opts.rs unit tests).
 
 with Ada.Calendar;
 with Ada.Streams;

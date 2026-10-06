@@ -1,4 +1,4 @@
---  Itb3.Runtime — libitb3 version string + process-wide Go runtime
+--  The libitb3 version string + process-wide Go runtime
 --  knobs. The knobs are readable at libitb3 load time via env vars
 --  (ITB_GOMEMLIMIT, ITB_GOGC) and adjustable at any time here;
 --  setter calls override the env-var values.

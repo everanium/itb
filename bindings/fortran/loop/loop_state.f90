@@ -49,7 +49,7 @@ module loop_state
   ! Cipher surfaces the --shape flag selects.
   integer, parameter :: SHAPE_STREAM = 0          ! session pump
   integer, parameter :: SHAPE_MESSAGE = 1         ! Single Message
-  integer, parameter :: SHAPE_STREAM_ONE_SHOT = 2 ! whole-buffer stream
+  integer, parameter :: SHAPE_STREAM_ONE_SHOT = 2 ! one-shot stream
   integer, parameter :: SHAPE_BOTH = 3            ! all three, rotating
 
   ! Plaintext content policies the --payload-mode flag selects.

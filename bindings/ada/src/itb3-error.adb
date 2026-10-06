@@ -1,4 +1,4 @@
---  Itb3.Error body — payload encoding / decoding + ITB_LastError read.
+--  Payload encoding / decoding + ITB_LastError read.
 
 with Ada.Strings;
 with Ada.Strings.Fixed;

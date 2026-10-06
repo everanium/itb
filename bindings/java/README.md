@@ -15,7 +15,7 @@ Android-class runtimes. Every hash-name / MAC-name / cipher-name /
 profile-name is an opaque string passed through to Go for validation;
 the binding carries no ITB construction logic. The public surface is
 one `Pipeline` type (init / load / save / rekey / close / destroy, Single
-Message encrypt / decrypt, whole-buffer and incremental stream
+Message encrypt / decrypt, one-shot and incremental stream
 sessions with `InputStream` / `OutputStream` pumps), an `Opts`
 query-string builder, a `Profile` record with the registry entries
 `Pipeline.register` / `lookup` / `profiles` and the blob reader
@@ -122,10 +122,10 @@ writable direct `ByteBuffer` — no output allocation, no copy-out, and
 libitb3 never writes past the limit. Stream sessions likewise accept a
 direct-buffer feed (`write(ByteBuffer)`) and drain
 (`readInto(ByteBuffer)`), both zero-copy at the FFI boundary. Size
-Message / one-shot output buffers for the wire-expansion envelope
-`max(131072, len * 5/4 + 131072)`; an undersized buffer fails with
-`Status.BUFFER_TOO_SMALL`, and a heap, read-only, or spent buffer is
-rejected with `IllegalArgumentException`.
+Single Message / one-shot output buffers for the wire-expansion
+envelope `max(131072, len * 5/4 + 131072)`; an undersized buffer
+fails with `Status.BUFFER_TOO_SMALL`, and a heap, read-only, or
+spent buffer is rejected with `IllegalArgumentException`.
 
 Profile names, opts keys, and every primitive name are validated by
 the Go side; a rejected string surfaces as an `ItbException` carrying
@@ -211,8 +211,9 @@ the deep suite lives in Go under the shipped tree.
 ./bindings/java/run_bench.sh
 ```
 
-Plain-table micro-benches: `message` (Single Message encrypt) and
-`stream_pump` throughput at 1 MiB / 16 MiB / 64 MiB. The script
+Plain-table micro-benches: `message` (Single Message encrypt),
+`stream_pump` and `stream_one_shot` (one-shot stream encrypt)
+throughput at 1 MiB / 16 MiB / 64 MiB. The script
 exports the canonical bench env defaults (`ITB_GOMEMLIMIT=4GiB`,
 `ITB_GOGC=100`, `ITB_NONCE_BITS=512`, `ITB_KEY_BITS=1024`,
 `ITB_WITH_PARALLAX=false`, `ITB_WITH_WRAPPER=false`,

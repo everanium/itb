@@ -2,8 +2,8 @@
 #
 # Micro-benchmark runner for the OCaml binding. Builds libitb3.so and
 # the dune project via build.sh, then runs bench/bench.ml:
-# encrypt_message and stream-session encrypt throughput at 1 MiB / 16
-# MiB / 64 MiB.
+# encrypt_message, stream-session encrypt and one-shot stream
+# throughput at 1 MiB / 16 MiB / 64 MiB.
 #
 # Usage:
 #   ./run_bench.sh

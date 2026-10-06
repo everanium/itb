@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 #
 # Micro-benchmark runner for the Lua binding. Builds the C module via
-# build.sh, then runs bench/bench.lua: Single Message encrypt and
-# incremental Streaming encrypt throughput at 1 MiB / 16 MiB / 64 MiB.
+# build.sh, then runs bench/bench.lua: Single Message encrypt,
+# incremental streaming encrypt and one-shot streaming encrypt
+# throughput at 1 MiB / 16 MiB / 64 MiB.
 #
 # Usage:
 #   ./run_bench.sh

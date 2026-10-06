@@ -14,8 +14,8 @@ at first use. Every hash-name / MAC-name / cipher-name / profile-name
 is an opaque string passed through to Go for validation; the binding
 carries no ITB construction logic. The public surface is one
 `Pipeline` class (init / load / load_f / save / save_f / rekey /
-max_workers / close, Single Message encrypt / decrypt, one-shot and
-incremental stream sessions with file-object pumps), an `Opts`
+max_workers / close, Single Message encrypt / decrypt, one-shot
+and incremental stream sessions with file-object pumps), an `Opts`
 query-string builder for `init`, the profile-catalogue functions
 (`inspect` / `register` / `lookup` / `profiles`), and the Go runtime
 knobs.
@@ -211,8 +211,9 @@ shipped tree.
 ./bindings/python/run_bench.sh
 ```
 
-Micro-benches: `encrypt_message` and `encrypt_stream_pump` throughput
-at 1 MiB / 16 MiB / 64 MiB. Shape and budget are driven by env vars
+Micro-benches: `encrypt_message`, `encrypt_stream_pump` and
+`encrypt_stream_one_shot` throughput at 1 MiB / 16 MiB / 64 MiB.
+Shape and budget are driven by env vars
 (`ITB_PROFILE`, `ITB_INNER_HASH`, `ITB_KEY_BITS`, `ITB_NONCE_BITS`,
 `ITB_WITH_PARALLAX`, `ITB_WITH_WRAPPER`, `ITB_BENCH_MIN_SEC`); the
 script pins the same defaults as the root Go BENCH3.md table. See

@@ -383,14 +383,13 @@ fn iterate(w: *Worker, iter: i64, scratch: []u8) bool {
 
     // Shape dispatch. message is one whole-buffer call on the Single
     // Message Pipeline; stream_one_shot is one whole-buffer call on
-    // the streaming Pipeline (the binding's encryptStreamOneShot,
-    // which routes to the same whole-buffer stream entry the Go
-    // harness calls by name); stream opens a session on the same
-    // streaming Pipeline and drives the chunk loop from here. Under
-    // both the three rotate by iteration number so the session path
-    // and the whole-buffer path alternate on one handle inside every
-    // worker — the cross-path state-reuse hazard this harness exists
-    // to catch.
+    // the streaming Pipeline (the C ABI's ITB_Triple_EncryptStream,
+    // which routes to the same one-shot stream entry the Go harness
+    // calls by name); stream opens a session on the same streaming
+    // Pipeline and drives the chunk loop from here. Under both the
+    // three rotate by iteration number so the session path and the
+    // whole-buffer path alternate on one handle inside every worker —
+    // the cross-path state-reuse hazard this harness exists to catch.
     var shape = r.cfg.shape;
     if (shape == .both) {
         shape = switch (@mod(iter, 3)) {

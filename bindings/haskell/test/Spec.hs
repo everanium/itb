@@ -1,7 +1,7 @@
 {-# LANGUAGE BangPatterns #-}
 
 -- | hspec suite for the ITB Haskell binding: roster checks, Single
--- Message and incremental Streaming round trips, error mapping, the
+-- Message and incremental streaming round trips, error mapping, the
 -- large-plaintext pre-allocate\/retry path, rekey, profile
 -- registration, and the stream session's GC parent-pin.
 module Main (main) where

@@ -13,7 +13,7 @@ API; no LuaJIT, no FFI library). The compiled `libitb3_lua.so` module links
 profile-name is an opaque string passed through to Go for validation —
 the binding carries no ITB construction logic. The public surface is a
 `Pipeline` userdata (create / load / load_f / save / save_f / rekey /
-max_workers / close, Single Message encrypt / decrypt, whole-buffer
+max_workers / close, Single Message encrypt / decrypt, one-shot
 and incremental stream sessions), an opts query-string builder for
 `create`, the profile-catalogue functions (`inspect` / `register` /
 `lookup` / `profiles`), and the Go runtime knobs.
@@ -239,7 +239,7 @@ itb.set_gc_percent(100)                       -- balanced GC
 ```
 
 Assert-based suite (no external test framework): version check, Single
-Message and incremental Streaming round trips, the pump helper, a
+Message and incremental streaming round trips, the pump helper, a
 > 1 MiB payload, error mapping (unknown profile, unknown opts key,
 tampered wire, closed Pipeline, duplicate profile registration), rekey
 blob refresh, save / load persistence (in memory and through a file),
@@ -253,8 +253,9 @@ the opts / hex helpers.
 ITB_BENCH_MIN_SEC=1 ./bindings/lua/run_bench.sh   # quick smoke
 ```
 
-Single Message encrypt and incremental Streaming encrypt (No MAC
-profiles) at 1 MiB / 16 MiB / 64 MiB, configured through the fleet's
+Single Message encrypt, incremental streaming encrypt and one-shot
+Streaming encrypt (No MAC profiles) at 1 MiB / 16 MiB / 64 MiB,
+configured through the fleet's
 canonical env vars (`ITB_INNER_HASH`, `ITB_KEY_BITS`,
 `ITB_NONCE_BITS`, `ITB_WITH_PARALLAX`, `ITB_WITH_WRAPPER`,
 `ITB_PROFILE`, `ITB_BENCH_MIN_SEC`); the harness caps the Go runtime

@@ -1,4 +1,4 @@
---  bench_stream — incremental stream-pump encrypt throughput vs
+--  Incremental stream-pump encrypt throughput vs
 --  plaintext size (Streaming Non-AEAD profile by default) at
 --  1 MiB / 16 MiB / 64 MiB. Each iteration opens a session, feeds
 --  the plaintext in 1 MiB slices, drains produced wire into an

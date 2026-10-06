@@ -108,7 +108,7 @@ cmd_version() ->
 
 %% Profiles whose canonical name begins with "streaming-" route
 %% through the streaming session pair instead of the Single Message
-%% pair. A one-shot Streaming call is a session opened, fed the whole
+%% pair. A one-shot streaming call is a session opened, fed the whole
 %% payload, and drained to a single binary.
 is_streaming_profile("streaming-" ++ _) -> true;
 is_streaming_profile(_) -> false.

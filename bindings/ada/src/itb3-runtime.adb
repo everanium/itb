@@ -1,4 +1,5 @@
---  Itb3.Runtime body.
+--  Thin relay onto the libitb3 version string, the Go runtime knobs,
+--  the heap-profile writer and the pool counters.
 
 with Interfaces.C;
 

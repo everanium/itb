@@ -21,11 +21,12 @@ string passed through to Go for validation; no ITB construction
 logic lives on the JVM side.
 
 The public surface is one `Pipeline` type (init / load / save / rekey /
-destroy, Single Message encrypt / decrypt, whole-buffer and
+close / destroy, Single Message encrypt / decrypt, one-shot and
 incremental stream sessions with `java.io` stream pumps), an `Opts`
 builder, a `Profile` record with the registry entries
 `Pipeline.register` / `lookup` / `profiles` and the blob reader
 `Pipeline.inspect`, and the Go runtime knobs on `Runtime`.
+
 Stream sessions pin their parent `Pipeline` (the `parent` field), so
 a pipeline stays reachable while a session on it is live;
 unreachable un-closed handles are reclaimed by the Java layer's
@@ -190,7 +191,8 @@ Pipeline.register('other-profile', Pipeline.profileOf(mode: 'singlemsg-nomac', w
         hash: 'areion512', keyBits: 1024))       // ... or an explicit Profile record
 ```
 
-`io.github.everanium.itb3.Profile` is a plain record plus JSON codec — no validation happens
+`io.github.everanium.itb3.Profile` is a plain record plus JSON codec — no
+validation happens
 on the binding side. `inspect` / `lookup` return it; `register`
 accepts it; an unknown name at `init` / `lookup` surfaces `Status.UNKNOWN_PROFILE`.
 
@@ -232,14 +234,16 @@ lives in Go under the shipped tree.
 ## Benchmarking
 
 ```bash
-./bindings/groovy/run_bench.sh            # both shapes
-./bindings/groovy/run_bench.sh message    # Single Message shape only
-./bindings/groovy/run_bench.sh stream     # stream-pump shape only
+./bindings/groovy/run_bench.sh                    # all shapes
+./bindings/groovy/run_bench.sh message            # Single Message shape only
+./bindings/groovy/run_bench.sh stream             # stream-pump shape only
+./bindings/groovy/run_bench.sh stream_one_shot    # one-shot stream shape only
 ```
 
-Wall-clock micro-benches: `encryptMessage` and stream-pump
-throughput at 1 MiB / 16 MiB / 64 MiB. Shape and budget are driven
-by the `ITB_*` env vars listed in `bench/BenchUtil.groovy`; defaults
+Wall-clock micro-benches: `encryptMessage`, stream-pump and
+one-shot stream throughput at 1 MiB / 16 MiB / 64 MiB. Shape and
+budget are driven by the `ITB_*` env vars listed in
+`bench/BenchUtil.groovy`; defaults
 match the root Go BENCH3.md pin. See
 [`bindings/BENCH.md`](https://github.com/everanium/itb/blob/main/bindings/BENCH.md) for the fleet-wide configuration authority and comparison tables.
 

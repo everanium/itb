@@ -127,7 +127,7 @@ defmodule EITB do
 
   # Profiles whose canonical name begins with "streaming-" route
   # through the streaming session pair instead of the Single Message
-  # pair. A one-shot Streaming encrypt is a session opened, fed the
+  # pair. A one-shot streaming encrypt is a session opened, fed the
   # whole plaintext, and drained to a single binary via ITB.Stream.
   defp streaming_profile?(profile), do: String.starts_with?(profile, "streaming-")
 

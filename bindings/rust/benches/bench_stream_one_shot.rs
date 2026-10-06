@@ -1,4 +1,4 @@
-//! Stream one-shot throughput vs plaintext size. Times the
+//! One-shot stream throughput vs plaintext size. Times the
 //! whole-buffer path (a single FFI round trip through the Pipeline's
 //! stream chain).
 //!

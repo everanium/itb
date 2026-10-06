@@ -1,4 +1,4 @@
---  Itb3.Pipeline — Triple Pipeline session over a libitb3 handle.
+--  Triple Pipeline session over a libitb3 handle.
 --
 --  A Pipeline is Init'ed fresh against a named profile or Load'ed
 --  from a session-bundle blob produced by Save / Rekey. All cipher

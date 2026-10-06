@@ -199,14 +199,15 @@ test suite lives in Go under the shipped tree.
 ## Benchmarking
 
 ```bash
-./bindings/scala/run_bench.sh            # both shapes
-./bindings/scala/run_bench.sh message    # Single Message shape only
-./bindings/scala/run_bench.sh stream     # stream-pump shape only
+./bindings/scala/run_bench.sh                    # all shapes
+./bindings/scala/run_bench.sh message            # Single Message shape only
+./bindings/scala/run_bench.sh stream             # stream-pump shape only
+./bindings/scala/run_bench.sh stream_one_shot    # one-shot stream shape only
 ```
 
-Wall-clock micro-benches: `encryptMessage` and stream-pump
-throughput at 1 MiB / 16 MiB / 64 MiB. Shape and budget are driven
-by the `ITB_*` env vars listed in
+Wall-clock micro-benches: `encryptMessage`, stream-pump and
+one-shot stream throughput at 1 MiB / 16 MiB / 64 MiB. Shape and budget are
+driven by the `ITB_*` env vars listed in
 `bench/src/main/scala/io/github/everanium/itb3/scala/bench/BenchUtil.scala`;
 defaults match the root Go BENCH3.md pin. See
 [`bindings/BENCH.md`](https://github.com/everanium/itb/blob/main/bindings/BENCH.md) for the fleet-wide configuration authority and comparison tables.

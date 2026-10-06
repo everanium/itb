@@ -1,4 +1,4 @@
---  eitb — command-line demonstrator for the ITB Ada binding.
+--  Command-line demonstrator for the ITB Ada binding.
 --
 --  Subcommands:
 --

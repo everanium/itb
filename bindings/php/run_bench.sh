@@ -2,8 +2,8 @@
 #
 # Micro-benchmark runner for the PHP binding. Builds
 # libitb3.so via build.sh, then runs bench/bench.php:
-# encryptMessage and stream-session encrypt throughput at 1
-# MiB / 16 MiB / 64 MiB.
+# encryptMessage, stream-session encrypt and one-shot stream
+# throughput at 1 MiB / 16 MiB / 64 MiB.
 #
 # Usage:
 #   ./run_bench.sh

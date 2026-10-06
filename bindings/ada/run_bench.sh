@@ -4,7 +4,7 @@
 # built by itb_bench.gpr (see build.sh): obj-bench/bench_message
 # (Single Message shape), obj-bench/bench_stream (incremental
 # stream-pump shape), and obj-bench/bench_stream_one_shot
-# (whole-buffer Streaming shape) at 1 MiB / 16 MiB / 64 MiB.
+# (one-shot streaming shape) at 1 MiB / 16 MiB / 64 MiB.
 #
 # Usage:
 #   ./run_bench.sh

@@ -1,5 +1,5 @@
 (ns io.github.everanium.itb3.clojure.bench-stream-one-shot
-  "Whole-buffer Stream throughput vs plaintext size (Streaming
+  "One-shot stream throughput vs plaintext size (Streaming
   Non-AEAD profile) at 1 MiB / 16 MiB / 64 MiB. Times
   encrypt-stream-one-shot / decrypt-stream-one-shot, the single FFI
   round-trip surface for callers holding the whole payload in

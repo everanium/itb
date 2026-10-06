@@ -267,7 +267,7 @@ func FreeTriple(id TripleHandleID) (st Status) {
 //
 // The whole plaintext is available up front on this surface, so the
 // call routes through [triple.Pipeline.EncryptStreamBytes] — the
-// whole-buffer Streaming entry whose direct path composes a
+// one-shot Streaming entry whose direct path composes a
 // single-chunk emission via the itb-root Cfg-aware entries when the
 // parallax layer is disengaged and the plaintext fits the itb-root
 // single-message cap, bypassing the per-chunk io.Reader / io.Writer

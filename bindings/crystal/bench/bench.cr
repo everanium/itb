@@ -1,6 +1,6 @@
 # Micro-benchmarks for the ITB Crystal binding.
 #
-# Single Message encrypt and incremental Streaming encrypt throughput
+# Single Message encrypt and incremental streaming encrypt throughput
 # at 1 MiB / 16 MiB / 64 MiB. Wall-clock via the POSIX monotonic clock
 # (stable across Crystal versions; the std-lib monotonic entry point
 # was renamed between releases); output is a fixed-width table:
@@ -197,7 +197,7 @@ begin
   pipe.free
 end
 
-# Whole-buffer stream: one FFI round trip through
+# One-shot stream: one FFI round trip through
 # encrypt_stream_one_shot / decrypt_stream_one_shot per iteration.
 begin
   pipe = ITB::Pipeline.new(profile_env("ITB_STREAM_PROFILE", "streaming-noaead-triple-v1"), opts: opts)

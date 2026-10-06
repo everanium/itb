@@ -15,7 +15,7 @@ cipher-name / profile-name is an opaque string passed through to Go
 for validation; the binding carries no ITB construction logic. The
 public surface is one non-copyable `Pipeline` struct (`create` /
 `load` / `save` / `rekey` / `close`, Single Message encrypt /
-decrypt, whole-buffer and incremental stream sessions with slice
+decrypt, one-shot and incremental stream sessions with slice
 pumps), an `Opts` query-string builder for create-time overrides, the
 `Profile` record with `register` / `lookup` / `profiles` / `inspect`,
 and the Go runtime knobs.

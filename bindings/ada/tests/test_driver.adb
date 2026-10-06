@@ -1,4 +1,4 @@
---  test_driver — runs the binding test roster and reports PASS /
+--  Runs the binding test roster and reports PASS /
 --  FAIL per test in Go-test style. Optional positional argument
 --  filters by exact test name (e.g. `test_driver smoke`).
 --  Exits 0 when every executed test passed, 1 otherwise.

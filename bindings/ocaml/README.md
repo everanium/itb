@@ -214,12 +214,12 @@ tree.
 ./bindings/ocaml/run_bench.sh
 ```
 
-Micro-benches: `encrypt_message` and stream-session encrypt
-throughput at 1 MiB / 16 MiB / 64 MiB. Shape and budget are driven by
-env vars (`ITB_PROFILE`, `ITB_INNER_HASH`, `ITB_KEY_BITS`,
-`ITB_NONCE_BITS`, `ITB_WITH_PARALLAX`, `ITB_WITH_WRAPPER`,
-`ITB_BENCH_MIN_SEC`); the script pins the same defaults as the root
-Go BENCH3.md table. See
+Micro-benches: `encrypt_message`, stream-session encrypt and
+one-shot stream throughput at 1 MiB / 16 MiB / 64 MiB. Shape and
+budget are driven by env vars (`ITB_PROFILE`, `ITB_INNER_HASH`,
+`ITB_KEY_BITS`, `ITB_NONCE_BITS`, `ITB_WITH_PARALLAX`,
+`ITB_WITH_WRAPPER`, `ITB_BENCH_MIN_SEC`); the script pins the same
+defaults as the root Go BENCH3.md table. See
 [`bindings/BENCH.md`](https://github.com/everanium/itb/blob/main/bindings/BENCH.md)
 for the fleet-wide configuration authority and comparison tables.
 

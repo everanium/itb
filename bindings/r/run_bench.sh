@@ -2,8 +2,8 @@
 #
 # Micro-benchmark runner for the R binding. Builds and installs the
 # package via build.sh, then runs bench/bench.R: Single Message
-# encrypt and incremental Streaming encrypt throughput at 1 MiB / 16
-# MiB / 64 MiB.
+# encrypt, incremental streaming encrypt and one-shot streaming
+# encrypt throughput at 1 MiB / 16 MiB / 64 MiB.
 #
 # Usage:
 #   ./run_bench.sh

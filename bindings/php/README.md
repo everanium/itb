@@ -16,7 +16,7 @@ the binding carries no ITB construction logic. The public surface is
 the `Itb` facade (`create` / `load` / `loadF` / `inspect` /
 `register` / `lookup` / `profiles` / `version` and the Go runtime
 knobs), a `Pipeline` class (save / saveF / rekey /
-maxWorkers / close, Single Message encrypt / decrypt, whole-buffer
+maxWorkers / close, Single Message encrypt / decrypt, one-shot
 and incremental stream sessions), and the `StreamEncryptor` /
 `StreamDecryptor` session classes.
 
@@ -120,9 +120,10 @@ them deterministically. For streaming, `encryptStream()` /
 `decryptStream()` open incremental sessions exposing `write` / `end`
 / `read` / `drainAll` / `isFinished` for caller-driven loops; the
 `encryptStreamOneShot` / `decryptStreamOneShot` calls cover
-whole-buffer streaming wires in a single call each. A live session holds a reference to its
-parent `Pipeline`, so the parent cannot be collected out from under
-it. All byte inputs and outputs are plain PHP byte-strings.
+streaming wires in a single call each. A live session holds a
+reference to its parent `Pipeline`, so the parent cannot be
+collected out from under it. All byte inputs and outputs are plain
+PHP byte-strings.
 
 Profile names, opts keys, and every primitive name are validated by
 the Go side; a rejected string throws
@@ -228,11 +229,12 @@ suite lives in Go under the shipped tree.
 ./bindings/php/run_bench.sh
 ```
 
-Micro-benches: `encryptMessage` and stream-session encrypt throughput
-at 1 MiB / 16 MiB / 64 MiB. Shape and budget are driven by env vars
-(`ITB_PROFILE`, `ITB_INNER_HASH`, `ITB_KEY_BITS`, `ITB_NONCE_BITS`,
-`ITB_WITH_PARALLAX`, `ITB_WITH_WRAPPER`, `ITB_BENCH_MIN_SEC`); the
-script pins the same defaults as the root Go BENCH3.md table. See
+Micro-benches: `encryptMessage`, stream-session encrypt and
+one-shot stream throughput at 1 MiB / 16 MiB / 64 MiB. Shape and
+budget are driven by env vars (`ITB_PROFILE`, `ITB_INNER_HASH`,
+`ITB_KEY_BITS`, `ITB_NONCE_BITS`, `ITB_WITH_PARALLAX`,
+`ITB_WITH_WRAPPER`, `ITB_BENCH_MIN_SEC`); the script pins the same
+defaults as the root Go BENCH3.md table. See
 [`bindings/BENCH.md`](https://github.com/everanium/itb/blob/main/bindings/BENCH.md)
 for the fleet-wide configuration authority and comparison tables.
 

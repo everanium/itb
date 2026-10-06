@@ -1,23 +1,14 @@
 (ns io.github.everanium.itb3.clojure.inner-hashes-test
   "Per-call constellation override via the typed :inner-hashes
-  opts key: register a base width-512 profile, then Init / Open
-  with an 8-entry width-512 alternate constellation and round-trip
-  a Single Message.
+  opts key: init a shipped width-512 base profile with an 8-entry
+  width-512 alternate constellation, load the saved blob into a
+  receiver, and round-trip a Single Message.
 
   The Clojure dispatcher branch for :inner-hashes delegates to the
   Java-side io.github.everanium.itb3.Opts#withInnerHashes(String[]) method."
   (:require [clojure.test :refer [deftest is]]
-            [io.github.everanium.itb3.clojure.core :as itb]
-            [io.github.everanium.itb3.clojure.error :as err])
+            [io.github.everanium.itb3.clojure.core :as itb])
   (:import [java.util Arrays]))
-
-(defmacro ^:private thrown-error
-  [& body]
-  `(try
-     ~@body
-     nil
-     (catch clojure.lang.ExceptionInfo e#
-       (when (err/itb-error? e#) e#))))
 
 (deftest inner-hashes-override-round-trip
   ;; Base profile is a shipped single-primitive width-512 Single

@@ -297,9 +297,10 @@ suite lives in Go under the shipped tree.
 ./bindings/gleam/run_bench.sh
 ```
 
-Micro-benches: `message` (encrypt_message) and `stream_pump`
-(incremental encrypt session) throughput at 1 MiB / 16 MiB /
-64 MiB, reported as an MB/s table on stdout. The runner exports
+Micro-benches: `message` (encrypt_message), `stream_pump`
+(incremental encrypt session) and `stream_one_shot` (one-shot
+encrypt call) throughput at 1 MiB / 16 MiB / 64 MiB,
+reported as an MB/s table on stdout. The runner exports
 `ITB_GOMEMLIMIT=4GiB` + `ITB_GOGC=100` defaults (respecting caller
 overrides) and the bench main applies the same caps
 programmatically; the shape env vars (`ITB_PROFILE`,
@@ -308,7 +309,8 @@ programmatically; the shape env vars (`ITB_PROFILE`,
 override the
 [`bindings/BENCH.md`](https://github.com/everanium/itb/blob/main/bindings/BENCH.md)
 defaults. `./run_bench.sh message` /
-`./run_bench.sh stream` runs one shape. The bench source lives in
+`./run_bench.sh stream` / `./run_bench.sh stream_one_shot` runs one
+shape. The bench source lives in
 `bench/itb_bench.gleam` with a symlink in `dev/` so the Gleam build
 tool compiles it as a dev-profile module.
 

@@ -6,7 +6,7 @@
 ////   stream_pump      incremental encrypt session throughput (begin ->
 ////                    write 1 MiB slices, draining the spool after each
 ////                    write -> finish -> drain until finished -> free)
-////   stream_one_shot  whole-buffer stream throughput (one
+////   stream_one_shot  one-shot stream throughput (one
 ////                    encrypt_stream_one_shot / decrypt_stream_one_shot
 ////                    call per iteration; the FFI whole-buffer fast
 ////                    path for callers holding the full payload)
@@ -127,7 +127,7 @@ fn bench_stream() -> Nil {
   pipeline.free(pipe)
 }
 
-// Whole-buffer stream: one FFI round trip through
+// One-shot stream: one FFI round trip through
 // encrypt_stream_one_shot / decrypt_stream_one_shot per iteration.
 fn bench_stream_one_shot() -> Nil {
   let profile = env("ITB_PROFILE", "streaming-noaead-triple-v1")

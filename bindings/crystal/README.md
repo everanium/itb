@@ -14,7 +14,7 @@ MAC-name / cipher-name / profile-name is an opaque string passed
 through to Go for validation — the binding carries no ITB construction
 logic. The public surface is the `ITB::Pipeline` class (init / load
 / save / rekey / close, Single Message encrypt / decrypt,
-whole-buffer and incremental stream sessions), the fluent
+one-shot and incremental stream sessions), the fluent
 `ITB::Opts` query-string builder, the `ITB::Profile` record with the
 registry entries `ITB.register` / `ITB.lookup` / `ITB.profiles` and
 the blob reader `ITB.inspect`, and the Go runtime knobs.
@@ -193,7 +193,8 @@ ITB.register("my-profile", custom)              # validated by Go; duplicate -> 
 
 `ITB::Profile` is a plain record plus JSON codec — no validation happens
 on the binding side. `ITB.inspect` / `ITB.lookup` return it; `ITB.register`
-accepts it; an unknown name at `Pipeline.new` / `ITB.lookup` surfaces `ITB::Status::UnknownProfile`.
+accepts it; an unknown name at `Pipeline.new` / `ITB.lookup` surfaces
+`ITB::Status::UnknownProfile`.
 
 ## Memory
 
@@ -221,7 +222,9 @@ Message and incremental-stream round trips
 (including pathological 17-byte feed / 23-byte drain batches), a
 large-plaintext round trip past 1 MiB, error mapping (unknown
 profile, unknown opts key, tampered wire, closed pipeline), rekey,
-session persistence (save / load, save_f / load_f, inspect, lookup / profiles / register, max_workers), opts encoding, and the stream-session
+session persistence (save / load, save_f / load_f, inspect, lookup
+/ profiles / register, max_workers), opts encoding, and the
+stream-session
 parent-pin.
 
 ## Benchmarking
@@ -231,8 +234,9 @@ parent-pin.
 ```
 
 Compiles `bench/bench.cr` with `--release` and measures Single
-Message encrypt and incremental Streaming encrypt throughput at
-1 MiB / 16 MiB / 64 MiB under the canonical fleet configuration
+Message encrypt, incremental streaming encrypt and one-shot
+Streaming encrypt throughput at 1 MiB / 16 MiB / 64 MiB under the
+canonical fleet configuration
 (Areion-SoEM-512, 1024-bit key, 512-bit nonce, parallax and wrapper
 off, No MAC profiles, 5 s wall-clock per case; see
 [`bindings/BENCH.md`](https://github.com/everanium/itb/blob/main/bindings/BENCH.md)). Shape overrides via `ITB_INNER_HASH`,

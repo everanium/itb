@@ -1,4 +1,4 @@
-// Gradle build for the ITB Groovy binding — a Tier 2 thin proxy
+// Gradle build for the ITB Groovy binding — a Tier 2 relay
 // over the Java binding (JVM bytecode interop, no FFI hop of its
 // own). The Java binding's library jar is consumed straight from the
 // sibling build's output directory; libitb3.so + the JNI shim are

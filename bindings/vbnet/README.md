@@ -25,6 +25,7 @@ stream sessions with `System.IO.Stream` pumps), an `Opts` builder,
 the C# layer's `Everanium.Itb3.Profile` record with the registry entries
 `Pipeline.Register` / `Lookup` / `Profiles` and the blob reader
 `Pipeline.Inspect`, and the Go runtime knobs on `Library`.
+
 Stream sessions pin their parent `Pipeline` (the `Parent` property),
 so a pipeline stays reachable while a session on it is live;
 unreachable un-disposed handles are reclaimed by the C# layer's
@@ -202,21 +203,24 @@ to dotnet test (e.g. `./run_tests.sh --filter
 FullyQualifiedName~Smoke`). The suite covers Single Message round
 trips per shipped profile, stream pumps, incremental sessions with
 pathological batch sizes, tampered-wire failure stickiness,
-mid-flight cancellation, rekey, session persistence (save / load, saveF / loadF, inspect, lookup / profiles / register, maxWorkers), error mapping,
+mid-flight cancellation, rekey, session persistence (save / load,
+saveF / loadF, inspect, lookup / profiles / register, maxWorkers),
+error mapping,
 and Opts query rendering — surface parity checks; the deep suite
 lives in Go under the shipped tree.
 
 ## Benchmarking
 
 ```bash
-./bindings/vbnet/run_bench.sh            # both shapes
-./bindings/vbnet/run_bench.sh message    # Single Message shape only
-./bindings/vbnet/run_bench.sh stream     # stream-pump shape only
+./bindings/vbnet/run_bench.sh                    # all shapes
+./bindings/vbnet/run_bench.sh message            # Single Message shape only
+./bindings/vbnet/run_bench.sh stream             # stream-pump shape only
+./bindings/vbnet/run_bench.sh stream_one_shot    # one-shot stream shape only
 ```
 
-`Stopwatch`-timed micro-benches: `EncryptMessage` and stream-pump
-throughput at 1 MiB / 16 MiB / 64 MiB. Shape and budget are driven
-by the `ITB_*` env vars listed in
+`Stopwatch`-timed micro-benches: `EncryptMessage`, stream-pump and
+one-shot stream throughput at 1 MiB / 16 MiB / 64 MiB. Shape and budget
+are driven by the `ITB_*` env vars listed in
 `bench/Everanium.LibItb3.VisualBasic.Bench/BenchUtil.vb`; defaults match
 the root Go BENCH3.md pin. See
 [`bindings/BENCH.md`](https://github.com/everanium/itb/blob/main/bindings/BENCH.md)
@@ -248,7 +252,8 @@ cd bindings/vbnet
 ./run_loop.sh --duration 2m --shape both
 ```
 
-`loop/bin/Release/net*/Everanium.LibItb3.VisualBasic.Loop -h` lists every flag. Concurrency mode: **shared-handle** —
+`loop/bin/Release/net*/Everanium.LibItb3.VisualBasic.Loop -h` lists
+every flag. Concurrency mode: **shared-handle** —
 CLR threads call into one Pipeline handle concurrently, which the
 `SafeHandle` under the binding and every entry behind it permit once
 the handle is constructed, so `--goroutines` is the thread count
