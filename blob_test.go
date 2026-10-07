@@ -684,8 +684,8 @@ func TestBlob128ImportRejectsOversizedKeyN(t *testing.T) {
 }
 
 // TestBlobImportModeDiscriminator pins the accepted set of blob mode
-// discriminators: 1 is the shipped Per-Region container floor and 2
-// is the Per-Container compact floor. Every other value —
+// discriminators: 1 is the shipped per-region container floor and 2
+// is the per-container compact floor. Every other value —
 // 3 included — names an unsupported mode and is rejected before any
 // receiver field is written.
 //
@@ -753,7 +753,7 @@ func TestBlobImportModeDiscriminator(t *testing.T) {
 }
 
 // TestBlobExportEmitsMode1 pins the emitted discriminator. Mode 1
-// (Per-Region container sizing) is the default when no Mode override
+// (per-region container sizing) is the default when no Mode override
 // is specified in Config or BlobOpts.
 func TestBlobExportEmitsMode1(t *testing.T) {
 	ks := makeAreion512Keys(t, 8)
@@ -906,5 +906,107 @@ func TestBlobExportMode2Direct(t *testing.T) {
 		if bDst.Mode != 2 || freshCfg.Mode != 2 {
 			t.Fatalf("imported bDst.Mode=%d freshCfg.Mode=%d, want 2/2", bDst.Mode, freshCfg.Mode)
 		}
+	}
+}
+
+// TestBlobExportMode2OtherWidths covers the Blob256 / Blob128 twins of
+// the Mode 2 export path: the resolved mode lands in the JSON and on
+// the receiver, and Import3Cfg carries it into the caller's Config.
+func TestBlobExportMode2OtherWidths(t *testing.T) {
+	probeMode := func(t *testing.T, data []byte) int {
+		t.Helper()
+		var probe struct {
+			Mode int `json:"mode"`
+		}
+		if err := json.Unmarshal(data, &probe); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		return probe.Mode
+	}
+	t.Run("256", func(t *testing.T) {
+		mkSeed := func() (*itb.Seed256, [32]byte) {
+			fn, batch, key := hashes.BLAKE3256Pair()
+			s, _ := itb.NewSeed256(1024, fn)
+			s.BatchHash = batch
+			return s, key
+		}
+		ns, keyN := mkSeed()
+		ls, keyL := mkSeed()
+		ds1, keyD1 := mkSeed()
+		ds2, keyD2 := mkSeed()
+		ds3, keyD3 := mkSeed()
+		ss1, keyS1 := mkSeed()
+		ss2, keyS2 := mkSeed()
+		ss3, keyS3 := mkSeed()
+		bSrc := &itb.Blob256{}
+		data, err := bSrc.Export3Cfg(&itb.Config{NonceBits: 128, BarrierFill: 1},
+			keyN, keyD1, keyD2, keyD3, keyS1, keyS2, keyS3,
+			ns, ds1, ds2, ds3, ss1, ss2, ss3, itb.Blob256Opts{KeyL: keyL, LS: ls, Mode: 2})
+		if err != nil {
+			t.Fatalf("Export3Cfg: %v", err)
+		}
+		fresh := &itb.Config{}
+		bDst := &itb.Blob256{}
+		if err := bDst.Import3Cfg(data, fresh); err != nil {
+			t.Fatalf("Import3Cfg: %v", err)
+		}
+		if bSrc.Mode != 2 || probeMode(t, data) != 2 || bDst.Mode != 2 || fresh.Mode != 2 {
+			t.Fatalf("mode: src %d json %d dst %d cfg %d, want 2 everywhere", bSrc.Mode, probeMode(t, data), bDst.Mode, fresh.Mode)
+		}
+	})
+	t.Run("128", func(t *testing.T) {
+		mkSeed := func() (*itb.Seed128, []byte) {
+			fn, key := hashes.AESCMAC()
+			s, _ := itb.NewSeed128(1024, fn)
+			return s, key[:]
+		}
+		ns, keyN := mkSeed()
+		ls, keyL := mkSeed()
+		ds1, keyD1 := mkSeed()
+		ds2, keyD2 := mkSeed()
+		ds3, keyD3 := mkSeed()
+		ss1, keyS1 := mkSeed()
+		ss2, keyS2 := mkSeed()
+		ss3, keyS3 := mkSeed()
+		bSrc := &itb.Blob128{}
+		data, err := bSrc.Export3Cfg(&itb.Config{NonceBits: 128, BarrierFill: 1},
+			keyN, keyD1, keyD2, keyD3, keyS1, keyS2, keyS3,
+			ns, ds1, ds2, ds3, ss1, ss2, ss3, itb.Blob128Opts{KeyL: keyL, LS: ls, Mode: 2})
+		if err != nil {
+			t.Fatalf("Export3Cfg: %v", err)
+		}
+		fresh := &itb.Config{}
+		bDst := &itb.Blob128{}
+		if err := bDst.Import3Cfg(data, fresh); err != nil {
+			t.Fatalf("Import3Cfg: %v", err)
+		}
+		if bSrc.Mode != 2 || probeMode(t, data) != 2 || bDst.Mode != 2 || fresh.Mode != 2 {
+			t.Fatalf("mode: src %d json %d dst %d cfg %d, want 2 everywhere", bSrc.Mode, probeMode(t, data), bDst.Mode, fresh.Mode)
+		}
+	})
+}
+
+// TestBlobExportRejectsModeOutOfRange pins the export-side gate: an
+// Opts.Mode outside {1, 2} and a Config.Mode outside {0, 1, 2} both
+// surface as ErrBlobModeMismatch, and the receiver struct is left
+// untouched.
+func TestBlobExportRejectsModeOutOfRange(t *testing.T) {
+	ks := makeAreion512Keys(t, 8)
+	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeed512Triple(t, ks)
+	bSrc := &itb.Blob512{}
+	_, err := bSrc.Export3Cfg(&itb.Config{NonceBits: 128},
+		ks[0], ks[2], ks[3], ks[4], ks[5], ks[6], ks[7],
+		ns, ds1, ds2, ds3, ss1, ss2, ss3, itb.Blob512Opts{KeyL: ks[1], LS: ls, Mode: 3})
+	if !errors.Is(err, itb.ErrBlobModeMismatch) {
+		t.Fatalf("Export3Cfg(Opts.Mode=3): %v, want ErrBlobModeMismatch", err)
+	}
+	_, err = bSrc.Export3Cfg(&itb.Config{NonceBits: 128, Mode: 3},
+		ks[0], ks[2], ks[3], ks[4], ks[5], ks[6], ks[7],
+		ns, ds1, ds2, ds3, ss1, ss2, ss3, itb.Blob512Opts{KeyL: ks[1], LS: ls})
+	if !errors.Is(err, itb.ErrBlobModeMismatch) {
+		t.Fatalf("Export3Cfg(Config.Mode=3): %v, want ErrBlobModeMismatch", err)
+	}
+	if bSrc.Mode != 0 {
+		t.Fatalf("receiver Mode = %d after rejected exports, want 0", bSrc.Mode)
 	}
 }

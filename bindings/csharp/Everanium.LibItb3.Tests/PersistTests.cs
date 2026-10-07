@@ -64,11 +64,12 @@ public class PersistTests
         Assert.Equal("streaming-aead-triple-mac-v1", prof.Name);
         Assert.Equal("streaming-aead", prof.Mode);
         Assert.Equal(512, prof.Width);
-        // The recipe fields match the registry entry; the two
+        // The recipe fields match the registry entry; the
         // inspection-only fields separate the two records.
         var recipe = prof.Clone();
         recipe.NonceBits = null;
         recipe.BarrierFill = null;
+        recipe.ContainerMode = null;
         Assert.Equal(Pipeline.Lookup("streaming-aead-triple-mac-v1"), recipe);
     }
 

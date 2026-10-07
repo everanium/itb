@@ -81,6 +81,7 @@ fn inspect_reads_the_embedded_profile() {
         Profile {
             nonce_bits: None,
             barrier_fill: None,
+            container_mode: None,
             ..prof.clone()
         },
         registry,

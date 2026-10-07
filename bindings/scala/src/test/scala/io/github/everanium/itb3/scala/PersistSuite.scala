@@ -63,12 +63,12 @@ class PersistSuite extends ItbSuite:
       assertEquals(prof.name(), "streaming-aead-triple-mac-v1")
       assertEquals(prof.mode(), "streaming-aead")
       assertEquals(prof.width(), 512)
-      // The recipe fields match the registry entry; the two
+      // The recipe fields match the registry entry; the
       // inspection-only fields separate the two records.
       val registry = ok(Pipeline.lookup("streaming-aead-triple-mac-v1"))
       assertEquals(
         registry,
-        io.github.everanium.itb3.Profile.fromJson(prof.toJson).nonceBits(null).barrierFill(null)
+        io.github.everanium.itb3.Profile.fromJson(prof.toJson).nonceBits(null).barrierFill(null).containerMode(null)
       )
     }
   }

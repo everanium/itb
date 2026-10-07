@@ -29,13 +29,13 @@ import java.util.Objects;
  * in the order {@code [noise, lock, data1, data2, data3, start1,
  * start2, start3]}.</p>
  *
- * <p>{@code nonce_bits} and {@code barrier_fill} are inspection-only.
- * They are not part of the profile recipe: {@link Pipeline#inspect}
- * reads them from the blob's runtime globals snapshot, while
- * {@link Pipeline#lookup} leaves both {@code null} because the
+ * <p>{@code nonce_bits}, {@code barrier_fill} and {@code container_mode}
+ * are inspection-only. They are not part of the profile recipe:
+ * {@link Pipeline#inspect} reads them from the blob's inner snapshot,
+ * while {@link Pipeline#lookup} leaves them {@code null} because the
  * registry entry never carries them. libitb3 rejects a
- * {@link Pipeline#register} payload that carries either key, so clear
- * both before registering an inspected record.</p>
+ * {@link Pipeline#register} payload that carries any of the keys, so
+ * clear them before registering an inspected record.</p>
  */
 public final class Profile {
 
@@ -47,6 +47,7 @@ public final class Profile {
     private int keyBits;
     private Integer nonceBits;
     private Integer barrierFill;
+    private Integer containerMode;
     private String mac = "";
     private int tagStub;
     private int chunk;
@@ -104,6 +105,13 @@ public final class Profile {
      * {@link #nonceBits()}. */
     public Integer barrierFill() {
         return barrierFill;
+    }
+
+    /** Container floor sizing mode ({@code container_mode}), read from
+     * the blob's inner mode field: 1 per-region, 2 per-container. Same
+     * inspection-only lifecycle as {@link #nonceBits()}. */
+    public Integer containerMode() {
+        return containerMode;
     }
 
     /** MAC name ({@code mac}); empty on a No MAC profile. */
@@ -194,6 +202,14 @@ public final class Profile {
         return this;
     }
 
+    /** Sets the inspection-only container floor sizing mode;
+     * {@code null} clears it. Same register-side rule as
+     * {@link #nonceBits(Integer)}. */
+    public Profile containerMode(Integer value) {
+        this.containerMode = value;
+        return this;
+    }
+
     public Profile mac(String value) {
         this.mac = value == null ? "" : value;
         return this;
@@ -251,13 +267,14 @@ public final class Profile {
                 && hash.equals(p.hash) && hashes.equals(p.hashes) && mac.equals(p.mac)
                 && outer.equals(p.outer) && palette.equals(p.palette)
                 && Objects.equals(nonceBits, p.nonceBits)
-                && Objects.equals(barrierFill, p.barrierFill);
+                && Objects.equals(barrierFill, p.barrierFill)
+                && Objects.equals(containerMode, p.containerMode);
     }
 
     @Override
     public int hashCode() {
         return Objects.hash(name, mode, width, hash, hashes, keyBits, nonceBits,
-                barrierFill, mac, tagStub, chunk, wrapper, outer, parallax, palette,
+                barrierFill, containerMode, mac, tagStub, chunk, wrapper, outer, parallax, palette,
                 segment);
     }
 
@@ -290,6 +307,9 @@ public final class Profile {
         }
         if (barrierFill != null) {
             key(sb, first, "barrier_fill").append(barrierFill.intValue());
+        }
+        if (containerMode != null) {
+            key(sb, first, "container_mode").append(containerMode.intValue());
         }
         if (!mac.isEmpty()) {
             key(sb, first, "mac").append(quote(mac));
@@ -353,6 +373,9 @@ public final class Profile {
                     break;
                 case "barrier_fill":
                     out.barrierFill = Integer.valueOf(p.integer());
+                    break;
+                case "container_mode":
+                    out.containerMode = Integer.valueOf(p.integer());
                     break;
                 case "mac":
                     out.mac = p.string();

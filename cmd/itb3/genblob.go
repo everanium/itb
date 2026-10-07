@@ -97,6 +97,8 @@ Flag semantics:
                   <= 65535); presets: 17, 257, 4093, 16381, 65531.
                   Requires -p to be present.
     -w <cipher>   Wrapper outer cipher — single name from ciphers.
+    --blob-mode 1|2   Container floor sizing mode (default 1 =
+                  per-region; 2 = per-container).
     -o <file>     Output file (created with mode 0600). Omitted → stdout.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			set := genblobFlagsSet{
@@ -127,7 +129,7 @@ Flag semantics:
 // the flag-parsing side stays boilerplate and the crypto path is
 // linear.
 func runGenblob(modeArg string, hashArg string, opts genblobOpts, set genblobFlagsSet) error {
-	if opts.blobMode != 0 && opts.blobMode != 1 && opts.blobMode != 2 {
+	if opts.blobMode != 1 && opts.blobMode != 2 {
 		return usageErr("genblob", "--blob-mode must be 1 (per-region) or 2 (per-container), got %d", opts.blobMode)
 	}
 	mode, err := parseCLIMode(modeArg)
@@ -276,12 +278,22 @@ func runGenblob(modeArg string, hashArg string, opts genblobOpts, set genblobFla
 
 // rewriteBlobMode modifies the inner blob's mode field within a
 // wrap-layer session blob without disturbing any secret material.
+// The decoded copies carry the same key material as blob; they are
+// wiped on every exit so only the caller's buffers outlive the call.
 func rewriteBlobMode(blob []byte, targetMode int) ([]byte, error) {
 	var wrap map[string]json.RawMessage
 	if err := json.Unmarshal(blob, &wrap); err != nil {
 		return nil, err
 	}
 	var inner map[string]json.RawMessage
+	defer func() {
+		for k := range inner {
+			clear(inner[k])
+		}
+		for k := range wrap {
+			clear(wrap[k])
+		}
+	}()
 	if err := json.Unmarshal(wrap["ib"], &inner); err != nil {
 		return nil, err
 	}

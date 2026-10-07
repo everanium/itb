@@ -785,3 +785,50 @@ func TestLastErrorSentenceFitsTheBindingFormat(t *testing.T) {
 		t.Errorf("LastError() = %q, want a single line", got)
 	}
 }
+
+// TestTripleInspectCarriesContainerModeCapi pins the inspection-only
+// container_mode key on the Inspect JSON (1 on a default blob) and its
+// rejection on the Register side: a record that still carries the key
+// is StatusBadInput, the status every other profile field rule maps
+// to, with the field named in LastError.
+func TestTripleInspectCarriesContainerModeCapi(t *testing.T) {
+	blobBuf := make([]byte, 1<<15)
+	id, blobLen, st := TripleInit(triple.ProfileSingleMsgTripleMACV1, "", blobBuf)
+	if st != StatusOK {
+		t.Fatalf("TripleInit: %v", st)
+	}
+	defer FreeTriple(id)
+
+	out := make([]byte, 4096)
+	n, st := TripleInspect(blobBuf[:blobLen], out)
+	if st != StatusOK {
+		t.Fatalf("TripleInspect: %v (%s)", st, LastError())
+	}
+	var probe struct {
+		ContainerMode int `json:"container_mode"`
+	}
+	if err := json.Unmarshal(out[:n], &probe); err != nil {
+		t.Fatalf("TripleInspect output does not decode: %v", err)
+	}
+	if probe.ContainerMode != 1 {
+		t.Fatalf("container_mode = %d, want 1 in %s", probe.ContainerMode, out[:n])
+	}
+
+	// Strip the other inspection-only fields and the name so the
+	// container_mode key is the only reason left for Register to refuse.
+	var prof triple.Profile
+	if err := json.Unmarshal(out[:n], &prof); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	prof.Name, prof.NonceBits, prof.BarrierFill = "", 0, 0
+	payload, err := json.Marshal(prof)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if st := TripleRegister("capi-test-container-mode", string(payload)); st != StatusBadInput {
+		t.Fatalf("TripleRegister(container_mode=1): %v, want StatusBadInput (%s)", st, LastError())
+	}
+	if !strings.Contains(LastError(), "ContainerMode") {
+		t.Fatalf("LastError %q does not name ContainerMode", LastError())
+	}
+}

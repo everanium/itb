@@ -254,7 +254,7 @@ class ItbTest < Minitest::Test
     looked = ITB.lookup("singlemsg-triple-mac-v1")
     refute_includes looked, "nonce_bits"
     refute_includes looked, "barrier_fill"
-    assert_equal looked, record.reject { |k, _| %w[nonce_bits barrier_fill].include?(k) }
+    assert_equal looked, record.reject { |k, _| %w[nonce_bits barrier_fill container_mode].include?(k) }
     err = assert_raises(ITB::Error) { ITB.inspect_blob("not a blob") }
     assert_equal ITB::Status::BAD_INPUT, err.status_code
   ensure

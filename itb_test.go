@@ -3,6 +3,7 @@ package itb
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"sync"
 	"testing"
@@ -841,18 +842,18 @@ func TestConfigMaxWorkersRespected(t *testing.T) {
 }
 
 // TestContainerSizePerRegionVsPerContainer verifies that Mode 1 enforces
-// the Per-Region floor independently within each third, while Mode 2
-// enforces the Per-Container floor jointly across the container.
+// the per-region floor independently within each third, while Mode 2
+// enforces the per-container floor jointly across the container.
 func TestContainerSizePerRegionVsPerContainer(t *testing.T) {
 	for _, tc := range []struct {
-		keyBits   int
-		wantW1    int // Mode 1 grid side (small payload)
-		wantW2    int // Mode 2 grid side (small payload)
+		keyBits int
+		wantW1  int // Mode 1 grid side (small payload)
+		wantW2  int // Mode 2 grid side (small payload)
 	}{
 		{512, 25, 15},
 		{1024, 35, 21},
 		{2048, 48, 29},
-	}{
+	} {
 		t.Run(fmt.Sprintf("%d-bit", tc.keyBits), func(t *testing.T) {
 			n, l, d1, d2, d3, s1, s2, s3 := makeEightSeeds512(tc.keyBits, makeBlake2bHash512())
 			_ = l
@@ -928,5 +929,47 @@ func TestMode2EncryptDecryptRoundTrip(t *testing.T) {
 	}
 	if !bytes.Equal(payload, ptAuthNil) {
 		t.Fatalf("Auth cross-mode decrypt mismatch")
+	}
+}
+
+// TestContainerSizeMode2Transition pins the wire size on both sides of
+// the per-container floor at 512-bit keys. Below the floor Mode 2 is
+// the smaller container; once the payload needs more pixels than the
+// floor supplies the two modes agree. The explicit sizes are what a
+// Mode 2 ≡ Mode 1 regression fails on.
+func TestContainerSizeMode2Transition(t *testing.T) {
+	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeeds512(512, makeBlake2bHash512())
+	hdr := headerSizeCfg(&Config{NonceBits: 128})
+	wire := func(mode, n int) int {
+		t.Helper()
+		cfg := &Config{NonceBits: 128, Mode: mode}
+		ct, err := Encrypt3x512Cfg(cfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, genTestPlaintext(t, n))
+		if err != nil {
+			t.Fatalf("Encrypt3x512Cfg(Mode=%d, %d B): %v", mode, n, err)
+		}
+		return len(ct)
+	}
+	for _, tc := range []struct{ n, side1, side2 int }{
+		{16, 25, 15},   // key floor binds on both sides
+		{1400, 25, 16}, // payload lifts Mode 2 off its floor; Mode 1 stays on its own
+		{5000, 29, 29}, // payload above both floors: the modes agree
+	} {
+		got1, got2 := wire(1, tc.n), wire(2, tc.n)
+		if got1 != hdr+tc.side1*tc.side1*8 || got2 != hdr+tc.side2*tc.side2*8 {
+			t.Fatalf("%d B: wire Mode 1 = %d, Mode 2 = %d; want sides %d / %d",
+				tc.n, got1, got2, tc.side1, tc.side2)
+		}
+	}
+}
+
+// TestConfigModeOutOfRangeIsBlobModeMismatch pins the error identity
+// of an out-of-range Config.Mode at an Encrypt entry point:
+// ErrBlobModeMismatch, the sentinel the blob import and export paths
+// raise for the same condition.
+func TestConfigModeOutOfRangeIsBlobModeMismatch(t *testing.T) {
+	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeeds512(512, makeBlake2bHash512())
+	_, err := Encrypt3x512Cfg(&Config{Mode: 3}, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, []byte("x"))
+	if !errors.Is(err, ErrBlobModeMismatch) {
+		t.Fatalf("Encrypt3x512Cfg(Mode=3): %v, want ErrBlobModeMismatch", err)
 	}
 }

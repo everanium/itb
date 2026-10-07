@@ -249,6 +249,7 @@ suite "itb nim binding":
     var recipe = prof
     recipe.nonceBits = none(int)
     recipe.barrierFill = none(int)
+    recipe.containerMode = none(int)
     check recipe == lookup("singlemsg-triple-mac-v1")
     try:
       discard inspect("not a blob".toOpenArrayByte(0, 9))

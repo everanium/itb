@@ -65,11 +65,12 @@ Public Class PersistTests
             Assert.Equal("streaming-aead-triple-mac-v1", prof.Name)
             Assert.Equal("streaming-aead", prof.Mode)
             Assert.Equal(512, prof.Width)
-            ' The recipe fields match the registry entry; the two
+            ' The recipe fields match the registry entry; the
             ' inspection-only fields separate the two records.
             Dim recipe As Global.Everanium.Itb3.Profile = prof.Clone()
             recipe.NonceBits = Nothing
             recipe.BarrierFill = Nothing
+            recipe.ContainerMode = Nothing
             Assert.Equal(Pipeline.Lookup("streaming-aead-triple-mac-v1"), recipe)
         End Using
     End Sub

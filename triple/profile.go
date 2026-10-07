@@ -202,8 +202,8 @@ type Profile struct {
 	// when [Opts.BarrierFill] is zero at Init.
 	BarrierFill int
 
-	// ContainerMode is the container floor sizing mode (1 for Per-Region,
-	// 2 for Per-Container) this Pipeline runs with. Same lifecycle as
+	// ContainerMode is the container floor sizing mode (1 for per-region,
+	// 2 for per-container) this Pipeline runs with. Same lifecycle as
 	// [Profile.NonceBits] and [Profile.BarrierFill] — populated by
 	// [Inspect] / [Load] from the blob's inner mode field only; zero on
 	// a Register-time Profile; a non-zero value at Register time is

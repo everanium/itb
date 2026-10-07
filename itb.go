@@ -127,9 +127,9 @@ func configuredWorkerCount(cfg *Config) int {
 func headerSizeCfg(cfg *Config) int { return currentNonceSizeCfg(cfg) + 4 }
 
 // calcContainerSize3Cfg computes square container dimensions for
-// Triple Ouroboros. In Per-Region mode (default, Mode 1), each third
+// Triple Ouroboros. In per-region mode (default, Mode 1), each third
 // must hold its part's COBS data and satisfy MinPixels independently.
-// In Per-Container mode (Mode 2), each third holds its COBS data, and
+// In per-container mode (Mode 2), each third holds its COBS data, and
 // the ambiguity floor is evaluated jointly across the container.
 // Consults [currentBarrierFillCfg] for the DRBG barrier margin.
 func calcContainerSize3Cfg(cfg *Config, cobsLens [3]int, minPxNoise int, minPxData [3]int, minPxStart [3]int) (width, height int) {

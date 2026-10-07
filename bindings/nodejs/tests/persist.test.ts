@@ -89,9 +89,10 @@ test('inspect carries the recipe plus inspection-only fields', () => {
   const looked = lookup(PROFILE) as unknown as Record<string, unknown>;
   assert.ok(!('nonce_bits' in looked));
   assert.ok(!('barrier_fill' in looked));
-  const { nonce_bits: _nb, barrier_fill: _bf, ...recipe } = record;
+  const { nonce_bits: _nb, barrier_fill: _bf, container_mode: _cm, ...recipe } = record;
   void _nb;
   void _bf;
+  void _cm;
   assert.deepEqual(recipe, looked);
   assert.equal(statusOf(() => inspect(Buffer.from('not a blob'))), Status.BadInput);
   assert.equal(statusOf(() => lookup('no-such-profile')), Status.UnknownProfile);

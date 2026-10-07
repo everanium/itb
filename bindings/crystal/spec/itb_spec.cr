@@ -266,6 +266,7 @@ describe ITB do
     recipe = prof.dup
     recipe.nonce_bits = nil
     recipe.barrier_fill = nil
+    recipe.container_mode = nil
     ITB.lookup("streaming-aead-triple-mac-v1").should eq recipe
   end
 

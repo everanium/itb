@@ -183,10 +183,11 @@ function New-ItbProfile {
     Builds an [Everanium.Itb3.Profile] record from a hashtable.
     .DESCRIPTION
     Keys are the record's property names and values are assigned
-    as-is; an unknown key fails on assignment. NonceBits and
-    BarrierFill are inspection-only — they are populated by
-    Get-ItbProfile -Blob and rejected by Register-ItbProfile, so a
-    record built for registration leaves them unset. No validation
+    as-is; an unknown key fails on assignment. NonceBits,
+    BarrierFill and ContainerMode are inspection-only — they are
+    populated by Get-ItbProfile -Blob and rejected by
+    Register-ItbProfile, so a record built for registration leaves
+    them unset. No validation
     happens locally — the Go side enforces every field rule at
     Register-ItbProfile / Import-ItbPipeline time.
     .EXAMPLE

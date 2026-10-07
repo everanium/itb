@@ -322,12 +322,12 @@ export class Pipeline implements Disposable {
  * [lookup] and accepts in [register]; absent keys are optional fields
  * at their zero value.
  *
- * `nonce_bits` and `barrier_fill` are inspection-only. They are not
- * part of the profile recipe: [inspect] reads them from the blob's
- * runtime globals snapshot, while [lookup] omits both because the
- * registry entry never carries them. libitb3 rejects a [register]
- * payload that carries either key, so drop both before registering
- * an inspected record.
+ * `nonce_bits`, `barrier_fill` and `container_mode` are
+ * inspection-only. They are not part of the profile recipe: [inspect]
+ * reads them from the blob's inner snapshot, while [lookup] omits them
+ * because the registry entry never carries them. libitb3 rejects a
+ * [register] payload that carries any of the keys, so drop them before
+ * registering an inspected record.
  */
 export interface Profile {
   name?: string;
@@ -340,6 +340,8 @@ export interface Profile {
   nonce_bits?: number;
   /** DRBG barrier fill margin; present only on an [inspect] record. */
   barrier_fill?: number;
+  /** Container floor sizing mode (1 per-region, 2 per-container); present only on an [inspect] record. */
+  container_mode?: number;
   mac?: string;
   tagstub?: number;
   chunk?: number;

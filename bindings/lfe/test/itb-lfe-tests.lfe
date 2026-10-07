@@ -223,7 +223,7 @@
       (is (not (maps:is_key #"nonce_bits" looked)))
       (is (not (maps:is_key #"barrier_fill" looked)))
       (is-equal looked
-                (maps:without (list #"nonce_bits" #"barrier_fill") record)))
+                (maps:without (list #"nonce_bits" #"barrier_fill" #"container_mode") record)))
     (let ((`#(error #(bad_input ,_)) (itb3-lfe:inspect #"not a blob")))
       'ok)
     (let ((`#(error #(unknown_profile ,_)) (itb3-lfe:lookup #"no-such-profile")))

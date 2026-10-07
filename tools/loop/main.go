@@ -32,7 +32,9 @@
 // Overrides beyond that shape: --profile exercises one registered
 // Triple profile in place of the shape-based pair; --key-bits /
 // --nonce-bits / --chunk-size / --barrier-fill sweep the corresponding
-// [github.com/everanium/itb/triple.Opts] knobs; --gomaxprocs pins CPU
+// [github.com/everanium/itb/triple.Opts] knobs; --blob-mode selects the
+// container floor sizing mode (1 per-region, 2 per-container) on the
+// session blob before the pipeline is opened; --gomaxprocs pins CPU
 // parallelism; --payload-mode swaps the plaintext content policy
 // (rotating CSPRNG refills or degenerate byte patterns — pattern modes
 // trade the cross-worker buffer distinctness above for content
@@ -824,13 +826,23 @@ func logf(format string, args ...any) {
 
 // editInnerBlobMode parses a wrap-layer session blob, sets the inner blob's
 // "mode" field to targetMode (1 = per-region, 2 = per-container), and returns
-// the re-encoded wrap-layer blob.
+// the re-encoded wrap-layer blob. The decoded copies carry the same key
+// material as blob; they are wiped on every exit so only the caller's
+// buffers outlive the call.
 func editInnerBlobMode(blob []byte, targetMode int) ([]byte, error) {
 	var wrap map[string]json.RawMessage
 	if err := json.Unmarshal(blob, &wrap); err != nil {
 		return nil, fmt.Errorf("unmarshal wrap blob: %w", err)
 	}
 	var inner map[string]json.RawMessage
+	defer func() {
+		for k := range inner {
+			clear(inner[k])
+		}
+		for k := range wrap {
+			clear(wrap[k])
+		}
+	}()
 	if err := json.Unmarshal(wrap["ib"], &inner); err != nil {
 		return nil, fmt.Errorf("unmarshal inner blob: %w", err)
 	}

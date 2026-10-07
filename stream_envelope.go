@@ -85,6 +85,11 @@ func validateTagStubSizeCfg(cfg *Config) error {
 //     positive value is clamped at 256 at consumption. The field is
 //     per-machine tuning and never travels in a blob; the guard keeps
 //     a negative value out of the Cfg-aware entry points.
+//   - Mode: 0 (defer to the per-region floor) or 1 / 2. Any other
+//     value is reported as [ErrBlobModeMismatch], the sentinel the
+//     Export3Cfg entries raise for an out-of-range Opts.Mode and the
+//     Import3Cfg entries raise for an out-of-range blob mode, so one
+//     condition carries one error identity whichever side set it.
 //
 // Consulted by every Cfg-aware Encrypt entry point in the itb-root
 // package and by every [Blob128.Export3Cfg] / [Blob256.Export3Cfg] /
@@ -111,7 +116,7 @@ func validateConfigCfg(cfg *Config) error {
 	switch cfg.Mode {
 	case 0, 1, 2:
 	default:
-		return fmt.Errorf("itb: cfg.Mode=%d must be 0, 1 (per-region), or 2 (per-container)", cfg.Mode)
+		return fmt.Errorf("%w (cfg.Mode=%d)", ErrBlobModeMismatch, cfg.Mode)
 	}
 	return nil
 }

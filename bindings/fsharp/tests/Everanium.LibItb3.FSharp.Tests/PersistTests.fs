@@ -57,11 +57,12 @@ let ``inspect reads the embedded record`` () =
     Assert.Equal("streaming-aead-triple-mac-v1", prof.Name)
     Assert.Equal("streaming-aead", prof.Mode)
     Assert.Equal(512, prof.Width)
-    // The recipe fields match the registry entry; the two
+    // The recipe fields match the registry entry; the
     // inspection-only fields separate the two records.
     let recipe = prof.Clone()
     recipe.NonceBits <- System.Nullable()
     recipe.BarrierFill <- System.Nullable()
+    recipe.ContainerMode <- System.Nullable()
     Assert.Equal(unwrap (Pipeline.lookup "streaming-aead-triple-mac-v1"), recipe)
 
 [<Fact>]

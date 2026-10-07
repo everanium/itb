@@ -403,11 +403,12 @@ void main() {
       expect(prof.name, 'streaming-aead-triple-mac-v1');
       expect(prof.mode, 'streaming-aead');
       expect(prof.width, 512);
-      // The recipe fields match the registry entry; the two
+      // The recipe fields match the registry entry; the
       // inspection-only fields separate the two records.
       final recipe = prof.copy()
         ..nonceBits = null
-        ..barrierFill = null;
+        ..barrierFill = null
+        ..containerMode = null;
       expect(recipe, Itb.lookup('streaming-aead-triple-mac-v1'));
       pipe.free();
     });

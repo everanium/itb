@@ -49,6 +49,7 @@ final class PersistTests: XCTestCase {
         var recipe = prof
         recipe.nonceBits = nil
         recipe.barrierFill = nil
+        recipe.containerMode = nil
         XCTAssertEqual(recipe, try lookup(name: "singlemsg-triple-mac-v1"))
         XCTAssertThrowsError(try inspect(Data("not a blob".utf8))) { error in
             XCTAssertEqual((error as? ItbError)?.status, .badInput)

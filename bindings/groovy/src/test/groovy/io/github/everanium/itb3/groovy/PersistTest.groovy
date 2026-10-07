@@ -79,10 +79,10 @@ class PersistTest {
             assertEquals('streaming-aead-triple-mac-v1', prof.name())
             assertEquals('streaming-aead', prof.mode())
             assertEquals(512, prof.width())
-            // The recipe fields match the registry entry; the two
+            // The recipe fields match the registry entry; the
             // inspection-only fields separate the two records.
             Profile registry = Pipeline.lookup('streaming-aead-triple-mac-v1')
-            assertEquals(registry, Profile.fromJson(prof.toJson()).nonceBits(null).barrierFill(null))
+            assertEquals(registry, Profile.fromJson(prof.toJson()).nonceBits(null).barrierFill(null).containerMode(null))
         }
     }
 

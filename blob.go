@@ -93,11 +93,14 @@ func decodeBlobStrict(data []byte, out *blobV1) error {
 // The native Blob API trades that convenience for explicit factory
 // control and per-instance Config wiring.
 
-// ErrBlobModeMismatch is returned by [Blob128.Import3Cfg] /
-// [Blob256.Import3Cfg] / [Blob512.Import3Cfg] when the JSON blob
-// carries a mode outside {1, 2} — the two container floor sizing
-// modes: 1 = Per-Region (default), 2 = Per-Container. Any other value
-// names a construction this tree cannot build seeds for.
+// ErrBlobModeMismatch is returned when a container sizing mode is
+// outside {1, 2}: by [Blob128.Import3Cfg] / [Blob256.Import3Cfg] /
+// [Blob512.Import3Cfg] for the mode a JSON blob carries, by the
+// Export3Cfg counterparts for an out-of-range Opts.Mode, and (wrapped)
+// by the Cfg-aware entry points for an out-of-range [Config.Mode].
+// The mode selects the container geometry — 1 = per-region floor
+// (default), 2 = per-container floor — and says nothing about the
+// seed material, so an unknown value is refused rather than mapped.
 var ErrBlobModeMismatch = errors.New("itb: blob mode mismatch (expected mode=1 for per-region or mode=2 for per-container)")
 
 // ErrBlobMalformed is returned when the JSON blob fails to parse
@@ -121,12 +124,12 @@ var ErrBlobTooManyOpts = errors.New("itb: Export accepts at most one options str
 const blobVersionV1 = 1
 
 // Blob mode discriminators. The mode names which container floor sizing
-// formula the blob uses: 1 is the shipped Per-Region floor (enforced
-// independently within each third), 2 is the Per-Container floor
+// formula the blob uses: 1 is the shipped per-region floor (enforced
+// independently within each third), 2 is the per-container floor
 // (enforced jointly across the container for network tunnel / VPN
 // compact sizing).
 const (
-	blobModePerRegion   = 1
+	blobModePerRegion    = 1
 	blobModePerContainer = 2
 )
 
@@ -266,7 +269,7 @@ func validateSeedComponentsLen(got, want int) error {
 // from the saved Key* bytes through the appropriate 512-bit factory.
 //
 // [Blob512.Mode] names the container floor sizing mode: 1 is the
-// canonical Per-Region floor, 2 is the Per-Container compact floor.
+// canonical per-region floor, 2 is the per-container compact floor.
 // Export3Cfg emits 1 by default (or 2 when Opts.Mode or Config.Mode is
 // set to 2); Import3Cfg accepts 1 or 2 and reports back whichever the
 // blob carried.
@@ -531,6 +534,8 @@ func (b *Blob512) Export3Cfg(
 		}
 	}
 
+	// cfg.Mode is within {0, 1, 2} here — validateConfigCfg ran above
+	// — so only the explicit Opts override needs the gate.
 	mode := blobModePerRegion
 	if o.Mode != 0 {
 		if o.Mode != blobModePerRegion && o.Mode != blobModePerContainer {
@@ -538,9 +543,6 @@ func (b *Blob512) Export3Cfg(
 		}
 		mode = o.Mode
 	} else if cfg != nil && cfg.Mode != 0 {
-		if cfg.Mode != blobModePerRegion && cfg.Mode != blobModePerContainer {
-			return nil, ErrBlobModeMismatch
-		}
 		mode = cfg.Mode
 	}
 
@@ -778,6 +780,8 @@ func (b *Blob256) Export3Cfg(
 		}
 	}
 
+	// cfg.Mode is within {0, 1, 2} here — validateConfigCfg ran above
+	// — so only the explicit Opts override needs the gate.
 	mode := blobModePerRegion
 	if o.Mode != 0 {
 		if o.Mode != blobModePerRegion && o.Mode != blobModePerContainer {
@@ -785,9 +789,6 @@ func (b *Blob256) Export3Cfg(
 		}
 		mode = o.Mode
 	} else if cfg != nil && cfg.Mode != 0 {
-		if cfg.Mode != blobModePerRegion && cfg.Mode != blobModePerContainer {
-			return nil, ErrBlobModeMismatch
-		}
 		mode = cfg.Mode
 	}
 
@@ -1017,6 +1018,8 @@ func (b *Blob128) Export3Cfg(
 		}
 	}
 
+	// cfg.Mode is within {0, 1, 2} here — validateConfigCfg ran above
+	// — so only the explicit Opts override needs the gate.
 	mode := blobModePerRegion
 	if o.Mode != 0 {
 		if o.Mode != blobModePerRegion && o.Mode != blobModePerContainer {
@@ -1024,9 +1027,6 @@ func (b *Blob128) Export3Cfg(
 		}
 		mode = o.Mode
 	} else if cfg != nil && cfg.Mode != 0 {
-		if cfg.Mode != blobModePerRegion && cfg.Mode != blobModePerContainer {
-			return nil, ErrBlobModeMismatch
-		}
 		mode = cfg.Mode
 	}
 

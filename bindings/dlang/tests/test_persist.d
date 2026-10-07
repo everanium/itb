@@ -54,6 +54,7 @@ void main()
         auto recipe = prof;
         recipe.nonceBits.nullify();
         recipe.barrierFill.nullify();
+        recipe.containerMode.nullify();
         assert(recipe == lookup("singlemsg-triple-mac-v1"));
     }
 

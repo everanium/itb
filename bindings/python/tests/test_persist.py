@@ -65,7 +65,7 @@ class PersistTest(unittest.TestCase):
         self.assertNotIn("nonce_bits", looked)
         self.assertNotIn("barrier_fill", looked)
         recipe = {k: v for k, v in record.items()
-                  if k not in ("nonce_bits", "barrier_fill")}
+                  if k not in ("nonce_bits", "barrier_fill", "container_mode")}
         self.assertEqual(recipe, looked)
 
     def test_inspect_rejects_garbage(self) -> None:

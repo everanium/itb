@@ -1305,3 +1305,22 @@ func TestInspectSurfacesContainerMode2(t *testing.T) {
 		t.Fatalf("reverse cross-mode decrypted %q != original %q", decrypted2, msg)
 	}
 }
+
+// TestInspectDefaultsContainerModeWhenAbsent pins the fallback: an
+// inner blob that omits the mode key inspects as ContainerMode 1.
+func TestInspectDefaultsContainerModeWhenAbsent(t *testing.T) {
+	pipe, blob, err := Init(ProfileSingleMsgTripleMACV1, Opts{})
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	defer pipe.Close()
+	rec, err := Inspect(editInner(t, blob, func(ib map[string]json.RawMessage) {
+		delete(ib, "mode")
+	}))
+	if err != nil {
+		t.Fatalf("Inspect: %v", err)
+	}
+	if rec.ContainerMode != 1 {
+		t.Fatalf("ContainerMode = %d, want 1", rec.ContainerMode)
+	}
+}

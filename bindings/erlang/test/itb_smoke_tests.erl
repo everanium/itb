@@ -101,7 +101,7 @@ inspect_lookup_profiles_test() ->
     ?assertNot(maps:is_key(<<"nonce_bits">>, Looked)),
     ?assertNot(maps:is_key(<<"barrier_fill">>, Looked)),
     ?assertEqual(Looked,
-                 maps:without([<<"nonce_bits">>, <<"barrier_fill">>], Record)),
+                 maps:without([<<"nonce_bits">>, <<"barrier_fill">>, <<"container_mode">>], Record)),
     ?assertMatch({error, {bad_input, _}}, itb3:inspect(<<"not a blob">>)),
     ?assertMatch({error, {unknown_profile, _}}, itb3:lookup(<<"no-such-profile">>)),
     Names = itb3:profiles(),

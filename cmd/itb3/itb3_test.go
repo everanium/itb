@@ -22,6 +22,7 @@ func TestGenblobLoadRoundTrip(t *testing.T) {
 		keyBits:     1024,
 		nonceBits:   512,
 		barrierFill: 1,
+		blobMode:    1,
 		mac:         "hmac-blake3",
 		palette:     []string{"aescmac", "chacha20", "siphash24"},
 		segment:     257,
@@ -74,7 +75,7 @@ func TestGenblobLoadRoundTrip(t *testing.T) {
 // triple.ErrProfileExists rather than being masked by a fallback.
 func TestGenblobRegisterCollision(t *testing.T) {
 	dir := t.TempDir()
-	opts := genblobOpts{keyBits: 512, nonceBits: 128, barrierFill: 1}
+	opts := genblobOpts{keyBits: 512, nonceBits: 128, barrierFill: 1, blobMode: 1}
 
 	opts.output = filepath.Join(dir, "b0.blob")
 	if err := runGenblob("nomac", "blake2s", opts, genblobFlagsSet{}); err != nil {
@@ -107,7 +108,7 @@ func TestGenblobRegisterCollision(t *testing.T) {
 func TestRekeyAssertions(t *testing.T) {
 	dir := t.TempDir()
 	src := filepath.Join(dir, "wo.blob")
-	opts := genblobOpts{keyBits: 1024, nonceBits: 512, barrierFill: 1, wrapper: "blake3", output: src}
+	opts := genblobOpts{keyBits: 1024, nonceBits: 512, barrierFill: 1, blobMode: 1, wrapper: "blake3", output: src}
 	if err := runGenblob("noaead", "blake2b256", opts, genblobFlagsSet{wrapper: true}); err != nil {
 		t.Fatalf("runGenblob: %v", err)
 	}
@@ -173,7 +174,7 @@ func TestVerifyRejectsUnsupportedSchema(t *testing.T) {
 }
 
 // TestGenblobBlobMode2AndInspect verifies generating a blob with Mode 2
-// (Per-Container floor), inspecting it with runInspect, and roundtripping
+// (per-container floor), inspecting it with runInspect, and roundtripping
 // encryption and decryption through the loaded pipeline.
 func TestGenblobBlobMode2AndInspect(t *testing.T) {
 	dir := t.TempDir()
@@ -254,5 +255,18 @@ func TestGenblobBlobMode2AndInspect(t *testing.T) {
 	renderInspect(prof1, len(blob1), &buf)
 	if !strings.Contains(buf.String(), "container_mode: per-region (1)") {
 		t.Fatalf("inspectText does not contain 'container_mode: per-region (1)':\n%s", buf.String())
+	}
+}
+
+// TestGenblobRejectsBlobModeOutOfRange pins the --blob-mode gate: 0 and
+// 3 are usage errors (exit 1) raised before any pipeline is built.
+func TestGenblobRejectsBlobModeOutOfRange(t *testing.T) {
+	for _, mode := range []int{0, 3} {
+		opts := genblobOpts{keyBits: 512, nonceBits: 128, barrierFill: 1, blobMode: mode}
+		err := runGenblob("nomac", "blake3", opts, genblobFlagsSet{})
+		var ce *cliError
+		if !errors.As(err, &ce) || ce.code != exitUsage {
+			t.Fatalf("--blob-mode %d: got %v, want exit %d", mode, err, exitUsage)
+		}
 	}
 }

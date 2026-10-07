@@ -77,11 +77,12 @@ Describe 'Persistence' {
             $prof.Name | Should -Be 'streaming-aead-triple-mac-v1'
             $prof.Mode | Should -Be 'streaming-aead'
             $prof.Width | Should -Be 512
-            # The recipe fields match the registry entry; the two
+            # The recipe fields match the registry entry; the
             # inspection-only fields separate the two records.
             $recipe = $prof.Clone()
             $recipe.NonceBits = $null
             $recipe.BarrierFill = $null
+            $recipe.ContainerMode = $null
             (Get-ItbProfile -Name 'streaming-aead-triple-mac-v1').ToJson() | Should -Be $recipe.ToJson()
         }
         finally { $pipe.Dispose() }

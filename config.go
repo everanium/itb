@@ -33,8 +33,8 @@ type Config struct {
 	MaxWorkers  int // 0 = runtime.NumCPU; otherwise 1..256
 
 	// Mode selects the container floor sizing mode:
-	// 0 or 1 = Per-Region container floor (default);
-	// 2 = Per-Container container floor (network tunnel / VPN compact mode).
+	// 0 or 1 = per-region container floor (default);
+	// 2 = per-container container floor (network tunnel / VPN compact mode).
 	Mode int
 
 	// MACIncremental is the optional multi-slice MAC arm consulted by

@@ -54,10 +54,10 @@
       (is (= "streaming-aead-triple-mac-v1" (:name prof)))
       (is (= "streaming-aead" (:mode prof)))
       (is (= 512 (:width prof)))
-      ;; The recipe keys match the registry entry; the two
+      ;; The recipe keys match the registry entry; the
       ;; inspection-only keys separate the two records.
       (is (= (itb/lookup "streaming-aead-triple-mac-v1")
-             (assoc prof :nonce-bits nil :barrier-fill nil))))))
+             (assoc prof :nonce-bits nil :barrier-fill nil :container-mode nil))))))
 
 (deftest inspect-carries-the-runtime-globals-lookup-does-not
   ;; Defaults: the blob records the compile-in nonce width and

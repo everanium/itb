@@ -101,7 +101,7 @@ defmodule ITB.SmokeTest do
     {:ok, looked} = ITB.lookup("singlemsg-triple-mac-v1")
     refute Map.has_key?(looked, "nonce_bits")
     refute Map.has_key?(looked, "barrier_fill")
-    assert Map.drop(record, ["nonce_bits", "barrier_fill"]) == looked
+    assert Map.drop(record, ["nonce_bits", "barrier_fill", "container_mode"]) == looked
     assert {:error, {:bad_input, _}} = ITB.inspect("not a blob")
     assert {:error, {:unknown_profile, _}} = ITB.lookup("no-such-profile")
     names = ITB.profiles()

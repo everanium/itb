@@ -89,7 +89,7 @@ final class PersistTest extends TestCase
         $this->assertArrayNotHasKey('nonce_bits', $looked);
         $this->assertArrayNotHasKey('barrier_fill', $looked);
         $recipe = $record;
-        unset($recipe['nonce_bits'], $recipe['barrier_fill']);
+        unset($recipe['nonce_bits'], $recipe['barrier_fill'], $recipe['container_mode']);
         $this->assertSame($looked, $recipe);
 
         try {
