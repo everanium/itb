@@ -534,6 +534,8 @@ enc, blob, err := triple.Init(triple.ProfileStreamingAEADTripleMACV1, triple.Opt
     NonceBits:   512,          // 128 / 256 / 512
     BarrierFill: 8,            // profile default varies
     MaxWorkers:  4,            // cap goroutines for this instance
+    DRBG:        "aesitb128",  // container fill; "" = auto tier
+    TagStubSize: 32,           // No MAC dummy stub bytes: 0 or 16..64
 
     // Cryptographic knob overrides:
     MacName:      "hmac-blake3",
