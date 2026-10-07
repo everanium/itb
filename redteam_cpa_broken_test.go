@@ -221,13 +221,10 @@ func cpaBuild8Seeds(t *testing.T, hf HashFunc128) [8]*Seed128 {
 }
 
 // bodyOfCTCPA slices the ciphertext body out of a shipped wire. Layout:
-// main_nonce (NonceSize) || W(2 BE) || H(2 BE) || W*H*Channels body bytes.
+// prefix (32) || main_nonce (NonceSize) || W(2 BE) || H(2 BE) ||
+// W*H*Channels body bytes.
 func bodyOfCTCPA(ct []byte) []byte {
-	header := NonceSize + 4
-	w := int(binary.BigEndian.Uint16(ct[NonceSize : NonceSize+2]))
-	h := int(binary.BigEndian.Uint16(ct[NonceSize+2 : NonceSize+4]))
-	total := w * h
-	return ct[header : header+total*Channels]
+	return parseSMWire(ct, NonceSize).container
 }
 
 // ---------------------------------------------------------------------------
@@ -535,7 +532,7 @@ func TestRedTeamCPABroken(t *testing.T) {
 	}
 	run.Config.SampleN = sampleN
 	run.Config.PlaintextBytes = cpaPlaintextBytes
-	run.Config.WirePath = "container body (Encrypt3x128Cfg wire minus nonce + dimension header)"
+	run.Config.WirePath = "container body (Encrypt3x128Cfg wire minus 32-byte prefix, nonce + dimension header)"
 	run.Config.CipherEntry = "Encrypt3x128Cfg"
 	run.Config.NoncePolicy = "fresh CSPRNG per Encrypt call (generateNonceCfg, testNonceOverride NOT installed)"
 	run.Config.AttackerPosture = "chosen-plaintext, fresh nonce; attacker fixes plaintext then queries oracle sample_n times"

@@ -251,7 +251,11 @@ The attacker cannot verify individual pixel rotations independently. The total c
 |{(r₁, r₂, ..., r_P) : rᵢ ∈ {0,...,6}}| = 7^P
 ```
 
-For P = 1225 (the shipped container at a 1024-bit key — per-region floor `MinPixels := MinPixelsAuth = 365` applied to each of three regions, `3 × 365 = 1095`, square-rounded to `35 × 35 = 1225` with `DefaultBarrierFill = 1`): `7^1225 ≈ 2^3439` — exceeds the Landauer bound on irreversible enumeration cost (~2^306 ≈ 10^92), and each of the `2^3439` rotation configurations requires independent ChainHash evaluation to verify. The Landauer bound scopes to the cost of blind enumeration of the configuration space; it does not bound structural attacks that do not enumerate. The noise barrier (2^9800 for 1225 pixels, [Proof 5](#proof-5-noise-barrier-bound)) independently exceeds the Landauer enumeration-cost bound. ∎
+For the minimum container at a 1024-bit key:
+- Under Mode 1 (per-region floor `MinPixels = 365` applied to each of three regions, `3 × 365 = 1095`, square-rounded to `35 × 35 = 1225` with `DefaultBarrierFill = 1`): `7^1225 ≈ 2^3439`.
+- Under Mode 2 (per-container floor `MinPixels = 365` evaluated across the container, square-rounded to `21 × 21 = 441` with `DefaultBarrierFill = 1`): `7^441 ≈ 2^1238`.
+
+Both configurations strictly dominate the 2^1024 key space and exceed the Landauer bound on irreversible enumeration cost (~2^306 ≈ 10^92). Each rotation configuration requires independent ChainHash evaluation to verify. The Landauer bound scopes to the cost of blind enumeration of the configuration space; it does not bound structural attacks that do not enumerate. The noise barrier (2^9800 for Mode 1, 2^3528 for Mode 2, [Proof 5](#proof-5-noise-barrier-bound)) independently exceeds the Landauer enumeration-cost bound. ∎
 
 This proof covers one layer (rotation barrier). For the complete multi-factor Full KPA defense, see [Proof 4a](#proof-4a-multi-factor-full-kpa-resistance).
 
@@ -287,11 +291,11 @@ with 7^P (or 56^P without CCA) per-pixel encoding ambiguity as an additional fac
 
 ## Proof 5: Noise Barrier Bound
 
-**Note on MinPixels unification.** The shipped construction unifies the container floor: `MinPixels := MinPixelsAuth = ⌈keyBits / log₂(7)⌉` applies to both plain and MAC Authenticated surfaces (the code aliases `MinPixels()` to `MinPixelsAuth()` for every width). One floor for both modes closes an Auth-vs-Non-AEAD distinguisher: the minimum-message container size is mode-independent, so the length envelope does not betray which mode is in use.
+**Note on MinPixels unification.** The shipped construction unifies the container floor: `MinPixels := MinPixelsAuth = ⌈keyBits / log₂(7)⌉` applies to both plain and MAC Authenticated surfaces (the code aliases `MinPixels()` to `MinPixelsAuth()` for every width). One floor for both surfaces closes an Auth-vs-Non-AEAD distinguisher: the minimum-message container size is surface-independent, so the length envelope does not betray which surface is in use.
 
 **Theorem.** With Channels = 8 and the unified shipped floor `MinPixels = MinPixelsAuth = ⌈keyBits / log₂(7)⌉` (both plain and Auth surfaces), the noise barrier 2^(Channels × P) strictly exceeds the key space 2^keyBits.
 
-**Proof.** For keyBits = 1024, the shipped per-region floor (both modes):
+**Proof.** For keyBits = 1024, the Mode 1 per-region floor (both surfaces):
 
 ```
 MinPixels = MinPixelsAuth = ⌈1024 / log₂(7)⌉ = ⌈1024 / 2.807⌉ = 365 per region
@@ -312,7 +316,11 @@ Key space: 2^1024.
 
 The barrier strictly exceeds the key space by a factor of 2^8776.
 
-**General:** For the shipped floor (both modes), `P ≥ 3 × ⌈keyBits / log₂(7)⌉` (per-region floor applied to each of three regions); since `8 / log₂(7) ≈ 2.850 > 1`, `8P > keyBits` follows even at the per-region floor, and shipped's 3× overhead only widens the margin. ∎
+**General:** For the container floor under both sizing modes:
+- Mode 1 (per-region floor): `P ≥ 3 × ⌈keyBits / log₂(7)⌉`. For a 1024-bit key, `P = 1225`, yielding noise barrier `2^(8 × 1225) = 2^9800 > 2^1024` (margin `2^8776`).
+- Mode 2 (per-container floor): `P ≥ ⌈keyBits / log₂(7)⌉`. For a 1024-bit key, `P = 441`, yielding noise barrier `2^(8 × 441) = 2^3528 > 2^1024` (margin `2^2504`).
+
+Because `Channels = 8` and `8 / log₂(7) ≈ 2.850 > 1`, the relation `8P > keyBits` holds unconditionally across both modes even at the un-multiplied per-container floor; Mode 1's 3× region multiplier widens the margin further. ∎
 
 ## Proof 6: CCA Leak Upper Bound
 
@@ -397,13 +405,15 @@ Under the random-container model, the construction provides indistinguishability
 
 ## Proof 9: Ambiguity Dominance Threshold
 
-**Definition (Ambiguity-Based Security).** A construction has (k, P)-ambiguity-based security if, for key size k bits and a region of P pixels, the number of observation-consistent configurations in that region exceeds 2^k for P > P_threshold. The shipped construction partitions the container into three regions and applies the threshold per region.
+**Definition (Ambiguity-Based Security).** A construction has (k, P)-ambiguity-based security if, for key size k bits and an observation domain of P pixels, the number of observation-consistent configurations in that domain exceeds 2^k for P > P_threshold.
 
-**Theorem.** For ITB with key size k bits, the per-region ambiguity threshold is:
-- Under CCA (MAC + Reveal): `P_region_threshold = ⌈k / log₂(7)⌉ ≈ ⌈k / 2.807⌉`
-- Without CCA (Core ITB / MAC + Silent Drop): `P_region_threshold = ⌈k / log₂(56)⌉ ≈ ⌈k / 5.807⌉`
+**Theorem.** For ITB with key size k bits, the ambiguity threshold is:
+- Under CCA (MAC + Reveal): `P_threshold = ⌈k / log₂(7)⌉ ≈ ⌈k / 2.807⌉`
+- Without CCA (Core ITB / MAC + Silent Drop): `P_threshold = ⌈k / log₂(56)⌉ ≈ ⌈k / 5.807⌉`
 
-When each of three regions independently exceeds `P_region_threshold`, per-region ambiguity satisfies the corresponding bound; joint ambiguity across all three regions is `7^(3·P_region)` (or `56^(3·P_region)`) — a strictly stronger property.
+The construction implements two container sizing postures:
+1. **Mode 1 (Per-Region Floor, default):** Enforces `P_region ≥ P_threshold` independently in each of the three regions. Every region independently satisfies `7^P_region > 2^k`; joint ambiguity across all three regions is `7^(3·P_region) ≫ 2^k`.
+2. **Mode 2 (Per-Container Floor):** Enforces `P_container ≥ P_threshold` jointly across the entire container. Joint container ambiguity satisfies `7^P_container > 2^k`. Because the 48-bit Rank Barrier lane permutation diffuses plaintext across regions under secret `lockSeed`, plaintext cannot be attributed to an individual region under the PRF assumption, making joint container ambiguity the governing security condition.
 
 **Proof.** Under CCA, each pixel has 7 rotation candidates ([Proof 4](#proof-4-rotation-barrier)). Per-region ambiguity across `P_region` pixels is `7^P_region`. The condition `7^P_region > 2^k` is equivalent to:
 
@@ -425,10 +435,10 @@ P_region > k / 5.807
 
 | Key size | CCA (`7^P_region > 2^k`) | No CCA (`56^P_region > 2^k`) |
 |---|---|---|
-| 1024-bit | `P_region > 365 pixels` | `P_region > 177 pixels` |
-| 2048-bit | `P_region > 730 pixels` | `P_region > 353 pixels` |
+| 1024-bit | `P_region ≥ 365 pixels` | `P_region ≥ 177 pixels` |
+| 2048-bit | `P_region ≥ 730 pixels` | `P_region ≥ 353 pixels` |
 
-For any per-region pixel count above these thresholds, encoding ambiguity dominates the key space in that region — the number of indistinguishable configurations exceeds the total number of possible keys. The unified `MinPixels := MinPixelsAuth = ⌈keyBits / log₂(7)⌉` formula is applied by `calcContainerSize3Cfg` per region (each of three regions holds at least `MinPixelsAuth` pixels), guaranteeing per-region ambiguity dominance at the shipped minimum container across both streaming modes. Joint 3-region ambiguity `7^(3·MinPixelsAuth) ≫ 2^keyBits` is strictly stronger; the `56^P_region` bound remains valid for any per-region pixel count above the plain-mode threshold as an additionally tighter statement in the absence of CCA. ∎
+For any pixel count above these thresholds, encoding ambiguity dominates the key space — the number of indistinguishable configurations exceeds the total number of possible keys. Mode 1 applies `MinPixels := MinPixelsAuth = ⌈keyBits / log₂(7)⌉` per region (each of three regions holds at least `MinPixelsAuth` pixels), guaranteeing per-region ambiguity dominance at the minimum container on both surfaces. Mode 2 applies `MinPixels` once across the container, guaranteeing joint ambiguity dominance `7^P_container > 2^k` at a more compact grid. The `56^P` bound remains valid for any pixel count above the plain-mode threshold as an additionally tighter statement in the absence of CCA. ∎
 
 ## Proof 10: Guaranteed DRBG Residue (No Perfect Fill)
 
@@ -460,11 +470,11 @@ gap = capacity(s+1) - max_payload(s)
     = (2s + 1) × 7 bytes
 ```
 
-Since s ≥ 1: gap ≥ 21 bytes. For shipped values at 1024-bit key:
-- Composite 3-region container (per-region floor `MinPixels = 365` × 3 regions = 1095 total, `s = ⌈√1095⌉ = 34`, container 35 × 35 = 1225): `gap ≥ (2 × 34 + 1) × 7 = 483 bytes`.
-- Theoretical single-region floor (`MinPixels = 400`, `s = ⌈√400⌉ = 20`, container 20 × 20 = 400): `gap ≥ (2 × 19 + 1) × 7 = 273 bytes` for payloads ≤ 19² = 361 pixels, and `(400 - 365) × 7 = 245 bytes` at the exact 365-pixel floor.
+Since s ≥ 1: gap ≥ 21 bytes. For concrete container floors at a 1024-bit key (`MinPixels = 365`):
+- Mode 1 composite container (per-region floor `MinPixels = 365` × 3 regions = 1095 total pixels, `s = ⌈√1095⌉ = 34`, container `35 × 35 = 1225`): `gap ≥ (2 × 34 + 1) × 7 = 483 bytes`, and `(1225 - 1095) × 7 = 910 bytes` at the exact 1095-pixel floor.
+- Mode 2 compact container (per-container floor `MinPixels = 365`, `s = ⌈√365⌉ = 20`, container `21 × 21 = 441`): `gap ≥ (2 × 20 + 1) × 7 = 287 bytes` for payloads ≤ 20² = 400 pixels (payload ≤ ~2.6 KB), and `(441 - 365) × 7 = 532 bytes` at the exact 365-pixel floor.
 
-**This gap is strictly positive for all s ≥ 1.** Perfect fill (gap = 0) is mathematically impossible. ∎
+**This gap is strictly positive for all s ≥ 1.** Perfect fill (gap = 0) is mathematically impossible across both container sizing modes. ∎
 
 **Consequence for CCA resistance.** After CCA removes noise bits, the attacker observes 7 data bits per channel. These data bits contain:
 
@@ -477,8 +487,8 @@ Both are encrypted identically by dataSeed (rotation + XOR). The attacker cannot
 
 | Data size | Side (s) | Min fill = 7×(2s+1) |
 |---|---|---|
-| theoretical single-region floor (1024-bit key, P = 400) | 19 / 20 | 273 / 245 bytes |
-| shipped floor 1024-bit (per-region `MinPixels = 365` × 3 regions = 1095 total pixels floor, s = 34) | 34 | 483 bytes |
+| Mode 2 per-container floor (1024-bit key, P = 441) | 20 | 287 bytes (532 bytes at 365-pixel floor) |
+| Mode 1 per-region floor (1024-bit key, P = 1225) | 34 | 483 bytes (910 bytes at 1095-pixel floor) |
 | 16 KB | 49 | 693 bytes |
 | 1 MB | 388 | 5,439 bytes |
 | 64 MB | 3,103 | 43,449 bytes |
@@ -550,7 +560,7 @@ The following theorems are well-known properties included for completeness. They
 
 **Proof.**
 
-**Part A: No spatial patterns.** The MAC covers the entire capacity: `tag = MAC(payload)` where `payload = [COBS data][0x00][DRBG fill]`.
+**Part A: No spatial patterns.** The MAC covers the entire capacity: `tag = MAC(payload ‖ streamID ‖ LE64(offset) ‖ flag)` where `payload = [COBS data][0x00][DRBG fill]`.
 
 Because the lane fragments of the interlock nonce `N_il` are prepended to the lane payloads prior to COBS framing, they reside within the authenticated lane buffers covered by the MAC tag; any active modification of `N_il` causes immediate MAC verification failure, eliminating unauthenticated context-commitment vulnerabilities. Flipping any data bit causes MAC failure. Only noise-bit flips produce "accept":
 - **COBS data bit** → payload changes → MAC(modified) ≠ tag → reject
@@ -565,11 +575,11 @@ Every data bit position produces "reject." Only noise bits produce "accept." The
 
 ```
 1. Decrypt3x{128,256,512}Cfg entire capacity → decoded[]
-2. Verify: MAC(decoded[:payloadLen]) == decoded[payloadLen:]
+2. Verify: MAC(decoded[:payloadLen] ‖ streamID ‖ LE64(offset) ‖ flag) == tag
 3. ONLY IF MAC passes: search for null terminator in decoded[:payloadLen]
 ```
 
-Any bit modification (including creating a false 0x00) fails MAC verification at step 2. Step 3 is never reached with tampered data. ∎
+Any data-bit modification (including creating a false 0x00) fails MAC verification at step 2. Step 3 is never reached with tampered data. ∎
 
 ## Nonce Uniqueness
 

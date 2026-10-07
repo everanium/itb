@@ -69,7 +69,6 @@ package itb
 // `REDTEAM_NEAR_IDENTICAL_FRESH_OUTPUT_DIR`.
 
 import (
-	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"math/rand"
@@ -177,15 +176,11 @@ func nifBuild8Seeds(t *testing.T, hf HashFunc128) [8]*Seed128 {
 	return out
 }
 
-// bodyOfCTNIF slices the ciphertext body out of a shipped wire (nonce +
-// dimension header dropped). Layout: main_nonce (NonceSize) || W(2 BE) ||
-// H(2 BE) || W*H*Channels body bytes.
+// bodyOfCTNIF slices the ciphertext body out of a shipped wire (prefix,
+// nonce + dimension header dropped). Layout: prefix (32) || main_nonce
+// (NonceSize) || W(2 BE) || H(2 BE) || W*H*Channels body bytes.
 func bodyOfCTNIF(ct []byte) []byte {
-	header := NonceSize + 4
-	w := int(binary.BigEndian.Uint16(ct[NonceSize : NonceSize+2]))
-	h := int(binary.BigEndian.Uint16(ct[NonceSize+2 : NonceSize+4]))
-	total := w * h
-	return ct[header : header+total*Channels]
+	return parseSMWire(ct, NonceSize).container
 }
 
 // xorInto stores `a XOR b` into `dst`. `dst`, `a`, `b` must all share
@@ -465,7 +460,7 @@ func TestRedTeamNearIdenticalFreshNonce(t *testing.T) {
 	run.Config.CipherEntry = "Encrypt3x128Cfg"
 	run.Config.NoncePolicy = "fresh CSPRNG per Encrypt call (generateNonceCfg, testNonceOverride NOT installed)"
 	run.Config.AttackerPosture = "chosen-plaintext near-identical pair, fresh nonces per call; attacker submits P1 and P2 = P1 XOR delta_mask, oracle draws distinct fresh nonces"
-	run.Config.WirePath = "container body (nonce + W + H dimension header dropped) XOR-aligned per pair"
+	run.Config.WirePath = "container body (32-byte prefix, nonce + W + H dimension header dropped) XOR-aligned per pair"
 
 	// Per-plaintext-size PRNG for the base plaintexts. Deterministic
 	// so a re-run reproduces the same sample corpus. Runtime uint64
@@ -636,18 +631,17 @@ func TestRedTeamNearIdenticalFreshNonce(t *testing.T) {
 	t.Logf("SUMMARY max independent_control byte-equal floor ratio=%.3fx",
 		maxFloorRatioIndep)
 
-	// Baseline comparison against the archived archival nonce-reuse
-	// Layer A number at 512 B on the near-identical pair shape. The
-	// number is the published REDTEAM.md range top (`redteam_nonce_
-	// reuse_test.go` Layer A histogram at 512 B, near-identical
-	// shape) ≈ 0.063 byte-equal rate = 16.128× the 1/256 floor. This
-	// probe measures the same shape under fresh nonces; the delta
-	// between the two floors is the load-bearing "fresh nonce
-	// suffices" number.
-	run.Baseline.Kind = "nonce-reuse near-identical pair at 512 B (Layer A histogram)"
-	run.Baseline.Source = "redteam_nonce_reuse_test.go TestRedTeamNonceReuseLayerAHistogram (reference archival number in REDTEAM.md § 'Nonce reuse (lab-only)')"
-	run.Baseline.NonceReuseNearIdenticalBER = 0.063
-	run.Baseline.NonceReuseFloorRatio = 16.128
+	// Baseline comparison against the nonce-reuse number at 512 B on
+	// the near-identical pair shape. The number is the one REDTEAM.md
+	// records (`redteam_nonce_reuse_dualnonce_test.go` Scenario A,
+	// near-identical shape, 512 B, N = 200 pairs) ≈ 0.070 byte-equal
+	// rate = 17.995× the 1/256 floor. This probe measures the same
+	// shape under fresh nonces; the delta between the two floors is
+	// the load-bearing "fresh nonce suffices" number.
+	run.Baseline.Kind = "nonce-reuse near-identical pair at 512 B (dual-nonce Scenario A)"
+	run.Baseline.Source = "redteam_nonce_reuse_dualnonce_test.go TestRedTeamNonceReuseDualNonceMatrix Scenario A near-identical 512 B (reference number in REDTEAM.md § 'Nonce reuse (lab-only)')"
+	run.Baseline.NonceReuseNearIdenticalBER = 0.070
+	run.Baseline.NonceReuseFloorRatio = 17.995
 	run.Baseline.NoteFreshVsReuse = "Under nonce reuse the near-identical pair produces C1 XOR C2 whose byte-equal rate at 512 B sits at ~16x the 1/256 floor — a traffic-analysis residue. Under fresh nonces the same pair shape should collapse to floor because each Encrypt call redraws every per-chunk mask + noise position + rotation + startPixel from the fresh nonce, so no per-position correlation between the two pair wires survives."
 
 	// A compact fresh-nonce number at 512 B on the near-identical

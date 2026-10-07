@@ -49,6 +49,7 @@ CHANNELS = 8
 DATA_BITS_PER_CHANNEL = 7
 DATA_BITS_PER_PIXEL = CHANNELS * DATA_BITS_PER_CHANNEL  # 56
 DATA_ROTATION_BITS = 3
+SM_PREFIX_SIZE = 32  # wire prefix ahead of the main nonce
 
 
 def cobs_encode(src: bytes) -> bytes:
@@ -206,7 +207,8 @@ def decode_container_to_payload(
     noise_hash_lo_per_pixel: List[int],
     start_pixel: int,
     total_pixels: int,
-    header_size: int = 20,
+    header_size: int,
+    prefix_size: int = SM_PREFIX_SIZE,
 ) -> bytes:
     """Decode every data-bearing pixel into the packed `payload` byte stream.
 
@@ -220,12 +222,13 @@ def decode_container_to_payload(
     Per-pixel `dataHash.lo` / `noiseHash.lo` arrays come from the caller
     so the function is hash-agnostic.
 
-    `header_size` strips the 20-byte ITB header (16-byte nonce + 2W + 2H).
+    `prefix_size` + `header_size` strip the 32-byte wire prefix and the
+    ITB header (main nonce + 2W + 2H).
     """
     capacity = (total_pixels * DATA_BITS_PER_PIXEL) // 8
     total_bits = capacity * 8
     payload_bits = bytearray(capacity)
-    container = ciphertext[header_size:]
+    container = ciphertext[prefix_size + header_size:]
     if len(container) < total_pixels * CHANNELS:
         raise ValueError(
             f"container too short: {len(container)} < {total_pixels * CHANNELS}"
@@ -347,6 +350,7 @@ def parity_check_corpus(fnvstress_dir: Path) -> bool:
         # change needs no edit here; derives from the already-parsed
         # `nonce` length otherwise.
         header_size = int(cell.get("header_size", len(nonce) + 4))
+        prefix_size = int(cell.get("prefix_size", SM_PREFIX_SIZE))
         payload_recovered = decode_container_to_payload(
             ciphertext=ciphertext,
             data_hash_lo_per_pixel=data_hash_lo_per_pixel,
@@ -354,6 +358,7 @@ def parity_check_corpus(fnvstress_dir: Path) -> bool:
             start_pixel=start_pixel,
             total_pixels=total_pixels,
             header_size=header_size,
+            prefix_size=prefix_size,
         )
         # Encoder wrote: `cobs_encode(plaintext) || 0x00 || csprng_fill`.
         # Parity passes if: (a) the first len(cobs_expected) bytes match

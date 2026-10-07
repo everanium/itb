@@ -19,7 +19,7 @@ Tests:
   * MomentChi2 — output byte distribution uniformity on 2²⁰ random
     inputs.
   * Sparse-keyset collision rate on all 160-bit keys with ≤ 2 bits set.
-    Directly relates to the Crib-KPA threat model: schema token headers
+    Directly relates to the Crib KPA threat model: schema token headers
     are sparse by construction.
 
 Usage:

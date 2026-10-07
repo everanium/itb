@@ -15,8 +15,10 @@ package itb
 //   - Fresh crypto/rand nonce per invocation (Mode B is a raw ciphertext
 //     bias probe, not a nonce-reuse attack — each of `n_samples` driver
 //     invocations produces an independent ciphertext). No `setBrokenTestNonce`.
-//   - `<hash>.pixel` sidecar carries `main_nonce_hex`, `interlock_nonce_hex`,
-//     `total_pixels`, `width`, `height`, `barrier_fill`, `header_size`,
+//   - `<hash>.bin` holds the whole Single Message wire, prefix included.
+//     `<hash>.pixel` sidecar carries `main_nonce_hex`, `interlock_nonce_hex`,
+//     `total_pixels`, `width`, `height`, `barrier_fill`, `prefix_size`,
+//     `header_size` (container at `prefix_size + header_size`),
 //     `start_pixel` (first-region `deriveStartPixel`, lab-only decorative
 //     value never consumed by the |Δ50| / χ² metric). Matches the field
 //     schema `raw_mode_bias_probe.py` consumes.
@@ -253,9 +255,9 @@ func TestRedTeamGenerateTripleMassive(t *testing.T) {
 
 	// Parse the shipped wire header off the ciphertext.
 	nonceLen := currentNonceSizeCfg(cfg)
-	mainNonce := ct[:nonceLen]
-	width := int(binary.BigEndian.Uint16(ct[nonceLen:]))
-	height := int(binary.BigEndian.Uint16(ct[nonceLen+2:]))
+	sm := parseSMWire(ct, nonceLen)
+	mainNonce := sm.mainNonce
+	width, height := sm.width, sm.height
 	totalPixels := width * height
 	headerSize := nonceLen + 4
 
@@ -277,7 +279,8 @@ func TestRedTeamGenerateTripleMassive(t *testing.T) {
 
 	// KEY=VALUE sidecar for the Python sub-scripts. Preserves the archived
 	// field shape (`total_pixels=N`, `barrier_fill=N`) and adds the
-	// dual-nonce fields (`main_nonce_hex`, `interlock_nonce_hex`, `header_size`).
+	// dual-nonce fields (`main_nonce_hex`, `interlock_nonce_hex`) and the
+	// wire offsets (`prefix_size`, `header_size`).
 	pixLines := []string{
 		"hash=" + hashName,
 		"hash_display=BLAKE3",
@@ -287,6 +290,7 @@ func TestRedTeamGenerateTripleMassive(t *testing.T) {
 		"width=" + strconv.Itoa(width),
 		"height=" + strconv.Itoa(height),
 		"total_pixels=" + strconv.Itoa(totalPixels),
+		"prefix_size=" + strconv.Itoa(smPrefixLen),
 		"header_size=" + strconv.Itoa(headerSize),
 		"barrier_fill=" + strconv.Itoa(bf),
 		"start_pixel=" + strconv.Itoa(startPixel),

@@ -382,14 +382,20 @@ func tcWriteVictim(t *testing.T, outDir, corpus string, keyBits, ptSize int) {
 		t.Fatal("roundtrip mismatch")
 	}
 	nonceLen := currentNonceSizeCfg(cfg)
-	mainNonce := ct[:nonceLen]
-	totalPixels := int(binary.BigEndian.Uint16(ct[nonceLen:])) * int(binary.BigEndian.Uint16(ct[nonceLen+2:]))
+	sm := parseSMWire(ct, nonceLen)
+	mainNonce := sm.mainNonce
+	totalPixels := sm.width * sm.height
 	third, thirdPixels2, _ := tripleThirdCaps(totalPixels)
 	dump := func(s *Seed128) []uint64 { return append([]uint64(nil), s.Components...) }
 	meta := map[string]any{
 		"corpus":              corpus,
 		"main_nonce_hex":      hex.EncodeToString(mainNonce),
 		"interlock_nonce_hex": hex.EncodeToString(ilNonce),
+		"width":               sm.width,
+		"height":              sm.height,
+		"total_pixels":        totalPixels,
+		"prefix_size":         smPrefixLen,
+		"header_size":         nonceLen + 4,
 		"start_pixels": map[string]int{
 			"s1": s1.deriveStartPixel(mainNonce, third),
 			"s2": s2.deriveStartPixel(mainNonce, third),
@@ -791,11 +797,10 @@ func tcRunCribKPA(t *testing.T, corpus string, ptSize int, modelName string) {
 
 	cfg := &Config{NonceBits: 128, BarrierFill: 1}
 	nonceLen := currentNonceSizeCfg(cfg)
-	mainNonce := append([]byte(nil), ct[:nonceLen]...)
-	W := int(binary.BigEndian.Uint16(ct[nonceLen:]))
-	H := int(binary.BigEndian.Uint16(ct[nonceLen+2:]))
-	totalPixels := W * H
-	container := ct[nonceLen+4:]
+	sm := parseSMWire(ct, nonceLen)
+	mainNonce := append([]byte(nil), sm.mainNonce...)
+	totalPixels := sm.width * sm.height
+	container := sm.container
 	third, thirdPixels2, _ := tripleThirdCaps(totalPixels)
 	lens, _ := nonceSplit(nonceLen)
 
@@ -816,7 +821,7 @@ func tcRunCribKPA(t *testing.T, corpus string, ptSize int, modelName string) {
 	}
 	maxChunks := (a.widths[0]*7 - a.base[0]) / 2
 	t.Logf("wire: %dx%d = %d pixels, thirds = [%d %d %d], fragment lens = %v, barrier lane starts at stream offset %v",
-		W, H, totalPixels, third, third, thirdPixels2, lens, a.base)
+		sm.width, sm.height, totalPixels, third, third, thirdPixels2, lens, a.base)
 	t.Logf("crib: %d plaintext bytes; framed chunks 1..7 fully pinned, chunk 8 four bytes of six, "+
 		"chunk 0 straddles the length header and is not pinned", cribLen)
 

@@ -55,27 +55,32 @@
 // encoding shared by the wire, [Inspect], and the FFI register /
 // inspect entries:
 //
-//	name         Name                 omitted when empty
-//	mode         Mode                 always
-//	width        Width                always
-//	hash         InnerHash            omitted when empty (mixed profiles)
-//	hashes       MixedHashes          omitted when every slot is empty;
-//	                                  otherwise exactly eight strings
-//	keybits      KeyBits              always
-//	nonce_bits   NonceBits            omitted when 0
-//	barrier_fill BarrierFill          omitted when 0
-//	mac          MacName              omitted when empty (No MAC)
-//	tagstub      TagStubSize          omitted when 0
-//	chunk        ChunkSize            omitted when 0
-//	wrapper      Wrapper              always
-//	outer        OuterCipher          omitted when empty
-//	parallax     Parallax             always
-//	palette      ParallaxPalette      omitted when empty
-//	segment      ParallaxSegmentSize  omitted when 0
+//	name           Name                 omitted when empty
+//	mode           Mode                 always
+//	width          Width                always
+//	hash           InnerHash            omitted when empty (mixed profiles)
+//	hashes         MixedHashes          omitted when every slot is empty;
+//	                                    otherwise exactly eight strings
+//	keybits        KeyBits              always
+//	nonce_bits     NonceBits            omitted when 0
+//	barrier_fill   BarrierFill          omitted when 0
+//	container_mode ContainerMode        omitted when 0
+//	mac            MacName              omitted when empty (No MAC)
+//	tagstub        TagStubSize          omitted when 0
+//	chunk          ChunkSize            omitted when 0
+//	wrapper        Wrapper              always
+//	outer          OuterCipher          omitted when empty
+//	parallax       Parallax             always
+//	palette        ParallaxPalette      omitted when empty
+//	segment        ParallaxSegmentSize  omitted when 0
 //
 // A producer clears the inert fields of a disabled layer (outer when
 // wrapper is false; palette and segment when parallax is false), so
-// the record carries no dead information.
+// the record carries no dead information. The nonce_bits, barrier_fill,
+// and container_mode keys are inspection-only (populated by [Inspect]
+// and [Load] from the blob's inner snapshot, where container_mode
+// surfaces 1 for per-region default | 2 for per-container); [Register]
+// requires them to be zero in a registration literal.
 //
 // [Opts.KeyBits] and [Profile.KeyBits] accept any multiple of the
 // resolved primitive's native hash width in [512,
@@ -124,7 +129,10 @@
 // default applies (see [github.com/everanium/itb.DefaultNonceBits] /
 // [github.com/everanium/itb.DefaultBarrierFill]); the value in force
 // is snapshotted into the blob at [Init] and restored by [Load], so
-// the wire shape never depends on the receiver's defaults. The worker
+// the wire shape never depends on the receiver's defaults. The container
+// floor sizing mode (Mode 1 per-region vs Mode 2 per-container) is
+// likewise preserved across [Pipeline.Save] / [Pipeline.Rekey] and
+// surfaced by [Inspect] as [Profile.ContainerMode]. The worker
 // cap is the one runtime-mutable value: set at [Init] from
 // [Opts.MaxWorkers], auto on a loaded Pipeline, overridable at any
 // time through [Pipeline.MaxWorkers], never written to the blob.

@@ -19,9 +19,11 @@ package itb
 //     caller cannot reach either override; both draw fresh crypto/rand per
 //     call. This is a corpus-generation assumption on the ciphertexts, not
 //     an oracle the downstream probe consumes.
-//   - `cell.meta.json` carries `main_nonce_hex` and `interlock_nonce_hex`
+//   - `ct_NNNN.bin` holds the whole Single Message wire, prefix included.
+//     `cell.meta.json` carries `main_nonce_hex` and `interlock_nonce_hex`
 //     (the current dual-nonce schema) plus attacker-visible container
-//     dimensions. `start_pixel` is the first-region `deriveStartPixel`
+//     dimensions and the wire offsets `prefix_size` / `header_size`
+//     (container at their sum). `start_pixel` is the first-region `deriveStartPixel`
 //     result, kept as a lab-visible convenience so the probe's terminal
 //     rank-of-true-shift printout has a target to compare against; the
 //     |Δ50| metric never consumes it.
@@ -537,10 +539,10 @@ func runShelfCorpus(t *testing.T, p shelfParams) {
 	// interlock nonce is not a wire field — under the reuse lab
 	// assumption it is the forced value installed above.
 	nonceLen := NonceSize
-	mainNonce := firstCt[:nonceLen]
+	sm := parseSMWire(firstCt, nonceLen)
+	mainNonce := sm.mainNonce
 	interlockNonce := fixedNonce
-	width := int(binary.BigEndian.Uint16(firstCt[nonceLen:]))
-	height := int(binary.BigEndian.Uint16(firstCt[nonceLen+2:]))
+	width, height := sm.width, sm.height
 	totalPixels := width * height
 	headerSize := nonceLen + 4
 
@@ -565,6 +567,7 @@ func runShelfCorpus(t *testing.T, p shelfParams) {
 		"width":               width,
 		"height":              height,
 		"total_pixels":        totalPixels,
+		"prefix_size":         smPrefixLen,
 		"header_size":         headerSize,
 		"start_pixel":         startPixel,
 		// Retained for compatibility with any archived consumer that

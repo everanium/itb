@@ -442,8 +442,8 @@ func TestStreamEnvelopeEdgeCases(t *testing.T) {
 // paths, so a chunk-boundary off-by-one in the prefix or stub logic
 // surfaces here.
 func TestStreamEnvelopeChunkSizes(t *testing.T) {
-	installNonceBits(t, 128)
-	installTestNonce(t, nonceFixture(16))
+	installNonceBits(t, DefaultNonceBits)
+	installTestNonce(t, nonceFixture(DefaultNonceBits/8))
 	chunkSizes := []int{1024, 4096, 16 << 10, 64 << 10}
 	multipliers := []float64{0.5, 1.0, 1.25, 3.7}
 	for _, cs := range chunkSizes {
@@ -490,10 +490,11 @@ func TestStreamEnvelopeChunkSizes(t *testing.T) {
 // length of a Single Message AEAD ciphertext equals the byte length
 // of the corresponding Single Message No MAC ciphertext for the same
 // plaintext, seeds and nonce. Both paths reserve tagSize + 1 bytes in
-// the third region's container capacity (AEAD: real tag + fixed 0x00
-// dummy flag; No MAC: pure DRBG stub via nomacTagStubSizeCfg), so
-// the two containers round to the identical square and the resulting
-// wire byte counts are equal.
+// the third region's container capacity (AEAD: real tag + the 0xFF
+// final flag; No MAC: pure DRBG stub via nomacTagStubSizeCfg), and
+// both carry a 32-byte prefix (AEAD: the MAC-bound streamID; No MAC: a
+// CSPRNG dummy), so the two containers round to the identical square
+// and the resulting wire byte counts are equal.
 func TestSingleMessageEnvelopeParityAEADvsNoMAC(t *testing.T) {
 	const plaintextSize = 1024
 	for _, wCfg := range []struct {

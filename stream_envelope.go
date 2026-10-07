@@ -120,3 +120,17 @@ func validateConfigCfg(cfg *Config) error {
 	}
 	return nil
 }
+
+// fillNomacPrefix draws the Single Message dummy prefix for the No MAC
+// arm straight into dst — the reserved lead bytes of the wire
+// [Encrypt3x128Cfg] / [Encrypt3x256Cfg] / [Encrypt3x512Cfg] return —
+// from the same CSPRNG source as [nomacStreamPrefix], so the Single
+// Message prefix and the streaming envelope prefix are drawn alike.
+// The bytes are never re-consumed; the decoder skips the same-length
+// window.
+func fillNomacPrefix(dst []byte) error {
+	if _, err := rand.Read(dst); err != nil {
+		return fmt.Errorf("itb: crypto/rand: %w", err)
+	}
+	return nil
+}

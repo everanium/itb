@@ -78,6 +78,11 @@ func process128Cfg(cfg *Config, noiseSeed, dataSeed, startSeed *Seed128, nonce [
 // check compares content, not just identity.
 func checkEightSeeds128(ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 *Seed128) error {
 	seeds := [8]*Seed128{ns, ls, ds1, ds2, ds3, ss1, ss2, ss3}
+	for i, s := range seeds {
+		if s == nil {
+			return fmt.Errorf("itb: seed is nil at slot %d", i)
+		}
+	}
 	for i := 0; i < len(seeds); i++ {
 		// Defensive nil-Hash check. [Blob128.Import3Cfg] leaves
 		// Seed128.Hash unset (documented as caller-wired via the
@@ -118,20 +123,46 @@ func containerSizeAuth3_128Cfg(cfg *Config, noiseSeed *Seed128, dataSeed1, dataS
 		[3]int{startSeed1.MinPixelsAuth(), startSeed2.MinPixelsAuth(), startSeed3.MinPixelsAuth()})
 }
 
-// Encrypt3x128Cfg encrypts data using Triple Ouroboros with 8 seeds
-// (128-bit variant). Plaintext is partitioned across 3 lanes by the
-// 48-bit Interlocked Barrier, each encrypted into 1/3 of the pixel data
-// with independent dataSeed and startSeed, sharing noiseSeed. The lockSeed keys the 48-bit
-// interlock overlay's per-chunk bit-permutation derivation, bound to a
-// second, independently drawn interlock nonce that travels split
-// across the three interlocked lanes rather than in the header. Output
-// format is the ITB wire:
-// [main nonce][W][H][W×H×8 pixels].
+// Encrypt3x128Cfg encrypts data as one Single Message using Triple
+// Ouroboros with 8 seeds (128-bit variant). Plaintext is partitioned
+// across 3 lanes by the 48-bit Interlocked Barrier, each encrypted
+// into 1/3 of the pixel data with independent dataSeed and startSeed,
+// sharing noiseSeed. The lockSeed keys the 48-bit interlock overlay's
+// per-chunk bit-permutation derivation, bound to a second,
+// independently drawn interlock nonce that travels split across the
+// three interlocked lanes rather than in the header. Output format is
+// the Single Message wire:
+//
+//	[prefix(32)][main nonce][W][H][W×H×8 pixels]
+//
+// The 32-byte prefix is a CSPRNG dummy of the same length as the
+// streamID that [EncryptAuthenticated3x128Cfg] binds into its MAC, so
+// the No MAC and MAC Authenticated Single Message wires share one
+// shape; [Decrypt3x128Cfg] skips it. The chunk that follows the prefix
+// is exactly what [EncryptStream3x128Cfg] emits per chunk, so a Single
+// Message wire and a one-chunk stream are byte-shape identical.
 //
 // cfg threads per-encryptor overrides through every Cfg-aware
 // accessor in the pipeline; nil cfg falls back to [DefaultNonceBits] /
 // [DefaultBarrierFill] / runtime.NumCPU.
 func Encrypt3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed128, data []byte) ([]byte, error) {
+	out, err := encrypt3x128Cfg(cfg, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data, streamIDPrefixLen)
+	if err != nil {
+		return nil, err
+	}
+	if err := fillNomacPrefix(out[:streamIDPrefixLen]); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// encrypt3x128Cfg produces one No MAC chunk —
+// [main nonce][W][H][W×H×8 pixels] — with lead zero bytes reserved
+// ahead of it in the returned buffer. The streaming encoders call it
+// with lead 0 for every chunk; [Encrypt3x128Cfg] calls it with
+// [streamIDPrefixLen] and writes the Single Message prefix into the
+// reserved bytes.
+func encrypt3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed128, data []byte, lead int) ([]byte, error) {
 	if err := checkEightSeeds128(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
 		return nil, err
 	}
@@ -160,7 +191,7 @@ func Encrypt3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dat
 	// distinguish this No MAC chunk from the paired authenticated chunk
 	// (whose third region carries payload || tag || flag(1)). The
 	// reserved bytes are pure DRBG on the No MAC side.
-	tp, out, container, width, height, err := buildTripleWire3(cfg, data, buildLockBatchPRF48_128Cfg(cfg, lockSeed, ilNonce), nomacTagStubSizeCfg(cfg), true, nonce, ilNonce,
+	tp, out, container, width, height, err := buildTripleWire3(cfg, data, buildLockBatchPRF48_128Cfg(cfg, lockSeed, ilNonce), nomacTagStubSizeCfg(cfg), true, lead, nonce, ilNonce,
 		func(cobsLens [3]int) (int, int) {
 			return containerSize3_128Cfg(cfg, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, cobsLens)
 		})
@@ -198,9 +229,35 @@ func Encrypt3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dat
 	return out, nil
 }
 
-// Decrypt3x128Cfg is the inverse of [Encrypt3x128Cfg]. nil cfg falls
-// back to the compile-in defaults.
+// Decrypt3x128Cfg is the inverse of [Encrypt3x128Cfg]: it skips the
+// 32-byte Single Message prefix and decodes the chunk behind it. The
+// wire must be exactly the prefix plus that one chunk — trailing
+// bytes and multi-chunk streams are rejected. nil cfg falls back to
+// the compile-in defaults.
 func Decrypt3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed128, fileData []byte) ([]byte, error) {
+	if err := checkEightSeeds128(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
+		return nil, err
+	}
+	if len(fileData) == 0 {
+		return nil, ErrEmptyInput
+	}
+	if len(fileData) < streamIDPrefixLen+headerSizeCfg(cfg)+Channels {
+		return nil, fmt.Errorf("itb: data too short")
+	}
+	// The header behind the prefix announces the one chunk, and nothing
+	// may follow it. A header that does not parse falls through to the
+	// chunk decoder, which reports the malformed field itself.
+	if chunkLen, perr := ParseChunkLenCfg(cfg, fileData[streamIDPrefixLen:]); perr == nil && streamIDPrefixLen+chunkLen != len(fileData) {
+		return nil, fmt.Errorf("itb: wire is %d bytes, want %d for prefix + one chunk (trailing bytes or a multi-chunk stream)", len(fileData), streamIDPrefixLen+chunkLen)
+	}
+	return decrypt3x128Cfg(cfg, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, fileData[streamIDPrefixLen:])
+}
+
+// decrypt3x128Cfg decodes one No MAC chunk —
+// [main nonce][W][H][W×H×8 pixels] — the inverse of [encrypt3x128Cfg].
+// The streaming decoders hand it each chunk in turn; [Decrypt3x128Cfg]
+// hands it the Single Message wire past the prefix.
+func decrypt3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed128, fileData []byte) ([]byte, error) {
 	if err := checkEightSeeds128(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
 		return nil, err
 	}
@@ -219,6 +276,11 @@ func Decrypt3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dat
 
 	if width == 0 || height == 0 {
 		return nil, fmt.Errorf("itb: invalid dimensions %dx%d", width, height)
+	}
+	// The encoder only emits square containers; a non-square header
+	// with the same W·H would otherwise decode to the same plaintext.
+	if width != height {
+		return nil, fmt.Errorf("itb: non-square container %dx%d", width, height)
 	}
 	if width > math.MaxInt/height {
 		return nil, fmt.Errorf("itb: container dimensions %dx%d overflow int", width, height)

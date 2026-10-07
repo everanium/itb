@@ -328,12 +328,13 @@ func TestWrongSeedDecryptNeverPanics(t *testing.T) {
 	}
 }
 
-// TestWireHeaderFormat confirms the wire header layout: the header is
-// exactly N+4 bytes (main nonce, width, height), the payload begins at
-// N+4, and the No MAC and MAC single-message wire envelopes remain
-// equal in size (the shipped AEAD/No MAC indistinguishability
-// invariant, preserved because both carry the same header and the same
-// per-lane interlock-nonce fragments).
+// TestWireHeaderFormat confirms the Single Message wire layout: the
+// 32-byte prefix comes first, the header behind it is exactly N+4
+// bytes (main nonce, width, height), the container begins at 32+N+4,
+// and the No MAC and MAC Single Message wire envelopes remain equal in
+// size (the shipped AEAD/No MAC indistinguishability invariant,
+// preserved because both carry a prefix of the same length, the same
+// header and the same per-lane interlock-nonce fragments).
 func TestWireHeaderFormat(t *testing.T) {
 	n := currentNonceSizeCfg(nil)
 	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeeds512(512, makeBlake2bHash512())
@@ -343,8 +344,11 @@ func TestWireHeaderFormat(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(ct) < headerSizeCfg(nil)+Channels {
-		t.Fatalf("ciphertext shorter than header: %d", len(ct))
+	if len(ct) < streamIDPrefixLen+headerSizeCfg(nil)+Channels {
+		t.Fatalf("ciphertext shorter than prefix plus header: %d", len(ct))
+	}
+	if _, err := ParseChunkLenCfg(nil, ct[streamIDPrefixLen:]); err != nil {
+		t.Fatalf("header does not parse at offset %d: %v", streamIDPrefixLen, err)
 	}
 	if headerSizeCfg(nil) != n+4 {
 		t.Fatalf("headerSizeCfg = %d, want %d", headerSizeCfg(nil), n+4)
@@ -358,7 +362,7 @@ func TestWireHeaderFormat(t *testing.T) {
 		t.Fatal("round-trip mismatch under the wire header")
 	}
 
-	// AEAD / No MAC single-message envelope sizes must match. Small
+	// AEAD / No MAC Single Message envelope sizes must match. Small
 	// payload (777 B) — the MinPixels floor pads containers, so this
 	// primarily verifies that the floor absorbs the reserved-tail
 	// difference between simpleMACFunc's 8-byte tag (tagSize+1 = 9
@@ -401,14 +405,17 @@ func TestWireHeaderFormat(t *testing.T) {
 	}
 }
 
-// TestHeaderByteCorruptionRejected pins the wire header's integrity
-// coverage: every single-byte corruption anywhere in the header is
-// rejected by the authenticated decrypt path. The main nonce drives
-// deriveStartPixel, so corrupting it garbles the Pixel Barrier walk and
-// the MAC over the recovered payloads fails; the width and height bytes
-// are rejected either structurally (dimension and capacity checks) or,
-// where the corrupted geometry still parses, by the same MAC. There is
-// no header field whose corruption authenticates.
+// TestHeaderByteCorruptionRejected pins the Single Message wire's
+// integrity coverage ahead of the container: every single-byte
+// corruption anywhere in the 32-byte streamID prefix or in the header
+// is rejected by the authenticated decrypt path. The streamID is bound
+// into the MAC, so corrupting it fails verification outright; the main
+// nonce drives deriveStartPixel, so corrupting it garbles the Pixel
+// Barrier walk and the MAC over the recovered payloads fails; the width
+// and height bytes are rejected either structurally (dimension,
+// capacity and exact-length checks) or, where the corrupted geometry
+// still parses, by the same MAC. There is no byte ahead of the
+// container whose single-byte corruption authenticates.
 func TestHeaderByteCorruptionRejected(t *testing.T) {
 	for _, bits := range nonceWidths {
 		cfg := &Config{NonceBits: bits}
@@ -428,17 +435,17 @@ func TestHeaderByteCorruptionRejected(t *testing.T) {
 			t.Fatalf("nonce %d: baseline round-trip err=%v match=%v", bits, err, bytes.Equal(pt, data))
 		}
 
-		for i := 0; i < hdr; i++ {
+		for i := 0; i < streamIDPrefixLen+hdr; i++ {
 			tampered := bytes.Clone(ct)
 			tampered[i] ^= 0x01
 			_, err := DecryptAuthenticated3x128Cfg(cfg, ns, ls, d1, d2, d3, s1, s2, s3, tampered, simpleMACFunc)
 			if err == nil {
-				t.Fatalf("nonce %d: header byte %d corruption authenticated", bits, i)
+				t.Fatalf("nonce %d: prefix/header byte %d corruption authenticated", bits, i)
 			}
-			// Main-nonce corruption reaches MAC verification and fails
-			// there; it is never absorbed by a structural check.
-			if i < nonceLen && !errors.Is(err, ErrMACFailure) {
-				t.Fatalf("nonce %d: main-nonce byte %d gave %v, want %v", bits, i, err, ErrMACFailure)
+			// StreamID and main-nonce corruption reach MAC verification
+			// and fail there; neither is absorbed by a structural check.
+			if i < streamIDPrefixLen+nonceLen && !errors.Is(err, ErrMACFailure) {
+				t.Fatalf("nonce %d: prefix/main-nonce byte %d gave %v, want %v", bits, i, err, ErrMACFailure)
 			}
 		}
 	}
@@ -532,7 +539,7 @@ func TestValueDistinctSeedsRejected(t *testing.T) {
 		if _, err := Encrypt3x128Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, []byte("hello world")); err == nil {
 			t.Fatal("Encrypt3x128Cfg accepted byte-identical lock/start seeds")
 		}
-		if _, err := Decrypt3x128Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, make([]byte, headerSizeCfg(nil)+Channels)); err == nil {
+		if _, err := Decrypt3x128Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, make([]byte, streamIDPrefixLen+headerSizeCfg(nil)+Channels)); err == nil {
 			t.Fatal("Decrypt3x128Cfg accepted byte-identical lock/start seeds")
 		}
 	})
@@ -542,7 +549,7 @@ func TestValueDistinctSeedsRejected(t *testing.T) {
 		if _, err := Encrypt3x256Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, []byte("hello world")); err == nil {
 			t.Fatal("Encrypt3x256Cfg accepted byte-identical lock/start seeds")
 		}
-		if _, err := Decrypt3x256Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, make([]byte, headerSizeCfg(nil)+Channels)); err == nil {
+		if _, err := Decrypt3x256Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, make([]byte, streamIDPrefixLen+headerSizeCfg(nil)+Channels)); err == nil {
 			t.Fatal("Decrypt3x256Cfg accepted byte-identical lock/start seeds")
 		}
 	})
@@ -552,7 +559,7 @@ func TestValueDistinctSeedsRejected(t *testing.T) {
 		if _, err := Encrypt3x512Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, []byte("hello world")); err == nil {
 			t.Fatal("Encrypt3x512Cfg accepted byte-identical lock/start seeds")
 		}
-		if _, err := Decrypt3x512Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, make([]byte, headerSizeCfg(nil)+Channels)); err == nil {
+		if _, err := Decrypt3x512Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, make([]byte, streamIDPrefixLen+headerSizeCfg(nil)+Channels)); err == nil {
 			t.Fatal("Decrypt3x512Cfg accepted byte-identical lock/start seeds")
 		}
 	})

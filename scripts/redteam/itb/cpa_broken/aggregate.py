@@ -57,7 +57,7 @@ def per_kind_body(cells: list[dict]) -> dict[str, dict[str, dict]]:
 def print_body_chi2(per_kind: dict) -> None:
     print("\n==== Per-cell body byte-histogram chi² vs df=255 uniform ====")
     print("df=255 uniform band: mean 255, one-sided 3σ top ≈ 323")
-    print("Body extraction: container body only (nonce + W + H header dropped)")
+    print("Body extraction: container body only (32-byte prefix, nonce + W + H header dropped)")
     print()
     kinds = sorted({k for prim_kinds in per_kind.values() for k in prim_kinds})
     header = f"  {'kind':<18} " + " ".join(f"{prim:>10}" for prim in sorted(per_kind))

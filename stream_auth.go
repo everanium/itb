@@ -6,14 +6,16 @@ import (
 	"fmt"
 )
 
-// streamIDPrefixLen is the on-wire length of the per-stream
-// CSPRNG-fresh anchor preceding chunk 0 of a Streaming AEAD
-// transcript.
+// streamIDPrefixLen is the on-wire length of the 32-byte prefix every
+// wire opens with: the CSPRNG-fresh streamID preceding chunk 0 of a
+// Streaming AEAD transcript or of a MAC Authenticated Single Message,
+// and the same-length CSPRNG dummy ahead of the No MAC shapes.
 const streamIDPrefixLen = 32
 
 // generateStreamID draws a CSPRNG-fresh 32-byte stream anchor that
 // the encoder helper writes once at stream start and reuses across
-// every chunk's MAC input.
+// every chunk's MAC input; the MAC Authenticated Single Message
+// entries draw theirs here too and bind it into the one chunk's MAC.
 func generateStreamID() ([streamIDPrefixLen]byte, error) {
 	var sid [streamIDPrefixLen]byte
 	if _, err := rand.Read(sid[:]); err != nil {
@@ -34,6 +36,11 @@ func chunkPixelCountCfg(cfg *Config, chunk []byte) (uint64, error) {
 	height := uint64(binary.BigEndian.Uint16(chunk[nonceLen+2:]))
 	if width == 0 || height == 0 {
 		return 0, fmt.Errorf("itb: invalid dimensions %dx%d", width, height)
+	}
+	// The encoder only emits square containers; a non-square header
+	// with the same W·H would otherwise decode to the same plaintext.
+	if width != height {
+		return 0, fmt.Errorf("itb: non-square container %dx%d", width, height)
 	}
 	return width * height, nil
 }

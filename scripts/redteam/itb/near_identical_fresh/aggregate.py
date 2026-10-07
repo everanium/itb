@@ -15,8 +15,7 @@ and prints a compact structural analysis:
   - dominant delta position per size and dominant size across the
     matrix
   - null / signal verdict against the uniform band and against the
-    archival nonce-reuse near-identical baseline (~16.13x floor at
-    512 B)
+    nonce-reuse near-identical baseline (~18.0x floor at 512 B)
 
 Consumes only the emitted JSON record — no Go test state.
 """
@@ -47,7 +46,7 @@ def fmt_chi2(v: float) -> str:
 def print_body_chi2(cells: list[dict]) -> None:
     print("\n==== Per-cell byte-XOR chi² vs df=255 uniform ====")
     print("df=255 uniform band: mean 255, one-sided 3σ top ≈ 323")
-    print("Wire path: container body only (nonce + W + H header dropped)")
+    print("Wire path: container body only (32-byte prefix, nonce + W + H header dropped)")
     print()
     sizes = sorted({c["plaintext_size"] for c in cells})
     deltas = list(dict.fromkeys(c["delta_position"] for c in cells))

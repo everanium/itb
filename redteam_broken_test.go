@@ -357,11 +357,9 @@ func TestRedTeamBrokenCRC128CribKPA(t *testing.T) {
 		t.Fatalf("barrier ciphertext did not round-trip")
 	}
 
-	header := NonceSize + 4
-	w := int(binary.BigEndian.Uint16(ct[NonceSize : NonceSize+2]))
-	h := int(binary.BigEndian.Uint16(ct[NonceSize+2 : NonceSize+4]))
-	barTotal := w * h
-	body := ct[header : header+barTotal*Channels]
+	sm := parseSMWire(ct, NonceSize)
+	barTotal := sm.width * sm.height
+	body := sm.container
 
 	// Attack with the CRC128 const of the barrier ciphertext's own nonce.
 	// (Same fixed nonce — nonce-reuse assumption.)
@@ -509,7 +507,7 @@ func TestRedTeamBrokenCRC128NonceReuse(t *testing.T) {
 	}
 
 	// Confirm the nonce genuinely collided (lab assumption realised).
-	if string(ctA[:NonceSize]) != string(ctB[:NonceSize]) {
+	if string(parseSMWire(ctA, NonceSize).mainNonce) != string(parseSMWire(ctB, NonceSize).mainNonce) {
 		t.Fatalf("nonce did not collide — setBrokenTestNonce override not in effect")
 	}
 	t.Logf("Nonce-Reuse lab assumption realised: identical %d-byte nonce on both ciphertexts", NonceSize)
@@ -522,11 +520,9 @@ func TestRedTeamBrokenCRC128NonceReuse(t *testing.T) {
 		{"msgA", ctA, plainA},
 		{"msgB", ctB, plainB},
 	} {
-		header := NonceSize + 4
-		w := int(binary.BigEndian.Uint16(tc.ct[NonceSize : NonceSize+2]))
-		h := int(binary.BigEndian.Uint16(tc.ct[NonceSize+2 : NonceSize+4]))
-		total := w * h
-		body := tc.ct[header : header+total*Channels]
+		sm := parseSMWire(tc.ct, NonceSize)
+		total := sm.width * sm.height
+		body := sm.container
 		surv, anchors := cribKPASurvivorsBroken(body, total, zeroSeed, nonce, tc.plain, cribPixels)
 		t.Logf("Nonce-Reuse %s: anchoredShifts=%d bestSurvivors=%d over %d shifts",
 			tc.name, anchors, surv, total)

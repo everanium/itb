@@ -551,7 +551,7 @@ func TestContainerSizes(t *testing.T) {
 			if !bytes.Equal(data, pt) {
 				t.Fatal("container-sizing round-trip mismatch")
 			}
-			containerSize := len(ct) - headerSizeCfg(nil)
+			containerSize := len(ct) - streamIDPrefixLen - headerSizeCfg(nil)
 			pixels := containerSize / Channels
 			capacity := (pixels * DataBitsPerPixel) / 8
 			t.Logf("container: %d pixels, capacity: %d bytes, output: %d bytes", pixels, capacity, len(ct))
@@ -710,10 +710,10 @@ func TestParseChunkLenErrors(t *testing.T) {
 func TestDecryptRejectOversizeContainer(t *testing.T) {
 	n, l, d1, d2, d3, s1, s2, s3 := makeEightSeeds128(1024, sipHash128)
 
-	header := make([]byte, headerSizeCfg(nil)+Channels)
-	nonceSz := currentNonceSizeCfg(nil)
-	binary.BigEndian.PutUint16(header[nonceSz:], 3200)
-	binary.BigEndian.PutUint16(header[nonceSz+2:], 3200)
+	header := make([]byte, streamIDPrefixLen+headerSizeCfg(nil)+Channels)
+	dimsOff := streamIDPrefixLen + currentNonceSizeCfg(nil) // W/H sit behind the prefix and the main nonce
+	binary.BigEndian.PutUint16(header[dimsOff:], 3200)
+	binary.BigEndian.PutUint16(header[dimsOff+2:], 3200)
 	fakeContainer := make([]byte, len(header)+3200*3200*8)
 	copy(fakeContainer, header)
 
@@ -763,14 +763,15 @@ func TestConcurrentEncryptSameSeed(t *testing.T) {
 			t.Errorf("worker %d: %v", i, err)
 		}
 	}
-	// Nonces (first currentNonceSizeCfg(nil) bytes) must differ pairwise.
+	// Main nonces (the currentNonceSizeCfg(nil) bytes behind the
+	// 32-byte Single Message prefix) must differ pairwise.
 	nonceSz := currentNonceSizeCfg(nil)
 	for i := 0; i < workers; i++ {
 		for j := i + 1; j < workers; j++ {
 			if results[i] == nil || results[j] == nil {
 				continue
 			}
-			if bytes.Equal(results[i][:nonceSz], results[j][:nonceSz]) {
+			if bytes.Equal(results[i][streamIDPrefixLen:streamIDPrefixLen+nonceSz], results[j][streamIDPrefixLen:streamIDPrefixLen+nonceSz]) {
 				t.Errorf("workers %d and %d produced identical nonces", i, j)
 			}
 		}
@@ -939,25 +940,31 @@ func TestMode2EncryptDecryptRoundTrip(t *testing.T) {
 // Mode 2 ≡ Mode 1 regression fails on.
 func TestContainerSizeMode2Transition(t *testing.T) {
 	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeeds512(512, makeBlake2bHash512())
-	hdr := headerSizeCfg(&Config{NonceBits: 128})
-	wire := func(mode, n int) int {
+	wire := func(nb, mode, n int) int {
 		t.Helper()
-		cfg := &Config{NonceBits: 128, Mode: mode}
+		cfg := &Config{NonceBits: nb, Mode: mode}
 		ct, err := Encrypt3x512Cfg(cfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, genTestPlaintext(t, n))
 		if err != nil {
-			t.Fatalf("Encrypt3x512Cfg(Mode=%d, %d B): %v", mode, n, err)
+			t.Fatalf("Encrypt3x512Cfg(NonceBits=%d, Mode=%d, %d B): %v", nb, mode, n, err)
 		}
 		return len(ct)
 	}
-	for _, tc := range []struct{ n, side1, side2 int }{
-		{16, 25, 15},   // key floor binds on both sides
-		{1400, 25, 16}, // payload lifts Mode 2 off its floor; Mode 1 stays on its own
-		{5000, 29, 29}, // payload above both floors: the modes agree
+	for _, tc := range []struct{ nb, n, side1, side2 int }{
+		{128, 16, 25, 15},   // key floor binds on both sides
+		{128, 1400, 25, 16}, // payload lifts Mode 2 off its floor; Mode 1 stays on its own
+		{128, 5000, 29, 29}, // payload above both floors: the modes agree
+		{256, 16, 25, 15},
+		{256, 1400, 25, 16},
+		{256, 5000, 29, 29},
+		{512, 16, 25, 15},
+		{512, 1400, 25, 17}, // the wider interlock nonce inside the container lifts Mode 2 one side further
+		{512, 5000, 29, 29},
 	} {
-		got1, got2 := wire(1, tc.n), wire(2, tc.n)
-		if got1 != hdr+tc.side1*tc.side1*8 || got2 != hdr+tc.side2*tc.side2*8 {
-			t.Fatalf("%d B: wire Mode 1 = %d, Mode 2 = %d; want sides %d / %d",
-				tc.n, got1, got2, tc.side1, tc.side2)
+		hdr := headerSizeCfg(&Config{NonceBits: tc.nb})
+		got1, got2 := wire(tc.nb, 1, tc.n), wire(tc.nb, 2, tc.n)
+		if got1 != streamIDPrefixLen+hdr+tc.side1*tc.side1*8 || got2 != streamIDPrefixLen+hdr+tc.side2*tc.side2*8 {
+			t.Fatalf("NonceBits=%d, %d B: wire Mode 1 = %d, Mode 2 = %d; want sides %d / %d",
+				tc.nb, tc.n, got1, got2, tc.side1, tc.side2)
 		}
 	}
 }

@@ -47,7 +47,6 @@ package itb
 // is the primary record.
 
 import (
-	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -224,13 +223,10 @@ func bitBalanceRS(diff []byte) (meanAbs, maxAbs float64) {
 }
 
 // bodyOfCTRS slices the ciphertext body out of a shipped wire. Layout:
-// main_nonce (NonceSize) || W(2 BE) || H(2 BE) || W×H×Channels body bytes.
+// prefix (32) || main_nonce (NonceSize) || W(2 BE) || H(2 BE) ||
+// W×H×Channels body bytes.
 func bodyOfCTRS(ct []byte) []byte {
-	header := NonceSize + 4
-	w := int(binary.BigEndian.Uint16(ct[NonceSize : NonceSize+2]))
-	h := int(binary.BigEndian.Uint16(ct[NonceSize+2 : NonceSize+4]))
-	total := w * h
-	return ct[header : header+total*Channels]
+	return parseSMWire(ct, NonceSize).container
 }
 
 // xorBytesRS returns a XOR b, truncated to min(len(a), len(b)).
@@ -661,8 +657,8 @@ func TestRedTeamRelatedSeedMatrix(t *testing.T) {
 						Chi2DF:           255,
 						BitBalMeanAbs:    meanAbs,
 						BitBalMaxAbs:     maxAbs,
-						Container0Bytes:  len(ct0),
-						Container1Bytes:  len(ct1),
+						Container0Bytes:  len(body0),
+						Container1Bytes:  len(body1),
 						MatchedContainer: matched,
 					}
 					run.Cells = append(run.Cells, cell)
@@ -702,13 +698,41 @@ func TestRedTeamRelatedSeedMatrix(t *testing.T) {
 			prim.name, maxChi, maxCell.Axis, maxCell.DeltaKind, maxCell.PlaintextKind)
 		t.Logf("SUMMARY %-6s: max_chi2 excluding noiseSeed axis: %10.1f on axis=%s Δ=%s pt=%s",
 			prim.name, nonNoiseMaxChi, nonNoiseMaxCell.Axis, nonNoiseMaxCell.DeltaKind, nonNoiseMaxCell.PlaintextKind)
+		// lockSeed axis alone. A lockSeed cell that collapsed toward the
+		// df=255 uniform band carried its Δ into the masks; a lockSeed
+		// cell at the ~42-56M no-Δ floor did not (a null Δ for the
+		// primitive — the Δ never changed a derived quantity). The two
+		// populations sit five orders of magnitude apart, so a 1e6
+		// threshold separates them.
+		const lockCollapsedMax = 1e6
+		var lockMaxChi float64
+		var lockMaxCell rsCell
+		lockAtFloor := 0
+		for _, c := range run.Cells {
+			if c.Primitive != prim.name || c.Axis != "lockSeed" {
+				continue
+			}
+			if c.Chi2 >= lockCollapsedMax {
+				lockAtFloor++
+				continue
+			}
+			if c.Chi2 > lockMaxChi {
+				lockMaxChi = c.Chi2
+				lockMaxCell = c
+			}
+		}
+		t.Logf("SUMMARY %-6s: lockSeed axis max_chi2 over collapsed cells=%10.1f on Δ=%s pt=%s; lockSeed cells at the no-Δ floor (null Δ)=%d",
+			prim.name, lockMaxChi, lockMaxCell.DeltaKind, lockMaxCell.PlaintextKind, lockAtFloor)
 		summary[prim.name] = map[string]any{
-			"max_chi2_all_axes":         maxChi,
-			"max_chi2_all_axes_cell":    maxCell,
-			"max_chi2_excl_noise":       nonNoiseMaxChi,
-			"max_chi2_excl_noise_cell":  nonNoiseMaxCell,
-			"archived_axis_hit_target":  map[string]float64{"CRC128": 42454524, "FNV-1a": 56680753}[prim.name],
-			"archived_neutralised_band": 6100000.0,
+			"max_chi2_all_axes":           maxChi,
+			"max_chi2_all_axes_cell":      maxCell,
+			"max_chi2_excl_noise":         nonNoiseMaxChi,
+			"max_chi2_excl_noise_cell":    nonNoiseMaxCell,
+			"lockseed_max_chi2_collapsed": lockMaxChi,
+			"lockseed_max_chi2_cell":      lockMaxCell,
+			"lockseed_cells_at_floor":     lockAtFloor,
+			"archived_axis_hit_target":    map[string]float64{"CRC128": 42454524, "FNV-1a": 56680753}[prim.name],
+			"archived_neutralised_band":   6100000.0,
 		}
 	}
 

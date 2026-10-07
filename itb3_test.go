@@ -189,7 +189,7 @@ func TestTriple_NonceUniqueness(t *testing.T) {
 	data := []byte("same data, different nonce")
 	enc1, _ := Encrypt3x128Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
 	enc2, _ := Encrypt3x128Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
-	if bytes.Equal(enc1[:currentNonceSizeCfg(nil)], enc2[:currentNonceSizeCfg(nil)]) {
+	if bytes.Equal(enc1[streamIDPrefixLen:streamIDPrefixLen+currentNonceSizeCfg(nil)], enc2[streamIDPrefixLen:streamIDPrefixLen+currentNonceSizeCfg(nil)]) {
 		t.Fatal("two encryptions produced identical nonces")
 	}
 }
@@ -201,7 +201,7 @@ func TestTriple_NonceUniqueness256(t *testing.T) {
 	data := []byte("same data, different nonce")
 	enc1, _ := Encrypt3x256Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
 	enc2, _ := Encrypt3x256Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
-	if bytes.Equal(enc1[:currentNonceSizeCfg(nil)], enc2[:currentNonceSizeCfg(nil)]) {
+	if bytes.Equal(enc1[streamIDPrefixLen:streamIDPrefixLen+currentNonceSizeCfg(nil)], enc2[streamIDPrefixLen:streamIDPrefixLen+currentNonceSizeCfg(nil)]) {
 		t.Fatal("two encryptions produced identical nonces")
 	}
 }
@@ -213,7 +213,7 @@ func TestTriple_NonceUniqueness512(t *testing.T) {
 	data := []byte("same data, different nonce")
 	enc1, _ := Encrypt3x512Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
 	enc2, _ := Encrypt3x512Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
-	if bytes.Equal(enc1[:currentNonceSizeCfg(nil)], enc2[:currentNonceSizeCfg(nil)]) {
+	if bytes.Equal(enc1[streamIDPrefixLen:streamIDPrefixLen+currentNonceSizeCfg(nil)], enc2[streamIDPrefixLen:streamIDPrefixLen+currentNonceSizeCfg(nil)]) {
 		t.Fatal("two encryptions produced identical nonces")
 	}
 }
@@ -357,7 +357,7 @@ func TestTriple_CorruptedContainer(t *testing.T) {
 	}
 
 	// Truncated container
-	_, err = Decrypt3x128Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted[:headerSizeCfg(nil)+1])
+	_, err = Decrypt3x128Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted[:streamIDPrefixLen+headerSizeCfg(nil)+1])
 	if err == nil {
 		t.Fatal("expected error for truncated container")
 	}
@@ -371,10 +371,10 @@ func TestTriple_CorruptedContainer(t *testing.T) {
 	// Zero dimensions
 	corrupted := make([]byte, len(encrypted))
 	copy(corrupted, encrypted)
-	corrupted[currentNonceSizeCfg(nil)] = 0
-	corrupted[currentNonceSizeCfg(nil)+1] = 0
-	corrupted[currentNonceSizeCfg(nil)+2] = 0
-	corrupted[currentNonceSizeCfg(nil)+3] = 0
+	corrupted[streamIDPrefixLen+currentNonceSizeCfg(nil)] = 0
+	corrupted[streamIDPrefixLen+currentNonceSizeCfg(nil)+1] = 0
+	corrupted[streamIDPrefixLen+currentNonceSizeCfg(nil)+2] = 0
+	corrupted[streamIDPrefixLen+currentNonceSizeCfg(nil)+3] = 0
 	_, err = Decrypt3x128Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, corrupted)
 	if err == nil {
 		t.Fatal("expected error for zero dimensions")
@@ -409,7 +409,7 @@ func TestTriple_AuthTamperDetection(t *testing.T) {
 
 	tampered := make([]byte, len(encrypted))
 	copy(tampered, encrypted)
-	for i := headerSizeCfg(nil); i < len(tampered); i++ {
+	for i := streamIDPrefixLen + headerSizeCfg(nil); i < len(tampered); i++ {
 		tampered[i] ^= 0xFF
 	}
 
@@ -726,7 +726,7 @@ func TestTriple_AuthTamperDetection256(t *testing.T) {
 	}
 	tampered := make([]byte, len(encrypted))
 	copy(tampered, encrypted)
-	for i := headerSizeCfg(nil); i < len(tampered); i++ {
+	for i := streamIDPrefixLen + headerSizeCfg(nil); i < len(tampered); i++ {
 		tampered[i] ^= 0xFF
 	}
 	_, err = DecryptAuthenticated3x256Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, tampered, simpleMACFunc)
@@ -744,7 +744,7 @@ func TestTriple_AuthTamperDetection512(t *testing.T) {
 	}
 	tampered := make([]byte, len(encrypted))
 	copy(tampered, encrypted)
-	for i := headerSizeCfg(nil); i < len(tampered); i++ {
+	for i := streamIDPrefixLen + headerSizeCfg(nil); i < len(tampered); i++ {
 		tampered[i] ^= 0xFF
 	}
 	_, err = DecryptAuthenticated3x512Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, tampered, simpleMACFunc)
@@ -784,7 +784,7 @@ func TestTriple_AuthWrongSeed512(t *testing.T) {
 func TestTriple_CorruptedContainer256(t *testing.T) {
 	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeeds256(512, makeBlake3Hash256())
 	// Truncated
-	_, err := Decrypt3x256Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, make([]byte, headerSizeCfg(nil)+1))
+	_, err := Decrypt3x256Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, make([]byte, streamIDPrefixLen+headerSizeCfg(nil)+1))
 	if err == nil {
 		t.Fatal("expected error for truncated container")
 	}
@@ -798,7 +798,7 @@ func TestTriple_CorruptedContainer256(t *testing.T) {
 func TestTriple_CorruptedContainer512(t *testing.T) {
 	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeeds512(512, makeBlake2bHash512())
 	// Truncated
-	_, err := Decrypt3x512Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, make([]byte, headerSizeCfg(nil)+1))
+	_, err := Decrypt3x512Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, make([]byte, streamIDPrefixLen+headerSizeCfg(nil)+1))
 	if err == nil {
 		t.Fatal("expected error for truncated container")
 	}
@@ -884,8 +884,8 @@ func TestTriple_MaxDataSizeExceeded512(t *testing.T) {
 
 func TestTriple_DecryptRejectOversizeContainer(t *testing.T) {
 	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeeds128(512, sipHash128)
-	header := make([]byte, headerSizeCfg(nil)+Channels)
-	nonceSz := currentNonceSizeCfg(nil)
+	header := make([]byte, streamIDPrefixLen+headerSizeCfg(nil)+Channels)
+	nonceSz := streamIDPrefixLen + currentNonceSizeCfg(nil)
 	binary.BigEndian.PutUint16(header[nonceSz:], 3200)
 	binary.BigEndian.PutUint16(header[nonceSz+2:], 3200)
 	fakeContainer := make([]byte, len(header)+3200*3200*8)
@@ -900,8 +900,8 @@ func TestTriple_DecryptRejectOversizeContainer256(t *testing.T) {
 	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeeds256(512, makeBlake3Hash256())
 	h := makeBlake3Hash256()
 	ns.Hash, ls.Hash, ds1.Hash, ds2.Hash, ds3.Hash, ss1.Hash, ss2.Hash, ss3.Hash = h, h, h, h, h, h, h, h
-	header := make([]byte, headerSizeCfg(nil)+Channels)
-	nonceSz := currentNonceSizeCfg(nil)
+	header := make([]byte, streamIDPrefixLen+headerSizeCfg(nil)+Channels)
+	nonceSz := streamIDPrefixLen + currentNonceSizeCfg(nil)
 	binary.BigEndian.PutUint16(header[nonceSz:], 3200)
 	binary.BigEndian.PutUint16(header[nonceSz+2:], 3200)
 	fakeContainer := make([]byte, len(header)+3200*3200*8)
@@ -916,8 +916,8 @@ func TestTriple_DecryptRejectOversizeContainer512(t *testing.T) {
 	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeeds512(512, makeBlake2bHash512())
 	h := makeBlake2bHash512()
 	ns.Hash, ls.Hash, ds1.Hash, ds2.Hash, ds3.Hash, ss1.Hash, ss2.Hash, ss3.Hash = h, h, h, h, h, h, h, h
-	header := make([]byte, headerSizeCfg(nil)+Channels)
-	nonceSz := currentNonceSizeCfg(nil)
+	header := make([]byte, streamIDPrefixLen+headerSizeCfg(nil)+Channels)
+	nonceSz := streamIDPrefixLen + currentNonceSizeCfg(nil)
 	binary.BigEndian.PutUint16(header[nonceSz:], 3200)
 	binary.BigEndian.PutUint16(header[nonceSz+2:], 3200)
 	fakeContainer := make([]byte, len(header)+3200*3200*8)

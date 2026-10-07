@@ -297,3 +297,46 @@ func TestConfigMaxWorkersRejectsNegative(t *testing.T) {
 		}
 	}
 }
+
+// TestStreamingParityCustomTagSizesIOReader extends the streaming
+// envelope-size parity to the io.Reader stream entries
+// (EncryptStream3xCfg / EncryptStreamAuth3xCfg) at every hash width:
+// with Config.TagStubSize set to the peer's tag length, the No MAC
+// stream and the Streaming AEAD stream produce the same total wire
+// length for every payload across a container-side boundary.
+func TestStreamingParityCustomTagSizesIOReader(t *testing.T) {
+	type seeds8 [8]any
+	widths := map[int]seeds8{}
+	{
+		a0, a1, a2, a3, a4, a5, a6, a7 := seedFixtures128(t, 1024)
+		widths[128] = seeds8{a0, a1, a2, a3, a4, a5, a6, a7}
+		b0, b1, b2, b3, b4, b5, b6, b7 := seedFixtures256(t, 1024)
+		widths[256] = seeds8{b0, b1, b2, b3, b4, b5, b6, b7}
+		c0, c1, c2, c3, c4, c5, c6, c7 := seedFixtures512(t, 1024)
+		widths[512] = seeds8{c0, c1, c2, c3, c4, c5, c6, c7}
+	}
+	for _, w := range []int{128, 256, 512} {
+		s := widths[w]
+		for _, ts := range []int{16, 32, 64} {
+			t.Run(fmt.Sprintf("width=%d/tag=%d", w, ts), func(t *testing.T) {
+				cfg := &Config{TagStubSize: ts}
+				macF := makeTagMAC(ts)
+				// 7600..8200 B crosses the 35×35 → 36×36 side boundary
+				// of the 1024-bit Mode 1 container at the default nonce.
+				for n := 7600; n <= 8200; n += 37 {
+					pt := randomPlaintext(t, n)
+					var a, b bytes.Buffer
+					if err := EncryptStream3xCfg(cfg, s[0], s[1], s[2], s[3], s[4], s[5], s[6], s[7], bytes.NewReader(pt), &a, 1<<20); err != nil {
+						t.Fatalf("EncryptStream3xCfg %d B: %v", n, err)
+					}
+					if err := EncryptStreamAuth3xCfg(cfg, s[0], s[1], s[2], s[3], s[4], s[5], s[6], s[7], bytes.NewReader(pt), &b, macF, 1<<20); err != nil {
+						t.Fatalf("EncryptStreamAuth3xCfg %d B: %v", n, err)
+					}
+					if a.Len() != b.Len() {
+						t.Fatalf("%d B: No MAC stream %d B, AEAD stream %d B", n, a.Len(), b.Len())
+					}
+				}
+			})
+		}
+	}
+}

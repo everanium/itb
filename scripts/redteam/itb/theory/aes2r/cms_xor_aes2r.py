@@ -146,14 +146,18 @@ def run(rounds, discard, n_pairs, timeout_s):
                 bit = (out[bi] >> k) & 1
                 e.clauses.append([v if bit else -v])
 
-    s = Solver(threads=4)
+    s = Solver(threads=4, time_limit=float(timeout_s))
     for cl in e.clauses:
         s.add_clause(cl)
     for vs, rhs in e.xors:
         s.add_xor_clause(vs, rhs)
     t0 = time.time()
-    sat, sol = s.solve()  # pycryptosat has no per-call timeout; rely on outer timeout wrapper
+    sat, sol = s.solve()  # sat is None when the time_limit cap is hit
     dt = time.time() - t0
+    if sat is None:
+        print(f"  rounds={rounds} discard={discard} pairs={n_pairs}: TIMEOUT after {dt:.1f}s "
+              f"(cap {timeout_s}s CPU)  vars={e.nv} clauses={len(e.clauses)} xors={len(e.xors)}")
+        return
     if not sat:
         print(f"  rounds={rounds} discard={discard} pairs={n_pairs}: UNSAT in {dt:.1f}s (?!)")
         return
@@ -164,8 +168,13 @@ def run(rounds, discard, n_pairs, timeout_s):
           f"round0_key_recovered={ok}  vars={e.nv} clauses={len(e.clauses)} xors={len(e.xors)}")
 
 if __name__ == "__main__":
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--timeout", type=float, default=120,
+                    help="per-run CryptoMiniSat time_limit in seconds (solver CPU time, summed over its threads)")
+    args = ap.parse_args()
     print("=" * 72)
     print("CMS-XOR seed recovery — pilot r=1 (does CMS crack what z3 timed out on?)")
     print("=" * 72)
-    run(rounds=1, discard=False, n_pairs=4, timeout_s=120)
-    run(rounds=1, discard=True,  n_pairs=6, timeout_s=120)
+    run(rounds=1, discard=False, n_pairs=4, timeout_s=args.timeout)
+    run(rounds=1, discard=True,  n_pairs=6, timeout_s=args.timeout)

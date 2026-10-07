@@ -7,9 +7,9 @@ Reuses the bit-exact reference ChainHash implementation from
 stream of lo-lane bytes suitable for `/usr/bin/nist-sts` (`Input File`
 generator, binary data format).
 
-The lo lane is the observable the shipped Pixel Barrier consumes, so NIST
-STS is measuring exactly the wire byte stream ITB emits at each cascade
-depth.
+The lo lane is the primitive output the shipped Pixel Barrier consumes, so
+NIST STS measures that raw output at each cascade depth, ahead of every
+barrier stage — not the wire byte stream ITB emits.
 
 Per call: draws random `data` of length `--data-len` bytes, computes
 ChainHash<aesitb128>(seed, data) at cascade depth `--rounds`, appends

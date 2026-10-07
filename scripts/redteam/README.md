@@ -75,7 +75,7 @@ model. Reproduction commands are cited from REDTEAM.md.
   — 2-round AES integral break characterisation, deferred SAT / differential
   / higher-order calibration. Result in HARNESS.md §3.7, reproduction block
   §5.8; also carried in the §3.4 / §3.5 tables.
-- `itb/theory/aesitb128/{integral_aesitb128,keyrecover_r2,keyrecover_r1_2p20,keyrecover_r1_lo,distinguisher_chainhash,higher_order_chainhash,order3_chainhash,order4_chainhash,differential_chainhash,uniformity_chainhash,screens_common}.py`
+- `itb/theory/aesitb128/{integral_aesitb128,keyrecover_r2,keyrecover_r1_2p20,distinguisher_chainhash,higher_order_chainhash,order3_chainhash,order4_chainhash,differential_chainhash,uniformity_chainhash,screens_common}.py`
   — the same treatment on the shipped AES-ITB-128 sponge: standalone Square
   integral + one-pair inversion, the lo-lane last-round peel on the encoder's
   own observable, then the cascade sweep r ∈ {1 … 16} with the lo-lane /
@@ -146,7 +146,7 @@ on the shipped Triple + always-on Interlocked Barrier container.
   no plaintext XOR, every container pixel treated as one flat stream.
 - `kl_urandom.py` — the matched-size `/dev/urandom` control for
   `kl_massive_full.py`. Takes the container **body** size, i.e.
-  `ciphertext_bytes − (NonceSize + 4)`.
+  `ciphertext_bytes − (32 + NonceSize + 4)`.
 - `kl_matrix.py` — the `BarrierFill` × plaintext-size auto-selection
   driver over both of the above.
 

@@ -77,8 +77,8 @@ Every probe consumes attacker-visible inputs only:
 - The plaintexts `(P1, P2)` are attacker-chosen (the delta position is
   the attacker's own probe).
 - The wire bytes `(C1, C2)` are the shipped-API output of
-  `Encrypt3x128Cfg` — the fresh nonce, dimension header, and container
-  body are all public.
+  `Encrypt3x128Cfg` — the prefix, fresh nonce, dimension header, and
+  container body are all public.
 - No seed / nonce / mask / rotation / noise-position value is read in
   any decision path. The 8-seed component vectors are drawn from a
   deterministic PRNG for reproducibility; the values themselves are

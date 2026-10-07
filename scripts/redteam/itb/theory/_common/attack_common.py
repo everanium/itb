@@ -8,7 +8,11 @@ tooling.
 Responsibilities:
     - safe_rmtree — validated deletion helper (mandatory safety discipline)
     - cobs_encode — Python port of cobsEncode from cobs.go
-    - parse_itb_header — extract nonce + W + H from ciphertext bytes 0..20
+    - parse_itb_header — extract main nonce + W + H + container from a
+      Single Message wire `[prefix 32][main nonce N][W][H][container]`
+    - SM_PREFIX_LEN / prefix_size_from_meta / header_size_from_meta /
+      container_offset_from_meta — wire-offset helpers shared by every
+      corpus reader
     - rotate7 / extract7 — 7-bit bit-manipulation helpers matching processChunk128
     - load_cell_meta / load_config_truth — JSON sidecar loaders
 """
@@ -30,6 +34,13 @@ CHANNELS = 8
 DATA_BITS_PER_CHANNEL = 7
 DATA_BITS_PER_PIXEL = 56
 DATA_ROTATION_BITS = 3
+
+# Single Message wire prefix: 32 bytes ahead of the chunk header on every
+# ITB wire (a CSPRNG dummy on the No MAC arm, the MAC-bound streamID on the
+# MAC arm). Attacker-visible public bytes; derived from no seed. Corpus
+# metadata carries it as `prefix_size`; a reader without metadata (a file
+# from `itb3`, an in-memory wire) uses this constant.
+SM_PREFIX_LEN = 32
 
 # ----------------------------------------------------------------------------
 # Deletion safety (mandatory for every attack orchestrator).
@@ -165,31 +176,73 @@ def cobs_encode_with_mask(src: bytes, src_mask: bytes) -> Tuple[bytes, bytes]:
 
 
 # ----------------------------------------------------------------------------
-# ITB header parser — matches the 20-byte layout emitted by Encrypt*
+# ITB wire offsets + header parser — the Single Message wire emitted by Encrypt*
 # ----------------------------------------------------------------------------
 
-def parse_itb_header(ciphertext: bytes, nonce_size: int = 16) -> Tuple[bytes, int, int, int, bytes]:
-    """Parse the ITB ciphertext header and return (nonce, W, H, totalPixels, container_body).
+def prefix_size_from_meta(meta: Dict[str, Any]) -> int:
+    """Bytes ahead of the main nonce: `meta["prefix_size"]`, else SM_PREFIX_LEN.
 
-    Layout:
-        [0 : nonce_size]                    nonce (big-endian byte string)
-        [nonce_size : nonce_size+2]         width  (uint16 BE)
-        [nonce_size+2 : nonce_size+4]       height (uint16 BE)
-        [nonce_size+4 :]                    container_body = totalPixels × 8 bytes
+    Accepts the JSON `cell.meta.json` dict and the KEY=VALUE `.pixel`
+    sidecar dict alike (values may be strings)."""
+    return int(meta.get("prefix_size", SM_PREFIX_LEN))
+
+
+def header_size_from_meta(meta: Dict[str, Any]) -> int:
+    """Chunk header length (main nonce + W + H = N + 4), excluding the prefix.
+
+    Reads `meta["header_size"]`; falls back to `len(main_nonce) + 4` from
+    `main_nonce_hex` / `nonce_hex`. Raises ValueError when the metadata
+    carries none of the three — guessing a header length misparses the
+    container silently, so no literal default exists here."""
+    if "header_size" in meta:
+        return int(meta["header_size"])
+    nonce_hex = meta.get("main_nonce_hex") or meta.get("nonce_hex")
+    if nonce_hex:
+        return len(nonce_hex) // 2 + 4
+    raise ValueError(
+        "metadata has no header_size / main_nonce_hex / nonce_hex field — "
+        "cannot locate the container; regenerate the corpus"
+    )
+
+
+def container_offset_from_meta(meta: Dict[str, Any]) -> int:
+    """Byte offset of the container in a corpus file: prefix_size + header_size."""
+    return prefix_size_from_meta(meta) + header_size_from_meta(meta)
+
+
+def parse_itb_header(
+    ciphertext: bytes, nonce_size: int = 16, prefix_size: int = SM_PREFIX_LEN,
+) -> Tuple[bytes, int, int, int, bytes]:
+    """Parse a Single Message wire and return (nonce, W, H, totalPixels, container_body).
+
+    Layout (P = prefix_size, N = nonce_size):
+        [0 : P]                             prefix (public bytes, skipped)
+        [P : P+N]                           main nonce
+        [P+N : P+N+2]                       width  (uint16 BE)
+        [P+N+2 : P+N+4]                     height (uint16 BE)
+        [P+N+4 :]                           container_body = totalPixels × 8 bytes
+
+    `nonce_size` is the chunk-header nonce width only; the prefix is passed
+    separately (from `prefix_size_from_meta(meta)` when metadata is at hand)
+    and is never folded into `nonce_size`.
     """
     header_size = nonce_size + 4
-    if len(ciphertext) < header_size:
-        raise ValueError(f"ciphertext too short for header (got {len(ciphertext)}, need ≥ {header_size})")
-    nonce = ciphertext[:nonce_size]
-    w = int.from_bytes(ciphertext[nonce_size:nonce_size + 2], "big")
-    h = int.from_bytes(ciphertext[nonce_size + 2:nonce_size + 4], "big")
+    offset = prefix_size + header_size
+    if len(ciphertext) < offset:
+        raise ValueError(
+            f"ciphertext too short for prefix + header (got {len(ciphertext)}, "
+            f"need ≥ {offset} = prefix {prefix_size} + header {header_size})"
+        )
+    nonce = ciphertext[prefix_size:prefix_size + nonce_size]
+    w = int.from_bytes(ciphertext[prefix_size + nonce_size:prefix_size + nonce_size + 2], "big")
+    h = int.from_bytes(ciphertext[prefix_size + nonce_size + 2:offset], "big")
     total_pixels = w * h
-    container = ciphertext[header_size:]
+    container = ciphertext[offset:]
     expected_container = total_pixels * CHANNELS
     if len(container) != expected_container:
         raise ValueError(
             f"container size mismatch: got {len(container)}, expected {expected_container} "
-            f"(W={w} × H={h} × {CHANNELS} channels)"
+            f"(W={w} × H={h} × {CHANNELS} channels; prefix {prefix_size}, header {header_size})"
         )
     return nonce, w, h, total_pixels, container
 

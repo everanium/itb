@@ -2,7 +2,7 @@
 
 package itb
 
-// jokeHash Full-KPA recovery attempt against the shipped Triple Ouroboros
+// jokeHash Full KPA recovery attempt against the shipped Triple Ouroboros
 // + always-on 48-bit Interlocked Barrier. This is the harder-primitive
 // counterpart to the nullHash Stage 1 attack (redteam_nullhash_attack_test.go):
 // same threat model (Full KPA — all 512 plaintext bytes known — plus the
@@ -29,7 +29,7 @@ package itb
 // This test does not "recover" the key — it runs the concrete reduction
 // steps the nullHash attack used and measures that every one of them is
 // structurally closed under jokeHash, and that the shipped barrier severs
-// the Full-KPA-at-plaintext into no-KPA-at-Part-2. The victim seeds are
+// the Full KPA at the plaintext from the Pixel Barrier. The victim seeds are
 // read only in clearly-labelled lab-side analytic prints (this is a
 // characterised null result, not a decision-path recovery, so there is no
 // attacker/oracle boundary to violate); no claim of a working attack is
@@ -94,9 +94,9 @@ func TestRedTeamJokeHashFullKPA(t *testing.T) {
 		t.Fatalf("Encrypt3x128Cfg: %v", err)
 	}
 	nonceLen := currentNonceSizeCfg(cfg)
-	mainNonce := ct[:nonceLen]
+	mainNonce := parseSMWire(ct, nonceLen).mainNonce
 
-	t.Logf("=== jokeHash Full-KPA reduction analysis (Triple + Interlocked Barrier) ===")
+	t.Logf("=== jokeHash Full KPA reduction analysis (Triple + Interlocked Barrier) ===")
 
 	// ---------------------------------------------------------------
 	// M0. No route to the interlock nonce. Two conditions have to fail
@@ -335,6 +335,6 @@ func TestRedTeamJokeHashFullKPA(t *testing.T) {
 	t.Logf("  - no 16-bit constant collapse (M1: 256-bit even key per role)")
 	t.Logf("  - no constant per-pixel schedule to brute (M2: per-pixel/per-nonce non-collapse)")
 	t.Logf("  - no single message-wide lock mask to precompute (M3: per-chunk masks, 2^16 brute reproduces 0)")
-	t.Logf("  - no Part-2 known-plaintext (M4: barrier locks lanes behind the 256-bit lockSeed)")
+	t.Logf("  - no Pixel Barrier known-plaintext (M4: barrier locks lanes behind the 256-bit lockSeed)")
 	t.Logf("The joint unknown is ~5 x 256 = ~1280 bits with a combinadic-unrank barrier between the KPA lever and the exploitable T-function layer. No sub-2^256 decomposition was found; a full joint SAT/SMT model was assessed as beyond the analysis budget and likely intractable due to the non-T-function unrank. Result: attack does not converge (characterised null result; positive evidence for the barrier).")
 }

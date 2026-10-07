@@ -91,9 +91,9 @@ The always-on Interlocked Barrier ([SCIENCE.md § 1.2](SCIENCE.md#12-interlocked
 
 **[4]** CCA reveals noise bits (12.5 % of container), but CSPRNG-seeded DRBG fill bytes encrypted by dataSeed persist in data bit positions, indistinguishable from plaintext. The information-theoretic barrier is reduced, not eliminated ([Proof 10](PROOFS.md#proof-10-guaranteed-drbg-residue-no-perfect-fill)).
 
-**[5]** Core ITB and MAC + Silent Drop (no oracle): the attacker must jointly search noiseSeed and dataSeed — without dataSeed, noiseSeed output is indistinguishable from random, so independent attack on noiseSeed is impossible without knowledge of dataSeed ([Proof 3](PROOFS.md#proof-3-8-seed-isolation)). Joint search space: 2^(2·keyBits). startSeed contributes only P (startPixel candidates, enumerated per region as [0, region_width)), not 2^keyBits. Total: P × 2^(2·keyBits) classical, √P × 2^keyBits Grover. At 1024-bit keys under the shipped container (P = 1225): classical ~2^2058, Grover ~2^1029.
+**[5]** Core ITB and MAC + Silent Drop (no oracle): the attacker must jointly search noiseSeed and dataSeed — without dataSeed, noiseSeed output is indistinguishable from random, so independent attack on noiseSeed is impossible without knowledge of dataSeed ([Proof 3](PROOFS.md#proof-3-8-seed-isolation)). Joint search space: 2^(2·keyBits). startSeed contributes only P (startPixel candidates, enumerated per region as [0, region_width)), not 2^keyBits. Total: P × 2^(2·keyBits) classical, √P × 2^keyBits Grover. At 1024-bit keys under the default per-region container (Mode 1, P = 1225): classical ~2^2058, Grover ~2^1029 (under per-container Mode 2, P = 441: classical ~2^2057, Grover ~2^1028).
 
-**[6]** MAC + Reveal: CCA reveals noisePos but not startPixel (startPixel determined by independent startSeed + nonce, not transmitted, per region enumerated as [0, region_width)). Total: P × 2^keyBits classical, √P × 2^(keyBits/2) Grover. At 1024-bit keys under the shipped container (P = 1225 = 3 × per-region floor 365, square-rounded to 35 × 35 with `DefaultBarrierFill = 1`): classical ~2^1034, Grover ~2^517. With invertible primitive under KPA: the always-on Interlocked Barrier's per-chunk mask permutation (Rank Barrier, keyed by lockSeed independent of noiseSeed) forecloses the SAT anchor even under the maximum-peek attacker regime — Bitwuzla returns UNSAT on the naive-crib anchor with FNV-1a on every seed role (see [REDTEAM.md § FNV-1a lo-lane SAT](REDTEAM.md#fnv-1a-lo-lane-sat--architecturally-foreclosed)). Full multi-factor obstacle enumeration in [SCIENCE.md § 2.6](SCIENCE.md#26-multi-factor-full-kpa-resistance-theorem-4a).
+**[6]** MAC + Reveal: CCA reveals noisePos but not startPixel (startPixel determined by independent startSeed + nonce, not transmitted, per region enumerated as [0, region_width)). Total: P × 2^keyBits classical, √P × 2^(keyBits/2) Grover. At 1024-bit keys under the default per-region container (Mode 1, P = 1225 = 3 × per-region floor 365, square-rounded to 35 × 35 with DefaultBarrierFill = 1): classical ~2^1034, Grover ~2^517 (under per-container Mode 2, P = 441: classical ~2^1033, Grover ~2^516). With invertible primitive under KPA: the always-on Interlocked Barrier's per-chunk mask permutation (Rank Barrier, keyed by lockSeed independent of noiseSeed) forecloses the SAT anchor even under the maximum-peek attacker regime — Bitwuzla does not recover the true `dataSeed_i` lo lane on the naive-crib anchor with FNV-1a on every seed role (see [REDTEAM.md § FNV-1a lo-lane SAT](REDTEAM.md#fnv-1a-lo-lane-sat--architecturally-foreclosed)). Full multi-factor obstacle enumeration in [SCIENCE.md § 2.6](SCIENCE.md#26-multi-factor-full-kpa-resistance-theorem-4a).
 
 **[7]** The always-on Interlocked Barrier removes the demask entry point on colliding messages: the per-chunk PRF-keyed 48-bit mask triple is applied before COBS framing, so two-time-pad XOR yields lane-compressed bits `l₀(P₁) ‖ l₁(P₁) ‖ l₂(P₁) ⊕ l₀(P₂) ‖ l₁(P₂) ‖ l₂(P₂)` interpretable only with `lockSeed` and PRF-opaque under the PRF assumption. Empirically, plaintext recovery is null under every attacker-realistic dual-slot, main-only, or interlock-only collision probe at tested sample sizes ([REDTEAM.md § Nonce reuse](REDTEAM.md#nonce-reuse-lab-only)). Under single-slot partial collisions (main-only or interlock-only), the uncollided fresh axis closes confidentiality a fortiori. See [SCIENCE.md § 1.2](SCIENCE.md#12-interlocked-barrier-architecture), [§ 2.14 Nonce Uniqueness](SCIENCE.md#214-nonce-uniqueness), [§ 2.15](SCIENCE.md#215-48-bit-rank-barrier-mask-space-theorem-11), and [PROOFS.md § Nonce Uniqueness](PROOFS.md#nonce-uniqueness).
 
@@ -123,21 +123,23 @@ The always-on Interlocked Barrier ([SCIENCE.md § 1.2](SCIENCE.md#12-interlocked
 
 Every entry point applies the CCA-resistant `MinPixels` floor uniformly, so the auth-side envelope covers Core ITB, MAC + Silent Drop, and MAC + Reveal — one row per metric, no plain-vs-auth split.
 
-| Metric | Theoretical Floor (Single Region) | Composite 3-Region Container |
-|---|---|---|
-| Container dimensions | 20 × 20 (P = 400) | 35 × 35 (P = 1225) |
-| MinPixels enforcement (per-region) | 365 → 400 | 3 × 365 = 1095 → 1225 (DefaultBarrierFill = 1) |
-| Noise barrier (2^(8P)) | 2^3200 | 2^9800 |
-| Encoding ambiguity 56^P (No CCA, Theorem 9) | 2^2323 | 2^7114 |
-| Encoding ambiguity 7^P (Under CCA, Theorem 9) | 2^1123 | 2^3439 |
-| Guaranteed DRBG residue (Theorem 10) | ≥ 273 bytes (s = 19) / 245 bytes | ≥ 483 bytes (s = 34) |
-| Landauer bound (blind enumeration) | ~2^306 | ~2^306 |
-| Blind-enumeration exponent vs Landauer | 10.5× (3200 / 306) | 32× (9800 / 306) |
-| Config map space (2^(62P)) | 2^24800 | 2^75950 |
-| Key space | 2^1024 | 2^1024 |
-| Mask-space cardinality per chunk (Theorem 11) | ≈ 2^70.20 | ≈ 2^70.20 |
-| PRF-preimage count per mask triple | ≈ 2^57.80 | ≈ 2^57.80 |
-| gcd(A, B) anti-collapse factor (Theorem 12) | 66,861 (full Cartesian reached) | 66,861 (full Cartesian reached) |
+| Metric | Mode 2: Per-Container | Mode 1: Per-Region (Default) | Theoretical Floor (Single Region) |
+|---|---|---|---|
+| Container dimensions | 21 × 21 (P = 441) | 35 × 35 (P = 1225) | 20 × 20 (P = 400) |
+| MinPixels enforcement | 365 joint → 441 (DefaultBarrierFill = 1) | 3 × 365 = 1095 → 1225 (DefaultBarrierFill = 1) | 365 → 400 |
+| Noise barrier (2^(8P)) | 2^3528 | 2^9800 | 2^3200 |
+| Encoding ambiguity 56^P (No CCA, Theorem 9) | 2^2561 | 2^7114 | 2^2323 |
+| Encoding ambiguity 7^P (Under CCA, Theorem 9) | 2^1238 | 2^3439 | 2^1123 |
+| Guaranteed DRBG residue (Theorem 10) | ≥ 287 bytes (s = 20) / 532 bytes | ≥ 483 bytes (s = 34) / 910 bytes | ≥ 273 bytes (s = 19) / 245 bytes |
+| Landauer bound (blind enumeration) | ~2^306 | ~2^306 | ~2^306 |
+| Blind-enumeration exponent vs Landauer | 11.5× (3528 / 306) | 32× (9800 / 306) | 10.5× (3200 / 306) |
+| Config map space (2^(62P)) | 2^27342 | 2^75950 | 2^24800 |
+| Key space | 2^1024 | 2^1024 | 2^1024 |
+| Mask-space cardinality per chunk (Theorem 11) | ≈ 2^70.20 | ≈ 2^70.20 | ≈ 2^70.20 |
+| PRF-preimage count per mask triple | ≈ 2^57.80 | ≈ 2^57.80 | ≈ 2^57.80 |
+| gcd(A, B) anti-collapse factor (Theorem 12) | 66,861 (full Cartesian reached) | 66,861 (full Cartesian reached) | 66,861 (full Cartesian reached) |
+
+**Note on Mode 2.** Under the per-container mode (Mode 2), MinPixels is evaluated jointly across the whole container rather than per region, and every barrier and ambiguity figure in its column exceeds the 2^1024 key space.
 
 The Landauer row bounds the cost of blind enumeration of the noise-barrier space; it does not bound structural attacks that do not enumerate.
 
@@ -161,11 +163,11 @@ Under CCA (MAC + Reveal) the noise positions are revealed but DRBG fill in data 
 | Format | Data / px | Noise / px | Overhead | CCA Config Leak | Barrier (1024-bit, unified P) |
 |---|---|---|---|---|---|
 | 8/1 (ITB) | 56 | 8 | 1.14× | 4.8 % | 2^3200 |
-| 6/2 | 48 | 16 | 1.33× | 8.9 % | 2^3136 |
-| 5/3 | 40 | 24 | 1.60× | 12.2 % | 2^5400 |
-| 4/4 | 32 | 32 | 2.00× | 17.1 % | 2^8192 |
+| 6/2 | 48 | 16 | 1.33× | 8.9 % | 2^6400 |
+| 5/3 | 40 | 24 | 1.60× | 12.2 % | 2^11616 |
+| 4/4 | 32 | 32 | 2.00× | 17.1 % | 2^16928 |
 
-8/1 is Pareto-optimal among the analyzed noise-density configurations. The Barrier column is illustrative at each format's `data_bits × MinPixels(format)` under a shared theoretical MinPixels floor (treated as total-container floor for the illustrative comparison across formats). The shipped ITB construction over-provisions this by applying MinPixels per region × 3, giving `P = 1225` for 1024-bit keys with barrier `2^9800` — see §4. All noise-barrier exponents place blind enumeration above the Landauer bound; that scopes to enumeration cost, not to structural attack resistance.
+8/1 is Pareto-optimal among the analyzed noise-density configurations. The Barrier column is illustrative: `2^(noise/px × P)` at each format's theoretical floor `P = ⌈√MinPixels(format)⌉²`, `MinPixels(format) = ⌈1024 / log₂(data bits per channel)⌉` (treated as total-container floor for the illustrative comparison across formats). The shipped ITB construction over-provisions this in Mode 1 by applying MinPixels per region × 3, giving `P = 1225` for 1024-bit keys with barrier `2^9800` — see §4. All noise-barrier exponents place blind enumeration above the Landauer bound; that scopes to enumeration cost, not to structural attack resistance.
 
 ## 6. MAC Placement Design Space
 

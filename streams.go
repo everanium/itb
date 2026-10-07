@@ -1,7 +1,7 @@
 // Width-less io.Reader / io.Writer streaming helpers for plain and
 // authenticated stream cipher modes. The width is determined by the
-// supplied seed type via the same any-typed dispatch path used by the
-// Single Message helpers.
+// supplied seed type via an any-typed dispatch over the per-chunk
+// helpers behind the Single Message entries.
 //
 // Each helper drains src to EOF, encrypts or decrypts chunk-by-chunk,
 // and writes the resulting wire chunks (encrypt) or recovered
@@ -98,6 +98,11 @@ func readChunkParseCfg(cfg *Config, src io.Reader) ([]byte, error) {
 	if width <= 0 || height <= 0 {
 		return nil, fmt.Errorf("itb: invalid dimensions %dx%d", width, height)
 	}
+	// The encoder only emits square containers; a non-square header
+	// with the same W·H would otherwise decode to the same plaintext.
+	if width != height {
+		return nil, fmt.Errorf("itb: non-square container %dx%d", width, height)
+	}
 	if width > math.MaxInt/height {
 		return nil, fmt.Errorf("itb: dimensions %dx%d overflow", width, height)
 	}
@@ -126,32 +131,35 @@ func readChunkParseCfg(cfg *Config, src io.Reader) ([]byte, error) {
 	return full, nil
 }
 
-// singleMessageEncryptTripleCfg is the per-chunk dispatch helper for
-// the width-less No MAC Triple Ouroboros Encrypt path when a Config
-// override is threaded per Pipeline.
-func singleMessageEncryptTripleCfg(cfg *Config, width int, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 any, data []byte) ([]byte, error) {
+// chunkEncryptTripleCfg is the per-chunk dispatch helper for the
+// width-less No MAC Triple Ouroboros Encrypt path when a Config
+// override is threaded per Pipeline. It reaches the prefix-free chunk
+// helpers, never the Single Message entries: the streamID-length
+// prefix travels once per stream, ahead of the first chunk.
+func chunkEncryptTripleCfg(cfg *Config, width int, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 any, data []byte) ([]byte, error) {
 	switch width {
 	case 128:
-		return Encrypt3x128Cfg(cfg, noiseSeed.(*Seed128), lockSeed.(*Seed128), dataSeed1.(*Seed128), dataSeed2.(*Seed128), dataSeed3.(*Seed128), startSeed1.(*Seed128), startSeed2.(*Seed128), startSeed3.(*Seed128), data)
+		return encrypt3x128Cfg(cfg, noiseSeed.(*Seed128), lockSeed.(*Seed128), dataSeed1.(*Seed128), dataSeed2.(*Seed128), dataSeed3.(*Seed128), startSeed1.(*Seed128), startSeed2.(*Seed128), startSeed3.(*Seed128), data, 0)
 	case 256:
-		return Encrypt3x256Cfg(cfg, noiseSeed.(*Seed256), lockSeed.(*Seed256), dataSeed1.(*Seed256), dataSeed2.(*Seed256), dataSeed3.(*Seed256), startSeed1.(*Seed256), startSeed2.(*Seed256), startSeed3.(*Seed256), data)
+		return encrypt3x256Cfg(cfg, noiseSeed.(*Seed256), lockSeed.(*Seed256), dataSeed1.(*Seed256), dataSeed2.(*Seed256), dataSeed3.(*Seed256), startSeed1.(*Seed256), startSeed2.(*Seed256), startSeed3.(*Seed256), data, 0)
 	case 512:
-		return Encrypt3x512Cfg(cfg, noiseSeed.(*Seed512), lockSeed.(*Seed512), dataSeed1.(*Seed512), dataSeed2.(*Seed512), dataSeed3.(*Seed512), startSeed1.(*Seed512), startSeed2.(*Seed512), startSeed3.(*Seed512), data)
+		return encrypt3x512Cfg(cfg, noiseSeed.(*Seed512), lockSeed.(*Seed512), dataSeed1.(*Seed512), dataSeed2.(*Seed512), dataSeed3.(*Seed512), startSeed1.(*Seed512), startSeed2.(*Seed512), startSeed3.(*Seed512), data, 0)
 	}
 	return nil, errSeedWidthMix
 }
 
-// singleMessageDecryptTripleCfg is the per-chunk dispatch helper for
-// the width-less No MAC Triple Ouroboros Decrypt path when a Config
-// override is threaded per Pipeline.
-func singleMessageDecryptTripleCfg(cfg *Config, width int, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 any, chunk []byte) ([]byte, error) {
+// chunkDecryptTripleCfg is the per-chunk dispatch helper for the
+// width-less No MAC Triple Ouroboros Decrypt path when a Config
+// override is threaded per Pipeline. Mirror image of
+// [chunkEncryptTripleCfg].
+func chunkDecryptTripleCfg(cfg *Config, width int, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 any, chunk []byte) ([]byte, error) {
 	switch width {
 	case 128:
-		return Decrypt3x128Cfg(cfg, noiseSeed.(*Seed128), lockSeed.(*Seed128), dataSeed1.(*Seed128), dataSeed2.(*Seed128), dataSeed3.(*Seed128), startSeed1.(*Seed128), startSeed2.(*Seed128), startSeed3.(*Seed128), chunk)
+		return decrypt3x128Cfg(cfg, noiseSeed.(*Seed128), lockSeed.(*Seed128), dataSeed1.(*Seed128), dataSeed2.(*Seed128), dataSeed3.(*Seed128), startSeed1.(*Seed128), startSeed2.(*Seed128), startSeed3.(*Seed128), chunk)
 	case 256:
-		return Decrypt3x256Cfg(cfg, noiseSeed.(*Seed256), lockSeed.(*Seed256), dataSeed1.(*Seed256), dataSeed2.(*Seed256), dataSeed3.(*Seed256), startSeed1.(*Seed256), startSeed2.(*Seed256), startSeed3.(*Seed256), chunk)
+		return decrypt3x256Cfg(cfg, noiseSeed.(*Seed256), lockSeed.(*Seed256), dataSeed1.(*Seed256), dataSeed2.(*Seed256), dataSeed3.(*Seed256), startSeed1.(*Seed256), startSeed2.(*Seed256), startSeed3.(*Seed256), chunk)
 	case 512:
-		return Decrypt3x512Cfg(cfg, noiseSeed.(*Seed512), lockSeed.(*Seed512), dataSeed1.(*Seed512), dataSeed2.(*Seed512), dataSeed3.(*Seed512), startSeed1.(*Seed512), startSeed2.(*Seed512), startSeed3.(*Seed512), chunk)
+		return decrypt3x512Cfg(cfg, noiseSeed.(*Seed512), lockSeed.(*Seed512), dataSeed1.(*Seed512), dataSeed2.(*Seed512), dataSeed3.(*Seed512), startSeed1.(*Seed512), startSeed2.(*Seed512), startSeed3.(*Seed512), chunk)
 	}
 	return nil, errSeedWidthMix
 }
@@ -232,7 +240,7 @@ func EncryptStream3xCfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, 
 		if err != nil {
 			return err
 		}
-		ct, encErr := singleMessageEncryptTripleCfg(cfg, width, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, buf[:n])
+		ct, encErr := chunkEncryptTripleCfg(cfg, width, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, buf[:n])
 		if encErr != nil {
 			return encErr
 		}
@@ -278,7 +286,7 @@ func DecryptStream3xCfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, 
 		if err != nil {
 			return err
 		}
-		pt, decErr := singleMessageDecryptTripleCfg(cfg, width, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, chunk)
+		pt, decErr := chunkDecryptTripleCfg(cfg, width, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, chunk)
 		if decErr != nil {
 			return decErr
 		}

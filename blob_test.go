@@ -81,7 +81,7 @@ func TestBlobMalformed(t *testing.T) {
 // rejected with ErrBlobVersionTooNew.
 func TestBlobVersionTooNew(t *testing.T) {
 	bDst := &itb.Blob512{}
-	tooNew := []byte(`{"v":99,"mode":1,"key_bits":1024,"globals":{"nonce_bits":128,"barrier_fill":1}}`)
+	tooNew := []byte(`{"v":99,"mode":1,"key_bits":1024,"globals":{"nonce_bits":512,"barrier_fill":1}}`)
 	if err := bDst.Import3Cfg(tooNew, &itb.Config{}); !errors.Is(err, itb.ErrBlobVersionTooNew) {
 		t.Errorf("Import3Cfg too-new blob: got %v, want ErrBlobVersionTooNew", err)
 	}
@@ -98,7 +98,7 @@ func TestBlobImportRejectsUnknownFields(t *testing.T) {
 	withUnknown := []byte(`{"v":1,"mode":1,"key_bits":512,` +
 		`"key_n":"00","ns":["0"],"ds1":["0"],"ds2":["0"],"ds3":["0"],` +
 		`"ss1":["0"],"ss2":["0"],"ss3":["0"],` +
-		`"globals":{"nonce_bits":128,"barrier_fill":1},` +
+		`"globals":{"nonce_bits":512,"barrier_fill":1},` +
 		`"extra_attacker_field":"oops"}`)
 	if err := bDst.Import3Cfg(withUnknown, &itb.Config{}); !errors.Is(err, itb.ErrBlobMalformed) {
 		t.Errorf("Import3Cfg blob with unknown field: got %v, want ErrBlobMalformed", err)
@@ -401,7 +401,7 @@ func TestBlobImportRejectsBadKeyBits(t *testing.T) {
 	// rejected by pre-validation before reaching downstream constructors.
 	oneComp := `"key_n":"00","ns":["0"],"ds1":["0"],"ds2":["0"],"ds3":["0"],` +
 		`"ss1":["0"],"ss2":["0"],"ss3":["0"]`
-	globals := `"globals":{"nonce_bits":128,"barrier_fill":1}`
+	globals := `"globals":{"nonce_bits":512,"barrier_fill":1}`
 	for _, w := range widths {
 		w := w
 		cases := []variant{
@@ -487,10 +487,10 @@ func TestBlobExportRejectsInvalidCfg(t *testing.T) {
 	}{
 		{"bad_nonce_bits", &itb.Config{NonceBits: 999, BarrierFill: 1}},
 		{"neg_nonce_bits", &itb.Config{NonceBits: -1, BarrierFill: 1}},
-		{"bad_barrier_fill", &itb.Config{NonceBits: 256, BarrierFill: 5}},
-		{"neg_barrier_fill", &itb.Config{NonceBits: 256, BarrierFill: -1}},
-		{"huge_barrier_fill", &itb.Config{NonceBits: 256, BarrierFill: 1 << 30}},
-		{"neg_max_workers", &itb.Config{NonceBits: 256, BarrierFill: 1, MaxWorkers: -1}},
+		{"bad_barrier_fill", &itb.Config{NonceBits: itb.DefaultNonceBits, BarrierFill: 5}},
+		{"neg_barrier_fill", &itb.Config{NonceBits: itb.DefaultNonceBits, BarrierFill: -1}},
+		{"huge_barrier_fill", &itb.Config{NonceBits: itb.DefaultNonceBits, BarrierFill: 1 << 30}},
+		{"neg_max_workers", &itb.Config{NonceBits: itb.DefaultNonceBits, BarrierFill: 1, MaxWorkers: -1}},
 	}
 	for _, c := range cases {
 		t.Run(c.label, func(t *testing.T) {
@@ -585,7 +585,7 @@ func TestBlobImportRejectsOversizedMACKey(t *testing.T) {
 	// three widths, so the test is decoupled from that path).
 	oneComp := `"key_n":"00","ns":["0"],"ds1":["0"],"ds2":["0"],"ds3":["0"],` +
 		`"ss1":["0"],"ss2":["0"],"ss3":["0"]`
-	globals := `"globals":{"nonce_bits":128,"barrier_fill":1}`
+	globals := `"globals":{"nonce_bits":512,"barrier_fill":1}`
 	body := `{"v":1,"mode":1,"key_bits":512,` +
 		oneComp + `,` + globals + `,"mac_key":"` + hugeHex + `"}`
 	widths := []struct {
@@ -637,7 +637,7 @@ func TestBlobImportRejectsOversizedMACKey(t *testing.T) {
 func TestBlob128ImportRejectsOversizedKeyN(t *testing.T) {
 	oneComp := `"ns":["0"],"ds1":["0"],"ds2":["0"],"ds3":["0"],` +
 		`"ss1":["0"],"ss2":["0"],"ss3":["0"]`
-	globals := `"globals":{"nonce_bits":128,"barrier_fill":1}`
+	globals := `"globals":{"nonce_bits":512,"barrier_fill":1}`
 	buildBody := func(hexN string) []byte {
 		return []byte(`{"v":1,"mode":1,"key_bits":512,"key_n":"` + hexN + `",` +
 			oneComp + `,` + globals + `}`)
@@ -698,7 +698,7 @@ func TestBlob128ImportRejectsOversizedKeyN(t *testing.T) {
 func TestBlobImportModeDiscriminator(t *testing.T) {
 	oneComp := `"key_n":"00","ns":["0"],"ds1":["0"],"ds2":["0"],"ds3":["0"],` +
 		`"ss1":["0"],"ss2":["0"],"ss3":["0"]`
-	globals := `"globals":{"nonce_bits":128,"barrier_fill":1}`
+	globals := `"globals":{"nonce_bits":512,"barrier_fill":1}`
 	body := func(mode int) []byte {
 		return []byte(`{"v":1,"mode":` + strconv.Itoa(mode) + `,"key_bits":512,` +
 			oneComp + `,` + globals + `}`)
@@ -758,7 +758,7 @@ func TestBlobImportModeDiscriminator(t *testing.T) {
 func TestBlobExportEmitsMode1(t *testing.T) {
 	ks := makeAreion512Keys(t, 8)
 	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeed512Triple(t, ks)
-	cfg := &itb.Config{NonceBits: 128, BarrierFill: 1}
+	cfg := &itb.Config{NonceBits: itb.DefaultNonceBits, BarrierFill: 1}
 	b := &itb.Blob512{}
 	data, err := b.Export3Cfg(cfg,
 		ks[0], ks[2], ks[3], ks[4], ks[5], ks[6], ks[7],
@@ -797,7 +797,7 @@ func TestBlobExportEmitsMode1(t *testing.T) {
 func TestBlobImportCarriesMode2Through(t *testing.T) {
 	ks := makeAreion512Keys(t, 8)
 	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeed512Triple(t, ks)
-	cfg := &itb.Config{NonceBits: 256, BarrierFill: 4}
+	cfg := &itb.Config{NonceBits: itb.DefaultNonceBits, BarrierFill: 4}
 
 	bSrc := &itb.Blob512{}
 	data, err := bSrc.Export3Cfg(cfg,
@@ -831,8 +831,8 @@ func TestBlobImportCarriesMode2Through(t *testing.T) {
 	}
 	// The captured configuration must survive the edit untouched —
 	// confirms the mode gate is the only thing the rewrite moved.
-	if fresh.NonceBits != 256 || fresh.BarrierFill != 4 {
-		t.Fatalf("fresh Cfg = %+v, want {NonceBits:256 BarrierFill:4}", fresh)
+	if fresh.NonceBits != itb.DefaultNonceBits || fresh.BarrierFill != 4 {
+		t.Fatalf("fresh Cfg = %+v, want {NonceBits:%d BarrierFill:4}", fresh, itb.DefaultNonceBits)
 	}
 	if fresh.Mode != 2 {
 		t.Fatalf("fresh Mode = %d, want 2", fresh.Mode)
@@ -848,7 +848,7 @@ func TestBlobExportMode2Direct(t *testing.T) {
 
 	// Subtest A: via Blob512Opts.Mode = 2
 	{
-		cfg := &itb.Config{NonceBits: 128, BarrierFill: 1}
+		cfg := &itb.Config{NonceBits: itb.DefaultNonceBits, BarrierFill: 1}
 		bSrc := &itb.Blob512{}
 		data, err := bSrc.Export3Cfg(cfg,
 			ks[0], ks[2], ks[3], ks[4], ks[5], ks[6], ks[7],
@@ -884,7 +884,7 @@ func TestBlobExportMode2Direct(t *testing.T) {
 
 	// Subtest B: via Config.Mode = 2
 	{
-		cfg := &itb.Config{NonceBits: 256, BarrierFill: 2, Mode: 2}
+		cfg := &itb.Config{NonceBits: itb.DefaultNonceBits, BarrierFill: 2, Mode: 2}
 		bSrc := &itb.Blob512{}
 		data, err := bSrc.Export3Cfg(cfg,
 			ks[0], ks[2], ks[3], ks[4], ks[5], ks[6], ks[7],
@@ -939,7 +939,7 @@ func TestBlobExportMode2OtherWidths(t *testing.T) {
 		ss2, keyS2 := mkSeed()
 		ss3, keyS3 := mkSeed()
 		bSrc := &itb.Blob256{}
-		data, err := bSrc.Export3Cfg(&itb.Config{NonceBits: 128, BarrierFill: 1},
+		data, err := bSrc.Export3Cfg(&itb.Config{NonceBits: itb.DefaultNonceBits, BarrierFill: 1},
 			keyN, keyD1, keyD2, keyD3, keyS1, keyS2, keyS3,
 			ns, ds1, ds2, ds3, ss1, ss2, ss3, itb.Blob256Opts{KeyL: keyL, LS: ls, Mode: 2})
 		if err != nil {
@@ -969,7 +969,7 @@ func TestBlobExportMode2OtherWidths(t *testing.T) {
 		ss2, keyS2 := mkSeed()
 		ss3, keyS3 := mkSeed()
 		bSrc := &itb.Blob128{}
-		data, err := bSrc.Export3Cfg(&itb.Config{NonceBits: 128, BarrierFill: 1},
+		data, err := bSrc.Export3Cfg(&itb.Config{NonceBits: itb.DefaultNonceBits, BarrierFill: 1},
 			keyN, keyD1, keyD2, keyD3, keyS1, keyS2, keyS3,
 			ns, ds1, ds2, ds3, ss1, ss2, ss3, itb.Blob128Opts{KeyL: keyL, LS: ls, Mode: 2})
 		if err != nil {
@@ -994,13 +994,13 @@ func TestBlobExportRejectsModeOutOfRange(t *testing.T) {
 	ks := makeAreion512Keys(t, 8)
 	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeed512Triple(t, ks)
 	bSrc := &itb.Blob512{}
-	_, err := bSrc.Export3Cfg(&itb.Config{NonceBits: 128},
+	_, err := bSrc.Export3Cfg(&itb.Config{NonceBits: itb.DefaultNonceBits},
 		ks[0], ks[2], ks[3], ks[4], ks[5], ks[6], ks[7],
 		ns, ds1, ds2, ds3, ss1, ss2, ss3, itb.Blob512Opts{KeyL: ks[1], LS: ls, Mode: 3})
 	if !errors.Is(err, itb.ErrBlobModeMismatch) {
 		t.Fatalf("Export3Cfg(Opts.Mode=3): %v, want ErrBlobModeMismatch", err)
 	}
-	_, err = bSrc.Export3Cfg(&itb.Config{NonceBits: 128, Mode: 3},
+	_, err = bSrc.Export3Cfg(&itb.Config{NonceBits: itb.DefaultNonceBits, Mode: 3},
 		ks[0], ks[2], ks[3], ks[4], ks[5], ks[6], ks[7],
 		ns, ds1, ds2, ds3, ss1, ss2, ss3, itb.Blob512Opts{KeyL: ks[1], LS: ls})
 	if !errors.Is(err, itb.ErrBlobModeMismatch) {

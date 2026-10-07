@@ -149,8 +149,8 @@ module ITB
     # across calls) and returns the wire byte count. Raises
     # ITB::Error with Status::BUFFER_TOO_SMALL when +cap+ is
     # insufficient; the pre-allocation formula
-    # payload * 5/4 + 131072 typically suffices for large payloads,
-    # but small payloads may still expand past it -- on
+    # payload * 5/4 + 131072 covers the Message wire at every key
+    # size, nonce width and barrier fill -- on
     # BUFFER_TOO_SMALL the caller re-issues with a larger +dst+ or
     # falls back to #encrypt_message (the String-returning variant,
     # whose retry path absorbs the expansion). Raises ArgumentError

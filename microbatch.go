@@ -25,8 +25,8 @@ import (
 //
 // Called once per Encrypt/Decrypt invocation of process{128,256,512}Cfg
 // (the same low-level entry both the Message and the Streaming surfaces
-// funnel through — Streaming loops call the Single Message entry per
-// chunk). Per-chunk payload length reaches this helper as the ordinary
+// funnel through — Streaming loops call the chunk body behind the
+// Single Message entry per chunk). Per-chunk payload length reaches this helper as the ordinary
 // slice length so the stream shape gets the actual chunk size without
 // separate plumbing.
 //

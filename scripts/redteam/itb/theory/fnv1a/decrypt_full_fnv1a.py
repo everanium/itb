@@ -55,6 +55,7 @@ from itb_channel_mirror import (  # type: ignore
     DATA_BITS_PER_CHANNEL,
     DATA_BITS_PER_PIXEL,
     DATA_ROTATION_BITS,
+    SM_PREFIX_SIZE,
     cobs_decode,
     decode_channel_to_plaintext_bits,
 )
@@ -270,7 +271,8 @@ def decrypt_full(
     nonce: bytes,
     total_pixels: int,
     rounds: int = 4,
-    header_size: int = 20,
+    header_size: Optional[int] = None,
+    prefix_size: int = SM_PREFIX_SIZE,
     progress_every: int = 16,
     plaintext_format: str = "ascii",
     start_pixel_override: Optional[int] = None,
@@ -303,7 +305,9 @@ def decrypt_full(
     single-candidate assignment). If None, the loop brute-forces every
     startPixel 0..total_pixels-1 as before.
     """
-    container = ciphertext[header_size:]
+    if header_size is None:
+        header_size = len(nonce) + 4
+    container = ciphertext[prefix_size + header_size:]
     t0 = time.perf_counter()
     tried = 0
     results: List[dict] = []
@@ -458,6 +462,7 @@ def main() -> int:
     # Prefer the corpus-emitted field so a wire-format change needs no edit
     # here; falls back to deriving from the already-parsed nonce length.
     header_size = int(meta.get("header_size", len(nonce) + 4))
+    prefix_size = int(meta.get("prefix_size", SM_PREFIX_SIZE))
 
     if args.lab_k_from_summary is not None:
         summary = json.loads(args.lab_k_from_summary.read_text())
@@ -469,7 +474,7 @@ def main() -> int:
         result = decrypt_full(
             ciphertext=ciphertext, K_lo=K_lo, nonce=nonce,
             total_pixels=total_pixels, rounds=args.rounds,
-            header_size=header_size,
+            header_size=header_size, prefix_size=prefix_size,
             plaintext_format=args.plaintext_format,
             start_pixel_override=args.start_pixel,
         )
@@ -524,7 +529,7 @@ def main() -> int:
     result = decrypt_full(
         ciphertext=ciphertext, K_lo=K_lo, nonce=nonce,
         total_pixels=total_pixels, rounds=args.rounds,
-        header_size=header_size,
+        header_size=header_size, prefix_size=prefix_size,
         plaintext_format=args.plaintext_format,
         start_pixel_override=args.start_pixel,
     )

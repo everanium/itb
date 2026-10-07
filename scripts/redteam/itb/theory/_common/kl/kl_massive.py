@@ -17,9 +17,7 @@ Prerequisites:
 Usage:
     python3 scripts/redteam/itb/theory/_common/kl/kl_massive.py <hash>
 
-Valid <hash> values match the 10 dirnames used elsewhere:
-    fnv1a, md5, areion256, areion512, blake2b,
-    blake2s, blake3, aescmac, siphash24, chacha20
+Valid <hash> values match the per-primitive corpus dirnames used elsewhere.
 """
 
 from __future__ import annotations
@@ -31,6 +29,9 @@ from pathlib import Path
 
 import numpy as np
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from attack_common import header_size_from_meta, prefix_size_from_meta  # noqa: E402
+
 # ITB_MASSIVE_DIR env var overrides the default lookup — used by kl_matrix.py
 # to give parallel workers isolated output directories. Symmetric with
 # kl_massive_full.py.
@@ -41,12 +42,9 @@ MASSIVE_DIR = (
     else Path.home() / "scratch" / "kl_massive"
 )
 
-# Container / extraction layout — same as distinguisher.py.
-# `header_size` is resolved per-run from the `.pixel` sidecar in main() —
-# the literal below is a last-resort fallback for legacy sidecars that
-# omit the field (see the cascade in main(), mirroring
-# kl_massive_full.py).
-HEADER_SIZE = 20
+# Container / extraction layout — same as distinguisher.py. The wire
+# offsets (`prefix_size`, `header_size`) are resolved per-run from the
+# `.pixel` sidecar in main().
 CHANNELS = 8
 DATA_BITS_PER_CHANNEL = 7
 DATA_BITS_PER_PIXEL = 56
@@ -92,8 +90,8 @@ def get_plaintext_channels(plaintext: bytes, n_pixels: int) -> np.ndarray:
 def main():
     if len(sys.argv) != 2:
         print(f"Usage: {sys.argv[0]} <hash_name>", file=sys.stderr)
-        print(f"  Requires tmp/massive/<hash>.{{bin,plain,pixel}} from "
-              f"TestRedTeamGenerateSingleMassive", file=sys.stderr)
+        print(f"  Requires {MASSIVE_DIR}/<hash>.{{bin,plain,pixel}} from "
+              f"TestRedTeamGenerateTripleMassive", file=sys.stderr)
         sys.exit(2)
 
     hash_name = sys.argv[1]
@@ -103,7 +101,7 @@ def main():
 
     for p in (bin_path, plain_path, pix_path):
         if not p.exists():
-            print(f"Missing {p}; run TestRedTeamGenerateSingleMassive first",
+            print(f"Missing {p}; run TestRedTeamGenerateTripleMassive first",
                   file=sys.stderr)
             sys.exit(1)
 
@@ -115,32 +113,30 @@ def main():
     start_pixel = int(meta["start_pixel"])
     total_pixels = int(meta["total_pixels"])
     barrier_fill = int(meta.get("barrier_fill", "1"))
-    # Prefer the corpus-emitted field so a wire-format change needs no edit
-    # here; fall back to deriving from main_nonce_hex/nonce_hex, then to
-    # the literal default with a one-time stderr warning (mirrors
-    # kl_massive_full.py's cascade).
-    if "header_size" in meta:
-        header_size = int(meta["header_size"])
-    else:
-        nonce_hex = meta.get("main_nonce_hex") or meta.get("nonce_hex")
-        if nonce_hex:
-            header_size = (len(nonce_hex) // 2) + 4
-        else:
-            header_size = HEADER_SIZE
-            print(f"WARNING: kl_massive.py: {pix_path} has no "
-                  f"header_size/main_nonce_hex/nonce_hex field — falling "
-                  f"back to header_size={HEADER_SIZE}", file=sys.stderr)
+    # Wire offsets from the sidecar: `header_size` (or `len(main_nonce) + 4`
+    # derived from main_nonce_hex / nonce_hex) is the chunk header; the
+    # 32-byte Single Message prefix sits ahead of it.
+    prefix_size = prefix_size_from_meta(meta)
+    header_size = header_size_from_meta(meta)
+    offset = prefix_size + header_size
 
     print(f"{'=' * 72}")
     print(f"  KL floor probe on a single massive sample")
     print(f"{'=' * 72}")
-    print(f"  hash: {hash_name}   BarrierFill: {barrier_fill}")
+    print(f"  hash: {hash_name}   BarrierFill: {barrier_fill}   "
+          f"prefix_size: {prefix_size}   header_size: {header_size}")
 
     # Load
     t0 = time.time()
     plaintext = plain_path.read_bytes()
     ciphertext = bin_path.read_bytes()
-    container = ciphertext[header_size:header_size + total_pixels * CHANNELS]
+    if len(ciphertext) != offset + total_pixels * CHANNELS:
+        print(f"ERROR: {bin_path} is {len(ciphertext)} bytes; sidecar geometry "
+              f"needs {offset + total_pixels * CHANNELS} (prefix {prefix_size} + "
+              f"header {header_size} + {total_pixels} px × {CHANNELS}) — stale "
+              f"or mismatched corpus; regenerate", file=sys.stderr)
+        sys.exit(1)
+    container = ciphertext[offset:offset + total_pixels * CHANNELS]
     print(f"  plaintext : {len(plaintext):,} bytes ({len(plaintext) / 1024 / 1024:.1f} MB)")
     print(f"  ciphertext: {len(ciphertext):,} bytes ({len(ciphertext) / 1024 / 1024:.1f} MB)")
     print(f"  total pixels: {total_pixels:,}   start pixel: {start_pixel:,}")

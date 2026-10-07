@@ -51,6 +51,7 @@ from attack_common import (  # noqa: E402
     load_cell_meta,
     load_config_truth,
     parse_itb_header,
+    prefix_size_from_meta,
 )
 
 PROJ = Path(__file__).resolve().parents[5]  # repo root
@@ -797,11 +798,10 @@ def main() -> int:
         "--nonce-size",
         type=int,
         default=None,
-        help="Override the main-nonce byte length used to parse the ITB header. Default: "
-             "derived from cell.meta.json's main_nonce_hex / nonce_hex field length; falls "
-             "back to 16 bytes only if the corpus metadata omits both fields (every in-tree "
-             "corpus generator hardcodes NonceBits=128, i.e. a 16-byte main nonce — this is "
-             "NOT itb.DefaultNonceBits/8, which is 64).",
+        help="Override the main-nonce byte length used to parse the ITB chunk header (the "
+             "32-byte wire prefix ahead of it is read from cell.meta.json's prefix_size). "
+             "Default: derived from cell.meta.json's main_nonce_hex / nonce_hex field "
+             "length; falls back to 16 bytes only if the corpus metadata omits both fields.",
     )
     args = parser.parse_args()
 
@@ -874,13 +874,14 @@ def main() -> int:
         nonce_size = len(bytes.fromhex(nonce_hex_for_header))
     else:
         nonce_size = 16  # last-resort fallback — NOT itb.DefaultNonceBits/8
-                          # (=64); every in-tree corpus generator hardcodes
-                          # NonceBits=128, i.e. a 16-byte main nonce.
+                          # (=64); the metadata-less corpora this covers
+                          # carry a 16-byte main nonce (NonceBits=128).
         print(f"WARNING: nonce_reuse_demask.py: cell.meta.json has no "
               f"main_nonce_hex/nonce_hex field — falling back to "
               f"nonce_size={nonce_size} bytes", file=sys.stderr)
-    n1, w1, h1, tp1, cb1_bytes = parse_itb_header(ct1, nonce_size)
-    n2, w2, h2, tp2, cb2_bytes = parse_itb_header(ct2, nonce_size)
+    prefix_size = prefix_size_from_meta(meta)
+    n1, w1, h1, tp1, cb1_bytes = parse_itb_header(ct1, nonce_size, prefix_size)
+    n2, w2, h2, tp2, cb2_bytes = parse_itb_header(ct2, nonce_size, prefix_size)
     if n1 != n2:
         if args.skip_nonce_check:
             print(f"WARNING: nonces differ (ct1: {n1.hex()}, ct2: {n2.hex()}) — "

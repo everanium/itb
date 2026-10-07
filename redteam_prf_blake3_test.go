@@ -9,7 +9,7 @@ package itb
 //
 // Every probe drives the shipped core Triple entrypoint
 // Encrypt3x256Cfg / Decrypt3x256Cfg: 8 mandatory distinct seeds,
-// always-on 48-bit Interlocked Barrier, no Single-Ouroboros fallback,
+// always-on 48-bit Interlocked Barrier, no Single Ouroboros fallback,
 // no overlay toggle. The barrier layer is the surface under test;
 // parallax and the outer-cipher wrapper are independent additional
 // layers not exercised here.
@@ -129,10 +129,12 @@ func pearsonBytes(a, b []byte) float64 {
 // Two plaintexts share the public-schema crib prefix but differ in the
 // body; both are encrypted under one fixed 8-seed bundle with fresh
 // per-message nonces (the shipped condition). If the shared crib
-// anchored any bit-position-to-lane mapping, the crib-region
-// ciphertext bytes of the two messages would correlate. The measured
-// crib-region byte-equal rate is compared against the 1/256
-// independent-stream floor.
+// anchored any bit-position-to-lane mapping, the ciphertext bytes of
+// the two messages would correlate. The byte-equal rate over the first
+// len(crib) container bytes (the container head) is compared against
+// the 1/256 independent-stream floor; the crib has no fixed ciphertext
+// position, since the Rank Barrier permutes it under lockSeed and the
+// start pixel follows the per-message nonce.
 func TestRedteamPRF_Probe1_CribKPAFreshNonce(t *testing.T) {
 	const (
 		trials  = 200
@@ -153,11 +155,15 @@ func TestRedteamPRF_Probe1_CribKPAFreshNonce(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		// The container head is sampled; the prefix and the chunk header
+		// ahead of it carry no plaintext dependence.
+		body1 := parseSMWire(ct1, NonceSize).container
+		body2 := parseSMWire(ct2, NonceSize).container
 		cribLen := len(prfPublicCrib)
-		if cribLen > len(ct1) || cribLen > len(ct2) {
-			cribLen = min(len(ct1), len(ct2))
+		if cribLen > len(body1) || cribLen > len(body2) {
+			cribLen = min(len(body1), len(body2))
 		}
-		sumCrib += byteEqualRate(ct1[:cribLen], ct2[:cribLen])
+		sumCrib += byteEqualRate(body1[:cribLen], body2[:cribLen])
 		sumFull += byteEqualRate(ct1, ct2)
 		sumPearson += math.Abs(pearsonBytes(ct1, ct2))
 	}
@@ -167,9 +173,9 @@ func TestRedteamPRF_Probe1_CribKPAFreshNonce(t *testing.T) {
 	const floor = 1.0 / 256.0
 
 	t.Logf("Probe 1 Crib KPA (fresh nonce, BLAKE3, Triple, barrier): N=%d bodyLen=%d", trials, bodyLen)
-	t.Logf("  crib-region ct byte-equal rate = %.5f (independent-stream floor %.5f)", cribRate, floor)
-	t.Logf("  full ct byte-equal rate        = %.5f", fullRate)
-	t.Logf("  mean |Pearson(ct1,ct2)|        = %.5f", meanPearson)
+	t.Logf("  container-head byte-equal rate = %.5f (independent-stream floor %.5f)", cribRate, floor)
+	t.Logf("  full ct byte-equal rate         = %.5f", fullRate)
+	t.Logf("  mean |Pearson(ct1,ct2)|         = %.5f", meanPearson)
 	t.Logf("  distinguisher signal |rate-floor| = %.5f", math.Abs(cribRate-floor))
 
 	// Sample-bounded null bound: the crib region sits at the

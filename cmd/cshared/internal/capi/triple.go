@@ -268,7 +268,7 @@ func FreeTriple(id TripleHandleID) (st Status) {
 // The whole plaintext is available up front on this surface, so the
 // call routes through [triple.Pipeline.EncryptStreamBytes] — the
 // one-shot Streaming entry whose direct path composes a
-// single-chunk emission via the itb-root Cfg-aware entries when the
+// single-chunk emission via the itb-root Single Message entries when the
 // parallax layer is disengaged and the plaintext fits the itb-root
 // single-message cap, bypassing the per-chunk io.Reader / io.Writer
 // machinery. Bindings sizing their buffer via
@@ -296,7 +296,7 @@ func TripleEncryptStream(id TripleHandleID, plainSrc, wireDst []byte) (n int, st
 // TripleDecryptStream is the receive-side counterpart of
 // [TripleEncryptStream]. Routes through
 // [triple.Pipeline.DecryptStreamBytes], whose direct path decodes
-// single-chunk wires via the itb-root Cfg-aware entries and whose
+// single-chunk wires via the itb-root Single Message entries and whose
 // wrapper posture unwraps the wire in one in-place keystream pass;
 // multi-chunk and parallax-on wires take the full reverse chain. Same
 // caller-allocated-buffer convention; the caller's wireSrc bytes are

@@ -75,6 +75,13 @@ def fmt_crossmsg(rec: dict) -> str:
             f"  {tag}: matched={r.get('match_bytes','?')}/{r.get('total_bytes','?')} "
             f"rate={r.get('match_rate', 0):.4f}"
         )
+    bp = rec.get("regime_B_prime_mask_oracle_peek", {})
+    if "content_match_bytes" in bp:
+        lines.append(
+            f"  regime_B_prime split: content={bp['content_match_bytes']}/{bp['content_total_bytes']} "
+            f"rate={bp.get('content_match_rate', 0):.4f}; code byte + interlock-nonce fragment="
+            f"{bp['head_match_bytes']}/{bp['head_total_bytes']} rate={bp.get('head_match_rate', 0):.4f}"
+        )
     return "\n".join(lines)
 
 
@@ -97,7 +104,7 @@ def main() -> None:
         print(fmt_cells_a(records["layer_a_histogram"]))
 
     if "layer_a_naive_kpa" in records:
-        print("\n[Layer A'] Naive Crib-KPA constraint match (interlock ignored)")
+        print("\n[Layer A'] Naive Crib KPA constraint match (interlock ignored)")
         print(fmt_cells_akpa(records["layer_a_naive_kpa"]))
 
     if "layer_b_random_floor" in records:
@@ -154,11 +161,41 @@ def main() -> None:
         print(fmt_crossmsg(records["cross_message_decrypt"]))
 
     print("\n" + "=" * 78)
-    print("Attacker-realistic verdict (regimes A and B — no mask peek): 0 bytes of P3")
+    print_verdict(records)
+
+
+def print_verdict(records: dict[str, dict]) -> None:
+    cm = records.get("cross_message_decrypt")
+    if cm is None:
+        print("Verdict: no cross_message_decrypt record — nothing to conclude.")
+        return
+    realistic = [cm.get(t, {}) for t in ("regime_A_no_peek", "regime_B_startpixel_peek")]
+    real_bytes = sum(int(r.get("match_bytes", 0)) for r in realistic)
+    bp = cm.get("regime_B_prime_mask_oracle_peek", {})
+    bp_match = int(bp.get("match_bytes", 0))
+    bp_total = int(bp.get("total_bytes", 0))
+    bp_rate = float(bp.get("match_rate", 0))
+
+    print(f"Attacker-realistic verdict (regimes A and B — no mask peek): {real_bytes} bytes of P3")
     print("recovered under Full KPA + nonce reuse against the always-on barrier.")
-    print("Mask-oracle upper bound (regime B'): archived-comparable recovery,")
-    print("confirming the barrier's closure lives in the mask secrecy — not in any")
-    print("per-pixel obfuscation the demasker's Layer 1 could route around.")
+    print(f"Mask-oracle upper bound (regime B'): {bp_match}/{bp_total} bytes of the")
+    print(f"deterministic prefix recovered (rate {bp_rate:.4f}).")
+    lb = records.get("layer_b_mask_oracle_peek")
+    if lb is not None:
+        rows = lb.get("per_region", [])
+        probed = sum(int(r.get("pixels_probed_within_deterministic_prefix", 0)) for r in rows)
+        unique = sum(int(r.get("pixels_with_unique_np_r", 0)) for r in rows)
+        multi = sum(int(r.get("pixels_with_multiple_np_r_candidates", 0)) for r in rows)
+        zero = sum(int(r.get("pixels_with_zero_np_r_candidates", 0)) for r in rows)
+        print(f"Layer B' pixels probed={probed}: unique={unique} multi={multi} zero={zero};")
+        print("the interlock-nonce fragment pixels carry a zero XOR under the forced nonce")
+        print("collision and are expected among the multi-candidate pixels.")
+    if real_bytes == 0 and bp_match > 0:
+        print("The barrier's closure lives in the mask secrecy — not in any per-pixel")
+        print("obfuscation the demasker's Layer 1 could route around.")
+    else:
+        print(f"Unexpected outcome: realistic={real_bytes} mask-oracle={bp_match}.")
+        print("Re-examine the probes before drawing a verdict.")
 
 
 if __name__ == "__main__":

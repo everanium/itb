@@ -13,9 +13,9 @@ import (
 // test runs at three input lengths matching the buf shapes ITB uses internally with the
 // 128 / 256 / 512-bit nonce configurations:
 //
-//	20 bytes  — default (16-byte nonce + 4-byte block index)
+//	20 bytes  — 128-bit nonce (16-byte nonce + 4-byte block index)
 //	36 bytes  — 256-bit nonce (32-byte nonce + 4-byte block index)
-//	68 bytes  — 512-bit nonce (64-byte nonce + 4-byte block index)
+//	68 bytes  — default 512-bit nonce (64-byte nonce + 4-byte block index)
 func TestChaCha20DigestDependsOnEveryByte(t *testing.T) {
 	mac := ChaCha20WithKey([32]byte{
 		0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,

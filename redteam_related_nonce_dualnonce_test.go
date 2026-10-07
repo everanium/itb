@@ -3,7 +3,7 @@
 package itb
 
 // Related-nonce differential re-verification under the shipped dual-nonce
-// wire (`[main_nonce (N)][W][H][container]`, header size `N+4`, with the
+// wire (`[prefix 32][main_nonce (N)][W][H][container]`, chunk header size `N+4`, with the
 // interlock nonce split across the three interlocked lanes inside the
 // container). Companion to `redteam_related_nonce_test.go`, which
 // applies a 1-bit Δ that perturbs BOTH nonce slots simultaneously (its
@@ -226,8 +226,8 @@ func runRelatedNonceDualCell(t *testing.T, scenario rnDualScenario, primName str
 		Chi2DF:           255,
 		BitBalMeanAbs:    meanAbs,
 		BitBalMaxAbs:     maxAbs,
-		Container0Bytes:  len(ct0),
-		Container1Bytes:  len(ct1),
+		Container0Bytes:  len(layout0.body),
+		Container1Bytes:  len(layout1.body),
 		MatchedContainer: matched,
 	}
 }

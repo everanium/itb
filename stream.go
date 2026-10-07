@@ -31,16 +31,21 @@ func ChunkSize(dataLen int) int {
 //	[main nonce][2-byte width BE][2-byte height BE][W*H*8 container]
 //
 // Returns an error when the supplied buffer is shorter than the
-// fixed header size, the dimensions are zero / overflow / exceed
-// the container cap, or the buffer does not contain enough trailing
+// fixed header size, the dimensions are zero / non-square / overflow /
+// exceed the container cap, or the buffer does not contain enough trailing
 // bytes for the announced container body.
 //
 // Streaming consumers use ParseChunkLenCfg to walk a concatenated
-// stream of ITB ciphertexts on disk or over the wire one chunk at
-// a time without buffering the entire stream in memory: read the
-// fixed header, call ParseChunkLenCfg to learn the chunk size, read
-// that many bytes, hand them to the matching Decrypt*Cfg entry point,
-// repeat.
+// stream of ITB chunks on disk or over the wire one chunk at a time
+// without buffering the entire stream in memory: skip the 32-byte
+// stream prefix, read the fixed header, call ParseChunkLenCfg to learn
+// the chunk size, read that many bytes, repeat. A bare chunk is not a
+// Single Message wire — the Single Message entries
+// ([Decrypt3x128Cfg] / [DecryptAuthenticated3x128Cfg] and their
+// width siblings) expect the 32-byte prefix ahead of the header — so a
+// chunk walker hands its chunks to the streaming decoders
+// ([DecryptStream3xCfg] / [DecryptStreamAuth3xCfg] over an io.Reader,
+// or the per-width DecryptStream* entries over a byte slice).
 func ParseChunkLenCfg(cfg *Config, data []byte) (int, error) {
 	if len(data) < headerSizeCfg(cfg) {
 		return 0, fmt.Errorf("data too short for header")
@@ -52,6 +57,11 @@ func ParseChunkLenCfg(cfg *Config, data []byte) (int, error) {
 
 	if width == 0 || height == 0 {
 		return 0, fmt.Errorf("invalid dimensions %dx%d", width, height)
+	}
+	// The encoder only emits square containers; a non-square header
+	// with the same W·H would otherwise decode to the same plaintext.
+	if width != height {
+		return 0, fmt.Errorf("non-square container %dx%d", width, height)
 	}
 	if width > math.MaxInt/height {
 		return 0, fmt.Errorf("dimensions %dx%d overflow", width, height)
@@ -109,7 +119,7 @@ func EncryptStream3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed
 		if end > len(data) {
 			end = len(data)
 		}
-		chunk, err := Encrypt3x128Cfg(cfg, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:end])
+		chunk, err := encrypt3x128Cfg(cfg, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:end], 0)
 		if err != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
 		}
@@ -138,7 +148,7 @@ func DecryptStream3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed
 		if err != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
 		}
-		decrypted, err := Decrypt3x128Cfg(cfg, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:off+chunkLen])
+		decrypted, err := decrypt3x128Cfg(cfg, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:off+chunkLen])
 		if err != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
 		}
@@ -183,7 +193,7 @@ func EncryptStream3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed
 		if end > len(data) {
 			end = len(data)
 		}
-		chunk, err := Encrypt3x256Cfg(cfg, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:end])
+		chunk, err := encrypt3x256Cfg(cfg, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:end], 0)
 		if err != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
 		}
@@ -212,7 +222,7 @@ func DecryptStream3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed
 		if err != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
 		}
-		decrypted, err := Decrypt3x256Cfg(cfg, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:off+chunkLen])
+		decrypted, err := decrypt3x256Cfg(cfg, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:off+chunkLen])
 		if err != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
 		}
@@ -257,7 +267,7 @@ func EncryptStream3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed
 		if end > len(data) {
 			end = len(data)
 		}
-		chunk, err := Encrypt3x512Cfg(cfg, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:end])
+		chunk, err := encrypt3x512Cfg(cfg, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:end], 0)
 		if err != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
 		}
@@ -286,7 +296,7 @@ func DecryptStream3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed
 		if err != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
 		}
-		decrypted, err := Decrypt3x512Cfg(cfg, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:off+chunkLen])
+		decrypted, err := decrypt3x512Cfg(cfg, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:off+chunkLen])
 		if err != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
 		}

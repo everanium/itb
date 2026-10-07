@@ -19,7 +19,6 @@ package itb
 import (
 	"bytes"
 	"crypto/rand"
-	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -94,9 +93,9 @@ func writeTrainHashLeakVictim(t *testing.T, outDir string, keyBits, ptSize, barr
 		t.Fatal("roundtrip mismatch")
 	}
 	nonceLen := currentNonceSizeCfg(cfg)
-	mainNonce := ct[:nonceLen]
-	width := int(binary.BigEndian.Uint16(ct[nonceLen:]))
-	height := int(binary.BigEndian.Uint16(ct[nonceLen+2:]))
+	sm := parseSMWire(ct, nonceLen)
+	mainNonce := sm.mainNonce
+	width, height := sm.width, sm.height
 	totalPixels := width * height
 	headerSize := nonceLen + 4
 	third, thirdPixels2, _ := tripleThirdCaps(totalPixels)
@@ -117,6 +116,7 @@ func writeTrainHashLeakVictim(t *testing.T, outDir string, keyBits, ptSize, barr
 		"width":               width,
 		"height":              height,
 		"total_pixels":        totalPixels,
+		"prefix_size":         smPrefixLen,
 		"header_size":         headerSize,
 		"third":               third,
 		"third_pixels2":       thirdPixels2,
@@ -151,6 +151,7 @@ func TestRedTeamTrainHashLeak7of8(t *testing.T) {
 		MainNonceHex   string `json:"main_nonce_hex"`
 		InterlockNonce string `json:"interlock_nonce_hex"`
 		TotalPixels    int    `json:"total_pixels"`
+		PrefixSize     int    `json:"prefix_size"`
 		HeaderSize     int    `json:"header_size"`
 		Third          int    `json:"third"`
 		ThirdPixels2   int    `json:"third_pixels2"`
@@ -178,7 +179,7 @@ func TestRedTeamTrainHashLeak7of8(t *testing.T) {
 	// recovered rather than from what the fixture recorded.
 	lens, offs := nonceSplit(currentNonceSizeCfg(cfg))
 
-	container := ct[meta.HeaderSize:]
+	container := ct[meta.PrefixSize+meta.HeaderSize:]
 	third := meta.Third
 	thirdPixels2 := meta.ThirdPixels2
 	off1 := third * Channels

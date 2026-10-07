@@ -23,6 +23,8 @@ from typing import Callable, List, Optional, Sequence, Tuple
 
 import numpy as np
 
+from attack_common import SM_PREFIX_LEN  # Single Message wire prefix ahead of the chunk header
+
 CHANNELS = 8              # RGBWYOPA
 DATA_BITS_PER_CHANNEL = 7
 DATA_BITS_PER_PIXEL = 56  # 8 × 7
@@ -35,14 +37,18 @@ MASK64 = (1 << 64) - 1
 
 def parse_raw_ciphertext(
     ciphertext_path: Path, total_pixels: int, header_size: int,
+    prefix_size: int = SM_PREFIX_LEN,
 ) -> List[Tuple[int, int, int]]:
     """Parse raw ITB ciphertext directly (no demasking).
 
-    Reads a `header_size`-byte header, then `total_pixels × 8` channel
-    bytes. The shipped wire header carries `main_nonce || W(2) || H(2)`,
-    so the caller computes `header_size = len(main_nonce) + 4` from the
-    corpus `cell.meta.json` (see `raw_mode_bias_probe.py`). For each
-    container position `cp` and each channel `ch`, emits a triple
+    Skips the `prefix_size`-byte wire prefix and the `header_size`-byte
+    chunk header, then reads `total_pixels × 8` channel bytes. The chunk
+    header carries `main_nonce || W(2) || H(2)`, so the caller takes
+    `header_size = len(main_nonce) + 4` (or `meta["header_size"]`) and
+    `prefix_size = meta["prefix_size"]` from the corpus `cell.meta.json`
+    (see `raw_mode_bias_probe.py`); `header_size` is the chunk header
+    only — the prefix is never folded into it. For each container
+    position `cp` and each channel `ch`, emits a triple
     `(cp, ch, byte & 0x7F)` — raw byte masked to low 7 bits.
 
     On the container body is the barrier-permuted Triple wire —
@@ -53,13 +59,15 @@ def parse_raw_ciphertext(
     per-shift conflict-rate distribution flat under any shift.
     """
     raw = ciphertext_path.read_bytes()
-    need = header_size + total_pixels * CHANNELS
+    offset = prefix_size + header_size
+    need = offset + total_pixels * CHANNELS
     if len(raw) < need:
         raise RuntimeError(
             f"raw ciphertext too short for total_pixels={total_pixels} "
-            f"header_size={header_size}: {len(raw)} bytes, need {need}."
+            f"prefix_size={prefix_size} header_size={header_size}: "
+            f"{len(raw)} bytes, need {need}."
         )
-    body = raw[header_size:need]
+    body = raw[offset:need]
     observations: List[Tuple[int, int, int]] = []
     for cp in range(total_pixels):
         base = cp * CHANNELS

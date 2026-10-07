@@ -10,9 +10,9 @@ test-only `setBrokenTestNonce` hook.
 ## Files
 
 - `run.sh` — one-shot runner that invokes `go test -tags redteam -run
-  TestRedTeamNonceReuse -v ./` from the repo root and copies the
-  emitted JSON records under `~/scratch/redteam/nonce_reuse/` into a
-  timestamped bundle for archival.
+  TestRedTeamNonceReuse -v ./` from the repo root, lists the
+  emitted JSON records under `~/scratch/redteam/nonce_reuse/` and
+  runs `aggregate.py` on them.
 - `aggregate.py` — reads the emitted JSON records and prints a compact
   per-layer summary table. Consumes only files under
   `~/scratch/redteam/nonce_reuse/` — no test dependencies.
@@ -36,7 +36,9 @@ for downstream aggregation.
   probe with random plaintext pair (no artificial quiet chunks).
 - `TestRedTeamNonceReuseLayerBMaskOraclePeek` — Layer B': upper bound
   under startPixel-peek + mask-oracle-peek. Confirms the archived
-  demasker's Layer 1 succeeds at 100% precision IF the mask is revealed.
+  demasker's Layer 1 anchors the content pixels IF the mask is revealed;
+  the interlock-nonce fragment pixels stay ambiguous, their XOR being
+  zero under the forced nonce collision.
 - `TestRedTeamNonceReuseLayerCFNVAlgebraic` — Layer C: attacker-realistic
   FNV-1a algebraic-recovery precondition. Zero pixels admit any (np, r)
   under the naive (no mask peek) constraint.
@@ -74,7 +76,7 @@ printouts, never in a decision path.
 ./scripts/redteam/itb/nonce_reuse/run.sh
 
 # Or invoke the tests directly:
-go test -tags redteam -run TestRedTeamNonceReuse -v ./
+go test -tags redteam -run TestRedTeamNonceReuse -v -timeout 1800s ./
 
 # Then aggregate:
 python3 scripts/redteam/itb/nonce_reuse/aggregate.py

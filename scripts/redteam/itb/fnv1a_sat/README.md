@@ -93,13 +93,14 @@ Ground-truth seed values appear elsewhere only in terminal-stage
 
 `sat_probe.py` is a compact adaptation of the archived
 `scripts/redteam/itb/theory/fnv1a/sat_harness_4round.py`. The full
-Single-Ouroboros harness ran ≈ 8 h on 4 cribs + disclosed startPixel.
+Single Ouroboros harness ran ≈ 8 h on 4 cribs + disclosed startPixel.
 The probe here targets an **isolated single-chain "strongest attacker"
 upper bound**: the attacker is granted true (np, r) per pixel (5 of 8
 chains inverted for free) and only the single dataSeed_i lo lane stays
-symbolic. If this UPPER-BOUND SAT returns UNSAT, the full
+symbolic. If this UPPER-BOUND SAT does not recover the true lane
+(UNSAT, or a model the cross-validation pixel rejects), the full
 coupled-8-chain SAT (all 8 chains unknown + per-chunk interlock mask
-triples symbolic) is trivially harder and also UNSAT.
+triples symbolic) is trivially harder.
 
 Full symbolic 8-chain SAT is beyond a single-cycle scope; the
 anchoring-level closure documented by F1 / F2 / F4 / F5 is the

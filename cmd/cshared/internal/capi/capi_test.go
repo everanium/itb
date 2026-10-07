@@ -52,8 +52,8 @@ func TestHeaderSize(t *testing.T) {
 // satisfies that identity finds the dimension field without assuming
 // anything about what precedes it.
 //
-// The shim's output is not the bare ITB wire — a constant-size
-// envelope precedes it — so the absolute offset is not HeaderSize.
+// The shim's output is not a bare chunk — the constant-size 32-byte
+// prefix precedes it — so the absolute offset is not HeaderSize.
 // What is checked instead is the DIFFERENCE across nonce widths, in
 // which any constant envelope cancels: growing the nonce by k bytes
 // must move the dimension field by exactly k. A copy that had kept a

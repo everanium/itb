@@ -10,7 +10,7 @@ plaintext of the second message.
 Attacker knowledge for the second message:
 
   * K (56 bits observable, 8 bits = low 3 + high 5 enumerated here).
-  * Nonce (from the 20-byte ITB ciphertext header, public).
+  * Nonce (from the ITB ciphertext header after the 32-byte prefix, public).
   * Width × Height (from the same header).
   * Plaintext format public (e.g. HTML). One known 7-byte prefix chunk
     (e.g. `\\xFF<iden` for HTML tag template) used to anchor startPixel
@@ -173,7 +173,9 @@ def main() -> int:
     total_pixels = int(meta["total_pixels"])
     ct_path = args.cell_dir / "ct_0000.bin"
     raw = ct_path.read_bytes()
-    body = raw[20:]
+    prefix_size = int(meta.get("prefix_size", 32))
+    header_size = int(meta.get("header_size", len(nonce) + 4))
+    body = raw[prefix_size + header_size:]
     k_observable = int(args.k_observable, 16)
     crib = bytes.fromhex(args.crib_hex)
     if len(crib) < 7 or len(crib) % 7 != 0:

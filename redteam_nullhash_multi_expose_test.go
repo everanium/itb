@@ -34,7 +34,6 @@ package itb
 import (
 	"bytes"
 	"crypto/rand"
-	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -91,9 +90,9 @@ func writeMultiNullHashExpose(t *testing.T, outDir string, nMsg, keyBits, ptSize
 			t.Fatalf("roundtrip msg %d failed", m)
 		}
 		nonceLen = currentNonceSizeCfg(cfg)
-		mainNonce := ct[:nonceLen]
-		width = int(binary.BigEndian.Uint16(ct[nonceLen:]))
-		height = int(binary.BigEndian.Uint16(ct[nonceLen+2:]))
+		sm := parseSMWire(ct, nonceLen)
+		mainNonce := sm.mainNonce
+		width, height = sm.width, sm.height
 		totalPixels = width * height
 		headerSize = nonceLen + 4
 
@@ -145,6 +144,7 @@ func writeMultiNullHashExpose(t *testing.T, outDir string, nMsg, keyBits, ptSize
 		"width":           width,
 		"height":          height,
 		"total_pixels":    totalPixels,
+		"prefix_size":     smPrefixLen,
 		"header_size":     headerSize,
 		"messages":        msgs,
 		"start_pixels": map[string]int{

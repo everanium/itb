@@ -23,7 +23,7 @@ const int _blobCap = 64 * 1024;
 const int _jsonCap = 4 * 1024;
 
 /// Pre-allocation formula for Message / one-shot stream outputs:
-/// 1.25x the payload plus a 64 KiB envelope allowance.
+/// 1.25x the payload plus a 128 KiB envelope allowance.
 int _outCap(int payload) => payload + (payload >> 2) + 131072;
 
 /// Single retry-once dispatch site for every variable-size output
@@ -251,8 +251,8 @@ class Pipeline {
   /// when it exceeds `dst.length`. Throws [ItbException] with
   /// [Status.bufferTooSmall] when [cap] is insufficient — there is
   /// no retry, the caller owns capacity policy. The pre-allocation
-  /// formula `payload * 5 / 4 + 131072` typically suffices for large
-  /// payloads, but small payloads may still expand past it; on
+  /// formula `payload * 5 / 4 + 131072` covers the Message wire at
+  /// every key size, nonce width and barrier fill; on
   /// [Status.bufferTooSmall] re-issue with a larger [dst] or fall
   /// back to [encryptMessage] (whose retry path absorbs the
   /// expansion). Bytes past the returned count are unspecified.

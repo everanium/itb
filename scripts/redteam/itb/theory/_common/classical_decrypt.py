@@ -36,7 +36,7 @@ import numpy as np
 from attack_common import (
     CHANNELS, DATA_BITS_PER_CHANNEL, DATA_BITS_PER_PIXEL,
     EXTRACT7_TABLE, ROT7_TABLE,
-    load_cell_meta, parse_itb_header, get_bits7, cobs_encode,
+    load_cell_meta, parse_itb_header, prefix_size_from_meta, get_bits7, cobs_encode,
 )
 
 from nonce_reuse_demask import (
@@ -264,11 +264,11 @@ def main() -> int:
                          "Layer 1 to attempt recovery (default: 2).")
     ap.add_argument("--nonce-size", type=int, default=None,
                     help="Override the main-nonce byte length used to parse the ITB "
-                         "header. Default: derived from cell.meta.json's "
-                         "main_nonce_hex / nonce_hex field length; falls back to 16 "
-                         "bytes only if the corpus metadata omits both fields (every "
-                         "in-tree corpus generator hardcodes NonceBits=128 — NOT "
-                         "itb.DefaultNonceBits/8, which is 64).")
+                         "chunk header (the 32-byte wire prefix ahead of it is read "
+                         "from cell.meta.json's prefix_size). Default: derived from "
+                         "cell.meta.json's main_nonce_hex / nonce_hex field length; "
+                         "falls back to 16 bytes only if the corpus metadata omits "
+                         "both fields.")
     args = ap.parse_args()
 
     cell_dir = args.cell_dir.resolve()
@@ -303,8 +303,9 @@ def main() -> int:
         print(f"WARNING: classical_decrypt.py: cell.meta.json has no "
               f"main_nonce_hex/nonce_hex field — falling back to "
               f"nonce_size={nonce_size} bytes", file=sys.stderr)
-    nonce1, w1, h1, tp1, body1 = parse_itb_header(c1_bytes, nonce_size)
-    nonce2, w2, h2, tp2, body2 = parse_itb_header(c2_bytes, nonce_size)
+    prefix_size = prefix_size_from_meta(meta)
+    nonce1, w1, h1, tp1, body1 = parse_itb_header(c1_bytes, nonce_size, prefix_size)
+    nonce2, w2, h2, tp2, body2 = parse_itb_header(c2_bytes, nonce_size, prefix_size)
     if nonce1 != nonce2:
         print("ERROR: nonces differ — not a nonce-reuse pair", file=sys.stderr)
         return 2

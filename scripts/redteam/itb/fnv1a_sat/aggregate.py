@@ -10,12 +10,12 @@ and prints a per-layer summary table.
 Independent of the Go test / SAT probe — no runtime dependency on
 either. Reports:
 
-  - F1 pre-anchor intersection per snake.
+  - F1 pre-anchor intersection per region.
   - F2 true-anchor upper bound (channel matches under lab-peek seeds).
   - F3 positive control (Single/barrier-off) anchor recovery.
   - F4 startPixel-peek Layer 3 (channel matches at true sp vs floor).
   - F5 displacement fraction on the JSON crib.
-  - Bitwuzla SAT run outcomes per snake per startPixel.
+  - Bitwuzla SAT run outcomes per region per startPixel.
 
 Usage:
     python3 aggregate.py [--dir ~/scratch/redteam/fnv1a_sat]

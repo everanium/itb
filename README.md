@@ -195,11 +195,11 @@ Blob profile (no cipher surface; used by `Init` / `Rekey` to bundle session stat
 
 The single-primitive Triple, blob, and mixed-primitive profiles default to **parallax on (Pre-inner ciphers) + wrapper (Outer cipher) on**; AES-ITB-128 native profiles keep parallax and wrapper off, but can be used in conjunction with other PRF-grade primitives. Both toggles are opt-out via `triple.Opts` on the overlay-enabled profiles. Every seed component, PRF key, MAC key, and wrapper master is drawn from `crypto/rand` at `Init` time.
 
-**The user's story.** Call `triple.Init(profile, opts)` to receive a `*triple.Pipeline` plus a `blob` byte slice. **The blob is the full session bundle** — the resolved `triple.Profile` record (the recipe: mode, width, primitives, key width, MAC, outer cipher, palette, chunk / segment sizes, layer toggles, and the sender's profile label), both masters, and the inner Blob{N} carrying the 8-seed components + per-slot PRF keys + optional MAC material + the `NonceBits` / `BarrierFill` snapshot. Ship the blob to the receiver out-of-band; the receiver calls `triple.Load(blob)` (or `triple.LoadF(path)` for a blob on disk) and reconstructs the same Pipeline from the recipe alone — no profile registration is needed on the receiving side, and no `Opts` are accepted because every structural field is fixed by the blob. Both sides then encrypt / decrypt against their Pipeline. The per-machine worker cap is the one runtime knob and is set after construction via `pipe.MaxWorkers(n)`.
+**The user's story.** Call `triple.Init(profile, opts)` to receive a `*triple.Pipeline` plus a `blob` byte slice. **The blob is the full session bundle** — the resolved `triple.Profile` record (the recipe: mode, width, primitives, key width, MAC, outer cipher, palette, chunk / segment sizes, layer toggles, and the sender's profile label), both masters, and the inner Blob{N} carrying the 8-seed components + per-slot PRF keys + optional MAC material + the `NonceBits` / `BarrierFill` / `ContainerMode` snapshot. Ship the blob to the receiver out-of-band; the receiver calls `triple.Load(blob)` (or `triple.LoadF(path)` for a blob on disk) and reconstructs the same Pipeline from the recipe alone — no profile registration is needed on the receiving side, and no `Opts` are accepted because every structural field is fixed by the blob. Both sides then encrypt / decrypt against their Pipeline. The per-machine worker cap is the one runtime knob and is set after construction via `pipe.MaxWorkers(n)`.
 
 **Blob persistence and inspection.** `pipe.Save()` returns a copy of the Pipeline's current blob (the bytes `Init` handed back, or the refreshed bytes after `Rekey` / a master override at `Load`); `pipe.SaveF(path)` writes it with mode `0600` (the containing directory must already exist). `triple.LoadF(path)` is the file-side counterpart of `Load`. `triple.Inspect(blob)` decodes the embedded `Profile` record without constructing a Pipeline — a pure metadata read that touches neither the profile registry nor the primitive registries. `Load` accepts an optional trailing `(permMaster, wrapMaster)` pair to swap the masters at reopen time (rekey-on-import); the blob `Save()` returns afterwards carries the overridden masters. A blob whose wrap-layer schema version is not the current one is refused with `triple.ErrBlobVersion`; a recipe naming a primitive absent from the local registries is refused with `triple.ErrRecipePrimitiveUnknown`.
 
-**Command-line utility — `itb3`.** [`cmd/itb3`](cmd/itb3/) ships an openssl-style CLI over the same `triple/` surface. `itb3 genblob <mode> <hash>` generates a session blob (written with mode `0600` when `-o` is used); `itb3 encrypt` / `decrypt` / `rekey` / `inspect` / `verify` operate on a saved blob via `triple.LoadF`, and `itb3 profiles` lists the registered profile catalogue. Payloads pass through files (`-i` / `-o`) or via stdin / stdout. See [`cmd/itb3/README.md`](cmd/itb3/README.md) for the full subcommand reference.
+**Command-line utility — `itb3`.** [`cmd/itb3`](cmd/itb3/) ships an openssl-style CLI over the same `triple/` surface. `itb3 genblob <mode> <hash> [--blob-mode 1|2]` generates a session blob (written with mode `0600` when `-o` is used; `--blob-mode` selects Mode 1 per-region default or Mode 2 per-container compact sizing); `itb3 encrypt` / `decrypt` / `rekey` / `inspect` / `verify` operate on a saved blob via `triple.LoadF`, and `itb3 profiles` lists the registered profile catalogue. Payloads pass through files (`-i` / `-o`) or via stdin / stdout. See [`cmd/itb3/README.md`](cmd/itb3/README.md) for the full subcommand reference.
 
 ### Triple 1 — Single Message with MAC
 
@@ -561,7 +561,7 @@ enc, blob, err := triple.Init(triple.ProfileStreamingAEADTripleMACV1, triple.Opt
 })
 ```
 
-Any field left at its zero value defers to the resolved profile's default; a nil `*bool` toggle defers to the profile default while a non-nil pointer forces the chosen setting. `Load` takes no `Opts`: the blob's recipe fixes the primitives, key width, MAC, outer cipher, palette, chunk / segment sizes, and both layer toggles, and the inner Blob{N} carries the `NonceBits` / `BarrierFill` snapshot — a receiver that deviated from any of them could not decrypt the sender's wires. The receiver-side knobs are `pipe.MaxWorkers(n)` after construction and the optional trailing `(permMaster, wrapMaster)` pair on `Load` for rekey-on-import.
+Any field left at its zero value defers to the resolved profile's default; a nil `*bool` toggle defers to the profile default while a non-nil pointer forces the chosen setting. `Load` takes no `Opts`: the blob's recipe fixes the primitives, key width, MAC, outer cipher, palette, chunk / segment sizes, and both layer toggles, and the inner Blob{N} carries the `NonceBits` / `BarrierFill` / `ContainerMode` snapshot — a receiver that deviated from any of them could not decrypt the sender's wires. The receiver-side knobs are `pipe.MaxWorkers(n)` after construction and the optional trailing `(permMaster, wrapMaster)` pair on `Load` for rekey-on-import.
 
 ### Accepted values per Opts field
 
@@ -583,6 +583,8 @@ Any field left at its zero value defers to the resolved profile's default; a nil
 | `OuterCipher` | one of the shipped primitive names below | Empty = profile default. Wrapper-off profiles ignore. |
 | `ParallaxPalette` | slice of primitive names from the set below | Empty = profile default palette. Order matters — parallax dispatches per-segment by slot. |
 | `ParallaxSegmentSize` | `int` in `[1, 65535]`, coprime to `504` (not divisible by 2, 3, or 7); or `0` = default | Default `4093`. Recommended values: primes such as `4093` / `4099` / `4111` / `4127`; composite values are accepted provided they are coprime to 504. |
+
+**Container mode lifecycle.** `ContainerMode` is not an `Opts` field: `triple.Register` rejects any profile with non-zero `ContainerMode`. The setting resides inside the session blob's inner payload, is inspected via `triple.Inspect` / `rec.ContainerMode` (reporting 1 for per-region or 2 for per-container), and is configured at blob creation time (`itb3 genblob --blob-mode 1|2` or Low-Level `*itb.Config.Mode`).
 
 **Shipped primitive names.** The single canonical registry (`hashes/registry.go` — `hashes.Registry`, the `hashes.Cipher*` name constants, and the `hashes.Names()` snapshot that `wrapper.CipherNames` mirrors) uses the same string alphabet for `InnerHash`, `OuterCipher`, and each `ParallaxPalette` entry, excluding `aesitb128` which is not supported by parallax and wrapper:
 
@@ -747,6 +749,18 @@ C-ABI callers install a persistent profile via `ITB_Triple_Register(name, profil
 ## Advanced — Low-Level `*Cfg` surface
 
 The `triple/` facade is the recommended entry point. Callers who need the raw 8-seed handoff — for custom key management, unusual PRF combinations, or in-process integration with existing seed material — consume the Low-Level `*Cfg` free functions directly. Every Low-Level entry takes an explicit `*itb.Config` (`nil` accepts all compile-in defaults); there is no process-wide setter surface.
+
+Selected `*itb.Config` fields:
+
+| Field | Type | Default | Accepted values / Description |
+|---|---|---|---|
+| `NonceBits` | `int` | `512` (`DefaultNonceBits`) | On-wire nonce width (`128` / `256` / `512`). |
+| `BarrierFill` | `int` | `1` (`DefaultBarrierFill`) | DRBG barrier fill margin in pixels (`1` / `2` / `4` / `8` / `16` / `32`). |
+| `MaxWorkers` | `int` | `runtime.NumCPU` | Goroutine concurrency cap (`1` .. `256`). |
+| `Mode` | `int` | `1` (per-region) | Container floor sizing mode: `0` or `1` = Mode 1 per-region (default); `2` = Mode 2 per-container (network tunnel / VPN compact mode). Out-of-range values return `ErrBlobModeMismatch`. |
+| `TagStubSize` | `int` | `32` | No MAC DRBG dummy stub reservation in bytes (`0` or `16` .. `64`). |
+
+The same `Mode` setting governs seed export options (`itb.Blob128Opts`, `itb.Blob256Opts`, `itb.Blob512Opts`) on `Export3Cfg`.
 
 ### Low-Level 1 — Single Message with MAC
 
@@ -1126,10 +1140,11 @@ This is best read as **local key evolution** — each round derives a fresh effe
 
 ```
 Offset  Size     Content
-0       N        Main nonce (crypto/rand, public; N = 16/32/64 bytes for 128/256/512-bit nonce)
-N       2        Width (uint16 big-endian)
-N+2     2        Height (uint16 big-endian)
-N+4     W×H×8    Raw RGBWYOPA pixel data with embedded encrypted payload,
+0       32       Prefix (crypto/rand; the streamID bound into the MAC on MAC Authenticated shapes)
+32      N        Main nonce (crypto/rand, public; N = 16/32/64 bytes for 128/256/512-bit nonce)
+32+N    2        Width (uint16 big-endian)
+34+N    2        Height (uint16 big-endian)
+36+N    W×H×8    Raw RGBWYOPA pixel data with embedded encrypted payload,
                  routed through the Interlocked Barrier
 ```
 
@@ -1139,13 +1154,20 @@ Default nonce size is 512 bits (64 bytes) — chosen so the birthday-bound on co
 
 ## Minimum container size
 
-The unified CCA-resistant envelope floor `MinPixels := MinPixelsAuth` applies across both the authenticated and non-authenticated surfaces: each of the three regions independently reaches `ceil(keyBits / log₂(7))` pixels, so the 7^P encoding-ambiguity floor exceeds the key space per region, and envelope length does not distinguish the authenticated from the non-authenticated surface at the floor. Total container pixels equal `3 × per-region floor`, rounded up to the smallest perfect square by side length; the side is then incremented by the DRBG barrier margin (`DefaultBarrierFill = 1`) — for 1024-bit keys `3 × 365 = 1095`, `⌈√1095⌉ = 34`, `34 + 1 = 35`, `35 × 35 = 1225` pixels.
+ITB enforces two container floor sizing modes:
 
-| Key size | Per-region floor | Total pixels (3×) | Container (side²) | Noise barrier |
-|---|---|---|---|---|
-| 512 bits  | 183 | 549  | 25×25 = 625  | 2^5000  ≥ 2^512  |
-| 1024 bits | 365 | 1095 | 35×35 = 1225 | 2^9800  ≥ 2^1024 |
-| 2048 bits | 730 | 2190 | 48×48 = 2304 | 2^18432 ≥ 2^2048 |
+- **Mode 1: Per-Region (default).** Each of the three regions independently reaches the ambiguity floor (365 pixels for 1024-bit keys). Total container pixels equal `3 × per-region floor` (1095 pixels for 1024-bit keys), rounded up to the smallest square by side length plus the DRBG barrier margin (`DefaultBarrierFill = 1`): `⌈√1095⌉ = 34 → (34 + 1)² = 35 × 35 = 1225` pixels (~9.9 KB ciphertext).
+- **Mode 2: Per-Container (compact VPN tunnel mode).** The ambiguity floor is evaluated jointly across the whole container (365 pixels for 1024-bit keys). Container dimensions round up to the smallest square plus the barrier margin: `⌈√365⌉ = 20 → 20 × 20 = 400` raw square floor (365 → 400), which with barrier fill becomes `(20 + 1)² = 21 × 21 = 441` pixels (~3.6 KB ciphertext). This reduces datagram overhead for packet-oriented network tunnels.
+
+| Key size | Ambiguity floor | Mode 1 Per-Region (side²) | Mode 1 Wire Floor | Mode 2 Per-Container (side²) | Mode 2 Wire Floor |
+|---|---|---|---|---|---|
+| 512 bits  | 183 px | 25 × 25 = 625 px  | ~5.1 KB | 15 × 15 = 225 px | ~1.9 KB |
+| 1024 bits | 365 px | 35 × 35 = 1225 px | ~9.9 KB | 21 × 21 = 441 px | ~3.6 KB |
+| 2048 bits | 730 px | 48 × 48 = 2304 px | ~18.5 KB | 29 × 29 = 841 px | ~6.8 KB |
+
+**Wire interoperability.** The on-wire header `[main_nonce][W][H]` following the 32-byte prefix self-describes container geometry; decryption consumes dimensions directly from the header without prior mode negotiation. A Mode 1 Pipeline decrypts Mode 2 ciphertexts, and a Mode 2 Pipeline decrypts Mode 1 ciphertexts. Once payload size exceeds the floor, container dimensions in both modes converge.
+
+**Selection.** Mode is selected via `itb3 genblob <mode> <hash> --blob-mode 1|2`, `*itb.Config.Mode`, or `Blob*Opts.Mode` (1 = per-region, 2 = per-container; out-of-range returns `ErrBlobModeMismatch`). `itb3 inspect` reports the resolved setting under `container_mode`.
 
 ## Integrity (MAC-Inside-Encrypt)
 
@@ -1174,7 +1196,7 @@ The 8 mandatory seeds are drawn as independent CSPRNG components; the API surfac
 | Hash function requirement | PRF required; PRF and barrier are complementary — neither sufficient alone; NPRF permitted subject to strict quality requirements |
 | Nonce | 128/256/512-bit per-message nonce, drawn internally from `crypto/rand` on every call (default 512-bit) |
 | Nonce reuse | Not architecturally closed by the barrier; closure of the CPA / KPA families is conditional on fresh nonces. The shipped API generates the nonce internally per call, which prevents caller-side reuse |
-| Storage overhead | ~1.14-1.27× (~2-20× for very small payloads < 2.5KB; ciphertext minimum size is > 9.8KB at default 1024-bit keys, > 5KB at 512-bit) |
+| Storage overhead | ~1.15-1.30× from ~10 KB to 64 MiB at 1024-bit keys (~4-20× Mode 1 / ~1.5-7× Mode 2 for 0.5-2.5 KB payloads; Mode 1 ciphertext floor ~9.9KB at 1024-bit keys, ~5.1KB at 512-bit; Mode 2 compact VPN floor ~3.6KB at 1024-bit, ~1.9KB at 512-bit) |
 
 ### Interlocked Barrier — composite defense architecture (Rank Barrier + Pixel Barrier)
 

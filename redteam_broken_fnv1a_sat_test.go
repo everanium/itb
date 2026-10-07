@@ -48,7 +48,6 @@ package itb
 // failure to write is logged but non-fatal.
 
 import (
-	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -112,15 +111,13 @@ type regionGeometryFNV struct {
 }
 
 func decodeWireFNV(ct []byte) regionGeometryFNV {
-	nonce := ct[:NonceSize]
-	w := int(binary.BigEndian.Uint16(ct[NonceSize : NonceSize+2]))
-	h := int(binary.BigEndian.Uint16(ct[NonceSize+2 : NonceSize+4]))
-	total := w * h
+	sm := parseSMWire(ct, NonceSize)
+	total := sm.width * sm.height
 	third := total / 3
 	third3 := total - 2*third
-	body := ct[NonceSize+4:]
+	body := sm.container
 	return regionGeometryFNV{
-		nonce:       nonce,
+		nonce:       sm.mainNonce,
 		totalPixels: total,
 		regionPixels: [3]int{third, third, third3},
 		regionBodies: [3][]byte{
@@ -719,7 +716,7 @@ func TestRedTeamBrokenFNV1aCribKPADisplacement(t *testing.T) {
 	// displacement measurement only.
 	n := tripleLaneLen(len(plain))
 	regions := [3][]byte{make([]byte, n), make([]byte, n), make([]byte, n)}
-	splitForTriple48LockedInto(nil, plain, buildLockBatchPRF48_128Cfg(nil, ls, ct[:NonceSize]), regions[0], regions[1], regions[2])
+	splitForTriple48LockedInto(nil, plain, buildLockBatchPRF48_128Cfg(nil, ls, parseSMWire(ct, NonceSize).mainNonce), regions[0], regions[1], regions[2])
 
 	type regionDisp struct {
 		Region            int     `json:"region"`
@@ -827,6 +824,8 @@ func TestRedTeamBrokenFNV1aCribKPAEmitCorpus(t *testing.T) {
 		"description":    "FNV-1a on all 8 seeds; shipped Triple/barrier + single-region control",
 		"key_bits":       keyBits,
 		"nonce_hex":      hexOf(nonce),
+		"prefix_size":    smPrefixLen,
+		"header_size":    NonceSize + 4,
 		"plaintext_utf8": string(plain),
 		"plaintext_hex":  hexOf(plain),
 		"ciphertext_hex": hexOf(ct),

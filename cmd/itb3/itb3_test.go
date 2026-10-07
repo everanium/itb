@@ -75,7 +75,7 @@ func TestGenblobLoadRoundTrip(t *testing.T) {
 // triple.ErrProfileExists rather than being masked by a fallback.
 func TestGenblobRegisterCollision(t *testing.T) {
 	dir := t.TempDir()
-	opts := genblobOpts{keyBits: 512, nonceBits: 128, barrierFill: 1, blobMode: 1}
+	opts := genblobOpts{keyBits: 512, nonceBits: 512, barrierFill: 1, blobMode: 1}
 
 	opts.output = filepath.Join(dir, "b0.blob")
 	if err := runGenblob("nomac", "blake2s", opts, genblobFlagsSet{}); err != nil {
@@ -181,7 +181,7 @@ func TestGenblobBlobMode2AndInspect(t *testing.T) {
 	pathMode2 := filepath.Join(dir, "mode2.blob")
 	opts2 := genblobOpts{
 		keyBits:     512,
-		nonceBits:   128,
+		nonceBits:   512,
 		barrierFill: 1,
 		blobMode:    2,
 		output:      pathMode2,
@@ -232,7 +232,7 @@ func TestGenblobBlobMode2AndInspect(t *testing.T) {
 	pathMode1 := filepath.Join(dir, "mode1.blob")
 	opts1 := genblobOpts{
 		keyBits:     512,
-		nonceBits:   128,
+		nonceBits:   512,
 		barrierFill: 1,
 		blobMode:    1,
 		output:      pathMode1,
@@ -262,7 +262,7 @@ func TestGenblobBlobMode2AndInspect(t *testing.T) {
 // 3 are usage errors (exit 1) raised before any pipeline is built.
 func TestGenblobRejectsBlobModeOutOfRange(t *testing.T) {
 	for _, mode := range []int{0, 3} {
-		opts := genblobOpts{keyBits: 512, nonceBits: 128, barrierFill: 1, blobMode: mode}
+		opts := genblobOpts{keyBits: 512, nonceBits: 512, barrierFill: 1, blobMode: mode}
 		err := runGenblob("nomac", "blake3", opts, genblobFlagsSet{})
 		var ce *cliError
 		if !errors.As(err, &ce) || ce.code != exitUsage {

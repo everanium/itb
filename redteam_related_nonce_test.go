@@ -58,7 +58,6 @@ package itb
 // directory via `REDTEAM_RELATED_NONCE_OUTPUT_DIR`.
 
 import (
-	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"math/rand"
@@ -195,11 +194,7 @@ func generatePlaintextRN(rng *rand.Rand, size int, kind string) []byte {
 
 // bodyOfCTRN slices the ciphertext body out of a shipped wire.
 func bodyOfCTRN(ct []byte) []byte {
-	header := NonceSize + 4
-	w := int(binary.BigEndian.Uint16(ct[NonceSize : NonceSize+2]))
-	h := int(binary.BigEndian.Uint16(ct[NonceSize+2 : NonceSize+4]))
-	total := w * h
-	return ct[header : header+total*Channels]
+	return parseSMWire(ct, NonceSize).container
 }
 
 // xorBytesRN returns a XOR b, truncated to min(len(a), len(b)).
@@ -470,8 +465,8 @@ func TestRedTeamRelatedNonceMatrix(t *testing.T) {
 					Chi2DF:           255,
 					BitBalMeanAbs:    meanAbs,
 					BitBalMaxAbs:     maxAbs,
-					Container0Bytes:  len(ct0),
-					Container1Bytes:  len(ct1),
+					Container0Bytes:  len(body0),
+					Container1Bytes:  len(body1),
 					MatchedContainer: matched,
 				}
 				run.Cells = append(run.Cells, cell)

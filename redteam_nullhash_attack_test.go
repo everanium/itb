@@ -2,9 +2,9 @@
 
 package itb
 
-// Full-KPA brute-force recovery against the below-floor nullHash
+// Full KPA brute-force recovery against the below-floor nullHash
 // primitive. This is the attacker-realistic companion to
-// TestRedTeamNullHashExpose: it consumes the Full-KPA plaintext, the
+// TestRedTeamNullHashExpose: it consumes the Full KPA plaintext, the
 // wire ciphertext, the main nonce read from the wire header, the
 // container geometry, and one lab concession — the three per-region
 // startPixels — then recovers the observable seed-role constants and
@@ -196,6 +196,7 @@ func TestRedTeamNullHashAttack(t *testing.T) {
 		Width          int    `json:"width"`
 		Height         int    `json:"height"`
 		TotalPixels    int    `json:"total_pixels"`
+		PrefixSize     int    `json:"prefix_size"`
 		HeaderSize     int    `json:"header_size"`
 		StartPixels    struct {
 			S1 int `json:"region_1"`
@@ -230,7 +231,7 @@ func TestRedTeamNullHashAttack(t *testing.T) {
 	}
 	attackerNonce := make([]byte, currentNonceSizeCfg(cfg))
 
-	container := ct[meta.HeaderSize:]
+	container := ct[meta.PrefixSize+meta.HeaderSize:]
 	totalPixels := meta.TotalPixels
 	third := totalPixels / 3
 	thirdPixels2 := totalPixels - 2*third
@@ -422,7 +423,7 @@ func TestRedTeamNullHashAttack(t *testing.T) {
 	// compared byte-for-byte. A later Crib KPA stage would pass a short
 	// cribLen (e.g. 48) and a non-nil structuralOK to additionally require
 	// the non-crib remainder to pass public COBS structural checks — the
-	// search (Phase A/B) is Full-KPA-specific, but this decode-and-verify
+	// search (Phase A/B) is Full KPA specific, but this decode-and-verify
 	// primitive and nullHashCandidateSeeds carry over unchanged.
 	cand := nullHashCandidateSeeds(byte(foundNoisePos), foundLock, foundData, startPixelConst)
 	kpaMatch, recovered := verifyRecovered(cfg, cand, ct, kpa, len(kpa), nil)
@@ -435,7 +436,7 @@ func TestRedTeamNullHashAttack(t *testing.T) {
 		copy(recoveredIl[offs[i]:offs[i]+lens[i]], foundFrag[i])
 	}
 
-	t.Logf("=== nullHash Full-KPA brute-force recovery ===")
+	t.Logf("=== nullHash Full KPA brute-force recovery ===")
 	t.Logf("wall-clock total:        %v", elapsed)
 	t.Logf("  Phase A (2^16 splits):  %v", phaseA.Sub(start))
 	t.Logf("  Phase B (%d decodes):  %v", decodeCount, elapsed-phaseA.Sub(start))
@@ -581,6 +582,7 @@ func TestRedTeamNullHashAttackCrib(t *testing.T) {
 		Width          int    `json:"width"`
 		Height         int    `json:"height"`
 		TotalPixels    int    `json:"total_pixels"`
+		PrefixSize     int    `json:"prefix_size"`
 		HeaderSize     int    `json:"header_size"`
 		StartPixels    struct {
 			S1 int `json:"region_1"`
@@ -615,7 +617,7 @@ func TestRedTeamNullHashAttackCrib(t *testing.T) {
 	}
 	attackerNonce := make([]byte, currentNonceSizeCfg(cfg))
 
-	container := ct[meta.HeaderSize:]
+	container := ct[meta.PrefixSize+meta.HeaderSize:]
 	totalPixels := meta.TotalPixels
 	third := totalPixels / 3
 	thirdPixels2 := totalPixels - 2*third
@@ -814,7 +816,7 @@ func TestRedTeamNullHashAttackCrib(t *testing.T) {
 		funcSet[funcKey(s.t)] = true
 	}
 
-	t.Logf("=== nullHash Crib-KPA brute-force recovery (crib=%d bytes) ===", nullHashCribLen)
+	t.Logf("=== nullHash Crib KPA brute-force recovery (crib=%d bytes) ===", nullHashCribLen)
 	t.Logf("wall-clock total:        %v", elapsed)
 	t.Logf("  Phase A' (2^16 splits): %v", phaseA.Sub(start))
 	t.Logf("  Phase B + verify:       %v", elapsed-phaseA.Sub(start))
@@ -831,7 +833,7 @@ func TestRedTeamNullHashAttackCrib(t *testing.T) {
 	t.Logf("interlock-nonce fragments read off %d/3 anchored lanes: %s", fragObserved, hex.EncodeToString(recoveredIl))
 
 	if len(survivors) == 0 {
-		t.Fatalf("Crib-KPA attack failed: no survivor passed structural verification")
+		t.Fatalf("Crib KPA attack failed: no survivor passed structural verification")
 	}
 	for i, s := range survivors {
 		t.Logf("  survivor[%d]: noisePos=%d lock=0x%04x dLo=%02x %02x %02x",
@@ -956,6 +958,7 @@ func TestRedTeamNullHashAttackNoKPA(t *testing.T) {
 		t.Fatalf("read cell.multi.meta.json (run TestRedTeamNullHashExposeMulti first): %v", err)
 	}
 	var meta struct {
+		PrefixSize  int `json:"prefix_size"`
 		HeaderSize  int `json:"header_size"`
 		TotalPixels int `json:"total_pixels"`
 		Messages    []struct {
@@ -1005,7 +1008,7 @@ func TestRedTeamNullHashAttackNoKPA(t *testing.T) {
 		(thirdPixels2 * DataBitsPerPixel) / 8,
 	}
 	regionsOf := func(ct []byte) [3][]byte {
-		c := ct[meta.HeaderSize:]
+		c := ct[meta.PrefixSize+meta.HeaderSize:]
 		return [3][]byte{c[0:off1], c[off1:off2], c[off2 : totalPixels*Channels]}
 	}
 	regions := make([][3][]byte, W)
@@ -1399,6 +1402,7 @@ func TestRedTeamNullHashAttackCribNoStartPixels(t *testing.T) {
 		Width          int    `json:"width"`
 		Height         int    `json:"height"`
 		TotalPixels    int    `json:"total_pixels"`
+		PrefixSize     int    `json:"prefix_size"`
 		HeaderSize     int    `json:"header_size"`
 		StartPixels    struct {
 			S1 int `json:"region_1"`
@@ -1429,7 +1433,7 @@ func TestRedTeamNullHashAttackCribNoStartPixels(t *testing.T) {
 	}
 	attackerNonce := make([]byte, currentNonceSizeCfg(cfg))
 
-	container := ct[meta.HeaderSize:]
+	container := ct[meta.PrefixSize+meta.HeaderSize:]
 	totalPixels := meta.TotalPixels
 	third := totalPixels / 3
 	thirdPixels2 := totalPixels - 2*third
@@ -1643,7 +1647,7 @@ func TestRedTeamNullHashAttackCribNoStartPixels(t *testing.T) {
 		funcSet[funcKey(s.c)] = s.c
 	}
 
-	t.Logf("=== nullHash Crib-KPA, UNKNOWN startPixels (crib=%d bytes, 1 wire) ===", nullHashCribLen)
+	t.Logf("=== nullHash Crib KPA, UNKNOWN startPixels (crib=%d bytes, 1 wire) ===", nullHashCribLen)
 	t.Logf("wall-clock total:       %v", elapsed)
 	t.Logf("  Phase A' (2^16 splits): %v", phaseA.Sub(start))
 	t.Logf("  Phase B + verify:       %v", elapsed-phaseA.Sub(start))

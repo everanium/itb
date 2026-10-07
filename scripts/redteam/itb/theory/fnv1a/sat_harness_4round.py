@@ -76,6 +76,7 @@ from itb_channel_mirror import (  # type: ignore
     DATA_BITS_PER_CHANNEL,
     DATA_BITS_PER_PIXEL,
     DATA_ROTATION_BITS,
+    SM_PREFIX_SIZE,
     rotate_bits_7,
     cobs_encode,
     cobs_decode,
@@ -109,7 +110,7 @@ class CellContext:
     nonce: bytes
     total_pixels: int
     start_pixel: int
-    container: bytes         # ciphertext minus 20-byte header
+    container: bytes         # ciphertext minus prefix and header
     plaintext_expected: bytes  # lab-only, for terminal-stage audit
     cobs_encoded: bytes      # cobs_encode(plaintext_expected) — public-schema predictable
     observations: List[ChannelObservation] = field(default_factory=list)
@@ -172,7 +173,9 @@ def _build_cell_context(
         start_hash_lo = fnv_chain_lo_concrete(start_lo, b"\x02" + nonce, rounds)
         start_pixel = start_hash_lo % total_pixels
 
-    container = ciphertext[20:]  # strip nonce (16) + W/H (4)
+    prefix_size = int(meta.get("prefix_size", SM_PREFIX_SIZE))
+    header_size = int(meta.get("header_size", len(nonce) + 4))
+    container = ciphertext[prefix_size + header_size:]  # strip prefix + nonce + W/H
     cobs_encoded = cobs_encode(plaintext_expected)
 
     # Attacker-visible crib material: the public-schema byte ranges.

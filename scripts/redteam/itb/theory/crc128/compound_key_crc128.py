@@ -149,7 +149,7 @@ def main() -> int:
                          "≈ 0.6%% across cell sizes; explicit integer overrides.")
     ap.add_argument("--raw-ciphertext-mode", action="store_true",
                     help="Treat --datahash-stream as raw ITB ciphertext "
-                         "(ct_NNNN.bin) — 8 bytes per pixel, 20-byte header skip. "
+                         "(ct_NNNN.bin) — 8 bytes per pixel, prefix + header skip. "
                          "Attacker skips demasking entirely.")
     ap.add_argument("--n-verify-pixels", type=int, default=64,
                     help="Predict channelXOR for N random pixels and diff "
@@ -197,9 +197,11 @@ def main() -> int:
     total_pixels = int(meta["total_pixels"])
     if args.raw_ciphertext_mode:
         header_size = int(meta.get("header_size", len(nonce) + 4))
-        observations = parse_raw_ciphertext(stream_path, total_pixels, header_size)
+        prefix_size = int(meta.get("prefix_size", 32))
+        observations = parse_raw_ciphertext(stream_path, total_pixels, header_size,
+                                            prefix_size)
         stream_mode = ("raw-ciphertext (NEGATIVE CONTROL: 8-byte-per-pixel, "
-                       "20-byte header skipped)")
+                       "prefix + header skipped)")
     elif stream_mode_hint == "partial":
         observations = parse_partial_stream(stream_path, auto_index)
         stream_mode = "partial-mode"

@@ -6,8 +6,8 @@ layers under raw-ciphertext analysis (no demasking, no nonce-reuse).
 For any pluggable chainhash implementation and a structured-plaintext
 corpus, the probe:
 
-  1. Parses the raw ciphertext (header derived from meta —
-     `len(main_nonce) + 4` on the shipped wire — then
+  1. Parses the raw ciphertext (container at `prefix_size + header_size`
+     from meta — `32 + len(main_nonce) + 4` on the shipped wire — then
      8 bytes per pixel).
   2. Precomputes `const(p) = ChainHash(p_le || main_nonce, seed=0)` for
      every container pixel via the pluggable hash module.
@@ -28,8 +28,8 @@ corpus, the probe:
 
 Interpretation guide:
 
-  * **PRF-grade hash** (BLAKE3, AES-CMAC, SipHash, ChaCha20, BLAKE2,
-    AreionSoEM): expected min conflict ≈ 50 % ± √(n / (probe_pins / 64)).
+  * **PRF-grade hash** (every PRF-grade registry primitive): expected
+    min conflict ≈ 50 % ± √(n / (probe_pins / 64)).
     No plateau: top shifts scatter randomly across the [0, total_pixels)
     range with conflict rates within the natural statistical band.
     Audit PASSES — ITB's bias neutralization holds.
@@ -63,6 +63,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
+from attack_common import header_size_from_meta, prefix_size_from_meta
 from raw_mode_common import (
     observations_to_numpy,
     parse_raw_ciphertext,
@@ -126,7 +127,8 @@ def main() -> int:
     # field for archived corpus artefacts.
     nonce_hex = meta.get("main_nonce_hex") or meta["nonce_hex"]
     nonce = bytes.fromhex(nonce_hex)
-    header_size = int(meta.get("header_size", len(nonce) + 4))
+    prefix_size = prefix_size_from_meta(meta)
+    header_size = header_size_from_meta(meta)
     # The "correct" pixel_shift the solver should converge to is
     # -start_pixel mod total_pixels; attacker cannot compute this because
     # startPixel is startSeed-derived, but the lab audit prints it for
@@ -156,8 +158,17 @@ def main() -> int:
     print(f"correct shift:   {correct_shift}  (= -startPx mod total_pixels)")
     print()
 
-    obs = parse_raw_ciphertext(ct_path, total_pixels, header_size)
-    print(f"parsed {len(obs)} observations (header={header_size} bytes)")
+    # The main nonce is on the wire at `prefix_size`; a file whose bytes
+    # there differ from the metadata was written under another layout
+    # (or belongs to another cell) and would misparse silently.
+    wire_nonce = ct_path.read_bytes()[prefix_size:prefix_size + len(nonce)]
+    if wire_nonce != nonce:
+        print(f"ERROR: {ct_path.name}[{prefix_size}:{prefix_size + len(nonce)}] "
+              f"!= main_nonce_hex — stale or foreign corpus file; regenerate",
+              file=sys.stderr)
+        return 2
+    obs = parse_raw_ciphertext(ct_path, total_pixels, header_size, prefix_size)
+    print(f"parsed {len(obs)} observations (prefix={prefix_size} header={header_size} bytes)")
 
     # Auto-scale probe size to keep per-bit binomial noise ~0.6%. Floor at
     # 2000 (small corpora) so the scan is still informative; cap at 16000

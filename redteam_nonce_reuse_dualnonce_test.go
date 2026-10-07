@@ -4,7 +4,7 @@ package itb
 
 // Nonce-Reuse dual-nonce re-verification for the shipped construction,
 // which draws two independent nonces per message: the main nonce, which
-// the wire header carries (`[main_nonce (N)][W][H][container]`, header
+// the wire header carries (`[prefix 32][main_nonce (N)][W][H][container]`, chunk header
 // size `N+4`), and the interlock nonce, which travels split across the
 // three interlocked lanes. Companion to the historical
 // `redteam_nonce_reuse_test.go` probes, which were authored against the
@@ -59,7 +59,6 @@ package itb
 // parent directory via `REDTEAM_NONCE_REUSE_DUALNONCE_OUTPUT_DIR`.
 
 import (
-	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -182,21 +181,15 @@ type wireLayoutDualNR struct {
 // installed through the override. Panics on malformed input — probes
 // hand it fresh Encrypt output only.
 func decodeWireDualNR(ct []byte, il []byte) wireLayoutDualNR {
-	n := NonceSize
-	main := ct[:n]
-	w := int(binary.BigEndian.Uint16(ct[n : n+2]))
-	h := int(binary.BigEndian.Uint16(ct[n+2 : n+4]))
-	total := w * h
-	hdr := n + 4
-	body := ct[hdr : hdr+total*Channels]
+	sm := parseSMWire(ct, NonceSize)
 	return wireLayoutDualNR{
-		mainNonce:      main,
+		mainNonce:      sm.mainNonce,
 		interlockNonce: il,
-		width:          w,
-		height:         h,
-		totalPixels:    total,
-		headerSize:     hdr,
-		body:           body,
+		width:          sm.width,
+		height:         sm.height,
+		totalPixels:    sm.width * sm.height,
+		headerSize:     NonceSize + 4,
+		body:           sm.container,
 	}
 }
 
@@ -484,13 +477,13 @@ func runDualNRScenario(t *testing.T, scenario dualNRScenario, primName string, h
 			t.Fatalf("Encrypt3x128Cfg p2: %v", err)
 		}
 		layout := decodeWireDualNR(c1, il1)
-		body1 := c1[layout.headerSize : layout.headerSize+layout.totalPixels*Channels]
-		body2 := c2[layout.headerSize : layout.headerSize+layout.totalPixels*Channels]
+		body1 := layout.body
+		body2 := decodeWireDualNR(c2, il2).body
 
 		// Sanity: the collided-slot invariant holds. The main nonce is
 		// read back off the wire; the interlock nonce is compared on
 		// the installed values, which is what the encrypt consumed.
-		mainCollide := string(c1[:NonceSize]) == string(c2[:NonceSize])
+		mainCollide := string(parseSMWire(c1, NonceSize).mainNonce) == string(parseSMWire(c2, NonceSize).mainNonce)
 		ilCollide := string(il1) == string(il2)
 		switch scenario {
 		case scenarioA:
@@ -657,10 +650,10 @@ func TestRedTeamNonceReuseDualNonceHeadlineBLAKE3(t *testing.T) {
 // byte values (attacker-realism-neutral — plaintext used only for
 // terminal-stage generation, decisions require no ground truth).
 //
-// Env-gated by `ITB_NONCE_REUSE_COBS_ALIGN_PROBE=1`. Wall clock ~1-3 s.
+// Env-gated by `ITB_NONCE_REUSE_COBS_ALIGN_PROBE=1`. Wall clock ~8 s.
 func TestRedTeamNonceReuseDualNonceCOBSAlignmentProbe(t *testing.T) {
 	if os.Getenv("ITB_NONCE_REUSE_COBS_ALIGN_PROBE") != "1" {
-		t.Skip("COBS alignment probe: set ITB_NONCE_REUSE_COBS_ALIGN_PROBE=1 to enable (~1-3 s)")
+		t.Skip("COBS alignment probe: set ITB_NONCE_REUSE_COBS_ALIGN_PROBE=1 to enable (~8 s)")
 	}
 	if testing.Short() {
 		t.Skip("COBS alignment probe: skipped under -short")

@@ -21,18 +21,19 @@ Threat-model framing.
 The closure is multi-seed joint coupling, not single-seed
 inversion. Attacker-visible bytes are the SUM of contributions from
 noiseSeed (np positions), lockSeed (per-chunk mask triple), dataSeed_i
-(xor_mask + rotation), startSeed_i (per-snake sp_i). Full 8-chain
+(xor_mask + rotation), startSeed_i (per-region sp_i). Full 8-chain
 symbolic SAT would encode each of the four chains and the interlock
 mask derivation as symbolic constraints — beyond the single-cycle
 scope. The probe below implements the STRONGEST-ATTACKER upper bound:
 grant true (np, r, sp_i) values as lab peek (5 of 8 chains inverted for
 free) and ask whether the remaining single dataSeed_i chain admits a
-naive-crib SAT anchor. Under the barrier the answer is UNSAT because
-the crib bytes are at wrong positions; even the maximum-peek attacker
+naive-crib SAT anchor. Under the barrier the answer is UNSAT, or a
+model the cross-validation pixel rejects, because the crib bytes are at
+wrong positions; even the maximum-peek attacker
 cannot recover.
 
 Encoding (per pixel p in [0, n_pixels)):
-  - Read container bytes at (sp + p) mod snake_pixels.
+  - Read container bytes at (sp + p) mod region_pixels.
   - Compute candidate_xor_mask56 over the 56 (np, r) tuples.
   - Assert: fnv_chain_lo(seed_lo, LE32(p)||nonce) >> 3
             ∈ {candidate_xor_mask56 for (np, r) in 56}
@@ -125,18 +126,18 @@ def recover_xor_mask56(pixel_bytes: bytes, np: int, r: int, crib_bits: List[int]
     return xor56
 
 
-def naive_snake_crib_bits(plain: bytes, snake_idx: int, snake_pixel: int) -> List[int]:
+def naive_region_crib_bits(plain: bytes, region_idx: int, region_pixel: int) -> List[int]:
     """Attacker's naive-crib bits per channel under every-3rd-byte split.
 
-    Mirror of naiveSnakeCribBits in the Go probe file.
+    Mirror of naiveRegionCribBits in the Go probe file.
     """
     bits = [0] * CHANNELS
     for ch in range(CHANNELS):
-        bit_idx = snake_pixel * (CHANNELS * DATA_BITS_PER_CHANNEL) + ch * DATA_BITS_PER_CHANNEL
+        bit_idx = region_pixel * (CHANNELS * DATA_BITS_PER_CHANNEL) + ch * DATA_BITS_PER_CHANNEL
         byte_idx = bit_idx // 8
         bit_off = bit_idx % 8
-        abs0 = snake_idx + 3 * byte_idx
-        abs1 = snake_idx + 3 * (byte_idx + 1)
+        abs0 = region_idx + 3 * byte_idx
+        abs1 = region_idx + 3 * (byte_idx + 1)
         if abs0 >= len(plain):
             return bits
         raw = plain[abs0]
@@ -151,24 +152,25 @@ def load_corpus(path: Path) -> Dict[str, Any]:
         return json.load(f)
 
 
-def decode_wire(ct_hex: str) -> Dict[str, Any]:
-    """Slice the Triple ciphertext into three snake regions per the
-    public wire header. Attacker-visible bytes only.
+def decode_wire(ct_hex: str, prefix_size: int, header_size: int) -> Dict[str, Any]:
+    """Slice the Triple ciphertext into three regions per the public
+    wire layout `[prefix][main nonce][W][H][container]`.
+    Attacker-visible bytes only.
     """
     ct = bytes.fromhex(ct_hex)
-    nonce_size = 64  # DefaultNonceBits/8 in 
-    nonce = ct[:nonce_size]
-    w = int.from_bytes(ct[nonce_size:nonce_size + 2], "big")
-    h = int.from_bytes(ct[nonce_size + 2:nonce_size + 4], "big")
+    nonce_size = header_size - 4
+    nonce = ct[prefix_size:prefix_size + nonce_size]
+    w = int.from_bytes(ct[prefix_size + nonce_size:prefix_size + nonce_size + 2], "big")
+    h = int.from_bytes(ct[prefix_size + nonce_size + 2:prefix_size + header_size], "big")
     total = w * h
     third = total // 3
     third3 = total - 2 * third
-    body = ct[nonce_size + 4:]
+    body = ct[prefix_size + header_size:]
     return {
         "nonce": nonce,
         "total_pixels": total,
-        "snake_pixels": [third, third, third3],
-        "snake_bodies": [
+        "region_pixels": [third, third, third3],
+        "region_bodies": [
             body[0:third * CHANNELS],
             body[third * CHANNELS:2 * third * CHANNELS],
             body[2 * third * CHANNELS:total * CHANNELS],
@@ -316,7 +318,7 @@ def sat_probe_control(
     rounds: int,
     regime: str,
 ) -> Dict[str, Any]:
-    """Run SAT on the single-snake, no-barrier control ciphertext.
+    """Run SAT on the single-region, no-barrier control ciphertext.
 
     regime == "true_npr": grants attacker true (np, r) per pixel plus
     true sp (Concession 1 posture). Expected: SAT within seconds.
@@ -423,34 +425,36 @@ def sat_probe_control(
 
 def sat_probe_barrier(
     corpus: Dict[str, Any],
-    snake_idx: int,
+    region_idx: int,
     n_pixels: int,
     timeout_sec: int,
     rounds: int,
     regime: str,
     sp_override: int = -1,
 ) -> Dict[str, Any]:
-    """Run SAT on the shipped barrier ciphertext at snake `snake_idx`
+    """Run SAT on the shipped barrier ciphertext at region `region_idx`
     under the naive-crib alignment premise. sp_override < 0 → enumerate
-    a fast-scan subset of snake_pixels; sp_override >= 0 → fix to that.
+    a fast-scan subset of region_pixels; sp_override >= 0 → fix to that.
 
     regime == "true_npr": grants true (np, r) per pixel (5-of-8 chains
-    peeked) — strongest attacker upper bound. Expected: UNSAT for
-    every candidate startPixel because crib bytes are displaced.
+    peeked) — strongest attacker upper bound. Expected: UNSAT, or a
+    model the cross-validation pixel rejects, for every candidate
+    startPixel because crib bytes are displaced.
     regime == "all_npr": enumerates all 56 (np, r) per pixel — real
     attacker regime.
     """
-    geom = decode_wire(corpus["ciphertext_hex"])
+    geom = decode_wire(corpus["ciphertext_hex"],
+                       int(corpus["prefix_size"]), int(corpus["header_size"]))
     plain = bytes.fromhex(corpus["plaintext_hex"])
     nonce = geom["nonce"]
-    snake_body = geom["snake_bodies"][snake_idx]
-    snake_pixels = geom["snake_pixels"][snake_idx]
+    region_body = geom["region_bodies"][region_idx]
+    region_pixels = geom["region_pixels"][region_idx]
 
     # For the [lab-peek: sp_i] variant (Layer 3), derive true sp_i.
-    seed_start_key = f"start{snake_idx + 1}"
+    seed_start_key = f"start{region_idx + 1}"
     ss_lanes = [int(h, 16) for h in corpus["seed_components"][seed_start_key][::2]]
     dom = bytes([0x02]) + nonce
-    true_sp = fnv_chain_lo_concrete(ss_lanes, dom, rounds) % snake_pixels
+    true_sp = fnv_chain_lo_concrete(ss_lanes, dom, rounds) % region_pixels
 
     if sp_override >= 0:
         sp_list = [sp_override]
@@ -460,12 +464,12 @@ def sat_probe_barrier(
         # Enumerate a fast-scan sample of the sp range. Full-range
         # scans are gated by ITB_FNV1A_SAT_FULL=1.
         cap = int(os.environ.get("ITB_FNV1A_SAT_CAP", "8"))
-        step = max(1, snake_pixels // cap)
-        sp_list = list(range(0, snake_pixels, step))[:cap]
+        step = max(1, region_pixels // cap)
+        sp_list = list(range(0, region_pixels, step))[:cap]
 
-    # Lab-peek per-snake noiseSeed / dataSeed_i lanes for "true_npr".
+    # Lab-peek per-region noiseSeed / dataSeed_i lanes for "true_npr".
     ns_lanes = [int(h, 16) for h in corpus["seed_components"]["noise"][::2]]
-    seed_data_key = f"data{snake_idx + 1}"
+    seed_data_key = f"data{region_idx + 1}"
     di_lanes = [int(h, 16) for h in corpus["seed_components"][seed_data_key][::2]]
 
     def true_np_at(p: int) -> int:
@@ -478,13 +482,13 @@ def sat_probe_barrier(
     for sp in sp_list:
         bitwuzla, tm, bw = make_bitwuzla(timeout_sec)
         sort64 = tm.mk_bv_sort(64)
-        seed_syms = [tm.mk_const(sort64, f"bar_s_{snake_idx}_{sp}_{i}") for i in range(rounds)]
+        seed_syms = [tm.mk_const(sort64, f"bar_s_{region_idx}_{sp}_{i}") for i in range(rounds)]
 
         per_pixel = []
         for p in range(n_pixels):
-            snake_pix = (sp + p) % snake_pixels
-            pix_bytes = snake_body[snake_pix * CHANNELS:(snake_pix + 1) * CHANNELS]
-            crib_bits = naive_snake_crib_bits(plain, snake_idx, p)
+            region_pix = (sp + p) % region_pixels
+            pix_bytes = region_body[region_pix * CHANNELS:(region_pix + 1) * CHANNELS]
+            crib_bits = naive_region_crib_bits(plain, region_idx, p)
             chain_expr = fnv_chain_lo_bw(bitwuzla, tm, seed_syms, struct.pack("<I", p) + nonce, rounds)
             if regime == "true_npr":
                 n_cands = constrain_pixel_true_npr(
@@ -501,7 +505,7 @@ def sat_probe_barrier(
         r = bw.check_sat()
         dt = time.time() - t0
         result = str(r)
-        print(f"[barrier snake={snake_idx} sp={sp} regime={regime}] "
+        print(f"[barrier region={region_idx} sp={sp} regime={regime}] "
               f"result={result} wall={dt:.2f}s pixels={n_pixels}", flush=True)
 
         entry: Dict[str, Any] = {
@@ -520,9 +524,9 @@ def sat_probe_barrier(
                     v = str(bw.get_value(s)).replace("#b", "")
                     recovered.append(int(v, 2) if len(v) == 64 else 0)
                 xval_pixel = n_pixels
-                snake_pix_x = (sp + xval_pixel) % snake_pixels
-                crib_bits_x = naive_snake_crib_bits(plain, snake_idx, xval_pixel)
-                pix_bytes_x = snake_body[snake_pix_x * CHANNELS:(snake_pix_x + 1) * CHANNELS]
+                region_pix_x = (sp + xval_pixel) % region_pixels
+                crib_bits_x = naive_region_crib_bits(plain, region_idx, xval_pixel)
+                pix_bytes_x = region_body[region_pix_x * CHANNELS:(region_pix_x + 1) * CHANNELS]
                 true_chain_x = fnv_chain_lo_concrete(
                     recovered, struct.pack("<I", xval_pixel) + nonce, rounds,
                 )
@@ -539,7 +543,7 @@ def sat_probe_barrier(
                 entry["cross_validation"] = {
                     "xval_pixel": xval_pixel,
                     "cross_matches": hit,
-                    "note": "cross_matches=False → model is spurious (barrier UNSAT verdict corroborated)",
+                    "note": "cross_matches=False → model is spurious (barrier null verdict corroborated)",
                 }
             except Exception as e:
                 entry["cross_validation_error"] = str(e)
@@ -550,9 +554,9 @@ def sat_probe_barrier(
     n_unknown = len(per_sp_results) - n_sat - n_unsat
     return {
         "config": "v030_triple_barrier",
-        "snake": snake_idx,
+        "region": region_idx,
         "regime": regime,
-        "snake_pixels": snake_pixels,
+        "region_pixels": region_pixels,
         "n_pixels": n_pixels,
         "rounds": rounds,
         "true_sp": true_sp,
@@ -587,7 +591,7 @@ def main(argv=None) -> int:
     ap.add_argument("--barrier-only", action="store_true")
     ap.add_argument("--control-only", action="store_true")
     ap.add_argument("--barrier-sp-peek", action="store_true",
-                    help="Layer 3: probe barrier at true sp_i per snake only.")
+                    help="Layer 3: probe barrier at true sp_i per region only.")
     args = ap.parse_args(argv)
 
     if not args.corpus_json.is_file():
@@ -615,15 +619,15 @@ def main(argv=None) -> int:
     if not args.control_only:
         print("\n=== Barrier (shipped Triple + always-on 48-bit interlock) ===")
         report["barrier"] = []
-        for snake_idx in range(3):
-            print(f"\n--- Snake {snake_idx} ---")
+        for region_idx in range(3):
+            print(f"\n--- Region {region_idx} ---")
             sp_override = -2 if args.barrier_sp_peek else -1
-            snake_report = sat_probe_barrier(
-                corpus, snake_idx, args.n_crib_pixels,
+            region_report = sat_probe_barrier(
+                corpus, region_idx, args.n_crib_pixels,
                 args.timeout_sec, args.rounds, args.regime,
                 sp_override=sp_override,
             )
-            report["barrier"].append(snake_report)
+            report["barrier"].append(region_report)
 
     args.json_report.parent.mkdir(parents=True, exist_ok=True)
     with args.json_report.open("w") as f:

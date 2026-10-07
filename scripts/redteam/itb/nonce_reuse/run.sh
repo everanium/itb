@@ -21,7 +21,7 @@ echo "==> Running nonce-reuse re-verification probes"
 echo "    (repo root: $repo_root)"
 echo
 
-go test -tags redteam -run TestRedTeamNonceReuse -v ./
+go test -tags redteam -run TestRedTeamNonceReuse -v -timeout 1800s ./
 
 echo
 echo "==> Emitted JSON records"

@@ -18,9 +18,9 @@ import (
 // The test runs at three input lengths matching the buf shapes
 // ITB uses with each nonce-width configuration:
 //
-//	20 bytes  — default 128-bit nonce
+//	20 bytes  — 128-bit nonce
 //	36 bytes  — 256-bit nonce
-//	68 bytes  — 512-bit nonce
+//	68 bytes  — default 512-bit nonce
 func TestAESCMACDigestDependsOnEveryByte(t *testing.T) {
 	hashFn := AESCMACWithKey([16]byte{
 		0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,

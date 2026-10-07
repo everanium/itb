@@ -50,9 +50,9 @@ Per-cell statistics recorded:
 - **Body chi² vs df=255 uniform** — Pearson chi² of the pooled body
   histogram against a uniform expectation. The container body is
   extracted with the same `bodyOfCT*` helper the related-seed /
-  related-nonce probes use (the wire nonce + `W` + `H` dimension header
-  is skipped so the well-known dimension-header signature does not
-  dominate).
+  related-nonce probes use (the 32-byte prefix and the wire nonce + `W` +
+  `H` dimension header are skipped so the well-known dimension-header
+  signature does not dominate).
 - **Mean pairwise byte-equal rate** — position-wise agreement fraction
   across successive ciphertext pairs (`ct[2k]` vs `ct[2k+1]` for k in
   `[0, N/2)`). For independent uniform streams the expected rate is

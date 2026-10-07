@@ -148,50 +148,53 @@ func TestStreamAuth_PerChunkTripleRoundtripCfg(t *testing.T) {
 		streamID[i] = byte(0x80 + i)
 	}
 	const cumOffset = uint64(98765)
-	cfg := &Config{NonceBits: 256}
-
-	t.Run("128-Triple-Cfg", func(t *testing.T) {
-		ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeeds128(512, sipHash128)
-		ct, err := EncryptStreamAuthenticated3x128Cfg(cfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data, streamAuthFlagMACFunc, streamID, cumOffset, true)
-		if err != nil {
-			t.Fatal(err)
-		}
-		pt, finalFlag, err := DecryptStreamAuthenticated3x128Cfg(cfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, ct, streamAuthFlagMACFunc, streamID, cumOffset)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !bytes.Equal(data, pt) || !finalFlag {
-			t.Fatalf("plaintext mismatch or finalFlag=false")
-		}
-	})
-	t.Run("256-Triple-Cfg", func(t *testing.T) {
-		ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeeds256(512, makeBlake3Hash256())
-		ct, err := EncryptStreamAuthenticated3x256Cfg(cfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data, streamAuthFlagMACFunc, streamID, cumOffset, true)
-		if err != nil {
-			t.Fatal(err)
-		}
-		pt, finalFlag, err := DecryptStreamAuthenticated3x256Cfg(cfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, ct, streamAuthFlagMACFunc, streamID, cumOffset)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !bytes.Equal(data, pt) || !finalFlag {
-			t.Fatalf("plaintext mismatch or finalFlag=false")
-		}
-	})
-	t.Run("512-Triple-Cfg", func(t *testing.T) {
-		ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeeds512(512, makeBlake2bHash512())
-		ct, err := EncryptStreamAuthenticated3x512Cfg(cfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data, streamAuthFlagMACFunc, streamID, cumOffset, true)
-		if err != nil {
-			t.Fatal(err)
-		}
-		pt, finalFlag, err := DecryptStreamAuthenticated3x512Cfg(cfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, ct, streamAuthFlagMACFunc, streamID, cumOffset)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !bytes.Equal(data, pt) || !finalFlag {
-			t.Fatalf("plaintext mismatch or finalFlag=false")
-		}
-	})
+	for _, nb := range []int{128, 256, 512} {
+		cfg := &Config{NonceBits: nb}
+		t.Run(fmt.Sprintf("nonce%d", nb), func(t *testing.T) {
+			t.Run("128-Triple-Cfg", func(t *testing.T) {
+				ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeeds128(512, sipHash128)
+				ct, err := EncryptStreamAuthenticated3x128Cfg(cfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data, streamAuthFlagMACFunc, streamID, cumOffset, true)
+				if err != nil {
+					t.Fatal(err)
+				}
+				pt, finalFlag, err := DecryptStreamAuthenticated3x128Cfg(cfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, ct, streamAuthFlagMACFunc, streamID, cumOffset)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !bytes.Equal(data, pt) || !finalFlag {
+					t.Fatalf("plaintext mismatch or finalFlag=false")
+				}
+			})
+			t.Run("256-Triple-Cfg", func(t *testing.T) {
+				ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeeds256(512, makeBlake3Hash256())
+				ct, err := EncryptStreamAuthenticated3x256Cfg(cfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data, streamAuthFlagMACFunc, streamID, cumOffset, true)
+				if err != nil {
+					t.Fatal(err)
+				}
+				pt, finalFlag, err := DecryptStreamAuthenticated3x256Cfg(cfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, ct, streamAuthFlagMACFunc, streamID, cumOffset)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !bytes.Equal(data, pt) || !finalFlag {
+					t.Fatalf("plaintext mismatch or finalFlag=false")
+				}
+			})
+			t.Run("512-Triple-Cfg", func(t *testing.T) {
+				ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeeds512(512, makeBlake2bHash512())
+				ct, err := EncryptStreamAuthenticated3x512Cfg(cfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data, streamAuthFlagMACFunc, streamID, cumOffset, true)
+				if err != nil {
+					t.Fatal(err)
+				}
+				pt, finalFlag, err := DecryptStreamAuthenticated3x512Cfg(cfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, ct, streamAuthFlagMACFunc, streamID, cumOffset)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !bytes.Equal(data, pt) || !finalFlag {
+					t.Fatalf("plaintext mismatch or finalFlag=false")
+				}
+			})
+		})
+	}
 }
 
 // --- Per-chunk Level 1 tampered detection ---
@@ -406,22 +409,25 @@ func TestStreamAuth_FullStreamTripleRoundtrip(t *testing.T) {
 func TestStreamAuth_FullStreamTripleRoundtripCfg(t *testing.T) {
 	data := streamAuthTestData(7)
 	chunkSize := 512
-	cfg := &Config{NonceBits: 256}
-
-	t.Run("128-Triple-Cfg", func(t *testing.T) {
-		ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeeds128(512, sipHash128)
-		var wire bytes.Buffer
-		if err := EncryptStreamAuth3x128Cfg(cfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data, chunkSize, streamAuthFlagMACFunc, emitToBuffer(&wire)); err != nil {
-			t.Fatal(err)
-		}
-		var recovered bytes.Buffer
-		if err := DecryptStreamAuth3x128Cfg(cfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, wire.Bytes(), streamAuthFlagMACFunc, emitToBuffer(&recovered)); err != nil {
-			t.Fatal(err)
-		}
-		if !bytes.Equal(data, recovered.Bytes()) {
-			t.Fatalf("recovered plaintext mismatch")
-		}
-	})
+	for _, nb := range []int{128, 256, 512} {
+		cfg := &Config{NonceBits: nb}
+		t.Run(fmt.Sprintf("nonce%d", nb), func(t *testing.T) {
+			t.Run("128-Triple-Cfg", func(t *testing.T) {
+				ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeeds128(512, sipHash128)
+				var wire bytes.Buffer
+				if err := EncryptStreamAuth3x128Cfg(cfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data, chunkSize, streamAuthFlagMACFunc, emitToBuffer(&wire)); err != nil {
+					t.Fatal(err)
+				}
+				var recovered bytes.Buffer
+				if err := DecryptStreamAuth3x128Cfg(cfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, wire.Bytes(), streamAuthFlagMACFunc, emitToBuffer(&recovered)); err != nil {
+					t.Fatal(err)
+				}
+				if !bytes.Equal(data, recovered.Bytes()) {
+					t.Fatalf("recovered plaintext mismatch")
+				}
+			})
+		})
+	}
 }
 
 // --- Full-stream Level 2 Triple truncate-tail detection ---

@@ -40,6 +40,9 @@ import numpy as np
 
 import os
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from attack_common import header_size_from_meta, prefix_size_from_meta  # noqa: E402
+
 # ITB_MASSIVE_DIR env var overrides the default lookup — used by kl_matrix.py
 # to give parallel workers isolated output directories.
 _MASSIVE_DIR_OVERRIDE = os.environ.get("ITB_MASSIVE_DIR", "")
@@ -51,11 +54,9 @@ MASSIVE_DIR = (
 
 CHANNELS = 8
 CHUNK_SIZE = 500_000  # same memory budget as Mode A: ~224 MB cand_raw peak
-# `header_size` is now read per-cell from the `.pixel` sidecar — the
-# shipped wire header is `NonceSize + 4` bytes (68 at the default
-# 512-bit nonce); the archived default of 20 remains as a last-resort
-# fallback for legacy corpora that omit the field.
-LEGACY_HEADER_SIZE = 20
+# The wire offsets are read per-cell from the `.pixel` sidecar: the chunk
+# header is `NonceSize + 4` bytes (68 at the default 512-bit nonce) and
+# the 32-byte Single Message prefix sits ahead of it.
 
 # Lookup tables (identical to distinguisher.py / kl_massive.py).
 _extract_tbl = np.zeros((8, 256), dtype=np.uint8)
@@ -75,8 +76,8 @@ for _r in range(7):
 def main():
     if len(sys.argv) != 2:
         print(f"Usage: {sys.argv[0]} <hash_name>", file=sys.stderr)
-        print(f"  Requires tmp/massive/<hash>.{{bin,pixel}} from "
-              f"TestRedTeamGenerateSingleMassive", file=sys.stderr)
+        print(f"  Requires {MASSIVE_DIR}/<hash>.{{bin,pixel}} from "
+              f"TestRedTeamGenerateTripleMassive", file=sys.stderr)
         sys.exit(2)
 
     hash_name = sys.argv[1]
@@ -85,7 +86,7 @@ def main():
 
     for p in (bin_path, pix_path):
         if not p.exists():
-            print(f"Missing {p}; run TestRedTeamGenerateSingleMassive first",
+            print(f"Missing {p}; run TestRedTeamGenerateTripleMassive first",
                   file=sys.stderr)
             sys.exit(1)
 
@@ -98,30 +99,32 @@ def main():
         meta[k] = v
     total_pixels = int(meta["total_pixels"])
     barrier_fill = int(meta.get("barrier_fill", "1"))
-    # shipped corpora carry `header_size` directly; fall back to
-    # `len(main_nonce) + 4` derived from `main_nonce_hex`, then to the
-    # archived 20-byte constant as a last resort. `Config.BarrierFill` is
-    # the runtime knob (never `SetBarrierFill(...)` — no such API exists);
-    # the corpus generator threads it via `ITB_BARRIER_FILL` into
-    # `Encrypt3x128Cfg`'s `*Config`.
-    if "header_size" in meta:
-        header_size = int(meta["header_size"])
-    else:
-        nonce_hex = meta.get("main_nonce_hex") or meta.get("nonce_hex")
-        if nonce_hex:
-            header_size = (len(nonce_hex) // 2) + 4
-        else:
-            header_size = LEGACY_HEADER_SIZE
+    # Shipped corpora carry `prefix_size` and `header_size` directly;
+    # `header_size` falls back to `len(main_nonce) + 4` derived from
+    # `main_nonce_hex`, `prefix_size` to the 32-byte Single Message
+    # prefix. `Config.BarrierFill` is the runtime knob (never
+    # `SetBarrierFill(...)` — no such API exists); the corpus generator
+    # threads it via `ITB_BARRIER_FILL` into `Encrypt3x128Cfg`'s `*Config`.
+    prefix_size = prefix_size_from_meta(meta)
+    header_size = header_size_from_meta(meta)
+    offset = prefix_size + header_size
 
     print(f"{'=' * 72}")
     print(f"  KL floor probe (full container) on a single massive sample")
     print(f"  (no startPixel, no plaintext — realistic-attacker threat model)")
     print(f"{'=' * 72}")
-    print(f"  hash: {hash_name}   BarrierFill: {barrier_fill}   header_size: {header_size}")
+    print(f"  hash: {hash_name}   BarrierFill: {barrier_fill}   "
+          f"prefix_size: {prefix_size}   header_size: {header_size}")
 
     t0 = time.time()
     ciphertext = bin_path.read_bytes()
-    container = ciphertext[header_size:header_size + total_pixels * CHANNELS]
+    if len(ciphertext) != offset + total_pixels * CHANNELS:
+        print(f"ERROR: {bin_path} is {len(ciphertext)} bytes; sidecar geometry "
+              f"needs {offset + total_pixels * CHANNELS} (prefix {prefix_size} + "
+              f"header {header_size} + {total_pixels} px × {CHANNELS}) — stale "
+              f"or mismatched corpus; regenerate", file=sys.stderr)
+        sys.exit(1)
+    container = ciphertext[offset:offset + total_pixels * CHANNELS]
     print(f"  ciphertext: {len(ciphertext):,} bytes "
           f"({len(ciphertext) / 1024 / 1024:.1f} MB)")
     print(f"  total pixels: {total_pixels:,}   candidates/pixel: 56")

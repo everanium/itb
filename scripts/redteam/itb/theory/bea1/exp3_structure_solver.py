@@ -315,7 +315,7 @@ def build_and_solve(R, observations, mode, timeout_sec, solver_name, td,
             m = s.model()
             vals = []
             for r_ in range(R):
-                vals.append(tuple(m.eval(seeds[r_][j]).as_long() & MASK10 for j in range(12)))
+                vals.append(tuple(m.eval(seeds[r_][j], model_completion=True).as_long() & MASK10 for j in range(12)))
 
     nbits = 120 * R
     return status, vals, build_sec, solve_sec, nbits
@@ -517,7 +517,7 @@ def run_ladder_rung(name, n_full_rounds, n_obs, timeout_sec, solver_name, rng):
         vals = None
         if r == z3.sat:
             m = sol.model()
-            vals = [tuple(m.eval(RK[rr][i]).as_long() & MASK10 for i in range(8))
+            vals = [tuple(m.eval(RK[rr][i], model_completion=True).as_long() & MASK10 for i in range(8))
                     for rr in range(n_unknown_keys)]
     dt = time.time() - t0
 

@@ -33,7 +33,6 @@ package itb
 import (
 	"bytes"
 	"crypto/rand"
-	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -214,12 +213,12 @@ func writeSingleNullHashExpose(t *testing.T, outDir string, keyBits, ptSize, bar
 	}
 
 	nonceLen := currentNonceSizeCfg(cfg)
-	if len(ct) < nonceLen+4 {
+	if len(ct) < smContainerOffset(nonceLen) {
 		t.Fatalf("ciphertext too short for the wire header: %d", len(ct))
 	}
-	mainNonce := ct[:nonceLen]
-	width := int(binary.BigEndian.Uint16(ct[nonceLen:]))
-	height := int(binary.BigEndian.Uint16(ct[nonceLen+2:]))
+	sm := parseSMWire(ct, nonceLen)
+	mainNonce := sm.mainNonce
+	width, height := sm.width, sm.height
 	totalPixels := width * height
 	headerSize := nonceLen + 4
 
@@ -262,6 +261,7 @@ func writeSingleNullHashExpose(t *testing.T, outDir string, keyBits, ptSize, bar
 		"width":               width,
 		"height":              height,
 		"total_pixels":        totalPixels,
+		"prefix_size":         smPrefixLen,
 		"header_size":         headerSize,
 		"start_pixels": map[string]int{
 			"region_1": sp1,

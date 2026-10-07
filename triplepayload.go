@@ -8,8 +8,9 @@ import (
 	"github.com/everanium/itb/internal/drbg"
 )
 
-// Shared encrypt-side stages of the Triple Ouroboros entry points
-// (Encrypt3x*, EncryptAuthenticated3x*, EncryptStreamAuthenticated3x* at
+// Shared encrypt-side stages of the Triple Ouroboros encrypt paths
+// (encrypt3x*Cfg behind Encrypt3x*, and encryptStreamAuthenticated3x*Cfg
+// behind EncryptAuthenticated3x* and EncryptStreamAuthenticated3x*, at
 // every hash width). The stages here are width-agnostic: the only
 // width-specific input is the container-sizing callback, which closes
 // over the caller's seeds.
@@ -115,16 +116,23 @@ func (tp *triplePayloads) release() {
 // bound-vs-actual padding is indistinguishable from that margin on the
 // wire.
 //
+// lead is the byte count reserved ahead of the header in the returned
+// wire buffer: zero for a stream chunk, [streamIDPrefixLen] for a
+// Single Message wire, whose caller writes the 32-byte prefix into
+// out[:lead] after the pixel pipeline has run. Reserving it here keeps
+// the Single Message wire a single allocation. The lead bytes are left
+// zero; nothing in this function reads or fills them.
+//
 // On return: tp carries the three per-third payload buffers ready for
 // pixel-encode; out is the wire buffer sized for
-// [main nonce | W | H | W·H·Ch container] with the header written and
-// the container DRBG-filled; container aliases out past the header, so
-// the pixel pipeline writes the wire in place and no final
-// header-plus-container copy is made. ilNonce does not reach the wire
-// header: it is split across the three lanes ahead of the COBS stage
-// (see interlock_nonce.go), so each lane — and each third's COBS bound
-// — carries its own fragment.
-func buildTripleWire3(cfg *Config, data []byte, bp lockBatchPRF48, reserve int, fillReserve bool, nonce, ilNonce []byte, sizeFn func(cobsLens [3]int) (width, height int)) (tp *triplePayloads, out, container []byte, width, height int, err error) {
+// [lead | main nonce | W | H | W·H·Ch container] with the header written
+// and the container DRBG-filled; container aliases out past the lead
+// and the header, so the pixel pipeline writes the wire in place and no
+// final header-plus-container copy is made. ilNonce does not reach the
+// wire header: it is split across the three lanes ahead of the COBS
+// stage (see interlock_nonce.go), so each lane — and each third's COBS
+// bound — carries its own fragment.
+func buildTripleWire3(cfg *Config, data []byte, bp lockBatchPRF48, reserve int, fillReserve bool, lead int, nonce, ilNonce []byte, sizeFn func(cobsLens [3]int) (width, height int)) (tp *triplePayloads, out, container []byte, width, height int, err error) {
 	laneLen := tripleLaneLen(len(data))
 	lens, offs := nonceSplit(len(ilNonce))
 
@@ -148,11 +156,12 @@ func buildTripleWire3(cfg *Config, data []byte, bp lockBatchPRF48, reserve int, 
 	// the three background container-fill goroutines can enter
 	// drbg.Fill immediately after this point.
 	hdr := headerSizeCfg(cfg)
-	out = make([]byte, hdr+totalPixels*Channels)
-	copy(out, nonce)
-	binary.BigEndian.PutUint16(out[len(nonce):], uint16(width))
-	binary.BigEndian.PutUint16(out[len(nonce)+2:], uint16(height))
-	container = out[hdr:]
+	out = make([]byte, lead+hdr+totalPixels*Channels)
+	header := out[lead : lead+hdr]
+	copy(header, nonce)
+	binary.BigEndian.PutUint16(header[len(nonce):], uint16(width))
+	binary.BigEndian.PutUint16(header[len(nonce)+2:], uint16(height))
+	container = out[lead+hdr:]
 
 	// Producer stage — spawn three container DRBG fill workers as
 	// early as the wire exists. They race the main goroutine's

@@ -14,12 +14,13 @@ then ITB ciphertext sits at the sampling precision of the distinguisher
 itself — the difference between the two observed KLs is below what any
 measurement at this N can resolve.
 
-`size_bytes` is the container BODY size (post-header). The caller passes
-`ciphertext_bytes - header_size`, where `header_size = NonceSize + 4`
-on the shipped wire; `kl_matrix.py`'s `container_bytes_from_ciphertext`
-computes this from the shipped ciphertext file size. The header layout is
-not consumed here — this probe is a pure /dev/urandom control, so the
-shipped wire evolution does not touch its logic.
+`size_bytes` is the container BODY size (W·H·8, after the wire prefix and
+the chunk header). The caller passes
+`ciphertext_bytes - prefix_size - header_size`, where `prefix_size = 32`
+and `header_size = NonceSize + 4` on the shipped wire; `kl_matrix.py`'s
+`container_bytes_from_ciphertext` computes this from the ciphertext file
+size and the `.pixel` sidecar. The wire layout is not consumed here —
+this probe is a pure /dev/urandom control.
 
 Usage:
     python3 kl_urandom.py <size_bytes>

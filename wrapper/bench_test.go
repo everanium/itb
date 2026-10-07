@@ -21,7 +21,7 @@ const (
 	benchStreamSize  = 64 * 1024 * 1024
 	benchStreamChunk = 16 * 1024 * 1024
 
-	benchNonceBits   = 128
+	benchNonceBits   = 512
 	benchBarrierFill = 1
 )
 

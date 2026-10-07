@@ -41,7 +41,7 @@ Attacker cost / model:
   * Full KPA, **discard off** — the full 128-bit ChainHash output visible.
     In the shipped pipeline only `h[0]` reaches the encoder, so this attacker
     grant is a lab-only lift; the discard-on lo-lane observable at r = 2 is
-    at the floor / 2⁶⁴ (`keyrecover_r2.py`, `keyrecover_r1_lo.py`).
+    at the floor / 2⁶⁴ (`keyrecover_r2.py`).
   * Λ-set active bytes: `LE32(idx)` bytes 0 / 1 / 2 (pixel-index-only
     attacker; no nonce byte is chosen).
   * 3 Λ-sets × 256 chosen texts = **768 chosen texts** per trial.
@@ -335,7 +335,7 @@ def main():
     print(f"  shipped fin_rounds = 2 → RC_LAST = RC[1]; per-call rounds at L = 20 B: T = 4")
     print(f"  attacker model: Full KPA, discard OFF (full 128-bit output); Λ-sets in LE32(idx) bytes 0 / 1 / 2")
     print(f"  in the shipped pipeline only h[0] reaches the encoder — the lo-lane observable at r = 2 is at")
-    print(f"  the floor / 2^64 (keyrecover_r2.py, keyrecover_r1_lo.py). This lift is a lab grant.")
+    print(f"  the floor / 2^64 (keyrecover_r2.py). This lift is a lab grant.")
     print()
 
     for name, engine, n_sets, chosen in (

@@ -423,7 +423,7 @@ func sipHash24Adapter(data []byte, seed0, seed1 uint64) (uint64, uint64) {
 
 // fnv1a128NativeAdapter is a HashFunc128 wrapper over two independent
 // FNV-1a-64 lanes: T-function class with the standard 64-bit FNV
-// prime 0x100000001b3 (popcount 6). The redteam suite already carries
+// prime 0x100000001b3 (popcount 7). The redteam suite already carries
 // a full-128-bit FNV-1a variant (fnv1a128BrokenLab in
 // redteam_broken_test.go) that uses math/big for the mod-2^128
 // arithmetic; that version is faithful to the archived probe but
@@ -591,7 +591,7 @@ func makeSeedsFor(t *testing.T, fn HashFunc128, keyBits int) (ns, ls, d1, d2, d3
 //
 //	jokeHash      — multiply-add fold, multiplier 257 (popcount 2)
 //	CRC128        — GF(2)-linear (two keyed CRC64 lanes, ECMA + ISO)
-//	FNV-1a        — T-function, multiplier 0x100000001b3 (popcount 6)
+//	FNV-1a        — T-function, multiplier 0x100000001b3 (popcount 7)
 //	SipHash-2-4   — designed PRF (hard-gated control)
 //
 // Purpose. Preserve the empirical finding recorded in FAQ.md
@@ -658,7 +658,7 @@ func TestRedTeamJokeHashHWDistinguisherVsPRF(t *testing.T) {
 	}
 
 	// FNV-1a arm (native two-lane, T-function class) — log only, null
-	// expected (multiplier 0x100000001b3 has popcount 6 and is prime,
+	// expected (multiplier 0x100000001b3 has popcount 7 and is prime,
 	// spreading bits well enough to keep output distribution uniform
 	// under random seeds).
 	{

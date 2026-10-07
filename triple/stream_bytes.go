@@ -21,9 +21,10 @@ import (
 //  1. Direct whole-buffer path — when the parallax layer is disengaged
 //     and the plaintext is at or below [messageFastPathMaxBytes], the
 //     call composes the same single-chunk emission as
-//     [Pipeline.EncryptMessage]'s direct path (one itb-root Cfg-aware
-//     entry, wrapper composed via [wrapper.WrapInPlace] when engaged).
-//     A single-chunk wire is a valid Streaming wire: the streaming
+//     [Pipeline.EncryptMessage]'s direct path (one itb-root Single
+//     Message entry, whose wire is the 32-byte prefix plus one chunk;
+//     wrapper composed via [wrapper.WrapInPlace] when engaged). A
+//     single-chunk wire is a valid Streaming wire: the streaming
 //     decoder accepts one final-flag chunk of any length within the
 //     itb-root single-message cap, independent of the resolved
 //     chunkSize.
@@ -217,30 +218,23 @@ func (p *Pipeline) decryptInnerSingleChunk(inner []byte) ([]byte, bool, error) {
 		return nil, false, nil
 	}
 
-	var streamID [streamIDPrefixLen]byte
-	copy(streamID[:], inner[:streamIDPrefixLen])
 	body := inner[streamIDPrefixLen:]
-
 	chunkLen, perr := itb.ParseChunkLenCfg(p.cfg, body)
 	if perr != nil || chunkLen != len(body) {
 		return nil, false, nil
 	}
 
+	// A one-chunk inner is a Single Message wire, so the itb-root
+	// Single Message entries consume it whole, prefix included. On the
+	// MAC arm the root entry rejects a chunk whose final flag is not
+	// set with [itb.ErrStreamTruncated] — the same diagnostic the
+	// streaming decode produces for a transcript that ends before its
+	// terminator.
 	if p.macFunc != nil {
-		plain, finalFlag, derr := decryptSingleChunkAuth(p, body, streamID)
-		if derr != nil {
-			return nil, true, derr
-		}
-		// The streaming decode surfaces [itb.ErrStreamTruncated] when
-		// the final chunk's flag is not set; mirror that diagnostic so
-		// a non-terminating chunk fed to this surface is rejected with
-		// the same error the streaming surface would have produced.
-		if !finalFlag {
-			return nil, true, itb.ErrStreamTruncated
-		}
-		return plain, true, nil
+		plain, derr := decryptMessageAuth(p, inner)
+		return plain, true, derr
 	}
-	plain, derr := decryptSingleChunkNoMAC(p, body)
+	plain, derr := decryptMessageNoMAC(p, inner)
 	return plain, true, derr
 }
 

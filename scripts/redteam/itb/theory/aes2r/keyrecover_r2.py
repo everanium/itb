@@ -6,7 +6,7 @@ against a ChainHash r=2 oracle. Control r=1 must recover; r=2 is the question.
 discard OFF (full 128-bit output) is the easiest case for the attacker; if it
 fails there, discard ON (lo lane only) is strictly harder.
 """
-import os, sys
+import argparse, os, sys
 from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
@@ -22,13 +22,18 @@ def make_chain_oracle(seed_comps, rounds, discard):
         return (full & MASK64, (full >> 64) & MASK64)
     return query
 
+ap = argparse.ArgumentParser()
+ap.add_argument("--trials", type=int, default=5,
+                help="random seeds per (rounds, discard) cell")
+args = ap.parse_args()
+
 print("=" * 70)
 print("Direction 2: integral KEY-RECOVERY through ChainHash r=1 (control) / r=2")
 print("=" * 70)
 for rounds in (1, 2):
     for discard in (False, True):
         hits = 0
-        TR = 5
+        TR = args.trials
         for _ in range(TR):
             seed_comps = [int.from_bytes(os.urandom(8), "big") for _ in range(2 * rounds)]
             # round-0 key = seed_comps[1]<<64 | seed_comps[0]; master byte 0 = top of seed_hi

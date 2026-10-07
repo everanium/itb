@@ -25,8 +25,9 @@ Usage:
 The Go entry point is `TestRedTeamGenerateTripleMassive` (in the
 `redteam_kl_test.go` file, guarded by `-tags redteam`); it emits
 `<outdir>/blake3.{bin,plain,pixel}` on the shipped Triple + always-on
-Interlocked Barrier wire, with the `.pixel` sidecar carrying the
-header size and `barrier_fill` value the sub-scripts consume.
+Interlocked Barrier wire, with the `.pixel` sidecar carrying the wire
+offsets (`prefix_size`, `header_size`), the container geometry and the
+`barrier_fill` value the sub-scripts consume.
 """
 
 from __future__ import annotations
@@ -42,6 +43,9 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Dict, List, Optional
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from attack_common import container_offset_from_meta  # noqa: E402
 
 PROJ = Path(__file__).resolve().parents[6]
 # Output lands in ~/scratch/kltest by default (per the working-tree layout:
@@ -164,43 +168,38 @@ def parse_output(text: str, patterns: Dict[str, re.Pattern]) -> Dict[str, float]
     return out
 
 
-_warned_container_bytes_fallback = False
-
-
 def container_bytes_from_ciphertext(bin_path: Path) -> int:
-    # shipped ITB ciphertext header is `NonceSize + 4` bytes (main nonce +
-    # width(2) + height(2)); at the default 512-bit nonce that is 68 bytes.
-    # Strip the header so the /dev/urandom baseline matches the container-
-    # body byte count. The sibling `.pixel` sidecar written alongside
-    # `bin_path` by `TestRedTeamGenerateTripleMassive` (see
-    # `redteam_kl_test.go`) carries `header_size=<int>` in the same
-    # key=value format `kl_massive_full.py` parses — read it from there so
-    # a wire-format change needs no edit here. Only when the sidecar is
-    # absent or missing the field does this fall back to the default-
-    # config formula (with a one-time stderr warning); callers driving a
-    # non-default `NonceBits` must fix up the sidecar rather than rely on
-    # the fallback.
-    global _warned_container_bytes_fallback
-    default_nonce_bytes = 64  # itb.NonceSize (config.go default)
+    # The wire file is `[prefix 32][main nonce N][W][H][container]`; the
+    # container is the W·H·8 bytes after `prefix_size + header_size`
+    # (header = main nonce + width(2) + height(2) = N + 4; 68 at the
+    # default 512-bit nonce). Strip both so the /dev/urandom baseline
+    # matches the container-body byte count. The sibling `.pixel` sidecar
+    # written alongside `bin_path` by `TestRedTeamGenerateTripleMassive`
+    # (see `redteam_kl_test.go`) carries `prefix_size=`, `header_size=`
+    # and `total_pixels=` in the key=value format `kl_massive_full.py`
+    # parses — read the offsets from there and check the result against
+    # the geometry, so a file written under another layout (or a sidecar
+    # from another run) fails here instead of feeding the control a
+    # wrong size.
     pixel_path = bin_path.with_suffix(".pixel")
-    if pixel_path.exists():
-        sidecar: Dict[str, str] = {}
-        for line in pixel_path.read_text().strip().split("\n"):
-            if "=" not in line:
-                continue
-            k, v = line.split("=", 1)
-            sidecar[k] = v
-        if "header_size" in sidecar:
-            return bin_path.stat().st_size - int(sidecar["header_size"])
-    if not _warned_container_bytes_fallback:
-        print(
-            f"WARNING: kl_matrix.py: {pixel_path} missing or has no "
-            f"header_size field — falling back to default-config "
-            f"header_size={default_nonce_bytes + 4}",
-            file=sys.stderr,
-        )
-        _warned_container_bytes_fallback = True
-    return bin_path.stat().st_size - (default_nonce_bytes + 4)
+    if not pixel_path.exists():
+        raise SystemExit(f"kl_matrix.py: {pixel_path} missing — cannot locate the container")
+    sidecar: Dict[str, str] = {}
+    for line in pixel_path.read_text().strip().split("\n"):
+        if "=" not in line:
+            continue
+        k, v = line.split("=", 1)
+        sidecar[k] = v
+    container_bytes = bin_path.stat().st_size - container_offset_from_meta(sidecar)
+    if "total_pixels" in sidecar:
+        expected = int(sidecar["total_pixels"]) * 8
+        if container_bytes != expected:
+            raise SystemExit(
+                f"kl_matrix.py: {bin_path} container is {container_bytes} bytes "
+                f"after the wire offsets, sidecar geometry says {expected} "
+                f"(total_pixels × 8) — stale or mismatched corpus; regenerate"
+            )
+    return container_bytes
 
 
 def already_done(size: int, bf: int) -> bool:
@@ -254,7 +253,7 @@ def run_cell(size: int, bf: int, n_samples: int, worker_id: int) -> Dict[str, fl
     container_bytes = container_bytes_from_ciphertext(bin_path)
 
     # Step 1 — start /dev/urandom baseline asynchronously; it runs in parallel
-    # with the 5 ITB encrypt+probe iterations below.
+    # with the n_samples ITB encrypt+probe iterations below.
     ur_env = os.environ.copy()
     ur_proc = subprocess.Popen(
         ["python3", str(PROJ / "scripts/redteam/itb/theory/_common/kl/kl_urandom.py"),
@@ -392,7 +391,7 @@ def render_markdown(rows: List[Dict[str, float]], sizes: List[int], bfs: List[in
         lines.append(f"| {size_label(s)} | " + " | ".join(cells) + " |")
     lines.append("")
 
-    lines.append("## Ratio means and z-scores  (5 ITB × 5 urandom per cell)")
+    lines.append(f"## Ratio means and z-scores  ({n_samples_any} ITB × {n_samples_any} urandom per cell)")
     lines.append("")
     lines.append("| Size | BF | N | ITB ratio | UR ratio | Δ | pooled σ | z | χ² Δ | z(χ²) |")
     lines.append("|:---|---:|---:|---:|---:|---:|---:|---:|---:|---:|")

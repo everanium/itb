@@ -2,7 +2,6 @@ package triple
 
 import (
 	"bytes"
-	"crypto/rand"
 	"errors"
 	"fmt"
 
@@ -48,13 +47,14 @@ const messageFastPathMaxBytes = 64 << 20
 //
 //  1. Direct whole-buffer path — chosen when the parallax layer is
 //     disengaged for this Pipeline. The plaintext feeds a single
-//     itb-root Cfg-aware entry ([itb.Encrypt3x{128,256,512}Cfg] on the
-//     No MAC arm, [itb.EncryptStreamAuthenticated3x{128,256,512}Cfg]
-//     with cumulative offset 0 and finalFlag true on the MAC arm) so
-//     the per-chunk io.Reader / io.Writer machinery of
-//     [Pipeline.EncryptStream] is bypassed for the message surface.
-//     The wrapper layer, when engaged, is composed as a
-//     [wrapper.WrapInPlace] over the assembled inner blob.
+//     itb-root Single Message entry ([itb.Encrypt3x{128,256,512}Cfg]
+//     on the No MAC arm, [itb.EncryptAuthenticated3x{128,256,512}Cfg]
+//     on the MAC arm), whose wire — the 32-byte prefix followed by one
+//     chunk — is exactly the one-chunk transcript the streaming
+//     encoders produce, so the per-chunk io.Reader / io.Writer
+//     machinery of [Pipeline.EncryptStream] is bypassed for the
+//     message surface. The wrapper layer, when engaged, is composed as
+//     a [wrapper.WrapInPlace] over that inner wire.
 //  2. Streaming-fallback path — chosen when the parallax layer is
 //     engaged, when the plaintext exceeds [messageFastPathMaxBytes],
 //     or when the resolved profile carries a mode the direct path does
@@ -111,12 +111,12 @@ func (p *Pipeline) EncryptMessage(plaintext []byte) ([]byte, error) {
 //
 //  1. Direct whole-buffer path — chosen when the parallax layer is
 //     disengaged AND the wire parses as a single-chunk envelope
-//     (streamID prefix followed by exactly one itb-root ciphertext
-//     whose header-announced chunk length equals the remaining wire
-//     length after any wrapper unwrap). Dispatches into
+//     (the 32-byte prefix followed by exactly one chunk whose
+//     header-announced length equals the remaining wire length after
+//     any wrapper unwrap). Dispatches into
 //     [itb.Decrypt3x{128,256,512}Cfg] on the No MAC arm or
-//     [itb.DecryptStreamAuthenticated3x{128,256,512}Cfg] with
-//     cumulative offset 0 on the MAC arm.
+//     [itb.DecryptAuthenticated3x{128,256,512}Cfg] on the MAC arm,
+//     each consuming the prefix-plus-chunk wire whole.
 //  2. Streaming-fallback path — chosen when the parallax layer is
 //     engaged or the wire carries a multi-chunk envelope (as produced
 //     by [Pipeline.EncryptStream] on plaintext larger than the
@@ -180,45 +180,37 @@ func (p *Pipeline) encryptMessageDirect(plaintext []byte) ([]byte, error) {
 		return []byte{}, nil
 	}
 
-	var streamID [streamIDPrefixLen]byte
-	if _, err := rand.Read(streamID[:]); err != nil {
-		return nil, fmt.Errorf("triple: crypto/rand: %w", err)
-	}
-
-	var chunk []byte
+	// The itb-root Single Message entries emit the complete inner wire
+	// — streamID (or the No MAC dummy of the same length) followed by
+	// the one chunk — so no assembly happens here.
+	var inner []byte
 	var err error
 	if p.macFunc != nil {
-		chunk, err = encryptSingleChunkAuth(p, plaintext, streamID)
+		inner, err = encryptMessageAuth(p, plaintext)
 	} else {
-		chunk, err = encryptSingleChunkNoMAC(p, plaintext)
+		inner, err = encryptMessageNoMAC(p, plaintext)
 	}
 	if err != nil {
 		return nil, err
 	}
-
-	// Assemble inner = streamID || chunk. The buffer is sized to the
-	// final wire so the wrapper wrap (when engaged) can operate in
-	// place without a second allocation.
-	wireLen := streamIDPrefixLen + len(chunk)
-	if p.resolved.Wrapper {
-		nlen, err := wrapper.NonceSize(p.wrapperCipher)
-		if err != nil {
-			return nil, fmt.Errorf("triple: wrapper.NonceSize: %w", err)
-		}
-		out := make([]byte, nlen+wireLen)
-		body := out[nlen:]
-		copy(body, streamID[:])
-		copy(body[streamIDPrefixLen:], chunk)
-		nonce, werr := wrapper.WrapInPlace(p.wrapperCipher, p.wrapperKey, body)
-		if werr != nil {
-			return nil, fmt.Errorf("triple: wrapper.WrapInPlace: %w", werr)
-		}
-		copy(out[:nlen], nonce)
-		return out, nil
+	if !p.resolved.Wrapper {
+		return inner, nil
 	}
-	out := make([]byte, wireLen)
-	copy(out, streamID[:])
-	copy(out[streamIDPrefixLen:], chunk)
+
+	// The buffer is sized to the final wire so the wrapper wrap
+	// operates in place on the body without a second allocation.
+	nlen, err := wrapper.NonceSize(p.wrapperCipher)
+	if err != nil {
+		return nil, fmt.Errorf("triple: wrapper.NonceSize: %w", err)
+	}
+	out := make([]byte, nlen+len(inner))
+	body := out[nlen:]
+	copy(body, inner)
+	nonce, werr := wrapper.WrapInPlace(p.wrapperCipher, p.wrapperKey, body)
+	if werr != nil {
+		return nil, fmt.Errorf("triple: wrapper.WrapInPlace: %w", werr)
+	}
+	copy(out[:nlen], nonce)
 	return out, nil
 }
 
@@ -268,45 +260,36 @@ func (p *Pipeline) decryptMessageDirect(wire []byte) ([]byte, bool, error) {
 		return nil, false, nil
 	}
 
-	var streamID [streamIDPrefixLen]byte
-	copy(streamID[:], inner[:streamIDPrefixLen])
+	// Try to parse a single chunk header behind the streamID prefix.
+	// If the header parses AND the announced chunk length equals the
+	// entire remaining body, the wire carries exactly one chunk and
+	// the fast path applies. Multi-chunk wires (produced by
+	// EncryptStream on plaintext larger than chunkSize) fail this
+	// equality and route to the streaming fallback.
 	body := inner[streamIDPrefixLen:]
-
-	// Try to parse a single chunk header at the body start. If the
-	// header parses AND the announced chunk length equals the entire
-	// remaining body, the wire carries exactly one chunk and the fast
-	// path applies. Multi-chunk wires (produced by EncryptStream on
-	// plaintext larger than chunkSize) fail this equality and route to
-	// the streaming fallback.
 	chunkLen, perr := itb.ParseChunkLenCfg(p.cfg, body)
 	if perr != nil || chunkLen != len(body) {
 		return nil, false, nil
 	}
 
+	// The itb-root Single Message entries consume the whole inner wire,
+	// prefix included. On the MAC arm the root entry already rejects a
+	// chunk whose final flag is not set with [itb.ErrStreamTruncated] —
+	// the same diagnostic the streaming fallback produces for a
+	// transcript that ends before its terminator.
 	if p.macFunc != nil {
-		plain, finalFlag, derr := decryptSingleChunkAuth(p, body, streamID)
-		if derr != nil {
-			return nil, true, derr
-		}
-		// The streaming fallback surfaces [itb.ErrStreamTruncated]
-		// when the final chunk's flag is not set; mirror that
-		// diagnostic here so a non-terminating chunk fed to the
-		// message surface is rejected with the same error the
-		// streaming surface would have produced.
-		if !finalFlag {
-			return nil, true, itb.ErrStreamTruncated
-		}
-		return plain, true, nil
+		plain, derr := decryptMessageAuth(p, inner)
+		return plain, true, derr
 	}
-	plain, derr := decryptSingleChunkNoMAC(p, body)
+	plain, derr := decryptMessageNoMAC(p, inner)
 	return plain, true, derr
 }
 
-// encryptSingleChunkNoMAC width-dispatches to the No MAC single-chunk
+// encryptMessageNoMAC width-dispatches to the No MAC Single Message
 // encrypt entry. Threads the Pipeline's per-instance Config so nonce
 // width / barrier fill / max-workers overrides land on the underlying
 // call site.
-func encryptSingleChunkNoMAC(p *Pipeline, plaintext []byte) ([]byte, error) {
+func encryptMessageNoMAC(p *Pipeline, plaintext []byte) ([]byte, error) {
 	switch p.width {
 	case 128:
 		return itb.Encrypt3x128Cfg(p.cfg,
@@ -333,94 +316,98 @@ func encryptSingleChunkNoMAC(p *Pipeline, plaintext []byte) ([]byte, error) {
 	return nil, fmt.Errorf("triple: unsupported inner width %d", p.width)
 }
 
-// encryptSingleChunkAuth width-dispatches to the Streaming AEAD
-// single-chunk encrypt entry with cumulative offset 0 and finalFlag
-// true, matching the per-chunk MAC binding that the streaming fallback
-// emits when the plaintext fits in one chunk.
-func encryptSingleChunkAuth(p *Pipeline, plaintext []byte, streamID [streamIDPrefixLen]byte) ([]byte, error) {
+// encryptMessageAuth width-dispatches to the MAC Authenticated Single
+// Message encrypt entry, which binds its CSPRNG streamID prefix into
+// the MAC with cumulative offset 0 and finalFlag true — the same
+// per-chunk binding the streaming fallback emits when the plaintext
+// fits in one chunk.
+func encryptMessageAuth(p *Pipeline, plaintext []byte) ([]byte, error) {
 	switch p.width {
 	case 128:
-		return itb.EncryptStreamAuthenticated3x128Cfg(p.cfg,
+		return itb.EncryptAuthenticated3x128Cfg(p.cfg,
 			p.seeds[0].(*itb.Seed128), p.seeds[1].(*itb.Seed128),
 			p.seeds[2].(*itb.Seed128), p.seeds[3].(*itb.Seed128), p.seeds[4].(*itb.Seed128),
 			p.seeds[5].(*itb.Seed128), p.seeds[6].(*itb.Seed128), p.seeds[7].(*itb.Seed128),
-			plaintext, p.macFunc, streamID, 0, true,
+			plaintext, p.macFunc,
 		)
 	case 256:
-		return itb.EncryptStreamAuthenticated3x256Cfg(p.cfg,
+		return itb.EncryptAuthenticated3x256Cfg(p.cfg,
 			p.seeds[0].(*itb.Seed256), p.seeds[1].(*itb.Seed256),
 			p.seeds[2].(*itb.Seed256), p.seeds[3].(*itb.Seed256), p.seeds[4].(*itb.Seed256),
 			p.seeds[5].(*itb.Seed256), p.seeds[6].(*itb.Seed256), p.seeds[7].(*itb.Seed256),
-			plaintext, p.macFunc, streamID, 0, true,
+			plaintext, p.macFunc,
 		)
 	case 512:
-		return itb.EncryptStreamAuthenticated3x512Cfg(p.cfg,
+		return itb.EncryptAuthenticated3x512Cfg(p.cfg,
 			p.seeds[0].(*itb.Seed512), p.seeds[1].(*itb.Seed512),
 			p.seeds[2].(*itb.Seed512), p.seeds[3].(*itb.Seed512), p.seeds[4].(*itb.Seed512),
 			p.seeds[5].(*itb.Seed512), p.seeds[6].(*itb.Seed512), p.seeds[7].(*itb.Seed512),
-			plaintext, p.macFunc, streamID, 0, true,
+			plaintext, p.macFunc,
 		)
 	}
 	return nil, fmt.Errorf("triple: unsupported inner width %d", p.width)
 }
 
-// decryptSingleChunkNoMAC width-dispatches to the No MAC single-chunk
-// decrypt entry. Mirror image of [encryptSingleChunkNoMAC].
-func decryptSingleChunkNoMAC(p *Pipeline, chunk []byte) ([]byte, error) {
+// decryptMessageNoMAC width-dispatches to the No MAC Single Message
+// decrypt entry. Mirror image of [encryptMessageNoMAC]; inner is the
+// whole prefix-plus-chunk wire.
+func decryptMessageNoMAC(p *Pipeline, inner []byte) ([]byte, error) {
 	switch p.width {
 	case 128:
 		return itb.Decrypt3x128Cfg(p.cfg,
 			p.seeds[0].(*itb.Seed128), p.seeds[1].(*itb.Seed128),
 			p.seeds[2].(*itb.Seed128), p.seeds[3].(*itb.Seed128), p.seeds[4].(*itb.Seed128),
 			p.seeds[5].(*itb.Seed128), p.seeds[6].(*itb.Seed128), p.seeds[7].(*itb.Seed128),
-			chunk,
+			inner,
 		)
 	case 256:
 		return itb.Decrypt3x256Cfg(p.cfg,
 			p.seeds[0].(*itb.Seed256), p.seeds[1].(*itb.Seed256),
 			p.seeds[2].(*itb.Seed256), p.seeds[3].(*itb.Seed256), p.seeds[4].(*itb.Seed256),
 			p.seeds[5].(*itb.Seed256), p.seeds[6].(*itb.Seed256), p.seeds[7].(*itb.Seed256),
-			chunk,
+			inner,
 		)
 	case 512:
 		return itb.Decrypt3x512Cfg(p.cfg,
 			p.seeds[0].(*itb.Seed512), p.seeds[1].(*itb.Seed512),
 			p.seeds[2].(*itb.Seed512), p.seeds[3].(*itb.Seed512), p.seeds[4].(*itb.Seed512),
 			p.seeds[5].(*itb.Seed512), p.seeds[6].(*itb.Seed512), p.seeds[7].(*itb.Seed512),
-			chunk,
+			inner,
 		)
 	}
 	return nil, fmt.Errorf("triple: unsupported inner width %d", p.width)
 }
 
-// decryptSingleChunkAuth width-dispatches to the Streaming AEAD
-// single-chunk decrypt entry with cumulative offset 0, matching the
-// per-chunk MAC binding produced by [encryptSingleChunkAuth].
-func decryptSingleChunkAuth(p *Pipeline, chunk []byte, streamID [streamIDPrefixLen]byte) ([]byte, bool, error) {
+// decryptMessageAuth width-dispatches to the MAC Authenticated Single
+// Message decrypt entry, the mirror image of [encryptMessageAuth]:
+// the root entry reads the streamID prefix, verifies the chunk at
+// cumulative offset 0 and rejects a non-terminating chunk with
+// [itb.ErrStreamTruncated]. inner is the whole prefix-plus-chunk wire.
+func decryptMessageAuth(p *Pipeline, inner []byte) ([]byte, error) {
 	switch p.width {
 	case 128:
-		return itb.DecryptStreamAuthenticated3x128Cfg(p.cfg,
+		return itb.DecryptAuthenticated3x128Cfg(p.cfg,
 			p.seeds[0].(*itb.Seed128), p.seeds[1].(*itb.Seed128),
 			p.seeds[2].(*itb.Seed128), p.seeds[3].(*itb.Seed128), p.seeds[4].(*itb.Seed128),
 			p.seeds[5].(*itb.Seed128), p.seeds[6].(*itb.Seed128), p.seeds[7].(*itb.Seed128),
-			chunk, p.macFunc, streamID, 0,
+			inner, p.macFunc,
 		)
 	case 256:
-		return itb.DecryptStreamAuthenticated3x256Cfg(p.cfg,
+		return itb.DecryptAuthenticated3x256Cfg(p.cfg,
 			p.seeds[0].(*itb.Seed256), p.seeds[1].(*itb.Seed256),
 			p.seeds[2].(*itb.Seed256), p.seeds[3].(*itb.Seed256), p.seeds[4].(*itb.Seed256),
 			p.seeds[5].(*itb.Seed256), p.seeds[6].(*itb.Seed256), p.seeds[7].(*itb.Seed256),
-			chunk, p.macFunc, streamID, 0,
+			inner, p.macFunc,
 		)
 	case 512:
-		return itb.DecryptStreamAuthenticated3x512Cfg(p.cfg,
+		return itb.DecryptAuthenticated3x512Cfg(p.cfg,
 			p.seeds[0].(*itb.Seed512), p.seeds[1].(*itb.Seed512),
 			p.seeds[2].(*itb.Seed512), p.seeds[3].(*itb.Seed512), p.seeds[4].(*itb.Seed512),
 			p.seeds[5].(*itb.Seed512), p.seeds[6].(*itb.Seed512), p.seeds[7].(*itb.Seed512),
-			chunk, p.macFunc, streamID, 0,
+			inner, p.macFunc,
 		)
 	}
-	return nil, false, fmt.Errorf("triple: unsupported inner width %d", p.width)
+	return nil, fmt.Errorf("triple: unsupported inner width %d", p.width)
 }
 
 // encryptMessageStreaming is the fallback encrypt path. Chains the
@@ -517,7 +504,8 @@ func hasNoCipherSurface(mode string) bool {
 
 // streamIDPrefixLen is the on-wire byte length of the per-message
 // streamID prefix emitted by the itb-root streaming encoders and
-// consumed by their decoders. Held here as a local mirror of the
+// Single Message entries and consumed by their decoders. Held here as
+// a local mirror of the
 // itb-root constant so the triple message surface stays
 // self-documenting without a cross-package import for a single byte
 // count.

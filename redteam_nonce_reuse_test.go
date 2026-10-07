@@ -38,7 +38,6 @@ package itb
 // primary record.
 
 import (
-	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -99,12 +98,12 @@ func buildEightFNV1aSeeds128(t *testing.T, keyBits int) (ns, ls, d1, d2, d3, s1,
 // wireLayoutNR describes the per-region byte offsets inside a
 // Triple ciphertext body. Populated from the wire header (attacker-visible).
 type wireLayoutNR struct {
-	nonce            []byte
-	totalPixels      int
-	third1Pixels     int
-	third2Pixels     int
-	third3Pixels     int
-	body             []byte
+	nonce             []byte
+	totalPixels       int
+	third1Pixels      int
+	third2Pixels      int
+	third3Pixels      int
+	body              []byte
 	regionBodyOffsets [3]int // channel-byte start offsets
 	regionBodyEnds    [3]int // channel-byte end offsets (exclusive)
 	regionPixelStarts [3]int // pixel start indices (0, third, 2*third)
@@ -119,20 +118,18 @@ type wireLayoutNR struct {
 // Attacker-visible — uses only public bytes. Panics if the wire is
 // malformed (tests should not call with an invalid wire).
 func decodeWireNR(ct []byte) wireLayoutNR {
-	nonce := ct[:NonceSize]
-	w := int(binary.BigEndian.Uint16(ct[NonceSize : NonceSize+2]))
-	h := int(binary.BigEndian.Uint16(ct[NonceSize+2 : NonceSize+4]))
-	total := w * h
+	sm := parseSMWire(ct, NonceSize)
+	total := sm.width * sm.height
 	third := total / 3
 	third3 := total - 2*third
-	body := ct[NonceSize+4:]
+	body := sm.container
 	return wireLayoutNR{
-		nonce:            nonce,
-		totalPixels:      total,
-		third1Pixels:     third,
-		third2Pixels:     third,
-		third3Pixels:     third3,
-		body:             body,
+		nonce:             sm.mainNonce,
+		totalPixels:       total,
+		third1Pixels:      third,
+		third2Pixels:      third,
+		third3Pixels:      third3,
+		body:              body,
 		regionBodyOffsets: [3]int{0, third * Channels, 2 * third * Channels},
 		regionBodyEnds:    [3]int{third * Channels, 2 * third * Channels, total * Channels},
 		regionPixelStarts: [3]int{0, third, 2 * third},
@@ -313,15 +310,16 @@ func TestRedTeamNonceReuseLayerAHistogram(t *testing.T) {
 					t.Fatalf("Encrypt p2: %v", err)
 				}
 				// Sanity: nonces collide (lab assumption in effect).
-				if string(c1[:NonceSize]) != string(c2[:NonceSize]) {
+				layout := decodeWireNR(c1)
+				layout2 := decodeWireNR(c2)
+				if string(layout.nonce) != string(layout2.nonce) {
 					t.Fatalf("nonce did not collide — setBrokenTestNonce override lost")
 				}
-				layout := decodeWireNR(c1)
-				// Only the container body enters the statistic — nonce +
+				// Only the container body enters the statistic — the
+				// prefix carries no plaintext dependence, and nonce +
 				// dim-header bytes carry no XOR signal (identical bytes
 				// XOR to zero and would over-count the "zero rate").
-				bodyXor := xorBytes(c1[NonceSize+4:NonceSize+4+layout.totalPixels*Channels],
-					c2[NonceSize+4:NonceSize+4+layout.totalPixels*Channels])
+				bodyXor := xorBytes(layout.body, layout2.body)
 				xorAll = append(xorAll, bodyXor...)
 				for _, b := range bodyXor {
 					if b == 0 {
@@ -459,7 +457,7 @@ func TestRedTeamNonceReuseLayerANaiveKPA(t *testing.T) {
 		Shape         string  `json:"shape"`
 		Pairs         int     `json:"pairs"`
 		ProbePixels   int     `json:"probe_pixels"`
-		Region         int     `json:"region"`
+		Region        int     `json:"region"`
 		BestMatchesMx int     `json:"max_matches_across_startPixels"`
 		AvgFullAnchor float64 `json:"avg_startPixels_fully_anchoring"`
 	}
@@ -498,8 +496,7 @@ func TestRedTeamNonceReuseLayerANaiveKPA(t *testing.T) {
 					t.Fatalf("Encrypt p2: %v", err)
 				}
 				layout := decodeWireNR(c1)
-				bodyXor := xorBytes(layout.body[:layout.totalPixels*Channels],
-					c2[NonceSize+4:NonceSize+4+layout.totalPixels*Channels])
+				bodyXor := xorBytes(layout.body, decodeWireNR(c2).body)
 				plainXor := xorBytes(p1, p2)
 
 				for si := 0; si < 3; si++ {
@@ -525,7 +522,7 @@ func TestRedTeamNonceReuseLayerANaiveKPA(t *testing.T) {
 					Shape:         shape,
 					Pairs:         pairs,
 					ProbePixels:   probePixels,
-					Region:         si,
+					Region:        si,
 					BestMatchesMx: maxAcrossPairs[si],
 					AvgFullAnchor: float64(sumFullAnchor[si]) / float64(pairs),
 				})
@@ -662,8 +659,7 @@ func TestRedTeamNonceReuseLayerBQuietChunk(t *testing.T) {
 		t.Fatalf("Encrypt p2: %v", err)
 	}
 	layout := decodeWireNR(c1)
-	bodyXor := xorBytes(layout.body[:layout.totalPixels*Channels],
-		c2[NonceSize+4:NonceSize+4+layout.totalPixels*Channels])
+	bodyXor := xorBytes(layout.body, decodeWireNR(c2).body)
 
 	// [lab-peek: sp_i] — documented single lab exception for Layer B.
 	sp := grantStartPixelsLabPeek(layout.nonce, layout.regionPixels, s1, s2, s3)
@@ -680,7 +676,7 @@ func TestRedTeamNonceReuseLayerBQuietChunk(t *testing.T) {
 	// used only in the terminal-stage validation printout at the end,
 	// tagged [audit]).
 	type regionResult struct {
-		Region              int     `json:"region"`
+		Region             int     `json:"region"`
 		Pixels             int     `json:"region_pixels"`
 		StartPixel         int     `json:"start_pixel"`
 		QuietCandidateNumr int     `json:"quiet_candidate_pixels"`
@@ -713,7 +709,7 @@ func TestRedTeamNonceReuseLayerBQuietChunk(t *testing.T) {
 			avgLog2 = sumLog2 / float64(quietCount)
 		}
 		results = append(results, regionResult{
-			Region:              si,
+			Region:             si,
 			Pixels:             layout.regionPixels[si],
 			StartPixel:         sp[si],
 			QuietCandidateNumr: quietCandidates,
@@ -745,7 +741,7 @@ func TestRedTeamNonceReuseLayerBQuietChunk(t *testing.T) {
 		"plaintext_size":      size,
 		"differing_chunk":     midChunkOff,
 		"plain_xor_HW_bits":   xorHW,
-		"per_region":           results,
+		"per_region":          results,
 		"quiet_expectation":   "if all pixels were quiet, per pixel np is pinned (8 candidates) since noise bit at np is random and always the only nonzero bit; r is unconstrained → per pixel candidates = 8 (log2 = 3)",
 		"barrier_expectation": "under the interlock, 'quiet region XOR' at a chunk is guaranteed for chunks where P1_chunk==P2_chunk regardless of masks — but the plaintext-chunk-to-region-payload-byte alignment is byte-boundary-aware. A region pixel spans ~7 region payload bytes ≈ 3.5 plaintext chunks worth of split bits, so 'fully quiet' pixel count is fewer than 'candidate quiet' pixel count.",
 	})
@@ -783,8 +779,7 @@ func TestRedTeamNonceReuseLayerBRandomPair(t *testing.T) {
 		t.Fatalf("Encrypt p2: %v", err)
 	}
 	layout := decodeWireNR(c1)
-	bodyXor := xorBytes(layout.body[:layout.totalPixels*Channels],
-		c2[NonceSize+4:NonceSize+4+layout.totalPixels*Channels])
+	bodyXor := xorBytes(layout.body, decodeWireNR(c2).body)
 
 	// [lab-peek: sp_i] — documented single lab exception, matches the
 	// Quiet-Chunk probe's peek.
@@ -795,7 +790,7 @@ func TestRedTeamNonceReuseLayerBRandomPair(t *testing.T) {
 	// pixel across the whole region (payload-order irrelevant here
 	// because the floor is measured, not the recovery rate).
 	type regionResult struct {
-		Region              int     `json:"region"`
+		Region             int     `json:"region"`
 		Pixels             int     `json:"region_pixels"`
 		AnyCandidatePixels int     `json:"pixels_with_at_least_1_np_r_admitting_allzero"`
 		AllCandidatePixels int     `json:"pixels_with_all_56_admitting_allzero"`
@@ -818,7 +813,7 @@ func TestRedTeamNonceReuseLayerBRandomPair(t *testing.T) {
 			sumC += cnt
 		}
 		results = append(results, regionResult{
-			Region:              si,
+			Region:             si,
 			Pixels:             layout.regionPixels[si],
 			AnyCandidatePixels: anyC,
 			AllCandidatePixels: allC,
@@ -832,7 +827,7 @@ func TestRedTeamNonceReuseLayerBRandomPair(t *testing.T) {
 		"threat_model": "nonce_reuse+full_kpa+startPixel_labpeek",
 		"primitive":    "fnv1a128BrokenLab",
 		"key_bits":     keyBits,
-		"per_region":    results,
+		"per_region":   results,
 	})
 }
 
@@ -886,8 +881,7 @@ func TestRedTeamNonceReuseLayerBMaskOraclePeek(t *testing.T) {
 		t.Fatalf("Encrypt p2: %v", err)
 	}
 	layout := decodeWireNR(c1)
-	bodyXor := xorBytes(layout.body[:layout.totalPixels*Channels],
-		c2[NonceSize+4:NonceSize+4+layout.totalPixels*Channels])
+	bodyXor := xorBytes(layout.body, decodeWireNR(c2).body)
 
 	// [lab-peek: sp_i] and [lab-peek: masks] — this is the mask-oracle
 	// upper-bound probe. The revelation is documented in the test
@@ -915,11 +909,17 @@ func TestRedTeamNonceReuseLayerBMaskOraclePeek(t *testing.T) {
 	splitForTriple48LockedInto(nil, p1, bp, l0a, l1a, l2a)
 	splitForTriple48LockedInto(nil, p2, bp, l0b, l1b, l2b)
 	// COBS-encode per region lane to get the deterministic byte prefix.
-	cobsLane := func(lane []byte) []byte {
-		return cobsEncodeInto(make([]byte, cobsEncodeBound(len(lane))), lane)
+	// The encoder prepends lane i's interlock-nonce fragment to the
+	// barrier output before COBS. The fragment is the interlock nonce,
+	// which the forced-collision override makes equal to the main nonce;
+	// it is consumed here inside the existing [lab-peek: masks] grant.
+	fragLens, fragOffs := nonceSplit(len(layout.nonce))
+	cobsLane := func(i int, lane []byte) []byte {
+		full := append(append([]byte(nil), layout.nonce[fragOffs[i]:fragOffs[i]+fragLens[i]]...), lane...)
+		return cobsEncodeInto(make([]byte, cobsEncodeBound(len(full))), full)
 	}
-	regionCobs1 := [3][]byte{cobsLane(l0a), cobsLane(l1a), cobsLane(l2a)}
-	regionCobs2 := [3][]byte{cobsLane(l0b), cobsLane(l1b), cobsLane(l2b)}
+	regionCobs1 := [3][]byte{cobsLane(0, l0a), cobsLane(1, l1a), cobsLane(2, l2a)}
+	regionCobs2 := [3][]byte{cobsLane(0, l0b), cobsLane(1, l1b), cobsLane(2, l2b)}
 	// The deterministic prefix per region is min(len(cobs1), len(cobs2))
 	// (the terminator sits at position max(...) actually but the safer
 	// bound is min). Beyond that byte, region payload includes the 0x00
@@ -939,7 +939,7 @@ func TestRedTeamNonceReuseLayerBMaskOraclePeek(t *testing.T) {
 	}
 
 	type regionResult struct {
-		Region              int `json:"region"`
+		Region             int `json:"region"`
 		Pixels             int `json:"region_pixels"`
 		StartPixel         int `json:"start_pixel"`
 		ProbedPixels       int `json:"pixels_probed_within_deterministic_prefix"`
@@ -990,7 +990,7 @@ func TestRedTeamNonceReuseLayerBMaskOraclePeek(t *testing.T) {
 			probed++
 		}
 		results = append(results, regionResult{
-			Region:              si,
+			Region:             si,
 			Pixels:             layout.regionPixels[si],
 			StartPixel:         sp[si],
 			ProbedPixels:       probed,
@@ -1005,7 +1005,7 @@ func TestRedTeamNonceReuseLayerBMaskOraclePeek(t *testing.T) {
 		"threat_model": "nonce_reuse+full_kpa+startPixel_peek+MASK_ORACLE_PEEK (upper bound, NOT attacker-realistic)",
 		"primitive":    "fnv1a128BrokenLab",
 		"key_bits":     keyBits,
-		"per_region":    results,
+		"per_region":   results,
 		"note":         "This probe reveals BOTH the startPixels and the interlock mask triples to the attacker. Results are the upper bound of what the archived demasker Layer 1 can recover IF a hypothetical primitive break gave the attacker the lockSeed. Under attacker-realistic inputs (no mask peek), the recovery rate drops to the Layer B random floor.",
 	})
 }
@@ -1076,14 +1076,14 @@ func TestRedTeamNonceReuseLayerDMultiPair(t *testing.T) {
 	// leaks a fixed bit, distinct count drops sharply on the leaked bit.
 
 	type posStat struct {
-		Region        int `json:"region"`
-		PosInRegion   int `json:"pos_in_region"`
+		Region       int `json:"region"`
+		PosInRegion  int `json:"pos_in_region"`
 		DistinctVals int `json:"distinct_byte_values"`
 	}
 	// Aggregate distinct-values across the whole region body.
 	type regionStat struct {
-		Region              int     `json:"region"`
-		RegionBytes         int     `json:"region_body_bytes"`
+		Region             int     `json:"region"`
+		RegionBytes        int     `json:"region_body_bytes"`
 		Ns                 int     `json:"pairs_N"`
 		MeanDistinctPerPos float64 `json:"mean_distinct_byte_values_per_position"`
 		MinDistinctPerPos  int     `json:"min_distinct_byte_values_per_position"`
@@ -1111,7 +1111,7 @@ func TestRedTeamNonceReuseLayerDMultiPair(t *testing.T) {
 		for pos := 0; pos < npos; pos++ {
 			seen := make(map[byte]struct{}, N)
 			for i := 0; i < N; i++ {
-				body := cts[i][NonceSize+4:]
+				body := decodeWireNR(cts[i]).body
 				seen[body[off+pos]] = struct{}{}
 			}
 			distinctCounts[pos] = len(seen)
@@ -1136,8 +1136,8 @@ func TestRedTeamNonceReuseLayerDMultiPair(t *testing.T) {
 		}
 		mean /= float64(len(distinctCounts))
 		sstats = append(sstats, regionStat{
-			Region:              si,
-			RegionBytes:         npos,
+			Region:             si,
+			RegionBytes:        npos,
 			Ns:                 N,
 			MeanDistinctPerPos: mean,
 			MinDistinctPerPos:  distinctCounts[0],
@@ -1158,7 +1158,7 @@ func TestRedTeamNonceReuseLayerDMultiPair(t *testing.T) {
 		"primitive":     "fnv1a128BrokenLab",
 		"key_bits":      keyBits,
 		"pairs_N":       N,
-		"per_region":     sstats,
+		"per_region":    sstats,
 		"floor_formula": "under uniform per-position bytes, expected distinct at N draws = 256*(1 - (255/256)^N)",
 	})
 }
@@ -1209,8 +1209,7 @@ func TestRedTeamNonceReuseLayerCFNVAlgebraic(t *testing.T) {
 		t.Fatalf("Encrypt p2: %v", err)
 	}
 	layout := decodeWireNR(c1)
-	bodyXor := xorBytes(layout.body[:layout.totalPixels*Channels],
-		c2[NonceSize+4:NonceSize+4+layout.totalPixels*Channels])
+	bodyXor := xorBytes(layout.body, decodeWireNR(c2).body)
 
 	// [lab-peek: sp_i] — same documented Layer B lab exception. Even with
 	// this peek granted, Layer C's precondition (recovered channelXOR
@@ -1226,7 +1225,7 @@ func TestRedTeamNonceReuseLayerCFNVAlgebraic(t *testing.T) {
 	// == plaintext_XOR_byte[b]). No lockSeed peek.
 	plainXor := xorBytes(p1, p2)
 	type regionResult struct {
-		Region             int     `json:"region"`
+		Region            int     `json:"region"`
 		Pixels            int     `json:"region_pixels"`
 		StartPixel        int     `json:"start_pixel"`
 		UniqueRecovered   int     `json:"pixels_with_unique_np_r"`
@@ -1271,7 +1270,7 @@ func TestRedTeamNonceReuseLayerCFNVAlgebraic(t *testing.T) {
 			avgC = float64(sumC) / float64(admC)
 		}
 		results = append(results, regionResult{
-			Region:             si,
+			Region:            si,
 			Pixels:            layout.regionPixels[si],
 			StartPixel:        sp[si],
 			UniqueRecovered:   unique,
@@ -1285,7 +1284,7 @@ func TestRedTeamNonceReuseLayerCFNVAlgebraic(t *testing.T) {
 		"threat_model": "nonce_reuse+full_kpa+startPixel_labpeek+NAIVE_mask_assumption (no mask peek)",
 		"primitive":    "fnv1a128BrokenLab",
 		"key_bits":     keyBits,
-		"per_region":    results,
+		"per_region":   results,
 		"conclusion":   "Layer C (FNV-1a algebraic seed recovery from reconstructed ChainHash stream) is architecturally foreclosed by Layer 1 failure under the attacker-realistic no-mask-peek assumption. Under the mask-oracle upper-bound peek (Layer B'), Layer C is not further neutralised by the barrier — the closure lives in the mask, not in the pixel layer.",
 	})
 	_ = fmt.Sprintf // keep import if pruning
@@ -1462,9 +1461,8 @@ func TestRedTeamNonceReuseCrossMessageDecrypt(t *testing.T) {
 		t.Fatalf("Encrypt p3: %v", err)
 	}
 	layout := decodeWireNR(c1)
-	bodyXor12 := xorBytes(layout.body[:layout.totalPixels*Channels],
-		c2[NonceSize+4:NonceSize+4+layout.totalPixels*Channels])
-	c3Body := c3[NonceSize+4 : NonceSize+4+layout.totalPixels*Channels]
+	bodyXor12 := xorBytes(layout.body, decodeWireNR(c2).body)
+	c3Body := decodeWireNR(c3).body
 
 	// Regime A — attacker-realistic (no lab peek). Attacker has C1, C2,
 	// C3, P1, P2 and tries to decrypt P3 by first recovering the
@@ -1618,7 +1616,7 @@ func TestRedTeamNonceReuseCrossMessageDecrypt(t *testing.T) {
 	// pipeline applies to C3 and decrypts region payload → interleaves
 	// the 3 recovered region payloads through the mask-oracle inverse to
 	// yield P3.
-	regimeBPrime := func() (matchBytes, totalBytes int) {
+	regimeBPrime := func() (matchBytes, totalBytes, headMatch, headTotal int) {
 		// [lab-peek: sp_i] + [lab-peek: masks]
 		sp := grantStartPixelsLabPeek(layout.nonce, layout.regionPixels, s1, s2, s3)
 		bp := buildLockBatchPRF48_128Cfg(nil, ls, layout.nonce)
@@ -1630,11 +1628,13 @@ func TestRedTeamNonceReuseCrossMessageDecrypt(t *testing.T) {
 		p2Lanes := [3][]byte{make([]byte, n2), make([]byte, n2), make([]byte, n2)}
 		splitForTriple48LockedInto(nil, p1, bp, p1Lanes[0], p1Lanes[1], p1Lanes[2])
 		splitForTriple48LockedInto(nil, p2, bp, p2Lanes[0], p2Lanes[1], p2Lanes[2])
-		cobsLane := func(lane []byte) []byte {
-			return cobsEncodeInto(make([]byte, cobsEncodeBound(len(lane))), lane)
+		fragLens, fragOffs := nonceSplit(len(layout.nonce))
+		cobsLane := func(i int, lane []byte) []byte {
+			full := append(append([]byte(nil), layout.nonce[fragOffs[i]:fragOffs[i]+fragLens[i]]...), lane...)
+			return cobsEncodeInto(make([]byte, cobsEncodeBound(len(full))), full)
 		}
-		regionCobs1 := [3][]byte{cobsLane(p1Lanes[0]), cobsLane(p1Lanes[1]), cobsLane(p1Lanes[2])}
-		regionCobs2 := [3][]byte{cobsLane(p2Lanes[0]), cobsLane(p2Lanes[1]), cobsLane(p2Lanes[2])}
+		regionCobs1 := [3][]byte{cobsLane(0, p1Lanes[0]), cobsLane(1, p1Lanes[1]), cobsLane(2, p1Lanes[2])}
+		regionCobs2 := [3][]byte{cobsLane(0, p2Lanes[0]), cobsLane(1, p2Lanes[1]), cobsLane(2, p2Lanes[2])}
 		regionPayloadXor := [3][]byte{}
 		for i := 0; i < 3; i++ {
 			n := min3(len(regionCobs1[i]), len(regionCobs2[i]))
@@ -1680,19 +1680,33 @@ func TestRedTeamNonceReuseCrossMessageDecrypt(t *testing.T) {
 		n3 := tripleLaneLen(len(p3))
 		p3Lanes := [3][]byte{make([]byte, n3), make([]byte, n3), make([]byte, n3)}
 		splitForTriple48LockedInto(nil, p3, bp, p3Lanes[0], p3Lanes[1], p3Lanes[2])
-		p3Cobs := [3][]byte{cobsLane(p3Lanes[0]), cobsLane(p3Lanes[1]), cobsLane(p3Lanes[2])}
+		p3Cobs := [3][]byte{cobsLane(0, p3Lanes[0]), cobsLane(1, p3Lanes[1]), cobsLane(2, p3Lanes[2])}
 
 		// Attacker uses lab peek to sizeknow, but doesn't know exact
 		// content — that IS the decrypt problem. Compare the recovered
 		// region payload bytes to the true region payload bytes (cobs,
 		// pre-terminator) — the length is known via the lab peek here.
+		//
+		// Lane byte k ≤ fragLens[si] is the COBS code byte or an
+		// interlock-nonce fragment byte (the forced nonce carries no
+		// zero byte, so COBS inserts no code byte inside the fragment);
+		// every later byte is lane content. The head bytes are
+		// deterministic under the collision and XOR to zero across the
+		// pair, so they are counted apart from the content bytes.
 		for si := 0; si < 3; si++ {
 			trueLen := len(p3Cobs[si])
 			for k := 0; k < trueLen && k < len(recoveredRegionBytes[si]); k++ {
+				head := k <= fragLens[si]
 				if recoveredRegionBytes[si][k] == p3Cobs[si][k] {
 					matchBytes++
+					if head {
+						headMatch++
+					}
 				}
 				totalBytes++
+				if head {
+					headTotal++
+				}
 			}
 		}
 		return
@@ -1700,7 +1714,7 @@ func TestRedTeamNonceReuseCrossMessageDecrypt(t *testing.T) {
 
 	amb, atot := regimeA()
 	bmb, btot := regimeB()
-	bpmb, bptot := regimeBPrime()
+	bpmb, bptot, bphm, bpht := regimeBPrime()
 	rate := func(m, t int) float64 {
 		if t == 0 {
 			return 0
@@ -1710,6 +1724,8 @@ func TestRedTeamNonceReuseCrossMessageDecrypt(t *testing.T) {
 	t.Logf("Cross-message decrypt: regime A (no peek)      matched %d/%d bytes (%.4f)", amb, atot, rate(amb, atot))
 	t.Logf("Cross-message decrypt: regime B (sp peek)      matched %d/%d bytes (%.4f)", bmb, btot, rate(bmb, btot))
 	t.Logf("Cross-message decrypt: regime B' (sp+mask peek) matched %d/%d bytes (%.4f)", bpmb, bptot, rate(bpmb, bptot))
+	t.Logf("Cross-message decrypt: regime B' split — content %d/%d bytes (%.4f); code byte + interlock-nonce fragment %d/%d bytes (%.4f)",
+		bpmb-bphm, bptot-bpht, rate(bpmb-bphm, bptot-bpht), bphm, bpht, rate(bphm, bpht))
 	emitJSONNR(t, "cross_message_decrypt", map[string]any{
 		"threat_model":   "nonce_reuse+full_kpa(P1,P2 known); attacker attempts to decrypt bytes of P3 encrypted under same seeds+same forced nonce",
 		"primitive":      "fnv1a128BrokenLab",
@@ -1726,10 +1742,16 @@ func TestRedTeamNonceReuseCrossMessageDecrypt(t *testing.T) {
 			"match_rate":  rate(bmb, btot),
 		},
 		"regime_B_prime_mask_oracle_peek": map[string]any{
-			"match_bytes": bpmb,
-			"total_bytes": bptot,
-			"match_rate":  rate(bpmb, bptot),
-			"note":        "Upper bound only — attacker does NOT hold the mask oracle. Included to quantify what the barrier's mask secrecy is worth.",
+			"match_bytes":         bpmb,
+			"total_bytes":         bptot,
+			"match_rate":          rate(bpmb, bptot),
+			"content_match_bytes": bpmb - bphm,
+			"content_total_bytes": bptot - bpht,
+			"content_match_rate":  rate(bpmb-bphm, bptot-bpht),
+			"head_match_bytes":    bphm,
+			"head_total_bytes":    bpht,
+			"head_match_rate":     rate(bphm, bpht),
+			"note":                "Upper bound only — attacker does NOT hold the mask oracle. Included to quantify what the barrier's mask secrecy is worth. head = COBS code byte + interlock-nonce fragment bytes per lane; content = the remaining lane bytes.",
 		},
 	})
 }

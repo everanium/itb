@@ -24,7 +24,7 @@ Attacker knowledge needed:
   * K_noise_bits_0_2 (3-bit, from crib_crc128_kpa_full.py)
   * One short known-plaintext crib (7-byte minimum) to anchor startPixel
     against the target ciphertext
-  * Nonce + W × H from the 20-byte ITB ciphertext header (public)
+  * Nonce + W × H from the ITB ciphertext header after the 32-byte prefix (public)
 
 NOT required:
   * No demasker, no nonce reuse, no bias probe
@@ -230,7 +230,9 @@ def main() -> int:
     total_pixels = int(meta["total_pixels"])
     ct_path = args.cell_dir / "ct_0000.bin"
     raw = ct_path.read_bytes()
-    body = raw[20:]
+    prefix_size = int(meta.get("prefix_size", 32))
+    header_size = int(meta.get("header_size", len(nonce) + 4))
+    body = raw[prefix_size + header_size:]
     crib = bytes.fromhex(args.crib_hex)
     if len(crib) < 7 or len(crib) % 7 != 0:
         print(f"ERROR: --crib-hex must be a multiple of 7 bytes (≥7), got {len(crib)}",

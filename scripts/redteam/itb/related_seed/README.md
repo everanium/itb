@@ -61,11 +61,20 @@ JSON records for later cross-check, never in a decision path.
 The barrier's related-seed diffusion property is **confined to
 the lockSeed axis**:
 
-- **lockSeed axis, both primitives**: χ² ≈ 200-635 across every Δ
-  pattern and plaintext kind — inside the df=255 uniform band. A 1-bit
+- **lockSeed axis, both primitives**: χ² ≈ 300-800 across the Δ
+  patterns the primitive carries into the masks and both plaintext
+  kinds — within a few multiples of the df=255 uniform band top. A 1-bit
   Δ on lockSeed re-derives the interlock's per-chunk permutation
   entirely, avalanching the plaintext-byte-to-region split and
-  randomising every touched pixel byte's 7 data bits.
+  randomising every touched pixel byte's 7 data bits. The bit_high
+  pattern (top bit of the last component, the high word of the final
+  ChainHash round) is a null Δ under FNV-1a on this axis: the flip
+  survives `deriveInterLockSeed` at bit 127 and is cancelled when the
+  `[K ‖ components]` cascade XORs the flipped component back in at its
+  last round, so that cell sits at the no-Δ floor (56.3M), not above it.
+  On every other axis bit_high is a null Δ for both primitives (only
+  `hLo` is consumed there; neither lab primitive carries a high-word
+  change into the low word).
 - **Every other seed axis** (noiseSeed / dataSeed_i / startSeed_i):
   χ² 19-56M range. **The no-Δ architectural floor** measured by
   `TestRedTeamRelatedSeedNoDeltaFloor` under identical seeds is

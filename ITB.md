@@ -141,7 +141,7 @@ Each lane byte is split across 2 channels (`gcd(7, 8) = 1`). Each channel contai
 **What the attacker sees:**
 
 ```
-Output: [main_nonce][W][H][container] (uniform random bytes)
+Output: [prefix(32)][main_nonce][W][H][container] (uniform random bytes)
 
 ┌──────────────────────────────────────────────────────┐
 │ dddddddddddddddddddddddddddddddddddddddddddddddddd  │
@@ -155,7 +155,17 @@ Output: [main_nonce][W][H][container] (uniform random bytes)
   No visible data/fill boundary (all three hidden).
 ```
 
-**Decryption.** The header `[main_nonce][W][H]` is parsed, and the container is split into thirds. Three parallel goroutines invert the Pixel Barrier (noise strip, inverse rotation, XOR unmask) and COBS-decode the lane payloads. The leading interlock-nonce fragments are reassembled. Then `interleaveTriple48LockedBatch` reconstructs the 48-bit chunks using mask triples derived from `lockSeed` and `interlock_nonce`, and the 4-byte length prefix is removed to restore the exact original plaintext.
+**Container geometry and floor modes.** Containers are square grids (`W = H = side`) sized to accommodate the three region payloads alongside the DRBG barrier fill margin (`DefaultBarrierFill = 1`):
+`side = s + 1`, where `s = ⌈√totalPixels⌉`.
+
+To resist chosen-ciphertext ambiguity reduction, the minimum pixel count enforces `MinPixels = ⌈keyBits / log₂7⌉` (183 / 365 / 730 pixels for 512 / 1024 / 2048-bit keys), ensuring `7^P > 2^keyBits`. Container sizing operates under two modes:
+
+- **Mode 1 (Per-Region, default):** Each of the three regions independently satisfies `MinPixels`. Small messages clamp to `3 × MinPixels` data pixels, yielding a 35 × 35 container (1,225 pixels) at 1024-bit keys.
+- **Mode 2 (Per-Container, compact mode):** The ambiguity floor is evaluated jointly across the container (`totalPixels = max(3 × maxDataThirdPixels, MinPixels)`). Small messages clamp to `MinPixels` total pixels, yielding a 21 × 21 container (441 pixels) at 1024-bit keys, reducing wire overhead for MTU-constrained networks.
+
+Both modes converge to identical dimensions once payload volume exceeds the floor. Decoders parse `W` and `H` directly from the frame header; decryption is mode-independent and handles ciphertexts from either mode without configuration.
+
+**Decryption.** After the 32-byte prefix, the header `[main_nonce][W][H]` is parsed, and the container is split into thirds. Three parallel goroutines invert the Pixel Barrier (noise strip, inverse rotation, XOR unmask) and COBS-decode the lane payloads. The leading interlock-nonce fragments are reassembled. Then `interleaveTriple48LockedBatch` reconstructs the 48-bit chunks using mask triples derived from `lockSeed` and `interlock_nonce`, and the 4-byte length prefix is removed to restore the exact original plaintext.
 
 ## 6. Under Normal Use: Attack Resistance Summary
 
@@ -199,7 +209,7 @@ Full KPA (where the attacker knows the entire plaintext) is the standard cryptog
 
 | Condition | Result |
 |---|---|
-| Full KPA + invertible primitive | Rank Barrier permutation and multi-seed coupling foreclose SAT-based seed recovery at instance formulation. Bitwuzla returns UNSAT even under maximum-peek regimes (see [REDTEAM.md § FNV-1a lo-lane SAT](REDTEAM.md#fnv-1a-lo-lane-sat--architecturally-foreclosed)). |
+| Full KPA + invertible primitive | Rank Barrier permutation and multi-seed coupling foreclose SAT-based seed recovery at instance formulation. Bitwuzla does not recover the true seed even under maximum-peek regimes (see [REDTEAM.md § FNV-1a lo-lane SAT](REDTEAM.md#fnv-1a-lo-lane-sat--architecturally-foreclosed)). |
 | Full KPA + PRF (non-invertible) | Inversion is infeasible. Work factor reduces to brute-force: `P × 2^(2·keyBits)` (Core ITB) or `P × 2^keyBits` (MAC + Reveal), plus per-chunk mask space (≈ 2^70.20 per chunk). |
 
 Without the barrier, an attacker could test 56 candidates per pixel, invert the hash to recover candidate seeds, and verify across pixels. Under a PRF, candidate verification is infeasible. Under an invertible primitive, the Rank Barrier removes the fixed position-to-lane mapping needed to verify on a second pixel.
@@ -235,7 +245,7 @@ Under CCA (chosen ciphertext with MAC verification feedback), bit-flipping revea
 
 With noise positions known, candidate configurations drop from 56 to 7 per pixel (rotation unknown). Without an invertible hash, the attacker cannot verify candidates, and the per-chunk permutation remains unobservable.
 
-**DRBG residue in data positions (Theorem 10).** Stripping noise bits exposes 7 data bits per channel, but these contain a mixture of encrypted payload and encrypted DRBG fill bytes, processed identically by `dataSeed`. Because containers enforce dimensions `(s+1) × (s+1)` where `s = ⌈√max(dataPixels, MinPixels)⌉`, capacity strictly exceeds payload: `gap ≥ (2s + 1) × 7 bytes > 0` ([Proof 10](PROOFS.md#proof-10-guaranteed-drbg-residue-no-perfect-fill), [SCIENCE.md § 2.9](SCIENCE.md#29-guaranteed-drbg-residue-theorem-10)). For the composite container at 1024-bit key (`MinPixels = 365` per region, `35 × 35 = 1225` pixels), `gap ≥ 483 bytes`; for the theoretical single-region floor (`20 × 20 = 400` pixels), `gap ≥ 273 bytes`. The attacker cannot distinguish payload from fill without `dataSeed`.
+**DRBG residue in data positions (Theorem 10).** Stripping noise bits exposes 7 data bits per channel, but these contain a mixture of encrypted payload and encrypted DRBG fill bytes, processed identically by `dataSeed`. Because containers enforce dimensions `(s+1) × (s+1)` where `s = ⌈√totalPixels⌉` and `totalPixels` satisfies the ambiguity floor `MinPixels = ⌈keyBits / log₂(7)⌉`, capacity strictly exceeds payload: `gap ≥ (2s + 1) × 7 bytes > 0` ([Proof 10](PROOFS.md#proof-10-guaranteed-drbg-residue-no-perfect-fill), [SCIENCE.md § 2.9](SCIENCE.md#29-guaranteed-drbg-residue-theorem-10)). At 1024-bit keys (`MinPixels = 365`), Mode 1 (per-region, `3 × 365 = 1095` pixels, `s = 34`, container `35 × 35 = 1225` pixels) yields `gap ≥ 483 bytes`; Mode 2 (per-container, `totalPixels = 365`, `s = 20`, container `21 × 21 = 441` pixels) yields `gap ≥ 287 bytes`. The attacker cannot distinguish payload from fill without `dataSeed`.
 
 CCA leaks 3/62 ≈ 4.8 % of per-pixel configuration, reducing brute-force complexity from `P × 2^(2·keyBits)` to `P × 2^keyBits` (eliminating `noiseSeed`). No plaintext, XOR masks, offsets, or permutations are leaked.
 
@@ -307,12 +317,13 @@ Unlike AES or ChaCha20 where testing a key takes nanoseconds on a single block, 
 
 | Data size | P (pixels) | Time per attempt | vs AES |
 |---|---|---|---|
-| Min container (payload ≤ ~7.5 KB, 1024-bit key) | 1,225 | ~196 µs | ~196,000× slower |
+| Min container (Mode 1, payload ≤ ~7.9 KB, 1024-bit key) | 1,225 | ~196 µs | ~196,000× slower |
+| Min container (Mode 2, payload ≤ ~2.6 KB, 1024-bit key) | 441 | ~70 µs | ~70,000× slower |
 | 4 MB | 603,729 | ~96 ms | ~96 million× slower |
 | 16 MB | 2,411,809 | ~385 ms | ~385 million× slower |
 | 64 MB | 9,634,816 | ~1.5 s | ~1.5 billion× slower |
 
-Estimates assume a 1024-bit key (~10 ns per hash round on modern hardware, 8 sequential ChainHash rounds per pixel) plus per-chunk combinadic unranking. ChainHash rounds are strictly sequential and cannot be parallelized.
+Estimates assume a 1024-bit key (128-bit primitive, ~10 ns per hash round on modern hardware, 8 sequential ChainHash rounds per pixel) plus per-chunk combinadic unranking. ChainHash rounds are strictly sequential and cannot be parallelized.
 
 ## 15. Barrier and PRF: Symbiosis
 
@@ -328,7 +339,7 @@ Together, non-invertibility blocks inversion, and the barrier absorbs primitive 
 
 Decryption with an incorrect seed constellation produces uniform random bytes with no distinguishing signal:
 
-- **No magic bytes or file headers:** Wire containers consist solely of `[main_nonce][W][H][container]`.
+- **No magic bytes or file headers:** Wire containers consist solely of `[prefix(32)][main_nonce][W][H][container]`, the prefix being CSPRNG output.
 - **No plaintext length header:** Length metadata is encrypted inside the container across chunk boundaries.
 - **Encrypted null terminator:** COBS termination is hidden within the ciphertext.
 - **No padding:** Rotation and XOR masking provide confidentiality without padding markers.
