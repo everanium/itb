@@ -61,8 +61,9 @@ or the 8-slot `mixed_hashes` comma list, `key_bits`, `nonce_bits`
 and `barrier_fill` (the two Init-time runtime globals — nonce width
 and DRBG barrier fill margin — the sender's Pipeline runs with,
 populated from the blob's inner Blob{N} snapshot), `container_mode`,
-`drbg` (the DRBG fill primitive the recipe states; `(default)` when
-the blob leaves the choice to the auto tier), `mac_name`
+`drbg` (the DRBG fill primitive the recipe states; `(auto: <cipher> on
+this host)` when the blob leaves the choice to the auto tier, which
+each host resolves for itself at encryption time), `mac_name`
 (`(none)` for a No MAC profile), `tag_stub_size` when set,
 `chunk_size` for streaming modes (`(default)` when the profile
 inherits the compile-in default), `wrapper` / `wrapper_cipher`,
@@ -84,7 +85,7 @@ inherits the compile-in default), `wrapper` / `wrapper_cipher`,
   container carrier noise and the lane residue on the encrypt path
   (`itb3 drbgs` lists the accepted names); the choice is written into
   the blob's recipe, so every Pipeline reopened from the blob encrypts
-  under it. Omitted, the auto tier applies (AES-CTR where the host has
+  under it. Omitted, the auto tier applies (AES-256-CTR where the host has
   hardware AES, ChaCha20 otherwise). A build older than the recipe
   key refuses a blob that states a choice; a blob without the key
   loads everywhere.

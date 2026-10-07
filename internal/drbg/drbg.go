@@ -18,7 +18,7 @@
 // primitive is chosen by name ([FillWith]) from the set [Names]
 // reports:
 //
-//   - "" (the default, [Fill]) — the auto tier: AES-CTR
+//   - "" (the default, [Fill]) — the auto tier: AES-256-CTR
 //     (crypto/aes + cipher.NewCTR, AES-256 under a 48-byte seed) on
 //     hosts with AES-NI / ARMv8-AES, ChaCha20 (RFC 8439, 44-byte seed)
 //     everywhere else, decided at package init from the host feature
@@ -49,7 +49,7 @@
 // make() slice).
 //
 // Fill is a performance choice as much as a policy one: on a host with
-// hardware AES the AES-CTR tier runs several GB/s per goroutine, while
+// hardware AES the AES-256-CTR tier runs several GB/s per goroutine, while
 // a hash primitive in counter mode runs at that primitive's own rate.
 // An operator selecting a slow fill under a fast inner primitive pays
 // the difference on every encrypt.
@@ -109,7 +109,7 @@ func init() {
 
 // pickTier resolves the fill worker for this build's tier ladder. Env
 // override wins when the requested tier is supported; otherwise the
-// auto-select ladder chooses AES-CTR on hardware with AES acceleration
+// auto-select ladder chooses AES-256-CTR on hardware with AES acceleration
 // and ChaCha20 everywhere else.
 func pickTier() (fillFn, string) {
 	forced := strings.ToLower(strings.TrimSpace(os.Getenv("ITB_DRBG_TIER")))

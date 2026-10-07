@@ -89,7 +89,7 @@ func renderInspect(prof triple.Profile, blobLen int, out io.Writer) {
 	if prof.DRBG != "" {
 		fmt.Fprintf(out, "drbg: %s\n", prof.DRBG)
 	} else {
-		fmt.Fprintln(out, "drbg: (default)")
+		fmt.Fprintf(out, "drbg: (auto: %s on this host)\n", autoTierLabel())
 	}
 	if prof.MacName != "" {
 		fmt.Fprintf(out, "mac_name: %s\n", prof.MacName)

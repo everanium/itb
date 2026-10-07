@@ -336,8 +336,8 @@ func TestGenblobDRBGFlag(t *testing.T) {
 	}
 	buf.Reset()
 	renderInspect(defProf, len(defBlob), &buf)
-	if !strings.Contains(buf.String(), "drbg: (default)\n") {
-		t.Fatalf("default inspect output lacks 'drbg: (default)':\n%s", buf.String())
+	if !strings.Contains(buf.String(), "drbg: (auto: "+autoTierLabel()+" on this host)\n") {
+		t.Fatalf("default inspect output lacks the auto-tier drbg line:\n%s", buf.String())
 	}
 
 	// Every listed name encrypts and decrypts under the registered

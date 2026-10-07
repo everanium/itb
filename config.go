@@ -65,7 +65,7 @@ type Config struct {
 
 	// DRBG names the primitive that fills the container carrier noise
 	// and the lane residue on the encrypt path. The empty string
-	// selects the auto tier of internal/drbg (AES-CTR where the host
+	// selects the auto tier of internal/drbg (AES-256-CTR where the host
 	// has hardware AES, ChaCha20 otherwise); "aesitb128" selects the
 	// AES-ITB noise filler, "csprng" the unexpanded crypto/rand.Read,
 	// and the name of any keystream-eligible registry primitive its

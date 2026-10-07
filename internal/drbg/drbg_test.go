@@ -143,7 +143,7 @@ func TestSelectedTierIsSupported(t *testing.T) {
 
 // TestBothTiersDirect exercises both tier workers directly, regardless
 // of the auto-selected tier, so the fallback path is covered on hosts
-// that would ordinarily pick AES-CTR.
+// that would ordinarily pick AES-256-CTR.
 func TestBothTiersDirect(t *testing.T) {
 	const size = 4096
 	buf := make([]byte, size)
@@ -161,7 +161,7 @@ func TestBothTiersDirect(t *testing.T) {
 		t.Fatal("fillChaCha20 left buffer all-zero")
 	}
 	if bytes.Equal(buf, buf2) {
-		t.Fatal("AES-CTR and ChaCha20 produced identical output")
+		t.Fatal("AES-256-CTR and ChaCha20 produced identical output")
 	}
 }
 
@@ -277,9 +277,9 @@ func BenchmarkFillProduction(b *testing.B) {
 	}
 }
 
-// BenchmarkDRBGAESCTR times the AES-CTR fill worker directly on a
+// BenchmarkDRBGAESCTR times the AES-256-CTR fill worker directly on a
 // single goroutine at every container-relevant size. Independent of
-// SelectedTier — always exercises the AES-CTR path.
+// SelectedTier — always exercises the AES-256-CTR path.
 func BenchmarkDRBGAESCTR(b *testing.B) {
 	for _, size := range benchSizes {
 		size := size
@@ -319,7 +319,7 @@ func BenchmarkDRBGChaCha20(b *testing.B) {
 
 // BenchmarkStdlibCryptoRand times the baseline crypto/rand.Read (vDSO
 // getrandom on Linux) at every container-relevant size.
-// This is the reference against which the AES-CTR and ChaCha20
+// This is the reference against which the AES-256-CTR and ChaCha20
 // bulk-fill throughput is evaluated.
 func BenchmarkStdlibCryptoRand(b *testing.B) {
 	for _, size := range benchSizes {
@@ -338,7 +338,7 @@ func BenchmarkStdlibCryptoRand(b *testing.B) {
 	}
 }
 
-// BenchmarkDRBGAESCTRParallel3 times the AES-CTR fill worker under the
+// BenchmarkDRBGAESCTRParallel3 times the AES-256-CTR fill worker under the
 // container-fill three-goroutine shape at every container-relevant size.
 // Reports aggregate MB/s.
 func BenchmarkDRBGAESCTRParallel3(b *testing.B) {

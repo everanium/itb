@@ -132,7 +132,7 @@
 // 32. Valid Mode: 0 or 1 (default per-region floor) or 2 (per-container
 // floor). Valid TagStubSize: 0 (default 32) or 16..64. Valid MaxWorkers: 0
 // (runtime.NumCPU fallback) or positive integer (clamped to 256). Valid
-// DRBG: "" (the auto tier — AES-CTR where the host has hardware AES,
+// DRBG: "" (the auto tier — AES-256-CTR where the host has hardware AES,
 // ChaCha20 otherwise) or the name of an installed DRBG fill primitive:
 // "aesitb128", "csprng", or a keystream-eligible registry primitive by
 // its registry name once package ctr is linked (see [Config.DRBG]).

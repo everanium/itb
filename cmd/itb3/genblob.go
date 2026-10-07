@@ -102,7 +102,7 @@ Flag semantics:
     --blob-mode 1|2   Container floor sizing mode (default 1 =
                   per-region; 2 = per-container).
     --drbg <name> DRBG fill primitive (see itb3 drbgs); omitted =
-                  the auto tier (AES-CTR where the host has hardware
+                  the auto tier (AES-256-CTR where the host has hardware
                   AES, ChaCha20 otherwise). The choice travels in the
                   blob's recipe.
     -o <file>     Output file (created with mode 0600). Omitted → stdout.`,

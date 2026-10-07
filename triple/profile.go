@@ -214,7 +214,7 @@ type Profile struct {
 	// DRBG is the name of the primitive that fills the container
 	// carrier noise and the lane residue on the encrypt path (see
 	// [github.com/everanium/itb.Config.DRBG]). Empty means the auto
-	// tier of the fill package — AES-CTR where the host has hardware
+	// tier of the fill package — AES-256-CTR where the host has hardware
 	// AES, ChaCha20 otherwise — and is what every shipped profile
 	// states; "aesitb128" selects the AES-ITB noise filler, "csprng"
 	// the unexpanded crypto/rand.Read, and the registry name of any
