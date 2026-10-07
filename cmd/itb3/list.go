@@ -15,6 +15,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/everanium/itb"
 	"github.com/everanium/itb/hashes"
 	"github.com/everanium/itb/internal/drbg"
 	"github.com/everanium/itb/macs"
@@ -183,7 +184,7 @@ func printCatalog() {
 	fmt.Printf("ChunkSize:   1-64 MB  (default 16 MiB; used for aead/noaead modes)\n")
 	fmt.Printf("MACs:        %s\n", strings.Join(macNames, ", "))
 	fmt.Printf("Ciphers:     %s\n", strings.Join(cipherNames, ", "))
-	fmt.Printf("DRBG:        %s  (default: auto tier, %s on this host)\n", strings.Join(drbg.Names(), ", "), autoTierLabel())
+	fmt.Printf("DRBG:        %s  (default: auto tier, %s on this host)\n", strings.Join(drbg.Names(), ", "), itb.DRBGAutoTier())
 	fmt.Printf("Segments:    coprime-504 positive int (default %d)\n", parallax.DefaultSegmentSize)
 	fmt.Printf("Toggles:     -p (parallax palette), -w (wrapper cipher)\n")
 	fmt.Printf("Profiles:    %s\n", strings.Join(triple.Profiles(), ", "))
@@ -205,14 +206,4 @@ func filterHashesByWidth(w hashes.Width) []string {
 		}
 	}
 	return out
-}
-
-// autoTierLabel names the fill cipher the auto DRBG tier selected on
-// this host. The tier is chosen per host at encryption time and is not
-// recorded in the blob.
-func autoTierLabel() string {
-	if drbg.SelectedTier() == "aes" {
-		return "aes-256-ctr"
-	}
-	return "chacha20"
 }

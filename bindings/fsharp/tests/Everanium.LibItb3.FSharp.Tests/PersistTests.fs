@@ -146,7 +146,9 @@ let ``unknown drbg is RecipePrimitiveUnknown`` () =
     let err = unwrapError (Pipeline.init "singlemsg-triple-mac-v1" opts)
     Assert.Equal(Status.RecipePrimitiveUnknown, err.Status)
     Assert.Equal(12, err.Code)
-    Assert.Contains("nope", err.Detail)
+    // Status only: the last-error slot is process-wide and xUnit runs
+    // test classes in parallel, so the detail text can come from
+    // another test's failing call.
 
 [<Fact>]
 let ``default drbg is absent`` () =

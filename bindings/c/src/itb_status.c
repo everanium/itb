@@ -31,6 +31,7 @@ itb_status itb_internal_status(int rc)
 #define ITB_ERRBUF_CAP ((size_t)2048)
 static _Thread_local char g_last_error[ITB_ERRBUF_CAP];
 static _Thread_local char g_version[64];
+static _Thread_local char g_drbg_auto_tier[64];
 
 /* Overflow storage for a diagnostic wider than the inline buffer.
  * Released at the head of the next fetch on the same thread, which is
@@ -93,6 +94,17 @@ const char *itb_version(void)
         return NULL;
     }
     return g_version;
+}
+
+const char *itb_drbg_auto_tier(void)
+{
+    size_t need = 0;
+    g_drbg_auto_tier[0] = '\0';
+    int rc = ITB_DRBGAutoTier(g_drbg_auto_tier, sizeof(g_drbg_auto_tier), &need);
+    if (rc != (int)ITB_STATUS_OK) {
+        return NULL;
+    }
+    return g_drbg_auto_tier;
 }
 
 /* ------------------------------------------------------------------ */

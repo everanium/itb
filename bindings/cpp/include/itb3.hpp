@@ -436,6 +436,11 @@ std::string hash_names();
 /* The libitb3 library version string (e.g. "0.5.1"). */
 std::string version();
 
+/* The fill cipher the auto DRBG tier selected on this host
+ * ("aes-256-ctr" or "chacha20"): the tier a Pipeline uses when its
+ * drbg option is empty, resolved per host and recorded in no blob. */
+std::string drbg_auto_tier();
+
 /* Sets the Go runtime's soft heap limit in bytes; returns the
  * previous limit. A negative value queries without changing. */
 std::int64_t set_memory_limit(std::int64_t bytes) noexcept;

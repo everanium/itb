@@ -25,8 +25,8 @@ Message, `Invoke-ItbEncryptStream` / `Invoke-ItbDecryptStream`
 (one-shot bytes, file-to-file, or stream-to-stream pumps) and
 `New-ItbEncryptStream` / `New-ItbDecryptStream` (caller-driven
 incremental sessions) for streaming, `New-ItbOpts` for the opts
-pass-through, and `Get-ItbVersion` / `Set-ItbMemoryLimit` /
-`Set-ItbGCPercent` for diagnostics and the Go runtime knobs. The
+pass-through, and `Get-ItbVersion` / `Get-ItbDrbgAutoTier` /
+`Set-ItbMemoryLimit` / `Set-ItbGCPercent` for diagnostics and the Go runtime knobs. The
 underlying CLR objects (`[Everanium.Itb3.Pipeline]`, `[Everanium.Itb3.Opts]`, session
 types) are returned as-is, so direct method calls
 (`$pipeline.EncryptMessage($bytes)`, `$session.Write($bytes)`)

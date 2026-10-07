@@ -63,6 +63,11 @@ test "hash registry: canonical order, led by the Non-PRF inner primitive" {
     try std.testing.expect(std.mem.indexOf(u8, json, "\"areion512\"") != null);
 }
 
+test "auto DRBG tier: one of the two fill ciphers, resolved per host" {
+    const tier = itb.drbgAutoTier();
+    try std.testing.expect(std.mem.eql(u8, tier, "aes-256-ctr") or std.mem.eql(u8, tier, "chacha20"));
+}
+
 test "an Error carries its numeric code back through the binding" {
     const gpa = std.testing.allocator;
     const e = itb.Pipeline.init(gpa, "no-such-profile", null);

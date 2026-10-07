@@ -35,8 +35,8 @@ pub use pipeline::{Pipeline, inspect};
 pub use profile::Profile;
 pub use register::{hash_names, lookup, profiles, register};
 pub use runtime::{
-    pool_stats, pool_stats_len, set_gc_percent, set_gomaxprocs, set_memory_limit, version,
-    write_heap_profile,
+    drbg_auto_tier, pool_stats, pool_stats_len, set_gc_percent, set_gomaxprocs, set_memory_limit,
+    version, write_heap_profile,
 };
 pub use status::ItbStatus;
 pub use stream::{DecryptStream, EncryptStream};

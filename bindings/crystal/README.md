@@ -108,6 +108,7 @@ rotated = pipe.rekey(perm_master, wrap_master)
 
 # Registry roster.
 ITB.version  # => libitb3 version string
+ITB.drbg_auto_tier # => fill cipher of the auto DRBG tier on this host
 ITB.profiles # => sorted registered profile names
 ```
 

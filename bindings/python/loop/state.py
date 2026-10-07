@@ -60,8 +60,10 @@ class Config:
     profile: str = ""  # empty = shape-based profile pair
     key_bits: int = 0  # 0 = profile default
     nonce_bits: int = 0  # 0 = profile default
+    blob_mode: int = 1  # container floor sizing mode: 1 (per-region, default) | 2 (per-container)
     chunk_size: int = 0  # 0 = profile default
     barrier_fill: int = 0  # 0 = profile default
+    drbg: str = ""  # DRBG fill primitive; "" = profile default (auto tier)
     gomaxprocs: int = 0  # 0 = inherit from the environment
     rekey_every: int = 0  # per-worker iterations between rotations; 0 = never
     blob_cycle_every: int = 0  # per-worker iterations between reopens; 0 = never

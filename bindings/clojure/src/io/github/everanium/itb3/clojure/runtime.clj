@@ -62,3 +62,10 @@
   "Returns the libitb3 library version string."
   ^String []
   (io.github.everanium.itb3.Runtime/version))
+
+(defn drbg-auto-tier
+  "Returns the fill cipher the auto DRBG tier selected on this host
+  (\"aes-256-ctr\" or \"chacha20\"): the tier a Pipeline uses when its
+  drbg option is empty, resolved per host and recorded in no blob."
+  ^String []
+  (io.github.everanium.itb3.Runtime/drbgAutoTier))

@@ -254,6 +254,9 @@ int finalSummary(SummaryInput s) {
     o.write(',"seed":${u64Dec(cfg.seed)}');
     o.write(',"key_bits":${cfg.keyBits}');
     o.write(',"nonce_bits":${cfg.nonceBits}');
+    o.write(',"blob_mode":${cfg.blobMode}');
+    o.write(',"drbg":${jsonEncode(cfg.drbg)}');
+    o.write(',"drbg_auto_tier":${jsonEncode(Itb.drbgAutoTier())}');
     o.write(',"chunk_size_bytes":${cfg.chunkSize}');
     o.write(',"barrier_fill":${cfg.barrierFill}');
     o.write(',"parallax":"${onOff(cfg.parallax)}"');

@@ -83,6 +83,16 @@ pub fn version() -> ItbResult<String> {
     read_cstr(|out, cap, len| unsafe { (s.ITB_Version)(out, cap, len) })
 }
 
+/// Returns the fill cipher the auto DRBG tier selected on this host
+/// (`"aes-256-ctr"` or `"chacha20"`): the tier a Pipeline uses when its
+/// drbg option is empty, resolved per host and recorded in no blob.
+pub fn drbg_auto_tier() -> ItbResult<String> {
+    let s = ffi::syms()?;
+    // SAFETY (both calls): standard probe-then-read over the
+    // size-out-param string contract; buffers are live for each call.
+    read_cstr(|out, cap, len| unsafe { (s.ITB_DRBGAutoTier)(out, cap, len) })
+}
+
 /// Two-phase read over the `(out, cap, *out_len)` C-string contract:
 /// probe with NULL / 0 for the required capacity, then read and
 /// NUL-strip.

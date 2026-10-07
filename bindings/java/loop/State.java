@@ -43,8 +43,10 @@ final class State {
         String profile = "";
         long keyBits;
         long nonceBits;
+        long blobMode;
         long chunkSize;
         long barrierFill;
+        String drbg = "";
         int gomaxprocs;
         long rekeyEvery;
         long blobCycleEvery;

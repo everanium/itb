@@ -41,6 +41,10 @@ void main() {
     expect(v, contains('.'));
   });
 
+  test('auto DRBG tier is one of the two fill ciphers', () {
+    expect(Itb.drbgAutoTier(), isIn(['aes-256-ctr', 'chacha20']));
+  });
+
   test('profiles list covers every cipher profile', () {
     for (final profile in cipherProfiles) {
       expect(Itb.profiles(), contains(profile));

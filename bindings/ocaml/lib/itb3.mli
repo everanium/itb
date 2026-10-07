@@ -136,6 +136,12 @@ val profiles : unit -> string list
 (** The libitb3 library version string. *)
 val version : unit -> string
 
+(** The fill cipher the auto DRBG tier selected on this host
+    (["aes-256-ctr"] or ["chacha20"]): the tier a Pipeline uses when
+    its [drbg] option is empty, resolved per host and recorded in no
+    blob. *)
+val drbg_auto_tier : unit -> string
+
 (** The binding's own version string. *)
 val binding_version : string
 

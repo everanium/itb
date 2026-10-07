@@ -35,6 +35,10 @@ test_that("version reports library and binding versions", {
   expect_equal(as.character(utils::packageVersion("libitb3r")), "0.5.1")
 })
 
+test_that("drbg_auto_tier names a fill cipher", {
+  expect_true(drbg_auto_tier() %in% c("aes-256-ctr", "chacha20"))
+})
+
 test_that("profiles lists the registered Triple profiles", {
   got <- profiles()
   expect_gt(length(got), 0)

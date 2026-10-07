@@ -31,6 +31,10 @@ version_test() ->
     {ok, Version} = itb3:version(),
     ?assert(byte_size(Version) > 0).
 
+drbg_auto_tier_test() ->
+    {ok, Tier} = itb3:drbg_auto_tier(),
+    ?assert(lists:member(Tier, [<<"aes-256-ctr">>, <<"chacha20">>])).
+
 save_load_round_trip_test_() ->
     {timeout, 120, fun() ->
         {ok, Sender} = itb3:init(<<"singlemsg-triple-mac-v1">>, #{}),

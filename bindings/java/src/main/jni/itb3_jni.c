@@ -51,6 +51,15 @@ JNIEXPORT jint JNICALL Java_io_github_everanium_itb3_Native_version(
     return rc;
 }
 
+JNIEXPORT jint JNICALL Java_io_github_everanium_itb3_Native_drbgAutoTier(
+    JNIEnv *env, jclass cls, jobject out, jlong cap, jlongArray outLen) {
+    (void)cls;
+    size_t n = 0;
+    int rc = ITB_DRBGAutoTier((char *)addr(env, out), (size_t)cap, &n);
+    set_long(env, outLen, n);
+    return rc;
+}
+
 JNIEXPORT jint JNICALL Java_io_github_everanium_itb3_Native_lastError(
     JNIEnv *env, jclass cls, jobject out, jlong cap, jlongArray outLen) {
     (void)cls;

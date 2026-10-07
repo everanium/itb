@@ -58,6 +58,13 @@ final class RuntimeTests: XCTestCase {
         XCTAssertTrue(names.contains("areion512"), "registry: \(names)")
     }
 
+    /// The auto DRBG tier is one of the two fill ciphers, resolved
+    /// per host.
+    func testDrbgAutoTier() {
+        let tier = ItbRuntime.drbgAutoTier
+        XCTAssertTrue(tier == "aes-256-ctr" || tier == "chacha20", "drbg auto tier: \(tier)")
+    }
+
     /// The diagnostic is the only text an error carries, so no fixed
     /// buffer may bound it. The relay layer snapshots the library's
     /// text into an inline 2 KiB buffer and widens on the

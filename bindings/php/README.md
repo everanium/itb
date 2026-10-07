@@ -14,7 +14,7 @@ dispatched at first use. Every hash-name / MAC-name / cipher-name /
 profile-name is an opaque string passed through to Go for validation;
 the binding carries no ITB construction logic. The public surface is
 the `Itb` facade (`create` / `load` / `loadF` / `inspect` /
-`register` / `lookup` / `profiles` / `version` and the Go runtime
+`register` / `lookup` / `profiles` / `version` / `drbgAutoTier` and the Go runtime
 knobs), a `Pipeline` class (save / saveF / rekey /
 maxWorkers / close, Single Message encrypt / decrypt, one-shot
 and incremental stream sessions), and the `StreamEncryptor` /

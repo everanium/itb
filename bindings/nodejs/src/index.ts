@@ -29,6 +29,7 @@ export {
 } from './pipeline.js';
 export {
   bindingVersion,
+  drbgAutoTier,
   poolStats,
   poolStatsLen,
   setGCPercent,

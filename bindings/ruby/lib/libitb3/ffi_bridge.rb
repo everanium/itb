@@ -71,6 +71,7 @@ module ITB
 
     # -- Library / runtime surface --------------------------------------
     attach_function :ITB_Version, [:buffer_out, :size_t, :pointer], :int
+    attach_function :ITB_DRBGAutoTier, [:buffer_out, :size_t, :pointer], :int
     attach_function :ITB_LastError, [:buffer_out, :size_t, :pointer], :int
     attach_function :ITB_SetMemoryLimit, [:int64], :int64
     attach_function :ITB_SetGCPercent, [:int], :int

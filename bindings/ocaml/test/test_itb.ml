@@ -27,6 +27,13 @@ let test_version () =
   | Some _ -> ()
   | None -> Alcotest.failf "version %S has no dot" v)
 
+let test_drbg_auto_tier () =
+  let t = Itb3.drbg_auto_tier () in
+  Alcotest.(check bool)
+    (Printf.sprintf "drbg auto tier %S is a fill cipher" t)
+    true
+    (t = "aes-256-ctr" || t = "chacha20")
+
 let test_profiles_list () =
   let profiles = Itb3.profiles () in
   Alcotest.(check bool) "has singlemsg mac" true
@@ -562,6 +569,7 @@ let () =
       ( "surface",
         [
           case "version" (fun () -> test_version ());
+          case "drbg auto tier" (fun () -> test_drbg_auto_tier ());
           case "profiles list" (fun () -> test_profiles_list ());
         ] );
       ( "message",

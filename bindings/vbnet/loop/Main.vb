@@ -40,7 +40,11 @@
 
 Imports System.Diagnostics
 Imports System.Globalization
+Imports System.IO
 Imports System.Runtime.InteropServices
+Imports System.Text.Encodings.Web
+Imports System.Text.Json
+Imports System.Text.Json.Nodes
 Imports System.Threading
 Imports Everanium.Itb3.VisualBasic
 
@@ -62,8 +66,10 @@ Friend Class Config
     Friend ProfileName As String = ""
     Friend KeyBits As Long
     Friend NonceBits As Long
+    Friend BlobMode As Long
     Friend ChunkSize As Long
     Friend BarrierFill As Long
+    Friend Drbg As String = ""
     Friend Gomaxprocs As Integer
     Friend RekeyEvery As Long
     Friend BlobCycleEvery As Long
@@ -224,7 +230,9 @@ Friend Module Program
     Friend Class RawFlags
         Friend BarrierFill As Long = 0
         Friend BlobCycleEvery As Long = 0
+        Friend BlobMode As Long = 1
         Friend ChunkSize As String = "0"
+        Friend Drbg As String = ""
         Friend Duration As String = "5m"
         Friend Gogc As Long = 0
         Friend Gomaxprocs As Long = 0
@@ -297,11 +305,22 @@ Friend Module Program
                 "reopen each pipeline from its session blob every N iterations per worker; 0 = never",
                 False, "",
                 Function(f, s) TryLong(s, f.BlobCycleEvery)),
+            New Flag("blob-mode", "int",
+                "container floor sizing mode: 1 (per-region, default) | 2 (per-container)",
+                False, DefaultOf(d.BlobMode),
+                Function(f, s) TryLong(s, f.BlobMode)),
             New Flag("chunk-size", "string",
                 "streaming chunk-size budget (e.g. 4MB); 0 = profile default; inert for pure message shape",
                 False, DefaultOf(d.ChunkSize),
                 Function(f, s)
                     f.ChunkSize = s
+                    Return True
+                End Function),
+            New Flag("drbg", "string",
+                "DRBG fill primitive name (see itb3 drbgs); empty = profile default (auto tier)",
+                False, DefaultOf(d.Drbg),
+                Function(f, s)
+                    f.Drbg = s
                     Return True
                 End Function),
             New Flag("duration", "duration",
@@ -632,10 +651,15 @@ Friend Module Program
             Return Reject("--nonce-bits must be 128 | 256 | 512 (or 0 = profile default), got " &
                           Dx(f.NonceBits))
         End If
+        If f.BlobMode <> 1 AndAlso f.BlobMode <> 2 Then
+            Return Reject("--blob-mode must be 1 (per-region) | 2 (per-container), got " &
+                          Dx(f.BlobMode))
+        End If
         If Array.IndexOf({0L, 1L, 2L, 4L, 8L, 16L, 32L}, f.BarrierFill) < 0 Then
             Return Reject("--barrier-fill must be 1 | 2 | 4 | 8 | 16 | 32 (or 0 = profile default), got " &
                           Dx(f.BarrierFill))
         End If
+        ' --drbg is validated by Init: the C ABI enumerates no DRBG names.
 
         Dim chunkSize As Long? = ParseSize(f.ChunkSize)
         If Not chunkSize.HasValue Then
@@ -674,8 +698,10 @@ Friend Module Program
             .ProfileName = f.ProfileName,
             .KeyBits = f.KeyBits,
             .NonceBits = f.NonceBits,
+            .BlobMode = f.BlobMode,
             .ChunkSize = chunkSize.Value,
             .BarrierFill = f.BarrierFill,
+            .Drbg = f.Drbg,
             .Gomaxprocs = CInt(f.Gomaxprocs),
             .RekeyEvery = f.RekeyEvery,
             .BlobCycleEvery = f.BlobCycleEvery,
@@ -783,8 +809,36 @@ Friend Module Program
                 " nonce-bits=" & If(rec.NonceBits.HasValue, rec.NonceBits.Value, 0).ToString(Inv) &
                 " barrier-fill=" & If(rec.BarrierFill.HasValue, rec.BarrierFill.Value, 0).ToString(Inv) &
                 " chunk-size=" & rec.Chunk.ToString(Inv) & " mac=" & Dash(rec.Mac) &
-                " parallax=" & OnOff(rec.Parallax) & " wrapper=" & OnOff(rec.Wrapper))
+                " parallax=" & OnOff(rec.Parallax) & " wrapper=" & OnOff(rec.Wrapper) &
+                If(rec.ContainerMode.HasValue AndAlso rec.ContainerMode.Value = 2, " container-mode=2", "") &
+                If(String.IsNullOrEmpty(rec.Drbg), "", " drbg=" & rec.Drbg))
     End Sub
+
+    ''' <summary>Returns a copy of a wrap-layer session blob whose inner
+    ''' blob ("ib") carries the given container floor sizing mode
+    ''' (1 = per-region, 2 = per-container). The wrap layer's profile
+    ''' record carries its own "mode" (a string), so only the inner
+    ''' blob's integer field is set; no key is added, integers keep
+    ''' their literals, and strings are written without escaping the
+    ''' base64 alphabet.</summary>
+    Private Function SetInnerBlobMode(blob As Byte(), mode As Integer) As Byte()
+        Dim root As JsonObject = TryCast(JsonNode.Parse(blob), JsonObject)
+        If root Is Nothing Then
+            Throw New FormatException("session blob is not a JSON object")
+        End If
+        Dim ib As JsonObject = TryCast(root("ib"), JsonObject)
+        If ib Is Nothing OrElse Not ib.ContainsKey("mode") Then
+            Throw New FormatException("inner blob mode field not found")
+        End If
+        ib("mode") = JsonValue.Create(mode)
+        Using buf As New MemoryStream()
+            Using w As New Utf8JsonWriter(buf, New JsonWriterOptions With {
+                    .Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping})
+                root.WriteTo(w)
+            End Using
+            Return buf.ToArray()
+        End Using
+    End Function
 
     Private Function Dash(s As String) As String
         Return If(String.IsNullOrEmpty(s), "-", s)
@@ -807,6 +861,7 @@ Friend Module Program
             WithKeyBits(cfg.KeyBits).
             WithNonceBits(cfg.NonceBits).
             WithBarrierFill(cfg.BarrierFill).
+            WithDrbg(cfg.Drbg).
             WithChunkSize(cfg.ChunkSize)
 
         If cfg.ProfileName.Length > 0 Then
@@ -835,6 +890,26 @@ Friend Module Program
             pipe.Dispose()
             Return False
         End Try
+
+        If cfg.BlobMode = 2 Then
+            ' The sizing mode is not an Opts knob: the Init blob is edited
+            ' and the pipeline reopened from it, so the retained blob (the
+            ' one blob-cycle reopens from) carries the edited mode.
+            pipe.Dispose()
+            pipe = Nothing
+            Try
+                blob = SetInnerBlobMode(blob, 2)
+            Catch ex As Exception
+                Console.Error.WriteLine("loop: rewrite blob mode: " & ex.Message)
+                Return False
+            End Try
+            Try
+                pipe = Pipeline.Load(blob)
+            Catch ex As Exception
+                Console.Error.WriteLine("loop: reload Mode 2 blob: " & Detail(ex))
+                Return False
+            End Try
+        End If
 
         LogPipelineInitialised(profile, blob)
         Return True
@@ -890,7 +965,9 @@ Friend Module Program
                 " blob-cycle-every=" & Dx(cfg.BlobCycleEvery) &
                 " payload-mode=" & PayloadModeName(cfg.Mode) &
                 " seed=" & cfg.Seed.ToString(Inv) &
-                " json-output=" & If(cfg.JsonOutput, "true", "false"))
+                " json-output=" & If(cfg.JsonOutput, "true", "false") &
+                If(cfg.BlobMode <> 1, " blob-mode=" & Dx(cfg.BlobMode), "") &
+                If(cfg.Drbg.Length > 0, " drbg=" & cfg.Drbg, ""))
         LogLine("policy: microbatch-tiers=" & PolicyLabel("ITB_MICROBATCH_TIERS") &
                 " hashpool-starters=" & PolicyLabel("ITB_HASHPOOL_STARTERS"))
 

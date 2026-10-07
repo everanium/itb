@@ -170,9 +170,24 @@ func ITB_Version(out *C.char, capBytes C.size_t, outLen *C.size_t) C.int {
 	return C.int(writeCString(libitb3Version, unsafe.Pointer(out), capBytes, outLen))
 }
 
-// Writes the last error message produced on this thread's most
-// recent capi call. Standard errno-style: read it immediately after
-// a non-OK return on the same thread.
+// Writes the fill cipher the auto DRBG tier selected on this host
+// ("aes-256-ctr" or "chacha20", NUL-terminated ASCII) into out, sets
+// *out_len to the number of bytes written including the NUL. The auto
+// tier applies when a Pipeline's DRBG option is empty; it is resolved
+// per host and is not recorded in a blob. Returns ITB_OK on success,
+// ITB_ERR_BUFFER_TOO_SMALL if cap is too small (out_len then carries
+// the required size).
+//
+//export ITB_DRBGAutoTier
+func ITB_DRBGAutoTier(out *C.char, capBytes C.size_t, outLen *C.size_t) C.int {
+	return C.int(writeCString(capi.DRBGAutoTier(), unsafe.Pointer(out), capBytes, outLen))
+}
+
+// Writes the message of the most recent non-OK capi call. The slot is
+// process-wide and the last write wins: read it immediately after a
+// non-OK return, and do not rely on its text while other threads call
+// the library concurrently — the status code each call returns is
+// always its own.
 //
 //export ITB_LastError
 func ITB_LastError(out *C.char, capBytes C.size_t, outLen *C.size_t) C.int {

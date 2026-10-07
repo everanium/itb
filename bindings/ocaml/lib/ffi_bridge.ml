@@ -80,6 +80,7 @@ let resolve_library_path () =
    held for the duration of each call, so the buffers stay pinned). *)
 type syms = {
   version : Bytes.t ocaml -> Unsigned.size_t -> Unsigned.size_t ptr -> int;
+  drbg_auto_tier : Bytes.t ocaml -> Unsigned.size_t -> Unsigned.size_t ptr -> int;
   last_error : Bytes.t ocaml -> Unsigned.size_t -> Unsigned.size_t ptr -> int;
   set_memory_limit : int64 -> int64;
   set_gc_percent : int -> int;
@@ -132,6 +133,7 @@ let load () =
   let buf_out = ocaml_bytes @-> size_t @-> ptr size_t @-> returning int in
   {
     version = f "ITB_Version" buf_out;
+    drbg_auto_tier = f "ITB_DRBGAutoTier" buf_out;
     last_error = f "ITB_LastError" buf_out;
     set_memory_limit = f "ITB_SetMemoryLimit" (int64_t @-> returning int64_t);
     set_gc_percent = f "ITB_SetGCPercent" (int @-> returning int);

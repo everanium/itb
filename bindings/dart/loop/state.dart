@@ -99,11 +99,18 @@ class Config {
   /// 0 = profile default.
   int nonceBits = 0;
 
+  /// Container floor sizing mode: 1 (per-region, default) | 2
+  /// (per-container).
+  int blobMode = 1;
+
   /// 0 = profile default.
   int chunkSize = 0;
 
   /// 0 = profile default.
   int barrierFill = 0;
+
+  /// DRBG fill primitive; "" = profile default (auto tier).
+  String drbg = '';
 
   /// 0 = inherit from the environment.
   int gomaxprocs = 0;

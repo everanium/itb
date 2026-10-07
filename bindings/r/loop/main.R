@@ -87,8 +87,12 @@ FLAGS <- list(
     "DRBG barrier fill margin: 1 | 2 | 4 | 8 | 16 | 32; 0 = profile default (1)"),
   list("blob-cycle-every", "int", KIND_INT64, 0,
     "reopen each pipeline from its session blob every N iterations per worker; 0 = never"),
+  list("blob-mode", "int", KIND_INT, 1,
+    "container floor sizing mode: 1 (per-region, default) | 2 (per-container)"),
   list("chunk-size", "string", KIND_STRING, "0",
     "streaming chunk-size budget (e.g. 4MB); 0 = profile default; inert for pure message shape"),
+  list("drbg", "string", KIND_STRING, "",
+    "DRBG fill primitive name (see itb3 drbgs); empty = profile default (auto tier)"),
   list("duration", "duration", KIND_STRING, "5m",
     "run duration (Go format: 30s / 5m / 1h); ignored when --iterations > 0"),
   list("gogc", "int", KIND_INT, 0,
@@ -463,12 +467,21 @@ parse_flags <- function(argv) {
       cfg$nonce_bits))
     return(fail())
   }
+  cfg$blob_mode <- raw[["blob-mode"]]
+  if (!(cfg$blob_mode %in% c(1, 2))) {
+    err_line(sprintf(
+      "--blob-mode must be 1 (per-region) | 2 (per-container), got %.0f",
+      cfg$blob_mode))
+    return(fail())
+  }
   cfg$barrier_fill <- raw[["barrier-fill"]]
   if (!(cfg$barrier_fill %in% c(0, 1, 2, 4, 8, 16, 32))) {
     err_line(sprintf(paste0("--barrier-fill must be 1 | 2 | 4 | 8 | 16 | 32 ",
       "(or 0 = profile default), got %.0f"), cfg$barrier_fill))
     return(fail())
   }
+  # Validated by Init: the C ABI enumerates no DRBG names.
+  cfg$drbg <- raw[["drbg"]]
   chunk_size <- parse_size(raw[["chunk-size"]])
   if (is.null(chunk_size)) {
     err_line(sprintf('--chunk-size: invalid size "%s"', raw[["chunk-size"]]))
@@ -522,7 +535,7 @@ log_pipeline_initialised <- function(profile, blob) {
       profile, length(blob), status_message(json)))
     return(invisible(NULL))
   }
-  log_line(sprintf(
+  line <- sprintf(
     paste0("pipeline initialised: profile=%s blob=%.0f bytes hash=%s ",
       "key-bits=%.0f nonce-bits=%.0f barrier-fill=%.0f chunk-size=%.0f ",
       "mac=%s parallax=%s wrapper=%s"),
@@ -530,8 +543,48 @@ log_pipeline_initialised <- function(profile, blob) {
     record_int(json, "keybits"), record_int(json, "nonce_bits"),
     record_int(json, "barrier_fill"), record_int(json, "chunk"),
     record_str(json, "mac"), on_off(record_bool(json, "parallax")),
-    on_off(record_bool(json, "wrapper"))))
+    on_off(record_bool(json, "wrapper")))
+  if (record_int(json, "container_mode") == 2) {
+    line <- paste0(line, " container-mode=2")
+  }
+  drbg <- record_str(json, "drbg")
+  if (drbg != "-") {
+    line <- paste0(line, " drbg=", drbg)
+  }
+  log_line(line)
   invisible(NULL)
+}
+
+# Returns a copy of a wrap-layer session blob whose inner blob's "mode"
+# field is set to target_mode (1 = per-region, 2 = per-container), or
+# NULL when the inner blob or its mode field is not found. The wrap
+# layer's profile record carries its own "mode" (a string), so the
+# search starts at the inner blob ("ib"); both shipped modes are one
+# digit wide, so the blob length does not change and nothing before the
+# inner blob is touched. The edit is a byte replacement on the raw
+# vector, the same reading the profile-record probes use, so the
+# integers and base64 fields of the blob are never re-rendered.
+edit_inner_blob_mode <- function(blob, target_mode) {
+  ib <- grepRaw('"ib":{', blob, fixed = TRUE)
+  if (length(ib) == 0L) {
+    return(NULL)
+  }
+  off <- ib + nchar('"ib":{')
+  rel <- grepRaw('"mode":', blob, offset = off, fixed = TRUE)
+  if (length(rel) == 0L) {
+    return(NULL)
+  }
+  at <- rel + nchar('"mode":')
+  if (at + 1L > length(blob)) {
+    return(NULL)
+  }
+  digit <- as.integer(blob[at])
+  nxt <- as.integer(blob[at + 1L])
+  if (digit < 0x31L || digit > 0x32L || (nxt >= 0x30L && nxt <= 0x39L)) {
+    return(NULL)
+  }
+  blob[at] <- as.raw(0x30L + target_mode)
+  blob
 }
 
 # Folds a keystream primitive into opts for any layer the named profile
@@ -592,6 +645,7 @@ build_pipeline <- function(cfg, profile) {
     key_bits = cfg$key_bits,
     nonce_bits = cfg$nonce_bits,
     barrier_fill = cfg$barrier_fill,
+    drbg = cfg$drbg,
     chunk_size = cfg$chunk_size
   )
   if (nzchar(cfg$profile)) {
@@ -623,6 +677,27 @@ build_pipeline <- function(cfg, profile) {
     })
   if (is.null(blob)) {
     return(NULL)
+  }
+  if (cfg$blob_mode == 2) {
+    # The sizing mode is not an Opts knob: the Init blob is edited and
+    # the pipeline reopened from it, so the retained blob (the one
+    # blob-cycle reopens from) carries the edited mode.
+    edited <- edit_inner_blob_mode(blob, 2L)
+    if (is.null(edited)) {
+      err_line("rewrite blob mode: inner blob mode field not found")
+      libitb3r::pipeline_free(pipe)
+      return(NULL)
+    }
+    libitb3r::pipeline_free(pipe)
+    pipe <- tryCatch(libitb3r::pipeline_load(edited),
+      error = function(e) {
+        err_line(sprintf("reload Mode 2 blob: %s", status_detail(e)))
+        NULL
+      })
+    if (is.null(pipe)) {
+      return(NULL)
+    }
+    blob <- edited
   }
   log_pipeline_initialised(profile, blob)
   list(pipe = pipe, blob = blob)
@@ -678,14 +753,16 @@ run <- function(argv) {
     cfg$workers, CONCURRENCY, shape_name(cfg$shape), cfg$hash, cfg$mac,
     human_bytes(cfg$payload), human_bytes(cfg$memlimit),
     on_off(cfg$parallax), on_off(cfg$wrapper)))
-  log_line(sprintf(
+  log_line(paste0(sprintf(
     paste0('overrides: profile="%s" key-bits=%.0f nonce-bits=%.0f ',
       "chunk-size=%s barrier-fill=%.0f gomaxprocs=%.0f rekey-every=%.0f ",
       "blob-cycle-every=%.0f payload-mode=%s seed=%.0f json-output=%s"),
     cfg$profile, cfg$key_bits, cfg$nonce_bits, human_bytes(cfg$chunk_size),
     cfg$barrier_fill, cfg$gomaxprocs, cfg$rekey_every, cfg$blob_cycle_every,
     payload_mode_name(cfg$payload_mode), cfg$seed,
-    if (cfg$json_output) "true" else "false"))
+    if (cfg$json_output) "true" else "false"),
+    if (cfg$blob_mode != 1) sprintf(" blob-mode=%.0f", cfg$blob_mode) else "",
+    if (nzchar(cfg$drbg)) paste0(" drbg=", cfg$drbg) else ""))
   log_line(sprintf("policy: microbatch-tiers=%s hashpool-starters=%s",
     policy_label("ITB_MICROBATCH_TIERS"),
     policy_label("ITB_HASHPOOL_STARTERS")))

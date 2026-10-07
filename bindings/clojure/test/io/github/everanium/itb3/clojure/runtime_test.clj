@@ -1,7 +1,7 @@
 (ns io.github.everanium.itb3.clojure.runtime-test
   "Runtime diagnostics surface: GOMAXPROCS query / set / restore, the
   heap-profile writer, the pool-counter snapshot and its slot layout,
-  and the hash-registry enumeration."
+  the hash-registry enumeration and the auto DRBG tier report."
   (:require [clojure.test :refer [deftest is]]
             [io.github.everanium.itb3.clojure.core :as itb]
             [io.github.everanium.itb3.clojure.error :as err]
@@ -47,3 +47,8 @@
   (let [names (itb/hash-names)]
     (is (= "aesitb128" (first names)))
     (is (some #{"areion512"} names))))
+
+(deftest drbg-auto-tier-is-a-fill-cipher
+  ;; One of the two fill ciphers, resolved per host.
+  (let [tier (runtime/drbg-auto-tier)]
+    (is (contains? #{"aes-256-ctr" "chacha20"} tier) (str "drbg auto tier: " tier))))

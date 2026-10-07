@@ -137,7 +137,9 @@ private struct RawFlags
 {
     int barrierFill = 0;
     long blobCycleEvery = 0;
+    int blobMode = 1;
     string chunkSize = "0";
+    string drbg = "";
     string duration = "5m";
     int gogc = 0;
     int gomaxprocs = 0;
@@ -242,8 +244,12 @@ private Flag[] flagTable(ref RawFlags f) @trusted
             "DRBG barrier fill margin: 1 | 2 | 4 | 8 | 16 | 32; 0 = profile default (1)");
     addLong("blob-cycle-every", &f.blobCycleEvery,
             "reopen each pipeline from its session blob every N iterations per worker; 0 = never");
+    addInt("blob-mode", &f.blobMode,
+            "container floor sizing mode: 1 (per-region, default) | 2 (per-container)");
     addString("chunk-size", "string", &f.chunkSize,
             "streaming chunk-size budget (e.g. 4MB); 0 = profile default; inert for pure message shape");
+    addString("drbg", "string", &f.drbg,
+            "DRBG fill primitive name (see itb3 drbgs); empty = profile default (auto tier)");
     addString("duration", "duration", &f.duration,
             "run duration (Go format: 30s / 5m / 1h); ignored when --iterations > 0");
     addInt("gogc", &f.gogc, "GC trigger percentage; 0 = leave the runtime default");
@@ -592,6 +598,17 @@ private int parseFlags(string[] argv, ref Config cfg) @safe
                 cfg.nonceBits));
         return -1;
     }
+    cfg.blobMode = f.blobMode;
+    switch (cfg.blobMode)
+    {
+    case 1:
+    case 2:
+        break;
+    default:
+        errLine(format("--blob-mode must be 1 (per-region) | 2 (per-container), got %d",
+                cfg.blobMode));
+        return -1;
+    }
     cfg.barrierFill = f.barrierFill;
     switch (cfg.barrierFill)
     {
@@ -608,6 +625,7 @@ private int parseFlags(string[] argv, ref Config cfg) @safe
                 cfg.barrierFill));
         return -1;
     }
+    cfg.drbg = f.drbg; // validated by Init: the C ABI enumerates no DRBG names
     if (!parseSize(f.chunkSize, cfg.chunkSize))
     {
         errLine(format("--chunk-size: invalid size \"%s\"", f.chunkSize));
@@ -685,14 +703,46 @@ private void logPipelineInitialised(string profile, scope const(ubyte)[] blob) @
                 profile, blob.length, lastError()));
         return;
     }
-    logLine(format("pipeline initialised: profile=%s blob=%d bytes hash=%s key-bits=%d "
+    string line = format("pipeline initialised: profile=%s blob=%d bytes hash=%s key-bits=%d "
             ~ "nonce-bits=%d barrier-fill=%d chunk-size=%d mac=%s parallax=%s wrapper=%s",
             profile, blob.length,
             record.innerHash.length ? record.innerHash : "-", record.keyBits,
             record.nonceBits.isNull ? 0 : record.nonceBits.get,
             record.barrierFill.isNull ? 0 : record.barrierFill.get,
             record.chunkSize, record.macName.length ? record.macName : "-",
-            onOff(record.parallax), onOff(record.wrapper)));
+            onOff(record.parallax), onOff(record.wrapper));
+    if (!record.containerMode.isNull && record.containerMode.get == 2)
+        line ~= " container-mode=2";
+    if (record.drbg.length)
+        line ~= " drbg=" ~ record.drbg;
+    logLine(line);
+}
+
+/// Sets the inner blob's "mode" field of a wrap-layer session blob to
+/// `targetMode` (1 = per-region, 2 = per-container) in place. The wrap
+/// layer's profile record carries its own "mode" (a string), so the
+/// search starts at the inner blob ("ib"); both shipped modes are one
+/// digit wide, so the blob length does not change. Returns false when
+/// the inner blob or its mode field is not found.
+private bool editInnerBlobMode(ubyte[] blob, int targetMode) @safe
+{
+    import std.algorithm.searching : countUntil;
+
+    immutable ubyte[] ibKey = cast(immutable(ubyte)[]) `"ib":{`;
+    immutable ubyte[] modeKey = cast(immutable(ubyte)[]) `"mode":`;
+    immutable ib = blob.countUntil(ibKey);
+    if (ib < 0)
+        return false;
+    immutable off = ib + ibKey.length;
+    immutable mode = blob[off .. $].countUntil(modeKey);
+    if (mode < 0)
+        return false;
+    immutable at = off + mode + modeKey.length;
+    if (at + 1 >= blob.length || blob[at] < '1' || blob[at] > '2'
+            || (blob[at + 1] >= '0' && blob[at + 1] <= '9'))
+        return false;
+    blob[at] = cast(ubyte)('0' + targetMode);
+    return true;
 }
 
 /// Constructs one Pipeline against `profile` with every flag-carried
@@ -712,6 +762,7 @@ private bool buildPipeline(const ref Config cfg, string profile,
         .withKeyBits(cfg.keyBits)
         .withNonceBits(cfg.nonceBits)
         .withBarrierFill(cfg.barrierFill)
+        .withDrbg(cfg.drbg)
         .withChunkSize(cfg.chunkSize);
     if (cfg.profile.length)
     {
@@ -737,6 +788,30 @@ private bool buildPipeline(const ref Config cfg, string profile,
     {
         errLine(format("Save(%s): %s", profile, detail(e)));
         return false;
+    }
+    if (cfg.blobMode == 2)
+    {
+        import std.algorithm.mutation : move;
+
+        // The sizing mode is not an Opts knob: the Init blob is edited
+        // and the pipeline reopened from it, so the retained blob (the
+        // one blob-cycle reopens from) carries the edited mode.
+        if (!editInnerBlobMode(blob, 2))
+        {
+            errLine("rewrite blob mode: inner blob mode field not found");
+            return false;
+        }
+        try
+        {
+            // D-specific. The move-assignment releases the Init handle.
+            auto fresh = Pipeline.load(blob);
+            pipe = move(fresh);
+        }
+        catch (ItbException e)
+        {
+            errLine(format("reload Mode 2 blob: %s", detail(e)));
+            return false;
+        }
     }
     logPipelineInitialised(profile, blob);
     return true;
@@ -804,7 +879,9 @@ private int run(string[] argv) @trusted
             cfg.profile, cfg.keyBits, cfg.nonceBits, humanBytes(cfg.chunkSize),
             cfg.barrierFill, cfg.gomaxprocs, cfg.rekeyEvery, cfg.blobCycleEvery,
             payloadModeName(cfg.payloadMode), cfg.seed,
-            cfg.jsonOutput ? "true" : "false"));
+            cfg.jsonOutput ? "true" : "false")
+            ~ (cfg.blobMode != 1 ? format(" blob-mode=%d", cfg.blobMode) : "")
+            ~ (cfg.drbg.length ? " drbg=" ~ cfg.drbg : ""));
     logLine(format("policy: microbatch-tiers=%s hashpool-starters=%s",
             policyLabel("ITB_MICROBATCH_TIERS"), policyLabel("ITB_HASHPOOL_STARTERS")));
 

@@ -289,6 +289,15 @@ int final_summary(RunState &r, std::int64_t elapsed_ns)
         j += fmt(",\"seed\":%llu", static_cast<unsigned long long>(cfg.seed));
         j += fmt(",\"key_bits\":%d", cfg.key_bits);
         j += fmt(",\"nonce_bits\":%d", cfg.nonce_bits);
+        j += fmt(",\"blob_mode\":%d", cfg.blob_mode);
+        j += ",\"drbg\":" + json_string(cfg.drbg);
+        std::string auto_tier;
+        try {
+            auto_tier = itb::drbg_auto_tier();
+        } catch (const itb::Error &) {
+            auto_tier.clear();
+        }
+        j += ",\"drbg_auto_tier\":" + json_string(auto_tier);
         j += fmt(",\"chunk_size_bytes\":%lld", static_cast<long long>(cfg.chunk_size));
         j += fmt(",\"barrier_fill\":%d", cfg.barrier_fill);
         j += fmt(",\"parallax\":\"%s\"", on_off(cfg.parallax));

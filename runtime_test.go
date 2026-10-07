@@ -7,6 +7,7 @@ import (
 	"runtime/debug"
 	"testing"
 
+	"github.com/everanium/itb/internal/drbg"
 	"github.com/everanium/itb/internal/poolstats"
 )
 
@@ -224,5 +225,19 @@ func TestPoolStatsLayout(t *testing.T) {
 		if dst[i] != 0 {
 			t.Errorf("slot %d beyond the layout was written (%d)", i, dst[i])
 		}
+	}
+}
+
+// TestDRBGAutoTier pins the reported label to the tier the fill
+// package selected: one of the two auto-tier ciphers, matching the
+// package's own selection.
+func TestDRBGAutoTier(t *testing.T) {
+	got := DRBGAutoTier()
+	want := "chacha20"
+	if drbg.SelectedTier() == "aes" {
+		want = "aes-256-ctr"
+	}
+	if got != want {
+		t.Fatalf("DRBGAutoTier() = %q, want %q (selected tier %q)", got, want, drbg.SelectedTier())
 	}
 }

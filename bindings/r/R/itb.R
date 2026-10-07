@@ -71,6 +71,14 @@ version <- function() {
   .Call(C_r_version)
 }
 
+#' Fill cipher the auto DRBG tier selected on this host ("aes-256-ctr"
+#' or "chacha20"): the tier a Pipeline uses when its drbg option is
+#' empty, resolved per host and recorded in no blob.
+#' @export
+drbg_auto_tier <- function() {
+  .Call(C_r_drbg_auto_tier)
+}
+
 #' Sorted character vector of every registered Triple profile name
 #' (the shipped catalogue plus `register` additions).
 #' @export

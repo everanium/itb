@@ -1,6 +1,6 @@
 ' Runtime diagnostics surface: GOMAXPROCS query / set / restore, the
 ' heap-profile writer, the pool-counter snapshot and its slot layout,
-' and the hash-registry enumeration.
+' the hash-registry enumeration and the auto DRBG tier report.
 
 Imports System.IO
 Imports Everanium.Itb3.VisualBasic
@@ -52,5 +52,10 @@ Public Class RuntimeTests
         Dim names As String() = Pipeline.HashNames()
         Assert.Equal("aesitb128", names(0))
         Assert.Contains("areion512", names)
+    End Sub
+
+    <Fact>
+    Public Sub DrbgAutoTierIsAFillCipher()
+        Assert.Contains(Library.DrbgAutoTier(), {"aes-256-ctr", "chacha20"})
     End Sub
 End Class

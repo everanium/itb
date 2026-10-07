@@ -43,6 +43,8 @@ final class Native {
     // ── auxiliaries ─────────────────────────────────────────────────
     static native int version(ByteBuffer out, long cap, long[] outLen);
 
+    static native int drbgAutoTier(ByteBuffer out, long cap, long[] outLen);
+
     static native int lastError(ByteBuffer out, long cap, long[] outLen);
 
     static native long setMemoryLimit(long limit);

@@ -186,6 +186,9 @@
     ",\"seed\":" (i (maps:get 'seed cfg))
     ",\"key_bits\":" (i (maps:get 'key-bits cfg))
     ",\"nonce_bits\":" (i (maps:get 'nonce-bits cfg))
+    ",\"blob_mode\":" (i (maps:get 'blob-mode cfg))
+    ",\"drbg\":" (jstr (maps:get 'drbg cfg))
+    ",\"drbg_auto_tier\":" (jstr (drbg-auto-tier))
     ",\"chunk_size_bytes\":" (i (maps:get 'chunk-size cfg))
     ",\"barrier_fill\":" (i (maps:get 'barrier-fill cfg))
     ",\"parallax\":" (jstr (loop-main:on-off (maps:get 'parallax cfg)))
@@ -232,6 +235,13 @@
 (defun f1 (v) (loop-size:fmt "~.1f" (list (* v 1.0))))
 (defun f2 (v) (loop-size:fmt "~.2f" (list (* v 1.0))))
 (defun f3 (v) (loop-size:fmt "~.3f" (list (* v 1.0))))
+
+;; The fill cipher the auto DRBG tier selected on this host; empty
+;; when the library cannot report it.
+(defun drbg-auto-tier ()
+  (case (itb3-lfe:drbg-auto-tier)
+    (`#(ok ,tier) tier)
+    (`#(error ,_) "")))
 
 ;; One JSON string literal with the escapes JSON requires.
 (defun jstr (s)

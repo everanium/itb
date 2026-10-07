@@ -88,8 +88,10 @@ struct Config {
     std::string profile;           /* empty = shape-based profile pair */
     int key_bits = 0;              /* 0 = profile default */
     int nonce_bits = 0;            /* 0 = profile default */
+    int blob_mode = 1;             /* container floor sizing mode: 1 (per-region, default) | 2 (per-container) */
     std::int64_t chunk_size = 0;   /* 0 = profile default */
     int barrier_fill = 0;          /* 0 = profile default */
+    std::string drbg;              /* DRBG fill primitive; "" = profile default (auto tier) */
     int gomaxprocs = 0;            /* 0 = inherit from the environment */
     std::int64_t rekey_every = 0;  /* per-worker iterations between rotations; 0 = never */
     std::int64_t blob_cycle_every = 0; /* per-worker iterations between reopens; 0 = never */

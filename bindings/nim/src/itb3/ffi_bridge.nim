@@ -59,6 +59,8 @@ proc itbLibPath*(): string =
 
 proc ITB_Version*(outBuf: pointer, capBytes: csize_t,
                   outLen: ptr csize_t): cint
+proc ITB_DRBGAutoTier*(outBuf: pointer, capBytes: csize_t,
+                       outLen: ptr csize_t): cint
 proc ITB_LastError*(outBuf: pointer, capBytes: csize_t,
                     outLen: ptr csize_t): cint
 proc ITB_SetMemoryLimit*(limit: int64): int64

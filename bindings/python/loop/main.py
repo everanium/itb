@@ -37,6 +37,7 @@ then the partial summary prints.
 
 from __future__ import annotations
 
+import json
 import os
 import signal
 import sys
@@ -111,8 +112,12 @@ FLAGS: tuple[tuple[str, str, int, object, str], ...] = (
      "DRBG barrier fill margin: 1 | 2 | 4 | 8 | 16 | 32; 0 = profile default (1)"),
     ("blob-cycle-every", "int", INT64, 0,
      "reopen each pipeline from its session blob every N iterations per worker; 0 = never"),
+    ("blob-mode", "int", INT, 1,
+     "container floor sizing mode: 1 (per-region, default) | 2 (per-container)"),
     ("chunk-size", "string", STRING, "0",
      "streaming chunk-size budget (e.g. 4MB); 0 = profile default; inert for pure message shape"),
+    ("drbg", "string", STRING, "",
+     "DRBG fill primitive name (see itb3 drbgs); empty = profile default (auto tier)"),
     ("duration", "duration", STRING, "5m",
      "run duration (Go format: 30s / 5m / 1h); ignored when --iterations > 0"),
     ("gogc", "int", INT, 0,
@@ -386,6 +391,10 @@ def parse_flags(argv: list[str]) -> tuple[int, Config]:
     if cfg.nonce_bits not in (0, 128, 256, 512):
         _err(f"--nonce-bits must be 128 | 256 | 512 (or 0 = profile default), got {cfg.nonce_bits}")
         return -1, cfg
+    cfg.blob_mode = int(raw["blob-mode"])
+    if cfg.blob_mode not in (1, 2):
+        _err(f"--blob-mode must be 1 (per-region) | 2 (per-container), got {cfg.blob_mode}")
+        return -1, cfg
     cfg.barrier_fill = int(raw["barrier-fill"])
     if cfg.barrier_fill not in (0, 1, 2, 4, 8, 16, 32):
         _err(
@@ -393,6 +402,8 @@ def parse_flags(argv: list[str]) -> tuple[int, Config]:
             f"got {cfg.barrier_fill}"
         )
         return -1, cfg
+    # Validated by Init: the C ABI enumerates no DRBG names.
+    cfg.drbg = str(raw["drbg"])
     chunk_size = parse_size(str(raw["chunk-size"]))
     if chunk_size is None:
         _err(f'--chunk-size: invalid size "{raw["chunk-size"]}"')
@@ -497,7 +508,24 @@ def _log_pipeline_initialised(profile: str, blob: bytes) -> None:
         f"mac={_record_str(record, 'mac')} "
         f"parallax={on_off(bool(record.get('parallax', False)))} "
         f"wrapper={on_off(bool(record.get('wrapper', False)))}"
+        + (" container-mode=2" if record.get("container_mode") == 2 else "")
+        + (f" drbg={record['drbg']}" if _record_str(record, "drbg") != "-" else "")
     )
+
+
+def _edit_inner_blob_mode(blob: bytes, target_mode: int) -> bytes:
+    """Returns a copy of a wrap-layer session blob whose inner blob's
+    "mode" field is set to target_mode (1 = per-region, 2 =
+    per-container). The wrap layer's profile record carries its own
+    "mode" (a string); the target is the inner blob's ("ib") integer
+    field. Raises ValueError when the blob is not the expected JSON
+    object or carries no inner blob mode field."""
+    doc = json.loads(blob)
+    inner = doc.get("ib") if isinstance(doc, dict) else None
+    if not isinstance(inner, dict) or "mode" not in inner:
+        raise ValueError("inner blob mode field not found")
+    inner["mode"] = target_mode
+    return json.dumps(doc, separators=(",", ":")).encode("utf-8")
 
 
 def _fill_keystream_layers(name: str, opts: itb.Opts, want_parallax: bool,
@@ -556,6 +584,7 @@ def _build_pipeline(cfg: Config, profile: str) -> tuple[itb.Pipeline, bytes] | N
         .with_key_bits(cfg.key_bits)
         .with_nonce_bits(cfg.nonce_bits)
         .with_barrier_fill(cfg.barrier_fill)
+        .with_drbg(cfg.drbg)
         .with_chunk_size(cfg.chunk_size)
     )
     if cfg.profile:
@@ -578,6 +607,23 @@ def _build_pipeline(cfg: Config, profile: str) -> tuple[itb.Pipeline, bytes] | N
         _err(f"Save({profile}): {status_detail(exc)}")
         pipe.free()
         return None
+    if cfg.blob_mode == 2:
+        # The sizing mode is not an Opts knob: the Init blob is edited
+        # and the pipeline reopened from it, so the retained blob (the
+        # one blob-cycle reopens from) carries the edited mode.
+        try:
+            edited = _edit_inner_blob_mode(blob, 2)
+        except ValueError as exc:
+            _err(f"rewrite blob mode: {exc}")
+            pipe.free()
+            return None
+        pipe.free()
+        try:
+            pipe = itb.Pipeline.load(edited)
+        except itb.ItbError as exc:
+            _err(f"reload Mode 2 blob: {status_detail(exc)}")
+            return None
+        blob = edited
     _log_pipeline_initialised(profile, blob)
     return pipe, blob
 
@@ -634,6 +680,8 @@ def run(argv: list[str]) -> int:
         f"rekey-every={cfg.rekey_every} blob-cycle-every={cfg.blob_cycle_every} "
         f"payload-mode={payload_mode_name(cfg.payload_mode)} seed={cfg.seed} "
         f"json-output={'true' if cfg.json_output else 'false'}"
+        + (f" blob-mode={cfg.blob_mode}" if cfg.blob_mode != 1 else "")
+        + (f" drbg={cfg.drbg}" if cfg.drbg else "")
     )
     log_line(
         "policy: microbatch-tiers="

@@ -36,6 +36,23 @@ def version() -> str:
     return buf.raw[: max(need.value - 1, 0)].decode("utf-8")
 
 
+def drbg_auto_tier() -> str:
+    """Returns the fill cipher the auto DRBG tier selected on this host
+    (``"aes-256-ctr"`` or ``"chacha20"``): the tier a Pipeline uses when
+    its ``drbg`` option is empty, resolved per host and recorded in no
+    blob."""
+    s = _ffi.syms()
+    need = ctypes.c_size_t(0)
+    rc = int(s.lib.ITB_DRBGAutoTier(None, 0, ctypes.byref(need)))
+    if rc not in (int(Status.OK), int(Status.BUFFER_TOO_SMALL)):
+        raise ItbError(_ffi.last_error(), status_from(rc))
+    if need.value <= 1:
+        return ""
+    buf = ctypes.create_string_buffer(need.value)
+    _ffi.check(int(s.lib.ITB_DRBGAutoTier(buf, len(buf), ctypes.byref(need))))
+    return buf.raw[: max(need.value - 1, 0)].decode("utf-8")
+
+
 def set_gomaxprocs(n: int) -> int:
     """Sets the Go runtime's GOMAXPROCS — the number of OS threads
     executing Go code simultaneously inside the library — and returns

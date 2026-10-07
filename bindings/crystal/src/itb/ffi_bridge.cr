@@ -50,6 +50,7 @@ end
 lib LibItb3
   # ── diagnostics ──────────────────────────────────────────────────
   fun version = ITB_Version(out : LibC::Char*, cap : LibC::SizeT, out_len : LibC::SizeT*) : LibC::Int
+  fun drbg_auto_tier = ITB_DRBGAutoTier(out : LibC::Char*, cap : LibC::SizeT, out_len : LibC::SizeT*) : LibC::Int
   fun last_error = ITB_LastError(out : LibC::Char*, cap : LibC::SizeT, out_len : LibC::SizeT*) : LibC::Int
 
   # ── Go runtime knobs ─────────────────────────────────────────────

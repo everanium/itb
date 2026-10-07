@@ -131,8 +131,10 @@ struct Config {
     var profile = ""              // empty = shape-based profile pair
     var keyBits: Int32 = 0        // 0 = profile default
     var nonceBits: Int32 = 0      // 0 = profile default
+    var blobMode: Int32 = 1       // container floor sizing mode: 1 (per-region, default) | 2 (per-container)
     var chunkSize: Int64 = 0      // 0 = profile default
     var barrierFill: Int32 = 0    // 0 = profile default
+    var drbg = ""                 // DRBG fill primitive; "" = profile default (auto tier)
     var gomaxprocs: Int32 = 0     // 0 = inherit from the environment
     var rekeyEvery: Int64 = 0     // per-worker iterations between rotations; 0 = never
     var blobCycleEvery: Int64 = 0 // per-worker iterations between reopens; 0 = never
@@ -161,7 +163,9 @@ struct Flag {
 final class RawFlags {
     var barrierFill: Int32 = 0
     var blobCycleEvery: Int64 = 0
+    var blobMode: Int32 = 1
     var chunkSize = "0"
+    var drbg = ""
     var duration = "5m"
     var gogc: Int32 = 0
     var gomaxprocs: Int32 = 0
@@ -202,6 +206,7 @@ final class RawFlags {
     func intValue(_ name: String) -> Int32 {
         switch name {
         case "barrier-fill": return barrierFill
+        case "blob-mode": return blobMode
         case "gogc": return gogc
         case "gomaxprocs": return gomaxprocs
         case "goroutines": return goroutines
@@ -214,6 +219,7 @@ final class RawFlags {
     func stringValue(_ name: String) -> String {
         switch name {
         case "chunk-size": return chunkSize
+        case "drbg": return drbg
         case "duration": return duration
         case "hash": return hash
         case "mac": return mac
@@ -239,6 +245,7 @@ final class RawFlags {
             }
             switch f.name {
             case "barrier-fill": barrierFill = v
+            case "blob-mode": blobMode = v
             case "gogc": gogc = v
             case "gomaxprocs": gomaxprocs = v
             case "goroutines": goroutines = v
@@ -267,6 +274,7 @@ final class RawFlags {
         case .string:
             switch f.name {
             case "chunk-size": chunkSize = value
+            case "drbg": drbg = value
             case "duration": duration = value
             case "hash": hash = value
             case "mac": mac = value
@@ -301,8 +309,12 @@ let flagTable: [Flag] = [
          help: "DRBG barrier fill margin: 1 | 2 | 4 | 8 | 16 | 32; 0 = profile default (1)"),
     Flag(name: "blob-cycle-every", typeLabel: "int", kind: .int64,
          help: "reopen each pipeline from its session blob every N iterations per worker; 0 = never"),
+    Flag(name: "blob-mode", typeLabel: "int", kind: .int,
+         help: "container floor sizing mode: 1 (per-region, default) | 2 (per-container)"),
     Flag(name: "chunk-size", typeLabel: "string", kind: .string,
          help: "streaming chunk-size budget (e.g. 4MB); 0 = profile default; inert for pure message shape"),
+    Flag(name: "drbg", typeLabel: "string", kind: .string,
+         help: "DRBG fill primitive name (see itb3 drbgs); empty = profile default (auto tier)"),
     Flag(name: "duration", typeLabel: "duration", kind: .string,
          help: "run duration (Go format: 30s / 5m / 1h); ignored when --iterations > 0"),
     Flag(name: "gogc", typeLabel: "int", kind: .int,
@@ -580,6 +592,14 @@ enum LoopMain {
             Log.err("--nonce-bits must be 128 | 256 | 512 (or 0 = profile default), got \(cfg.nonceBits)")
             return -1
         }
+        cfg.blobMode = f.blobMode
+        switch cfg.blobMode {
+        case 1, 2:
+            break
+        default:
+            Log.err("--blob-mode must be 1 (per-region) | 2 (per-container), got \(cfg.blobMode)")
+            return -1
+        }
         cfg.barrierFill = f.barrierFill
         switch cfg.barrierFill {
         case 0, 1, 2, 4, 8, 16, 32:
@@ -588,6 +608,7 @@ enum LoopMain {
             Log.err("--barrier-fill must be 1 | 2 | 4 | 8 | 16 | 32 (or 0 = profile default), got \(cfg.barrierFill)")
             return -1
         }
+        cfg.drbg = f.drbg // validated by Init: no DRBG-name enumeration exists
         guard let chunk = parseSize(f.chunkSize) else {
             Log.err("--chunk-size: invalid size \"\(f.chunkSize)\"")
             return -1
@@ -684,10 +705,43 @@ enum LoopMain {
         }
         let hash = record.innerHash.isEmpty ? "-" : record.innerHash
         let mac = record.macName.isEmpty ? "-" : record.macName
-        Log.line("pipeline initialised: profile=\(profile) blob=\(blob.count) bytes hash=\(hash) "
+        var line = "pipeline initialised: profile=\(profile) blob=\(blob.count) bytes hash=\(hash) "
             + "key-bits=\(record.keyBits) nonce-bits=\(record.nonceBits ?? 0) "
             + "barrier-fill=\(record.barrierFill ?? 0) chunk-size=\(record.chunkSize) mac=\(mac) "
-            + "parallax=\(onOff(record.parallax)) wrapper=\(onOff(record.wrapper))")
+            + "parallax=\(onOff(record.parallax)) wrapper=\(onOff(record.wrapper))"
+        if record.containerMode == 2 {
+            line += " container-mode=2"
+        }
+        if !record.drbg.isEmpty {
+            line += " drbg=\(record.drbg)"
+        }
+        Log.line(line)
+    }
+
+    /// Sets the inner blob's "mode" field of a wrap-layer session blob
+    /// to targetMode (1 = per-region, 2 = per-container) in place. The
+    /// wrap layer's profile record carries its own "mode" (a string),
+    /// so the search starts at the inner blob ("ib"); both shipped
+    /// modes are one digit wide, so the blob length does not change.
+    /// Returns false when the inner blob or its mode field is not
+    /// found.
+    static func editInnerBlobMode(_ blob: inout Data, _ targetMode: Int) -> Bool {
+        guard let ib = blob.range(of: Data("\"ib\":{".utf8)),
+              let mode = blob.range(of: Data("\"mode\":".utf8), in: ib.upperBound..<blob.endIndex) else {
+            return false
+        }
+        let at = mode.upperBound
+        guard at + 1 < blob.endIndex else {
+            return false
+        }
+        let digit = UInt8(ascii: "0")
+        let nine = UInt8(ascii: "9")
+        if blob[at] < UInt8(ascii: "1") || blob[at] > UInt8(ascii: "2")
+            || (blob[at + 1] >= digit && blob[at + 1] <= nine) {
+            return false
+        }
+        blob[at] = digit + UInt8(targetMode)
+        return true
     }
 
     /// Constructs one Pipeline against profile with every flag-carried
@@ -710,6 +764,7 @@ enum LoopMain {
             try opts.set("keyBits", "\(cfg.keyBits)")
             try opts.set("nonceBits", "\(cfg.nonceBits)")
             try opts.set("barrierFill", "\(cfg.barrierFill)")
+            try opts.set("drbg", cfg.drbg)
             try opts.set("chunkSize", "\(cfg.chunkSize)")
         } catch {
             Log.err("opts: \(error)")
@@ -727,7 +782,7 @@ enum LoopMain {
             }
         }
 
-        let pipe: Pipeline
+        var pipe: Pipeline
         do {
             pipe = try Pipeline(profile: profile, opts: opts)
         } catch let e as ItbError {
@@ -737,7 +792,7 @@ enum LoopMain {
             Log.err("Init(\(profile)): \(error)")
             return nil
         }
-        let blob: Data
+        var blob: Data
         do {
             blob = try pipe.save()
         } catch let e as ItbError {
@@ -746,6 +801,25 @@ enum LoopMain {
         } catch {
             Log.err("Save(\(profile)): \(error)")
             return nil
+        }
+        if cfg.blobMode == 2 {
+            // The sizing mode is not an Opts knob: the Init blob is
+            // edited and the pipeline reopened from it, so the retained
+            // blob (the one blob-cycle reopens from) carries the edited
+            // mode.
+            if !editInnerBlobMode(&blob, 2) {
+                Log.err("rewrite blob mode: inner blob mode field not found")
+                return nil
+            }
+            do {
+                pipe = try Pipeline(load: blob)
+            } catch let e as ItbError {
+                Log.err("reload Mode 2 blob: status \(e.code): \(e.message)")
+                return nil
+            } catch {
+                Log.err("reload Mode 2 blob: \(error)")
+                return nil
+            }
         }
         logPipelineInitialised(profile, blob)
         return (pipe, blob)
@@ -801,7 +875,9 @@ enum LoopMain {
             + "barrier-fill=\(cfg.barrierFill) gomaxprocs=\(cfg.gomaxprocs) "
             + "rekey-every=\(cfg.rekeyEvery) blob-cycle-every=\(cfg.blobCycleEvery) "
             + "payload-mode=\(cfg.payloadMode.name) seed=\(cfg.seed) "
-            + "json-output=\(cfg.jsonOutput ? "true" : "false")")
+            + "json-output=\(cfg.jsonOutput ? "true" : "false")"
+            + (cfg.blobMode != 1 ? " blob-mode=\(cfg.blobMode)" : "")
+            + (cfg.drbg.isEmpty ? "" : " drbg=\(cfg.drbg)"))
         let env = ProcessInfo.processInfo.environment
         Log.line("policy: microbatch-tiers=\(policyLabel(env["ITB_MICROBATCH_TIERS"])) "
             + "hashpool-starters=\(policyLabel(env["ITB_HASHPOOL_STARTERS"]))")

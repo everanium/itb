@@ -13,7 +13,8 @@ declarations — no compile-time link against libitb3; the
 Every hash-name / MAC-name / cipher-name / profile-name is an opaque
 string passed through to Go for validation; the binding carries no
 ITB construction logic. The public surface is the `itb3` module
-(`initPipeline` / `loadPipeline` / `loadPipelineF` / `version`, the
+(`initPipeline` / `loadPipeline` / `loadPipelineF` / `version` /
+`drbgAutoTier`, the
 `Profile` record with `register` / `lookup` / `profiles` / `inspect`,
 and the Go runtime knobs), the `Pipeline`
 type (Single Message encrypt / decrypt, save / saveF, rekey,

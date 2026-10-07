@@ -13,6 +13,7 @@ import {
   Opts,
   Pipeline,
   Status,
+  drbgAutoTier,
   hashNames,
   poolStats,
   poolStatsLen,
@@ -115,4 +116,9 @@ test('every enumerated name constructs a Pipeline', () => {
     assert.deepEqual(pipe.decryptMessage(pipe.encryptMessage(probe)), probe);
     pipe.free();
   }
+});
+
+test('drbgAutoTier names one of the two fill ciphers', () => {
+  // Resolved per host; the value is one of the two fill ciphers.
+  assert.ok(['aes-256-ctr', 'chacha20'].includes(drbgAutoTier()));
 });

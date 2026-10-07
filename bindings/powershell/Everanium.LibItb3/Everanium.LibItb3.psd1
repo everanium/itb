@@ -29,6 +29,7 @@
         'New-ItbEncryptStream'
         'New-ItbDecryptStream'
         'Get-ItbVersion'
+        'Get-ItbDrbgAutoTier'
         'Set-ItbMemoryLimit'
         'Set-ItbGCPercent'
         'Set-ItbGOMAXPROCS'

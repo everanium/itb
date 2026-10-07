@@ -10,6 +10,12 @@ package Itb3.Runtime is
    --  The libitb3 library version string ("<major>.<minor>.<patch>").
    function Version return String;
 
+   --  The fill cipher the auto DRBG tier selected on this host
+   --  ("aes-256-ctr" or "chacha20"): the tier a Pipeline uses when
+   --  its "drbg" option is empty, resolved per host and recorded in
+   --  no blob.
+   function DRBG_Auto_Tier return String;
+
    --  Sets the Go runtime's soft heap limit in bytes.
    procedure Set_Memory_Limit (Limit : Interfaces.Integer_64);
 

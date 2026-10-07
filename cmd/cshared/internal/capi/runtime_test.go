@@ -6,6 +6,7 @@ import (
 	"runtime"
 	"testing"
 
+	itb "github.com/everanium/itb"
 	"github.com/everanium/itb/internal/poolstats"
 )
 
@@ -140,5 +141,15 @@ func TestPoolStatsLayout(t *testing.T) {
 		if dst[i] != 0 {
 			t.Errorf("slot %d beyond the layout was written (%d)", i, dst[i])
 		}
+	}
+}
+
+// TestDRBGAutoTier pins the FFI entry to the root report.
+func TestDRBGAutoTier(t *testing.T) {
+	if got, want := DRBGAutoTier(), itb.DRBGAutoTier(); got != want {
+		t.Fatalf("DRBGAutoTier() = %q, want %q", got, want)
+	}
+	if got := DRBGAutoTier(); got != "aes-256-ctr" && got != "chacha20" {
+		t.Fatalf("DRBGAutoTier() = %q, want aes-256-ctr or chacha20", got)
 	}
 }

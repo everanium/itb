@@ -780,6 +780,20 @@ static ERL_NIF_TERM version_nif(ErlNifEnv *env, int argc,
     return make_ok(env, make_bin(env, v, strlen(v)));
 }
 
+/* drbg_auto_tier_nif() -> {ok, NameBin} | {error, _} */
+static ERL_NIF_TERM drbg_auto_tier_nif(ErlNifEnv *env, int argc,
+                                       const ERL_NIF_TERM argv[])
+{
+    (void)argc;
+    (void)argv;
+    const char *t = itb_drbg_auto_tier();
+    if (t == NULL) {
+        return make_error_msg(env, ITB_STATUS_INTERNAL,
+                              "libitb3 auto DRBG tier unavailable");
+    }
+    return make_ok(env, make_bin(env, t, strlen(t)));
+}
+
 /* last_error_nif() -> DetailBin */
 static ERL_NIF_TERM last_error_nif(ErlNifEnv *env, int argc,
                                    const ERL_NIF_TERM argv[])
@@ -945,6 +959,7 @@ static ErlNifFunc nif_funcs[] = {
     {"lookup_nif", 1, lookup_nif, 0},
     {"profiles_nif", 0, profiles_nif, 0},
     {"version_nif", 0, version_nif, 0},
+    {"drbg_auto_tier_nif", 0, drbg_auto_tier_nif, 0},
     {"last_error_nif", 0, last_error_nif, 0},
     {"set_memory_limit_nif", 1, set_memory_limit_nif,
      ERL_NIF_DIRTY_JOB_CPU_BOUND},

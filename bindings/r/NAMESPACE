@@ -1,6 +1,7 @@
 useDynLib(libitb3r, .registration = TRUE)
 
 export(version)
+export(drbg_auto_tier)
 export(profiles)
 export(inspect)
 export(register)

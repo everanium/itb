@@ -10,6 +10,7 @@ module itb_runtime
   private
 
   public :: itb_set_memory_limit, itb_set_gc_percent, itb_version
+  public :: itb_drbg_auto_tier
   public :: itb_set_gomaxprocs, itb_write_heap_profile
   public :: itb_pool_stats_len, itb_pool_stats
 
@@ -49,6 +50,24 @@ contains
     call itb_error_set(err, rc)
     if (.not. itb_ok(err)) return
     call itb_from_cstr(buf, n, version)
+  end subroutine
+
+  ! The fill cipher the auto DRBG tier selected on this host
+  ! ("aes-256-ctr" or "chacha20"): the tier a Pipeline uses when its
+  ! drbg option is empty, resolved per host and recorded in no blob.
+  subroutine itb_drbg_auto_tier(tier, err)
+    character(:), allocatable, intent(out) :: tier
+    type(itb_error_t), intent(out)         :: err
+    character(kind=c_char), target :: buf(64)
+    integer(c_size_t) :: n
+    integer(c_int)    :: rc
+
+    tier = ""
+    n = 0_c_size_t
+    rc = c_itb_drbg_auto_tier(c_loc(buf(1)), int(size(buf), c_size_t), n)
+    call itb_error_set(err, rc)
+    if (.not. itb_ok(err)) return
+    call itb_from_cstr(buf, n, tier)
   end subroutine
 
   ! Sets the Go runtime's GOMAXPROCS and returns the previous value.

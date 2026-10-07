@@ -68,4 +68,12 @@ Public Module Library
     Public Function Version() As String
         Return Guarded(Function() Global.Everanium.Itb3.Runtime.Version())
     End Function
+
+    ''' <summary>Returns the fill cipher the auto DRBG tier selected on
+    ''' this host (<c>"aes-256-ctr"</c> or <c>"chacha20"</c>): the tier
+    ''' a Pipeline uses when its <c>drbg</c> option is empty, resolved
+    ''' per host and recorded in no blob.</summary>
+    Public Function DrbgAutoTier() As String
+        Return Guarded(Function() Global.Everanium.Itb3.Runtime.DrbgAutoTier())
+    End Function
 End Module

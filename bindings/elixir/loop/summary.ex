@@ -215,6 +215,9 @@ defmodule Loop.Summary do
       ",\"seed\":", i(cfg.seed),
       ",\"key_bits\":", i(cfg.key_bits),
       ",\"nonce_bits\":", i(cfg.nonce_bits),
+      ",\"blob_mode\":", i(cfg.blob_mode),
+      ",\"drbg\":", jstr(cfg.drbg),
+      ",\"drbg_auto_tier\":", jstr(drbg_auto_tier()),
       ",\"chunk_size_bytes\":", i(cfg.chunk_size),
       ",\"barrier_fill\":", i(cfg.barrier_fill),
       ",\"parallax\":", jstr(Loop.Main.on_off(cfg.parallax)),
@@ -251,6 +254,15 @@ defmodule Loop.Summary do
   end
 
   defp i(n), do: Integer.to_string(n)
+
+  # The fill cipher the auto DRBG tier selected on this host; empty
+  # when the library cannot report it.
+  defp drbg_auto_tier do
+    case ITB.drbg_auto_tier() do
+      {:ok, tier} -> tier
+      {:error, _} -> ""
+    end
+  end
 
   # One JSON string literal with the escapes JSON requires.
   defp jstr(s) do

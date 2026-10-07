@@ -1,5 +1,5 @@
 /*
- * Go runtime knobs and the library version.
+ * Go runtime knobs, the library version and the auto DRBG tier.
  */
 
 #include <array>
@@ -14,6 +14,14 @@ std::string version()
     std::array<char, 64> buf{};
     std::size_t need = 0;
     detail::check(ITB_Version(buf.data(), buf.size(), &need), "version");
+    return {buf.data()};
+}
+
+std::string drbg_auto_tier()
+{
+    std::array<char, 64> buf{};
+    std::size_t need = 0;
+    detail::check(ITB_DRBGAutoTier(buf.data(), buf.size(), &need), "drbg_auto_tier");
     return {buf.data()};
 }
 

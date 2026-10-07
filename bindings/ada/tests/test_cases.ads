@@ -47,10 +47,11 @@ package Test_Cases is
    --  builder).
    procedure Opts_Render;
 
-   --  Go runtime knobs and the hash-registry enumeration: the
-   --  setters report through their query forms, the heap profile
-   --  reaches the file system, and the pool counters come back at the
-   --  length the library reports and in the layout it documents.
+   --  Go runtime knobs, the hash-registry enumeration and the auto
+   --  DRBG tier report: the setters report through their query forms,
+   --  the heap profile reaches the file system, the pool counters come
+   --  back at the length the library reports and in the layout it
+   --  documents, and the auto tier names one of the two fill ciphers.
    procedure Runtime_Surface;
 
    --  Per-call constellation override via the typed

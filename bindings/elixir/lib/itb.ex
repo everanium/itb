@@ -385,6 +385,18 @@ defmodule ITB do
   def version!, do: bang(version())
 
   @doc """
+  The fill cipher the auto DRBG tier selected on this host
+  (`"aes-256-ctr"` or `"chacha20"`): the tier a Pipeline uses when its
+  `drbg` option is empty, resolved per host and recorded in no blob.
+  """
+  @spec drbg_auto_tier() :: {:ok, binary()} | {:error, reason()}
+  def drbg_auto_tier, do: :itb3.drbg_auto_tier()
+
+  @doc "As `drbg_auto_tier/0`, unwrapping the binary or raising `ITB.Error`."
+  @spec drbg_auto_tier!() :: binary()
+  def drbg_auto_tier!, do: bang(drbg_auto_tier())
+
+  @doc """
   The Go-side diagnostic recorded by the most recent failing libitb3
   call (process-global last-write-wins; `<<>>` when none). The error
   tuples already carry this detail — direct use is for ad-hoc

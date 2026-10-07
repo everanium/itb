@@ -41,6 +41,7 @@
 
 package io.github.everanium.itb3.scala.loop
 
+import java.nio.charset.StandardCharsets
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.locks.{Condition, ReentrantLock, ReentrantReadWriteLock}
 import java.util.concurrent.{BrokenBarrierException, CountDownLatch, CyclicBarrier, TimeUnit}
@@ -66,8 +67,10 @@ final class Config(
     val profile: String,
     val keyBits: Long,
     val nonceBits: Long,
+    val blobMode: Long,
     val chunkSize: Long,
     val barrierFill: Long,
+    val drbg: String,
     val gomaxprocs: Int,
     val rekeyEvery: Long,
     val blobCycleEvery: Long,
@@ -174,7 +177,9 @@ final class RunState(
 private final class RawFlags:
   var barrierFill = 0L
   var blobCycleEvery = 0L
+  var blobMode = 1L
   var chunkSize = "0"
+  var drbg = ""
   var duration = "5m"
   var gogc = 0L
   var gomaxprocs = 0L
@@ -282,11 +287,23 @@ object Main:
         (f, s) => storeInt(s).exists(v => { f.blobCycleEvery = v; true })
       ),
       Flag(
+        "blob-mode", "int",
+        "container floor sizing mode: 1 (per-region, default) | 2 (per-container)",
+        false, defaultOf(d.blobMode),
+        (f, s) => storeInt(s).exists(v => { f.blobMode = v; true })
+      ),
+      Flag(
         "chunk-size", "string",
         "streaming chunk-size budget (e.g. 4MB); 0 = profile default; " +
           "inert for pure message shape",
         false, defaultOf(d.chunkSize),
         (f, s) => { f.chunkSize = s; true }
+      ),
+      Flag(
+        "drbg", "string",
+        "DRBG fill primitive name (see itb3 drbgs); empty = profile default (auto tier)",
+        false, defaultOf(d.drbg),
+        (f, s) => { f.drbg = s; true }
       ),
       Flag(
         "duration", "duration",
@@ -601,6 +618,11 @@ object Main:
         s"loop: --nonce-bits must be 128 | 256 | 512 (or 0 = profile default), got ${f.nonceBits}"
       )
       return (None, 2)
+    if !Set(1L, 2L).contains(f.blobMode) then
+      System.err.println(
+        s"loop: --blob-mode must be 1 (per-region) | 2 (per-container), got ${f.blobMode}"
+      )
+      return (None, 2)
     if !Set(0L, 1L, 2L, 4L, 8L, 16L, 32L).contains(f.barrierFill) then
       System.err.println(
         "loop: --barrier-fill must be 1 | 2 | 4 | 8 | 16 | 32 (or 0 = profile default), " +
@@ -634,7 +656,9 @@ object Main:
         Config(
           durationNs, f.iterations, workers, workers, shape, f.hash, f.mac, payload,
           memlimit, memlimitAuto, f.gogc.toInt, parallax, wrapper, f.profile, f.keyBits,
-          f.nonceBits, chunkSize, f.barrierFill, f.gomaxprocs.toInt, f.rekeyEvery,
+          f.nonceBits, f.blobMode, chunkSize, f.barrierFill,
+          f.drbg, // validated by Init: the C ABI enumerates no DRBG names
+          f.gomaxprocs.toInt, f.rekeyEvery,
           f.blobCycleEvery, payloadMode, f.seed, f.jsonOutput, f.memprofile
         )
       ),
@@ -725,6 +749,7 @@ object Main:
       .withKeyBits(cfg.keyBits)
       .withNonceBits(cfg.nonceBits)
       .withBarrierFill(cfg.barrierFill)
+      .withDrbg(cfg.drbg)
       .withChunkSize(cfg.chunkSize)
     if cfg.profile.nonEmpty then
       fillKeystreamLayers(cfg.profile, opts, cfg.parallax, cfg.wrapper) match
@@ -736,7 +761,7 @@ object Main:
               s"loop: ${cfg.profile} leaves the requested keystream layers unnamed; " +
                 s"$KeystreamFillCipher supplied for them"
             )
-    val pipe = Pipeline.init(profile, opts) match
+    var pipe = Pipeline.init(profile, opts) match
       case Left(e) =>
         System.err.println(s"loop: Init($profile): ${Worker.detail(e)}")
         return None
@@ -747,8 +772,56 @@ object Main:
         pipe.close()
         return None
       case Right(b) => b
+    if cfg.blobMode == 2L then
+      // The sizing mode is not an Opts knob: the Init blob is edited
+      // and the pipeline reopened from it, so the retained blob (the
+      // one blob-cycle reopens from) carries the edited mode.
+      if !editInnerBlobMode(blob, 2) then
+        System.err.println("loop: rewrite blob mode: inner blob mode field not found")
+        pipe.close()
+        return None
+      pipe.close()
+      pipe = Pipeline.load(blob) match
+        case Left(e) =>
+          System.err.println(s"loop: reload Mode 2 blob: ${Worker.detail(e)}")
+          return None
+        case Right(p) => p
     logPipelineInitialised(profile, blob)
     Some((pipe, blob))
+
+  /** Offset of the first occurrence of needle in hay at or after from,
+    * or -1 when absent.
+    */
+  private def findBytes(hay: Array[Byte], from: Int, needle: Array[Byte]): Int =
+    var i = from
+    while i + needle.length <= hay.length do
+      var j = 0
+      while j < needle.length && hay(i + j) == needle(j) do j += 1
+      if j == needle.length then return i
+      i += 1
+    -1
+
+  /** Sets the inner blob's "mode" field of a wrap-layer session blob to
+    * targetMode (1 = per-region, 2 = per-container) in place. The wrap
+    * layer's profile record carries its own "mode" (a string), so the
+    * search starts at the inner blob ("ib"); both shipped modes are one
+    * digit wide, so the blob length does not change and the key material
+    * in blob is never copied. Returns false when the inner blob or its
+    * mode field is not found.
+    */
+  private def editInnerBlobMode(blob: Array[Byte], targetMode: Int): Boolean =
+    val ibKey = "\"ib\":{".getBytes(StandardCharsets.US_ASCII)
+    val modeKey = "\"mode\":".getBytes(StandardCharsets.US_ASCII)
+    val ib = findBytes(blob, 0, ibKey)
+    if ib < 0 then return false
+    val mode = findBytes(blob, ib + ibKey.length, modeKey)
+    if mode < 0 then return false
+    val at = mode + modeKey.length
+    if at + 1 >= blob.length || blob(at) < '1' || blob(at) > '2' ||
+        (blob(at + 1) >= '0' && blob(at + 1) <= '9')
+    then return false
+    blob(at) = ('0' + targetMode).toByte
+    true
 
   private def dash(s: String): String = if s.isEmpty then "-" else s
 
@@ -775,7 +848,11 @@ object Main:
             s" chunk-size=${rec.chunk()}" +
             s" mac=${dash(rec.mac())}" +
             s" parallax=${onOff(rec.parallax())}" +
-            s" wrapper=${onOff(rec.wrapper())}"
+            s" wrapper=${onOff(rec.wrapper())}" +
+            (if rec.containerMode() != null && rec.containerMode().intValue == 2 then
+               " container-mode=2"
+             else "") +
+            (if rec.drbg().isEmpty then "" else s" drbg=${rec.drbg()}")
         )
 
   private def run(args: Array[String]): Int =
@@ -828,7 +905,9 @@ object Main:
         s" blob-cycle-every=${cfg.blobCycleEvery}" +
         s" payload-mode=${cfg.payloadMode.label}" +
         s" seed=${java.lang.Long.toUnsignedString(cfg.seed)}" +
-        s" json-output=${if cfg.jsonOutput then "true" else "false"}"
+        s" json-output=${if cfg.jsonOutput then "true" else "false"}" +
+        (if cfg.blobMode != 1L then s" blob-mode=${cfg.blobMode}" else "") +
+        (if cfg.drbg.isEmpty then "" else s" drbg=${cfg.drbg}")
     )
     logLine(
       s"""policy: microbatch-tiers=${policyLabel("ITB_MICROBATCH_TIERS")}""" +

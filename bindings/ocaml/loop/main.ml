@@ -67,8 +67,12 @@ let flags =
      "DRBG barrier fill margin: 1 | 2 | 4 | 8 | 16 | 32; 0 = profile default (1)");
     ("blob-cycle-every", "int", Kind_int64, Rint 0,
      "reopen each pipeline from its session blob every N iterations per worker; 0 = never");
+    ("blob-mode", "int", Kind_int, Rint 1,
+     "container floor sizing mode: 1 (per-region, default) | 2 (per-container)");
     ("chunk-size", "string", Kind_string, Rstring "0",
      "streaming chunk-size budget (e.g. 4MB); 0 = profile default; inert for pure message shape");
+    ("drbg", "string", Kind_string, Rstring "",
+     "DRBG fill primitive name (see itb3 drbgs); empty = profile default (auto tier)");
     ("duration", "duration", Kind_string, Rstring "5m",
      "run duration (Go format: 30s / 5m / 1h); ignored when --iterations > 0");
     ("gogc", "int", Kind_int, Rint 0,
@@ -473,12 +477,20 @@ let parse_flags argv =
           (Printf.sprintf
              "--nonce-bits must be 128 | 256 | 512 (or 0 = profile default), got %d"
              cfg.nonce_bits);
+      cfg.blob_mode <- raw_int table "blob-mode";
+      if not (List.mem cfg.blob_mode [ 1; 2 ]) then
+        reject
+          (Printf.sprintf
+             "--blob-mode must be 1 (per-region) | 2 (per-container), got %d"
+             cfg.blob_mode);
       cfg.barrier_fill <- raw_int table "barrier-fill";
       if not (List.mem cfg.barrier_fill [ 0; 1; 2; 4; 8; 16; 32 ]) then
         reject
           (Printf.sprintf
              "--barrier-fill must be 1 | 2 | 4 | 8 | 16 | 32 (or 0 = profile default), got %d"
              cfg.barrier_fill);
+      (* Validated by Init: the C ABI enumerates no DRBG names. *)
+      cfg.drbg <- raw_string table "drbg";
       (match Size.parse_size (raw_string table "chunk-size") with
       | Some n -> cfg.chunk_size <- n
       | None ->
@@ -561,12 +573,45 @@ let log_pipeline_initialised profile blob =
       log_line
         (Printf.sprintf
            "pipeline initialised: profile=%s blob=%d bytes hash=%s key-bits=%d \
-            nonce-bits=%d barrier-fill=%d chunk-size=%d mac=%s parallax=%s wrapper=%s"
+            nonce-bits=%d barrier-fill=%d chunk-size=%d mac=%s parallax=%s wrapper=%s%s%s"
            profile (Bytes.length blob) (record_str json "hash") (record_int json "keybits")
            (record_int json "nonce_bits") (record_int json "barrier_fill")
            (record_int json "chunk") (record_str json "mac")
            (on_off (record_bool json "parallax"))
-           (on_off (record_bool json "wrapper")))
+           (on_off (record_bool json "wrapper"))
+           (if record_int json "container_mode" = 2 then " container-mode=2" else "")
+           (match record_str json "drbg" with "-" -> "" | d -> " drbg=" ^ d))
+
+(* Sets the inner blob's "mode" field of a wrap-layer session blob to
+   target_mode (1 = per-region, 2 = per-container) in place. The wrap
+   layer's profile record carries its own "mode" (a string), so the
+   search starts at the inner blob ("ib"); both shipped modes are one
+   digit wide, so the blob length does not change. Returns false when
+   the inner blob or its mode field is not found.
+
+   OCaml-specific. The binding carries no JSON library and reads
+   profile records by targeted string handling, so the edit replaces
+   the single digit rather than re-serialising the blob. *)
+let edit_inner_blob_mode blob target_mode =
+  let text = Bytes.to_string blob in
+  let ib_key = "\"ib\":{" and mode_key = "\"mode\":" in
+  match find_sub text ib_key with
+  | None -> false
+  | Some ib -> (
+      let off = ib + String.length ib_key in
+      let tail = String.sub text off (String.length text - off) in
+      match find_sub tail mode_key with
+      | None -> false
+      | Some m ->
+          let at = off + m + String.length mode_key in
+          let digit c = c >= '0' && c <= '9' in
+          if at + 1 >= String.length text
+             || text.[at] < '1' || text.[at] > '2'
+             || digit text.[at + 1]
+          then false
+          else (
+            Bytes.set blob at (Char.chr (Char.code '0' + target_mode));
+            true))
 
 (* Constructs one Pipeline against profile with every flag-carried
    override in the opts string (zero values included -- the shared
@@ -584,6 +629,7 @@ let build_pipeline cfg profile =
       ("keyBits", string_of_int cfg.key_bits);
       ("nonceBits", string_of_int cfg.nonce_bits);
       ("barrierFill", string_of_int cfg.barrier_fill);
+      ("drbg", cfg.drbg);
       ("chunkSize", string_of_int cfg.chunk_size);
     ]
   in
@@ -613,9 +659,26 @@ let build_pipeline cfg profile =
               err_line (Printf.sprintf "Save(%s): %s" profile (status_detail exn));
               (try Itb3.close pipe with Itb3.ITB_error _ -> ());
               None
-          | blob ->
+          | blob when cfg.blob_mode <> 2 ->
               log_pipeline_initialised profile blob;
-              Some (pipe, blob)))
+              Some (pipe, blob)
+          | blob ->
+              (* The sizing mode is not an Opts knob: the Init blob is
+                 edited and the pipeline reopened from it, so the
+                 retained blob (the one blob-cycle reopens from)
+                 carries the edited mode. *)
+              (try Itb3.close pipe with Itb3.ITB_error _ -> ());
+              if not (edit_inner_blob_mode blob 2) then (
+                err_line "rewrite blob mode: inner blob mode field not found";
+                None)
+              else (
+                match Itb3.load blob with
+                | exception exn ->
+                    err_line (Printf.sprintf "reload Mode 2 blob: %s" (status_detail exn));
+                    None
+                | reloaded ->
+                    log_pipeline_initialised profile blob;
+                    Some (reloaded, blob))))
 
 (* ---------------------------------------------------------------- *)
 (* Run                                                              *)
@@ -663,13 +726,15 @@ let run argv =
       (Printf.sprintf
          "overrides: profile=\"%s\" key-bits=%d nonce-bits=%d chunk-size=%s \
           barrier-fill=%d gomaxprocs=%d rekey-every=%d blob-cycle-every=%d \
-          payload-mode=%s seed=%Lu json-output=%s"
+          payload-mode=%s seed=%Lu json-output=%s%s%s"
          cfg.profile cfg.key_bits cfg.nonce_bits
          (Size.human_bytes cfg.chunk_size)
          cfg.barrier_fill cfg.gomaxprocs cfg.rekey_every cfg.blob_cycle_every
          (Payload.payload_mode_name cfg.payload_mode)
          cfg.seed
-         (if cfg.json_output then "true" else "false"));
+         (if cfg.json_output then "true" else "false")
+         (if cfg.blob_mode <> 1 then Printf.sprintf " blob-mode=%d" cfg.blob_mode else "")
+         (if cfg.drbg = "" then "" else " drbg=" ^ cfg.drbg));
     log_line
       (Printf.sprintf "policy: microbatch-tiers=%s hashpool-starters=%s"
          (policy_label "ITB_MICROBATCH_TIERS")

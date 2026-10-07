@@ -64,6 +64,10 @@ abstract final class Itb {
   /// The libitb3 library version string.
   static String version() => rt.libVersion();
 
+  /// The fill cipher the auto DRBG tier selected on this host
+  /// (`aes-256-ctr` or `chacha20`; see [rt.drbgAutoTier]).
+  static String drbgAutoTier() => rt.drbgAutoTier();
+
   /// Sets the Go runtime's soft heap limit in bytes; returns the
   /// previous limit. A negative value queries without changing.
   static int setMemoryLimit(int bytes) => rt.setMemoryLimit(bytes);

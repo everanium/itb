@@ -128,6 +128,8 @@ fn per_call_inner_hashes_override_round_trips() {
 fn unknown_drbg_name_is_recipe_primitive_unknown() {
     let opts = OptsBuilder::new().with_drbg("nope");
     let err = Pipeline::init("singlemsg-triple-mac-v1", &opts).unwrap_err();
+    // Status only: ITB_LastError is process-global and cargo runs the
+    // tests of this binary on parallel threads, so the diagnostic text
+    // can belong to a neighbouring test's failing call.
     assert_eq!(err.status(), Some(ItbStatus::RecipePrimitiveUnknown));
-    assert!(err.to_string().contains("nope"), "{err}");
 }

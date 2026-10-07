@@ -66,7 +66,9 @@ type
     ## The raw flag values before validation.
     barrierFill: int
     blobCycleEvery: int64
+    blobMode: int
     chunkSize: string
+    drbg: string
     duration: string
     gogc: int
     gomaxprocs: int
@@ -102,7 +104,8 @@ type
 
 proc defaults(): RawFlags =
   RawFlags(
-    barrierFill: 0, blobCycleEvery: 0, chunkSize: "0", duration: "5m",
+    barrierFill: 0, blobCycleEvery: 0, blobMode: 1, chunkSize: "0", drbg: "",
+    duration: "5m",
     gogc: 0, gomaxprocs: 0, goroutines: 3, hash: "areion512", iterations: 0,
     jsonOutput: false, keyBits: 0, mac: "hmac-blake3", memlimit: "auto",
     memprofile: "", nonceBits: 0, parallax: "on", payloadMode: "fixed",
@@ -159,8 +162,12 @@ proc flagTable(f: ptr RawFlags): seq[Flag] =
     "DRBG barrier fill margin: 1 | 2 | 4 | 8 | 16 | 32; 0 = profile default (1)")
   t.addInt64("blob-cycle-every", addr f.blobCycleEvery,
     "reopen each pipeline from its session blob every N iterations per worker; 0 = never")
+  t.addInt("blob-mode", addr f.blobMode,
+    "container floor sizing mode: 1 (per-region, default) | 2 (per-container)")
   t.addString("chunk-size", "string", addr f.chunkSize,
     "streaming chunk-size budget (e.g. 4MB); 0 = profile default; inert for pure message shape")
+  t.addString("drbg", "string", addr f.drbg,
+    "DRBG fill primitive name (see itb3 drbgs); empty = profile default (auto tier)")
   t.addString("duration", "duration", addr f.duration,
     "run duration (Go format: 30s / 5m / 1h); ignored when --iterations > 0")
   t.addInt("gogc", addr f.gogc,
@@ -420,11 +427,17 @@ proc parseFlags(argv: seq[string], cfg: var Config): int =
     errLine("--nonce-bits must be 128 | 256 | 512 (or 0 = profile default), got " &
             $cfg.nonceBits)
     return -1
+  cfg.blobMode = f.blobMode
+  if cfg.blobMode notin [1, 2]:
+    errLine("--blob-mode must be 1 (per-region) | 2 (per-container), got " &
+            $cfg.blobMode)
+    return -1
   cfg.barrierFill = f.barrierFill
   if cfg.barrierFill notin [0, 1, 2, 4, 8, 16, 32]:
     errLine("--barrier-fill must be 1 | 2 | 4 | 8 | 16 | 32 (or 0 = profile default), got " &
             $cfg.barrierFill)
     return -1
+  cfg.drbg = f.drbg # validated by Init: the C ABI enumerates no DRBG names
   if not parseSize(f.chunkSize, cfg.chunkSize):
     errLine("--chunk-size: invalid size \"" & f.chunkSize & "\"")
     return -1
@@ -495,7 +508,7 @@ proc logPipelineInitialised(profileName: string, blob: seq[byte]) =
     logLine("pipeline initialised: profile=" & profileName & " blob=" &
             $blob.len & " bytes (inspect: " & e.lastError & ")")
     return
-  logLine("pipeline initialised: profile=" & profileName & " blob=" &
+  var line = "pipeline initialised: profile=" & profileName & " blob=" &
           $blob.len & " bytes hash=" &
           (if record.innerHash.len > 0: record.innerHash else: "-") &
           " key-bits=" & $record.keyBits &
@@ -504,7 +517,44 @@ proc logPipelineInitialised(profileName: string, blob: seq[byte]) =
           " chunk-size=" & $record.chunkSize &
           " mac=" & (if record.macName.len > 0: record.macName else: "-") &
           " parallax=" & onOff(record.parallax) &
-          " wrapper=" & onOff(record.wrapper))
+          " wrapper=" & onOff(record.wrapper)
+  if record.containerMode.get(0) == 2:
+    line.add(" container-mode=2")
+  if record.drbg.len > 0:
+    line.add(" drbg=" & record.drbg)
+  logLine(line)
+
+proc editInnerBlobMode(blob: var seq[byte], targetMode: int): bool =
+  ## Sets the inner blob's "mode" field of a wrap-layer session blob to
+  ## `targetMode` (1 = per-region, 2 = per-container) in place. The wrap
+  ## layer's profile record carries its own "mode" (a string), so the
+  ## search starts at the inner blob ("ib"); both shipped modes are one
+  ## digit wide, so the blob length does not change. Returns false when
+  ## the inner blob or its mode field is not found.
+  proc find(hay: seq[byte], needle: string, start: int): int =
+    for i in start .. hay.len - needle.len:
+      var hit = true
+      for k in 0 ..< needle.len:
+        if hay[i + k] != byte(needle[k]):
+          hit = false
+          break
+      if hit:
+        return i
+    -1
+  const ibKey = "\"ib\":{"
+  const modeKey = "\"mode\":"
+  let ib = find(blob, ibKey, 0)
+  if ib < 0:
+    return false
+  let mode = find(blob, modeKey, ib + ibKey.len)
+  if mode < 0:
+    return false
+  let at = mode + modeKey.len
+  if at + 1 >= blob.len or blob[at] < byte('1') or blob[at] > byte('2') or
+      (blob[at + 1] >= byte('0') and blob[at + 1] <= byte('9')):
+    return false
+  blob[at] = byte(ord('0') + targetMode)
+  true
 
 proc buildPipeline(cfg: Config, profileName: string, pipe: var Pipeline,
                    present: var bool, blob: var seq[byte]): bool =
@@ -522,6 +572,7 @@ proc buildPipeline(cfg: Config, profileName: string, pipe: var Pipeline,
     .withKeyBits(cfg.keyBits)
     .withNonceBits(cfg.nonceBits)
     .withBarrierFill(cfg.barrierFill)
+    .withDrbg(cfg.drbg)
     .withChunkSize(int(cfg.chunkSize))
   if cfg.profile.len > 0:
     let filled = fillKeystreamLayers(cfg.profile, opts, cfg.parallax, cfg.wrapper)
@@ -542,6 +593,21 @@ proc buildPipeline(cfg: Config, profileName: string, pipe: var Pipeline,
   except ItbError as e:
     errLine("Save(" & profileName & "): " & detail(e))
     return false
+  if cfg.blobMode == 2:
+    # The sizing mode is not an Opts knob: the Init blob is edited and
+    # the pipeline reopened from it, so the retained blob (the one
+    # blob-cycle reopens from) carries the edited mode.
+    if not editInnerBlobMode(blob, 2):
+      errLine("rewrite blob mode: inner blob mode field not found")
+      return false
+    var fresh: Pipeline
+    try:
+      fresh = loadPipeline(blob)
+    except ItbError as e:
+      errLine("reload Mode 2 blob: " & detail(e))
+      return false
+    pipe.free()
+    pipe = fresh
   logPipelineInitialised(profileName, blob)
   true
 
@@ -607,7 +673,9 @@ proc run(argv: seq[string]): int =
           " blob-cycle-every=" & $cfg.blobCycleEvery &
           " payload-mode=" & payloadModeName(cfg.payloadMode) &
           " seed=" & $cfg.seed &
-          " json-output=" & (if cfg.jsonOutput: "true" else: "false"))
+          " json-output=" & (if cfg.jsonOutput: "true" else: "false") &
+          (if cfg.blobMode != 1: " blob-mode=" & $cfg.blobMode else: "") &
+          (if cfg.drbg.len > 0: " drbg=" & cfg.drbg else: ""))
   logLine("policy: microbatch-tiers=" & policyLabel("ITB_MICROBATCH_TIERS") &
           " hashpool-starters=" & policyLabel("ITB_HASHPOOL_STARTERS"))
 

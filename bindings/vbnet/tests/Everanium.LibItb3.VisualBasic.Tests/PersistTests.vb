@@ -162,8 +162,10 @@ Public Class PersistTests
     Public Sub UnknownDrbgIsRecipePrimitiveUnknown()
         Dim ex As ItbException = Assert.Throws(Of ItbException)(
             Sub() Pipeline.Init("singlemsg-triple-mac-v1", New Opts().WithDrbg("nope")))
+        ' Status only: the last-error slot is process-wide and xUnit
+        ' runs test classes in parallel, so the message text can come
+        ' from another test's failing call.
         Assert.Equal(Status.RecipePrimitiveUnknown, ex.Status)
-        Assert.Contains("nope", ex.Message)
     End Sub
 
     <Fact>

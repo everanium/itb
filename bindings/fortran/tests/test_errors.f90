@@ -17,7 +17,7 @@ program test_errors
   type(itb_pipeline_t) :: pipe, sender, receiver
   type(itb_error_t)    :: err
   integer(c_int8_t), allocatable :: plain(:), wire(:), back(:), blob(:)
-  character(:), allocatable :: version, json
+  character(:), allocatable :: version, json, tier
   integer :: i
 
   ! Unknown profile is UnknownProfile with a non-empty diagnostic, on
@@ -112,6 +112,12 @@ program test_errors
   call itb_version(version, err)
   call expect_ok(err, "version")
   call check(len(version) > 0, "version non-empty")
+
+  ! Auto DRBG tier: one of the two fill ciphers, resolved per host.
+  call itb_drbg_auto_tier(tier, err)
+  call expect_ok(err, "drbg auto tier")
+  call check(tier == "aes-256-ctr" .or. tier == "chacha20", &
+             "drbg auto tier: "//tier)
 
   call test_done("test_errors")
 end program

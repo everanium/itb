@@ -17,6 +17,7 @@ typedef long long int64_t;
 
 /* Diagnostics + runtime knobs. */
 int ITB_Version(char* out, size_t capBytes, size_t* outLen);
+int ITB_DRBGAutoTier(char* out, size_t capBytes, size_t* outLen);
 int ITB_LastError(char* out, size_t capBytes, size_t* outLen);
 int64_t ITB_SetMemoryLimit(int64_t limit);
 int ITB_SetGCPercent(int pct);

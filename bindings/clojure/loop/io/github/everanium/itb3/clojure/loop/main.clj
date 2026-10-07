@@ -61,7 +61,9 @@
   update."
   {:barrier-fill 0
    :blob-cycle-every 0
+   :blob-mode 1
    :chunk-size "0"
+   :drbg ""
    :duration "5m"
    :gogc 0
    :gomaxprocs 0
@@ -116,11 +118,19 @@
                "0 = never")
     :suffix ""
     :store (store-long :blob-cycle-every)}
+   {:name "blob-mode" :type "int"
+    :help "container floor sizing mode: 1 (per-region, default) | 2 (per-container)"
+    :suffix (default-suffix-num (:blob-mode raw-defaults))
+    :store (store-long :blob-mode)}
    {:name "chunk-size" :type "string"
     :help (str "streaming chunk-size budget (e.g. 4MB); 0 = profile default; "
                "inert for pure message shape")
     :suffix (default-suffix-str (:chunk-size raw-defaults))
     :store (store-string :chunk-size)}
+   {:name "drbg" :type "string"
+    :help "DRBG fill primitive name (see itb3 drbgs); empty = profile default (auto tier)"
+    :suffix (default-suffix-str (:drbg raw-defaults))
+    :store (store-string :drbg)}
    {:name "duration" :type "duration"
     :help "run duration (Go format: 30s / 5m / 1h); ignored when --iterations > 0"
     :suffix (default-suffix-str (:duration raw-defaults))
@@ -370,6 +380,9 @@
         _ (when-not (one-of [0 128 256 512] (:nonce-bits raw))
             (invalid! (str "--nonce-bits must be 128 | 256 | 512 (or 0 = profile default), got "
                            (:nonce-bits raw))))
+        _ (when-not (one-of [1 2] (:blob-mode raw))
+            (invalid! (str "--blob-mode must be 1 (per-region) | 2 (per-container), got "
+                           (:blob-mode raw))))
         _ (when-not (one-of [0 1 2 4 8 16 32] (:barrier-fill raw))
             (invalid! (str "--barrier-fill must be 1 | 2 | 4 | 8 | 16 | 32 "
                            "(or 0 = profile default), got " (:barrier-fill raw))))
@@ -401,8 +414,11 @@
      :profile (:profile raw)
      :key-bits (:key-bits raw)
      :nonce-bits (:nonce-bits raw)
+     :blob-mode (:blob-mode raw)
      :chunk-size (long chunk-size)
      :barrier-fill (:barrier-fill raw)
+     ;; validated by Init: the C ABI enumerates no DRBG names
+     :drbg (:drbg raw)
      :gomaxprocs (:gomaxprocs raw)
      :rekey-every (:rekey-every raw)
      :blob-cycle-every (:blob-cycle-every raw)
@@ -524,7 +540,50 @@
                            " chunk-size=" (:chunk record)
                            " mac=" (dash (:mac record))
                            " parallax=" (state/on-off (:parallax? record))
-                           " wrapper=" (state/on-off (:wrapper? record)))))))
+                           " wrapper=" (state/on-off (:wrapper? record))
+                           (when (= 2 (:container-mode record)) " container-mode=2")
+                           (when (seq (:drbg record)) (str " drbg=" (:drbg record))))))))
+
+(defn- find-bytes
+  "Offset of the first occurrence of needle in hay at or after from,
+  or -1 when absent."
+  ^long [^bytes hay ^long from ^bytes needle]
+  (let [hn (alength hay)
+        nn (alength needle)]
+    (loop [i from]
+      (cond
+        (> (+ i nn) hn) -1
+        (loop [j 0]
+          (cond
+            (= j nn) true
+            (= (aget hay (+ i j)) (aget needle j)) (recur (inc j))
+            :else false)) i
+        :else (recur (inc i))))))
+
+(defn- edit-inner-blob-mode!
+  "Sets the inner blob's \"mode\" field of a wrap-layer session blob to
+  target-mode (1 = per-region, 2 = per-container) in place. The wrap
+  layer's profile record carries its own \"mode\" (a string), so the
+  search starts at the inner blob (\"ib\"); both shipped modes are one
+  digit wide, so the blob length does not change and the key material
+  in blob is never copied. False when the inner blob or its mode field
+  is not found."
+  [^bytes blob ^long target-mode]
+  (let [ib-key (.getBytes "\"ib\":{" "US-ASCII")
+        mode-key (.getBytes "\"mode\":" "US-ASCII")
+        ib (find-bytes blob 0 ib-key)]
+    (if (neg? ib)
+      false
+      (let [mode (find-bytes blob (+ ib (alength ib-key)) mode-key)]
+        (if (neg? mode)
+          false
+          (let [at (+ mode (alength mode-key))]
+            (if (or (>= (inc at) (alength blob))
+                    (not (<= 0x31 (aget blob at) 0x32))
+                    (<= 0x30 (aget blob (inc at)) 0x39))
+              false
+              (do (aset-byte blob at (byte (+ 0x30 target-mode)))
+                  true))))))))
 
 (defn- build-pipeline
   "Constructs one Pipeline against profile with every flag-carried
@@ -542,6 +601,7 @@
               :key-bits (:key-bits cfg)
               :nonce-bits (:nonce-bits cfg)
               :barrier-fill (:barrier-fill cfg)
+              :drbg (:drbg cfg)
               :chunk-size (:chunk-size cfg)}
         opts (if (zero? (.length ^String (:profile cfg)))
                base
@@ -566,8 +626,26 @@
                      (.close ^java.lang.AutoCloseable pipe)
                      nil))]
         (when blob
-          (log-pipeline-initialised profile blob)
-          {:pipe pipe :blob blob})))))
+          (if (= 2 (long (:blob-mode cfg)))
+            ;; The sizing mode is not an Opts knob: the Init blob is
+            ;; edited and the pipeline reopened from it, so the retained
+            ;; blob (the one blob-cycle reopens from) carries the edited
+            ;; mode.
+            (if-not (edit-inner-blob-mode! blob 2)
+              (do (state/err-line "loop: rewrite blob mode: inner blob mode field not found")
+                  (.close ^java.lang.AutoCloseable pipe)
+                  nil)
+              (do (.close ^java.lang.AutoCloseable pipe)
+                  (when-let [reloaded (try
+                                        (itb/load blob)
+                                        (catch Exception e
+                                          (state/err-line (str "loop: reload Mode 2 blob: "
+                                                               (state/detail e)))
+                                          nil))]
+                    (log-pipeline-initialised profile blob)
+                    {:pipe reloaded :blob blob})))
+            (do (log-pipeline-initialised profile blob)
+                {:pipe pipe :blob blob})))))))
 
 ;; ----------------------------------------------------------------------
 ;; Run
@@ -623,7 +701,9 @@
                        " blob-cycle-every=" (:blob-cycle-every cfg)
                        " payload-mode=" (payload/mode-label (:payload-mode cfg))
                        " seed=" (Long/toUnsignedString (long (:seed cfg)))
-                       " json-output=" (if (:json-output cfg) "true" "false")))
+                       " json-output=" (if (:json-output cfg) "true" "false")
+                       (when (not= 1 (long (:blob-mode cfg))) (str " blob-mode=" (:blob-mode cfg)))
+                       (when (seq (:drbg cfg)) (str " drbg=" (:drbg cfg)))))
   (state/log-line (str "policy: microbatch-tiers=" (state/policy-label "ITB_MICROBATCH_TIERS")
                        " hashpool-starters=" (state/policy-label "ITB_HASHPOOL_STARTERS"))))
 

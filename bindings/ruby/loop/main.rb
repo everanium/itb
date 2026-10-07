@@ -83,8 +83,12 @@ module Loop
      "DRBG barrier fill margin: 1 | 2 | 4 | 8 | 16 | 32; 0 = profile default (1)"],
     ["blob-cycle-every", "int", INT64, 0,
      "reopen each pipeline from its session blob every N iterations per worker; 0 = never"],
+    ["blob-mode", "int", INT, 1,
+     "container floor sizing mode: 1 (per-region, default) | 2 (per-container)"],
     ["chunk-size", "string", STRING, "0",
      "streaming chunk-size budget (e.g. 4MB); 0 = profile default; inert for pure message shape"],
+    ["drbg", "string", STRING, "",
+     "DRBG fill primitive name (see itb3 drbgs); empty = profile default (auto tier)"],
     ["duration", "duration", STRING, "5m",
      "run duration (Go format: 30s / 5m / 1h); ignored when --iterations > 0"],
     ["gogc", "int", INT, 0,
@@ -135,7 +139,8 @@ module Loop
     :duration_ns, :iterations, :workers_requested, :workers, :shape, :hash, :mac,
     :payload, :memlimit, :memlimit_auto, :gogc, :parallax, :wrapper,
     :profile, :key_bits, :nonce_bits, :chunk_size, :barrier_fill, :gomaxprocs,
-    :rekey_every, :blob_cycle_every, :payload_mode, :seed, :json_output, :memprofile
+    :rekey_every, :blob_cycle_every, :payload_mode, :seed, :json_output, :memprofile,
+    :blob_mode, :drbg
   )
 
   module Main
@@ -386,12 +391,19 @@ module Loop
         err("--nonce-bits must be 128 | 256 | 512 (or 0 = profile default), got #{cfg.nonce_bits}")
         return [-1, nil]
       end
+      cfg.blob_mode = raw["blob-mode"]
+      unless [1, 2].include?(cfg.blob_mode)
+        err("--blob-mode must be 1 (per-region) | 2 (per-container), got #{cfg.blob_mode}")
+        return [-1, nil]
+      end
       cfg.barrier_fill = raw["barrier-fill"]
       unless [0, 1, 2, 4, 8, 16, 32].include?(cfg.barrier_fill)
         err("--barrier-fill must be 1 | 2 | 4 | 8 | 16 | 32 (or 0 = profile default), " \
             "got #{cfg.barrier_fill}")
         return [-1, nil]
       end
+      # Validated by Init: the C ABI enumerates no DRBG names.
+      cfg.drbg = raw["drbg"]
       cfg.chunk_size = s.parse_size(raw["chunk-size"])
       if cfg.chunk_size.nil?
         err("--chunk-size: invalid size \"#{raw['chunk-size']}\"")
@@ -493,8 +505,25 @@ module Loop
         "chunk-size=#{record.fetch('chunk', 0).to_i} " \
         "mac=#{record_str(record, 'mac')} " \
         "parallax=#{Loop.on_off(record.fetch('parallax', false) == true)} " \
-        "wrapper=#{Loop.on_off(record.fetch('wrapper', false) == true)}"
+        "wrapper=#{Loop.on_off(record.fetch('wrapper', false) == true)}" \
+        "#{record['container_mode'] == 2 ? ' container-mode=2' : ''}" \
+        "#{record_str(record, 'drbg') == '-' ? '' : " drbg=#{record['drbg']}"}"
       )
+    end
+
+    # Returns a copy of a wrap-layer session blob whose inner blob's
+    # "mode" field is set to target_mode (1 = per-region, 2 =
+    # per-container). The wrap layer's profile record carries its own
+    # "mode" (a string); the target is the inner blob's ("ib") integer
+    # field. Raises ArgumentError when the blob carries no inner blob
+    # mode field, JSON::ParserError when it is not JSON.
+    def edit_inner_blob_mode(blob, target_mode)
+      doc = JSON.parse(blob.dup.force_encoding(Encoding::UTF_8))
+      inner = doc.is_a?(Hash) ? doc["ib"] : nil
+      raise ArgumentError, "inner blob mode field not found" unless inner.is_a?(Hash) && inner.key?("mode")
+
+      inner["mode"] = target_mode
+      JSON.generate(doc)
     end
 
     # Folds a keystream primitive into opts for any layer the named
@@ -553,6 +582,7 @@ module Loop
         "keyBits" => cfg.key_bits.to_s,
         "nonceBits" => cfg.nonce_bits.to_s,
         "barrierFill" => cfg.barrier_fill.to_s,
+        "drbg" => cfg.drbg,
         "chunkSize" => cfg.chunk_size.to_s
       }
       unless cfg.profile.empty?
@@ -576,6 +606,26 @@ module Loop
         err("Save(#{profile}): #{Loop.status_detail(e)}")
         pipe.free
         return nil
+      end
+      if cfg.blob_mode == 2
+        # The sizing mode is not an Opts knob: the Init blob is edited
+        # and the pipeline reopened from it, so the retained blob (the
+        # one blob-cycle reopens from) carries the edited mode.
+        begin
+          edited = edit_inner_blob_mode(blob, 2)
+        rescue ArgumentError, JSON::ParserError => e
+          err("rewrite blob mode: #{e.message}")
+          pipe.free
+          return nil
+        end
+        pipe.free
+        begin
+          pipe = ITB.load(edited)
+        rescue ITB::Error => e
+          err("reload Mode 2 blob: #{Loop.status_detail(e)}")
+          return nil
+        end
+        blob = edited
       end
       log_pipeline_initialised(profile, blob)
       [pipe, blob]
@@ -628,7 +678,9 @@ module Loop
         "barrier-fill=#{cfg.barrier_fill} gomaxprocs=#{cfg.gomaxprocs} " \
         "rekey-every=#{cfg.rekey_every} blob-cycle-every=#{cfg.blob_cycle_every} " \
         "payload-mode=#{Payload.mode_name(cfg.payload_mode)} seed=#{cfg.seed} " \
-        "json-output=#{cfg.json_output ? 'true' : 'false'}"
+        "json-output=#{cfg.json_output ? 'true' : 'false'}" \
+        "#{cfg.blob_mode == 1 ? '' : " blob-mode=#{cfg.blob_mode}"}" \
+        "#{cfg.drbg.empty? ? '' : " drbg=#{cfg.drbg}"}"
       )
       Loop.log_line(
         "policy: microbatch-tiers=#{Loop.policy_label(ENV.fetch('ITB_MICROBATCH_TIERS', nil))} " \

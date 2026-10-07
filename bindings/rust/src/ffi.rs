@@ -109,6 +109,7 @@ pub(crate) type FnTripleStreamRead =
 /// Cached function pointers plus the Library that keeps them valid.
 pub(crate) struct Syms {
     pub(crate) ITB_Version: FnCStrOut,
+    pub(crate) ITB_DRBGAutoTier: FnCStrOut,
     pub(crate) ITB_LastError: FnCStrOut,
     pub(crate) ITB_SetMemoryLimit: FnSetMemoryLimit,
     pub(crate) ITB_SetGCPercent: FnSetGCPercent,
@@ -181,6 +182,7 @@ impl Syms {
         }
         Ok(Self {
             ITB_Version: sym!(b"ITB_Version"),
+            ITB_DRBGAutoTier: sym!(b"ITB_DRBGAutoTier"),
             ITB_LastError: sym!(b"ITB_LastError"),
             ITB_SetMemoryLimit: sym!(b"ITB_SetMemoryLimit"),
             ITB_SetGCPercent: sym!(b"ITB_SetGCPercent"),

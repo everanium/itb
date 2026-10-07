@@ -66,6 +66,9 @@ export const lib = koffi.load(libraryPath);
 export const ITB_Version = lib.func(
   'int ITB_Version(uint8_t *out, size_t capBytes, _Out_ size_t *outLen)',
 );
+export const ITB_DRBGAutoTier = lib.func(
+  'int ITB_DRBGAutoTier(uint8_t *out, size_t capBytes, _Out_ size_t *outLen)',
+);
 export const ITB_LastError = lib.func(
   'int ITB_LastError(uint8_t *out, size_t capBytes, _Out_ size_t *outLen)',
 );

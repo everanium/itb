@@ -1,8 +1,8 @@
 //! Runtime diagnostics surface: GOMAXPROCS query / set / restore, the
 //! heap-profile writer, the pool-counter snapshot and its slot layout,
-//! and the hash-registry enumeration.
+//! the hash-registry enumeration and the auto DRBG tier report.
 
-use itb3::{ItbStatus, hash_names, pool_stats, pool_stats_len, set_gomaxprocs, write_heap_profile};
+use itb3::{ItbStatus, drbg_auto_tier, hash_names, pool_stats, pool_stats_len, set_gomaxprocs, write_heap_profile};
 
 #[test]
 fn gomaxprocs_query_set_restore() {
@@ -45,4 +45,10 @@ fn hash_names_canonical() {
     let names = hash_names().unwrap();
     assert_eq!(names.first().map(String::as_str), Some("aesitb128"));
     assert!(names.iter().any(|n| n == "areion512"));
+}
+
+#[test]
+fn drbg_auto_tier_is_a_fill_cipher() {
+    let tier = drbg_auto_tier().unwrap();
+    assert!(tier == "aes-256-ctr" || tier == "chacha20", "drbg auto tier: {tier}");
 }

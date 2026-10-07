@@ -62,6 +62,24 @@ let version () =
     Ffi_bridge.check rc;
     take buf need)
 
+let drbg_auto_tier () =
+  let s = Ffi_bridge.syms () in
+  let read cap =
+    let buf = Bytes.create cap in
+    let need = Ffi_bridge.new_size_out () in
+    let rc = s.drbg_auto_tier (Ffi_bridge.bs buf) (Ffi_bridge.sz cap) need in
+    (rc, buf, Ffi_bridge.sz_int !@need)
+  in
+  let take buf need = Bytes.sub_string buf 0 (max (need - 1) 0) in
+  let rc, buf, need = read 256 in
+  if rc = Ffi_bridge.status_buffer_too_small && need > 256 then (
+    let rc2, buf2, need2 = read need in
+    Ffi_bridge.check rc2;
+    take buf2 need2)
+  else (
+    Ffi_bridge.check rc;
+    take buf need)
+
 let set_memory_limit bytes_limit =
   let s = Ffi_bridge.syms () in
   ignore (s.set_memory_limit (Int64.of_int bytes_limit))

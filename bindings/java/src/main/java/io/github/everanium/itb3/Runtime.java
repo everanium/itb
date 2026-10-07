@@ -84,4 +84,12 @@ public final class Runtime {
     public static String version() {
         return Native.readCString(Native::version);
     }
+
+    /** Returns the fill cipher the auto DRBG tier selected on this host
+     * ({@code "aes-256-ctr"} or {@code "chacha20"}): the tier a Pipeline
+     * uses when its {@code drbg} option is empty, resolved per host and
+     * recorded in no blob. */
+    public static String drbgAutoTier() {
+        return Native.readCString(Native::drbgAutoTier);
+    }
 }

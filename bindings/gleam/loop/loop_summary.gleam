@@ -358,6 +358,12 @@ fn json(cfg: Config, f: Figures) -> Nil {
     <> i(cfg.key_bits)
     <> ",\"nonce_bits\":"
     <> i(cfg.nonce_bits)
+    <> ",\"blob_mode\":"
+    <> i(cfg.blob_mode)
+    <> ",\"drbg\":"
+    <> jstr(cfg.drbg)
+    <> ",\"drbg_auto_tier\":"
+    <> jstr(drbg_auto_tier())
     <> ",\"chunk_size_bytes\":"
     <> i(cfg.chunk_size)
     <> ",\"barrier_fill\":"
@@ -433,6 +439,15 @@ fn json_byte_pool(p: BytePool) -> String {
   <> ",\"miss_percent\":"
   <> loop_size.f2(miss_percent(p.regrow, p.get))
   <> "}"
+}
+
+// The fill cipher the auto DRBG tier selected on this host; empty when
+// the library cannot report it.
+fn drbg_auto_tier() -> String {
+  case itb3_gleam.drbg_auto_tier() {
+    Ok(tier) -> tier
+    Error(_) -> ""
+  }
 }
 
 // One JSON string literal with the escapes JSON requires.

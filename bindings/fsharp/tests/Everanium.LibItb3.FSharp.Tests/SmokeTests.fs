@@ -31,3 +31,7 @@ let ``smoke round trip through the itb computation expression`` () =
 let ``library version string is non-empty`` () =
     Assert.False(System.String.IsNullOrEmpty(Runtime.version ()))
     Assert.Equal("0.5.1", Runtime.BindingVersion)
+
+[<Fact>]
+let ``auto DRBG tier is a fill cipher`` () =
+    Assert.Contains(Runtime.drbgAutoTier (), [| "aes-256-ctr"; "chacha20" |])

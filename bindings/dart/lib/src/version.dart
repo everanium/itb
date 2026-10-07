@@ -20,6 +20,17 @@ String libVersion() {
   return v;
 }
 
+/// Returns the fill cipher the auto DRBG tier selected on this host
+/// (`aes-256-ctr` or `chacha20`): the tier a Pipeline uses when its
+/// drbg option is empty, resolved per host and recorded in no blob.
+String drbgAutoTier() {
+  final v = readCString(FfiBridge.instance.drbgAutoTier);
+  if (v.isEmpty) {
+    throw ItbException(Status.internal, 'ITB_DRBGAutoTier returned nothing');
+  }
+  return v;
+}
+
 /// Sets the Go runtime's soft heap limit in bytes and returns the
 /// previous limit. A negative value queries without changing.
 int setMemoryLimit(int bytes) => FfiBridge.instance.setMemoryLimit(bytes);

@@ -138,6 +138,7 @@ nothrow:
 // ─── Library introspection + Go runtime knobs ──────────────────────
 
 pragma(mangle, "ITB_Version") int raw_ITB_Version(char* outBuf, size_t capBytes, size_t* outLen);
+pragma(mangle, "ITB_DRBGAutoTier") int raw_ITB_DRBGAutoTier(char* outBuf, size_t capBytes, size_t* outLen);
 pragma(mangle, "ITB_LastError") int raw_ITB_LastError(char* outBuf, size_t capBytes, size_t* outLen);
 pragma(mangle, "ITB_SetMemoryLimit") long raw_ITB_SetMemoryLimit(long limit);
 pragma(mangle, "ITB_SetGCPercent") int raw_ITB_SetGCPercent(int pct);
@@ -278,6 +279,14 @@ int ITB_Version(char* outBuf, size_t capBytes, size_t* outLen)
     auto guard = GcSignalGuard.enter();
     scope (exit) guard.leave();
     return raw_ITB_Version(outBuf, capBytes, outLen);
+}
+
+pragma(mangle, "itb_binding_guarded_ITB_DRBGAutoTier")
+int ITB_DRBGAutoTier(char* outBuf, size_t capBytes, size_t* outLen)
+{
+    auto guard = GcSignalGuard.enter();
+    scope (exit) guard.leave();
+    return raw_ITB_DRBGAutoTier(outBuf, capBytes, outLen);
 }
 
 pragma(mangle, "itb_binding_guarded_ITB_LastError")

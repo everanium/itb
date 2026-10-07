@@ -41,6 +41,9 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.InteropServices;
+using System.Text.Encodings.Web;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace Everanium.Itb3.Loop;
 
@@ -63,8 +66,10 @@ internal sealed class Config
     internal string Profile = "";
     internal long KeyBits;
     internal long NonceBits;
+    internal long BlobMode;
     internal long ChunkSize;
     internal long BarrierFill;
+    internal string Drbg = "";
     internal int Gomaxprocs;
     internal long RekeyEvery;
     internal long BlobCycleEvery;
@@ -228,7 +233,9 @@ internal static class Program
     {
         internal long BarrierFill;
         internal long BlobCycleEvery;
+        internal long BlobMode = 1;
         internal string ChunkSize = "0";
+        internal string Drbg = "";
         internal string Duration = "5m";
         internal long Gogc;
         internal long Gomaxprocs;
@@ -288,10 +295,18 @@ internal static class Program
                 "reopen each pipeline from its session blob every N iterations per worker; 0 = never",
                 false, "",
                 (f, s) => StoreInt(s, out f.BlobCycleEvery)),
+            new Flag("blob-mode", "int",
+                "container floor sizing mode: 1 (per-region, default) | 2 (per-container)",
+                false, DefaultOf(d.BlobMode),
+                (f, s) => StoreInt(s, out f.BlobMode)),
             new Flag("chunk-size", "string",
                 "streaming chunk-size budget (e.g. 4MB); 0 = profile default; inert for pure message shape",
                 false, DefaultOf(d.ChunkSize),
                 (f, s) => { f.ChunkSize = s; return true; }),
+            new Flag("drbg", "string",
+                "DRBG fill primitive name (see itb3 drbgs); empty = profile default (auto tier)",
+                false, DefaultOf(d.Drbg),
+                (f, s) => { f.Drbg = s; return true; }),
             new Flag("duration", "duration",
                 "run duration (Go format: 30s / 5m / 1h); ignored when --iterations > 0",
                 false, DefaultOf(d.Duration),
@@ -652,6 +667,13 @@ internal static class Program
                 + $"got {f.NonceBits.ToString(inv)}");
             return (null, 2);
         }
+        if (f.BlobMode is not (1 or 2))
+        {
+            Console.Error.WriteLine(
+                "loop: --blob-mode must be 1 (per-region) | 2 (per-container), "
+                + $"got {f.BlobMode.ToString(inv)}");
+            return (null, 2);
+        }
         if (f.BarrierFill is not (0 or 1 or 2 or 4 or 8 or 16 or 32))
         {
             Console.Error.WriteLine(
@@ -659,6 +681,7 @@ internal static class Program
                 + $"got {f.BarrierFill.ToString(inv)}");
             return (null, 2);
         }
+        // --drbg is validated by Init: the C ABI enumerates no DRBG names.
         long? chunkSize = Size.ParseSize(f.ChunkSize);
         if (chunkSize is null)
         {
@@ -709,8 +732,10 @@ internal static class Program
             Profile = f.Profile,
             KeyBits = f.KeyBits,
             NonceBits = f.NonceBits,
+            BlobMode = f.BlobMode,
             ChunkSize = chunkSize.Value,
             BarrierFill = f.BarrierFill,
+            Drbg = f.Drbg,
             Gomaxprocs = (int)f.Gomaxprocs,
             RekeyEvery = f.RekeyEvery,
             BlobCycleEvery = f.BlobCycleEvery,
@@ -821,6 +846,7 @@ internal static class Program
             .WithKeyBits(cfg.KeyBits)
             .WithNonceBits(cfg.NonceBits)
             .WithBarrierFill(cfg.BarrierFill)
+            .WithDrbg(cfg.Drbg)
             .WithChunkSize(cfg.ChunkSize);
         if (cfg.Profile.Length > 0)
         {
@@ -858,6 +884,32 @@ internal static class Program
             pipe.Dispose();
             return null;
         }
+        if (cfg.BlobMode == 2)
+        {
+            // The sizing mode is not an Opts knob: the Init blob is
+            // edited and the pipeline reopened from it, so the retained
+            // blob (the one blob-cycle reopens from) carries the edited
+            // mode.
+            pipe.Dispose();
+            try
+            {
+                blob = SetInnerBlobMode(blob, 2);
+            }
+            catch (Exception e)
+            {
+                Console.Error.WriteLine($"loop: rewrite blob mode: {e.Message}");
+                return null;
+            }
+            try
+            {
+                pipe = Pipeline.Load(blob);
+            }
+            catch (Exception e)
+            {
+                Console.Error.WriteLine($"loop: reload Mode 2 blob: {Worker.Detail(e)}");
+                return null;
+            }
+        }
         LogPipelineInitialised(profile, blob);
         return (pipe, blob);
     }
@@ -890,7 +942,36 @@ internal static class Program
             + $"nonce-bits={(rec.NonceBits ?? 0).ToString(inv)} "
             + $"barrier-fill={(rec.BarrierFill ?? 0).ToString(inv)} "
             + $"chunk-size={rec.Chunk.ToString(inv)} mac={Dash(rec.Mac)} "
-            + $"parallax={OnOff(rec.Parallax)} wrapper={OnOff(rec.Wrapper)}");
+            + $"parallax={OnOff(rec.Parallax)} wrapper={OnOff(rec.Wrapper)}"
+            + (rec.ContainerMode == 2 ? " container-mode=2" : "")
+            + (rec.Drbg.Length > 0 ? $" drbg={rec.Drbg}" : ""));
+    }
+
+    /// <summary>Returns a copy of a wrap-layer session blob whose inner
+    /// blob ("ib") carries the given container floor sizing mode
+    /// (1 = per-region, 2 = per-container). The wrap layer's profile
+    /// record carries its own "mode" (a string), so only the inner
+    /// blob's integer field is set; no key is added, integers keep
+    /// their literals, and strings are written without escaping the
+    /// base64 alphabet.</summary>
+    private static byte[] SetInnerBlobMode(byte[] blob, int mode)
+    {
+        var root = JsonNode.Parse(blob) as JsonObject
+            ?? throw new FormatException("session blob is not a JSON object");
+        if (root["ib"] is not JsonObject ib || !ib.ContainsKey("mode"))
+        {
+            throw new FormatException("inner blob mode field not found");
+        }
+        ib["mode"] = mode;
+        using var buf = new MemoryStream();
+        using (var w = new Utf8JsonWriter(buf, new JsonWriterOptions
+        {
+            Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+        }))
+        {
+            root.WriteTo(w);
+        }
+        return buf.ToArray();
     }
 
     // --------------------------------------------------------------
@@ -957,7 +1038,9 @@ internal static class Program
             + $"rekey-every={cfg.RekeyEvery.ToString(inv)} "
             + $"blob-cycle-every={cfg.BlobCycleEvery.ToString(inv)} "
             + $"payload-mode={cfg.PayloadMode.Name()} seed={cfg.Seed.ToString(inv)} "
-            + $"json-output={(cfg.JsonOutput ? "true" : "false")}");
+            + $"json-output={(cfg.JsonOutput ? "true" : "false")}"
+            + (cfg.BlobMode != 1 ? $" blob-mode={cfg.BlobMode.ToString(inv)}" : "")
+            + (cfg.Drbg.Length > 0 ? $" drbg={cfg.Drbg}" : ""));
         LogLine(
             $"policy: microbatch-tiers={PolicyLabel("ITB_MICROBATCH_TIERS")} "
             + $"hashpool-starters={PolicyLabel("ITB_HASHPOOL_STARTERS")}");

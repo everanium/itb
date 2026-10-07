@@ -10,6 +10,7 @@
 module ITB3.FFI
   ( ITBHandle
   , c_ITB_Version
+  , c_ITB_DRBGAutoTier
   , c_ITB_LastError
   , c_ITB_SetMemoryLimit
   , c_ITB_SetGCPercent
@@ -55,6 +56,9 @@ type ITBHandle = CUIntPtr
 
 foreign import ccall safe "ITB_Version"
   c_ITB_Version :: Ptr CChar -> CSize -> Ptr CSize -> IO CInt
+
+foreign import ccall safe "ITB_DRBGAutoTier"
+  c_ITB_DRBGAutoTier :: Ptr CChar -> CSize -> Ptr CSize -> IO CInt
 
 foreign import ccall safe "ITB_LastError"
   c_ITB_LastError :: Ptr CChar -> CSize -> Ptr CSize -> IO CInt

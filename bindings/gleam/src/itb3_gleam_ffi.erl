@@ -31,7 +31,7 @@
          encrypt_stream/1, decrypt_stream/1,
          stream_write/2, stream_end/1, stream_read/2, stream_free/1,
          inspect/1, register/2, lookup/1, profiles/0, hash_names/0,
-         version/0, last_error/0, status_code/1,
+         version/0, drbg_auto_tier/0, last_error/0, status_code/1,
          set_memory_limit/1, set_gc_percent/1, set_gomaxprocs/1,
          write_heap_profile/1, pool_stats_len/0, pool_stats/0,
          env/2, now_us/0, read_file/1, write_file/2, delete_file/1,
@@ -148,6 +148,10 @@ json_text({error, Reason}) -> {error, err(Reason)}.
 version() ->
     ok = ensure_itb(),
     norm(itb3:version()).
+
+drbg_auto_tier() ->
+    ok = ensure_itb(),
+    norm(itb3:drbg_auto_tier()).
 
 last_error() ->
     ok = ensure_itb(),

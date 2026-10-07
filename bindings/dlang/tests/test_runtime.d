@@ -1,6 +1,6 @@
 /// The runtime surface the stress harness drives: GOMAXPROCS, the
-/// heap profile, the pool counters, and the shipped hash-registry
-/// enumeration.
+/// heap profile, the pool counters, the shipped hash-registry
+/// enumeration, and the auto DRBG tier report.
 module test_runtime;
 
 import std.algorithm : canFind;
@@ -72,6 +72,10 @@ void main()
     auto opts = Opts().withInnerHash("blake3");
     auto p = Pipeline.create("singlemsg-triple-mac-v1", opts);
     assert(p.save().length > 0, "a registry name must construct");
+
+    // Auto DRBG tier: one of the two fill ciphers, resolved per host.
+    immutable tier = drbgAutoTier();
+    assert(tier == "aes-256-ctr" || tier == "chacha20", "drbg auto tier: " ~ tier);
 
     writeln("PASS test_runtime");
 }

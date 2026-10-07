@@ -27,6 +27,10 @@ class ItbTest < Minitest::Test
     assert_match(/\A\d+\.\d+/, v)
   end
 
+  def test_drbg_auto_tier_names_a_fill_cipher
+    assert_includes %w[aes-256-ctr chacha20], ITB.drbg_auto_tier
+  end
+
   def test_profiles_list
     profiles = ITB.profiles
     assert_includes profiles, "singlemsg-triple-mac-v1"

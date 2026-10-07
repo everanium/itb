@@ -118,6 +118,23 @@ module ITB
       buf.read_bytes([need.read(:size_t) - 1, 0].max).force_encoding(Encoding::UTF_8)
     end
 
+    # Returns the fill cipher the auto DRBG tier selected on this host
+    # ("aes-256-ctr" or "chacha20"): the tier a Pipeline uses when its
+    # drbg option is empty, resolved per host and recorded in no blob.
+    def drbg_auto_tier
+      need = FFI::MemoryPointer.new(:size_t)
+      rc = FFIBridge.ITB_DRBGAutoTier(nil, 0, need)
+      unless [Status::OK, Status::BUFFER_TOO_SMALL].include?(rc)
+        raise Error.new(FFIBridge.last_error, rc)
+      end
+      n = need.read(:size_t)
+      return "" if n <= 1
+
+      buf = FFI::MemoryPointer.new(n)
+      FFIBridge.check(FFIBridge.ITB_DRBGAutoTier(buf, n, need))
+      buf.read_bytes([need.read(:size_t) - 1, 0].max).force_encoding(Encoding::UTF_8)
+    end
+
     # Sets the Go runtime's soft heap limit in bytes and returns the
     # previous limit. A negative value queries without changing.
     def set_memory_limit(limit_bytes)

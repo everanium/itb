@@ -13,7 +13,7 @@ resolved at load time. Every hash-name / MAC-name / cipher-name /
 profile-name is an opaque string passed through to Go for validation;
 the binding carries no ITB construction logic. The public surface is
 the `ITB` module (`create` / `load` / `load_f` / `inspect_blob` /
-`register` / `lookup` / `profiles` / `version` and the Go runtime
+`register` / `lookup` / `profiles` / `version` / `drbg_auto_tier` and the Go runtime
 knobs), the `Pipeline` class (Single Message encrypt /
 decrypt, one-shot and incremental stream sessions, save / save_f,
 rekey, max_workers, close), and the `StreamEncryptor` / `StreamDecryptor` session

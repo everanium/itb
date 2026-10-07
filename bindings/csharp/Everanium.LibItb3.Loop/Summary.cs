@@ -323,6 +323,9 @@ internal static class Summary
             j.Append(",\"seed\":").Append(cfg.Seed.ToString(CultureInfo.InvariantCulture));
             j.Append(",\"key_bits\":").Append(D(cfg.KeyBits));
             j.Append(",\"nonce_bits\":").Append(D(cfg.NonceBits));
+            j.Append(",\"blob_mode\":").Append(D(cfg.BlobMode));
+            j.Append(",\"drbg\":").Append(JsonString(cfg.Drbg));
+            j.Append(",\"drbg_auto_tier\":").Append(JsonString(Everanium.Itb3.Runtime.DrbgAutoTier()));
             j.Append(",\"chunk_size_bytes\":").Append(D(cfg.ChunkSize));
             j.Append(",\"barrier_fill\":").Append(D(cfg.BarrierFill));
             j.Append(",\"parallax\":\"").Append(Program.OnOff(cfg.Parallax)).Append('"');

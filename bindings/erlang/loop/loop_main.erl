@@ -153,8 +153,12 @@ flag_table() ->
       "DRBG barrier fill margin: 1 | 2 | 4 | 8 | 16 | 32; 0 = profile default (1)"},
      {"blob-cycle-every", "int", int64,
       "reopen each pipeline from its session blob every N iterations per worker; 0 = never"},
+     {"blob-mode", "int", int,
+      "container floor sizing mode: 1 (per-region, default) | 2 (per-container)"},
      {"chunk-size", "string", string,
       "streaming chunk-size budget (e.g. 4MB); 0 = profile default; inert for pure message shape"},
+     {"drbg", "string", string,
+      "DRBG fill primitive name (see itb3 drbgs); empty = profile default (auto tier)"},
      {"duration", "duration", string,
       "run duration (Go format: 30s / 5m / 1h); ignored when --iterations > 0"},
      {"gogc", "int", int,
@@ -197,8 +201,8 @@ flag_table() ->
       "wrapper layer: on | off"}].
 
 defaults() ->
-    #{"barrier-fill" => 0, "blob-cycle-every" => 0, "chunk-size" => "0",
-      "duration" => "5m", "gogc" => 0, "gomaxprocs" => 0, "goroutines" => 3,
+    #{"barrier-fill" => 0, "blob-cycle-every" => 0, "blob-mode" => 1, "chunk-size" => "0",
+      "drbg" => "", "duration" => "5m", "gogc" => 0, "gomaxprocs" => 0, "goroutines" => 3,
       "hash" => "areion512", "iterations" => 0, "json-output" => false,
       "key-bits" => 0, "mac" => "hmac-blake3", "memlimit" => "auto",
       "memprofile" => "", "nonce-bits" => 0, "parallax" => "on",
@@ -476,16 +480,27 @@ resolve_key_bits(V, Cfg) ->
 resolve_nonce_bits(V, Cfg) ->
     case maps:get("nonce-bits", V) of
         N when N =:= 0; N =:= 128; N =:= 256; N =:= 512 ->
-            resolve_barrier_fill(V, Cfg#cfg{nonce_bits = N});
+            resolve_blob_mode(V, Cfg#cfg{nonce_bits = N});
         N ->
             err("--nonce-bits must be 128 | 256 | 512 (or 0 = profile default), got ~B", [N]),
+            error
+    end.
+
+resolve_blob_mode(V, Cfg) ->
+    case maps:get("blob-mode", V) of
+        M when M =:= 1; M =:= 2 ->
+            resolve_barrier_fill(V, Cfg#cfg{blob_mode = M});
+        M ->
+            err("--blob-mode must be 1 (per-region) | 2 (per-container), got ~B", [M]),
             error
     end.
 
 resolve_barrier_fill(V, Cfg) ->
     case maps:get("barrier-fill", V) of
         B when B =:= 0; B =:= 1; B =:= 2; B =:= 4; B =:= 8; B =:= 16; B =:= 32 ->
-            resolve_chunk_size(V, Cfg#cfg{barrier_fill = B});
+            %% The DRBG name is validated by Init: the C ABI enumerates
+            %% no DRBG names.
+            resolve_chunk_size(V, Cfg#cfg{barrier_fill = B, drbg = maps:get("drbg", V)});
         B ->
             err("--barrier-fill must be 1 | 2 | 4 | 8 | 16 | 32 (or 0 = profile default), got ~B", [B]),
             error
@@ -603,6 +618,7 @@ build_pipeline(Cfg, Profile) ->
             {keyBits, integer_to_list(Cfg#cfg.key_bits)},
             {nonceBits, integer_to_list(Cfg#cfg.nonce_bits)},
             {barrierFill, integer_to_list(Cfg#cfg.barrier_fill)},
+            {drbg, Cfg#cfg.drbg},
             {chunkSize, integer_to_list(Cfg#cfg.chunk_size)}],
     Extra = case Cfg#cfg.profile of
                 "" -> {ok, []};
@@ -628,10 +644,48 @@ build_pipeline(Cfg, Profile) ->
                             itb3:free(Pipe),
                             error;
                         {ok, Blob} ->
-                            log_pipeline_initialised(Profile, Blob),
-                            {ok, Pipe, Blob}
+                            apply_blob_mode(Cfg, Profile, Pipe, Blob)
                     end
             end
+    end.
+
+%% The sizing mode is not an opts knob: under --blob-mode 2 the Init
+%% blob is edited and the pipeline reopened from it, so the retained
+%% blob (the one blob-cycle reopens from) carries the edited mode.
+apply_blob_mode(#cfg{blob_mode = 1}, Profile, Pipe, Blob) ->
+    log_pipeline_initialised(Profile, Blob),
+    {ok, Pipe, Blob};
+apply_blob_mode(#cfg{blob_mode = Mode}, Profile, Pipe, Blob) ->
+    itb3:free(Pipe),
+    case edit_inner_blob_mode(Blob, Mode) of
+        {error, Detail} ->
+            err("rewrite blob mode: ~ts", [Detail]),
+            error;
+        {ok, Edited} ->
+            case itb3:load(Edited) of
+                {error, {Status, Detail}} ->
+                    err("reload Mode 2 blob: ~s", [status_text(Status, Detail)]),
+                    error;
+                {ok, Reloaded} ->
+                    log_pipeline_initialised(Profile, Edited),
+                    {ok, Reloaded, Edited}
+            end
+    end.
+
+%% Sets the inner blob's integer "mode" (1 = per-region, 2 =
+%% per-container) of a session blob through the OTP json module. The
+%% profile record "p" carries its own string "mode"; the target is the
+%% one under "ib". Integers and strings round-trip unchanged; only the
+%% key order may differ.
+edit_inner_blob_mode(Blob, Mode) ->
+    try json:decode(Blob) of
+        #{<<"ib">> := #{<<"mode">> := M} = Inner} = Session when is_integer(M) ->
+            {ok, iolist_to_binary(json:encode(Session#{<<"ib">> := Inner#{<<"mode">> := Mode}}))};
+        _ ->
+            {error, "inner blob mode field not found"}
+    catch
+        error:Reason ->
+            {error, io_lib:format("~p", [Reason])}
     end.
 
 %% Prints the construction line with the recipe read back from the
@@ -645,14 +699,19 @@ log_pipeline_initialised(Profile, Blob) ->
             log("pipeline initialised: profile=~s blob=~B bytes (inspect: ~ts)",
                 [Profile, byte_size(Blob), Detail]);
         {ok, Record} ->
-            log("pipeline initialised: profile=~s blob=~B bytes hash=~s key-bits=~B "
+            Line = io_lib:format(
+                "pipeline initialised: profile=~s blob=~B bytes hash=~s key-bits=~B "
                 "nonce-bits=~B barrier-fill=~B chunk-size=~B mac=~s parallax=~s wrapper=~s",
                 [Profile, byte_size(Blob),
                  record_str(Record, <<"hash">>), record_int(Record, <<"keybits">>),
                  record_int(Record, <<"nonce_bits">>), record_int(Record, <<"barrier_fill">>),
                  record_int(Record, <<"chunk">>), record_str(Record, <<"mac">>),
                  on_off(record_bool(Record, <<"parallax">>)),
-                 on_off(record_bool(Record, <<"wrapper">>))])
+                 on_off(record_bool(Record, <<"wrapper">>))]),
+            ContainerMode = [" container-mode=2" || record_int(Record, <<"container_mode">>) =:= 2],
+            Drbg = [[" drbg=", record_str(Record, <<"drbg">>)]
+                    || record_str(Record, <<"drbg">>) =/= "-"],
+            log("~ts", [[Line, ContainerMode, Drbg]])
     end.
 
 record_int(Record, Key) ->
@@ -772,12 +831,20 @@ start_lines(Cfg) ->
          on_off(Cfg#cfg.parallax), on_off(Cfg#cfg.wrapper)]),
     log("overrides: profile=\"~s\" key-bits=~B nonce-bits=~B chunk-size=~s "
         "barrier-fill=~B gomaxprocs=~B rekey-every=~B blob-cycle-every=~B "
-        "payload-mode=~s seed=~B json-output=~s",
+        "payload-mode=~s seed=~B json-output=~s~s~s",
         [Cfg#cfg.profile, Cfg#cfg.key_bits, Cfg#cfg.nonce_bits,
          loop_size:human_bytes(Cfg#cfg.chunk_size), Cfg#cfg.barrier_fill,
          Cfg#cfg.gomaxprocs, Cfg#cfg.rekey_every, Cfg#cfg.blob_cycle_every,
          loop_payload:mode_name(Cfg#cfg.payload_mode), Cfg#cfg.seed,
-         atom_to_list(Cfg#cfg.json_output)]),
+         atom_to_list(Cfg#cfg.json_output),
+         case Cfg#cfg.blob_mode of
+             1 -> "";
+             M -> " blob-mode=" ++ integer_to_list(M)
+         end,
+         case Cfg#cfg.drbg of
+             "" -> "";
+             D -> " drbg=" ++ D
+         end]),
     log("policy: microbatch-tiers=~s hashpool-starters=~s",
         [policy_label("ITB_MICROBATCH_TIERS"), policy_label("ITB_HASHPOOL_STARTERS")]).
 

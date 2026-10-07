@@ -178,8 +178,10 @@ public class PersistTests
     {
         var ex = Assert.Throws<ItbException>(
             () => Pipeline.Init("singlemsg-triple-mac-v1", new Opts().WithDrbg("nope")));
+        // Status only: the last-error slot is process-wide and xUnit
+        // runs test classes in parallel, so the message text can come
+        // from another test's failing call.
         Assert.Equal(Status.RecipePrimitiveUnknown, ex.Status);
-        Assert.Contains("nope", ex.Message);
     }
 
     [Fact]

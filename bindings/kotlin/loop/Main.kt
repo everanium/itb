@@ -110,8 +110,10 @@ class Config(
     val profile: String,
     val keyBits: Long,
     val nonceBits: Long,
+    val blobMode: Long,
     val chunkSize: Long,
     val barrierFill: Long,
+    val drbg: String,
     val gomaxprocs: Int,
     val rekeyEvery: Long,
     val blobCycleEvery: Long,
@@ -227,7 +229,9 @@ class RunState(
 private class RawFlags {
     var barrierFill = 0L
     var blobCycleEvery = 0L
+    var blobMode = 1L
     var chunkSize = "0"
+    var drbg = ""
     var duration = "5m"
     var gogc = 0L
     var gomaxprocs = 0L
@@ -284,11 +288,21 @@ private fun buildFlags(): List<Flag> {
             false, "",
         ) { f, s -> s.toLongOrNull()?.also { f.blobCycleEvery = it } != null },
         Flag(
+            "blob-mode", "int",
+            "container floor sizing mode: 1 (per-region, default) | 2 (per-container)",
+            false, defaultOf(d.blobMode),
+        ) { f, s -> s.toLongOrNull()?.also { f.blobMode = it } != null },
+        Flag(
             "chunk-size", "string",
             "streaming chunk-size budget (e.g. 4MB); 0 = profile default; " +
                 "inert for pure message shape",
             false, defaultOf(d.chunkSize),
         ) { f, s -> f.chunkSize = s; true },
+        Flag(
+            "drbg", "string",
+            "DRBG fill primitive name (see itb3 drbgs); empty = profile default (auto tier)",
+            false, defaultOf(d.drbg),
+        ) { f, s -> f.drbg = s; true },
         Flag(
             "duration", "duration",
             "run duration (Go format: 30s / 5m / 1h); ignored when --iterations > 0",
@@ -620,6 +634,12 @@ private fun parseFlags(args: Array<String>): Parsed {
         )
         return Parsed(null, 2)
     }
+    if (f.blobMode !in listOf(1L, 2L)) {
+        System.err.println(
+            "loop: --blob-mode must be 1 (per-region) | 2 (per-container), got ${f.blobMode}",
+        )
+        return Parsed(null, 2)
+    }
     if (f.barrierFill !in listOf(0L, 1L, 2L, 4L, 8L, 16L, 32L)) {
         System.err.println(
             "loop: --barrier-fill must be 1 | 2 | 4 | 8 | 16 | 32 (or 0 = profile default), " +
@@ -670,8 +690,10 @@ private fun parseFlags(args: Array<String>): Parsed {
             profile = f.profile,
             keyBits = f.keyBits,
             nonceBits = f.nonceBits,
+            blobMode = f.blobMode,
             chunkSize = chunkSize,
             barrierFill = f.barrierFill,
+            drbg = f.drbg, // validated by Init: the C ABI enumerates no DRBG names
             gomaxprocs = f.gomaxprocs.toInt(),
             rekeyEvery = f.rekeyEvery,
             blobCycleEvery = f.blobCycleEvery,
@@ -795,6 +817,7 @@ private fun buildPipeline(cfg: Config, profile: String): Built? {
         .keyBits(cfg.keyBits)
         .nonceBits(cfg.nonceBits)
         .barrierFill(cfg.barrierFill)
+        .drbg(cfg.drbg)
         .chunkSize(cfg.chunkSize)
     if (cfg.profile.isNotEmpty()) {
         val filled = fillKeystreamLayers(cfg.profile, opts, cfg.parallax, cfg.wrapper)
@@ -807,7 +830,7 @@ private fun buildPipeline(cfg: Config, profile: String): Built? {
             )
         }
     }
-    val pipe = try {
+    var pipe = try {
         Pipeline.init(profile, opts)
     } catch (e: Exception) {
         System.err.println("loop: Init($profile): ${detail(e)}")
@@ -820,8 +843,73 @@ private fun buildPipeline(cfg: Config, profile: String): Built? {
         pipe.close()
         return null
     }
+    if (cfg.blobMode == 2L) {
+        // The sizing mode is not an Opts knob: the Init blob is edited
+        // and the pipeline reopened from it, so the retained blob (the
+        // one blob-cycle reopens from) carries the edited mode.
+        if (!editInnerBlobMode(blob, 2)) {
+            System.err.println("loop: rewrite blob mode: inner blob mode field not found")
+            pipe.close()
+            return null
+        }
+        pipe.close()
+        pipe = try {
+            Pipeline.load(blob)
+        } catch (e: Exception) {
+            System.err.println("loop: reload Mode 2 blob: ${detail(e)}")
+            return null
+        }
+    }
     logPipelineInitialised(profile, blob)
     return Built(pipe, blob)
+}
+
+/** Offset of the first occurrence of needle in hay at or after from,
+ * or -1 when absent. */
+private fun findBytes(hay: ByteArray, from: Int, needle: ByteArray): Int {
+    var i = from
+    while (i + needle.size <= hay.size) {
+        var match = true
+        for (j in needle.indices) {
+            if (hay[i + j] != needle[j]) {
+                match = false
+                break
+            }
+        }
+        if (match) {
+            return i
+        }
+        i++
+    }
+    return -1
+}
+
+/** Sets the inner blob's "mode" field of a wrap-layer session blob to
+ * targetMode (1 = per-region, 2 = per-container) in place. The wrap
+ * layer's profile record carries its own "mode" (a string), so the
+ * search starts at the inner blob ("ib"); both shipped modes are one
+ * digit wide, so the blob length does not change and the key material
+ * in blob is never copied. Returns false when the inner blob or its
+ * mode field is not found. */
+private fun editInnerBlobMode(blob: ByteArray, targetMode: Int): Boolean {
+    val ibKey = "\"ib\":{".toByteArray(Charsets.US_ASCII)
+    val modeKey = "\"mode\":".toByteArray(Charsets.US_ASCII)
+    val ib = findBytes(blob, 0, ibKey)
+    if (ib < 0) {
+        return false
+    }
+    val mode = findBytes(blob, ib + ibKey.size, modeKey)
+    if (mode < 0) {
+        return false
+    }
+    val at = mode + modeKey.size
+    if (at + 1 >= blob.size || blob[at] < '1'.code.toByte() || blob[at] > '2'.code.toByte() ||
+        (blob[at + 1] >= '0'.code.toByte() && blob[at + 1] <= '9'.code.toByte())
+    ) {
+        return false
+    }
+    blob[at] = ('0'.code + targetMode).toByte()
+    return true
 }
 
 private fun dash(s: String): String = if (s.isEmpty()) "-" else s
@@ -850,7 +938,9 @@ private fun logPipelineInitialised(profile: String, blob: ByteArray) {
             " chunk-size=${rec.chunk()}" +
             " mac=${dash(rec.mac())}" +
             " parallax=${onOff(rec.parallax())}" +
-            " wrapper=${onOff(rec.wrapper())}",
+            " wrapper=${onOff(rec.wrapper())}" +
+            (if (rec.containerMode() == 2) " container-mode=2" else "") +
+            (if (rec.drbg().isEmpty()) "" else " drbg=${rec.drbg()}"),
     )
 }
 
@@ -914,7 +1004,9 @@ private fun run(args: Array<String>): Int {
             " blob-cycle-every=${cfg.blobCycleEvery}" +
             " payload-mode=${cfg.payloadMode.label}" +
             " seed=${java.lang.Long.toUnsignedString(cfg.seed)}" +
-            " json-output=${if (cfg.jsonOutput) "true" else "false"}",
+            " json-output=${if (cfg.jsonOutput) "true" else "false"}" +
+            (if (cfg.blobMode != 1L) " blob-mode=${cfg.blobMode}" else "") +
+            (if (cfg.drbg.isEmpty()) "" else " drbg=${cfg.drbg}"),
     )
     logLine(
         "policy: microbatch-tiers=${policyLabel("ITB_MICROBATCH_TIERS")}" +

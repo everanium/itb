@@ -22,6 +22,13 @@ class SmokeTest {
     }
 
     @Test
+    void drbgAutoTierIsAFillCipher() {
+        // One of the two fill ciphers, resolved per host.
+        String tier = Runtime.drbgAutoTier()
+        assertTrue(tier == 'aes-256-ctr' || tier == 'chacha20', "drbg auto tier: ${tier}".toString())
+    }
+
+    @Test
     void smokeRoundTrip() {
         Pipeline.withPipeline('singlemsg-triple-mac-v1') { Pipeline sender ->
             assertTrue(sender.save().length > 0)

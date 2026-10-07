@@ -43,6 +43,10 @@ main = hspec $ do
       v <- version
       v `shouldNotBe` ""
 
+    it "drbg auto tier is one of the two fill ciphers" $ do
+      t <- drbgAutoTier
+      t `shouldSatisfy` (`elem` ["aes-256-ctr", "chacha20"])
+
     it "profiles list carries the shipped names" $ do
       forM_ [ "singlemsg-triple-mac-v1"
             , "singlemsg-triple-nomac-v1"

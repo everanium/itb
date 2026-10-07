@@ -55,8 +55,12 @@ $script:LoopFlags = @(
        Help = 'DRBG barrier fill margin: 1 | 2 | 4 | 8 | 16 | 32; 0 = profile default (1)' }
     @{ Name = 'blob-cycle-every'; Type = 'int'; Kind = 'int'; Default = 0; NoDefault = $true
        Help = 'reopen each pipeline from its session blob every N iterations per worker; 0 = never' }
+    @{ Name = 'blob-mode'; Type = 'int'; Kind = 'int'; Default = 1
+       Help = 'container floor sizing mode: 1 (per-region, default) | 2 (per-container)' }
     @{ Name = 'chunk-size'; Type = 'string'; Kind = 'string'; Default = '0'
        Help = 'streaming chunk-size budget (e.g. 4MB); 0 = profile default; inert for pure message shape' }
+    @{ Name = 'drbg'; Type = 'string'; Kind = 'string'; Default = ''
+       Help = 'DRBG fill primitive name (see itb3 drbgs); empty = profile default (auto tier)' }
     @{ Name = 'duration'; Type = 'duration'; Kind = 'string'; Default = '5m'
        Help = 'run duration (Go format: 30s / 5m / 1h); ignored when --iterations > 0' }
     @{ Name = 'gogc'; Type = 'int'; Kind = 'int'; Default = 0
@@ -343,10 +347,15 @@ function Read-LoopConfig {
         return (& $bad ('--nonce-bits must be 128 | 256 | 512 (or 0 = profile default), got ' +
                         (Format-LoopInt $raw['nonce-bits'])))
     }
+    if (@(1, 2) -notcontains $raw['blob-mode']) {
+        return (& $bad ('--blob-mode must be 1 (per-region) | 2 (per-container), got ' +
+                        (Format-LoopInt $raw['blob-mode'])))
+    }
     if (@(0, 1, 2, 4, 8, 16, 32) -notcontains $raw['barrier-fill']) {
         return (& $bad ('--barrier-fill must be 1 | 2 | 4 | 8 | 16 | 32 (or 0 = profile default), got ' +
                         (Format-LoopInt $raw['barrier-fill'])))
     }
+    # --drbg is validated by Init: the C ABI enumerates no DRBG names.
 
     $chunkSize = Convert-LoopSize $raw['chunk-size']
     if ($null -eq $chunkSize) {
@@ -387,8 +396,10 @@ function Read-LoopConfig {
             ProfileName = [string]$raw['profile']
             KeyBits = [long]$raw['key-bits']
             NonceBits = [long]$raw['nonce-bits']
+            BlobMode = [long]$raw['blob-mode']
             ChunkSize = [long]$chunkSize
             BarrierFill = [long]$raw['barrier-fill']
+            Drbg = [string]$raw['drbg']
             Gomaxprocs = [int]$raw['gomaxprocs']
             RekeyEvery = [long]$raw['rekey-every']
             BlobCycleEvery = [long]$raw['blob-cycle-every']
@@ -426,6 +437,7 @@ function New-LoopPipeline {
         keyBits = (Format-LoopInt $Cfg.KeyBits)
         nonceBits = (Format-LoopInt $Cfg.NonceBits)
         barrierFill = (Format-LoopInt $Cfg.BarrierFill)
+        drbg = $Cfg.Drbg
         chunkSize = (Format-LoopInt $Cfg.ChunkSize)
     }
 
@@ -477,6 +489,23 @@ function New-LoopPipeline {
         return $null
     }
 
+    if ($Cfg.BlobMode -eq 2) {
+        # The sizing mode is not an Opts knob: the Init blob is edited
+        # and the pipeline reopened from it, so the retained blob (the
+        # one blob-cycle reopens from) carries the edited mode.
+        $pipe.Dispose()
+        try { $blob = Set-LoopInnerBlobMode $blob 2 }
+        catch {
+            Write-LoopError ('rewrite blob mode: ' + $_.Exception.Message)
+            return $null
+        }
+        try { $pipe = Import-ItbPipeline -Blob $blob }
+        catch {
+            Write-LoopError ('reload Mode 2 blob: ' + (Get-LoopErrorDetail $_))
+            return $null
+        }
+    }
+
     Write-LoopPipelineInitialised $Profile $blob
     return @{ Pipe = $pipe; Blob = $blob }
 }
@@ -512,7 +541,43 @@ function Write-LoopPipelineInitialised {
         ' chunk-size=' + (Format-LoopInt ([long]$rec.Chunk)) +
         ' mac=' + (& $dash $rec.Mac) +
         ' parallax=' + (Format-LoopOnOff $rec.Parallax) +
-        ' wrapper=' + (Format-LoopOnOff $rec.Wrapper))
+        ' wrapper=' + (Format-LoopOnOff $rec.Wrapper) +
+        $(if ($rec.ContainerMode -eq 2) { ' container-mode=2' } else { '' }) +
+        $(if (-not [string]::IsNullOrEmpty($rec.Drbg)) { ' drbg=' + $rec.Drbg } else { '' }))
+}
+
+function Set-LoopInnerBlobMode {
+    <#
+    .SYNOPSIS
+    Returns a copy of a session blob with the inner blob's sizing mode set.
+    .DESCRIPTION
+    The inner blob ("ib") of a wrap-layer session blob carries the
+    container floor sizing mode (1 = per-region, 2 = per-container). The
+    wrap layer's profile record carries its own "mode" (a string), so
+    only the inner blob's integer field is set; no key is added, integers
+    keep their literals, and strings are written without escaping the
+    base64 alphabet.
+    #>
+    param([byte[]]$Blob, [int]$Mode)
+
+    $root = [System.Text.Json.Nodes.JsonNode]::Parse([System.Text.Encoding]::UTF8.GetString($Blob))
+    if ($root -isnot [System.Text.Json.Nodes.JsonObject]) {
+        throw [System.FormatException]::new('session blob is not a JSON object')
+    }
+    $ib = $root['ib']
+    if ($ib -isnot [System.Text.Json.Nodes.JsonObject] -or -not $ib.ContainsKey('mode')) {
+        throw [System.FormatException]::new('inner blob mode field not found')
+    }
+    $ib['mode'] = [System.Text.Json.Nodes.JsonValue]::Create([int]$Mode)
+    $buf = [System.IO.MemoryStream]::new()
+    try {
+        $options = [System.Text.Json.JsonWriterOptions]::new()
+        $options.Encoder = [System.Text.Encodings.Web.JavaScriptEncoder]::UnsafeRelaxedJsonEscaping
+        $w = [System.Text.Json.Utf8JsonWriter]::new([System.IO.Stream]$buf, $options)
+        try { $root.WriteTo($w) } finally { $w.Dispose() }
+        return ,$buf.ToArray()
+    }
+    finally { $buf.Dispose() }
 }
 
 # ----------------------------------------------------------------------
@@ -576,7 +641,9 @@ function Invoke-LoopRun {
         ' blob-cycle-every=' + (Format-LoopInt $cfg.BlobCycleEvery) +
         ' payload-mode=' + $cfg.PayloadMode +
         ' seed=' + ([uint64]$cfg.Seed).ToString([System.Globalization.CultureInfo]::InvariantCulture) +
-        ' json-output=' + $(if ($cfg.JsonOutput) { 'true' } else { 'false' }))
+        ' json-output=' + $(if ($cfg.JsonOutput) { 'true' } else { 'false' }) +
+        $(if ($cfg.BlobMode -ne 1) { ' blob-mode=' + (Format-LoopInt $cfg.BlobMode) } else { '' }) +
+        $(if ($cfg.Drbg.Length -gt 0) { ' drbg=' + $cfg.Drbg } else { '' }))
     Write-LoopLine ('policy: microbatch-tiers=' + (Get-LoopPolicyLabel 'ITB_MICROBATCH_TIERS') +
         ' hashpool-starters=' + (Get-LoopPolicyLabel 'ITB_HASHPOOL_STARTERS'))
 

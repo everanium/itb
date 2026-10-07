@@ -268,6 +268,9 @@ def _emit_json(
         + ',"seed":%d' % cfg.seed
         + ',"key_bits":%d' % cfg.key_bits
         + ',"nonce_bits":%d' % cfg.nonce_bits
+        + ',"blob_mode":%d' % cfg.blob_mode
+        + ',"drbg":%s' % _js(cfg.drbg)
+        + ',"drbg_auto_tier":%s' % _js(itb.drbg_auto_tier())
         + ',"chunk_size_bytes":%d' % cfg.chunk_size
         + ',"barrier_fill":%d' % cfg.barrier_fill
         + ',"parallax":"%s"' % on_off(cfg.parallax)

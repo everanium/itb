@@ -43,7 +43,7 @@
          stream_write/2, stream_end/1, stream_read/1, stream_read/2,
          stream_free/1,
          inspect/1, register/2, lookup/1, profiles/0, hash_names/0,
-         version/0, last_error/0, status_code/1,
+         version/0, drbg_auto_tier/0, last_error/0, status_code/1,
          set_memory_limit/1, set_gc_percent/1, set_gomaxprocs/1,
          write_heap_profile/1, pool_stats_len/0, pool_stats/0]).
 
@@ -296,6 +296,14 @@ json_out({error, _} = Err) -> Err.
 -spec version() -> {ok, binary()} | {error, reason()}.
 version() ->
     itb3_nif:version_nif().
+
+%% The fill cipher the auto DRBG tier selected on this host
+%% (<<"aes-256-ctr">> or <<"chacha20">>): the tier a Pipeline uses
+%% when its `drbg` option is empty, resolved per host and recorded in
+%% no blob.
+-spec drbg_auto_tier() -> {ok, binary()} | {error, reason()}.
+drbg_auto_tier() ->
+    itb3_nif:drbg_auto_tier_nif().
 
 %% The Go-side diagnostic recorded by the most recent failing libitb3
 %% call (process-global last-write-wins; `<<>>` when none). The error

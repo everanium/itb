@@ -323,8 +323,9 @@ type summaryReport struct {
 	Seed             uint64              `json:"seed"`
 	KeyBits          int                 `json:"key_bits"`
 	NonceBits        int                 `json:"nonce_bits"`
-	BlobMode         int                 `json:"blob_mode,omitempty"`
-	DRBG             string              `json:"drbg,omitempty"`
+	BlobMode         int                 `json:"blob_mode"`
+	DRBG             string              `json:"drbg"`
+	DRBGAutoTier     string              `json:"drbg_auto_tier"`
 	ChunkSizeBytes   int64               `json:"chunk_size_bytes"`
 	BarrierFill      int                 `json:"barrier_fill"`
 	Parallax         string              `json:"parallax"`
@@ -531,42 +532,38 @@ func printJSONSummary(r *runState, elapsed time.Duration, finalHeap uint64, fina
 		Seed:                r.cfg.seed,
 		KeyBits:             r.cfg.keyBits,
 		NonceBits:           r.cfg.nonceBits,
-		BlobMode: func() int {
-			if r.cfg.blobMode != 1 {
-				return r.cfg.blobMode
-			}
-			return 0
-		}(),
-		DRBG:              r.cfg.drbg,
-		ChunkSizeBytes:    r.cfg.chunkSize,
-		BarrierFill:       r.cfg.barrierFill,
-		Parallax:          onOff(r.cfg.parallax),
-		Wrapper:           onOff(r.cfg.wrapper),
-		WorkersRequested:  r.cfg.workers,
-		Workers:           len(r.workers),
-		Concurrency:       concurrencyMode,
-		GOGC:              gogcLabel(r.cfg.gogc),
-		MemLimit:          r.cfg.memlimit,
-		GOMAXPROCS:        itb.SetGOMAXPROCS(0),
-		MicroBatchTiers:   policyLabel(os.Getenv("ITB_MICROBATCH_TIERS")),
-		HashPoolStarters:  policyLabel(os.Getenv("ITB_HASHPOOL_STARTERS")),
-		RSSWarmupBytes:    r.rssWarmup,
-		RSSPeakBytes:      r.rssPeak,
-		RSSFinalBytes:     r.rssFinal,
-		RSSGrowthPercent:  fixed2(rssGrowthPct),
-		HashPoolTiers:     hashTiers,
-		BufPool:           am.BufPool,
-		ChunkPool:         am.ChunkPool,
-		HeapWarmupBytes:   r.warmupHeap,
-		HeapPeakBytes:     r.peakHeap,
-		HeapFinalBytes:    finalHeap,
-		HeapGrowthPercent: fixed2(growthPct),
-		GoroutinesIdle:    r.idleGoroutines,
-		GoroutinesWarmup:  r.warmupGoroutines,
-		GoroutinesPeak:    r.peakGoroutines,
-		GoroutinesFinal:   finalGoroutines,
-		Warnings:          r.warnings,
-		allocMetrics:      am,
+		BlobMode:            r.cfg.blobMode,
+		DRBG:                r.cfg.drbg,
+		DRBGAutoTier:        itb.DRBGAutoTier(),
+		ChunkSizeBytes:      r.cfg.chunkSize,
+		BarrierFill:         r.cfg.barrierFill,
+		Parallax:            onOff(r.cfg.parallax),
+		Wrapper:             onOff(r.cfg.wrapper),
+		WorkersRequested:    r.cfg.workers,
+		Workers:             len(r.workers),
+		Concurrency:         concurrencyMode,
+		GOGC:                gogcLabel(r.cfg.gogc),
+		MemLimit:            r.cfg.memlimit,
+		GOMAXPROCS:          itb.SetGOMAXPROCS(0),
+		MicroBatchTiers:     policyLabel(os.Getenv("ITB_MICROBATCH_TIERS")),
+		HashPoolStarters:    policyLabel(os.Getenv("ITB_HASHPOOL_STARTERS")),
+		RSSWarmupBytes:      r.rssWarmup,
+		RSSPeakBytes:        r.rssPeak,
+		RSSFinalBytes:       r.rssFinal,
+		RSSGrowthPercent:    fixed2(rssGrowthPct),
+		HashPoolTiers:       hashTiers,
+		BufPool:             am.BufPool,
+		ChunkPool:           am.ChunkPool,
+		HeapWarmupBytes:     r.warmupHeap,
+		HeapPeakBytes:       r.peakHeap,
+		HeapFinalBytes:      finalHeap,
+		HeapGrowthPercent:   fixed2(growthPct),
+		GoroutinesIdle:      r.idleGoroutines,
+		GoroutinesWarmup:    r.warmupGoroutines,
+		GoroutinesPeak:      r.peakGoroutines,
+		GoroutinesFinal:     finalGoroutines,
+		Warnings:            r.warnings,
+		allocMetrics:        am,
 	}
 	b, err := json.Marshal(rep)
 	if err != nil {

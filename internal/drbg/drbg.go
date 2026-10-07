@@ -23,7 +23,7 @@
 //     hosts with AES-NI / ARMv8-AES, ChaCha20 (RFC 8439, 44-byte seed)
 //     everywhere else, decided at package init from the host feature
 //     flags. The environment variable ITB_DRBG_TIER ("aes" / "aesctr" /
-//     "aes-ctr" / "aescmac" or "chacha" / "chacha20") forces one of the
+//     "aes-ctr" or "chacha" / "chacha20") forces one of the
 //     two for parity and diagnostic runs; an unrecognised or
 //     unsupported token keeps the auto selection silently. The variable
 //     is consulted on this path only — a named primitive is never
@@ -115,7 +115,7 @@ func pickTier() (fillFn, string) {
 	forced := strings.ToLower(strings.TrimSpace(os.Getenv("ITB_DRBG_TIER")))
 	hasAES := hostHasAES()
 	switch forced {
-	case "aes", "aesctr", "aes-ctr", "aescmac":
+	case "aes", "aesctr", "aes-ctr":
 		if hasAES {
 			return fillAesCTR, "aes"
 		}

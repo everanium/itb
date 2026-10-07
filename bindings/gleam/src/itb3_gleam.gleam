@@ -50,6 +50,12 @@ pub type Opts =
 @external(erlang, "itb3_gleam_ffi", "version")
 pub fn version() -> Result(String, ItbError)
 
+/// The fill cipher the auto DRBG tier selected on this host
+/// ("aes-256-ctr" or "chacha20"): the tier a Pipeline uses when its
+/// `drbg` option is empty, resolved per host and recorded in no blob.
+@external(erlang, "itb3_gleam_ffi", "drbg_auto_tier")
+pub fn drbg_auto_tier() -> Result(String, ItbError)
+
 /// Decodes the blob's embedded profile record without opening a
 /// Pipeline and returns it as the JSON text libitb3 emits; absent keys
 /// are optional fields at their zero value. No registry read, no

@@ -98,8 +98,10 @@ pub struct Config {
     pub profile: String,
     pub key_bits: i64,
     pub nonce_bits: i64,
+    pub blob_mode: i64,
     pub chunk_size: i64,
     pub barrier_fill: i64,
+    pub drbg: String,
     pub gomaxprocs: i32,
     pub rekey_every: i64,
     pub blob_cycle_every: i64,
@@ -208,7 +210,9 @@ pub fn policy_label(env: Option<String>) -> String {
 struct RawFlags {
     barrier_fill: i64,
     blob_cycle_every: i64,
+    blob_mode: i64,
     chunk_size: String,
+    drbg: String,
     duration: String,
     gogc: i64,
     gomaxprocs: i64,
@@ -236,7 +240,9 @@ impl Default for RawFlags {
         Self {
             barrier_fill: 0,
             blob_cycle_every: 0,
+            blob_mode: 1,
             chunk_size: "0".into(),
+            drbg: String::new(),
             duration: "5m".into(),
             gogc: 0,
             gomaxprocs: 0,
@@ -282,7 +288,7 @@ struct Flag {
     show_default: bool,
 }
 
-const FLAGS: [Flag; 23] = [
+const FLAGS: [Flag; 25] = [
     Flag {
         name: "barrier-fill",
         type_label: "int",
@@ -298,10 +304,24 @@ const FLAGS: [Flag; 23] = [
         show_default: false,
     },
     Flag {
+        name: "blob-mode",
+        type_label: "int",
+        help: "container floor sizing mode: 1 (per-region, default) | 2 (per-container)",
+        slot: Slot::Int(|f| &mut f.blob_mode),
+        show_default: true,
+    },
+    Flag {
         name: "chunk-size",
         type_label: "string",
         help: "streaming chunk-size budget (e.g. 4MB); 0 = profile default; inert for pure message shape",
         slot: Slot::Str(|f| &mut f.chunk_size),
+        show_default: true,
+    },
+    Flag {
+        name: "drbg",
+        type_label: "string",
+        help: "DRBG fill primitive name (see itb3 drbgs); empty = profile default (auto tier)",
+        slot: Slot::Str(|f| &mut f.drbg),
         show_default: true,
     },
     Flag {
@@ -696,6 +716,13 @@ fn parse_flags(args: &[String]) -> Result<Option<Config>, ()> {
         );
         return Err(());
     }
+    if !matches!(f.blob_mode, 1 | 2) {
+        eprintln!(
+            "loop: --blob-mode must be 1 (per-region) | 2 (per-container), got {}",
+            f.blob_mode
+        );
+        return Err(());
+    }
     if !matches!(f.barrier_fill, 0 | 1 | 2 | 4 | 8 | 16 | 32) {
         eprintln!(
             "loop: --barrier-fill must be 1 | 2 | 4 | 8 | 16 | 32 (or 0 = profile default), got {}",
@@ -703,6 +730,7 @@ fn parse_flags(args: &[String]) -> Result<Option<Config>, ()> {
         );
         return Err(());
     }
+    // --drbg is validated by Init: the C ABI enumerates no DRBG names.
     let Some(chunk_size) = parse_size(&f.chunk_size) else {
         eprintln!("loop: --chunk-size: invalid size \"{}\"", f.chunk_size);
         return Err(());
@@ -749,8 +777,10 @@ fn parse_flags(args: &[String]) -> Result<Option<Config>, ()> {
         profile: f.profile,
         key_bits: f.key_bits,
         nonce_bits: f.nonce_bits,
+        blob_mode: f.blob_mode,
         chunk_size,
         barrier_fill: f.barrier_fill,
+        drbg: f.drbg,
         gomaxprocs: f.gomaxprocs as i32,
         rekey_every: f.rekey_every,
         blob_cycle_every: f.blob_cycle_every,
@@ -843,6 +873,7 @@ fn build_pipeline(cfg: &Config, profile: &str) -> Result<(Pipeline, Vec<u8>), ()
         .with_key_bits(cfg.key_bits)
         .with_nonce_bits(cfg.nonce_bits)
         .with_barrier_fill(cfg.barrier_fill)
+        .with_drbg(&cfg.drbg)
         .with_chunk_size(cfg.chunk_size);
     if !cfg.profile.is_empty() {
         let (o, filled) = fill_keystream_layers(&cfg.profile, opts, cfg.parallax, cfg.wrapper)?;
@@ -854,22 +885,58 @@ fn build_pipeline(cfg: &Config, profile: &str) -> Result<(Pipeline, Vec<u8>), ()
             );
         }
     }
-    let pipe = match Pipeline::init(profile, &opts) {
+    let mut pipe = match Pipeline::init(profile, &opts) {
         Ok(p) => p,
         Err(e) => {
             eprintln!("loop: Init({profile}): {}", worker::detail(&e));
             return Err(());
         }
     };
-    let blob = match pipe.save() {
+    let mut blob = match pipe.save() {
         Ok(b) => b,
         Err(e) => {
             eprintln!("loop: Save({profile}): {}", worker::detail(&e));
             return Err(());
         }
     };
+    if cfg.blob_mode == 2 {
+        // The sizing mode is not an Opts knob: the Init blob is edited
+        // and the pipeline reopened from it, so the retained blob (the
+        // one blob-cycle reopens from) carries the edited mode.
+        if edit_inner_blob_mode(&mut blob, 2).is_none() {
+            eprintln!("loop: rewrite blob mode: inner blob mode field not found");
+            return Err(());
+        }
+        drop(pipe);
+        pipe = match Pipeline::load(&blob, None) {
+            Ok(p) => p,
+            Err(e) => {
+                eprintln!("loop: reload Mode 2 blob: {}", worker::detail(&e));
+                return Err(());
+            }
+        };
+    }
     log_pipeline_initialised(profile, &blob);
     Ok((pipe, blob))
+}
+
+/// Sets the inner blob's "mode" field of a wrap-layer session blob to
+/// target_mode (1 = per-region, 2 = per-container) in place. The wrap
+/// layer's profile record carries its own "mode" (a string), so the
+/// search starts at the inner blob ("ib"); both shipped modes are one
+/// digit wide, so the blob length does not change. `None` when the
+/// inner blob or its mode field is not found.
+fn edit_inner_blob_mode(blob: &mut [u8], target_mode: u8) -> Option<()> {
+    let find = |hay: &[u8], needle: &[u8]| hay.windows(needle.len()).position(|w| w == needle);
+    let ib_key = b"\"ib\":{";
+    let mode_key = b"\"mode\":";
+    let off = find(blob, ib_key)? + ib_key.len();
+    let at = off + find(&blob[off..], mode_key)? + mode_key.len();
+    if at + 1 >= blob.len() || !(b'1'..=b'2').contains(&blob[at]) || blob[at + 1].is_ascii_digit() {
+        return None;
+    }
+    blob[at] = b'0' + target_mode;
+    Some(())
 }
 
 /// Prints the construction line with the recipe read back from the
@@ -896,7 +963,7 @@ fn log_pipeline_initialised(profile: &str, blob: &[u8]) {
             s.to_string()
         }
     };
-    log_line(&format!(
+    let mut line = format!(
         "pipeline initialised: profile={profile} blob={} bytes hash={} key-bits={} nonce-bits={} barrier-fill={} chunk-size={} mac={} parallax={} wrapper={}",
         blob.len(),
         dash(&rec.inner_hash),
@@ -907,7 +974,14 @@ fn log_pipeline_initialised(profile: &str, blob: &[u8]) {
         dash(&rec.mac_name),
         on_off(rec.parallax),
         on_off(rec.wrapper)
-    ));
+    );
+    if rec.container_mode == Some(2) {
+        line.push_str(" container-mode=2");
+    }
+    if !rec.drbg.is_empty() {
+        line.push_str(&format!(" drbg={}", rec.drbg));
+    }
+    log_line(&line);
 }
 
 // ------------------------------------------------------------------
@@ -962,7 +1036,7 @@ fn run(args: &[String]) -> i32 {
         on_off(cfg.parallax),
         on_off(cfg.wrapper)
     ));
-    log_line(&format!(
+    let mut overrides = format!(
         "overrides: profile=\"{}\" key-bits={} nonce-bits={} chunk-size={} barrier-fill={} gomaxprocs={} rekey-every={} blob-cycle-every={} payload-mode={} seed={} json-output={}",
         cfg.profile,
         cfg.key_bits,
@@ -975,7 +1049,14 @@ fn run(args: &[String]) -> i32 {
         cfg.payload_mode.name(),
         cfg.seed,
         cfg.json_output
-    ));
+    );
+    if cfg.blob_mode != 1 {
+        overrides.push_str(&format!(" blob-mode={}", cfg.blob_mode));
+    }
+    if !cfg.drbg.is_empty() {
+        overrides.push_str(&format!(" drbg={}", cfg.drbg));
+    }
+    log_line(&overrides);
     log_line(&format!(
         "policy: microbatch-tiers={} hashpool-starters={}",
         policy_label(std::env::var("ITB_MICROBATCH_TIERS").ok()),

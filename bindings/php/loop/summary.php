@@ -391,6 +391,9 @@ function emit_json(
         . \sprintf(',"seed":%d', $cfg->seed)
         . \sprintf(',"key_bits":%d', $cfg->keyBits)
         . \sprintf(',"nonce_bits":%d', $cfg->nonceBits)
+        . \sprintf(',"blob_mode":%d', $cfg->blobMode)
+        . ',"drbg":' . json_string($cfg->drbg)
+        . ',"drbg_auto_tier":' . json_string(Itb::drbgAutoTier())
         . \sprintf(',"chunk_size_bytes":%d', $cfg->chunkSize)
         . \sprintf(',"barrier_fill":%d', $cfg->barrierFill)
         . ',"parallax":"' . on_off($cfg->parallax) . '"'

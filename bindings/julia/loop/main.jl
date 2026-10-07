@@ -77,8 +77,12 @@ const FLAGS = (
      "DRBG barrier fill margin: 1 | 2 | 4 | 8 | 16 | 32; 0 = profile default (1)"),
     ("blob-cycle-every", "int", KIND_INT64, 0,
      "reopen each pipeline from its session blob every N iterations per worker; 0 = never"),
+    ("blob-mode", "int", KIND_INT, 1,
+     "container floor sizing mode: 1 (per-region, default) | 2 (per-container)"),
     ("chunk-size", "string", KIND_STRING, "0",
      "streaming chunk-size budget (e.g. 4MB); 0 = profile default; inert for pure message shape"),
+    ("drbg", "string", KIND_STRING, "",
+     "DRBG fill primitive name (see itb3 drbgs); empty = profile default (auto tier)"),
     ("duration", "duration", KIND_STRING, "5m",
      "run duration (Go format: 30s / 5m / 1h); ignored when --iterations > 0"),
     ("gogc", "int", KIND_INT, 0,
@@ -457,11 +461,18 @@ function parse_flags(argv::Vector{String})
         err_line("--nonce-bits must be 128 | 256 | 512 (or 0 = profile default), got $(cfg.nonce_bits)")
         return -1, cfg
     end
+    cfg.blob_mode = Int(raw["blob-mode"])
+    if !(cfg.blob_mode in (1, 2))
+        err_line("--blob-mode must be 1 (per-region) | 2 (per-container), got $(cfg.blob_mode)")
+        return -1, cfg
+    end
     cfg.barrier_fill = Int(raw["barrier-fill"])
     if !(cfg.barrier_fill in (0, 1, 2, 4, 8, 16, 32))
         err_line("--barrier-fill must be 1 | 2 | 4 | 8 | 16 | 32 (or 0 = profile default), got $(cfg.barrier_fill)")
         return -1, cfg
     end
+    # Validated by Init: the C ABI enumerates no DRBG names.
+    cfg.drbg = string(raw["drbg"])
     chunk_size = parse_size(string(raw["chunk-size"]))
     if chunk_size === nothing
         err_line("--chunk-size: invalid size \"$(raw["chunk-size"])\"")
@@ -591,16 +602,50 @@ function log_pipeline_initialised(profile::AbstractString, blob::Vector{UInt8})
                  "(inspect: $(err.last_error))")
         return nothing
     end
-    log_line("pipeline initialised: profile=$profile blob=$(length(blob)) bytes " *
-             "hash=$(record_str(json, "hash")) " *
-             "key-bits=$(record_int(json, "keybits")) " *
-             "nonce-bits=$(record_int(json, "nonce_bits")) " *
-             "barrier-fill=$(record_int(json, "barrier_fill")) " *
-             "chunk-size=$(record_int(json, "chunk")) " *
-             "mac=$(record_str(json, "mac")) " *
-             "parallax=$(on_off(record_bool(json, "parallax"))) " *
-             "wrapper=$(on_off(record_bool(json, "wrapper")))")
+    line = "pipeline initialised: profile=$profile blob=$(length(blob)) bytes " *
+           "hash=$(record_str(json, "hash")) " *
+           "key-bits=$(record_int(json, "keybits")) " *
+           "nonce-bits=$(record_int(json, "nonce_bits")) " *
+           "barrier-fill=$(record_int(json, "barrier_fill")) " *
+           "chunk-size=$(record_int(json, "chunk")) " *
+           "mac=$(record_str(json, "mac")) " *
+           "parallax=$(on_off(record_bool(json, "parallax"))) " *
+           "wrapper=$(on_off(record_bool(json, "wrapper")))"
+    container_mode = record_int(json, "container_mode")
+    if container_mode == 2
+        line *= " container-mode=$container_mode"
+    end
+    drbg = record_str(json, "drbg")
+    if drbg != "-"
+        line *= " drbg=$drbg"
+    end
+    log_line(line)
     return nothing
+end
+
+"""
+Sets the inner blob's "mode" field of a wrap-layer session blob to
+target_mode (1 = per-region, 2 = per-container) in place. The binding
+carries no JSON library, so the edit is a targeted one: the wrap layer's
+profile record carries its own "mode" (a string), so the search starts
+at the inner blob ("ib"), and nothing before it is touched; both shipped
+modes are one digit wide, so the blob length does not change. Returns
+false when the inner blob or its mode field is not found.
+"""
+function edit_inner_blob_mode!(blob::Vector{UInt8}, target_mode::Integer)
+    ib_key = codeunits("\"ib\":{")
+    mode_key = codeunits("\"mode\":")
+    ib = findfirst(ib_key, blob)
+    ib === nothing && return false
+    off = last(ib) + 1
+    mode = findnext(mode_key, blob, off)
+    mode === nothing && return false
+    at = last(mode) + 1
+    at + 1 > length(blob) && return false
+    UInt8('1') <= blob[at] <= UInt8('2') || return false
+    UInt8('0') <= blob[at + 1] <= UInt8('9') && return false
+    blob[at] = UInt8('0') + UInt8(target_mode)
+    return true
 end
 
 """
@@ -620,6 +665,7 @@ function build_pipeline(cfg::Config, profile::AbstractString)
     ITB.with_key_bits!(opts, cfg.key_bits)
     ITB.with_nonce_bits!(opts, cfg.nonce_bits)
     ITB.with_barrier_fill!(opts, cfg.barrier_fill)
+    ITB.with_drbg!(opts, cfg.drbg)
     ITB.with_chunk_size!(opts, cfg.chunk_size)
     if !isempty(cfg.profile)
         filled = fill_keystream_layers(cfg.profile, opts, cfg.parallax, cfg.wrapper)
@@ -645,6 +691,24 @@ function build_pipeline(cfg::Config, profile::AbstractString)
         err_line("Save($profile): $(status_detail(err))")
         ITB.free!(pipe)
         return nothing
+    end
+    if cfg.blob_mode == 2
+        # The sizing mode is not an Opts knob: the Init blob is edited
+        # and the pipeline reopened from it, so the retained blob (the
+        # one blob-cycle reopens from) carries the edited mode.
+        if !edit_inner_blob_mode!(blob, 2)
+            err_line("rewrite blob mode: inner blob mode field not found")
+            ITB.free!(pipe)
+            return nothing
+        end
+        ITB.free!(pipe)
+        try
+            pipe = ITB.load(blob)
+        catch err
+            err isa ITB.ITBError || rethrow()
+            err_line("reload Mode 2 blob: $(status_detail(err))")
+            return nothing
+        end
     end
     log_pipeline_initialised(profile, blob)
     return pipe, blob
@@ -695,7 +759,9 @@ function run_loop(argv::Vector{String})
              "barrier-fill=$(cfg.barrier_fill) gomaxprocs=$(cfg.gomaxprocs) " *
              "rekey-every=$(cfg.rekey_every) blob-cycle-every=$(cfg.blob_cycle_every) " *
              "payload-mode=$(payload_mode_name(cfg.payload_mode)) seed=$(cfg.seed) " *
-             "json-output=$(cfg.json_output ? "true" : "false")")
+             "json-output=$(cfg.json_output ? "true" : "false")" *
+             (cfg.blob_mode != 1 ? " blob-mode=$(cfg.blob_mode)" : "") *
+             (isempty(cfg.drbg) ? "" : " drbg=$(cfg.drbg)"))
     log_line("policy: microbatch-tiers=$(policy_label("ITB_MICROBATCH_TIERS")) " *
              "hashpool-starters=$(policy_label("ITB_HASHPOOL_STARTERS"))")
 

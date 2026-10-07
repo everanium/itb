@@ -19,6 +19,7 @@
  *   itb.profiles()                          -> { "blob-triple-mac-v1", ... } (sorted)
  *   itb.hash_names()                        -> { "aesitb128", ... } (registry order)
  *   itb.version()                           -> string
+ *   itb.drbg_auto_tier()                    -> "aes-256-ctr" | "chacha20"
  *   itb.set_memory_limit(bytes)             -> previous limit
  *   itb.set_gc_percent(pct)                 -> previous percent
  *   itb.set_gomaxprocs(n)                   -> previous value (n <= 0 queries)
@@ -439,6 +440,34 @@ static int l_version(lua_State *L) {
         luaL_Buffer b;
         char *p = luaL_buffinitsize(L, &b, need);
         rc = ITB_Version(p, need, &need);
+        if (rc != ST_OK) {
+            luaL_pushresultsize(&b, 0);
+            lua_pop(L, 1);
+            return raise_status(L, rc);
+        }
+        luaL_pushresultsize(&b, need > 0 ? need - 1 : 0);
+    }
+    return 1;
+}
+
+/* itb.drbg_auto_tier() -> string: the fill cipher the auto DRBG tier
+ * selected on this host ("aes-256-ctr" or "chacha20") — the tier a
+ * Pipeline uses when its drbg option is empty, resolved per host and
+ * recorded in no blob. */
+static int l_drbg_auto_tier(lua_State *L) {
+    size_t need = 0;
+    int rc = ITB_DRBGAutoTier(NULL, 0, &need);
+    if (rc != ST_OK && rc != ST_BUFFER_TOO_SMALL) {
+        return raise_status(L, rc);
+    }
+    if (need <= 1) {
+        lua_pushliteral(L, "");
+        return 1;
+    }
+    {
+        luaL_Buffer b;
+        char *p = luaL_buffinitsize(L, &b, need);
+        rc = ITB_DRBGAutoTier(p, need, &need);
         if (rc != ST_OK) {
             luaL_pushresultsize(&b, 0);
             lua_pop(L, 1);
@@ -880,6 +909,7 @@ static const luaL_Reg MODULE_FUNCS[] = {
     {"lookup", l_lookup},
     {"profiles", l_profiles},
     {"version", l_version},
+    {"drbg_auto_tier", l_drbg_auto_tier},
     {"set_memory_limit", l_set_memory_limit},
     {"set_gc_percent", l_set_gc_percent},
     {"now", l_now},

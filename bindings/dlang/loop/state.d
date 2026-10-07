@@ -72,8 +72,10 @@ struct Config
     string profile;         /// empty = shape-based profile pair
     int keyBits;            /// 0 = profile default
     int nonceBits;          /// 0 = profile default
+    int blobMode;           /// container floor sizing mode: 1 (per-region, default) | 2 (per-container)
     long chunkSize;         /// 0 = profile default
     int barrierFill;        /// 0 = profile default
+    string drbg;            /// DRBG fill primitive; empty = profile default (auto tier)
     int gomaxprocs;         /// 0 = inherit from the environment
     long rekeyEvery;        /// per-worker iterations between rotations; 0 = never
     long blobCycleEvery;    /// per-worker iterations between reopens; 0 = never

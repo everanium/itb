@@ -71,6 +71,7 @@ module ITB3
   , module ITB3.Errors
     -- * Library version and runtime knobs
   , version
+  , drbgAutoTier
   , setMemoryLimit
   , setGcPercent
   , setGomaxprocs
@@ -104,6 +105,13 @@ bindingVersion = "0.5.1"
 -- | Returns the libitb3 library version string.
 version :: IO String
 version = readCStr c_ITB_Version
+
+-- | Returns the fill cipher the auto DRBG tier selected on this host
+-- (@\"aes-256-ctr\"@ or @\"chacha20\"@): the tier a Pipeline uses
+-- when its @drbg@ option is empty, resolved per host and recorded in
+-- no blob.
+drbgAutoTier :: IO String
+drbgAutoTier = readCStr c_ITB_DRBGAutoTier
 
 -- | Sets the Go runtime's soft heap limit in bytes and returns the
 -- previous limit. A negative value queries without changing.

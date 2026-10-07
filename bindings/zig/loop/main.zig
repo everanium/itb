@@ -149,7 +149,9 @@ const Flag = struct {
 const RawFlags = struct {
     barrier_fill: i32 = 0,
     blob_cycle_every: i64 = 0,
+    blob_mode: i32 = 1,
     chunk_size: []const u8 = "0",
+    drbg: []const u8 = "",
     duration: []const u8 = "5m",
     gogc: i32 = 0,
     gomaxprocs: i32 = 0,
@@ -173,6 +175,7 @@ const RawFlags = struct {
 
     fn intSlot(self: *RawFlags, name: []const u8) ?*i32 {
         if (std.mem.eql(u8, name, "barrier-fill")) return &self.barrier_fill;
+        if (std.mem.eql(u8, name, "blob-mode")) return &self.blob_mode;
         if (std.mem.eql(u8, name, "gogc")) return &self.gogc;
         if (std.mem.eql(u8, name, "gomaxprocs")) return &self.gomaxprocs;
         if (std.mem.eql(u8, name, "goroutines")) return &self.goroutines;
@@ -190,6 +193,7 @@ const RawFlags = struct {
 
     fn stringSlot(self: *RawFlags, name: []const u8) ?*[]const u8 {
         if (std.mem.eql(u8, name, "chunk-size")) return &self.chunk_size;
+        if (std.mem.eql(u8, name, "drbg")) return &self.drbg;
         if (std.mem.eql(u8, name, "duration")) return &self.duration;
         if (std.mem.eql(u8, name, "hash")) return &self.hash;
         if (std.mem.eql(u8, name, "mac")) return &self.mac;
@@ -265,7 +269,9 @@ const RawFlags = struct {
 const flag_table = [_]Flag{
     .{ .name = "barrier-fill", .type_label = "int", .kind = .int, .help = "DRBG barrier fill margin: 1 | 2 | 4 | 8 | 16 | 32; 0 = profile default (1)" },
     .{ .name = "blob-cycle-every", .type_label = "int", .kind = .int64, .help = "reopen each pipeline from its session blob every N iterations per worker; 0 = never" },
+    .{ .name = "blob-mode", .type_label = "int", .kind = .int, .help = "container floor sizing mode: 1 (per-region, default) | 2 (per-container)" },
     .{ .name = "chunk-size", .type_label = "string", .kind = .string, .help = "streaming chunk-size budget (e.g. 4MB); 0 = profile default; inert for pure message shape" },
+    .{ .name = "drbg", .type_label = "string", .kind = .string, .help = "DRBG fill primitive name (see itb3 drbgs); empty = profile default (auto tier)" },
     .{ .name = "duration", .type_label = "duration", .kind = .string, .help = "run duration (Go format: 30s / 5m / 1h); ignored when --iterations > 0" },
     .{ .name = "gogc", .type_label = "int", .kind = .int, .help = "GC trigger percentage; 0 = leave the runtime default" },
     .{ .name = "gomaxprocs", .type_label = "int", .kind = .int, .help = "Go runtime GOMAXPROCS override; 0 = inherit from the environment" },
@@ -548,6 +554,14 @@ fn parseFlags(gpa: std.mem.Allocator, argv: []const [*:0]const u8, cfg: *Config,
             return .fail;
         },
     }
+    cfg.blob_mode = f.blob_mode;
+    switch (cfg.blob_mode) {
+        1, 2 => {},
+        else => {
+            err("--blob-mode must be 1 (per-region) | 2 (per-container), got {d}", .{cfg.blob_mode});
+            return .fail;
+        },
+    }
     cfg.barrier_fill = f.barrier_fill;
     switch (cfg.barrier_fill) {
         0, 1, 2, 4, 8, 16, 32 => {},
@@ -556,6 +570,7 @@ fn parseFlags(gpa: std.mem.Allocator, argv: []const [*:0]const u8, cfg: *Config,
             return .fail;
         },
     }
+    cfg.drbg = f.drbg; // validated by Init: no DRBG-name enumeration exists
     cfg.chunk_size = size.parseSize(f.chunk_size) orelse {
         err("--chunk-size: invalid size \"{s}\"", .{f.chunk_size});
         return .fail;
@@ -660,8 +675,18 @@ fn logPipelineInitialised(gpa: std.mem.Allocator, profile: []const u8, blob: []c
     };
     defer parsed.deinit();
     const obj = parsed.value.object;
+    var tail_buf: [128]u8 = undefined;
+    var tail_len: usize = 0;
+    const container_mode = recordInt(obj, "container_mode");
+    if (container_mode == 2) {
+        if (std.fmt.bufPrint(tail_buf[tail_len..], " container-mode={d}", .{container_mode})) |t| tail_len += t.len else |_| {}
+    }
+    const drbg = recordStr(obj, "drbg");
+    if (!std.mem.eql(u8, drbg, "-")) {
+        if (std.fmt.bufPrint(tail_buf[tail_len..], " drbg={s}", .{drbg})) |t| tail_len += t.len else |_| {}
+    }
     line(
-        "pipeline initialised: profile={s} blob={d} bytes hash={s} key-bits={d} nonce-bits={d} barrier-fill={d} chunk-size={d} mac={s} parallax={s} wrapper={s}",
+        "pipeline initialised: profile={s} blob={d} bytes hash={s} key-bits={d} nonce-bits={d} barrier-fill={d} chunk-size={d} mac={s} parallax={s} wrapper={s}{s}",
         .{
             profile,
             blob.len,
@@ -673,8 +698,28 @@ fn logPipelineInitialised(gpa: std.mem.Allocator, profile: []const u8, blob: []c
             recordStr(obj, "mac"),
             onOff(recordBool(obj, "parallax")),
             onOff(recordBool(obj, "wrapper")),
+            tail_buf[0..tail_len],
         },
     );
+}
+
+/// Sets the inner blob's "mode" field of a wrap-layer session blob to
+/// target_mode (1 = per-region, 2 = per-container) in place. The wrap
+/// layer's profile record carries its own "mode" (a string), so the
+/// search starts at the inner blob ("ib"); both shipped modes are one
+/// digit wide, so the blob length does not change and the key material
+/// in blob is never copied. Returns false when the inner blob or its
+/// mode field is not found.
+fn editInnerBlobMode(blob: []u8, target_mode: u8) bool {
+    const ib_key = "\"ib\":{";
+    const mode_key = "\"mode\":";
+    const ib = std.mem.indexOf(u8, blob, ib_key) orelse return false;
+    const off = ib + ib_key.len;
+    const mode = std.mem.indexOf(u8, blob[off..], mode_key) orelse return false;
+    const at = off + mode + mode_key.len;
+    if (at + 1 >= blob.len or blob[at] < '1' or blob[at] > '2' or std.ascii.isDigit(blob[at + 1])) return false;
+    blob[at] = '0' + target_mode;
+    return true;
 }
 
 /// Constructs one Pipeline against profile with every flag-carried
@@ -701,6 +746,8 @@ fn buildPipeline(
     defer gpa.free(hash_z);
     const mac_z = gpa.dupeZ(u8, cfg.mac) catch return false;
     defer gpa.free(mac_z);
+    const drbg_z = gpa.dupeZ(u8, cfg.drbg) catch return false;
+    defer gpa.free(drbg_z);
     opts.set("innerHash", hash_z) catch {};
     opts.set("macName", mac_z) catch {};
     opts.set("withParallax", if (cfg.parallax) "true" else "false") catch {};
@@ -708,6 +755,7 @@ fn buildPipeline(
     setNum(opts, "keyBits", &num, cfg.key_bits);
     setNum(opts, "nonceBits", &num, cfg.nonce_bits);
     setNum(opts, "barrierFill", &num, cfg.barrier_fill);
+    opts.set("drbg", drbg_z) catch {};
     setNum(opts, "chunkSize", &num, cfg.chunk_size);
 
     if (cfg.profile.len > 0) {
@@ -729,6 +777,23 @@ fn buildPipeline(
         pipe.deinit();
         return false;
     };
+    if (cfg.blob_mode == 2) {
+        // The sizing mode is not an Opts knob: the Init blob is edited
+        // and the pipeline reopened from it, so the retained blob (the
+        // one blob-cycle reopens from) carries the edited mode.
+        if (!editInnerBlobMode(blob, 2)) {
+            err("rewrite blob mode: inner blob mode field not found", .{});
+            pipe.deinit();
+            gpa.free(blob);
+            return false;
+        }
+        pipe.deinit();
+        pipe = itb.Pipeline.load(gpa, blob, null) catch |e| {
+            err("reload Mode 2 blob: status {d}: {s}", .{ itb.statusOf(e).code(), itb.lastError() });
+            gpa.free(blob);
+            return false;
+        };
+    }
     out_pipe.* = pipe;
     out_blob.* = blob;
     logPipelineInitialised(gpa, profile, blob);
@@ -786,12 +851,15 @@ fn run(gpa: std.mem.Allocator, argv: []const [*:0]const u8) u8 {
         },
     );
     line(
-        "overrides: profile=\"{s}\" key-bits={d} nonce-bits={d} chunk-size={s} barrier-fill={d} gomaxprocs={d} rekey-every={d} blob-cycle-every={d} payload-mode={s} seed={d} json-output={s}",
+        "overrides: profile=\"{s}\" key-bits={d} nonce-bits={d} chunk-size={s} barrier-fill={d} gomaxprocs={d} rekey-every={d} blob-cycle-every={d} payload-mode={s} seed={d} json-output={s}{s}{s}{s}",
         .{
             cfg.profile,     cfg.key_bits,    cfg.nonce_bits,
             size.humanBytes(&a, cfg.chunk_size), cfg.barrier_fill, cfg.gomaxprocs,
             cfg.rekey_every, cfg.blob_cycle_every, cfg.payload_mode.name(),
             cfg.seed,        if (cfg.json_output) "true" else "false",
+            if (cfg.blob_mode != 1) (std.fmt.bufPrint(&b, " blob-mode={d}", .{cfg.blob_mode}) catch "") else "",
+            if (cfg.drbg.len > 0) " drbg=" else "",
+            cfg.drbg,
         },
     );
     const microbatch = policyLabel("ITB_MICROBATCH_TIERS");

@@ -166,8 +166,12 @@ defmodule Loop.Main do
      "DRBG barrier fill margin: 1 | 2 | 4 | 8 | 16 | 32; 0 = profile default (1)"},
     {"blob-cycle-every", "int", :int64,
      "reopen each pipeline from its session blob every N iterations per worker; 0 = never"},
+    {"blob-mode", "int", :int,
+     "container floor sizing mode: 1 (per-region, default) | 2 (per-container)"},
     {"chunk-size", "string", :string,
      "streaming chunk-size budget (e.g. 4MB); 0 = profile default; inert for pure message shape"},
+    {"drbg", "string", :string,
+     "DRBG fill primitive name (see itb3 drbgs); empty = profile default (auto tier)"},
     {"duration", "duration", :string,
      "run duration (Go format: 30s / 5m / 1h); ignored when --iterations > 0"},
     {"gogc", "int", :int, "GC trigger percentage; 0 = leave the runtime default"},
@@ -207,7 +211,9 @@ defmodule Loop.Main do
   @defaults %{
     "barrier-fill" => 0,
     "blob-cycle-every" => 0,
+    "blob-mode" => 1,
     "chunk-size" => "0",
+    "drbg" => "",
     "duration" => "5m",
     "gogc" => 0,
     "gomaxprocs" => 0,
@@ -367,6 +373,7 @@ defmodule Loop.Main do
          {:ok, cfg} <- resolve_profile(v, cfg),
          {:ok, cfg} <- resolve_key_bits(v, cfg),
          {:ok, cfg} <- resolve_nonce_bits(v, cfg),
+         {:ok, cfg} <- resolve_blob_mode(v, cfg),
          {:ok, cfg} <- resolve_barrier_fill(v, cfg),
          {:ok, cfg} <- resolve_chunk_size(v, cfg),
          {:ok, cfg} <- resolve_gomaxprocs(v, cfg),
@@ -540,10 +547,22 @@ defmodule Loop.Main do
     end
   end
 
+  defp resolve_blob_mode(v, cfg) do
+    case v["blob-mode"] do
+      m when m in [1, 2] ->
+        {:ok, %{cfg | blob_mode: m}}
+
+      m ->
+        err("--blob-mode must be 1 (per-region) | 2 (per-container), got #{m}") && :error
+    end
+  end
+
   defp resolve_barrier_fill(v, cfg) do
     case v["barrier-fill"] do
       b when b in [0, 1, 2, 4, 8, 16, 32] ->
-        {:ok, %{cfg | barrier_fill: b}}
+        # The DRBG name is validated by Init: the C ABI enumerates no
+        # DRBG names.
+        {:ok, %{cfg | barrier_fill: b, drbg: v["drbg"]}}
 
       b ->
         err(
@@ -661,6 +680,7 @@ defmodule Loop.Main do
       {:keyBits, Integer.to_string(cfg.key_bits)},
       {:nonceBits, Integer.to_string(cfg.nonce_bits)},
       {:barrierFill, Integer.to_string(cfg.barrier_fill)},
+      {:drbg, cfg.drbg},
       {:chunkSize, Integer.to_string(cfg.chunk_size)}
     ]
 
@@ -694,11 +714,54 @@ defmodule Loop.Main do
                 :error
 
               {:ok, blob} ->
-                log_pipeline_initialised(profile, blob)
-                {:ok, pipe, blob}
+                apply_blob_mode(cfg, profile, pipe, blob)
             end
         end
     end
+  end
+
+  # The sizing mode is not an opts knob: under --blob-mode 2 the Init
+  # blob is edited and the pipeline reopened from it, so the retained
+  # blob (the one blob-cycle reopens from) carries the edited mode.
+  defp apply_blob_mode(%Config{blob_mode: 1}, profile, pipe, blob) do
+    log_pipeline_initialised(profile, blob)
+    {:ok, pipe, blob}
+  end
+
+  defp apply_blob_mode(%Config{blob_mode: mode}, profile, pipe, blob) do
+    ITB.free(pipe)
+
+    case edit_inner_blob_mode(blob, mode) do
+      {:error, detail} ->
+        err("rewrite blob mode: #{detail}") && :error
+
+      {:ok, edited} ->
+        case ITB.load(edited) do
+          {:error, {status, detail}} ->
+            err("reload Mode 2 blob: " <> status_text(status, detail)) && :error
+
+          {:ok, reloaded} ->
+            log_pipeline_initialised(profile, edited)
+            {:ok, reloaded, edited}
+        end
+    end
+  end
+
+  # Sets the inner blob's integer "mode" (1 = per-region, 2 =
+  # per-container) of a session blob through the OTP json module. The
+  # profile record "p" carries its own string "mode"; the target is the
+  # one under "ib". Integers and strings round-trip unchanged; only the
+  # key order may differ.
+  defp edit_inner_blob_mode(blob, mode) do
+    case :json.decode(blob) do
+      %{"ib" => %{"mode" => m} = inner} = session when is_integer(m) ->
+        {:ok, IO.iodata_to_binary(:json.encode(%{session | "ib" => %{inner | "mode" => mode}}))}
+
+      _ ->
+        {:error, "inner blob mode field not found"}
+    end
+  rescue
+    e -> {:error, Exception.message(e)}
   end
 
   # Prints the construction line with the recipe read back from the
@@ -719,7 +782,12 @@ defmodule Loop.Main do
             "barrier-fill=#{record_int(record, "barrier_fill")} " <>
             "chunk-size=#{record_int(record, "chunk")} mac=#{record_str(record, "mac")} " <>
             "parallax=#{on_off(record_bool(record, "parallax"))} " <>
-            "wrapper=#{on_off(record_bool(record, "wrapper"))}"
+            "wrapper=#{on_off(record_bool(record, "wrapper"))}" <>
+            if(record_int(record, "container_mode") == 2, do: " container-mode=2", else: "") <>
+            case record_str(record, "drbg") do
+              "-" -> ""
+              drbg -> " drbg=#{drbg}"
+            end
         )
     end
   end
@@ -856,7 +924,9 @@ defmodule Loop.Main do
         "barrier-fill=#{cfg.barrier_fill} gomaxprocs=#{cfg.gomaxprocs} " <>
         "rekey-every=#{cfg.rekey_every} blob-cycle-every=#{cfg.blob_cycle_every} " <>
         "payload-mode=#{Payload.mode_name(cfg.payload_mode)} seed=#{cfg.seed} " <>
-        "json-output=#{cfg.json_output}"
+        "json-output=#{cfg.json_output}" <>
+        if(cfg.blob_mode != 1, do: " blob-mode=#{cfg.blob_mode}", else: "") <>
+        if(cfg.drbg != "", do: " drbg=#{cfg.drbg}", else: "")
     )
 
     log(

@@ -27,7 +27,7 @@ using Libdl
 import Base: read!
 
 export ITBError, Opts, Pipeline, StreamEncryptor, StreamDecryptor,
-    profiles, version,
+    profiles, version, drbg_auto_tier,
     load, load_f, save, save_f, inspect, register, lookup,
     set_memory_limit, set_gc_percent,
     rekey!, max_workers!, close!, free!,
@@ -64,6 +64,25 @@ function version()::String
     n <= 1 && return ""
     buf = Vector{UInt8}(undef, n)
     check(_ITB_Version(buf, length(buf), need))
+    return String(buf[1:max(Int(need[]) - 1, 0)])
+end
+
+"""
+    drbg_auto_tier() -> String
+
+Returns the fill cipher the auto DRBG tier selected on this host
+(`"aes-256-ctr"` or `"chacha20"`): the tier a Pipeline uses when its
+`drbg` option is empty, resolved per host and recorded in no blob.
+"""
+function drbg_auto_tier()::String
+    need = Ref{Csize_t}(0)
+    rc = Int(_ITB_DRBGAutoTier(C_NULL, 0, need))
+    (rc == STATUS_OK || rc == STATUS_BUFFER_TOO_SMALL) ||
+        throw(ITBError(rc, last_error()))
+    n = Int(need[])
+    n <= 1 && return ""
+    buf = Vector{UInt8}(undef, n)
+    check(_ITB_DRBGAutoTier(buf, length(buf), need))
     return String(buf[1:max(Int(need[]) - 1, 0)])
 end
 

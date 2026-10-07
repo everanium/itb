@@ -21,6 +21,11 @@ final class SmokeTest extends TestCase
         $this->assertMatchesRegularExpression('/^\d+\.\d+\.\d+/', $v);
     }
 
+    public function testDrbgAutoTierNamesAFillCipher(): void
+    {
+        $this->assertContains(Itb::drbgAutoTier(), ['aes-256-ctr', 'chacha20']);
+    }
+
     public function testProfilesRosterShape(): void
     {
         $profiles = Itb::profiles();

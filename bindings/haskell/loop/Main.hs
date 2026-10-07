@@ -44,6 +44,7 @@ import Control.Concurrent.MVar
 import Control.Exception (SomeException, finally, try)
 import Control.Monad (forM_, unless, when)
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Char8 as BC
 import Data.IORef
 import Data.Int (Int64)
 import Data.List (isPrefixOf)
@@ -102,8 +103,12 @@ flags =
       "DRBG barrier fill margin: 1 | 2 | 4 | 8 | 16 | 32; 0 = profile default (1)" "0"
   , Flag "blob-cycle-every" "int" KInt64
       "reopen each pipeline from its session blob every N iterations per worker; 0 = never" "0"
+  , Flag "blob-mode" "int" KInt
+      "container floor sizing mode: 1 (per-region, default) | 2 (per-container)" "1"
   , Flag "chunk-size" "string" KString
       "streaming chunk-size budget (e.g. 4MB); 0 = profile default; inert for pure message shape" "0"
+  , Flag "drbg" "string" KString
+      "DRBG fill primitive name (see itb3 drbgs); empty = profile default (auto tier)" ""
   , Flag "duration" "duration" KString
       "run duration (Go format: 30s / 5m / 1h); ignored when --iterations > 0" "5m"
   , Flag "gogc" "int" KInt
@@ -268,7 +273,7 @@ stageB raw goroutines = do
       "off" -> Right False
       v -> Left ("--" ++ name ++ " must be on | off, got \"" ++ v ++ "\"")
 
-stageC :: (String -> String) -> Either String (Int, Int, Int, Int64, Int, Int64, Int64, PayloadMode)
+stageC :: (String -> String) -> Either String (Int, Int, Int, Int, Int64, Int, Int64, Int64, PayloadMode)
 stageC raw = do
   let keyBits = intOf raw "key-bits"
   need (keyBits `elem` [0, 512, 1024, 2048])
@@ -276,6 +281,9 @@ stageC raw = do
   let nonceBits = intOf raw "nonce-bits"
   need (nonceBits `elem` [0, 128, 256, 512])
     ("--nonce-bits must be 128 | 256 | 512 (or 0 = profile default), got " ++ show nonceBits)
+  let blobMode = intOf raw "blob-mode"
+  need (blobMode `elem` [1, 2])
+    ("--blob-mode must be 1 (per-region) | 2 (per-container), got " ++ show blobMode)
   let barrierFill = intOf raw "barrier-fill"
   need (barrierFill `elem` [0, 1, 2, 4, 8, 16, 32])
     ("--barrier-fill must be 1 | 2 | 4 | 8 | 16 | 32 (or 0 = profile default), got "
@@ -295,7 +303,7 @@ stageC raw = do
     Just m -> Right m
     Nothing -> Left ("--payload-mode must be fixed | rotating | pattern-zero | pattern-ff | pattern-ascii, got \""
       ++ raw "payload-mode" ++ "\"")
-  pure (keyBits, nonceBits, barrierFill, chunkSize, gomaxprocs, rekeyEvery, blobEvery, pmode)
+  pure (keyBits, nonceBits, blobMode, barrierFill, chunkSize, gomaxprocs, rekeyEvery, blobEvery, pmode)
 
 intOf :: (String -> String) -> String -> Int
 intOf raw n = fromMaybe 0 (readMaybe (raw n))
@@ -334,7 +342,7 @@ parseFlags argv = do
                   Nothing -> pure (Left 2)
                   Just shape' -> case stageC raw of
                     Left msg -> reject msg
-                    Right (keyBits, nonceBits, barrierFill, chunkSize, gomaxprocs, rekeyEvery, blobEvery, pmode) ->
+                    Right (keyBits, nonceBits, blobMode, barrierFill, chunkSize, gomaxprocs, rekeyEvery, blobEvery, pmode) ->
                       pure (Right (Just defaultConfig
                         { cfgDurationNs = durationNs
                         , cfgIterations = iterations
@@ -357,8 +365,12 @@ parseFlags argv = do
                         , cfgProfile = raw "profile"
                         , cfgKeyBits = keyBits
                         , cfgNonceBits = nonceBits
+                        , cfgBlobMode = blobMode
                         , cfgChunkSize = chunkSize
                         , cfgBarrierFill = barrierFill
+                        -- Validated by Init: the C ABI enumerates no
+                        -- DRBG names.
+                        , cfgDrbg = raw "drbg"
                         , cfgGomaxprocs = gomaxprocs
                         , cfgRekeyEvery = rekeyEvery
                         , cfgBlobCycleEvery = blobEvery
@@ -511,6 +523,10 @@ logPipelineInitialised profile blob = do
         ++ " mac=" ++ recordStr json "mac"
         ++ " parallax=" ++ onOff (recordBool json "parallax")
         ++ " wrapper=" ++ onOff (recordBool json "wrapper")
+        ++ (if recordInt json "container_mode" == "2" then " container-mode=2" else "")
+        ++ (case recordStr json "drbg" of
+              "-" -> ""
+              d -> " drbg=" ++ d)
   where
     head' = "pipeline initialised: profile=" ++ profile ++ " blob="
       ++ show (BS.length blob) ++ " bytes"
@@ -530,6 +546,7 @@ buildPipeline cfg profile = do
         <> ITB3.keyBits (cfgKeyBits cfg)
         <> ITB3.nonceBits (cfgNonceBits cfg)
         <> ITB3.barrierFill (cfgBarrierFill cfg)
+        <> ITB3.drbg (cfgDrbg cfg)
         <> ITB3.chunkSize (fromIntegral (cfgChunkSize cfg))
   extra <-
     if null (cfgProfile cfg)
@@ -554,9 +571,54 @@ buildPipeline cfg profile = do
               errLine $ "Save(" ++ profile ++ "): " ++ statusDetail e
               ITB3.freePipeline pipe
               pure Nothing
-            Right blob -> do
-              logPipelineInitialised profile blob
-              pure (Just (pipe, blob))
+            Right blob
+              | cfgBlobMode cfg /= 2 -> do
+                  logPipelineInitialised profile blob
+                  pure (Just (pipe, blob))
+              | otherwise -> do
+                  -- The sizing mode is not an Opts knob: the Init blob
+                  -- is edited and the pipeline reopened from it, so the
+                  -- retained blob (the one blob-cycle reopens from)
+                  -- carries the edited mode.
+                  ITB3.freePipeline pipe
+                  case editInnerBlobMode blob 2 of
+                    Nothing -> do
+                      errLine "rewrite blob mode: inner blob mode field not found"
+                      pure Nothing
+                    Just edited -> do
+                      reloaded <- try (ITB3.loadPipeline edited Nothing)
+                      case reloaded of
+                        Left (e :: SomeException) -> do
+                          errLine $ "reload Mode 2 blob: " ++ statusDetail e
+                          pure Nothing
+                        Right pipe' -> do
+                          logPipelineInitialised profile edited
+                          pure (Just (pipe', edited))
+
+-- | Sets the inner blob's @mode@ field of a wrap-layer session blob to
+-- the target mode (1 = per-region, 2 = per-container). The wrap
+-- layer's profile record carries its own @mode@ (a string), so the
+-- search starts at the inner blob (@ib@); both shipped modes are one
+-- digit wide, so the blob length does not change. 'Nothing' when the
+-- inner blob or its mode field is not found.
+--
+-- Haskell-specific. The binding carries no JSON library and reads
+-- profile records by targeted string handling, so the edit replaces
+-- the single digit in place rather than re-serialising the blob.
+editInnerBlobMode :: BS.ByteString -> Int -> Maybe BS.ByteString
+editInnerBlobMode blob target = do
+  let (pre, fromIb) = BC.breakSubstring (BC.pack "\"ib\":{") blob
+  if BS.null fromIb then Nothing else Just ()
+  let ibLen = BS.length pre + 6
+      (preMode, fromMode) = BC.breakSubstring (BC.pack "\"mode\":") (BS.drop ibLen blob)
+  if BS.null fromMode then Nothing else Just ()
+  let at = ibLen + BS.length preMode + 7
+      isDigit c = c >= '0' && c <= '9'
+  if at + 1 < BS.length blob
+       && BC.index blob at >= '1' && BC.index blob at <= '2'
+       && not (isDigit (BC.index blob (at + 1)))
+    then Just (BS.concat [BS.take at blob, BC.singleton (head (show target)), BS.drop (at + 1) blob])
+    else Nothing
 
 -- | Builds the Pipeline for a surface the shape exercises. The outer
 -- 'Nothing' is a construction failure; the inner one is a surface this
@@ -621,6 +683,8 @@ run argv = do
         ++ " payload-mode=" ++ payloadModeName (cfgPayloadMode cfg)
         ++ " seed=" ++ show (cfgSeed cfg)
         ++ " json-output=" ++ (if cfgJsonOutput cfg then "true" else "false")
+        ++ (if cfgBlobMode cfg /= 1 then " blob-mode=" ++ show (cfgBlobMode cfg) else "")
+        ++ (if null (cfgDrbg cfg) then "" else " drbg=" ++ cfgDrbg cfg)
       logLine $ "policy: microbatch-tiers=" ++ microbatch
         ++ " hashpool-starters=" ++ starters
 

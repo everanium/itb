@@ -17,8 +17,8 @@ carries no ITB construction logic. The public surface is one
 `Pipeline` class (create / load / save / rekey / close, Single
 Message encrypt / decrypt, one-shot and incremental stream
 sessions with chunk pumps), the `Itb` facade (create / load / loadF /
-inspect / register / lookup / profiles / version / runtime
-knobs), an `Opts` query-string builder, the `Profile` record, and
+inspect / register / lookup / profiles / version / drbgAutoTier /
+runtime knobs), an `Opts` query-string builder, the `Profile` record, and
 `ItbException`.
 
 ## Prerequisites (Arch Linux)

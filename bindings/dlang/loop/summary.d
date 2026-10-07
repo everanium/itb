@@ -269,6 +269,9 @@ int finalSummary(ref RunState r, long elapsedNs) @trusted
         j ~= format(",\"seed\":%d", cfg.seed);
         j ~= format(",\"key_bits\":%d", cfg.keyBits);
         j ~= format(",\"nonce_bits\":%d", cfg.nonceBits);
+        j ~= format(",\"blob_mode\":%d", cfg.blobMode);
+        j ~= ",\"drbg\":" ~ jsonString(cfg.drbg);
+        j ~= ",\"drbg_auto_tier\":" ~ jsonString(drbgAutoTier());
         j ~= format(",\"chunk_size_bytes\":%d", cfg.chunkSize);
         j ~= format(",\"barrier_fill\":%d", cfg.barrierFill);
         j ~= format(",\"parallax\":\"%s\"", onOff(cfg.parallax));

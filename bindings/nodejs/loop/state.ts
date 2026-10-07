@@ -88,10 +88,14 @@ export interface Config {
   keyBits: number;
   /** 0 = profile default. */
   nonceBits: number;
+  /** Container floor sizing mode: 1 (per-region, default) | 2 (per-container). */
+  blobMode: number;
   /** 0 = profile default. */
   chunkSize: number;
   /** 0 = profile default. */
   barrierFill: number;
+  /** DRBG fill primitive; "" = profile default (auto tier). */
+  drbg: string;
   /** 0 = inherit from the environment. */
   gomaxprocs: number;
   /** Per-worker iterations between rotations; 0 = never. */
@@ -124,8 +128,10 @@ export function newConfig(): Config {
     profile: '',
     keyBits: 0,
     nonceBits: 0,
+    blobMode: 1,
     chunkSize: 0,
     barrierFill: 0,
+    drbg: '',
     gomaxprocs: 0,
     rekeyEvery: 0,
     blobCycleEvery: 0,

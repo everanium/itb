@@ -99,10 +99,22 @@ fn flag_table() -> List(Flag) {
       "reopen each pipeline from its session blob every N iterations per worker; 0 = never",
     ),
     Flag(
+      "blob-mode",
+      "int",
+      KInt,
+      "container floor sizing mode: 1 (per-region, default) | 2 (per-container)",
+    ),
+    Flag(
       "chunk-size",
       "string",
       KString,
       "streaming chunk-size budget (e.g. 4MB); 0 = profile default; inert for pure message shape",
+    ),
+    Flag(
+      "drbg",
+      "string",
+      KString,
+      "DRBG fill primitive name (see itb3 drbgs); empty = profile default (auto tier)",
     ),
     Flag(
       "duration",
@@ -211,7 +223,9 @@ fn defaults() -> Dict(String, Value) {
   dict.from_list([
     #("barrier-fill", VInt(0)),
     #("blob-cycle-every", VInt(0)),
+    #("blob-mode", VInt(1)),
     #("chunk-size", VString("0")),
+    #("drbg", VString("")),
     #("duration", VString("5m")),
     #("gogc", VInt(0)),
     #("gomaxprocs", VInt(0)),
@@ -445,8 +459,10 @@ fn blank_config(duration_ns: Int) -> Config {
     profile: "",
     key_bits: 0,
     nonce_bits: 0,
+    blob_mode: 1,
     chunk_size: 0,
     barrier_fill: 0,
+    drbg: "",
     gomaxprocs: 0,
     rekey_every: 0,
     blob_cycle_every: 0,
@@ -683,11 +699,28 @@ fn resolve_nonce_bits(
 ) -> Result(Config, Nil) {
   let n = get_int(v, "nonce-bits")
   case n == 0 || n == 128 || n == 256 || n == 512 {
-    True -> resolve_barrier_fill(v, Config(..cfg, nonce_bits: n))
+    True -> resolve_blob_mode(v, Config(..cfg, nonce_bits: n))
     False -> {
       loop_types.err(
         "--nonce-bits must be 128 | 256 | 512 (or 0 = profile default), got "
         <> int.to_string(n),
+      )
+      Error(Nil)
+    }
+  }
+}
+
+fn resolve_blob_mode(
+  v: Dict(String, Value),
+  cfg: Config,
+) -> Result(Config, Nil) {
+  let m = get_int(v, "blob-mode")
+  case m == 1 || m == 2 {
+    True -> resolve_barrier_fill(v, Config(..cfg, blob_mode: m))
+    False -> {
+      loop_types.err(
+        "--blob-mode must be 1 (per-region) | 2 (per-container), got "
+        <> int.to_string(m),
       )
       Error(Nil)
     }
@@ -700,7 +733,13 @@ fn resolve_barrier_fill(
 ) -> Result(Config, Nil) {
   let b = get_int(v, "barrier-fill")
   case b == 0 || b == 1 || b == 2 || b == 4 || b == 8 || b == 16 || b == 32 {
-    True -> resolve_chunk_size(v, Config(..cfg, barrier_fill: b))
+    // The DRBG name is validated by Init: the C ABI enumerates no DRBG
+    // names.
+    True ->
+      resolve_chunk_size(
+        v,
+        Config(..cfg, barrier_fill: b, drbg: get_string(v, "drbg")),
+      )
     False -> {
       loop_types.err(
         "--barrier-fill must be 1 | 2 | 4 | 8 | 16 | 32 (or 0 = profile default), got "
@@ -929,6 +968,7 @@ fn build_pipeline(
     #("keyBits", int.to_string(cfg.key_bits)),
     #("nonceBits", int.to_string(cfg.nonce_bits)),
     #("barrierFill", int.to_string(cfg.barrier_fill)),
+    #("drbg", cfg.drbg),
     #("chunkSize", int.to_string(cfg.chunk_size)),
   ]
   let extra = case cfg.profile {
@@ -967,13 +1007,93 @@ fn build_pipeline(
               pipeline.free(pipe)
               Error(Nil)
             }
-            Ok(blob) -> {
-              log_pipeline_initialised(profile, blob)
-              Ok(#(pipe, blob))
+            Ok(blob) -> apply_blob_mode(cfg.blob_mode, profile, pipe, blob)
+          }
+      }
+    }
+  }
+}
+
+// The sizing mode is not an opts knob: under --blob-mode 2 the Init
+// blob is edited and the pipeline reopened from it, so the retained
+// blob (the one blob-cycle reopens from) carries the edited mode.
+fn apply_blob_mode(
+  mode: Int,
+  profile: String,
+  pipe: Pipeline,
+  blob: BitArray,
+) -> Result(#(Pipeline, BitArray), Nil) {
+  case mode {
+    1 -> {
+      log_pipeline_initialised(profile, blob)
+      Ok(#(pipe, blob))
+    }
+    _ -> {
+      pipeline.free(pipe)
+      case edit_inner_blob_mode(blob, mode) {
+        Error(Nil) -> {
+          loop_types.err("rewrite blob mode: inner blob mode field not found")
+          Error(Nil)
+        }
+        Ok(edited) ->
+          case pipeline.load(edited) {
+            Error(ItbError(status, detail)) -> {
+              loop_types.err(
+                "reload Mode 2 blob: " <> loop_types.status_text(status, detail),
+              )
+              Error(Nil)
+            }
+            Ok(reloaded) -> {
+              log_pipeline_initialised(profile, edited)
+              Ok(#(reloaded, edited))
             }
           }
       }
     }
+  }
+}
+
+// Gleam-specific. This binding pins no JSON encoder, so the inner
+// blob's integer "mode" (1 = per-region, 2 = per-container) is set by
+// a targeted edit, the same one the C reference makes: the search
+// starts at the inner blob ("ib"), because the profile record "p"
+// carries its own string "mode", and nothing before "ib" is touched.
+// Both shipped modes are one digit wide, so the blob length does not
+// change.
+fn edit_inner_blob_mode(blob: BitArray, mode: Int) -> Result(BitArray, Nil) {
+  let ib_key = "\"ib\":{"
+  let mode_key = "\"mode\":"
+  case bit_array.to_string(blob) {
+    Error(Nil) -> Error(Nil)
+    Ok(text) ->
+      case string.split_once(text, ib_key) {
+        Error(Nil) -> Error(Nil)
+        Ok(#(before, inner)) ->
+          case string.split_once(inner, mode_key) {
+            Error(Nil) -> Error(Nil)
+            Ok(#(mid, rest)) ->
+              case string.pop_grapheme(rest) {
+                Ok(#(digit, tail)) if digit == "1" || digit == "2" ->
+                  case string.pop_grapheme(tail) {
+                    Ok(#(next, _)) ->
+                      case int.parse(next) {
+                        Ok(_) -> Error(Nil)
+                        Error(Nil) ->
+                          Ok(bit_array.from_string(
+                            before
+                            <> ib_key
+                            <> mid
+                            <> mode_key
+                            <> int.to_string(mode)
+                            <> tail,
+                          ))
+                      }
+                    Error(Nil) -> Error(Nil)
+                  }
+                _ -> Error(Nil)
+              }
+          }
+      }
   }
 }
 
@@ -1016,7 +1136,15 @@ fn log_pipeline_initialised(profile: String, blob: BitArray) -> Nil {
         <> " parallax="
         <> loop_types.on_off(record_bool(json, "parallax"))
         <> " wrapper="
-        <> loop_types.on_off(record_bool(json, "wrapper")),
+        <> loop_types.on_off(record_bool(json, "wrapper"))
+        <> case record_int(json, "container_mode") {
+          2 -> " container-mode=2"
+          _ -> ""
+        }
+        <> case record_str(json, "drbg") {
+          "-" -> ""
+          drbg -> " drbg=" <> drbg
+        },
       )
   }
 }
@@ -1144,7 +1272,15 @@ fn start_lines(cfg: Config) -> Nil {
     <> " seed="
     <> i(cfg.seed)
     <> " json-output="
-    <> loop_types.bool_text(cfg.json_output),
+    <> loop_types.bool_text(cfg.json_output)
+    <> case cfg.blob_mode {
+      1 -> ""
+      m -> " blob-mode=" <> i(m)
+    }
+    <> case cfg.drbg {
+      "" -> ""
+      d -> " drbg=" <> d
+    },
   )
   loop_types.log(
     "policy: microbatch-tiers="

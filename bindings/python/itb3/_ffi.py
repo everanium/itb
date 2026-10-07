@@ -45,6 +45,7 @@ _p_int64 = ctypes.POINTER(ctypes.c_int64)
 # ITB_Triple_* exports of cmd/cshared.
 _PROTOTYPES: dict[str, tuple[list[object], object]] = {
     "ITB_Version": ([_c_char_p, _c_size_t, _p_size_t], _c_int),
+    "ITB_DRBGAutoTier": ([_c_char_p, _c_size_t, _p_size_t], _c_int),
     "ITB_LastError": ([_c_char_p, _c_size_t, _p_size_t], _c_int),
     "ITB_SetMemoryLimit": ([_c_int64], _c_int64),
     "ITB_SetGCPercent": ([_c_int], _c_int),

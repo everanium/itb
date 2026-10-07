@@ -227,6 +227,8 @@ typedef PoolStatsDart = int Function(
 class FfiBridge {
   FfiBridge._(DynamicLibrary lib)
       : version = lib.lookupFunction<_VersionC, VersionDart>('ITB_Version'),
+        drbgAutoTier =
+            lib.lookupFunction<_VersionC, VersionDart>('ITB_DRBGAutoTier'),
         lastError = lib.lookupFunction<_VersionC, VersionDart>('ITB_LastError'),
         setMemoryLimit =
             lib.lookupFunction<_SetMemoryLimitC, SetMemoryLimitDart>(
@@ -296,6 +298,7 @@ class FfiBridge {
   static final FfiBridge instance = FfiBridge._(_openLibrary());
 
   final VersionDart version;
+  final VersionDart drbgAutoTier;
   final VersionDart lastError;
   final SetMemoryLimitDart setMemoryLimit;
   final SetGCPercentDart setGCPercent;

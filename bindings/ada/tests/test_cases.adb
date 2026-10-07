@@ -1140,6 +1140,15 @@ package body Test_Cases is
          Check (Ada.Strings.Fixed.Index (JSON, """nope""") = 0,
                 "registry omits a made-up name");
       end;
+
+      --  Auto DRBG tier: one of the two fill ciphers, resolved per
+      --  host.
+      declare
+         Tier : constant String := Itb3.Runtime.DRBG_Auto_Tier;
+      begin
+         Check (Tier = "aes-256-ctr" or else Tier = "chacha20",
+                "drbg auto tier: " & Tier);
+      end;
    end Runtime_Surface;
 
 end Test_Cases;

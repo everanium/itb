@@ -77,7 +77,7 @@ procedure Loop_Main is
    --  whose profiles need this fill.
    Keystream_Fill_Cipher : constant String := "aescmac";
 
-   N_Flags : constant := 23;
+   N_Flags : constant := 25;
 
    type Flag_Kind is (K_Int, K_Int64, K_UInt64, K_String, K_Bool);
 
@@ -92,7 +92,9 @@ procedure Loop_Main is
    Flag_Name : constant array (Flag_Index) of Text_Ref :=
      [new String'("barrier-fill"),
       new String'("blob-cycle-every"),
+      new String'("blob-mode"),
       new String'("chunk-size"),
+      new String'("drbg"),
       new String'("duration"),
       new String'("gogc"),
       new String'("gomaxprocs"),
@@ -117,6 +119,8 @@ procedure Loop_Main is
    Flag_Type : constant array (Flag_Index) of Text_Ref :=
      [new String'("int"),
       new String'("int"),
+      new String'("int"),
+      new String'("string"),
       new String'("string"),
       new String'("duration"),
       new String'("int"),
@@ -140,7 +144,7 @@ procedure Loop_Main is
       new String'("string")];
 
    Flag_Of : constant array (Flag_Index) of Flag_Kind :=
-     [K_Int, K_Int64, K_String, K_String, K_Int,
+     [K_Int, K_Int64, K_Int, K_String, K_String, K_String, K_Int,
       K_Int, K_Int, K_String, K_Int64, K_Bool,
       K_Int, K_String, K_String, K_String, K_Int,
       K_String, K_String, K_String, K_String, K_Int64,
@@ -149,7 +153,9 @@ procedure Loop_Main is
    Flag_Default : constant array (Flag_Index) of Text_Ref :=
      [new String'("0"),
       new String'("0"),
+      new String'("1"),
       new String'("0"),
+      new String'(""),
       new String'("5m"),
       new String'("0"),
       new String'("0"),
@@ -176,8 +182,12 @@ procedure Loop_Main is
                   & " 0 = profile default (1)"),
       new String'("reopen each pipeline from its session blob every N"
                   & " iterations per worker; 0 = never"),
+      new String'("container floor sizing mode: 1 (per-region, default)"
+                  & " | 2 (per-container)"),
       new String'("streaming chunk-size budget (e.g. 4MB); 0 = profile"
                   & " default; inert for pure message shape"),
+      new String'("DRBG fill primitive name (see itb3 drbgs); empty ="
+                  & " profile default (auto tier)"),
       new String'("run duration (Go format: 30s / 5m / 1h); ignored when"
                   & " --iterations > 0"),
       new String'("GC trigger percentage; 0 = leave the runtime default"),
@@ -427,19 +437,19 @@ procedure Loop_Main is
    function Validate return Parse_Outcome is
       Surface : Shape_Kind;
    begin
-      if not Parse_Duration (Text_Of (4), Cfg.Duration_NS)
+      if not Parse_Duration (Text_Of (6), Cfg.Duration_NS)
         or else Cfg.Duration_NS <= 0
       then
-         Err_Line ("--duration must be positive, got " & Text_Of (4));
+         Err_Line ("--duration must be positive, got " & Text_Of (6));
          return Parse_Error;
       end if;
-      Cfg.Iterations := As_Count (Text_Of (9));
+      Cfg.Iterations := As_Count (Text_Of (11));
       if Cfg.Iterations < 0 then
          Err_Line ("--iterations must be >= 0, got " & Img (Cfg.Iterations));
          return Parse_Error;
       end if;
       declare
-         Asked : constant Integer := As_Integer (Text_Of (7));
+         Asked : constant Integer := As_Integer (Text_Of (9));
       begin
          if Asked < 1 or else Asked > Max_Workers then
             Err_Line ("--goroutines must be in 1.."
@@ -453,59 +463,59 @@ procedure Loop_Main is
          Cfg.Workers_Asked := Asked;
          Cfg.Workers := Asked;
       end;
-      if not Harness.Worker.Parse_Shape (Text_Of (22), Cfg.Shape) then
+      if not Harness.Worker.Parse_Shape (Text_Of (24), Cfg.Shape) then
          Err_Line ("--shape must be stream | message | stream_one_shot "
-                   & "| both, got """ & Text_Of (22) & """");
+                   & "| both, got """ & Text_Of (24) & """");
          return Parse_Error;
       end if;
-      if not Hash_Registered (Text_Of (8)) then
-         Err_Line ("--hash """ & Text_Of (8)
+      if not Hash_Registered (Text_Of (10)) then
+         Err_Line ("--hash """ & Text_Of (10)
                    & """ is not a registered hash primitive");
          return Parse_Error;
       end if;
-      Cfg.Hash := Raw (8);
+      Cfg.Hash := Raw (10);
       --  Validated by Init: the C ABI enumerates no MAC names.
-      Cfg.MAC := Raw (12);
-      if not Parse_Size (Text_Of (18), Cfg.Payload) then
-         Err_Line ("--payload-size: invalid size """ & Text_Of (18) & """");
+      Cfg.MAC := Raw (14);
+      if not Parse_Size (Text_Of (20), Cfg.Payload) then
+         Err_Line ("--payload-size: invalid size """ & Text_Of (20) & """");
          return Parse_Error;
       end if;
       if Cfg.Payload < 1 then
          Err_Line ("--payload-size must be at least 1 byte");
          return Parse_Error;
       end if;
-      if Text_Of (13) = "auto" then
+      if Text_Of (15) = "auto" then
          Cfg.Memlimit_Auto := True;
          Cfg.Memlimit :=
            (if Cfg.Workers <= 3 then 1024 * 1024 * 1024
             else 256 * 1024 * 1024);
-      elsif not Parse_Size (Text_Of (13), Cfg.Memlimit) then
-         Err_Line ("--memlimit: invalid size """ & Text_Of (13) & """");
+      elsif not Parse_Size (Text_Of (15), Cfg.Memlimit) then
+         Err_Line ("--memlimit: invalid size """ & Text_Of (15) & """");
          return Parse_Error;
       end if;
-      Cfg.GoGC := As_Integer (Text_Of (5));
+      Cfg.GoGC := As_Integer (Text_Of (7));
       if Cfg.GoGC < 0 then
          Err_Line ("--gogc must be >= 0, got " & Img (Cfg.GoGC));
          return Parse_Error;
       end if;
-      if not Parse_On_Off (Text_Of (16), Cfg.Parallax) then
-         Err_Line ("--parallax must be on | off, got """ & Text_Of (16)
+      if not Parse_On_Off (Text_Of (18), Cfg.Parallax) then
+         Err_Line ("--parallax must be on | off, got """ & Text_Of (18)
                    & """");
          return Parse_Error;
       end if;
-      if not Parse_On_Off (Text_Of (23), Cfg.Wrapper) then
-         Err_Line ("--wrapper must be on | off, got """ & Text_Of (23)
+      if not Parse_On_Off (Text_Of (25), Cfg.Wrapper) then
+         Err_Line ("--wrapper must be on | off, got """ & Text_Of (25)
                    & """");
          return Parse_Error;
       end if;
-      Cfg.Profile := Raw (19);
+      Cfg.Profile := Raw (21);
       if SU.Length (Cfg.Profile) > 0 then
          if not Profile_Surface (SU.To_String (Cfg.Profile), Surface) then
             return Parse_Error;
          end if;
          Cfg.Shape := Narrow_Shape (Cfg.Shape, Surface);
       end if;
-      Cfg.Key_Bits := As_Integer (Text_Of (11));
+      Cfg.Key_Bits := As_Integer (Text_Of (13));
       case Cfg.Key_Bits is
          when 0 | 512 | 1024 | 2048 =>
             null;
@@ -514,7 +524,7 @@ procedure Loop_Main is
                       & "(or 0 = profile default), got " & Img (Cfg.Key_Bits));
             return Parse_Error;
       end case;
-      Cfg.Nonce_Bits := As_Integer (Text_Of (15));
+      Cfg.Nonce_Bits := As_Integer (Text_Of (17));
       case Cfg.Nonce_Bits is
          when 0 | 128 | 256 | 512 =>
             null;
@@ -522,6 +532,15 @@ procedure Loop_Main is
             Err_Line ("--nonce-bits must be 128 | 256 | 512 "
                       & "(or 0 = profile default), got "
                       & Img (Cfg.Nonce_Bits));
+            return Parse_Error;
+      end case;
+      Cfg.Blob_Mode := As_Integer (Text_Of (3));
+      case Cfg.Blob_Mode is
+         when 1 | 2 =>
+            null;
+         when others =>
+            Err_Line ("--blob-mode must be 1 (per-region) | 2 "
+                      & "(per-container), got " & Img (Cfg.Blob_Mode));
             return Parse_Error;
       end case;
       Cfg.Barrier_Fill := As_Integer (Text_Of (1));
@@ -534,17 +553,19 @@ procedure Loop_Main is
                       & Img (Cfg.Barrier_Fill));
             return Parse_Error;
       end case;
-      if not Parse_Size (Text_Of (3), Cfg.Chunk_Size) then
-         Err_Line ("--chunk-size: invalid size """ & Text_Of (3) & """");
+      --  Validated by Init: the C ABI enumerates no DRBG names.
+      Cfg.DRBG := Raw (5);
+      if not Parse_Size (Text_Of (4), Cfg.Chunk_Size) then
+         Err_Line ("--chunk-size: invalid size """ & Text_Of (4) & """");
          return Parse_Error;
       end if;
-      Cfg.GOMAXPROCS := As_Integer (Text_Of (6));
+      Cfg.GOMAXPROCS := As_Integer (Text_Of (8));
       if Cfg.GOMAXPROCS < 0 then
          Err_Line ("--gomaxprocs must be > 0 when specified, got "
                    & Img (Cfg.GOMAXPROCS));
          return Parse_Error;
       end if;
-      Cfg.Rekey_Every := As_Count (Text_Of (20));
+      Cfg.Rekey_Every := As_Count (Text_Of (22));
       if Cfg.Rekey_Every < 0 then
          Err_Line ("--rekey-every must be >= 0, got "
                    & Img (Cfg.Rekey_Every));
@@ -557,18 +578,18 @@ procedure Loop_Main is
          return Parse_Error;
       end if;
       if not Harness.Payload.Parse_Payload_Mode
-               (Text_Of (17), Cfg.Payload_Mode)
+               (Text_Of (19), Cfg.Payload_Mode)
       then
          Err_Line ("--payload-mode must be fixed | rotating | "
                    & "pattern-zero | pattern-ff | pattern-ascii, got """
-                   & Text_Of (17) & """");
+                   & Text_Of (19) & """");
          return Parse_Error;
       end if;
-      if not Parse_U64 (Text_Of (21), Cfg.Seed) then
+      if not Parse_U64 (Text_Of (23), Cfg.Seed) then
          Cfg.Seed := 0;
       end if;
-      Cfg.JSON_Output := Text_Of (10) = "true";
-      Cfg.Memprofile := Raw (14);
+      Cfg.JSON_Output := Text_Of (12) = "true";
+      Cfg.Memprofile := Raw (16);
       return Parse_Ok;
    end Validate;
 
@@ -728,8 +749,13 @@ procedure Loop_Main is
    begin
       declare
          JSON : constant String := Itb3.Pipeline.Inspect (Blob);
+         Line : SU.Unbounded_String;
+         DRBG : constant String := Record_Str (JSON, "drbg");
+         Container_Mode : constant Count :=
+           Record_Int (JSON, "container_mode");
       begin
-         Log_Line (Head
+         Line := SU.To_Unbounded_String
+                  (Head
                    & " hash=" & Record_Str (JSON, "hash")
                    & " key-bits=" & Img (Record_Int (JSON, "keybits"))
                    & " nonce-bits=" & Img (Record_Int (JSON, "nonce_bits"))
@@ -738,11 +764,84 @@ procedure Loop_Main is
                    & " mac=" & Record_Str (JSON, "mac")
                    & " parallax=" & On_Off (Record_Bool (JSON, "parallax"))
                    & " wrapper=" & On_Off (Record_Bool (JSON, "wrapper")));
+         if Container_Mode = 2 then
+            SU.Append (Line, " container-mode=" & Img (Container_Mode));
+         end if;
+         if DRBG /= "-" then
+            SU.Append (Line, " drbg=" & DRBG);
+         end if;
+         Log_Line (SU.To_String (Line));
       end;
    exception
       when E : Itb3.Error.Itb_Error =>
          Log_Line (Head & " (inspect: " & Detail (E) & ")");
    end Log_Pipeline_Initialised;
+
+   --  Sets the inner blob's "mode" field of a wrap-layer session blob
+   --  to Target (1 = per-region, 2 = per-container) in place. The wrap
+   --  layer's profile record carries its own "mode" (a string), so the
+   --  search starts at the inner blob ("ib"); both shipped modes are
+   --  one digit wide, so the blob length does not change and the key
+   --  material in Blob is never copied. Returns False when the inner
+   --  blob or its mode field is not found.
+   function Edit_Inner_Blob_Mode
+     (Blob : in out Byte_Array; Target : Integer) return Boolean
+   is
+      use type Ada.Streams.Stream_Element;
+      use type Ada.Streams.Stream_Element_Offset;
+
+      --  Offset of the first occurrence of Needle in Blob at or after
+      --  From, or Blob'Last + 1 when absent.
+      function Find_Bytes
+        (From : Element_Offset; Needle : String) return Element_Offset is
+      begin
+         for I in From .. Blob'Last - Element_Offset (Needle'Length) + 1 loop
+            declare
+               Hit : Boolean := True;
+            begin
+               for J in Needle'Range loop
+                  if Blob (I + Element_Offset (J - Needle'First))
+                    /= Character'Pos (Needle (J))
+                  then
+                     Hit := False;
+                     exit;
+                  end if;
+               end loop;
+               if Hit then
+                  return I;
+               end if;
+            end;
+         end loop;
+         return Blob'Last + 1;
+      end Find_Bytes;
+
+      IB_Key   : constant String := """ib"":{";
+      Mode_Key : constant String := """mode"":";
+      IB       : Element_Offset;
+      Mode     : Element_Offset;
+      At_Pos   : Element_Offset;
+   begin
+      IB := Find_Bytes (Blob'First, IB_Key);
+      if IB > Blob'Last then
+         return False;
+      end if;
+      Mode := Find_Bytes (IB + IB_Key'Length, Mode_Key);
+      if Mode > Blob'Last then
+         return False;
+      end if;
+      At_Pos := Mode + Mode_Key'Length;
+      if At_Pos + 1 > Blob'Last
+        or else Blob (At_Pos) < Character'Pos ('1')
+        or else Blob (At_Pos) > Character'Pos ('2')
+        or else (Blob (At_Pos + 1) >= Character'Pos ('0')
+                 and then Blob (At_Pos + 1) <= Character'Pos ('9'))
+      then
+         return False;
+      end if;
+      Blob (At_Pos) :=
+        Ada.Streams.Stream_Element (Character'Pos ('0') + Target);
+      return True;
+   end Edit_Inner_Blob_Mode;
 
    --  Folds a keystream primitive into opts for any layer the named
    --  profile leaves unfilled but the operator asked for.
@@ -822,6 +921,7 @@ procedure Loop_Main is
       Itb3.Opts.Set (Options, "keyBits", Img (Cfg.Key_Bits));
       Itb3.Opts.Set (Options, "nonceBits", Img (Cfg.Nonce_Bits));
       Itb3.Opts.Set (Options, "barrierFill", Img (Cfg.Barrier_Fill));
+      Itb3.Opts.Set (Options, "drbg", SU.To_String (Cfg.DRBG));
       Itb3.Opts.Set (Options, "chunkSize", Img (Cfg.Chunk_Size));
       if SU.Length (Cfg.Profile) > 0 then
          Filled := Fill_Keystream_Layers
@@ -851,6 +951,23 @@ procedure Loop_Main is
             Err_Line ("Save(" & Profile & "): " & Detail (E));
             return False;
       end;
+      if Cfg.Blob_Mode = 2 then
+         --  The sizing mode is not an Opts knob: the Init blob is
+         --  edited and the Pipeline reopened from it (Load releases
+         --  the Init handle first), so the retained blob (the one
+         --  blob-cycle reopens from) carries the edited mode.
+         if not Edit_Inner_Blob_Mode (Blob.all, 2) then
+            Err_Line ("rewrite blob mode: inner blob mode field not found");
+            return False;
+         end if;
+         begin
+            Itb3.Pipeline.Load (Pipe.all, Blob.all);
+         exception
+            when E : Itb3.Error.Itb_Error =>
+               Err_Line ("reload Mode 2 blob: " & Detail (E));
+               return False;
+         end;
+      end if;
       Log_Pipeline_Initialised (Profile, Blob.all);
       return True;
    end Build_Pipeline;
@@ -927,7 +1044,11 @@ begin
              & " payload-mode="
              & Harness.Payload.Payload_Mode_Name (Cfg.Payload_Mode)
              & " seed=" & Img (Cfg.Seed)
-             & " json-output=" & Truth (Cfg.JSON_Output));
+             & " json-output=" & Truth (Cfg.JSON_Output)
+             & (if Cfg.Blob_Mode /= 1
+                then " blob-mode=" & Img (Cfg.Blob_Mode) else "")
+             & (if SU.Length (Cfg.DRBG) > 0
+                then " drbg=" & SU.To_String (Cfg.DRBG) else ""));
    Log_Line ("policy: microbatch-tiers="
              & Policy_Label ("ITB_MICROBATCH_TIERS")
              & " hashpool-starters="

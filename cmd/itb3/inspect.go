@@ -14,6 +14,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/everanium/itb"
 	"github.com/everanium/itb/triple"
 )
 
@@ -89,7 +90,7 @@ func renderInspect(prof triple.Profile, blobLen int, out io.Writer) {
 	if prof.DRBG != "" {
 		fmt.Fprintf(out, "drbg: %s\n", prof.DRBG)
 	} else {
-		fmt.Fprintf(out, "drbg: (auto: %s on this host)\n", autoTierLabel())
+		fmt.Fprintf(out, "drbg: (auto: %s on this host)\n", itb.DRBGAutoTier())
 	}
 	if prof.MacName != "" {
 		fmt.Fprintf(out, "mac_name: %s\n", prof.MacName)

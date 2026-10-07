@@ -81,8 +81,10 @@ module loop_state
     character(:), allocatable :: profile
     integer                   :: key_bits = 0
     integer                   :: nonce_bits = 0
+    integer                   :: blob_mode = 1 ! 1 = per-region, 2 = per-container
     integer(c_int64_t)        :: chunk_size = 0_c_int64_t
     integer                   :: barrier_fill = 0
+    character(:), allocatable :: drbg ! empty = profile default
     integer                   :: gomaxprocs = 0
     integer(c_int64_t)        :: rekey_every = 0_c_int64_t
     integer(c_int64_t)        :: blob_cycle_every = 0_c_int64_t

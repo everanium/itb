@@ -75,8 +75,10 @@ package Harness is
       Profile          : SU.Unbounded_String;
       Key_Bits         : Integer := 0; --  0 = profile default
       Nonce_Bits       : Integer := 0;
+      Blob_Mode        : Integer := 1; --  1 = per-region, 2 = per-container
       Chunk_Size       : Count := 0;
       Barrier_Fill     : Integer := 0;
+      DRBG             : SU.Unbounded_String; --  empty = profile default
       GOMAXPROCS       : Integer := 0; --  0 = inherit from the environment
       Rekey_Every      : Count := 0;   --  0 = never
       Blob_Cycle_Every : Count := 0;   --  0 = never

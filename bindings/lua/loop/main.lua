@@ -81,8 +81,12 @@ local FLAGS = {
         "DRBG barrier fill margin: 1 | 2 | 4 | 8 | 16 | 32; 0 = profile default (1)" },
     { "blob-cycle-every", "int", INT64, 0,
         "reopen each pipeline from its session blob every N iterations per worker; 0 = never" },
+    { "blob-mode", "int", INT, 1,
+        "container floor sizing mode: 1 (per-region, default) | 2 (per-container)" },
     { "chunk-size", "string", STRING, "0",
         "streaming chunk-size budget (e.g. 4MB); 0 = profile default; inert for pure message shape" },
+    { "drbg", "string", STRING, "",
+        "DRBG fill primitive name (see itb3 drbgs); empty = profile default (auto tier)" },
     { "duration", "duration", STRING, "5m",
         "run duration (Go format: 30s / 5m / 1h); ignored when --iterations > 0" },
     { "gogc", "int", INT, 0,
@@ -484,6 +488,13 @@ local function parse_flags(argv)
             cfg.nonce_bits))
         return -1, cfg
     end
+    cfg.blob_mode = raw["blob-mode"]
+    if cfg.blob_mode ~= 1 and cfg.blob_mode ~= 2 then
+        err(string.format(
+            "--blob-mode must be 1 (per-region) | 2 (per-container), got %d",
+            cfg.blob_mode))
+        return -1, cfg
+    end
     cfg.barrier_fill = raw["barrier-fill"]
     local fill_ok = { [0] = true, [1] = true, [2] = true, [4] = true,
         [8] = true, [16] = true, [32] = true }
@@ -493,6 +504,8 @@ local function parse_flags(argv)
             cfg.barrier_fill))
         return -1, cfg
     end
+    -- Validated by Init: the C ABI enumerates no DRBG names.
+    cfg.drbg = raw["drbg"]
     local chunk_size = size.parse_size(raw["chunk-size"])
     if chunk_size == nil then
         err(string.format('--chunk-size: invalid size "%s"', raw["chunk-size"]))
@@ -547,14 +560,46 @@ local function log_pipeline_initialised(profile, blob)
             profile, #blob, state.status_message(json)))
         return
     end
-    state.log_line(string.format(
+    local line = string.format(
         "pipeline initialised: profile=%s blob=%d bytes hash=%s key-bits=%d "
         .. "nonce-bits=%d barrier-fill=%d chunk-size=%d mac=%s parallax=%s wrapper=%s",
         profile, #blob, record_str(json, "hash"), record_int(json, "keybits"),
         record_int(json, "nonce_bits"), record_int(json, "barrier_fill"),
         record_int(json, "chunk"), record_str(json, "mac"),
         state.on_off(record_bool(json, "parallax")),
-        state.on_off(record_bool(json, "wrapper"))))
+        state.on_off(record_bool(json, "wrapper")))
+    local container_mode = record_int(json, "container_mode")
+    if container_mode == 2 then
+        line = line .. string.format(" container-mode=%d", container_mode)
+    end
+    local drbg = record_str(json, "drbg")
+    if drbg ~= "-" then
+        line = line .. " drbg=" .. drbg
+    end
+    state.log_line(line)
+end
+
+-- Returns a copy of a wrap-layer session blob whose inner blob's "mode"
+-- field is set to target_mode (1 = per-region, 2 = per-container), or
+-- nil when the inner blob or its mode field is not found. The wrap
+-- layer's profile record carries its own "mode" (a string), so the
+-- search starts at the inner blob ("ib"); both shipped modes are one
+-- digit wide, so the blob length does not change and nothing before the
+-- inner blob is touched.
+local function edit_inner_blob_mode(blob, target_mode)
+    local _, ib_end = blob:find('"ib":{', 1, true)
+    if ib_end == nil then
+        return nil
+    end
+    local _, mode_end = blob:find('"mode":', ib_end + 1, true)
+    if mode_end == nil then
+        return nil
+    end
+    local at = mode_end + 1
+    if not blob:sub(at, at):match("^[12]$") or blob:sub(at + 1, at + 1):match("^%d$") then
+        return nil
+    end
+    return blob:sub(1, at - 1) .. string.format("%d", target_mode) .. blob:sub(at + 1)
 end
 
 -- Folds a keystream primitive into opts for any layer the named profile
@@ -615,6 +660,7 @@ local function build_pipeline(cfg, profile)
         key_bits = cfg.key_bits,
         nonce_bits = cfg.nonce_bits,
         barrier_fill = cfg.barrier_fill,
+        drbg = cfg.drbg,
         chunk_size = cfg.chunk_size,
     }
     if cfg.profile ~= "" then
@@ -639,6 +685,24 @@ local function build_pipeline(cfg, profile)
         err(string.format("Save(%s): %s", profile, state.status_detail(blob)))
         pipe:free()
         return nil
+    end
+    if cfg.blob_mode == 2 then
+        -- The sizing mode is not an Opts knob: the Init blob is edited
+        -- and the pipeline reopened from it, so the retained blob (the
+        -- one blob-cycle reopens from) carries the edited mode.
+        local edited = edit_inner_blob_mode(blob, 2)
+        if edited == nil then
+            err("rewrite blob mode: inner blob mode field not found")
+            pipe:free()
+            return nil
+        end
+        pipe:free()
+        local loaded, fresh = pcall(itb.load, edited)
+        if not loaded then
+            err("reload Mode 2 blob: " .. state.status_detail(fresh))
+            return nil
+        end
+        pipe, blob = fresh, edited
     end
     log_pipeline_initialised(profile, blob)
     return pipe, blob
@@ -698,12 +762,14 @@ local function run(argv)
     state.log_line(string.format(
         'overrides: profile="%s" key-bits=%d nonce-bits=%d chunk-size=%s '
         .. "barrier-fill=%d gomaxprocs=%d rekey-every=%d blob-cycle-every=%d "
-        .. "payload-mode=%s seed=%s json-output=%s",
+        .. "payload-mode=%s seed=%s json-output=%s%s%s",
         cfg.profile, cfg.key_bits, cfg.nonce_bits,
         size.human_bytes(cfg.chunk_size), cfg.barrier_fill, cfg.gomaxprocs,
         cfg.rekey_every, cfg.blob_cycle_every,
         payload.mode_name(cfg.payload_mode), u64_dec(cfg.seed),
-        cfg.json_output and "true" or "false"))
+        cfg.json_output and "true" or "false",
+        cfg.blob_mode ~= 1 and string.format(" blob-mode=%d", cfg.blob_mode) or "",
+        cfg.drbg ~= "" and " drbg=" .. cfg.drbg or ""))
     state.log_line(string.format(
         "policy: microbatch-tiers=%s hashpool-starters=%s",
         state.policy_label(os.getenv("ITB_MICROBATCH_TIERS")),

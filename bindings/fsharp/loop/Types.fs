@@ -47,8 +47,10 @@ type Config =
       Profile: string
       KeyBits: int64
       NonceBits: int64
+      BlobMode: int64
       ChunkSize: int64
       BarrierFill: int64
+      Drbg: string
       Gomaxprocs: int
       RekeyEvery: int64
       BlobCycleEvery: int64

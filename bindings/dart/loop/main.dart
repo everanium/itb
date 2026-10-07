@@ -37,6 +37,7 @@
 // then the partial summary prints.
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
 import 'dart:typed_data';
@@ -83,8 +84,12 @@ const List<_Flag> _flags = [
       'DRBG barrier fill margin: 1 | 2 | 4 | 8 | 16 | 32; 0 = profile default (1)'),
   _Flag('blob-cycle-every', 'int', _Kind.int64,
       'reopen each pipeline from its session blob every N iterations per worker; 0 = never'),
+  _Flag('blob-mode', 'int', _Kind.int32,
+      'container floor sizing mode: 1 (per-region, default) | 2 (per-container)'),
   _Flag('chunk-size', 'string', _Kind.string,
       'streaming chunk-size budget (e.g. 4MB); 0 = profile default; inert for pure message shape'),
+  _Flag('drbg', 'string', _Kind.string,
+      'DRBG fill primitive name (see itb3 drbgs); empty = profile default (auto tier)'),
   _Flag('duration', 'duration', _Kind.string,
       'run duration (Go format: 30s / 5m / 1h); ignored when --iterations > 0'),
   _Flag('gogc', 'int', _Kind.int32,
@@ -128,7 +133,9 @@ const List<_Flag> _flags = [
 Map<String, Object> _rawDefaults() => {
       'barrier-fill': 0,
       'blob-cycle-every': 0,
+      'blob-mode': 1,
       'chunk-size': '0',
+      'drbg': '',
       'duration': '5m',
       'gogc': 0,
       'gomaxprocs': 0,
@@ -396,12 +403,20 @@ int _narrowShape(int requested, int surface) {
         '(or 0 = profile default), got ${cfg.nonceBits}');
     return (-1, cfg);
   }
+  cfg.blobMode = num('blob-mode');
+  if (![1, 2].contains(cfg.blobMode)) {
+    errLine('--blob-mode must be 1 (per-region) | 2 (per-container), '
+        'got ${cfg.blobMode}');
+    return (-1, cfg);
+  }
   cfg.barrierFill = num('barrier-fill');
   if (![0, 1, 2, 4, 8, 16, 32].contains(cfg.barrierFill)) {
     errLine('--barrier-fill must be 1 | 2 | 4 | 8 | 16 | 32 '
         '(or 0 = profile default), got ${cfg.barrierFill}');
     return (-1, cfg);
   }
+  // Validated by Init: the C ABI enumerates no DRBG names.
+  cfg.drbg = str('drbg');
   final chunk = parseSize(str('chunk-size'));
   if (chunk == null) {
     errLine('--chunk-size: invalid size "${str('chunk-size')}"');
@@ -505,7 +520,37 @@ void _logPipelineInitialised(String profile, Uint8List blob) {
       'hash=${r.hash.isEmpty ? '-' : r.hash} key-bits=${r.keyBits} '
       'nonce-bits=${r.nonceBits ?? 0} barrier-fill=${r.barrierFill ?? 0} '
       'chunk-size=${r.chunk} mac=${r.mac.isEmpty ? '-' : r.mac} '
-      'parallax=${onOff(r.parallax)} wrapper=${onOff(r.wrapper)}');
+      'parallax=${onOff(r.parallax)} wrapper=${onOff(r.wrapper)}'
+      '${r.containerMode == 2 ? ' container-mode=${r.containerMode}' : ''}'
+      '${r.drbg.isNotEmpty ? ' drbg=${r.drbg}' : ''}');
+}
+
+/// Sets the inner blob's "mode" field of a wrap-layer session blob to
+/// targetMode (1 = per-region, 2 = per-container) and returns the
+/// re-encoded blob, or the failure detail. The wrap layer's profile
+/// record carries its own "mode" (a string), so only the inner blob
+/// ("ib") is touched; every other value survives the round trip
+/// unchanged (integers stay integers, strings stay byte-identical) and
+/// no key is added.
+(Uint8List?, String) _editInnerBlobMode(Uint8List blob, int targetMode) {
+  Object? wrap;
+  try {
+    wrap = jsonDecode(utf8.decode(blob));
+  } on FormatException catch (e) {
+    return (null, 'unmarshal wrap blob: ${e.message}');
+  }
+  if (wrap is! Map<String, dynamic>) {
+    return (null, 'wrap blob is not a JSON object');
+  }
+  final inner = wrap['ib'];
+  if (inner is! Map<String, dynamic>) {
+    return (null, 'inner blob not found');
+  }
+  if (!inner.containsKey('mode')) {
+    return (null, 'inner blob mode field not found');
+  }
+  inner['mode'] = targetMode;
+  return (Uint8List.fromList(utf8.encode(jsonEncode(wrap))), '');
 }
 
 /// Constructs one Pipeline against profile with every flag-carried
@@ -523,6 +568,7 @@ void _logPipelineInitialised(String profile, Uint8List blob) {
       .withKeyBits(cfg.keyBits)
       .withNonceBits(cfg.nonceBits)
       .withBarrierFill(cfg.barrierFill)
+      .withDrbg(cfg.drbg)
       .withChunkSize(cfg.chunkSize);
   if (cfg.profile.isNotEmpty) {
     final filled =
@@ -547,6 +593,25 @@ void _logPipelineInitialised(String profile, Uint8List blob) {
     errLine('Save($profile): ${statusDetail(e)}');
     pipe.free();
     return null;
+  }
+  if (cfg.blobMode == 2) {
+    // The sizing mode is not an Opts knob: the Init blob is edited and
+    // the pipeline reopened from it, so the retained blob (the one
+    // blob-cycle reopens from) carries the edited mode.
+    final (edited, detail) = _editInnerBlobMode(blob, 2);
+    if (edited == null) {
+      errLine('rewrite blob mode: $detail');
+      pipe.free();
+      return null;
+    }
+    blob = edited;
+    pipe.free();
+    try {
+      pipe = Itb.load(blob);
+    } catch (e) {
+      errLine('reload Mode 2 blob: ${statusDetail(e)}');
+      return null;
+    }
   }
   _logPipelineInitialised(profile, blob);
   return (pipe, blob);
@@ -597,7 +662,9 @@ Future<int> _run(List<String> argv) async {
       'blob-cycle-every=${cfg.blobCycleEvery} '
       'payload-mode=${payloadModeName(cfg.payloadMode)} '
       'seed=${u64Dec(cfg.seed)} '
-      'json-output=${cfg.jsonOutput ? 'true' : 'false'}');
+      'json-output=${cfg.jsonOutput ? 'true' : 'false'}'
+      '${cfg.blobMode != 1 ? ' blob-mode=${cfg.blobMode}' : ''}'
+      '${cfg.drbg.isNotEmpty ? ' drbg=${cfg.drbg}' : ''}');
   logLine('policy: '
       'microbatch-tiers='
       '${policyLabel(Platform.environment['ITB_MICROBATCH_TIERS'])} '

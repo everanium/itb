@@ -1,6 +1,6 @@
 // Runtime diagnostics surface: GOMAXPROCS query / set / restore, the
 // heap-profile writer, the pool-counter snapshot and its slot layout,
-// and the hash-registry enumeration.
+// the hash-registry enumeration and the auto DRBG tier report.
 
 package io.github.everanium.itb3;
 
@@ -58,5 +58,12 @@ class RuntimeTest {
         List<String> names = Pipeline.hashNames();
         assertEquals("aesitb128", names.get(0));
         assertTrue(names.contains("areion512"));
+    }
+
+    @Test
+    void drbgAutoTierIsAFillCipher() {
+        // One of the two fill ciphers, resolved per host.
+        String tier = Runtime.drbgAutoTier();
+        assertTrue("aes-256-ctr".equals(tier) || "chacha20".equals(tier), "drbg auto tier: " + tier);
     }
 }

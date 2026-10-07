@@ -94,10 +94,14 @@ final class Config
     public $keyBits = 0;
     /** 0 = profile default. */
     public $nonceBits = 0;
+    /** Container floor sizing mode: 1 (per-region, default) | 2 (per-container). */
+    public $blobMode = 1;
     /** 0 = profile default. */
     public $chunkSize = 0;
     /** 0 = profile default. */
     public $barrierFill = 0;
+    /** DRBG fill primitive; '' = profile default (auto tier). */
+    public $drbg = '';
     /** 0 = inherit from the environment. */
     public $gomaxprocs = 0;
     /** Per-worker iterations between rotations; 0 = never. */

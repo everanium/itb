@@ -70,3 +70,8 @@ func setLastErrMessage(msg string) {
 	v := msg
 	lastErr.Store(&v)
 }
+
+// DRBGAutoTier is the FFI-side entry of [itb.DRBGAutoTier].
+func DRBGAutoTier() string {
+	return itb.DRBGAutoTier()
+}

@@ -36,6 +36,13 @@ module ITB
     read_cstr { |out_p, cap, len_p| ITB.blocking(->{ LibItb3.version(out_p, cap, len_p) }) }
   end
 
+  # Returns the fill cipher the auto DRBG tier selected on this host
+  # (`"aes-256-ctr"` or `"chacha20"`): the tier a Pipeline uses when its
+  # drbg option is empty, resolved per host and recorded in no blob.
+  def self.drbg_auto_tier : String
+    read_cstr { |out_p, cap, len_p| ITB.blocking(->{ LibItb3.drbg_auto_tier(out_p, cap, len_p) }) }
+  end
+
   # Returns the sorted names of every registered profile — the shipped
   # catalogue plus prior `ITB.register` calls (`ITB_Triple_Profiles`).
   def self.profiles : Array(String)

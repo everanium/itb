@@ -67,6 +67,7 @@
     (hash-names 0)
     ;; Runtime + diagnostics
     (version 0)
+    (drbg-auto-tier 0)
     (last-error 0)
     (status-code 1)
     (set-memory-limit 1)
@@ -258,6 +259,12 @@
 (defun version ()
   "The libitb3 library version string (e.g. #\"0.5.1\")."
   (itb3:version))
+
+(defun drbg-auto-tier ()
+  "The fill cipher the auto DRBG tier selected on this host
+  (#\"aes-256-ctr\" or #\"chacha20\"): the tier a Pipeline uses when
+  its drbg option is empty, resolved per host and recorded in no blob."
+  (itb3:drbg_auto_tier))
 
 (defun last-error ()
   "The Go-side diagnostic recorded by the most recent failing libitb3

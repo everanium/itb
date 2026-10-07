@@ -123,8 +123,12 @@ const FLAGS: readonly FlagRow[] = [
     'DRBG barrier fill margin: 1 | 2 | 4 | 8 | 16 | 32; 0 = profile default (1)'],
   ['blob-cycle-every', 'int', Kind.Int64, 0,
     'reopen each pipeline from its session blob every N iterations per worker; 0 = never'],
+  ['blob-mode', 'int', Kind.Int, 1,
+    'container floor sizing mode: 1 (per-region, default) | 2 (per-container)'],
   ['chunk-size', 'string', Kind.Str, '0',
     'streaming chunk-size budget (e.g. 4MB); 0 = profile default; inert for pure message shape'],
+  ['drbg', 'string', Kind.Str, '',
+    'DRBG fill primitive name (see itb3 drbgs); empty = profile default (auto tier)'],
   ['duration', 'duration', Kind.Str, '5m',
     'run duration (Go format: 30s / 5m / 1h); ignored when --iterations > 0'],
   ['gogc', 'int', Kind.Int, 0,
@@ -464,6 +468,11 @@ function parseFlags(argv: string[]): [number, Config] {
     );
     return [-1, cfg];
   }
+  cfg.blobMode = num('blob-mode');
+  if (![1, 2].includes(cfg.blobMode)) {
+    errLine(`--blob-mode must be 1 (per-region) | 2 (per-container), got ${cfg.blobMode}`);
+    return [-1, cfg];
+  }
   cfg.barrierFill = num('barrier-fill');
   if (![0, 1, 2, 4, 8, 16, 32].includes(cfg.barrierFill)) {
     errLine(
@@ -472,6 +481,8 @@ function parseFlags(argv: string[]): [number, Config] {
     );
     return [-1, cfg];
   }
+  // Validated by Init: the C ABI enumerates no DRBG names.
+  cfg.drbg = str('drbg');
   const chunkSize = parseSize(str('chunk-size'));
   if (chunkSize === null) {
     errLine(`--chunk-size: invalid size "${str('chunk-size')}"`);
@@ -544,8 +555,34 @@ function logPipelineInitialised(profile: string, blob: Uint8Array): void {
       `chunk-size=${record.chunk ?? 0} ` +
       `mac=${recordStr(record.mac)} ` +
       `parallax=${onOff(record.parallax === true)} ` +
-      `wrapper=${onOff(record.wrapper === true)}`,
+      `wrapper=${onOff(record.wrapper === true)}` +
+      (record.container_mode === 2 ? ` container-mode=${record.container_mode}` : '') +
+      (record.drbg !== undefined && record.drbg !== '' ? ` drbg=${record.drbg}` : ''),
   );
+}
+
+/**
+ * Sets the inner blob's "mode" field of a wrap-layer session blob to
+ * targetMode (1 = per-region, 2 = per-container) and returns the
+ * re-encoded blob. The wrap layer's profile record carries its own
+ * "mode" (a string), so only the inner blob ("ib") is touched; every
+ * other value survives the round trip unchanged (integers stay
+ * integers, strings stay byte-identical) and no key is added.
+ */
+function editInnerBlobMode(blob: Uint8Array, targetMode: number): Uint8Array {
+  const wrap: unknown = JSON.parse(new TextDecoder().decode(blob));
+  if (typeof wrap !== 'object' || wrap === null || Array.isArray(wrap)) {
+    throw new Error('wrap blob is not a JSON object');
+  }
+  const inner = (wrap as Record<string, unknown>)['ib'];
+  if (typeof inner !== 'object' || inner === null || Array.isArray(inner)) {
+    throw new Error('inner blob not found');
+  }
+  if (!('mode' in inner)) {
+    throw new Error('inner blob mode field not found');
+  }
+  (inner as Record<string, unknown>)['mode'] = targetMode;
+  return new TextEncoder().encode(JSON.stringify(wrap));
 }
 
 /**
@@ -623,6 +660,7 @@ function buildPipeline(
     .withKeyBits(cfg.keyBits)
     .withNonceBits(cfg.nonceBits)
     .withBarrierFill(cfg.barrierFill)
+    .withDrbg(cfg.drbg)
     .withChunkSize(cfg.chunkSize);
   if (cfg.profile !== '') {
     const filled = fillKeystreamLayers(cfg.profile, opts, cfg.parallax, cfg.wrapper);
@@ -650,6 +688,25 @@ function buildPipeline(
     errLine(`Save(${profile}): ${statusDetail(e)}`);
     pipe.free();
     return null;
+  }
+  if (cfg.blobMode === 2) {
+    // The sizing mode is not an Opts knob: the Init blob is edited and
+    // the pipeline reopened from it, so the retained blob (the one
+    // blob-cycle reopens from) carries the edited mode.
+    try {
+      blob = editInnerBlobMode(blob, 2);
+    } catch (e) {
+      errLine(`rewrite blob mode: ${errorSentence(e)}`);
+      pipe.free();
+      return null;
+    }
+    pipe.free();
+    try {
+      pipe = Pipeline.load(blob);
+    } catch (e) {
+      errLine(`reload Mode 2 blob: ${statusDetail(e)}`);
+      return null;
+    }
   }
   logPipelineInitialised(profile, blob);
   return { pipe, blob };
@@ -714,7 +771,9 @@ async function run(argv: string[]): Promise<number> {
       `barrier-fill=${cfg.barrierFill} gomaxprocs=${cfg.gomaxprocs} ` +
       `rekey-every=${cfg.rekeyEvery} blob-cycle-every=${cfg.blobCycleEvery} ` +
       `payload-mode=${payloadModeName(cfg.payloadMode)} seed=${u64Dec(cfg.seed)} ` +
-      `json-output=${cfg.jsonOutput ? 'true' : 'false'}`,
+      `json-output=${cfg.jsonOutput ? 'true' : 'false'}` +
+      (cfg.blobMode !== 1 ? ` blob-mode=${cfg.blobMode}` : '') +
+      (cfg.drbg !== '' ? ` drbg=${cfg.drbg}` : ''),
   );
   logLine(
     'policy: microbatch-tiers=' +

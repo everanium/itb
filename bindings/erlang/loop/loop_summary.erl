@@ -208,6 +208,9 @@ json(Cfg, F) ->
          ",\"seed\":", int(Cfg#cfg.seed),
          ",\"key_bits\":", int(Cfg#cfg.key_bits),
          ",\"nonce_bits\":", int(Cfg#cfg.nonce_bits),
+         ",\"blob_mode\":", int(Cfg#cfg.blob_mode),
+         ",\"drbg\":", jstr(Cfg#cfg.drbg),
+         ",\"drbg_auto_tier\":", jstr(drbg_auto_tier()),
          ",\"chunk_size_bytes\":", int(Cfg#cfg.chunk_size),
          ",\"barrier_fill\":", int(Cfg#cfg.barrier_fill),
          ",\"parallax\":", jstr(loop_main:on_off(Cfg#cfg.parallax)),
@@ -251,6 +254,14 @@ f2(V) -> io_lib:format("~.2f", [float(V)]).
 f3(V) -> io_lib:format("~.3f", [float(V)]).
 
 %% One JSON string literal with the escapes JSON requires.
+%% The fill cipher the auto DRBG tier selected on this host; empty
+%% when the library cannot report it.
+drbg_auto_tier() ->
+    case itb3:drbg_auto_tier() of
+        {ok, Tier} -> Tier;
+        {error, _} -> ""
+    end.
+
 jstr(S) ->
     [$", [json_char(C) || C <- unicode:characters_to_list(iolist_to_binary(S))], $"].
 

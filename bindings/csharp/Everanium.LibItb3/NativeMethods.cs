@@ -82,6 +82,9 @@ internal static unsafe partial class NativeMethods
     internal static partial int ITB_Version(byte* @out, nuint capBytes, out nuint outLen);
 
     [LibraryImport(LibName)]
+    internal static partial int ITB_DRBGAutoTier(byte* @out, nuint capBytes, out nuint outLen);
+
+    [LibraryImport(LibName)]
     internal static partial int ITB_LastError(byte* @out, nuint capBytes, out nuint outLen);
 
     [LibraryImport(LibName)]
@@ -260,6 +263,10 @@ internal static unsafe partial class NativeMethods
 
     /// <summary>Reads the libitb3 library version string.</summary>
     internal static string VersionString() => ReadCString(ITB_Version);
+
+    /// <summary>Reads the fill cipher the auto DRBG tier selected on
+    /// this host.</summary>
+    internal static string DrbgAutoTierString() => ReadCString(ITB_DRBGAutoTier);
 
     /// <summary>
     /// Reads the <c>ITB_LastError</c> diagnostic. Returns the empty

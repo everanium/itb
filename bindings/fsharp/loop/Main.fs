@@ -44,7 +44,11 @@ module Everanium.Itb3.FSharp.Loop.Main
 open System
 open System.Diagnostics
 open System.Globalization
+open System.IO
 open System.Runtime.InteropServices
+open System.Text.Encodings.Web
+open System.Text.Json
+open System.Text.Json.Nodes
 open System.Threading
 open Everanium.Itb3.FSharp
 open Everanium.Itb3.FSharp.Loop
@@ -73,7 +77,9 @@ let private keystreamFillSegment = 4093L
 type private RawFlags() =
     member val BarrierFill = 0L with get, set
     member val BlobCycleEvery = 0L with get, set
+    member val BlobMode = 1L with get, set
     member val ChunkSize = "0" with get, set
+    member val Drbg = "" with get, set
     member val Duration = "5m" with get, set
     member val Gogc = 0L with get, set
     member val Gomaxprocs = 0L with get, set
@@ -140,6 +146,12 @@ let private flags: Flag list =
         IsBool = false
         DefaultSuffix = ""
         Store = storeInt (fun f v -> f.BlobCycleEvery <- v) }
+      { Name = "blob-mode"
+        TypeLabel = "int"
+        Help = "container floor sizing mode: 1 (per-region, default) | 2 (per-container)"
+        IsBool = false
+        DefaultSuffix = defaultOfInt dflt.BlobMode
+        Store = storeInt (fun f v -> f.BlobMode <- v) }
       { Name = "chunk-size"
         TypeLabel = "string"
         Help =
@@ -147,6 +159,12 @@ let private flags: Flag list =
         IsBool = false
         DefaultSuffix = defaultOfStr dflt.ChunkSize
         Store = storeStr (fun f v -> f.ChunkSize <- v) }
+      { Name = "drbg"
+        TypeLabel = "string"
+        Help = "DRBG fill primitive name (see itb3 drbgs); empty = profile default (auto tier)"
+        IsBool = false
+        DefaultSuffix = defaultOfStr dflt.Drbg
+        Store = storeStr (fun f v -> f.Drbg <- v) }
       { Name = "duration"
         TypeLabel = "duration"
         Help = "run duration (Go format: 30s / 5m / 1h); ignored when --iterations > 0"
@@ -481,12 +499,16 @@ let private parseFlags (args: string[]) : Config option * int =
         reject ("--key-bits must be 512 | 1024 | 2048 (or 0 = profile default), got " + d f.KeyBits)
     elif not (List.contains f.NonceBits [ 0L; 128L; 256L; 512L ]) then
         reject ("--nonce-bits must be 128 | 256 | 512 (or 0 = profile default), got " + d f.NonceBits)
+    elif f.BlobMode <> 1L && f.BlobMode <> 2L then
+        reject ("--blob-mode must be 1 (per-region) | 2 (per-container), got " + d f.BlobMode)
     elif not (List.contains f.BarrierFill [ 0L; 1L; 2L; 4L; 8L; 16L; 32L ]) then
         reject (
             "--barrier-fill must be 1 | 2 | 4 | 8 | 16 | 32 (or 0 = profile default), got "
             + d f.BarrierFill
         )
     else
+
+    // --drbg is validated by Init: the C ABI enumerates no DRBG names.
 
     match parseSize f.ChunkSize with
     | None -> reject ("--chunk-size: invalid size \"" + f.ChunkSize + "\"")
@@ -525,8 +547,10 @@ let private parseFlags (args: string[]) : Config option * int =
           Profile = f.Profile
           KeyBits = f.KeyBits
           NonceBits = f.NonceBits
+          BlobMode = f.BlobMode
           ChunkSize = chunkSize
           BarrierFill = f.BarrierFill
+          Drbg = f.Drbg
           Gomaxprocs = int f.Gomaxprocs
           RekeyEvery = f.RekeyEvery
           BlobCycleEvery = f.BlobCycleEvery
@@ -631,7 +655,36 @@ let private logPipelineInitialised (profile: string) (blob: byte[]) =
             + string (orZero rec_.NonceBits) + " barrier-fill=" + string (orZero rec_.BarrierFill)
             + " chunk-size=" + string rec_.Chunk + " mac=" + dash rec_.Mac + " parallax="
             + onOff rec_.Parallax + " wrapper=" + onOff rec_.Wrapper
+            + (if rec_.ContainerMode.HasValue && rec_.ContainerMode.Value = 2 then " container-mode=2" else "")
+            + (if String.IsNullOrEmpty rec_.Drbg then "" else " drbg=" + rec_.Drbg)
         )
+
+/// Returns a copy of a wrap-layer session blob whose inner blob ("ib")
+/// carries the given container floor sizing mode (1 = per-region,
+/// 2 = per-container). The wrap layer's profile record carries its own
+/// "mode" (a string), so only the inner blob's integer field is set; no
+/// key is added, integers keep their literals, and strings are written
+/// without escaping the base64 alphabet.
+let private setInnerBlobMode (blob: byte[]) (mode: int) : Result<byte[], string> =
+    try
+        match JsonNode.Parse(blob: byte[]) with
+        | :? JsonObject as root ->
+            match root["ib"] with
+            | :? JsonObject as ib when ib.ContainsKey "mode" ->
+                ib["mode"] <- JsonValue.Create mode
+                use buf = new MemoryStream()
+
+                do
+                    use w =
+                        new Utf8JsonWriter(buf, JsonWriterOptions(Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping))
+
+                    root.WriteTo w
+
+                Ok(buf.ToArray())
+            | _ -> Error "inner blob mode field not found"
+        | _ -> Error "session blob is not a JSON object"
+    with e ->
+        Error e.Message
 
 /// Constructs one Pipeline against profile with every flag-carried
 /// override in the opts string (zero values included — the shared
@@ -649,6 +702,7 @@ let private buildPipeline (cfg: Config) (profile: string) : (Pipeline * byte[]) 
         |> Opts.withKeyBits cfg.KeyBits
         |> Opts.withNonceBits cfg.NonceBits
         |> Opts.withBarrierFill cfg.BarrierFill
+        |> Opts.withDrbg cfg.Drbg
         |> Opts.withChunkSize cfg.ChunkSize
 
     let resolved =
@@ -676,6 +730,25 @@ let private buildPipeline (cfg: Config) (profile: string) : (Pipeline * byte[]) 
                 Console.Error.WriteLine("loop: Save(" + profile + "): " + detail e)
                 pipe.Dispose()
                 None
+            | Ok blob when cfg.BlobMode = 2L ->
+                // The sizing mode is not an Opts knob: the Init blob is
+                // edited and the pipeline reopened from it, so the
+                // retained blob (the one blob-cycle reopens from) carries
+                // the edited mode.
+                pipe.Dispose()
+
+                match setInnerBlobMode blob 2 with
+                | Error m ->
+                    Console.Error.WriteLine("loop: rewrite blob mode: " + m)
+                    None
+                | Ok edited ->
+                    match Pipeline.load edited with
+                    | Error e ->
+                        Console.Error.WriteLine("loop: reload Mode 2 blob: " + detail e)
+                        None
+                    | Ok reloaded ->
+                        logPipelineInitialised profile edited
+                        Some(reloaded, edited)
             | Ok blob ->
                 logPipelineInitialised profile blob
                 Some(pipe, blob)
@@ -729,6 +802,8 @@ let private run (args: string[]) : int =
         + d cfg.RekeyEvery + " blob-cycle-every=" + d cfg.BlobCycleEvery + " payload-mode="
         + Payload.modeName cfg.PayloadMode + " seed=" + cfg.Seed.ToString inv + " json-output="
         + (if cfg.JsonOutput then "true" else "false")
+        + (if cfg.BlobMode <> 1L then " blob-mode=" + d cfg.BlobMode else "")
+        + (if cfg.Drbg.Length > 0 then " drbg=" + cfg.Drbg else "")
     )
 
     logLine (

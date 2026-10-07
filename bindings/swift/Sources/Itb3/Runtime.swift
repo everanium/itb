@@ -71,6 +71,16 @@ public enum ItbRuntime {
         return String(cString: v)
     }
 
+    /// The fill cipher the auto DRBG tier selected on this host
+    /// ("aes-256-ctr" or "chacha20"): the tier a Pipeline uses when its
+    /// drbg option is empty, resolved per host and recorded in no blob.
+    public static var drbgAutoTier: String {
+        guard let v = itb_drbg_auto_tier() else {
+            return ""
+        }
+        return String(cString: v)
+    }
+
     /// The Go-side diagnostic recorded by the most recent failing
     /// libitb3 call (process-global last-write-wins; empty when none).
     public static var lastError: String {

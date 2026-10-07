@@ -56,6 +56,11 @@ run("version", function()
     assert(itb._VERSION == "0.5.1")
 end)
 
+run("drbg auto tier", function()
+    local tier = itb.drbg_auto_tier()
+    assert(tier == "aes-256-ctr" or tier == "chacha20", "drbg auto tier: " .. tostring(tier))
+end)
+
 run("profiles list", function()
     local got = itb.profiles()
     assert(#got > 0)

@@ -80,8 +80,10 @@ struct config {
     const char *profile;      /* empty = shape-based profile pair */
     int key_bits;             /* 0 = profile default */
     int nonce_bits;           /* 0 = profile default */
+    int blob_mode;            /* container floor sizing mode: 1 (per-region, default) | 2 (per-container) */
     int64_t chunk_size;       /* 0 = profile default */
     int barrier_fill;         /* 0 = profile default */
+    const char *drbg;         /* DRBG fill primitive; "" = profile default (auto tier) */
     int gomaxprocs;           /* 0 = inherit from the environment */
     int64_t rekey_every;      /* per-worker iterations between rotations; 0 = never */
     int64_t blob_cycle_every; /* per-worker iterations between reopens; 0 = never */

@@ -38,6 +38,12 @@ defmodule ITB.SmokeTest do
     assert ITB.version!() == version
   end
 
+  test "drbg auto tier" do
+    {:ok, tier} = ITB.drbg_auto_tier()
+    assert tier in ["aes-256-ctr", "chacha20"]
+    assert ITB.drbg_auto_tier!() == tier
+  end
+
   test "save / load round trip" do
     {:ok, sender} = ITB.init("singlemsg-triple-mac-v1")
     {:ok, blob} = ITB.save(sender)

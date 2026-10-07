@@ -78,6 +78,9 @@ end
 _ITB_Version(buf, cap, need) =
     ccall(_sym(:ITB_Version), Cint, (Ptr{UInt8}, Csize_t, Ptr{Csize_t}), buf, cap, need)
 
+_ITB_DRBGAutoTier(buf, cap, need) =
+    ccall(_sym(:ITB_DRBGAutoTier), Cint, (Ptr{UInt8}, Csize_t, Ptr{Csize_t}), buf, cap, need)
+
 _ITB_LastError(buf, cap, need) =
     ccall(_sym(:ITB_LastError), Cint, (Ptr{UInt8}, Csize_t, Ptr{Csize_t}), buf, cap, need)
 

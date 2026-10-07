@@ -86,6 +86,9 @@ class HashRegistryTest(unittest.TestCase):
                     b"registry probe",
                 )
 
+    def test_drbg_auto_tier_names_a_fill_cipher(self) -> None:
+        self.assertIn(itb.drbg_auto_tier(), ("aes-256-ctr", "chacha20"))
+
 
 if __name__ == "__main__":
     unittest.main()

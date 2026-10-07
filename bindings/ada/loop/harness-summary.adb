@@ -393,6 +393,10 @@ package body Harness.Summary is
          SU.Append (Text, ",""seed"":" & Img (Cfg.Seed));
          SU.Append (Text, ",""key_bits"":" & Img (Cfg.Key_Bits));
          SU.Append (Text, ",""nonce_bits"":" & Img (Cfg.Nonce_Bits));
+         SU.Append (Text, ",""blob_mode"":" & Img (Cfg.Blob_Mode));
+         SU.Append (Text, ",""drbg"":" & JSON_String (SU.To_String (Cfg.DRBG)));
+         SU.Append (Text, ",""drbg_auto_tier"":"
+                    & JSON_String (Itb3.Runtime.DRBG_Auto_Tier));
          SU.Append (Text, ",""chunk_size_bytes"":" & Img (Cfg.Chunk_Size));
          SU.Append (Text, ",""barrier_fill"":" & Img (Cfg.Barrier_Fill));
          SU.Append (Text, ",""parallax"":""" & On_Off (Cfg.Parallax) & """");

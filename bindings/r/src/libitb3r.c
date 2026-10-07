@@ -11,6 +11,7 @@
  * Registered .Call entry points (R-facing wrappers live in R/itb.R):
  *
  *   C_r_version()                      -> character(1)
+ *   C_r_drbg_auto_tier()               -> character(1)
  *   C_r_profiles()                     -> character vector (sorted)
  *   C_r_set_memory_limit(num)          -> numeric(1)  previous limit
  *   C_r_set_gc_percent(int)            -> integer(1)  previous percent
@@ -346,6 +347,28 @@ SEXP C_r_version(void) {
     }
     buf = R_alloc(need, 1);
     rc = ITB_Version(buf, need, &need);
+    if (rc != ST_OK) {
+        raise_status(rc);
+    }
+    buf[need > 0 ? need - 1 : 0] = '\0';
+    return Rf_mkString(buf);
+}
+
+/* The fill cipher the auto DRBG tier selected on this host
+ * ("aes-256-ctr" or "chacha20"): the tier a Pipeline uses when its
+ * drbg option is empty, resolved per host and recorded in no blob. */
+SEXP C_r_drbg_auto_tier(void) {
+    size_t need = 0;
+    int rc = ITB_DRBGAutoTier(NULL, 0, &need);
+    char *buf;
+    if (rc != ST_OK && rc != ST_BUFFER_TOO_SMALL) {
+        raise_status(rc);
+    }
+    if (need <= 1) {
+        return Rf_mkString("");
+    }
+    buf = R_alloc(need, 1);
+    rc = ITB_DRBGAutoTier(buf, need, &need);
     if (rc != ST_OK) {
         raise_status(rc);
     }
@@ -913,6 +936,7 @@ SEXP C_r_stream_free(SEXP ptr) {
 
 static const R_CallMethodDef CALL_DEFS[] = {
     CALLDEF(C_r_version, 0),
+    CALLDEF(C_r_drbg_auto_tier, 0),
     CALLDEF(C_r_profiles, 0),
     CALLDEF(C_r_set_memory_limit, 1),
     CALLDEF(C_r_set_gc_percent, 1),

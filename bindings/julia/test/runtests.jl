@@ -36,6 +36,10 @@ end
         @test occursin(r"^\d+\.\d+", v)
     end
 
+    @testset "drbg auto tier" begin
+        @test drbg_auto_tier() in ("aes-256-ctr", "chacha20")
+    end
+
     @testset "profiles list" begin
         ps = profiles()
         @test "singlemsg-triple-mac-v1" in ps

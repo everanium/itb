@@ -357,4 +357,3 @@ func runNoAEADIOTripleDecrypt(b *testing.B, plaintext []byte, cn string) {
 		}
 	}
 }
-

@@ -14,7 +14,7 @@ C compiler at install time, no compile-time link; the `.so` /
 through to Go for validation; the binding carries no ITB construction
 logic. The public surface is the `LibItb3` module (`load` / `load_f` /
 `save` / `save_f` / `inspect` / `register` / `lookup` / `profiles` /
-`version` and the Go runtime knobs), the `Pipeline` type
+`version` / `drbg_auto_tier` and the Go runtime knobs), the `Pipeline` type
 (Single Message encrypt / decrypt, one-shot and incremental stream
 sessions, rekey, max_workers, close), the `StreamEncryptor` /
 `StreamDecryptor` session types, and the fluent `Opts` builder.

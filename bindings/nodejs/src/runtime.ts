@@ -1,6 +1,7 @@
 // Process-wide Go runtime knobs plus the library version strings.
 
 import {
+  ITB_DRBGAutoTier,
   ITB_PoolStats,
   ITB_PoolStatsLen,
   ITB_SetGCPercent,
@@ -103,6 +104,31 @@ export function version(): string {
   const buf = new Uint8Array(cap);
   const len: [number | bigint] = [0];
   const rc2 = ITB_Version(buf, buf.length, len);
+  if (rc2 !== Status.Ok) {
+    throw new ItbError(rc2);
+  }
+  const written = Number(len[0]);
+  return decoder.decode(buf.subarray(0, written > 0 ? written - 1 : 0));
+}
+
+/**
+ * Returns the fill cipher the auto DRBG tier selected on this host
+ * ("aes-256-ctr" or "chacha20"): the tier a Pipeline uses when its
+ * drbg option is empty, resolved per host and recorded in no blob.
+ */
+export function drbgAutoTier(): string {
+  const need: [number | bigint] = [0];
+  const rc1 = ITB_DRBGAutoTier(null, 0, need);
+  const cap = Number(need[0]);
+  if (rc1 !== Status.Ok && rc1 !== Status.BufferTooSmall) {
+    throw new ItbError(rc1);
+  }
+  if (cap <= 1) {
+    return '';
+  }
+  const buf = new Uint8Array(cap);
+  const len: [number | bigint] = [0];
+  const rc2 = ITB_DRBGAutoTier(buf, buf.length, len);
   if (rc2 !== Status.Ok) {
     throw new ItbError(rc2);
   }

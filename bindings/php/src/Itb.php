@@ -204,6 +204,28 @@ final class Itb
     }
 
     /**
+     * The fill cipher the auto DRBG tier selected on this host
+     * ("aes-256-ctr" or "chacha20"): the tier a Pipeline uses when its
+     * drbg option is empty, resolved per host and recorded in no blob.
+     */
+    public static function drbgAutoTier(): string
+    {
+        $ffi = FFIBridge::get();
+        $need = $ffi->new('size_t');
+        $rc = $ffi->ITB_DRBGAutoTier(null, 0, \FFI::addr($need));
+        if ($rc !== Status::OK && $rc !== Status::BUFFER_TOO_SMALL) {
+            throw new ItbException(FFIBridge::lastError(), $rc);
+        }
+        $needed = (int) $need->cdata;
+        if ($needed <= 1) {
+            return '';
+        }
+        $buf = $ffi->new("char[$needed]");
+        FFIBridge::check($ffi->ITB_DRBGAutoTier($buf, $needed, \FFI::addr($need)));
+        return \FFI::string($buf, max((int) $need->cdata - 1, 0));
+    }
+
+    /**
      * Sets the Go runtime's soft heap limit in bytes and returns the
      * previous limit. A negative value queries without changing.
      */

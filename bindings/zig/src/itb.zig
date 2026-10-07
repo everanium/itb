@@ -54,6 +54,7 @@ pub const lookup = runtime_mod.lookup;
 pub const profiles = runtime_mod.profiles;
 pub const hashNames = runtime_mod.hashNames;
 pub const version = runtime_mod.version;
+pub const drbgAutoTier = runtime_mod.drbgAutoTier;
 pub const setMemoryLimit = runtime_mod.setMemoryLimit;
 pub const setGcPercent = runtime_mod.setGcPercent;
 pub const setGomaxprocs = runtime_mod.setGomaxprocs;

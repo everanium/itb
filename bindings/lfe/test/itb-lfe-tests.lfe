@@ -24,6 +24,10 @@
   (let ((`#(ok ,version) (itb3-lfe:version)))
     (is (> (byte_size version) 0))))
 
+(deftest drbg-auto-tier
+  (let ((`#(ok ,tier) (itb3-lfe:drbg-auto-tier)))
+    (is (lists:member tier '(#"aes-256-ctr" #"chacha20")))))
+
 (deftest runtime-knobs-query-without-changing
   ;; Negative values query without changing; the return is the
   ;; previous setting.

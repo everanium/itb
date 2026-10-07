@@ -87,9 +87,13 @@ function flag_table(): array
         ['blob-cycle-every', 'int', KIND_INT64, 0,
             'reopen each pipeline from its session blob every N iterations per worker; '
             . '0 = never'],
+        ['blob-mode', 'int', KIND_INT, 1,
+            'container floor sizing mode: 1 (per-region, default) | 2 (per-container)'],
         ['chunk-size', 'string', KIND_STRING, '0',
             'streaming chunk-size budget (e.g. 4MB); 0 = profile default; inert for pure '
             . 'message shape'],
+        ['drbg', 'string', KIND_STRING, '',
+            'DRBG fill primitive name (see itb3 drbgs); empty = profile default (auto tier)'],
         ['duration', 'duration', KIND_STRING, '5m',
             'run duration (Go format: 30s / 5m / 1h); ignored when --iterations > 0'],
         ['gogc', 'int', KIND_INT, 0,
@@ -462,12 +466,20 @@ function parse_flags(array $argv): array
             . $cfg->nonceBits);
         return [-1, $cfg];
     }
+    $cfg->blobMode = (int) $raw['blob-mode'];
+    if (!\in_array($cfg->blobMode, [1, 2], true)) {
+        err_line('--blob-mode must be 1 (per-region) | 2 (per-container), got '
+            . $cfg->blobMode);
+        return [-1, $cfg];
+    }
     $cfg->barrierFill = (int) $raw['barrier-fill'];
     if (!\in_array($cfg->barrierFill, [0, 1, 2, 4, 8, 16, 32], true)) {
         err_line('--barrier-fill must be 1 | 2 | 4 | 8 | 16 | 32 (or 0 = profile '
             . 'default), got ' . $cfg->barrierFill);
         return [-1, $cfg];
     }
+    // Validated by Init: the C ABI enumerates no DRBG names.
+    $cfg->drbg = (string) $raw['drbg'];
     $chunkSize = parse_size((string) $raw['chunk-size']);
     if ($chunkSize === null) {
         err_line('--chunk-size: invalid size "' . $raw['chunk-size'] . '"');
@@ -596,7 +608,7 @@ function log_pipeline_initialised(string $profile, string $blob): void
         ));
         return;
     }
-    log_line(\sprintf(
+    $line = \sprintf(
         'pipeline initialised: profile=%s blob=%d bytes hash=%s key-bits=%d '
         . 'nonce-bits=%d barrier-fill=%d chunk-size=%d mac=%s parallax=%s wrapper=%s',
         $profile,
@@ -609,7 +621,39 @@ function log_pipeline_initialised(string $profile, string $blob): void
         record_str($record, 'mac'),
         on_off((bool) ($record['parallax'] ?? false)),
         on_off((bool) ($record['wrapper'] ?? false))
-    ));
+    );
+    if (record_int($record, 'container_mode') === 2) {
+        $line .= ' container-mode=2';
+    }
+    if (record_str($record, 'drbg') !== '-') {
+        $line .= ' drbg=' . $record['drbg'];
+    }
+    log_line($line);
+}
+
+/**
+ * Returns a copy of a wrap-layer session blob whose inner blob's "mode"
+ * field is set to $targetMode (1 = per-region, 2 = per-container);
+ * throws \RuntimeException when the blob is not a JSON object or
+ * carries no inner blob mode field. The wrap layer's profile record
+ * carries its own "mode" (a string); the target is the inner blob's
+ * ("ib") integer field. Objects decode as objects rather than arrays so
+ * an empty object re-encodes as {}, and slashes in the base64 fields
+ * stay unescaped.
+ */
+function edit_inner_blob_mode(string $blob, int $targetMode): string
+{
+    $doc = \json_decode($blob, false);
+    if (!$doc instanceof \stdClass || !isset($doc->ib) || !$doc->ib instanceof \stdClass
+        || !\property_exists($doc->ib, 'mode')) {
+        throw new \RuntimeException('inner blob mode field not found');
+    }
+    $doc->ib->mode = $targetMode;
+    $out = \json_encode($doc, \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE);
+    if ($out === false) {
+        throw new \RuntimeException(\json_last_error_msg());
+    }
+    return $out;
 }
 
 /**
@@ -684,6 +728,7 @@ function build_pipeline(Config $cfg, string $profile): ?array
         'keyBits' => $cfg->keyBits,
         'nonceBits' => $cfg->nonceBits,
         'barrierFill' => $cfg->barrierFill,
+        'drbg' => $cfg->drbg,
         'chunkSize' => $cfg->chunkSize,
     ];
     if ($cfg->profile !== '') {
@@ -708,6 +753,26 @@ function build_pipeline(Config $cfg, string $profile): ?array
         err_line('Save(' . $profile . '): ' . status_detail($e));
         $pipe->free();
         return null;
+    }
+    if ($cfg->blobMode === 2) {
+        // The sizing mode is not an Opts knob: the Init blob is edited
+        // and the pipeline reopened from it, so the retained blob (the
+        // one blob-cycle reopens from) carries the edited mode.
+        try {
+            $edited = edit_inner_blob_mode($blob, 2);
+        } catch (\RuntimeException $e) {
+            err_line('rewrite blob mode: ' . $e->getMessage());
+            $pipe->free();
+            return null;
+        }
+        $pipe->free();
+        try {
+            $pipe = Itb::load($edited);
+        } catch (ItbException $e) {
+            err_line('reload Mode 2 blob: ' . status_detail($e));
+            return null;
+        }
+        $blob = $edited;
     }
     log_pipeline_initialised($profile, $blob);
     return [$pipe, $blob];
@@ -786,7 +851,9 @@ function run(array $argv): int
         payload_mode_name($cfg->payloadMode),
         u64_dec($cfg->seed),
         $cfg->jsonOutput ? 'true' : 'false'
-    ));
+    )
+        . ($cfg->blobMode !== 1 ? ' blob-mode=' . $cfg->blobMode : '')
+        . ($cfg->drbg !== '' ? ' drbg=' . $cfg->drbg : ''));
     log_line(\sprintf(
         'policy: microbatch-tiers=%s hashpool-starters=%s',
         policy_label(\getenv('ITB_MICROBATCH_TIERS')),

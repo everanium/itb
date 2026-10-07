@@ -323,6 +323,13 @@ const char *itb_last_error(void);
  * buffer owned by the library; NULL only if libitb3 misbehaves. */
 const char *itb_version(void);
 
+/* The fill cipher the auto DRBG tier selected on this host
+ * ("aes-256-ctr" or "chacha20"): the tier a Pipeline uses when its
+ * drbg option is empty, resolved per host and recorded in no blob.
+ * Thread-local buffer owned by the library; NULL only if libitb3
+ * misbehaves. */
+const char *itb_drbg_auto_tier(void);
+
 /* Sets the Go runtime's soft heap limit in bytes; returns the
  * previous limit. A negative value queries without changing. */
 int64_t itb_set_memory_limit(int64_t bytes);

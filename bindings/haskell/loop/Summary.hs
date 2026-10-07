@@ -178,6 +178,7 @@ finalSummary si = do
   gogc <- effectiveGogc (cfgGogc cfg)
   microbatch <- policyLabel <$> lookupEnv "ITB_MICROBATCH_TIERS"
   starters <- policyLabel <$> lookupEnv "ITB_HASHPOOL_STARTERS"
+  autoTier <- either (\(_ :: SomeException) -> "") id <$> try ITB3.drbgAutoTier
 
   let totalIters = sum perWorker
       totalEnc = sum encs
@@ -235,6 +236,9 @@ finalSummary si = do
         , ",", kv "seed" (show (cfgSeed cfg))
         , ",", kv "key_bits" (show (cfgKeyBits cfg))
         , ",", kv "nonce_bits" (show (cfgNonceBits cfg))
+        , ",", kv "blob_mode" (show (cfgBlobMode cfg))
+        , ",", kv "drbg" (jsonString (cfgDrbg cfg))
+        , ",", kv "drbg_auto_tier" (jsonString autoTier)
         , ",", kv "chunk_size_bytes" (show (cfgChunkSize cfg))
         , ",", kv "barrier_fill" (show (cfgBarrierFill cfg))
         , ",", kv "parallax" (jsonString (onOff (cfgParallax cfg)))

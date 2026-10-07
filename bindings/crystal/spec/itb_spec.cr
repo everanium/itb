@@ -31,6 +31,10 @@ describe ITB do
     ITB::VERSION.should eq "0.5.1"
   end
 
+  it "reports the auto DRBG tier as a fill cipher" do
+    ["aes-256-ctr", "chacha20"].should contain(ITB.drbg_auto_tier)
+  end
+
   it "lists the shipped profiles" do
     got = ITB.profiles
     got.should_not be_empty

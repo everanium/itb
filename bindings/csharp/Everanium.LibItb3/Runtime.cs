@@ -76,4 +76,10 @@ public static unsafe class Runtime
 
     /// <summary>Returns the libitb3 library version string.</summary>
     public static string Version() => NativeMethods.VersionString();
+
+    /// <summary>Returns the fill cipher the auto DRBG tier selected on
+    /// this host (<c>"aes-256-ctr"</c> or <c>"chacha20"</c>): the tier
+    /// a Pipeline uses when its <c>drbg</c> option is empty, resolved
+    /// per host and recorded in no blob.</summary>
+    public static string DrbgAutoTier() => NativeMethods.DrbgAutoTierString();
 }

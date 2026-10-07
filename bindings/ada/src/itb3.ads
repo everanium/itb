@@ -73,6 +73,13 @@ private
       Out_Len : access Size_T) return C_Int
    with Import => True, Convention => C, External_Name => "ITB_Version";
 
+   function ITB_DRBGAutoTier
+     (Out_Buf : System.Address;
+      Cap     : Size_T;
+      Out_Len : access Size_T) return C_Int
+   with Import => True, Convention => C,
+        External_Name => "ITB_DRBGAutoTier";
+
    function ITB_LastError
      (Out_Buf : System.Address;
       Cap     : Size_T;

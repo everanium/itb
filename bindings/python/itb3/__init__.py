@@ -32,6 +32,7 @@ from .pipeline import (
     register,
 )
 from .runtime import (
+    drbg_auto_tier,
     pool_stats,
     pool_stats_len,
     set_gc_percent,
@@ -54,6 +55,7 @@ __all__ = [
     "Profile",
     "Status",
     "__version__",
+    "drbg_auto_tier",
     "hash_names",
     "inspect",
     "lookup",

@@ -31,6 +31,26 @@ package body Itb3.Runtime is
       return To_Ada (Buf (1 .. Out_Len - 1), Trim_Nul => False);
    end Version;
 
+   --------------------
+   -- DRBG_Auto_Tier --
+   --------------------
+
+   function DRBG_Auto_Tier return String is
+      Buf     : aliased char_array (1 .. 64) := [others => nul];
+      Out_Len : aliased Size_T := 0;
+      St      : constant C_Int :=
+        ITB_DRBGAutoTier (Buf'Address, Buf'Length, Out_Len'Access);
+   begin
+      if Integer (St) /= Itb3.Status.OK then
+         Itb3.Error.Raise_For (Integer (St));
+      end if;
+      --  libitb3 counts the trailing NUL terminator in Out_Len.
+      if Out_Len <= 1 then
+         return "";
+      end if;
+      return To_Ada (Buf (1 .. Out_Len - 1), Trim_Nul => False);
+   end DRBG_Auto_Tier;
+
    ----------------------
    -- Set_Memory_Limit --
    ----------------------

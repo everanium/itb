@@ -36,6 +36,15 @@ module itb_ffi
       integer(c_int)           :: rc
     end function
 
+    function c_itb_drbg_auto_tier(out, cap_bytes, out_len) &
+        bind(C, name="ITB_DRBGAutoTier") result(rc)
+      import
+      type(c_ptr), value       :: out
+      integer(c_size_t), value :: cap_bytes
+      integer(c_size_t)        :: out_len
+      integer(c_int)           :: rc
+    end function
+
     function c_itb_last_error(out, cap_bytes, out_len) &
         bind(C, name="ITB_LastError") result(rc)
       import

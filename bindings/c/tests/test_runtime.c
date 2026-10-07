@@ -1,6 +1,6 @@
 /* Runtime diagnostics surface: GOMAXPROCS query / set / restore, the
  * heap-profile writer, the pool-counter snapshot and its slot layout,
- * and the hash-registry enumeration. */
+ * the hash-registry enumeration and the auto DRBG tier report. */
 
 #define _POSIX_C_SOURCE 200809L
 
@@ -70,6 +70,11 @@ static int run(void)
                     && strstr(json, "\"areion512\"") != NULL,
                 "hash names: %s", json);
     itb_string_free(json);
+
+    /* Auto DRBG tier: one of the two fill ciphers, resolved per host. */
+    const char *tier = itb_drbg_auto_tier();
+    TEST_ASSERT(tier != NULL && (strcmp(tier, "aes-256-ctr") == 0 || strcmp(tier, "chacha20") == 0),
+                "drbg auto tier: %s", tier != NULL ? tier : "(null)");
     return 0;
 }
 

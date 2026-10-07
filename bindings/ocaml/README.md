@@ -18,8 +18,8 @@ Single Message `encrypt_message` / `decrypt_message`, `rekey` /
 `decrypt_stream_one_shot`, incremental stream sessions
 (`encrypt_stream` / `decrypt_stream` with `write` / `end_` / `read` /
 `drain_all`), the profile-record entries `inspect` / `register` /
-`lookup` / `profiles`, the `version` introspection helper, and the
-Go runtime knobs.
+`lookup` / `profiles`, the `version` and `drbg_auto_tier`
+introspection helpers, and the Go runtime knobs.
 
 ## Prerequisites (Arch Linux)
 

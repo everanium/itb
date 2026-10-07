@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/everanium/itb"
 	"github.com/everanium/itb/hashes"
 	"github.com/everanium/itb/internal/drbg"
 	"github.com/everanium/itb/triple"
@@ -336,7 +337,7 @@ func TestGenblobDRBGFlag(t *testing.T) {
 	}
 	buf.Reset()
 	renderInspect(defProf, len(defBlob), &buf)
-	if !strings.Contains(buf.String(), "drbg: (auto: "+autoTierLabel()+" on this host)\n") {
+	if !strings.Contains(buf.String(), "drbg: (auto: "+itb.DRBGAutoTier()+" on this host)\n") {
 		t.Fatalf("default inspect output lacks the auto-tier drbg line:\n%s", buf.String())
 	}
 

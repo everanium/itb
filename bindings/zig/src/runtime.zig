@@ -71,6 +71,16 @@ pub fn version() [:0]const u8 {
     return if (v != null) std.mem.span(v) else "";
 }
 
+/// The fill cipher the auto DRBG tier selected on this host
+/// ("aes-256-ctr" or "chacha20"): the tier a Pipeline uses when its
+/// drbg option is empty, resolved per host and recorded in no blob
+/// ("" if libitb3 misbehaves). Thread-local C-side buffer — copy
+/// before the next call if kept.
+pub fn drbgAutoTier() [:0]const u8 {
+    const v = ffi.itb_drbg_auto_tier();
+    return if (v != null) std.mem.span(v) else "";
+}
+
 /// Sets the Go runtime's soft heap limit in bytes; returns the
 /// previous limit. A negative value queries without changing.
 pub fn setMemoryLimit(bytes: i64) i64 {

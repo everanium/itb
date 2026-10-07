@@ -53,6 +53,7 @@ import io.github.everanium.itb3.loop.State.Pipes;
 import io.github.everanium.itb3.loop.State.RunState;
 import io.github.everanium.itb3.loop.State.WorkerState;
 import io.github.everanium.itb3.loop.Worker.Shape;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.BrokenBarrierException;
@@ -119,7 +120,9 @@ public final class Main {
     private static final class RawFlags {
         long barrierFill;
         long blobCycleEvery;
+        long blobMode = 1;
         String chunkSize = "0";
+        String drbg = "";
         String duration = "5m";
         long gogc;
         long gomaxprocs;
@@ -203,12 +206,30 @@ public final class Main {
                         f.blobCycleEvery = v;
                         return true;
                     }),
+            new Flag("blob-mode", "int",
+                    "container floor sizing mode: 1 (per-region, default) | 2 (per-container)",
+                    false, defaultOf(d.blobMode),
+                    (f, s) -> {
+                        Long v = storeInt(s);
+                        if (v == null) {
+                            return false;
+                        }
+                        f.blobMode = v;
+                        return true;
+                    }),
             new Flag("chunk-size", "string",
                     "streaming chunk-size budget (e.g. 4MB); 0 = profile default; inert for pure"
                             + " message shape",
                     false, defaultOf(d.chunkSize),
                     (f, s) -> {
                         f.chunkSize = s;
+                        return true;
+                    }),
+            new Flag("drbg", "string",
+                    "DRBG fill primitive name (see itb3 drbgs); empty = profile default (auto tier)",
+                    false, defaultOf(d.drbg),
+                    (f, s) -> {
+                        f.drbg = s;
                         return true;
                     }),
             new Flag("duration", "duration",
@@ -633,6 +654,11 @@ public final class Main {
                     + " default), got " + f.nonceBits);
             return new Parsed(null, 2);
         }
+        if (f.blobMode != 1 && f.blobMode != 2) {
+            System.err.println("loop: --blob-mode must be 1 (per-region) | 2 (per-container), got "
+                    + f.blobMode);
+            return new Parsed(null, 2);
+        }
         if (f.barrierFill != 0 && f.barrierFill != 1 && f.barrierFill != 2 && f.barrierFill != 4
                 && f.barrierFill != 8 && f.barrierFill != 16 && f.barrierFill != 32) {
             System.err.println("loop: --barrier-fill must be 1 | 2 | 4 | 8 | 16 | 32 (or 0 ="
@@ -680,8 +706,10 @@ public final class Main {
         cfg.profile = f.profile;
         cfg.keyBits = f.keyBits;
         cfg.nonceBits = f.nonceBits;
+        cfg.blobMode = f.blobMode;
         cfg.chunkSize = chunkSize;
         cfg.barrierFill = f.barrierFill;
+        cfg.drbg = f.drbg; // validated by Init: the C ABI enumerates no DRBG names
         cfg.gomaxprocs = (int) f.gomaxprocs;
         cfg.rekeyEvery = f.rekeyEvery;
         cfg.blobCycleEvery = f.blobCycleEvery;
@@ -812,6 +840,7 @@ public final class Main {
                 .withKeyBits(cfg.keyBits)
                 .withNonceBits(cfg.nonceBits)
                 .withBarrierFill(cfg.barrierFill)
+                .withDrbg(cfg.drbg)
                 .withChunkSize(cfg.chunkSize);
         if (!cfg.profile.isEmpty()) {
             Filled filled = fillKeystreamLayers(cfg.profile, opts, cfg.parallax, cfg.wrapper);
@@ -840,8 +869,71 @@ public final class Main {
             pipe.close();
             return null;
         }
+        if (cfg.blobMode == 2) {
+            // The sizing mode is not an Opts knob: the Init blob is edited
+            // and the pipeline reopened from it, so the retained blob (the
+            // one blob-cycle reopens from) carries the edited mode.
+            if (!editInnerBlobMode(blob, 2)) {
+                System.err.println(
+                        "loop: rewrite blob mode: inner blob mode field not found");
+                pipe.close();
+                return null;
+            }
+            pipe.close();
+            try {
+                pipe = Pipeline.load(blob);
+            } catch (RuntimeException e) {
+                System.err.println("loop: reload Mode 2 blob: " + Worker.detail(e));
+                return null;
+            }
+        }
         logPipelineInitialised(profile, blob);
         return new Built(pipe, blob);
+    }
+
+    /** Offset of the first occurrence of needle in hay at or after
+     * from, or -1 when absent. */
+    private static int findBytes(byte[] hay, int from, byte[] needle) {
+        for (int i = from; i + needle.length <= hay.length; i++) {
+            boolean match = true;
+            for (int j = 0; j < needle.length; j++) {
+                if (hay[i + j] != needle[j]) {
+                    match = false;
+                    break;
+                }
+            }
+            if (match) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /** Sets the inner blob's "mode" field of a wrap-layer session blob to
+     * targetMode (1 = per-region, 2 = per-container) in place. The wrap
+     * layer's profile record carries its own "mode" (a string), so the
+     * search starts at the inner blob ("ib"); both shipped modes are one
+     * digit wide, so the blob length does not change and the key material
+     * in blob is never copied. Returns false when the inner blob or its
+     * mode field is not found. */
+    private static boolean editInnerBlobMode(byte[] blob, int targetMode) {
+        byte[] ibKey = "\"ib\":{".getBytes(StandardCharsets.US_ASCII);
+        byte[] modeKey = "\"mode\":".getBytes(StandardCharsets.US_ASCII);
+        int ib = findBytes(blob, 0, ibKey);
+        if (ib < 0) {
+            return false;
+        }
+        int mode = findBytes(blob, ib + ibKey.length, modeKey);
+        if (mode < 0) {
+            return false;
+        }
+        int at = mode + modeKey.length;
+        if (at + 1 >= blob.length || blob[at] < '1' || blob[at] > '2'
+                || (blob[at + 1] >= '0' && blob[at + 1] <= '9')) {
+            return false;
+        }
+        blob[at] = (byte) ('0' + targetMode);
+        return true;
     }
 
     private static String dash(String s) {
@@ -870,7 +962,10 @@ public final class Main {
                 + " chunk-size=" + rec.chunk()
                 + " mac=" + dash(rec.mac())
                 + " parallax=" + onOff(rec.parallax())
-                + " wrapper=" + onOff(rec.wrapper()));
+                + " wrapper=" + onOff(rec.wrapper())
+                + (rec.containerMode() != null && rec.containerMode() == 2
+                        ? " container-mode=2" : "")
+                + (rec.drbg().isEmpty() ? "" : " drbg=" + rec.drbg()));
     }
 
     // ------------------------------------------------------------------
@@ -933,7 +1028,9 @@ public final class Main {
                 + " blob-cycle-every=" + cfg.blobCycleEvery
                 + " payload-mode=" + cfg.payloadMode.label()
                 + " seed=" + Long.toUnsignedString(cfg.seed)
-                + " json-output=" + (cfg.jsonOutput ? "true" : "false"));
+                + " json-output=" + (cfg.jsonOutput ? "true" : "false")
+                + (cfg.blobMode != 1 ? " blob-mode=" + cfg.blobMode : "")
+                + (cfg.drbg.isEmpty() ? "" : " drbg=" + cfg.drbg));
         logLine("policy: microbatch-tiers=" + policyLabel("ITB_MICROBATCH_TIERS")
                 + " hashpool-starters=" + policyLabel("ITB_HASHPOOL_STARTERS"));
 

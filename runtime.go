@@ -7,6 +7,7 @@ import (
 	"runtime/debug"
 	"runtime/pprof"
 
+	"github.com/everanium/itb/internal/drbg"
 	"github.com/everanium/itb/internal/poolstats"
 	_ "github.com/everanium/itb/internal/runtimecfg"
 )
@@ -133,4 +134,18 @@ func PoolStats(dst []int64) int {
 	dst[tail+6] = s.ChunkRegrow
 	dst[tail+7] = s.ChunkRegrowBytes
 	return need
+}
+
+// DRBGAutoTier names the fill cipher the auto DRBG tier selected on
+// this host: "aes-256-ctr" where the CPU has hardware AES, "chacha20"
+// otherwise (ITB_DRBG_TIER can force either). The tier is resolved once
+// per process and fills the container whenever [Config.DRBG] is empty.
+// It is host state and is not recorded in a blob, so a blob that leaves
+// the choice open can be filled differently on different hosts.
+// Decryption never depends on it.
+func DRBGAutoTier() string {
+	if drbg.SelectedTier() == "aes" {
+		return "aes-256-ctr"
+	}
+	return "chacha20"
 }

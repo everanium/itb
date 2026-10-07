@@ -26,6 +26,22 @@ proc version*(): string =
   buf.setLen(max(int(need) - 1, 0))
   buf
 
+proc drbgAutoTier*(): string =
+  ## Returns the fill cipher the auto DRBG tier selected on this host
+  ## (``"aes-256-ctr"`` or ``"chacha20"``): the tier a Pipeline uses
+  ## when its drbg option is empty, resolved per host and recorded in
+  ## no blob.
+  var need: csize_t = 0
+  let rc = int(ITB_DRBGAutoTier(nil, 0, addr need))
+  if rc notin {ord(stOk), ord(stBufferTooSmall)}:
+    raise newItbError(statusFrom(rc), rc, lastErrorText())
+  if int(need) <= 1:
+    return ""
+  var buf = newString(int(need))
+  check(ITB_DRBGAutoTier(addr buf[0], csize_t(buf.len), addr need))
+  buf.setLen(max(int(need) - 1, 0))
+  buf
+
 proc setGomaxprocs*(n: int): int =
   ## Sets the Go runtime's GOMAXPROCS and returns the previous value.
   ## Zero or a negative value queries without changing.

@@ -59,3 +59,10 @@ object Runtime:
 
   /** Returns the libitb3 library version string. */
   def version: String = JRuntime.version()
+
+  /** Returns the fill cipher the auto DRBG tier selected on this host
+    * (`"aes-256-ctr"` or `"chacha20"`): the tier a Pipeline uses when
+    * its `drbg` option is empty, resolved per host and recorded in no
+    * blob.
+    */
+  def drbgAutoTier: String = JRuntime.drbgAutoTier()

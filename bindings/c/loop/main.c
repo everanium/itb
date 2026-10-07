@@ -111,7 +111,9 @@ struct flag {
 struct raw_flags {
     int barrier_fill;
     int64_t blob_cycle_every;
+    int blob_mode;
     const char *chunk_size;
+    const char *drbg;
     const char *duration;
     int gogc;
     int gomaxprocs;
@@ -137,14 +139,18 @@ struct raw_flags {
 /* The flag table, in alphabetical order (the order the usage prints). */
 static struct flag *flag_table(struct raw_flags *f, size_t *count)
 {
-    static struct flag table[23];
-    static const struct flag proto[23] = {
+    static struct flag table[25];
+    static const struct flag proto[25] = {
         { "barrier-fill", "int", FLAG_INT, NULL,
           "DRBG barrier fill margin: 1 | 2 | 4 | 8 | 16 | 32; 0 = profile default (1)" },
         { "blob-cycle-every", "int", FLAG_INT64, NULL,
           "reopen each pipeline from its session blob every N iterations per worker; 0 = never" },
+        { "blob-mode", "int", FLAG_INT, NULL,
+          "container floor sizing mode: 1 (per-region, default) | 2 (per-container)" },
         { "chunk-size", "string", FLAG_STRING, NULL,
           "streaming chunk-size budget (e.g. 4MB); 0 = profile default; inert for pure message shape" },
+        { "drbg", "string", FLAG_STRING, NULL,
+          "DRBG fill primitive name (see itb3 drbgs); empty = profile default (auto tier)" },
         { "duration", "duration", FLAG_STRING, NULL,
           "run duration (Go format: 30s / 5m / 1h); ignored when --iterations > 0" },
         { "gogc", "int", FLAG_INT, NULL,
@@ -186,18 +192,18 @@ static struct flag *flag_table(struct raw_flags *f, size_t *count)
         { "wrapper", "string", FLAG_STRING, NULL,
           "wrapper layer: on | off" },
     };
-    void *dsts[23] = {
-        &f->barrier_fill, &f->blob_cycle_every, &f->chunk_size, &f->duration,
+    void *dsts[25] = {
+        &f->barrier_fill, &f->blob_cycle_every, &f->blob_mode, &f->chunk_size, &f->drbg, &f->duration,
         &f->gogc, &f->gomaxprocs, &f->goroutines, &f->hash, &f->iterations,
         &f->json_output, &f->key_bits, &f->mac, &f->memlimit, &f->memprofile,
         &f->nonce_bits, &f->parallax, &f->payload_mode, &f->payload_size,
         &f->profile, &f->rekey_every, &f->seed, &f->shape, &f->wrapper,
     };
-    for (size_t i = 0; i < 23; i++) {
+    for (size_t i = 0; i < 25; i++) {
         table[i] = proto[i];
         table[i].dst = dsts[i];
     }
-    *count = 23;
+    *count = 25;
     return table;
 }
 
@@ -469,8 +475,8 @@ static enum shape narrow_shape(enum shape requested, enum shape surface)
 static int parse_flags(int argc, char **argv, struct config *cfg)
 {
     struct raw_flags f = {
-        .barrier_fill = 0, .blob_cycle_every = 0, .chunk_size = "0",
-        .duration = "5m", .gogc = 0, .gomaxprocs = 0, .goroutines = 3,
+        .barrier_fill = 0, .blob_cycle_every = 0, .blob_mode = 1, .chunk_size = "0",
+        .drbg = "", .duration = "5m", .gogc = 0, .gomaxprocs = 0, .goroutines = 3,
         .hash = "areion512", .iterations = 0, .json_output = false,
         .key_bits = 0, .mac = "hmac-blake3", .memlimit = "auto",
         .memprofile = "", .nonce_bits = 0, .parallax = "on",
@@ -564,6 +570,14 @@ static int parse_flags(int argc, char **argv, struct config *cfg)
         fprintf(stderr, "loop: --nonce-bits must be 128 | 256 | 512 (or 0 = profile default), got %d\n", cfg->nonce_bits);
         return -1;
     }
+    cfg->blob_mode = f.blob_mode;
+    switch (cfg->blob_mode) {
+    case 1: case 2:
+        break;
+    default:
+        fprintf(stderr, "loop: --blob-mode must be 1 (per-region) | 2 (per-container), got %d\n", cfg->blob_mode);
+        return -1;
+    }
     cfg->barrier_fill = f.barrier_fill;
     switch (cfg->barrier_fill) {
     case 0: case 1: case 2: case 4: case 8: case 16: case 32:
@@ -572,6 +586,7 @@ static int parse_flags(int argc, char **argv, struct config *cfg)
         fprintf(stderr, "loop: --barrier-fill must be 1 | 2 | 4 | 8 | 16 | 32 (or 0 = profile default), got %d\n", cfg->barrier_fill);
         return -1;
     }
+    cfg->drbg = f.drbg; /* validated by Init: the C ABI enumerates no DRBG names */
     if (parse_size(f.chunk_size, &cfg->chunk_size) != 0) {
         fprintf(stderr, "loop: --chunk-size: invalid size \"%s\"\n", f.chunk_size);
         return -1;
@@ -686,13 +701,66 @@ static void log_pipeline_initialised(const char *profile, const uint8_t *blob, s
     }
     char hash[64];
     char mac[64];
+    char drbg[64];
     record_str(json, "hash", hash, sizeof(hash));
     record_str(json, "mac", mac, sizeof(mac));
-    log_line("pipeline initialised: profile=%s blob=%zu bytes hash=%s key-bits=%lld nonce-bits=%lld barrier-fill=%lld chunk-size=%lld mac=%s parallax=%s wrapper=%s",
-             profile, blob_len, hash, record_int(json, "keybits"), record_int(json, "nonce_bits"),
-             record_int(json, "barrier_fill"), record_int(json, "chunk"), mac,
-             on_off(record_bool(json, "parallax") != 0), on_off(record_bool(json, "wrapper") != 0));
+    record_str(json, "drbg", drbg, sizeof(drbg));
+    long long container_mode = record_int(json, "container_mode");
+    char line[1024];
+    int n = snprintf(line, sizeof(line),
+                     "pipeline initialised: profile=%s blob=%zu bytes hash=%s key-bits=%lld nonce-bits=%lld barrier-fill=%lld chunk-size=%lld mac=%s parallax=%s wrapper=%s",
+                     profile, blob_len, hash, record_int(json, "keybits"), record_int(json, "nonce_bits"),
+                     record_int(json, "barrier_fill"), record_int(json, "chunk"), mac,
+                     on_off(record_bool(json, "parallax") != 0), on_off(record_bool(json, "wrapper") != 0));
+    if (n > 0 && (size_t)n < sizeof(line) && container_mode == 2) {
+        n += snprintf(line + n, sizeof(line) - (size_t)n, " container-mode=%lld", container_mode);
+    }
+    if (n > 0 && (size_t)n < sizeof(line) && strcmp(drbg, "-") != 0) {
+        n += snprintf(line + n, sizeof(line) - (size_t)n, " drbg=%s", drbg);
+    }
+    log_line("%s", line);
     itb_string_free(json);
+}
+
+/* Offset of the first occurrence of needle in hay, or hay_len when
+ * absent. The blob is JSON text handed over without a terminator, so
+ * the search is bounded by length rather than by a NUL. */
+static size_t find_bytes(const uint8_t *hay, size_t hay_len, const char *needle, size_t needle_len)
+{
+    for (size_t i = 0; i + needle_len <= hay_len; i++) {
+        if (memcmp(hay + i, needle, needle_len) == 0) {
+            return i;
+        }
+    }
+    return hay_len;
+}
+
+/* Sets the inner blob's "mode" field of a wrap-layer session blob to
+ * target_mode (1 = per-region, 2 = per-container) in place. The wrap
+ * layer's profile record carries its own "mode" (a string), so the
+ * search starts at the inner blob ("ib"); both shipped modes are one
+ * digit wide, so the blob length does not change and the key material
+ * in blob is never copied. Returns -1 when the inner blob or its mode
+ * field is not found. */
+static int edit_inner_blob_mode(uint8_t *blob, size_t blob_len, int target_mode)
+{
+    static const char ib_key[] = "\"ib\":{";
+    static const char mode_key[] = "\"mode\":";
+    size_t ib = find_bytes(blob, blob_len, ib_key, sizeof(ib_key) - 1);
+    if (ib == blob_len) {
+        return -1;
+    }
+    size_t off = ib + sizeof(ib_key) - 1;
+    size_t mode = find_bytes(blob + off, blob_len - off, mode_key, sizeof(mode_key) - 1);
+    if (mode == blob_len - off) {
+        return -1;
+    }
+    size_t at = off + mode + sizeof(mode_key) - 1;
+    if (at + 1 >= blob_len || blob[at] < '1' || blob[at] > '2' || (blob[at + 1] >= '0' && blob[at + 1] <= '9')) {
+        return -1;
+    }
+    blob[at] = (uint8_t)('0' + target_mode);
+    return 0;
 }
 
 /* Constructs one Pipeline against profile with every flag-carried
@@ -720,6 +788,7 @@ static int build_pipeline(const struct config *cfg, const char *profile,
     (void)itb_opts_set(opts, "nonceBits", num);
     (void)snprintf(num, sizeof(num), "%d", cfg->barrier_fill);
     (void)itb_opts_set(opts, "barrierFill", num);
+    (void)itb_opts_set(opts, "drbg", cfg->drbg);
     (void)snprintf(num, sizeof(num), "%lld", (long long)cfg->chunk_size);
     (void)itb_opts_set(opts, "chunkSize", num);
     if (cfg->profile != NULL && cfg->profile[0] != '\0') {
@@ -746,6 +815,28 @@ static int build_pipeline(const struct config *cfg, const char *profile,
         itb_pipeline_free(*pipe);
         *pipe = NULL;
         return -1;
+    }
+    if (cfg->blob_mode == 2) {
+        /* The sizing mode is not an Opts knob: the Init blob is edited
+         * and the pipeline reopened from it, so the retained blob (the
+         * one blob-cycle reopens from) carries the edited mode. */
+        if (edit_inner_blob_mode(*blob, *blob_len, 2) != 0) {
+            fprintf(stderr, "loop: rewrite blob mode: inner blob mode field not found\n");
+            itb_pipeline_free(*pipe);
+            *pipe = NULL;
+            itb_bytes_free(*blob);
+            *blob = NULL;
+            return -1;
+        }
+        itb_pipeline_free(*pipe);
+        *pipe = NULL;
+        st = itb_pipeline_load(*blob, *blob_len, NULL, 0, NULL, 0, pipe);
+        if (st != ITB_STATUS_OK) {
+            fprintf(stderr, "loop: reload Mode 2 blob: status %d: %s\n", (int)st, itb_last_error());
+            itb_bytes_free(*blob);
+            *blob = NULL;
+            return -1;
+        }
     }
     log_pipeline_initialised(profile, *blob, *blob_len);
     return 0;
@@ -802,11 +893,22 @@ static int run(int argc, char **argv)
              a, (long long)cfg->iterations, cfg->workers_requested, cfg->workers, LOOP_CONCURRENCY,
              shape_name(cfg->shape), cfg->hash, cfg->mac, b, c, on_off(cfg->parallax), on_off(cfg->wrapper));
     human_bytes(cfg->chunk_size, a, sizeof(a));
-    log_line("overrides: profile=\"%s\" key-bits=%d nonce-bits=%d chunk-size=%s barrier-fill=%d gomaxprocs=%d rekey-every=%lld blob-cycle-every=%lld payload-mode=%s seed=%llu json-output=%s",
-             cfg->profile, cfg->key_bits, cfg->nonce_bits, a, cfg->barrier_fill, cfg->gomaxprocs,
-             (long long)cfg->rekey_every, (long long)cfg->blob_cycle_every,
-             payload_mode_name(cfg->payload_mode), (unsigned long long)cfg->seed,
-             cfg->json_output ? "true" : "false");
+    {
+        char overrides[1024];
+        int n = snprintf(overrides, sizeof(overrides),
+                         "overrides: profile=\"%s\" key-bits=%d nonce-bits=%d chunk-size=%s barrier-fill=%d gomaxprocs=%d rekey-every=%lld blob-cycle-every=%lld payload-mode=%s seed=%llu json-output=%s",
+                         cfg->profile, cfg->key_bits, cfg->nonce_bits, a, cfg->barrier_fill, cfg->gomaxprocs,
+                         (long long)cfg->rekey_every, (long long)cfg->blob_cycle_every,
+                         payload_mode_name(cfg->payload_mode), (unsigned long long)cfg->seed,
+                         cfg->json_output ? "true" : "false");
+        if (n > 0 && (size_t)n < sizeof(overrides) && cfg->blob_mode != 1) {
+            n += snprintf(overrides + n, sizeof(overrides) - (size_t)n, " blob-mode=%d", cfg->blob_mode);
+        }
+        if (n > 0 && (size_t)n < sizeof(overrides) && cfg->drbg[0] != '\0') {
+            n += snprintf(overrides + n, sizeof(overrides) - (size_t)n, " drbg=%s", cfg->drbg);
+        }
+        log_line("%s", overrides);
+    }
     log_line("policy: microbatch-tiers=%s hashpool-starters=%s",
              policy_label(getenv("ITB_MICROBATCH_TIERS")), policy_label(getenv("ITB_HASHPOOL_STARTERS")));
 

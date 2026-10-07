@@ -79,4 +79,12 @@ final class Runtime {
     static String version() {
         JRuntime.version()
     }
+
+    /** Returns the fill cipher the auto DRBG tier selected on this host
+     * ({@code 'aes-256-ctr'} or {@code 'chacha20'}): the tier a Pipeline
+     * uses when its {@code drbg} option is empty, resolved per host and
+     * recorded in no blob. */
+    static String drbgAutoTier() {
+        JRuntime.drbgAutoTier()
+    }
 }

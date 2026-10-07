@@ -72,3 +72,11 @@ string libitb3Version() @trusted
 {
     return readCString((buf, cap, len) => ITB_Version(buf, cap, len));
 }
+
+/// Returns the fill cipher the auto DRBG tier selected on this host
+/// (`"aes-256-ctr"` or `"chacha20"`): the tier a Pipeline uses when its
+/// drbg option is empty, resolved per host and recorded in no blob.
+string drbgAutoTier() @trusted
+{
+    return readCString((buf, cap, len) => ITB_DRBGAutoTier(buf, cap, len));
+}

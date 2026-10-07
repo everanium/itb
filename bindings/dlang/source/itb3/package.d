@@ -23,7 +23,7 @@ public import itb3.opts : Opts;
 public import itb3.pipeline : Pipeline, hashNames, inspect, lookup, profiles,
     register;
 public import itb3.profile : Profile;
-public import itb3.runtime : bindingVersion, libitb3Version, poolStats,
+public import itb3.runtime : bindingVersion, drbgAutoTier, libitb3Version, poolStats,
     poolStatsLen, setGCPercent, setGOMAXPROCS, setMemoryLimit,
     writeHeapProfile;
 public import itb3.status : Status, statusFromRc;

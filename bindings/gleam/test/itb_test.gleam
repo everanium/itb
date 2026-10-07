@@ -39,6 +39,11 @@ pub fn version_test() {
   assert version != ""
 }
 
+pub fn drbg_auto_tier_test() {
+  let assert Ok(tier) = itb3_gleam.drbg_auto_tier()
+  assert tier == "aes-256-ctr" || tier == "chacha20"
+}
+
 pub fn runtime_knobs_test() {
   // Negative values query without changing; the return is the
   // previous setting.

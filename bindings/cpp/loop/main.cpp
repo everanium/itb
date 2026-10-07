@@ -75,7 +75,9 @@ constexpr const char *kKeystreamFillCipher = "aescmac";
 struct RawFlags {
     int barrier_fill = 0;
     std::int64_t blob_cycle_every = 0;
+    int blob_mode = 1;
     std::string chunk_size = "0";
+    std::string drbg;
     std::string duration = "5m";
     int gogc = 0;
     int gomaxprocs = 0;
@@ -203,8 +205,12 @@ std::vector<Flag> flag_table(RawFlags &f)
             "DRBG barrier fill margin: 1 | 2 | 4 | 8 | 16 | 32; 0 = profile default (1)");
     add_int64("blob-cycle-every", f.blob_cycle_every,
               "reopen each pipeline from its session blob every N iterations per worker; 0 = never");
+    add_int("blob-mode", f.blob_mode,
+            "container floor sizing mode: 1 (per-region, default) | 2 (per-container)");
     add_string("chunk-size", "string", f.chunk_size,
                "streaming chunk-size budget (e.g. 4MB); 0 = profile default; inert for pure message shape");
+    add_string("drbg", "string", f.drbg,
+               "DRBG fill primitive name (see itb3 drbgs); empty = profile default (auto tier)");
     add_string("duration", "duration", f.duration,
                "run duration (Go format: 30s / 5m / 1h); ignored when --iterations > 0");
     add_int("gogc", f.gogc, "GC trigger percentage; 0 = leave the runtime default");
@@ -527,6 +533,15 @@ int parse_flags(int argc, char **argv, Config &cfg)
                      cfg.nonce_bits));
         return -1;
     }
+    cfg.blob_mode = f.blob_mode;
+    switch (cfg.blob_mode) {
+    case 1: case 2:
+        break;
+    default:
+        err_line(fmt("--blob-mode must be 1 (per-region) | 2 (per-container), got %d",
+                     cfg.blob_mode));
+        return -1;
+    }
     cfg.barrier_fill = f.barrier_fill;
     switch (cfg.barrier_fill) {
     case 0: case 1: case 2: case 4: case 8: case 16: case 32:
@@ -536,6 +551,7 @@ int parse_flags(int argc, char **argv, Config &cfg)
                      cfg.barrier_fill));
         return -1;
     }
+    cfg.drbg = f.drbg; /* validated by Init: the C ABI enumerates no DRBG names */
     if (!parse_size(f.chunk_size, cfg.chunk_size)) {
         err_line(fmt("--chunk-size: invalid size \"%s\"", f.chunk_size.c_str()));
         return -1;
@@ -649,13 +665,51 @@ void log_pipeline_initialised(const std::string &profile,
                      profile.c_str(), blob.size(), itb::last_error().c_str()));
         return;
     }
-    log_line(fmt("pipeline initialised: profile=%s blob=%zu bytes hash=%s key-bits=%lld "
-                 "nonce-bits=%lld barrier-fill=%lld chunk-size=%lld mac=%s parallax=%s wrapper=%s",
-                 profile.c_str(), blob.size(), record_str(json, "hash").c_str(),
-                 record_int(json, "keybits"), record_int(json, "nonce_bits"),
-                 record_int(json, "barrier_fill"), record_int(json, "chunk"),
-                 record_str(json, "mac").c_str(),
-                 on_off(record_bool(json, "parallax")), on_off(record_bool(json, "wrapper"))));
+    std::string line = fmt("pipeline initialised: profile=%s blob=%zu bytes hash=%s key-bits=%lld "
+                           "nonce-bits=%lld barrier-fill=%lld chunk-size=%lld mac=%s parallax=%s wrapper=%s",
+                           profile.c_str(), blob.size(), record_str(json, "hash").c_str(),
+                           record_int(json, "keybits"), record_int(json, "nonce_bits"),
+                           record_int(json, "barrier_fill"), record_int(json, "chunk"),
+                           record_str(json, "mac").c_str(),
+                           on_off(record_bool(json, "parallax")), on_off(record_bool(json, "wrapper")));
+    const long long container_mode = record_int(json, "container_mode");
+    if (container_mode == 2) {
+        line += fmt(" container-mode=%lld", container_mode);
+    }
+    const std::string drbg = record_str(json, "drbg");
+    if (drbg != "-") {
+        line += " drbg=" + drbg;
+    }
+    log_line(line);
+}
+
+/* Sets the inner blob's "mode" field of a wrap-layer session blob to
+ * target_mode (1 = per-region, 2 = per-container) in place. The wrap
+ * layer's profile record carries its own "mode" (a string), so the
+ * search starts at the inner blob ("ib"); both shipped modes are one
+ * digit wide, so the blob length does not change and the key material
+ * in blob is never copied. Returns false when the inner blob or its
+ * mode field is not found. */
+bool edit_inner_blob_mode(std::vector<std::uint8_t> &blob, int target_mode)
+{
+    const std::string_view text(reinterpret_cast<const char *>(blob.data()), blob.size());
+    constexpr std::string_view ib_key = "\"ib\":{";
+    constexpr std::string_view mode_key = "\"mode\":";
+    const std::size_t ib = text.find(ib_key);
+    if (ib == std::string_view::npos) {
+        return false;
+    }
+    const std::size_t mode = text.find(mode_key, ib + ib_key.size());
+    if (mode == std::string_view::npos) {
+        return false;
+    }
+    const std::size_t at = mode + mode_key.size();
+    if (at + 1 >= blob.size() || blob[at] < '1' || blob[at] > '2'
+        || (blob[at + 1] >= '0' && blob[at + 1] <= '9')) {
+        return false;
+    }
+    blob[at] = static_cast<std::uint8_t>('0' + target_mode);
+    return true;
 }
 
 /* Constructs one Pipeline against profile with every flag-carried
@@ -675,6 +729,7 @@ bool build_pipeline(const Config &cfg, const std::string &profile,
     opts.set("keyBits", fmt("%d", cfg.key_bits));
     opts.set("nonceBits", fmt("%d", cfg.nonce_bits));
     opts.set("barrierFill", fmt("%d", cfg.barrier_fill));
+    opts.set("drbg", cfg.drbg);
     opts.set("chunkSize", fmt("%lld", static_cast<long long>(cfg.chunk_size)));
     if (!cfg.profile.empty()) {
         const int filled = fill_keystream_layers(cfg.profile, opts, cfg.parallax, cfg.wrapper);
@@ -699,6 +754,25 @@ bool build_pipeline(const Config &cfg, const std::string &profile,
         err_line(fmt("Save(%s): %s", profile.c_str(), detail(e).c_str()));
         pipe.reset();
         return false;
+    }
+    if (cfg.blob_mode == 2) {
+        /* The sizing mode is not an Opts knob: the Init blob is edited
+         * and the pipeline reopened from it, so the retained blob (the
+         * one blob-cycle reopens from) carries the edited mode. */
+        if (!edit_inner_blob_mode(blob, 2)) {
+            err_line("rewrite blob mode: inner blob mode field not found");
+            pipe.reset();
+            blob.clear();
+            return false;
+        }
+        pipe.reset();
+        try {
+            pipe = itb::Pipeline::load(itb::as_bytes(blob));
+        } catch (const itb::Error &e) {
+            err_line(fmt("reload Mode 2 blob: %s", detail(e).c_str()));
+            blob.clear();
+            return false;
+        }
     }
     log_pipeline_initialised(profile, blob);
     return true;
@@ -754,16 +828,23 @@ int run(int argc, char **argv)
                  kConcurrency, shape_name(cfg.shape), cfg.hash.c_str(), cfg.mac.c_str(),
                  human_bytes(cfg.payload).c_str(), human_bytes(cfg.memlimit).c_str(),
                  on_off(cfg.parallax), on_off(cfg.wrapper)));
-    log_line(fmt("overrides: profile=\"%s\" key-bits=%d nonce-bits=%d chunk-size=%s "
-                 "barrier-fill=%d gomaxprocs=%d rekey-every=%lld blob-cycle-every=%lld "
-                 "payload-mode=%s seed=%llu json-output=%s",
-                 cfg.profile.c_str(), cfg.key_bits, cfg.nonce_bits,
-                 human_bytes(cfg.chunk_size).c_str(), cfg.barrier_fill, cfg.gomaxprocs,
-                 static_cast<long long>(cfg.rekey_every),
-                 static_cast<long long>(cfg.blob_cycle_every),
-                 payload_mode_name(cfg.payload_mode),
-                 static_cast<unsigned long long>(cfg.seed),
-                 cfg.json_output ? "true" : "false"));
+    std::string overrides = fmt("overrides: profile=\"%s\" key-bits=%d nonce-bits=%d chunk-size=%s "
+                                "barrier-fill=%d gomaxprocs=%d rekey-every=%lld blob-cycle-every=%lld "
+                                "payload-mode=%s seed=%llu json-output=%s",
+                                cfg.profile.c_str(), cfg.key_bits, cfg.nonce_bits,
+                                human_bytes(cfg.chunk_size).c_str(), cfg.barrier_fill, cfg.gomaxprocs,
+                                static_cast<long long>(cfg.rekey_every),
+                                static_cast<long long>(cfg.blob_cycle_every),
+                                payload_mode_name(cfg.payload_mode),
+                                static_cast<unsigned long long>(cfg.seed),
+                                cfg.json_output ? "true" : "false");
+    if (cfg.blob_mode != 1) {
+        overrides += fmt(" blob-mode=%d", cfg.blob_mode);
+    }
+    if (!cfg.drbg.empty()) {
+        overrides += " drbg=" + cfg.drbg;
+    }
+    log_line(overrides);
     log_line(fmt("policy: microbatch-tiers=%s hashpool-starters=%s",
                  policy_label(std::getenv("ITB_MICROBATCH_TIERS")).c_str(),
                  policy_label(std::getenv("ITB_HASHPOOL_STARTERS")).c_str()));

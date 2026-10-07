@@ -223,7 +223,8 @@ contains
     integer            :: errors, i, n_emitted
     logical            :: pass
     type(pool_delta_t) :: d
-    character(:), allocatable :: text, parts, sp, mp
+    character(:), allocatable :: text, parts, sp, mp, auto_tier
+    type(itb_error_t)         :: tier_err
 
     total_iters = 0_c_int64_t
     total_enc = 0_c_int64_t
@@ -311,6 +312,11 @@ contains
       text = text//',"seed":'//u64toa(cfg%seed)
       text = text//',"key_bits":'//itoa(int(cfg%key_bits, c_int64_t))
       text = text//',"nonce_bits":'//itoa(int(cfg%nonce_bits, c_int64_t))
+      text = text//',"blob_mode":'//itoa(int(cfg%blob_mode, c_int64_t))
+      text = text//',"drbg":'//json_string(cfg%drbg)
+      call itb_drbg_auto_tier(auto_tier, tier_err)
+      if (.not. itb_ok(tier_err)) auto_tier = ""
+      text = text//',"drbg_auto_tier":'//json_string(auto_tier)
       text = text//',"chunk_size_bytes":'//itoa(cfg%chunk_size)
       text = text//',"barrier_fill":'//itoa(int(cfg%barrier_fill, c_int64_t))
       text = text//',"parallax":"'//on_off(cfg%parallax)//'"'

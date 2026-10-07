@@ -3,7 +3,7 @@
 // and the shared library's pool counters.
 
 import { readFileSync } from 'node:fs';
-import { ItbError, poolStats, setGCPercent } from '../src/index.js';
+import { ItbError, drbgAutoTier, poolStats, setGCPercent } from '../src/index.js';
 import { payloadModeName } from './payload.js';
 import {
   humanBytes,
@@ -346,6 +346,9 @@ function emitJson(
     `,"seed":${u64Dec(cfg.seed)}` +
     `,"key_bits":${cfg.keyBits}` +
     `,"nonce_bits":${cfg.nonceBits}` +
+    `,"blob_mode":${cfg.blobMode}` +
+    `,"drbg":${jsonString(cfg.drbg)}` +
+    `,"drbg_auto_tier":${jsonString(drbgAutoTier())}` +
     `,"chunk_size_bytes":${cfg.chunkSize}` +
     `,"barrier_fill":${cfg.barrierFill}` +
     `,"parallax":"${onOff(cfg.parallax)}"` +

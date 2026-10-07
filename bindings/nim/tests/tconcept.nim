@@ -21,6 +21,10 @@ suite "itb nim binding":
     check v.len > 0
     check v[0] in {'0' .. '9'}
 
+  test "drbg auto tier is a fill cipher":
+    let tier = drbgAutoTier()
+    check tier in ["aes-256-ctr", "chacha20"]
+
   test "profiles list":
     let names = profiles()
     check "singlemsg-triple-mac-v1" in names

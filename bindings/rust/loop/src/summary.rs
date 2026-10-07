@@ -300,6 +300,12 @@ pub fn final_summary(r: &RunState, elapsed_ns: i64) -> i32 {
         j.push_str(&format!(",\"seed\":{}", cfg.seed));
         j.push_str(&format!(",\"key_bits\":{}", cfg.key_bits));
         j.push_str(&format!(",\"nonce_bits\":{}", cfg.nonce_bits));
+        j.push_str(&format!(",\"blob_mode\":{}", cfg.blob_mode));
+        j.push_str(&format!(",\"drbg\":{}", json_string(&cfg.drbg)));
+        j.push_str(&format!(
+            ",\"drbg_auto_tier\":{}",
+            json_string(&itb3::drbg_auto_tier().unwrap_or_default())
+        ));
         j.push_str(&format!(",\"chunk_size_bytes\":{}", cfg.chunk_size));
         j.push_str(&format!(",\"barrier_fill\":{}", cfg.barrier_fill));
         j.push_str(&format!(",\"parallax\":\"{}\"", on_off(cfg.parallax)));

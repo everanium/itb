@@ -68,8 +68,10 @@ type
     profile*: string        ## empty = shape-based profile pair
     keyBits*: int           ## 0 = profile default
     nonceBits*: int         ## 0 = profile default
+    blobMode*: int          ## container floor sizing mode: 1 (per-region, default) | 2 (per-container)
     chunkSize*: int64       ## 0 = profile default
     barrierFill*: int       ## 0 = profile default
+    drbg*: string           ## DRBG fill primitive; empty = profile default (auto tier)
     gomaxprocs*: int        ## 0 = inherit from the environment
     rekeyEvery*: int64      ## per-worker iterations between rotations; 0 = never
     blobCycleEvery*: int64  ## per-worker iterations between reopens; 0 = never
