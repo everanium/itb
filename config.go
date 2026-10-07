@@ -23,6 +23,8 @@ import (
 //   - TagStubSize: 0 = 32 (every shipped MAC's tag length);
 //     otherwise the paired AEAD peer's MAC tag length in bytes, in
 //     [16, 64].
+//   - DRBG: "" = the auto tier of internal/drbg; otherwise the name of
+//     the DRBG fill primitive.
 //
 // A nil *Config passed to a Cfg-suffixed entry point behaves as an
 // all-zero Config — every field falls back to the compile-in default
@@ -60,6 +62,26 @@ type Config struct {
 	// contract, the ceiling covers the longest realistic MAC tag; the
 	// No MAC encrypt entry points reject anything else fail-fast.
 	TagStubSize int
+
+	// DRBG names the primitive that fills the container carrier noise
+	// and the lane residue on the encrypt path. The empty string
+	// selects the auto tier of internal/drbg (AES-CTR where the host
+	// has hardware AES, ChaCha20 otherwise); "aesitb128" selects the
+	// AES-ITB noise filler, "csprng" the unexpanded crypto/rand.Read,
+	// and the name of any keystream-eligible registry primitive its
+	// counter-mode construction through the ctr package. The keystream
+	// arms are installed by package ctr at init, which every program
+	// linking wrapper, parallax or triple carries; a program that links
+	// only this package and hashes holds the auto tier, "aesitb128" and
+	// "csprng". A name outside that set is rejected fail-fast by every
+	// Cfg encrypt entry point and by Blob{128,256,512}.Export3Cfg —
+	// never a silent fallback. The Decrypt*Cfg entry points neither
+	// validate nor consult the field: the receiver reproduces no noise,
+	// so any value decrypts. The choice
+	// is a performance decision as much as a policy one — a slow
+	// primitive under a fast inner primitive is paid for on every
+	// encrypt.
+	DRBG string
 }
 
 // DefaultNonceBits is the nonce width in bits used when [Config.NonceBits]

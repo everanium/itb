@@ -151,10 +151,18 @@ func buildTripleWire3(cfg *Config, data []byte, bp lockBatchPRF48, reserve int, 
 	totalPixels := width * height
 	third, _, caps := tripleThirdCaps(totalPixels)
 
+	// The DRBG fill primitive is resolved once here from the Config
+	// (validated by every Cfg entry point); the three container fills
+	// and the lane tail fills below all draw through it.
+	fillName := ""
+	if cfg != nil {
+		fillName = cfg.DRBG
+	}
+
 	// Allocate the wire and write the header on the calling goroutine.
 	// The wire buffer has no data dependency on interlock or COBS, so
 	// the three background container-fill goroutines can enter
-	// drbg.Fill immediately after this point.
+	// drbg.FillWith immediately after this point.
 	hdr := headerSizeCfg(cfg)
 	out = make([]byte, lead+hdr+totalPixels*Channels)
 	header := out[lead : lead+hdr]
@@ -174,15 +182,15 @@ func buildTripleWire3(cfg *Config, data []byte, bp lockBatchPRF48, reserve int, 
 	wgContainer.Add(3)
 	go func() {
 		defer wgContainer.Done()
-		wireErr[0] = drbg.Fill(container[0 : third*Channels])
+		wireErr[0] = drbg.FillWith(fillName, container[0:third*Channels])
 	}()
 	go func() {
 		defer wgContainer.Done()
-		wireErr[1] = drbg.Fill(container[third*Channels : 2*third*Channels])
+		wireErr[1] = drbg.FillWith(fillName, container[third*Channels:2*third*Channels])
 	}()
 	go func() {
 		defer wgContainer.Done()
-		wireErr[2] = drbg.Fill(container[2*third*Channels : totalPixels*Channels])
+		wireErr[2] = drbg.FillWith(fillName, container[2*third*Channels:totalPixels*Channels])
 	}()
 
 	// Main goroutine — interlock split into three pooled lanes through
@@ -243,7 +251,7 @@ func buildTripleWire3(cfg *Config, data []byte, bp lockBatchPRF48, reserve int, 
 				fillEnd = len(buf)
 			}
 			if fillStart := tp.encLen[i] + 1; fillStart < fillEnd {
-				if e := drbg.Fill(buf[fillStart:fillEnd]); e != nil {
+				if e := drbg.FillWith(fillName, buf[fillStart:fillEnd]); e != nil {
 					laneErr[i] = fmt.Errorf("itb: crypto/rand: %w", e)
 				}
 			}

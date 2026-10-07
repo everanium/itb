@@ -45,6 +45,7 @@ itb3 verify  blob.json
 | `itb3 hashes` | List shipped hash primitives. |
 | `itb3 macs` | List shipped MAC primitives. |
 | `itb3 ciphers` | List shipped wrapper outer ciphers. |
+| `itb3 drbgs` | List DRBG fill primitives accepted by `genblob --drbg`. |
 | `itb3 modes` | List CLI mode positional tokens. |
 | `itb3 profiles` | List registered profile catalogue names. |
 | `itb3 catalog` | Unified multi-section dump of accepted inputs. |
@@ -59,7 +60,9 @@ via `triple.Inspect`: `profile`, `mode`, `width`, either `inner_hash`
 or the 8-slot `mixed_hashes` comma list, `key_bits`, `nonce_bits`
 and `barrier_fill` (the two Init-time runtime globals — nonce width
 and DRBG barrier fill margin — the sender's Pipeline runs with,
-populated from the blob's inner Blob{N} snapshot), `mac_name`
+populated from the blob's inner Blob{N} snapshot), `container_mode`,
+`drbg` (the DRBG fill primitive the recipe states; `(default)` when
+the blob leaves the choice to the auto tier), `mac_name`
 (`(none)` for a No MAC profile), `tag_stub_size` when set,
 `chunk_size` for streaming modes (`(default)` when the profile
 inherits the compile-in default), `wrapper` / `wrapper_cipher`,
@@ -77,6 +80,14 @@ inherits the compile-in default), `wrapper` / `wrapper_cipher`,
 
 - The CLI is a pure wrapper: no new cryptographic logic, no new wire
   format, no on-disk state beyond the blob file.
+- `genblob --drbg <name>` selects the primitive that fills the
+  container carrier noise and the lane residue on the encrypt path
+  (`itb3 drbgs` lists the accepted names); the choice is written into
+  the blob's recipe, so every Pipeline reopened from the blob encrypts
+  under it. Omitted, the auto tier applies (AES-CTR where the host has
+  hardware AES, ChaCha20 otherwise). A build older than the recipe
+  key refuses a blob that states a choice; a blob without the key
+  loads everywhere.
 - `-o` writes the blob to disk with mode `0600`; every read path
   loads it via `triple.LoadF`. The blob carries the resolved
   `triple.Profile` record — the shipped-catalogue prefix reserved for

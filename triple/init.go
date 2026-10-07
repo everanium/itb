@@ -144,6 +144,9 @@ func Init(profile string, opts Opts) (*Pipeline, []byte, error) {
 	if err := validateResolvedChunkSize("Init", resolved); err != nil {
 		return nil, nil, err
 	}
+	if err := validateResolvedDRBG("Init", resolved); err != nil {
+		return nil, nil, err
+	}
 
 	// Master intake / auto-generation.
 	permMaster, wrapMaster, err := prepareMasters(resolved, opts)
@@ -199,6 +202,10 @@ func Init(profile string, opts Opts) (*Pipeline, []byte, error) {
 	if cfg.TagStubSize == 0 && resolved.TagStubSize > 0 {
 		cfg.TagStubSize = resolved.TagStubSize
 	}
+	// The DRBG fill primitive is a recipe field: the resolved record
+	// carries it into the blob and the Config consumes it on every
+	// encrypt.
+	cfg.DRBG = resolved.DRBG
 
 	// Parallax build.
 	var (

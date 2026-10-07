@@ -3,6 +3,8 @@ package itb
 import (
 	"crypto/rand"
 	"fmt"
+
+	"github.com/everanium/itb/internal/drbg"
 )
 
 // nomacStreamPrefix draws a fresh CSPRNG dummy stream anchor for the
@@ -117,6 +119,9 @@ func validateConfigCfg(cfg *Config) error {
 	case 0, 1, 2:
 	default:
 		return fmt.Errorf("%w (cfg.Mode=%d)", ErrBlobModeMismatch, cfg.Mode)
+	}
+	if !drbg.Known(cfg.DRBG) {
+		return fmt.Errorf("itb: cfg.DRBG=%q is not an installed DRBG fill primitive (want \"\" or one of %v)", cfg.DRBG, drbg.Names())
 	}
 	return nil
 }

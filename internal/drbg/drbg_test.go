@@ -435,3 +435,181 @@ func itoa(n int) string {
 	}
 	return string(d[i:])
 }
+
+// builtinArms lists the arms FillWith serves without any installed
+// keystream arm: the auto tier and the two built-in names.
+var builtinArms = []string{"", NameAESITB128, NameCSPRNG}
+
+// fillLengthClasses covers the empty fill, sub-block and off-by-one
+// tails, and a bulk size.
+var fillLengthClasses = []int{0, 1, 15, 16, 17, 64 << 10}
+
+// TestFillWithBuiltinArms confirms every built-in arm fills non-zero
+// bytes at every length class, that two calls differ (fresh seed per
+// call), and that FillWith("") takes the same tier as Fill.
+func TestFillWithBuiltinArms(t *testing.T) {
+	for _, name := range builtinArms {
+		for _, n := range fillLengthClasses {
+			a := make([]byte, n)
+			b := make([]byte, n)
+			if err := FillWith(name, a); err != nil {
+				t.Fatalf("FillWith(%q, %d): %v", name, n, err)
+			}
+			if err := FillWith(name, b); err != nil {
+				t.Fatalf("FillWith(%q, %d): %v", name, n, err)
+			}
+			if n >= 16 {
+				if isAllZero(a) {
+					t.Fatalf("FillWith(%q, %d) left the buffer all-zero", name, n)
+				}
+				if bytes.Equal(a, b) {
+					t.Fatalf("FillWith(%q, %d): two calls produced identical output", name, n)
+				}
+			}
+		}
+	}
+	if !Known("") || !Known(NameAESITB128) || !Known(NameCSPRNG) {
+		t.Fatal("Known rejects a built-in name")
+	}
+}
+
+// TestFillWithUnknownNameNeverWrites confirms an unknown token is
+// refused with an error naming it and that dst is left untouched —
+// never a fallback to another arm.
+func TestFillWithUnknownNameNeverWrites(t *testing.T) {
+	buf := make([]byte, 64)
+	for i := range buf {
+		buf[i] = 0xA5
+	}
+	err := FillWith("nosucharm", buf)
+	if err == nil {
+		t.Fatal("FillWith(unknown) returned nil error")
+	}
+	if !bytes.Contains([]byte(err.Error()), []byte(`"nosucharm"`)) {
+		t.Fatalf("error %q does not name the token", err)
+	}
+	for i, b := range buf {
+		if b != 0xA5 {
+			t.Fatalf("FillWith(unknown) wrote byte %d", i)
+		}
+	}
+	if Known("nosucharm") {
+		t.Fatal("Known accepts an unknown name")
+	}
+	if err := FillWith("nosucharm", nil); err != nil {
+		t.Fatalf("FillWith(unknown, empty) must succeed without consulting the name: %v", err)
+	}
+}
+
+// TestRegisterRejectsReservedAndDuplicate pins the Register rules:
+// the built-in names and the empty name are refused, a nil fill is
+// refused, and a name installed once cannot be installed again.
+func TestRegisterRejectsReservedAndDuplicate(t *testing.T) {
+	for _, name := range builtinArms {
+		if err := Register(name, fillAesCTR); err == nil {
+			t.Fatalf("Register(%q) accepted a reserved name", name)
+		}
+	}
+	if err := Register("drbg-test-arm", nil); err == nil {
+		t.Fatal("Register accepted a nil fill")
+	}
+	if err := Register("drbg-test-arm", fillChaCha20); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	if err := Register("drbg-test-arm", fillChaCha20); err == nil {
+		t.Fatal("Register accepted a duplicate name")
+	}
+	names := Names()
+	if names[0] != NameAESITB128 || names[len(names)-1] != NameCSPRNG {
+		t.Fatalf("Names() = %v: aesitb128 must lead and csprng must close", names)
+	}
+	found := false
+	for _, n := range names[1 : len(names)-1] {
+		if n == "drbg-test-arm" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("Names() = %v does not carry the installed arm", names)
+	}
+	buf := make([]byte, 64)
+	if err := FillWith("drbg-test-arm", buf); err != nil || isAllZero(buf) {
+		t.Fatalf("installed arm did not fill: err=%v", err)
+	}
+}
+
+// TestBuiltinArmsStatisticalSmoke runs the coarse bit-balance and
+// byte-histogram smoke of TestStatisticalSmoke over the aesitb128 and
+// csprng arms. Not a uniformity proof — enough to catch a stuck bit or
+// a seed passthrough.
+func TestBuiltinArmsStatisticalSmoke(t *testing.T) {
+	const size = 1 << 20
+	const halfBits = size * 8 / 2
+	tol := halfBits / 200
+	for _, name := range []string{NameAESITB128, NameCSPRNG} {
+		buf := make([]byte, size)
+		if err := FillWith(name, buf); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		var popcount int
+		var hist [256]int
+		for _, b := range buf {
+			hist[b]++
+			popcount += onesInByte(b)
+		}
+		if diff := abs(popcount - halfBits); diff > tol {
+			t.Errorf("%s: population count %d off half=%d by %d (tol %d)", name, popcount, halfBits, diff, tol)
+		}
+		for v, c := range hist {
+			if c > 2*(size/256) {
+				t.Errorf("%s: byte value %d occurs %d times (expected ~%d)", name, v, c, size/256)
+			}
+		}
+	}
+}
+
+// TestNamedArmIgnoresTierEnv confirms the environment tier variable
+// reaches the auto path only: pickTier re-reads it, FillWith with a
+// name does not consult it.
+func TestNamedArmIgnoresTierEnv(t *testing.T) {
+	t.Setenv("ITB_DRBG_TIER", "chacha")
+	if _, name := pickTier(); name != "chacha" {
+		t.Fatalf("auto path ignores ITB_DRBG_TIER: %q", name)
+	}
+	buf := make([]byte, 4096)
+	if err := FillWith(NameAESITB128, buf); err != nil || isAllZero(buf) {
+		t.Fatalf("named arm under ITB_DRBG_TIER: err=%v", err)
+	}
+}
+
+// BenchmarkFillWithParallel3 times every arm FillWith serves under the
+// container-fill three-goroutine shape at the production sizes;
+// reports aggregate MB/s. The installed keystream arms are present
+// only when a package that installs them is linked into the test
+// binary (see drbg_ext_test.go for the ctr-linked run).
+func BenchmarkFillWithParallel3(b *testing.B) {
+	for _, name := range append([]string{""}, Names()...) {
+		label := name
+		if label == "" {
+			label = "auto"
+		}
+		for _, size := range []int{3 << 20, 18 << 20} {
+			size := size
+			buf := make([]byte, size)
+			b.Run(label+"/"+sizeName(size), func(b *testing.B) {
+				b.ReportAllocs()
+				b.SetBytes(int64(size))
+				b.ResetTimer()
+				for i := 0; i < b.N; i++ {
+					third := size / 3
+					var wg sync.WaitGroup
+					wg.Add(3)
+					go func() { _ = FillWith(name, buf[0:third]); wg.Done() }()
+					go func() { _ = FillWith(name, buf[third:2*third]); wg.Done() }()
+					go func() { _ = FillWith(name, buf[2*third:size]); wg.Done() }()
+					wg.Wait()
+				}
+			})
+		}
+	}
+}

@@ -324,6 +324,7 @@ type summaryReport struct {
 	KeyBits          int                 `json:"key_bits"`
 	NonceBits        int                 `json:"nonce_bits"`
 	BlobMode         int                 `json:"blob_mode,omitempty"`
+	DRBG             string              `json:"drbg,omitempty"`
 	ChunkSizeBytes   int64               `json:"chunk_size_bytes"`
 	BarrierFill      int                 `json:"barrier_fill"`
 	Parallax         string              `json:"parallax"`
@@ -536,6 +537,7 @@ func printJSONSummary(r *runState, elapsed time.Duration, finalHeap uint64, fina
 			}
 			return 0
 		}(),
+		DRBG:              r.cfg.drbg,
 		ChunkSizeBytes:    r.cfg.chunkSize,
 		BarrierFill:       r.cfg.barrierFill,
 		Parallax:          onOff(r.cfg.parallax),

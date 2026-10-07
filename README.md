@@ -25,7 +25,7 @@
 
 ---
 
-A parameterized symmetric cipher construction library for Go that suppresses hash output under passive observation through independent barrier mechanisms: **noise insertion** (a random container filled by `internal/drbg` — AES-CTR or ChaCha20 seeded per call from CSPRNG — makes hash output unobservable), **encoding ambiguity** (secret rotation yields 7^P unverifiable configurations that survive CCA), and the **Interlocked Barrier** (the composite pair of the **Rank Barrier** — a per-chunk PRF-keyed 48-bit permutation over three regions with a per-chunk mask space of ≈ 2^70.20 balanced partitions executed in ~3 cycles in constant time via BMI2 PEXTQ/PDEPQ — and the **Pixel Barrier** — per-pixel channel XOR masking, rotation, and noise insertion). 8-seed isolation ensures compromise of any one domain provides zero information about the others.
+A parameterized symmetric cipher construction library for Go that suppresses hash output under passive observation through independent barrier mechanisms: **noise insertion** (a random container filled by `internal/drbg` — CSPRNG-seeded noise from the operator-selected DRBG fill primitive, AES-CTR by default where hardware AES is present and ChaCha20 otherwise — makes hash output unobservable), **encoding ambiguity** (secret rotation yields 7^P unverifiable configurations that survive CCA), and the **Interlocked Barrier** (the composite pair of the **Rank Barrier** — a per-chunk PRF-keyed 48-bit permutation over three regions with a per-chunk mask space of ≈ 2^70.20 balanced partitions executed in ~3 cycles in constant time via BMI2 PEXTQ/PDEPQ — and the **Pixel Barrier** — per-pixel channel XOR masking, rotation, and noise insertion). 8-seed isolation ensures compromise of any one domain provides zero information about the others.
 
 **Ambiguity-Based Security.** The number of observation-consistent **configurations** grows with data size — a property orthogonal to Shannon's key-entropy bound (distinct from Shannon's perfect-secrecy relationship on plaintext entropy; not a violation of it). The Interlocked Barrier (Rank Barrier + Pixel Barrier) converts known-plaintext cryptanalysis from a computational-hardness problem into an instance-formulation one under the PRF assumption: a known-plaintext crib reaches neither a fixed lane position (Rank Barrier) nor an observable byte (Pixel Barrier).
 
@@ -577,6 +577,7 @@ Any field left at its zero value defers to the resolved profile's default; a nil
 | `ChunkSize` | `int > 0` bytes (or 0 = default) | Streaming chunk-size budget; default `itb.DefaultChunkSize` = 16 MiB. |
 | `MacName` | `"kmac256"` \| `"hmac-sha256"` \| `"hmac-blake3"` | The shipped MACs (see `macs/registry.go`). Empty = profile default. Non-MAC profiles ignore. |
 | `TagStubSize` | `int` in `[16, 64]` (or 0 = default) | Overrides the profile's `TagStubSize` — the No MAC envelope's DRBG dummy stub reservation, pinned to a paired MAC counterpart's tag length for wire-shape indistinguishability. Resolution: Opts > Profile > MacName auto-probe > 32-byte default (every shipped MAC's tag length). The floor matches the `macs.Register` TagSize ≥ 16 contract; the ceiling covers the longest realistic MAC tag. Meaningful for No MAC profiles paired with a custom-tag-size MAC counterpart. |
+| `DRBG` | `"aesitb128"` \| `"csprng"` \| a keystream-eligible primitive name (or `""` = default) | Overrides the profile's `DRBG` — the primitive that fills the container carrier noise and the lane residue on the encrypt path. Empty = the auto tier (AES-CTR where the host has hardware AES, ChaCha20 otherwise). The resolved name travels in the blob's recipe so `Load` reproduces it; an unknown name is `ErrRecipePrimitiveUnknown` at `Init`. The decrypt path never consults it. |
 | `InnerHash` | one of the shipped primitive names below | Empty = profile default. |
 | `MixedHashes` | `[8]string`, all slots one of the shipped primitive names below | Zero-value array (all slots empty) = profile default. When any slot is non-empty, all 8 must be non-empty, every entry's primitive width must equal the effective width, and the override wins over `InnerHash` (both dispatch paths are mutually exclusive). Slot ordering: `[0]noise [1]lock [2]data1 [3]data2 [4]data3 [5]start1 [6]start2 [7]start3`. |
 | `KeyBits` | multiple of the primitive's native hash width (128 / 256 / 512), in `[512, 2048]`, or `0` = default | Common values `512` / `1024` / `2048`; any intermediate multiple in the range is accepted per the seed factory contract (640 / 768 / 896 / 1152 / 1280 / 1536 / 1792 for width-128 primitives, and the corresponding multiples for width-256 / width-512). Default `1024`. |
@@ -592,11 +593,18 @@ Any field left at its zero value defers to the resolved profile's default; a nil
 aesitb128  areion256  areion512  blake2b256  blake2b512  blake2s  blake3  aescmac  siphash24  chacha20
 ```
 
+**DRBG fill names.** `DRBG` accepts the same alphabet plus `csprng` (empty selects the auto tier); an unknown name is refused at `Register`, `Init` and `Load`, never a silent fallback:
+
+```
+aesitb128  areion256  areion512  blake2b256  blake2b512  blake2s  blake3  aescmac  siphash24  chacha20  csprng
+```
+
 **Name reuse across layers.** The string `"aescmac"` names two different primitives depending on which field it appears in:
 
 - `InnerHash: "aescmac"` → **AES-CMAC** (the MAC-family primitive, `hashes/registry.go`).
 - `OuterCipher: "aescmac"` → **AES-128-CTR** (the stream cipher).
 - `ParallaxPalette: []string{"aescmac", ... }` → **AES-128-CTR** (the stream cipher).
+- `DRBG: "aescmac"` → **AES-128-CTR** (the stream cipher, as the DRBG fill).
 
 A `blake3` `InnerHash` and a `blake3` `OuterCipher` denote the same construction — a BLAKE3 keystream. Users who reach for AES on the outer cipher path get AES-128-CTR whether they type `"aescmac"` or use the `hashes.CipherAES128CTR` constant.
 
@@ -626,7 +634,7 @@ Name rules for `Register`:
 - Must not start with one of the reserved shipped-catalogue prefixes: `singlemsg-`, `streaming-`, `blob-`. User profiles pick a distinct prefix (organisation tag, application name).
 - Must not already be registered; re-registration returns `triple.ErrProfileExists`.
 
-Every `triple.Profile` field is validated fail-fast before the registration lands: `Mode` in the shipped set (`singlemsg-mac` / `singlemsg-nomac` / `streaming-aead` / `streaming-noaead` / `blob-only`); `Width` in {128, 256, 512}; `InnerHash` resolves via `hashes.Find` to a Spec whose width matches `Width` (single-primitive dispatch), OR `MixedHashes` populates all 8 slots with primitives whose width matches `Width` and `InnerHash` is empty (mixed-primitive dispatch — the two paths are mutually exclusive); `KeyBits` a positive multiple of `Width`; `MacName` (when non-empty) in `macs.Registry`; `OuterCipher` in `wrapper.CipherNames` when `Wrapper` is true; every `ParallaxPalette` entry in `wrapper.CipherNames` and the palette size in [`parallax.MinPaletteSize`, `parallax.MaxPaletteSize`] when `Parallax` is true; `ChunkSize` / `ParallaxSegmentSize` non-negative (zero defers to the compile-in default); `TagStubSize` zero or in [16, 64]. The same field rules are re-applied by `Load` to the recipe carried in a blob (a failure surfaces as `triple.ErrBlobMalformedRecipe`). `Register` is safe under concurrent invocation with itself, `Init`, `Lookup`, and `Profiles`.
+Every `triple.Profile` field is validated fail-fast before the registration lands: `Mode` in the shipped set (`singlemsg-mac` / `singlemsg-nomac` / `streaming-aead` / `streaming-noaead` / `blob-only`); `Width` in {128, 256, 512}; `InnerHash` resolves via `hashes.Find` to a Spec whose width matches `Width` (single-primitive dispatch), OR `MixedHashes` populates all 8 slots with primitives whose width matches `Width` and `InnerHash` is empty (mixed-primitive dispatch — the two paths are mutually exclusive); `KeyBits` a positive multiple of `Width`; `MacName` (when non-empty) in `macs.Registry`; `OuterCipher` in `wrapper.CipherNames` when `Wrapper` is true; every `ParallaxPalette` entry in `wrapper.CipherNames` and the palette size in [`parallax.MinPaletteSize`, `parallax.MaxPaletteSize`] when `Parallax` is true; `ChunkSize` / `ParallaxSegmentSize` non-negative (zero defers to the compile-in default); `TagStubSize` zero or in [16, 64]; `DRBG` empty or the name of an installed DRBG fill primitive. The same field rules are re-applied by `Load` to the recipe carried in a blob (a failure surfaces as `triple.ErrBlobMalformedRecipe`). `Register` is safe under concurrent invocation with itself, `Init`, `Lookup`, and `Profiles`.
 
 `triple.Profile` encodes to and decodes from JSON (`MarshalJSON` / `UnmarshalJSON`) under one documented key set — the same codec that carries the record inside the blob, that `Inspect` returns, and that the C ABI `ITB_Triple_Register` / `ITB_Triple_Inspect` entries exchange as their JSON payload.
 
@@ -759,6 +767,7 @@ Selected `*itb.Config` fields:
 | `MaxWorkers` | `int` | `runtime.NumCPU` | Goroutine concurrency cap (`1` .. `256`). |
 | `Mode` | `int` | `1` (per-region) | Container floor sizing mode: `0` or `1` = Mode 1 per-region (default); `2` = Mode 2 per-container (network tunnel / VPN compact mode). Out-of-range values return `ErrBlobModeMismatch`. |
 | `TagStubSize` | `int` | `32` | No MAC DRBG dummy stub reservation in bytes (`0` or `16` .. `64`). |
+| `DRBG` | `string` | `""` (auto tier) | DRBG fill primitive: `""` = AES-CTR where the host has hardware AES, ChaCha20 otherwise; `"aesitb128"` = the AES-ITB noise filler; `"csprng"` = unexpanded `crypto/rand.Read`; or a keystream-eligible registry primitive by name (installed by package `ctr`). An unknown name is rejected by every `Cfg` encrypt entry point and `Export3Cfg`; decrypt never consults it. |
 
 The same `Mode` setting governs seed export options (`itb.Blob128Opts`, `itb.Blob256Opts`, `itb.Blob512Opts`) on `Export3Cfg`.
 

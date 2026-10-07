@@ -20,6 +20,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/everanium/itb/hashes"
+	"github.com/everanium/itb/internal/drbg"
 	"github.com/everanium/itb/macs"
 	"github.com/everanium/itb/parallax"
 	"github.com/everanium/itb/triple"
@@ -34,6 +35,7 @@ type genblobOpts struct {
 	nonceBits   int
 	barrierFill int
 	blobMode    int
+	drbg        string
 	mac         string
 	palette     []string
 	segment     int
@@ -99,6 +101,10 @@ Flag semantics:
     -w <cipher>   Wrapper outer cipher — single name from ciphers.
     --blob-mode 1|2   Container floor sizing mode (default 1 =
                   per-region; 2 = per-container).
+    --drbg <name> DRBG fill primitive (see itb3 drbgs); omitted =
+                  the auto tier (AES-CTR where the host has hardware
+                  AES, ChaCha20 otherwise). The choice travels in the
+                  blob's recipe.
     -o <file>     Output file (created with mode 0600). Omitted → stdout.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			set := genblobFlagsSet{
@@ -121,6 +127,7 @@ Flag semantics:
 	f.IntVarP(&opts.segment, "segment", "s", parallax.DefaultSegmentSize, "parallax segment size (positive, coprime-504)")
 	f.StringVarP(&opts.wrapper, "wrapper", "w", "", "wrapper outer cipher")
 	f.IntVar(&opts.blobMode, "blob-mode", 1, "container floor sizing mode — 1 (per-region, default) | 2 (per-container)")
+	f.StringVar(&opts.drbg, "drbg", "", "DRBG fill primitive name (see itb3 drbgs); empty = auto tier")
 	f.StringVarP(&opts.output, "output", "o", "", "output blob file (default stdout)")
 	return cmd
 }
@@ -131,6 +138,9 @@ Flag semantics:
 func runGenblob(modeArg string, hashArg string, opts genblobOpts, set genblobFlagsSet) error {
 	if opts.blobMode != 1 && opts.blobMode != 2 {
 		return usageErr("genblob", "--blob-mode must be 1 (per-region) or 2 (per-container), got %d", opts.blobMode)
+	}
+	if !drbg.Known(opts.drbg) {
+		return usageErr("genblob", "--drbg must name a DRBG fill primitive (see itb3 drbgs), got %q", opts.drbg)
 	}
 	mode, err := parseCLIMode(modeArg)
 	if err != nil {
@@ -227,8 +237,10 @@ func runGenblob(modeArg string, hashArg string, opts genblobOpts, set genblobFla
 		chunkBytes = opts.chunkSizeMB * 1024 * 1024
 	}
 
-	// Every structural field rides on the Profile record; only the
-	// two Config-level knobs (NonceBits / BarrierFill) go through Opts.
+	// Every structural field rides on the Profile record; the two
+	// Config-level knobs (NonceBits / BarrierFill) and the DRBG fill
+	// primitive go through Opts, the latter folded into the record by
+	// Init.
 	prof := triple.Profile{
 		Mode:                mode,
 		Width:               width,
@@ -251,6 +263,7 @@ func runGenblob(modeArg string, hashArg string, opts genblobOpts, set genblobFla
 	pipe, blob, err := triple.Init(name, triple.Opts{
 		NonceBits:   opts.nonceBits,
 		BarrierFill: opts.barrierFill,
+		DRBG:        opts.drbg,
 	})
 	if err != nil {
 		return runtimeErr("genblob", "triple.Init: %v", err)

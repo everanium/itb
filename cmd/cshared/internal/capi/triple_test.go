@@ -832,3 +832,78 @@ func TestTripleInspectCarriesContainerModeCapi(t *testing.T) {
 		t.Fatalf("LastError %q does not name ContainerMode", LastError())
 	}
 }
+
+// TestTripleDRBGRecipeCapi pins the DRBG fill primitive as a recipe
+// key at the FFI boundary — the inverse of the inspection-only
+// container_mode: an Init under drbg=blake3 writes "drbg":"blake3"
+// into the Inspect JSON, and the inspected record (inspection-only
+// fields stripped) re-registers under a new name with StatusOK and
+// surfaces the key through Lookup; drbg=nope is
+// StatusRecipePrimitiveUnknown at Init and at Load, with the token in
+// LastError.
+func TestTripleDRBGRecipeCapi(t *testing.T) {
+	blobBuf := make([]byte, 1<<15)
+	id, blobLen, st := TripleInit(triple.ProfileSingleMsgTripleMACV1, "drbg=blake3", blobBuf)
+	if st != StatusOK {
+		t.Fatalf("TripleInit(drbg=blake3): %v (%s)", st, LastError())
+	}
+	defer FreeTriple(id)
+	blob := blobBuf[:blobLen]
+
+	out := make([]byte, 4096)
+	n, st := TripleInspect(blob, out)
+	if st != StatusOK {
+		t.Fatalf("TripleInspect: %v (%s)", st, LastError())
+	}
+	if !strings.Contains(string(out[:n]), `"drbg":"blake3"`) {
+		t.Fatalf("Inspect JSON lacks the drbg key: %s", out[:n])
+	}
+	var prof triple.Profile
+	if err := json.Unmarshal(out[:n], &prof); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	prof.Name, prof.NonceBits, prof.BarrierFill, prof.ContainerMode = "", 0, 0, 0
+	payload, err := json.Marshal(prof)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if st := TripleRegister("capi-test-drbg-copy", string(payload)); st != StatusOK {
+		t.Fatalf("TripleRegister(drbg=blake3 record): %v, want StatusOK (%s)", st, LastError())
+	}
+	n, st = TripleLookup("capi-test-drbg-copy", out)
+	if st != StatusOK || !strings.Contains(string(out[:n]), `"drbg":"blake3"`) {
+		t.Fatalf("TripleLookup: %v / %s", st, out[:n])
+	}
+
+	// The reopened handle encrypts and the sender's handle decrypts.
+	rID, st := TripleLoad(blob)
+	if st != StatusOK {
+		t.Fatalf("TripleLoad: %v (%s)", st, LastError())
+	}
+	defer FreeTriple(rID)
+	plain := []byte("drbg recipe round trip")
+	wire := make([]byte, 1<<16)
+	wn, st := TripleEncryptMessage(rID, plain, wire)
+	if st != StatusOK {
+		t.Fatalf("TripleEncryptMessage: %v (%s)", st, LastError())
+	}
+	got := make([]byte, 1<<16)
+	gn, st := TripleDecryptMessage(id, wire[:wn], got)
+	if st != StatusOK || string(got[:gn]) != string(plain) {
+		t.Fatalf("TripleDecryptMessage: %v (%s)", st, LastError())
+	}
+
+	if _, _, st := TripleInit(triple.ProfileSingleMsgTripleMACV1, "drbg=nope", blobBuf); st != StatusRecipePrimitiveUnknown {
+		t.Fatalf("TripleInit(drbg=nope): %v, want StatusRecipePrimitiveUnknown (%s)", st, LastError())
+	}
+	if !strings.Contains(LastError(), `"nope"`) {
+		t.Fatalf("LastError %q does not name the token", LastError())
+	}
+	unknown := tripleEditRecord(t, blob, func(p map[string]any) { p["drbg"] = "nope" })
+	if _, st := TripleLoad(unknown); st != StatusRecipePrimitiveUnknown {
+		t.Fatalf("TripleLoad(drbg=nope): %v, want StatusRecipePrimitiveUnknown (%s)", st, LastError())
+	}
+	if !strings.Contains(LastError(), `"nope"`) {
+		t.Fatalf("LastError %q does not name the token", LastError())
+	}
+}

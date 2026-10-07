@@ -57,6 +57,7 @@ state beyond the blob file the caller chooses to write.`,
 	root.AddCommand(newHashesCmd())
 	root.AddCommand(newMacsCmd())
 	root.AddCommand(newCiphersCmd())
+	root.AddCommand(newDrbgsCmd())
 	root.AddCommand(newModesCmd())
 	root.AddCommand(newProfilesCmd())
 	root.AddCommand(newCatalogCmd())

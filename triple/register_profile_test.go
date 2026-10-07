@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/everanium/itb"
+	"github.com/everanium/itb/internal/drbg"
 	"github.com/everanium/itb/parallax"
 )
 
@@ -452,5 +453,57 @@ func TestRegisterRejectsOverlongStrings(t *testing.T) {
 				t.Fatalf("Register %s: got %v, want error mentioning \"exceeds hashes.MaxNameLen\"", c.label, err)
 			}
 		})
+	}
+}
+
+// TestRegisterDRBGField pins the DRBG recipe field on the registry
+// side: a registered profile stating a fill primitive is accepted,
+// Lookup surfaces it, Init folds it into the blob, and an Opts
+// override wins over the profile value; an unknown name is refused at
+// Register.
+func TestRegisterDRBGField(t *testing.T) {
+	name := "userns-drbg-profile-v1"
+	prof := baseValidProfile()
+	prof.Mode = modeSingleMsgNoMAC
+	prof.MacName = ""
+	prof.DRBG = drbg.NameCSPRNG
+	if err := Register(name, prof); err != nil && !errors.Is(err, ErrProfileExists) {
+		t.Fatalf("Register: %v", err)
+	}
+	got, err := Lookup(name)
+	if err != nil || got.DRBG != drbg.NameCSPRNG {
+		t.Fatalf("Lookup: %v / DRBG %q", err, got.DRBG)
+	}
+
+	sender, blob, err := Init(name, Opts{})
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	defer sender.Close()
+	if sender.cfg.DRBG != drbg.NameCSPRNG {
+		t.Fatalf("profile-driven cfg.DRBG = %q", sender.cfg.DRBG)
+	}
+	rec, err := Inspect(blob)
+	if err != nil || rec.DRBG != drbg.NameCSPRNG {
+		t.Fatalf("Inspect: %v / DRBG %q", err, rec.DRBG)
+	}
+
+	over, overBlob, err := Init(name, Opts{DRBG: drbg.NameAESITB128})
+	if err != nil {
+		t.Fatalf("Init(Opts override): %v", err)
+	}
+	defer over.Close()
+	if over.cfg.DRBG != drbg.NameAESITB128 {
+		t.Fatalf("Opts override cfg.DRBG = %q, want aesitb128", over.cfg.DRBG)
+	}
+	rec, err = Inspect(overBlob)
+	if err != nil || rec.DRBG != drbg.NameAESITB128 {
+		t.Fatalf("Inspect(override): %v / DRBG %q", err, rec.DRBG)
+	}
+
+	bad := baseValidProfile()
+	bad.DRBG = "nosuchdrbg"
+	if err := Register("userns-drbg-bad-v1", bad); err == nil {
+		t.Fatal("Register accepted an unknown DRBG name")
 	}
 }

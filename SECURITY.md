@@ -187,7 +187,7 @@ Implemented: Inside (full capacity) — every shipped MAC Authenticated Low-Leve
 | Interlock combinadic unrank index-select timing (DPA/SPA class) | Oscilloscope on CPU die, > 10 GHz, lab access | Same class as DPA on any cipher | Constant-time VPERMT2Q / VPERMD select over precomputed C(p, k) table, no software side-channel |
 | rotateBits7 shift timing (DPA/SPA class) | Oscilloscope on CPU die, > 10 GHz, lab access | Same class as DPA on any cipher | Register-only, no software side-channel |
 | Container size metadata | Network observation | Metadata only | Inherent to all ciphers, no crypto advantage |
-| Non-DRBG container | Deployer misconfiguration | Degrades barrier | `internal/drbg` (CSPRNG-seeded) mandatory, non-DRBG container source unsupported |
+| Non-DRBG container | Deployer misconfiguration | Degrades barrier | `internal/drbg` (CSPRNG-seeded, or `crypto/rand` direct under `csprng`) mandatory, container source outside it unsupported |
 | COBS decode truncation | Wrong seed / tampered data | None | Core ITB: returns raw decoded bytes (plausible deniability, no oracle); MAC Authenticated: MAC rejects before COBS decode |
 | Bit-flip false null (DoS) | Data bit modification | None (with MAC) | MAC verified before null search; noise flips do not affect decrypted data |
 | CGO AVX2 side-channel | Co-located attacker | None (see below) | All AVX2 ops constant-time; identical to Pure Go |

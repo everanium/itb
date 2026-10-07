@@ -82,6 +82,7 @@ func TestParseTripleOptsKeys(t *testing.T) {
 		"innerHash=blake3",
 		"innerHashes=a,b,c,d,e,f,g,h",
 		"outerCipher=chacha20",
+		"drbg=csprng",
 		"parallaxPalette=blake2s,blake3",
 	}, "&")
 	opts, err = parseTripleOpts(query)
@@ -101,7 +102,7 @@ func TestParseTripleOptsKeys(t *testing.T) {
 		opts.ChunkSize != 65536 || opts.KeyBits != 1024 || opts.ParallaxSegmentSize != 17 {
 		t.Fatalf("numeric opts mismatch: %+v", opts)
 	}
-	if opts.MacName != "keccak800" || opts.InnerHash != "blake3" || opts.OuterCipher != "chacha20" {
+	if opts.MacName != "keccak800" || opts.InnerHash != "blake3" || opts.OuterCipher != "chacha20" || opts.DRBG != "csprng" {
 		t.Fatalf("name opts mismatch: %+v", opts)
 	}
 	if opts.MixedHashes != [8]string{"a", "b", "c", "d", "e", "f", "g", "h"} {

@@ -9,6 +9,7 @@ import (
 
 	"github.com/everanium/itb"
 	"github.com/everanium/itb/hashes"
+	"github.com/everanium/itb/internal/drbg"
 	"github.com/everanium/itb/macs"
 )
 
@@ -264,6 +265,9 @@ func checkRecipeProfile(prof Profile) error {
 	}
 	if prof.Wrapper && prof.OuterCipher != "" && !isKnownWrapperCipher(prof.OuterCipher) {
 		return fmt.Errorf("%w: outer %q", ErrRecipePrimitiveUnknown, prof.OuterCipher)
+	}
+	if prof.DRBG != "" && !drbg.Known(prof.DRBG) {
+		return fmt.Errorf("%w: drbg %q", ErrRecipePrimitiveUnknown, prof.DRBG)
 	}
 	if prof.Parallax {
 		for i, entry := range prof.ParallaxPalette {

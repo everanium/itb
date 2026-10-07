@@ -65,6 +65,7 @@
 //	nonce_bits     NonceBits            omitted when 0
 //	barrier_fill   BarrierFill          omitted when 0
 //	container_mode ContainerMode        omitted when 0
+//	drbg           DRBG                 omitted when empty (auto tier)
 //	mac            MacName              omitted when empty (No MAC)
 //	tagstub        TagStubSize          omitted when 0
 //	chunk          ChunkSize            omitted when 0

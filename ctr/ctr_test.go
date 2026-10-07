@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/everanium/itb/hashes"
+	"github.com/everanium/itb/internal/drbg"
 	"github.com/everanium/itb/internal/hashprf"
 )
 
@@ -279,5 +280,35 @@ func TestInnerPRFOnlyRejectedByDispatch(t *testing.T) {
 		if _, err := New(info.Name, nil, nil); err == nil {
 			t.Errorf("New(%q): inner-PRF-only primitive accepted by ctr dispatch", info.Name)
 		}
+	}
+}
+
+// TestDRBGArmsInstalled confirms the package init installs one DRBG
+// fill arm per keystream-eligible registry primitive, in registry
+// order between the built-in aesitb128 and csprng tokens, and that
+// every installed arm fills.
+func TestDRBGArmsInstalled(t *testing.T) {
+	names := drbg.Names()
+	keystream := hashes.KeystreamNames()
+	if len(names) < len(keystream)+2 || names[0] != drbg.NameAESITB128 || names[len(names)-1] != drbg.NameCSPRNG {
+		t.Fatalf("drbg.Names() = %v", names)
+	}
+	for i, name := range keystream {
+		if names[1+i] != name {
+			t.Fatalf("drbg.Names()[%d] = %q, want %q", 1+i, names[1+i], name)
+		}
+		buf := make([]byte, 4096)
+		if err := drbg.FillWith(name, buf); err != nil {
+			t.Fatalf("FillWith(%q): %v", name, err)
+		}
+		if bytes.Equal(buf, make([]byte, len(buf))) {
+			t.Fatalf("FillWith(%q) left the buffer all-zero", name)
+		}
+	}
+	if drbg.Known(hashes.CipherAESITB128) && func() bool {
+		_, err := New(hashes.CipherAESITB128, make([]byte, 16), make([]byte, 16))
+		return err == nil
+	}() {
+		t.Fatal("aesitb128 reached the ctr constructor")
 	}
 }

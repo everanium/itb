@@ -86,6 +86,11 @@ func renderInspect(prof triple.Profile, blobLen int, out io.Writer) {
 	default:
 		fmt.Fprintf(out, "container_mode: %d\n", prof.ContainerMode)
 	}
+	if prof.DRBG != "" {
+		fmt.Fprintf(out, "drbg: %s\n", prof.DRBG)
+	} else {
+		fmt.Fprintln(out, "drbg: (default)")
+	}
 	if prof.MacName != "" {
 		fmt.Fprintf(out, "mac_name: %s\n", prof.MacName)
 	} else {

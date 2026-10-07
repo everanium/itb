@@ -34,7 +34,8 @@
 // --nonce-bits / --chunk-size / --barrier-fill sweep the corresponding
 // [github.com/everanium/itb/triple.Opts] knobs; --blob-mode selects the
 // container floor sizing mode (1 per-region, 2 per-container) on the
-// session blob before the pipeline is opened; --gomaxprocs pins CPU
+// session blob before the pipeline is opened; --drbg names the DRBG
+// fill primitive (empty = the profile's auto tier); --gomaxprocs pins CPU
 // parallelism; --payload-mode swaps the plaintext content policy
 // (rotating CSPRNG refills or degenerate byte patterns — pattern modes
 // trade the cross-worker buffer distinctness above for content
@@ -84,6 +85,7 @@ import (
 
 	itb "github.com/everanium/itb"
 	"github.com/everanium/itb/hashes"
+	"github.com/everanium/itb/internal/drbg"
 	"github.com/everanium/itb/macs"
 	"github.com/everanium/itb/parallax"
 	"github.com/everanium/itb/triple"
@@ -210,6 +212,7 @@ type config struct {
 	blobMode       int    // container floor sizing mode: 1 (per-region, default) | 2 (per-container)
 	chunkSize      int64  // 0 = profile default
 	barrierFill    int    // 0 = profile default
+	drbg           string // DRBG fill primitive; "" = profile default (auto tier)
 	gomaxprocs     int    // 0 = inherit from the environment
 	rekeyEvery     int64  // per-worker iterations between Rekey calls; 0 = never
 	blobCycleEvery int64  // per-worker iterations between blob reopen cycles; 0 = never
@@ -374,6 +377,9 @@ func run() int {
 	if cfg.blobMode != 1 {
 		overridesLine += fmt.Sprintf(" blob-mode=%d", cfg.blobMode)
 	}
+	if cfg.drbg != "" {
+		overridesLine += fmt.Sprintf(" drbg=%s", cfg.drbg)
+	}
 	logf("%s", overridesLine)
 	logf("policy: microbatch-tiers=%s hashpool-starters=%s",
 		policyLabel(os.Getenv("ITB_MICROBATCH_TIERS")), policyLabel(os.Getenv("ITB_HASHPOOL_STARTERS")))
@@ -392,6 +398,7 @@ func run() int {
 		KeyBits:      cfg.keyBits,
 		NonceBits:    cfg.nonceBits,
 		BarrierFill:  cfg.barrierFill,
+		DRBG:         cfg.drbg,
 		ChunkSize:    int(cfg.chunkSize),
 	}
 	r.streamProfile = triple.ProfileStreamingAEADTripleMACV1
@@ -628,6 +635,7 @@ func parseFlags(argv []string) (config, error) {
 		blobMode       = fs.Int("blob-mode", 1, "container floor sizing mode: 1 (per-region, default) | 2 (per-container)")
 		chunkSizeStr   = fs.String("chunk-size", "0", "streaming chunk-size budget (e.g. 4MB); 0 = profile default; inert for pure message shape")
 		barrierFill    = fs.Int("barrier-fill", 0, "DRBG barrier fill margin: 1 | 2 | 4 | 8 | 16 | 32; 0 = profile default (1)")
+		drbgName       = fs.String("drbg", "", "DRBG fill primitive name (see itb3 drbgs); empty = profile default (auto tier)")
 		gomaxprocs     = fs.Int("gomaxprocs", 0, "Go runtime GOMAXPROCS override; 0 = inherit from the environment")
 		rekeyEvery     = fs.Int64("rekey-every", 0, "rotate the parallax + wrapper masters via Rekey every N iterations per worker; 0 = never")
 		blobCycleEvery = fs.Int64("blob-cycle-every", 0, "reopen each pipeline from its session blob every N iterations per worker; 0 = never")
@@ -656,6 +664,7 @@ func parseFlags(argv []string) (config, error) {
 		nonceBits:      *nonceBits,
 		blobMode:       *blobMode,
 		barrierFill:    *barrierFill,
+		drbg:           *drbgName,
 		gomaxprocs:     *gomaxprocs,
 		rekeyEvery:     *rekeyEvery,
 		blobCycleEvery: *blobCycleEvery,
@@ -750,6 +759,9 @@ func parseFlags(argv []string) (config, error) {
 	default:
 		return config{}, fmt.Errorf("--barrier-fill must be 1 | 2 | 4 | 8 | 16 | 32 (or 0 = profile default), got %d", cfg.barrierFill)
 	}
+	if !drbg.Known(cfg.drbg) {
+		return config{}, fmt.Errorf("--drbg must name a DRBG fill primitive (see itb3 drbgs), got %q", cfg.drbg)
+	}
 	cfg.chunkSize, err = parseSize(*chunkSizeStr)
 	if err != nil {
 		return config{}, fmt.Errorf("--chunk-size: %v", err)
@@ -799,6 +811,9 @@ func logPipelineInitialised(profile string, blob []byte) {
 		rec.ChunkSize, dash(rec.MacName), onOff(rec.Parallax), onOff(rec.Wrapper))
 	if rec.ContainerMode == 2 {
 		initLine += fmt.Sprintf(" container-mode=%d", rec.ContainerMode)
+	}
+	if rec.DRBG != "" {
+		initLine += fmt.Sprintf(" drbg=%s", rec.DRBG)
 	}
 	logf("%s", initLine)
 }

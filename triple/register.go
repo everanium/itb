@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/everanium/itb/hashes"
+	"github.com/everanium/itb/internal/drbg"
 	"github.com/everanium/itb/macs"
 	"github.com/everanium/itb/parallax"
 	"github.com/everanium/itb/wrapper"
@@ -108,6 +109,9 @@ var validProfileModes = map[string]struct{}{
 //     32-byte default) or a value in [16, 64] — the floor matches the
 //     macs.Register TagSize >= 16 contract, the ceiling covers the
 //     longest realistic MAC tag; see [Profile.TagStubSize].
+//   - DRBG, when non-empty, names an installed DRBG fill primitive
+//     ("aesitb128", "csprng", or a keystream-eligible registry
+//     primitive by its registry name).
 //   - OuterCipher is validated only when Wrapper is true; must be
 //     a recognised entry in
 //     [github.com/everanium/itb/wrapper.CipherNames].
@@ -255,6 +259,16 @@ func validateProfileFields(p Profile) error {
 	if p.ContainerMode != 0 {
 		return fmt.Errorf("triple: Register: ContainerMode must be 0 in a Register-time profile (got %d); container mode is set via blob options, not in the profile literal — the field is populated by Inspect / Load from the blob's inner mode field",
 			p.ContainerMode)
+	}
+	if p.DRBG != "" {
+		if len(p.DRBG) > hashes.MaxNameLen {
+			return fmt.Errorf("triple: Register: DRBG %q length %d exceeds hashes.MaxNameLen=%d",
+				p.DRBG, len(p.DRBG), hashes.MaxNameLen)
+		}
+		if !drbg.Known(p.DRBG) {
+			return fmt.Errorf("triple: Register: DRBG %q not an installed DRBG fill primitive (want one of %v)",
+				p.DRBG, drbg.Names())
+		}
 	}
 	if p.MacName != "" {
 		if len(p.MacName) > hashes.MaxNameLen {
@@ -433,6 +447,10 @@ func validateOptsStrings(caller string, opts Opts) error {
 		return fmt.Errorf("triple: %s: opts.OuterCipher %q length %d exceeds hashes.MaxNameLen=%d",
 			caller, opts.OuterCipher, len(opts.OuterCipher), hashes.MaxNameLen)
 	}
+	if len(opts.DRBG) > hashes.MaxNameLen {
+		return fmt.Errorf("triple: %s: opts.DRBG %q length %d exceeds hashes.MaxNameLen=%d",
+			caller, opts.DRBG, len(opts.DRBG), hashes.MaxNameLen)
+	}
 	for i, name := range opts.MixedHashes {
 		if len(name) > hashes.MaxNameLen {
 			return fmt.Errorf("triple: %s: opts.MixedHashes[%d] %q length %d exceeds hashes.MaxNameLen=%d",
@@ -493,6 +511,25 @@ func validateResolvedChunkSize(caller string, r Profile) error {
 	if r.ChunkSize > parallax.MaxChunkSize {
 		return fmt.Errorf("triple: %s: resolved chunkSize=%d must be in [1, %d]",
 			caller, r.ChunkSize, parallax.MaxChunkSize)
+	}
+	return nil
+}
+
+// validateResolvedDRBG enforces membership of the resolved
+// [Profile.DRBG] in the installed DRBG fill set. The empty string is
+// the auto-tier sentinel and short-circuits. No existing hook
+// validates a resolved string field at Init ([Profile.OuterCipher] and
+// [Profile.MacName] fail inside their constructors), so the fail-loud
+// check for an explicit fill choice is made here, wrapping
+// [ErrRecipePrimitiveUnknown] — the sentinel [checkRecipeProfile]
+// reports at Load — so the two construction paths map to the same
+// status at the FFI boundary.
+func validateResolvedDRBG(caller string, r Profile) error {
+	if r.DRBG == "" {
+		return nil
+	}
+	if !drbg.Known(r.DRBG) {
+		return fmt.Errorf("%w: drbg %q (%s; want one of %v)", ErrRecipePrimitiveUnknown, r.DRBG, caller, drbg.Names())
 	}
 	return nil
 }

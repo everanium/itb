@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/everanium/itb/hashes"
+	"github.com/everanium/itb/internal/drbg"
 	"github.com/everanium/itb/triple"
 )
 
@@ -268,5 +269,111 @@ func TestGenblobRejectsBlobModeOutOfRange(t *testing.T) {
 		if !errors.As(err, &ce) || ce.code != exitUsage {
 			t.Fatalf("--blob-mode %d: got %v, want exit %d", mode, err, exitUsage)
 		}
+	}
+}
+
+// TestGenblobDRBGFlag pins the --drbg surface: the chosen fill
+// primitive lands in the blob's recipe and on the inspect line, a
+// blob without the key inspects as "(default)", every listed name
+// encrypts and decrypts under the handle genblob registered, and an
+// unknown name is a usage error raised before any pipeline is built.
+// The <mode>/<hash> pairs are distinct from every other test's so the
+// per-process handle registration does not collide.
+func TestGenblobDRBGFlag(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "csprng.blob")
+	opts := genblobOpts{keyBits: 512, nonceBits: 512, barrierFill: 1, blobMode: 1, drbg: "csprng", output: path}
+	if err := runGenblob("nomac", "siphash24", opts, genblobFlagsSet{}); err != nil {
+		t.Fatalf("runGenblob --drbg csprng: %v", err)
+	}
+	blob, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	prof, err := triple.Inspect(blob)
+	if err != nil {
+		t.Fatalf("Inspect: %v", err)
+	}
+	if prof.DRBG != "csprng" {
+		t.Fatalf("prof.DRBG = %q, want csprng", prof.DRBG)
+	}
+	var buf bytes.Buffer
+	renderInspect(prof, len(blob), &buf)
+	if !strings.Contains(buf.String(), "drbg: csprng\n") {
+		t.Fatalf("inspect output lacks the drbg line:\n%s", buf.String())
+	}
+	pipe, err := triple.LoadF(path)
+	if err != nil {
+		t.Fatalf("LoadF: %v", err)
+	}
+	plain := []byte("itb3 --drbg round trip")
+	wire, err := pipe.EncryptMessage(plain)
+	if err != nil {
+		t.Fatalf("EncryptMessage: %v", err)
+	}
+	got, err := pipe.DecryptMessage(wire)
+	pipe.Close()
+	if err != nil || !bytes.Equal(got, plain) {
+		t.Fatalf("DecryptMessage: %v", err)
+	}
+
+	// Default blob: no key in the recipe, "(default)" on the inspect line.
+	defPath := filepath.Join(dir, "default.blob")
+	defOpts := genblobOpts{keyBits: 512, nonceBits: 512, barrierFill: 1, blobMode: 1, output: defPath}
+	if err := runGenblob("nomac", "chacha20", defOpts, genblobFlagsSet{}); err != nil {
+		t.Fatalf("runGenblob default: %v", err)
+	}
+	defBlob, err := os.ReadFile(defPath)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if bytes.Contains(defBlob, []byte(`"drbg"`)) {
+		t.Fatalf("default blob carries a drbg key")
+	}
+	defProf, err := triple.Inspect(defBlob)
+	if err != nil {
+		t.Fatalf("Inspect default: %v", err)
+	}
+	buf.Reset()
+	renderInspect(defProf, len(defBlob), &buf)
+	if !strings.Contains(buf.String(), "drbg: (default)\n") {
+		t.Fatalf("default inspect output lacks 'drbg: (default)':\n%s", buf.String())
+	}
+
+	// Every listed name encrypts and decrypts under the registered
+	// handle — the same Opts path genblob takes for each --drbg value.
+	names := drbg.Names()
+	if len(names) < 2 || names[0] != "aesitb128" || names[len(names)-1] != "csprng" {
+		t.Fatalf("drbg.Names() = %v", names)
+	}
+	for _, name := range names {
+		p, _, ierr := triple.Init("itb3-nomac-siphash24", triple.Opts{NonceBits: 512, BarrierFill: 1, DRBG: name})
+		if ierr != nil {
+			t.Fatalf("Init(--drbg %s): %v", name, ierr)
+		}
+		if rec, _ := triple.Inspect(p.Save()); rec.DRBG != name {
+			t.Fatalf("%s: recipe carries %q", name, rec.DRBG)
+		}
+		wire, eerr := p.EncryptMessage(plain)
+		if eerr != nil {
+			t.Fatalf("%s: EncryptMessage: %v", name, eerr)
+		}
+		got, derr := p.DecryptMessage(wire)
+		p.Close()
+		if derr != nil || !bytes.Equal(got, plain) {
+			t.Fatalf("%s: DecryptMessage: %v", name, derr)
+		}
+	}
+
+	// Unknown name: usage error (exit 1) before Init — no handle is
+	// registered, so the same pair is reusable below.
+	bad := genblobOpts{keyBits: 512, nonceBits: 512, barrierFill: 1, blobMode: 1, drbg: "invalid"}
+	err = runGenblob("nomac", "aescmac", bad, genblobFlagsSet{})
+	var ce *cliError
+	if !errors.As(err, &ce) || ce.code != exitUsage {
+		t.Fatalf("--drbg invalid: got %v, want exit %d", err, exitUsage)
+	}
+	if _, lerr := triple.Lookup("itb3-nomac-aescmac"); lerr == nil {
+		t.Fatal("usage error registered a handle")
 	}
 }

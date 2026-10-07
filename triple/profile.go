@@ -211,6 +211,20 @@ type Profile struct {
 	// omitted in the blob.
 	ContainerMode int
 
+	// DRBG is the name of the primitive that fills the container
+	// carrier noise and the lane residue on the encrypt path (see
+	// [github.com/everanium/itb.Config.DRBG]). Empty means the auto
+	// tier of the fill package — AES-CTR where the host has hardware
+	// AES, ChaCha20 otherwise — and is what every shipped profile
+	// states; "aesitb128" selects the AES-ITB noise filler, "csprng"
+	// the unexpanded crypto/rand.Read, and the registry name of any
+	// keystream-eligible primitive its counter-mode construction. A
+	// non-empty name is a recipe field: [Register] validates it
+	// against the installed set, [Init] folds [Opts.DRBG] over it, the
+	// blob carries it, and [Load] reproduces it so a stated policy
+	// survives Save / Load / Rekey. The decrypt path never consults it.
+	DRBG string
+
 	// MacName is the MAC primitive name (e.g. "hmac-blake3"). Empty
 	// for No MAC modes; otherwise must resolve via
 	// [github.com/everanium/itb/macs.Find].
@@ -585,6 +599,9 @@ func resolveProfile(prof Profile, opts Opts) Profile {
 	if opts.TagStubSize > 0 {
 		out.TagStubSize = opts.TagStubSize
 	}
+	if opts.DRBG != "" {
+		out.DRBG = opts.DRBG
+	}
 	if opts.OuterCipher != "" {
 		out.OuterCipher = opts.OuterCipher
 	}
@@ -638,6 +655,7 @@ type profileWire struct {
 	NonceBits           int      `json:"nonce_bits,omitempty"`
 	BarrierFill         int      `json:"barrier_fill,omitempty"`
 	ContainerMode       int      `json:"container_mode,omitempty"`
+	DRBG                string   `json:"drbg,omitempty"`
 	MacName             string   `json:"mac,omitempty"`
 	TagStubSize         int      `json:"tagstub,omitempty"`
 	ChunkSize           int      `json:"chunk,omitempty"`
@@ -664,6 +682,7 @@ type profileWire struct {
 //	                                    inner Blob{N}.Globals
 //	barrier_fill   BarrierFill          same shape as nonce_bits
 //	container_mode ContainerMode        same shape as nonce_bits
+//	drbg           DRBG                 omitted when empty (auto tier)
 //	mac            MacName              omitted when empty (No MAC)
 //	tagstub        TagStubSize          omitted when 0
 //	chunk          ChunkSize            omitted when 0
@@ -693,6 +712,7 @@ func (p Profile) MarshalJSON() ([]byte, error) {
 		NonceBits:           p.NonceBits,
 		BarrierFill:         p.BarrierFill,
 		ContainerMode:       p.ContainerMode,
+		DRBG:                p.DRBG,
 		MacName:             p.MacName,
 		TagStubSize:         p.TagStubSize,
 		ChunkSize:           p.ChunkSize,
@@ -746,6 +766,7 @@ func (p *Profile) UnmarshalJSON(data []byte) error {
 		NonceBits:           w.NonceBits,
 		BarrierFill:         w.BarrierFill,
 		ContainerMode:       w.ContainerMode,
+		DRBG:                w.DRBG,
 		MacName:             w.MacName,
 		TagStubSize:         w.TagStubSize,
 		ChunkSize:           w.ChunkSize,

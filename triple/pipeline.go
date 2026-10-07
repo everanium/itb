@@ -144,6 +144,16 @@ type Opts struct {
 	// A zero value defers to the profile default.
 	BarrierFill int
 
+	// DRBG overrides the profile's [Profile.DRBG] — the name of the
+	// primitive that fills the container carrier noise and the lane
+	// residue on the encrypt path. An empty string defers to the
+	// profile default, which for every shipped profile is the auto
+	// tier of the fill package. The resolved value travels in the
+	// blob's record so [Load] reproduces the choice; a name outside
+	// the installed set is refused by [Init] fail-fast with
+	// [ErrRecipePrimitiveUnknown].
+	DRBG string
+
 	// ChunkSize overrides the profile's streaming chunk-size budget
 	// (bytes). A zero value defers to the profile default.
 	ChunkSize int

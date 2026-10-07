@@ -1,10 +1,11 @@
 package main
 
-// Registry-listing subcommands: `hashes`, `macs`, `ciphers`, `modes`,
-// `profiles`, and the unified `catalog` dump. Every list is driven by
-// a runtime query against the shipped registry (`hashes.Registry` /
-// `hashes.FullView()` for every primitive, `hashes.KeystreamNames()`
-// for the outer-cipher-eligible subset, `macs.Registry`, plus
+// Registry-listing subcommands: `hashes`, `macs`, `ciphers`, `drbgs`,
+// `modes`, `profiles`, and the unified `catalog` dump. Every list is
+// driven by a runtime query against the shipped registry
+// (`hashes.Registry` / `hashes.FullView()` for every primitive,
+// `hashes.KeystreamNames()` for the outer-cipher-eligible subset,
+// `macs.Registry`, `drbg.Names()` for the DRBG fill primitives, plus
 // `triple.Profiles()` for the profile catalogue) so the output stays
 // current as the shipped catalogues grow without a CLI code change.
 
@@ -15,6 +16,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/everanium/itb/hashes"
+	"github.com/everanium/itb/internal/drbg"
 	"github.com/everanium/itb/macs"
 	"github.com/everanium/itb/parallax"
 	"github.com/everanium/itb/triple"
@@ -60,6 +62,27 @@ func newCiphersCmd() *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			for _, name := range hashes.KeystreamNames() {
+				fmt.Println(name)
+			}
+			return nil
+		},
+	}
+}
+
+// newDrbgsCmd — `itb3 drbgs` (alias `drbg`).
+func newDrbgsCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:     "drbgs",
+		Aliases: []string{"drbg"},
+		Short:   "List DRBG fill primitives accepted by genblob --drbg (one per line)",
+		Args:    cobra.NoArgs,
+		Long: `Enumerate every name genblob --drbg accepts, one per line to stdout,
+in canonical order: the AES-ITB noise filler, every keystream-eligible
+shipped primitive in registry order, and csprng (crypto/rand with no
+expansion). Omitting --drbg selects the auto tier, which is not a
+listed name.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			for _, name := range drbg.Names() {
 				fmt.Println(name)
 			}
 			return nil
@@ -160,6 +183,7 @@ func printCatalog() {
 	fmt.Printf("ChunkSize:   1-64 MB  (default 16 MiB; used for aead/noaead modes)\n")
 	fmt.Printf("MACs:        %s\n", strings.Join(macNames, ", "))
 	fmt.Printf("Ciphers:     %s\n", strings.Join(cipherNames, ", "))
+	fmt.Printf("DRBG:        %s  (default: auto tier)\n", strings.Join(drbg.Names(), ", "))
 	fmt.Printf("Segments:    coprime-504 positive int (default %d)\n", parallax.DefaultSegmentSize)
 	fmt.Printf("Toggles:     -p (parallax palette), -w (wrapper cipher)\n")
 	fmt.Printf("Profiles:    %s\n", strings.Join(triple.Profiles(), ", "))

@@ -16,6 +16,7 @@ import (
 
 	"github.com/everanium/itb"
 	"github.com/everanium/itb/hashes"
+	"github.com/everanium/itb/internal/drbg"
 	"github.com/everanium/itb/macs"
 	"github.com/everanium/itb/parallax"
 )
@@ -1322,5 +1323,137 @@ func TestInspectDefaultsContainerModeWhenAbsent(t *testing.T) {
 	}
 	if rec.ContainerMode != 1 {
 		t.Fatalf("ContainerMode = %d, want 1", rec.ContainerMode)
+	}
+}
+
+// TestDRBGRecipeRoundTrip pins the DRBG fill primitive as a recipe
+// field: Init with Opts.DRBG writes the "drbg" key into the wrap-layer
+// recipe, Inspect returns it, Load reproduces it into the reopened
+// Pipeline's Config, and Rekey — which re-marshals the resolved record
+// — preserves it. A default blob carries no "drbg" key at all.
+func TestDRBGRecipeRoundTrip(t *testing.T) {
+	pipe, blob, err := Init(ProfileSingleMsgTripleMACV1, Opts{DRBG: drbg.NameCSPRNG})
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	defer pipe.Close()
+	if pipe.cfg.DRBG != drbg.NameCSPRNG {
+		t.Fatalf("Init cfg.DRBG = %q, want csprng", pipe.cfg.DRBG)
+	}
+	var wrap struct {
+		Profile json.RawMessage `json:"p"`
+	}
+	if err := json.Unmarshal(blob, &wrap); err != nil {
+		t.Fatalf("wrap decode: %v", err)
+	}
+	if !bytes.Contains(wrap.Profile, []byte(`"drbg":"csprng"`)) {
+		t.Fatalf("wire recipe does not carry the drbg key: %s", wrap.Profile)
+	}
+	prof, err := Inspect(blob)
+	if err != nil {
+		t.Fatalf("Inspect: %v", err)
+	}
+	if prof.DRBG != drbg.NameCSPRNG {
+		t.Fatalf("Inspect DRBG = %q, want csprng", prof.DRBG)
+	}
+	rx, err := Load(blob)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	defer rx.Close()
+	if rx.cfg.DRBG != drbg.NameCSPRNG {
+		t.Fatalf("Load cfg.DRBG = %q, want csprng", rx.cfg.DRBG)
+	}
+	roundTripMessage(t, pipe, rx)
+
+	rekeyed, err := pipe.Rekey(freshBytes(t, 32), freshBytes(t, 32))
+	if err != nil {
+		t.Fatalf("Rekey: %v", err)
+	}
+	prof, err = Inspect(rekeyed)
+	if err != nil {
+		t.Fatalf("Inspect(rekeyed): %v", err)
+	}
+	if prof.DRBG != drbg.NameCSPRNG {
+		t.Fatalf("Rekey dropped the drbg key: %q", prof.DRBG)
+	}
+
+	// Default blob: no key, Inspect empty, equal to Lookup on the
+	// recipe fields.
+	def, defBlob, err := Init(ProfileSingleMsgTripleMACV1, Opts{})
+	if err != nil {
+		t.Fatalf("Init default: %v", err)
+	}
+	defer def.Close()
+	if bytes.Contains(defBlob, []byte(`"drbg"`)) {
+		t.Fatalf("default blob carries a drbg key: %s", defBlob)
+	}
+	defProf, err := Inspect(defBlob)
+	if err != nil {
+		t.Fatalf("Inspect default: %v", err)
+	}
+	shipped, _ := Lookup(ProfileSingleMsgTripleMACV1)
+	if defProf.DRBG != "" || shipped.DRBG != "" {
+		t.Fatalf("default DRBG: inspect %q, lookup %q, want both empty", defProf.DRBG, shipped.DRBG)
+	}
+}
+
+// TestDRBGLegacyBlobLoadsAsDefault confirms a blob without the drbg
+// key (the shape of every default blob) loads with the auto tier, and
+// that a blob naming an unknown fill primitive is refused by Load with
+// ErrRecipePrimitiveUnknown while Inspect returns the name unchanged.
+func TestDRBGLegacyBlobLoadsAsDefault(t *testing.T) {
+	tx, blob, err := Init(ProfileSingleMsgTripleMACV1, Opts{DRBG: drbg.NameAESITB128})
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	defer tx.Close()
+	legacy := editRecord(t, blob, func(p map[string]any) { delete(p, "drbg") })
+	rx, err := Load(legacy)
+	if err != nil {
+		t.Fatalf("Load(legacy): %v", err)
+	}
+	defer rx.Close()
+	if rx.cfg.DRBG != "" {
+		t.Fatalf("legacy blob cfg.DRBG = %q, want empty", rx.cfg.DRBG)
+	}
+	roundTripMessage(t, tx, rx)
+
+	unknown := editRecord(t, blob, func(p map[string]any) { p["drbg"] = "nosuchdrbg" })
+	if _, err := Load(unknown); !errors.Is(err, ErrRecipePrimitiveUnknown) {
+		t.Fatalf("Load(unknown drbg): %v, want ErrRecipePrimitiveUnknown", err)
+	}
+	prof, err := Inspect(unknown)
+	if err != nil || prof.DRBG != "nosuchdrbg" {
+		t.Fatalf("Inspect(unknown drbg): %v / %q", err, prof.DRBG)
+	}
+	if _, _, err := Init(ProfileSingleMsgTripleMACV1, Opts{DRBG: "nosuchdrbg"}); !errors.Is(err, ErrRecipePrimitiveUnknown) {
+		t.Fatalf("Init(unknown drbg): %v, want ErrRecipePrimitiveUnknown", err)
+	}
+	if _, _, err := Init(ProfileSingleMsgTripleMACV1, Opts{DRBG: "thirteen-chars"}); err == nil {
+		t.Fatal("Init accepted an over-long DRBG name")
+	}
+}
+
+// TestDRBGEveryArmRoundTrip encrypts and decrypts a message under every
+// installed DRBG fill primitive through the Triple surface, each blob
+// reopened by Load.
+func TestDRBGEveryArmRoundTrip(t *testing.T) {
+	for _, name := range drbg.Names() {
+		tx, blob, err := Init(ProfileSingleMsgAESITBNoMACV1, Opts{DRBG: name})
+		if err != nil {
+			t.Fatalf("Init(%s): %v", name, err)
+		}
+		rx, err := Load(blob)
+		if err != nil {
+			tx.Close()
+			t.Fatalf("Load(%s): %v", name, err)
+		}
+		if rx.cfg.DRBG != name {
+			t.Fatalf("%s: Load cfg.DRBG = %q", name, rx.cfg.DRBG)
+		}
+		roundTripMessage(t, tx, rx)
+		tx.Close()
+		rx.Close()
 	}
 }

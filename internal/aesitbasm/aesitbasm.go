@@ -1,8 +1,10 @@
 // Package aesitbasm holds the assembly kernels of the AES-ITB-128
-// primitive for the parent itb package, in two families over the four
+// primitive for the parent itb package: two families over the four
 // fixed per-lane input lengths — 13 bytes (the Interlocked Barrier fill
 // shape) and 20 / 36 / 68 bytes (the ITB 128 / 256 / 512-bit nonce buf
-// shapes):
+// shapes) — and, for package aesitb, the counter-driven noise filler of
+// the "aesitb128" DRBG arm ([NoiseFill]; aesitb_noisefill_*.s,
+// hand-written; see noisefill.go). The two cascade families:
 //
 //   - fused ChainHash cascade kernels, one or four lanes per call
 //     ([FusedChain13x1] / [FusedChain13x4] and siblings;

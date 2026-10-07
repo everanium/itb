@@ -91,6 +91,9 @@ func openWrap(wrap blobWrapV2, masters [][]byte) (*Pipeline, error) {
 	if cfg.TagStubSize == 0 && resolved.TagStubSize > 0 {
 		cfg.TagStubSize = resolved.TagStubSize
 	}
+	// The DRBG fill primitive travels in the record; the reopened
+	// Pipeline encrypts under the sender's stated choice.
+	cfg.DRBG = resolved.DRBG
 
 	// Parallax build.
 	var (

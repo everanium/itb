@@ -13,7 +13,10 @@ import (
 	"testing"
 
 	"github.com/everanium/itb"
+	"github.com/everanium/itb/ctr"
 	"github.com/everanium/itb/hashes"
+	"github.com/everanium/itb/internal/drbg"
+	"github.com/everanium/itb/wrapper"
 )
 
 // generateDataExt returns n bytes of cryptographically random data
@@ -363,5 +366,105 @@ func TestCascadeCrossConstructorRoundTrip(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// TestConfigDRBGRejectedByEveryCfgEncryptEntry pins the fail-fast rule: a
+// Config naming a DRBG fill primitive outside drbg.Names is refused by
+// every Cfg entry point before any wire is produced.
+func TestConfigDRBGRejectedByEveryCfgEncryptEntry(t *testing.T) {
+	cfg := &itb.Config{DRBG: "nope"}
+	plain := []byte("x")
+	for _, name := range []string{"aescmac", "blake3", "areion512"} {
+		c := newLowLevelConstellation(t, name, 512)
+		if _, err := c.encrypt(cfg, plain); err == nil {
+			t.Fatalf("%s: Encrypt3x*Cfg accepted cfg.DRBG=%q", name, cfg.DRBG)
+		}
+	}
+	mac := func(data []byte) []byte { return make([]byte, 32) }
+	c := newLowLevelConstellation(t, "blake3", 512)
+	s := c.seeds
+	if _, err := itb.EncryptAuth3x256Cfg(cfg, s[0].(*itb.Seed256), s[1].(*itb.Seed256), s[2].(*itb.Seed256), s[3].(*itb.Seed256), s[4].(*itb.Seed256), s[5].(*itb.Seed256), s[6].(*itb.Seed256), s[7].(*itb.Seed256), plain, mac); err == nil {
+		t.Fatalf("EncryptAuth3x256Cfg accepted cfg.DRBG=%q", cfg.DRBG)
+	}
+	if err := itb.EncryptStream3x256Cfg(cfg, s[0].(*itb.Seed256), s[1].(*itb.Seed256), s[2].(*itb.Seed256), s[3].(*itb.Seed256), s[4].(*itb.Seed256), s[5].(*itb.Seed256), s[6].(*itb.Seed256), s[7].(*itb.Seed256), plain, 1<<20, func([]byte) error { return nil }); err == nil {
+		t.Fatalf("EncryptStream3x256Cfg accepted cfg.DRBG=%q", cfg.DRBG)
+	}
+}
+
+// TestConfigDRBGRoundTripEveryArm encrypts and decrypts under every
+// DRBG fill primitive drbg.Names reports at every width; the receiver
+// never consults the field, so a receiver under the default decrypts
+// a sender's explicit choice.
+func TestConfigDRBGRoundTripEveryArm(t *testing.T) {
+	plain := generateDataExt(3000)
+	for _, width := range []string{"aescmac", "blake3", "areion512"} {
+		c := newLowLevelConstellation(t, width, 512)
+		for _, arm := range drbg.Names() {
+			wire, err := c.encrypt(&itb.Config{DRBG: arm}, plain)
+			if err != nil {
+				t.Fatalf("%s/%s: encrypt: %v", width, arm, err)
+			}
+			got, err := c.decrypt(nil, wire)
+			if err != nil {
+				t.Fatalf("%s/%s: decrypt: %v", width, arm, err)
+			}
+			if !bytes.Equal(got, plain) {
+				t.Fatalf("%s/%s: round trip mismatch", width, arm)
+			}
+		}
+	}
+}
+
+// TestConfigDRBGAESITB128StructuralIsolation pins that the Non-PRF
+// primitive is reachable as a DRBG fill arm only: the keystream
+// constructor refuses it while an encrypt under Config.DRBG =
+// "aesitb128" succeeds.
+func TestConfigDRBGAESITB128StructuralIsolation(t *testing.T) {
+	if _, err := ctr.New(hashes.CipherAESITB128, make([]byte, 16), make([]byte, 16)); err == nil {
+		t.Fatal("ctr.New(aesitb128) accepted the Non-PRF primitive")
+	}
+	if _, err := wrapper.DeriveKey(hashes.CipherAESITB128, make([]byte, 32)); err == nil {
+		t.Fatal("wrapper.DeriveKey(aesitb128) accepted the Non-PRF primitive")
+	}
+	c := newLowLevelConstellation(t, "blake3", 512)
+	plain := generateDataExt(500)
+	wire, err := c.encrypt(&itb.Config{DRBG: drbg.NameAESITB128}, plain)
+	if err != nil {
+		t.Fatalf("encrypt under aesitb128 fill: %v", err)
+	}
+	got, err := c.decrypt(nil, wire)
+	if err != nil || !bytes.Equal(got, plain) {
+		t.Fatalf("decrypt: %v", err)
+	}
+}
+
+// TestConfigDRBGIgnoredByDecrypt pins the receiver side of the rule:
+// the Decrypt*Cfg entry points neither validate nor consult
+// Config.DRBG, so a wire decrypts under any value, an uninstalled name
+// included.
+func TestConfigDRBGIgnoredByDecrypt(t *testing.T) {
+	bad := &itb.Config{DRBG: "nope"}
+	plain := generateDataExt(2000)
+	for _, name := range []string{"aescmac", "blake3", "areion512"} {
+		c := newLowLevelConstellation(t, name, 512)
+		wire, err := c.encrypt(&itb.Config{DRBG: drbg.NameCSPRNG}, plain)
+		if err != nil {
+			t.Fatalf("%s: encrypt: %v", name, err)
+		}
+		got, err := c.decrypt(bad, wire)
+		if err != nil || !bytes.Equal(got, plain) {
+			t.Fatalf("%s: Decrypt*Cfg under cfg.DRBG=%q: %v", name, bad.DRBG, err)
+		}
+	}
+	c := newLowLevelConstellation(t, "blake3", 512)
+	s := c.seeds
+	var wire []byte
+	if err := itb.EncryptStream3x256Cfg(nil, s[0].(*itb.Seed256), s[1].(*itb.Seed256), s[2].(*itb.Seed256), s[3].(*itb.Seed256), s[4].(*itb.Seed256), s[5].(*itb.Seed256), s[6].(*itb.Seed256), s[7].(*itb.Seed256), plain, 1<<20, func(chunk []byte) error { wire = append(wire, chunk...); return nil }); err != nil {
+		t.Fatalf("EncryptStream3x256Cfg: %v", err)
+	}
+	var got []byte
+	if err := itb.DecryptStream3x256Cfg(bad, s[0].(*itb.Seed256), s[1].(*itb.Seed256), s[2].(*itb.Seed256), s[3].(*itb.Seed256), s[4].(*itb.Seed256), s[5].(*itb.Seed256), s[6].(*itb.Seed256), s[7].(*itb.Seed256), wire, func(chunk []byte) error { got = append(got, chunk...); return nil }); err != nil || !bytes.Equal(got, plain) {
+		t.Fatalf("DecryptStream3x256Cfg under cfg.DRBG=%q: %v", bad.DRBG, err)
 	}
 }
