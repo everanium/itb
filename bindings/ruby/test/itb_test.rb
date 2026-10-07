@@ -461,4 +461,47 @@ class ItbTest < Minitest::Test
       pipe&.free
     end
   end
+
+  # -- DRBG fill primitive --------------------------------------------
+
+  def test_drbg_round_trip_and_inspect
+    %w[csprng aesitb128].each do |name|
+      sender = ITB.create("singlemsg-triple-mac-v1", { "drbg" => name })
+      blob = sender.save
+      assert_equal name, ITB.inspect_blob(blob)["drbg"]
+      receiver = ITB.load(blob)
+      wire = receiver.encrypt_message("drbg #{name} round trip")
+      assert_equal "drbg #{name} round trip", sender.decrypt_message(wire)
+    ensure
+      sender&.free
+      receiver&.free
+    end
+  end
+
+  def test_drbg_absent_by_default
+    pipe = ITB.create("singlemsg-triple-mac-v1")
+    refute_includes ITB.inspect_blob(pipe.save), "drbg"
+    refute_includes ITB.lookup("singlemsg-triple-mac-v1"), "drbg"
+  ensure
+    pipe&.free
+  end
+
+  def test_unknown_drbg_is_recipe_primitive_unknown
+    err = assert_raises(ITB::Error) { ITB.create("singlemsg-triple-mac-v1", { "drbg" => "nope" }) }
+    assert_equal ITB::Status::RECIPE_PRIMITIVE_UNKNOWN, err.status_code
+    assert_includes err.last_error, "nope"
+  end
+
+  def test_drbg_survives_register_copy
+    # drbg is a recipe field: unlike the inspection-only keys, it stays
+    # in a registered copy of an inspected record.
+    pipe = ITB.create("singlemsg-triple-mac-v1", { "drbg" => "csprng" })
+    record = ITB.inspect_blob(pipe.save)
+    recipe = record.reject { |k, _| %w[name nonce_bits barrier_fill container_mode].include?(k) }
+    name = "ruby-binding-test-drbg-copy-#{Process.pid}"
+    ITB.register(name, recipe)
+    assert_equal "csprng", ITB.lookup(name)["drbg"]
+  ensure
+    pipe&.free
+  end
 end

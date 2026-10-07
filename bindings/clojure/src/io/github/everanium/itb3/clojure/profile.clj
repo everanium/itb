@@ -17,6 +17,8 @@
     :nonce-bits  long or nil — inspection-only (see below)
     :barrier-fill long or nil — inspection-only (see below)
     :container-mode long or nil — inspection-only (see below)
+    :drbg        string  — DRBG fill primitive (\"\" selects the auto
+                 tier); a recipe key, so a registered copy keeps it
     :mac         string  — \"\" on a No MAC profile
     :tag-stub    long    — 0 when absent
     :chunk       long    — 0 when absent
@@ -51,6 +53,7 @@
    :nonce-bits (some-> (.nonceBits p) long)
    :barrier-fill (some-> (.barrierFill p) long)
    :container-mode (some-> (.containerMode p) long)
+   :drbg (.drbg p)
    :mac (.mac p)
    :tag-stub (.tagStub p)
    :chunk (.chunk p)
@@ -78,6 +81,7 @@
           :nonce-bits (.nonceBits p (some-> v int))
           :barrier-fill (.barrierFill p (some-> v int))
           :container-mode (.containerMode p (some-> v int))
+          :drbg (.drbg p (str v))
           :mac (.mac p (str v))
           :tag-stub (.tagStub p (int v))
           :chunk (.chunk p (int v))

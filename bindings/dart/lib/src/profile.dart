@@ -33,6 +33,7 @@ class Profile {
     this.hash = '',
     this.hashes = const [],
     this.keyBits = 0,
+    this.drbg = '',
     this.mac = '',
     this.tagStub = 0,
     this.chunk = 0,
@@ -80,6 +81,9 @@ class Profile {
   /// inspection-only lifecycle as [nonceBits].
   int? containerMode;
 
+  /// DRBG fill primitive name (`drbg`); empty when absent.
+  String drbg;
+
   /// MAC name (`mac`); empty on a No MAC profile.
   String mac;
 
@@ -115,6 +119,7 @@ class Profile {
         if (nonceBits != null) 'nonce_bits': nonceBits!,
         if (barrierFill != null) 'barrier_fill': barrierFill!,
         if (containerMode != null) 'container_mode': containerMode!,
+        if (drbg.isNotEmpty) 'drbg': drbg,
         if (mac.isNotEmpty) 'mac': mac,
         if (tagStub != 0) 'tagstub': tagStub,
         if (chunk != 0) 'chunk': chunk,
@@ -144,6 +149,7 @@ class Profile {
         nonceBits: m['nonce_bits'] as int?,
         barrierFill: m['barrier_fill'] as int?,
         containerMode: m['container_mode'] as int?,
+        drbg: (m['drbg'] as String?) ?? '',
         mac: (m['mac'] as String?) ?? '',
         tagStub: (m['tagstub'] as int?) ?? 0,
         chunk: (m['chunk'] as int?) ?? 0,

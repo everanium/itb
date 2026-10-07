@@ -342,6 +342,8 @@ export interface Profile {
   barrier_fill?: number;
   /** Container floor sizing mode (1 per-region, 2 per-container); present only on an [inspect] record. */
   container_mode?: number;
+  /** DRBG fill primitive name; absent when the auto tier applies. */
+  drbg?: string;
   mac?: string;
   tagstub?: number;
   chunk?: number;

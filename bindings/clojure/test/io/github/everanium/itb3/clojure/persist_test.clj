@@ -3,7 +3,8 @@
   inspect, lookup / profiles / register! round trip, max-workers!
   clamping."
   (:require [clojure.test :refer [deftest is]]
-            [io.github.everanium.itb3.clojure.core :as itb])
+            [io.github.everanium.itb3.clojure.core :as itb]
+            [io.github.everanium.itb3.clojure.profile :as profile])
   (:import [java.nio.file Files]
            [java.util Arrays]))
 
@@ -100,3 +101,34 @@
     (itb/max-workers! pipe -1)
     (itb/max-workers! pipe 1000)
     (is (round-trips? pipe pipe))))
+
+(deftest drbg-round-trips-through-a-loaded-blob
+  (doseq [drbg ["csprng" "aesitb128"]]
+    (with-open [sender (itb/init "singlemsg-triple-mac-v1" {:drbg drbg})]
+      (with-open [receiver (itb/load (itb/save sender))]
+        (is (round-trips? sender receiver))
+        (is (round-trips? receiver sender))))))
+
+(deftest inspect-reports-the-drbg
+  (with-open [pipe (itb/init "singlemsg-triple-mac-v1" {:drbg "csprng"})]
+    (let [prof (itb/inspect (itb/save pipe))]
+      (is (= "csprng" (:drbg prof)))
+      (is (.contains (.toJson (profile/map->profile prof)) "\"drbg\":\"csprng\"")))))
+
+(deftest default-drbg-is-absent
+  (with-open [pipe (itb/init "singlemsg-triple-mac-v1")]
+    (let [prof (itb/inspect (itb/save pipe))]
+      (is (= "" (:drbg prof)))
+      (is (not (.contains (.toJson (profile/map->profile prof)) "\"drbg\"")))))
+  (is (= "" (:drbg (itb/lookup "singlemsg-triple-mac-v1")))))
+
+(deftest register-copy-keeps-the-drbg
+  (with-open [pipe (itb/init "singlemsg-triple-mac-v1" {:drbg "csprng"})]
+    (let [copy (assoc (itb/inspect (itb/save pipe))
+                      :name "" :nonce-bits nil :barrier-fill nil :container-mode nil)]
+      (itb/register! "clojure-binding-test-drbg-copy" copy)
+      (is (= "csprng" (:drbg (itb/lookup "clojure-binding-test-drbg-copy"))))
+      (with-open [sender (itb/init "clojure-binding-test-drbg-copy")]
+        (with-open [receiver (itb/load (itb/save sender))]
+          (is (= "csprng" (:drbg (itb/inspect (itb/save sender)))))
+          (is (round-trips? sender receiver)))))))

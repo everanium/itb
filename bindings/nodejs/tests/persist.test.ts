@@ -146,3 +146,27 @@ test('maxWorkers', () => {
   assert.deepEqual(neg.decryptMessage(neg.encryptMessage(Buffer.from('negative cap'))), Buffer.from('negative cap'));
   neg.free();
 });
+
+test('drbg round trip and inspect', () => {
+  for (const name of ['csprng', 'aesitb128']) {
+    const sender = Pipeline.init(PROFILE, new Opts().withDrbg(name));
+    const blob = sender.save();
+    const record: Profile = inspect(blob);
+    assert.equal(record.drbg, name);
+    const receiver = Pipeline.load(blob);
+    const plain = Buffer.from(`drbg ${name} round trip`);
+    const wire = receiver.encryptMessage(plain);
+    assert.deepEqual(sender.decryptMessage(wire), plain);
+    sender.free();
+    receiver.free();
+  }
+});
+
+test('drbg is absent by default', () => {
+  const pipe = Pipeline.init(PROFILE);
+  const record = inspect(pipe.save()) as unknown as Record<string, unknown>;
+  pipe.free();
+  assert.ok(!('drbg' in record));
+  const looked = lookup(PROFILE) as unknown as Record<string, unknown>;
+  assert.ok(!('drbg' in looked));
+});

@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
@@ -144,6 +145,61 @@ class PersistTest {
             p.maxWorkers(-1);
             p.maxWorkers(1000);
             assertArrayEquals(PLAIN, p.decryptMessage(p.encryptMessage(PLAIN)));
+        }
+    }
+
+    @Test
+    void drbgRoundTripsThroughLoadedBlob() {
+        for (String drbg : new String[] {"csprng", "aesitb128"}) {
+            try (Pipeline sender = Pipeline.init("singlemsg-triple-mac-v1",
+                    new Opts().withDrbg(drbg));
+                    Pipeline receiver = Pipeline.load(sender.save())) {
+                assertArrayEquals(PLAIN, receiver.decryptMessage(sender.encryptMessage(PLAIN)));
+                assertArrayEquals(PLAIN, sender.decryptMessage(receiver.encryptMessage(PLAIN)));
+            }
+        }
+    }
+
+    @Test
+    void inspectReportsTheDrbg() {
+        try (Pipeline p = Pipeline.init("singlemsg-triple-mac-v1", new Opts().withDrbg("csprng"))) {
+            Profile prof = Pipeline.inspect(p.save());
+            assertEquals("csprng", prof.drbg());
+            assertTrue(prof.toJson().contains("\"drbg\":\"csprng\""));
+        }
+    }
+
+    @Test
+    void unknownDrbgIsRecipePrimitiveUnknown() {
+        ItbException e = assertThrows(ItbException.class,
+                () -> Pipeline.init("singlemsg-triple-mac-v1", new Opts().withDrbg("nope")));
+        assertEquals(Status.RECIPE_PRIMITIVE_UNKNOWN, e.status());
+        assertTrue(e.getMessage().contains("nope"));
+    }
+
+    @Test
+    void defaultDrbgIsAbsent() {
+        try (Pipeline p = Pipeline.init("singlemsg-triple-mac-v1")) {
+            Profile prof = Pipeline.inspect(p.save());
+            assertEquals("", prof.drbg());
+            assertFalse(prof.toJson().contains("\"drbg\""));
+        }
+        assertEquals("", Pipeline.lookup("singlemsg-triple-mac-v1").drbg());
+    }
+
+    @Test
+    void registerCopyKeepsTheDrbg() {
+        try (Pipeline p = Pipeline.init("singlemsg-triple-mac-v1", new Opts().withDrbg("csprng"))) {
+            Profile copy = Pipeline.inspect(p.save())
+                    .name("").nonceBits(null).barrierFill(null).containerMode(null);
+            Pipeline.register("java-binding-test-drbg-copy", copy);
+            Profile back = Pipeline.lookup("java-binding-test-drbg-copy");
+            assertEquals("csprng", back.drbg());
+            try (Pipeline sender = Pipeline.init("java-binding-test-drbg-copy");
+                    Pipeline receiver = Pipeline.load(sender.save())) {
+                assertEquals("csprng", Pipeline.inspect(sender.save()).drbg());
+                assertArrayEquals(PLAIN, receiver.decryptMessage(sender.encryptMessage(PLAIN)));
+            }
         }
     }
 }

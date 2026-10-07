@@ -488,3 +488,56 @@
   (let ((`#(error #(,status ,_detail)) (itb3-lfe:lookup #"no-such-profile")))
     (is-equal 'unknown_profile status)
     (is-equal 13 (itb3-lfe:status-code status))))
+
+;;; ------------------------------------------------------------------
+;;; DRBG fill primitive
+;;; ------------------------------------------------------------------
+
+;; The drbg opts key selects the fill primitive: the session round
+;; trips through a loaded blob and inspect reports the key.
+(deftestgen drbg-round-trip
+  (tuple 'timeout 120
+    (lambda ()
+      (lists:foreach
+        (lambda (drbg)
+          (let* ((`#(ok ,sender) (itb3-lfe:init #"singlemsg-triple-mac-v1"
+                                                (map #"drbg" drbg)))
+                 (`#(ok ,blob) (itb3-lfe:save sender))
+                 (`#(ok ,receiver) (itb3-lfe:load blob))
+                 (`#(ok ,wire) (itb3-lfe:encrypt-message receiver #"drbg round-trip payload"))
+                 (`#(ok ,record) (itb3-lfe:inspect blob)))
+            (is-equal #(ok #"drbg round-trip payload")
+                      (itb3-lfe:decrypt-message sender wire))
+            (is-equal drbg (maps:get #"drbg" record))
+            (is-equal 'ok (itb3-lfe:free receiver))
+            (is-equal 'ok (itb3-lfe:free sender))))
+        (list #"csprng" #"aesitb128")))))
+
+(deftest drbg-unknown-name
+  (let ((`#(error #(recipe_primitive_unknown ,detail))
+          (itb3-lfe:init #"singlemsg-triple-mac-v1" (map #"drbg" #"nope"))))
+    (is (=/= 'nomatch (binary:match detail #"nope")))))
+
+(deftest drbg-absent-by-default
+  (let* ((`#(ok ,pipe) (itb3-lfe:init #"singlemsg-triple-mac-v1"))
+         (`#(ok ,blob) (itb3-lfe:save pipe)))
+    (is-equal 'ok (itb3-lfe:free pipe))
+    (let ((`#(ok ,record) (itb3-lfe:inspect blob))
+          (`#(ok ,looked) (itb3-lfe:lookup #"singlemsg-triple-mac-v1")))
+      (is (not (maps:is_key #"drbg" record)))
+      (is (not (maps:is_key #"drbg" looked))))))
+
+;; An inspected record with the inspection-only fields dropped
+;; re-registers and keeps the drbg key.
+(deftest drbg-register-copy-keeps-key
+  (let* ((`#(ok ,pipe) (itb3-lfe:init #"singlemsg-triple-mac-v1"
+                                      (map #"drbg" #"csprng")))
+         (`#(ok ,blob) (itb3-lfe:save pipe)))
+    (is-equal 'ok (itb3-lfe:free pipe))
+    (let* ((`#(ok ,record) (itb3-lfe:inspect blob))
+           (copy (maps:without (list #"name" #"nonce_bits" #"barrier_fill"
+                                     #"container_mode")
+                               record)))
+      (is-equal 'ok (itb3-lfe:register #"lfe-binding-test-drbg-copy" copy))
+      (let ((`#(ok ,looked) (itb3-lfe:lookup #"lfe-binding-test-drbg-copy")))
+        (is-equal #"csprng" (maps:get #"drbg" looked))))))

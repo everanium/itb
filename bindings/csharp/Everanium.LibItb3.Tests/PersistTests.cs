@@ -148,4 +148,68 @@ public class PersistTests
         pipe.MaxWorkers(1000);
         Assert.Equal(Plain, pipe.DecryptMessage(pipe.EncryptMessage(Plain)));
     }
+
+    [Fact]
+    public void DrbgRoundTripsThroughALoadedBlob()
+    {
+        foreach (var drbg in new[] { "csprng", "aesitb128" })
+        {
+            using var sender = Pipeline.Init("singlemsg-triple-mac-v1", new Opts().WithDrbg(drbg));
+            using var receiver = Pipeline.Load(sender.Save());
+            Assert.Equal(Plain, receiver.DecryptMessage(sender.EncryptMessage(Plain)));
+            Assert.Equal(Plain, sender.DecryptMessage(receiver.EncryptMessage(Plain)));
+        }
+    }
+
+    [Fact]
+    public void InspectReportsTheDrbg()
+    {
+        using var pipe = Pipeline.Init("singlemsg-triple-mac-v1", new Opts().WithDrbg("csprng"));
+        var prof = Pipeline.Inspect(pipe.Save());
+        Assert.Equal("csprng", prof.Drbg);
+        Assert.Contains("\"drbg\":\"csprng\"", prof.ToJson());
+        // Clone and the JSON codec carry the field.
+        Assert.Equal("csprng", prof.Clone().Drbg);
+        Assert.Equal("csprng", Profile.FromJson(prof.ToJson()).Drbg);
+    }
+
+    [Fact]
+    public void UnknownDrbgIsRecipePrimitiveUnknown()
+    {
+        var ex = Assert.Throws<ItbException>(
+            () => Pipeline.Init("singlemsg-triple-mac-v1", new Opts().WithDrbg("nope")));
+        Assert.Equal(Status.RecipePrimitiveUnknown, ex.Status);
+        Assert.Contains("nope", ex.Message);
+    }
+
+    [Fact]
+    public void DefaultDrbgIsAbsent()
+    {
+        using var pipe = Pipeline.Init("singlemsg-triple-mac-v1");
+        var prof = Pipeline.Inspect(pipe.Save());
+        Assert.Equal("", prof.Drbg);
+        Assert.DoesNotContain("\"drbg\"", prof.ToJson());
+        var registry = Pipeline.Lookup("singlemsg-triple-mac-v1");
+        Assert.Equal("", registry.Drbg);
+        Assert.DoesNotContain("\"drbg\"", registry.ToJson());
+    }
+
+    [Fact]
+    public void RegisterCopyKeepsTheDrbg()
+    {
+        using var pipe = Pipeline.Init("singlemsg-triple-mac-v1", new Opts().WithDrbg("csprng"));
+        // The drbg key is part of the recipe; only the inspection-only
+        // fields and the name are cleared before registering.
+        var copy = Pipeline.Inspect(pipe.Save());
+        copy.Name = "";
+        copy.NonceBits = null;
+        copy.BarrierFill = null;
+        copy.ContainerMode = null;
+        Pipeline.Register("csharp-binding-test-drbg-copy", copy);
+        var back = Pipeline.Lookup("csharp-binding-test-drbg-copy");
+        Assert.Equal("csprng", back.Drbg);
+        using var sender = Pipeline.Init("csharp-binding-test-drbg-copy");
+        using var receiver = Pipeline.Load(sender.Save());
+        Assert.Equal(Plain, receiver.DecryptMessage(sender.EncryptMessage(Plain)));
+    }
 }

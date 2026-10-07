@@ -136,4 +136,66 @@ Public Class PersistTests
             Assert.Equal(Of Byte)(Plain, pipe.DecryptMessage(pipe.EncryptMessage(Plain)))
         End Using
     End Sub
+
+    <Fact>
+    Public Sub DrbgRoundTripsThroughALoadedBlob()
+        For Each drbg As String In New String() {"csprng", "aesitb128"}
+            Using sender As Pipeline = Pipeline.Init("singlemsg-triple-mac-v1", New Opts().WithDrbg(drbg))
+                Using receiver As Pipeline = Pipeline.Load(sender.Save())
+                    Assert.Equal(Of Byte)(Plain, receiver.DecryptMessage(sender.EncryptMessage(Plain)))
+                    Assert.Equal(Of Byte)(Plain, sender.DecryptMessage(receiver.EncryptMessage(Plain)))
+                End Using
+            End Using
+        Next
+    End Sub
+
+    <Fact>
+    Public Sub InspectReportsTheDrbg()
+        Using pipe As Pipeline = Pipeline.Init("singlemsg-triple-mac-v1", New Opts().WithDrbg("csprng"))
+            Dim prof As Global.Everanium.Itb3.Profile = Pipeline.Inspect(pipe.Save())
+            Assert.Equal("csprng", prof.Drbg)
+            Assert.Contains("""drbg"":""csprng""", prof.ToJson())
+        End Using
+    End Sub
+
+    <Fact>
+    Public Sub UnknownDrbgIsRecipePrimitiveUnknown()
+        Dim ex As ItbException = Assert.Throws(Of ItbException)(
+            Sub() Pipeline.Init("singlemsg-triple-mac-v1", New Opts().WithDrbg("nope")))
+        Assert.Equal(Status.RecipePrimitiveUnknown, ex.Status)
+        Assert.Contains("nope", ex.Message)
+    End Sub
+
+    <Fact>
+    Public Sub DefaultDrbgIsAbsent()
+        Using pipe As Pipeline = Pipeline.Init("singlemsg-triple-mac-v1")
+            Dim prof As Global.Everanium.Itb3.Profile = Pipeline.Inspect(pipe.Save())
+            Assert.Equal("", prof.Drbg)
+            Assert.DoesNotContain("""drbg""", prof.ToJson())
+        End Using
+        Dim registry As Global.Everanium.Itb3.Profile = Pipeline.Lookup("singlemsg-triple-mac-v1")
+        Assert.Equal("", registry.Drbg)
+        Assert.DoesNotContain("""drbg""", registry.ToJson())
+    End Sub
+
+    <Fact>
+    Public Sub RegisterCopyKeepsTheDrbg()
+        Using pipe As Pipeline = Pipeline.Init("singlemsg-triple-mac-v1", New Opts().WithDrbg("csprng"))
+            ' The drbg key is part of the recipe; only the inspection-only
+            ' fields and the name are cleared before registering.
+            Dim copy As Global.Everanium.Itb3.Profile = Pipeline.Inspect(pipe.Save())
+            copy.Name = ""
+            copy.NonceBits = Nothing
+            copy.BarrierFill = Nothing
+            copy.ContainerMode = Nothing
+            Pipeline.Register("vbnet-binding-test-drbg-copy", copy)
+        End Using
+        Dim back As Global.Everanium.Itb3.Profile = Pipeline.Lookup("vbnet-binding-test-drbg-copy")
+        Assert.Equal("csprng", back.Drbg)
+        Using sender As Pipeline = Pipeline.Init("vbnet-binding-test-drbg-copy")
+            Using receiver As Pipeline = Pipeline.Load(sender.Save())
+                Assert.Equal(Of Byte)(Plain, receiver.DecryptMessage(sender.EncryptMessage(Plain)))
+            End Using
+        End Using
+    End Sub
 End Class

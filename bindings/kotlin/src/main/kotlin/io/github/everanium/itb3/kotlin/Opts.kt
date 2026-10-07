@@ -70,6 +70,8 @@ class Opts {
 
     fun outerCipher(name: String): Opts = apply { impl.withOuterCipher(name) }
 
+    fun drbg(name: String): Opts = apply { impl.withDrbg(name) }
+
     /** Comma-joins the palette names (`parallaxPalette`). */
     fun parallaxPalette(vararg names: String): Opts =
         apply { impl.withParallaxPalette(*names) }

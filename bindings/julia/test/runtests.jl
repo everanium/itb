@@ -424,3 +424,50 @@ end
         free!(p)
     end
 end
+
+@testset "DRBG fill primitive" begin
+    @testset "drbg round trip through a loaded blob" begin
+        for name in ("csprng", "aesitb128")
+            sender = Pipeline("singlemsg-triple-mac-v1";
+                              opts=with_drbg!(Opts(), name))
+            receiver = load(save(sender))
+            plain = Vector{UInt8}("drbg $name")
+            @test decrypt_message(receiver, encrypt_message(sender, plain)) == plain
+            back = Vector{UInt8}("reverse $name")
+            @test decrypt_message(sender, encrypt_message(receiver, back)) == back
+            free!(sender)
+            free!(receiver)
+        end
+    end
+
+    @testset "drbg inspect, default and unknown name" begin
+        pipe = Pipeline("singlemsg-triple-mac-v1";
+                        opts=with_drbg!(Opts(), "csprng"))
+        @test occursin("\"drbg\":\"csprng\"", inspect(save(pipe)))
+        free!(pipe)
+        # With no drbg set the record carries no drbg key, and no
+        # shipped profile names one.
+        plain = Pipeline("singlemsg-triple-mac-v1")
+        @test !occursin("\"drbg\":", inspect(save(plain)))
+        free!(plain)
+        @test !occursin("\"drbg\":", lookup("singlemsg-triple-mac-v1"))
+        err = capture_itberror(() -> Pipeline("singlemsg-triple-mac-v1";
+                                              opts=with_drbg!(Opts(), "nope")))
+        @test err.status_code == LibItb3.STATUS_RECIPE_PRIMITIVE_UNKNOWN
+        @test occursin("nope", err.last_error)
+    end
+
+    @testset "drbg survives a register copy" begin
+        pipe = Pipeline("singlemsg-triple-mac-v1";
+                        opts=with_drbg!(Opts(), "csprng"))
+        # The inspection-only fields are dropped; drbg is a recipe
+        # field and stays in the registered copy.
+        record = inspect(save(pipe))
+        record = replace(record, r"\"name\":\"[^\"]*\",?" => "")
+        record = replace(record,
+                         r"\"(nonce_bits|barrier_fill|container_mode)\":[0-9]+,?" => "")
+        register("julia-binding-test-drbg-copy", record)
+        @test occursin("\"drbg\":\"csprng\"", lookup("julia-binding-test-drbg-copy"))
+        free!(pipe)
+    end
+end

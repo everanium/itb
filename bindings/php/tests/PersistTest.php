@@ -128,4 +128,39 @@ final class PersistTest extends TestCase
         $this->assertSame('negative cap', $neg->decryptMessage($neg->encryptMessage('negative cap')));
         $neg->free();
     }
+
+    public function testDrbgRoundTripAndInspect(): void
+    {
+        foreach (['csprng', 'aesitb128'] as $name) {
+            $sender = Itb::create(self::PROFILE, ['drbg' => $name]);
+            $blob = $sender->save();
+            $this->assertSame($name, Itb::inspect($blob)['drbg']);
+            $receiver = Itb::load($blob);
+            $wire = $receiver->encryptMessage("drbg {$name} round trip");
+            $this->assertSame("drbg {$name} round trip", $sender->decryptMessage($wire));
+            $sender->free();
+            $receiver->free();
+        }
+    }
+
+    public function testDrbgAbsentByDefault(): void
+    {
+        $pipe = Itb::create(self::PROFILE);
+        $record = Itb::inspect($pipe->save());
+        $pipe->free();
+        $this->assertArrayNotHasKey('drbg', $record);
+        $this->assertArrayNotHasKey('drbg', Itb::lookup(self::PROFILE));
+    }
+
+    public function testDrbgSurvivesRegisterCopy(): void
+    {
+        // drbg is a recipe field: unlike the inspection-only keys, it
+        // stays in a registered copy of an inspected record.
+        $pipe = Itb::create(self::PROFILE, ['drbg' => 'csprng']);
+        $recipe = Itb::inspect($pipe->save());
+        $pipe->free();
+        unset($recipe['name'], $recipe['nonce_bits'], $recipe['barrier_fill'], $recipe['container_mode']);
+        Itb::register('php-binding-test-drbg-copy', $recipe);
+        $this->assertSame('csprng', Itb::lookup('php-binding-test-drbg-copy')['drbg']);
+    }
 }

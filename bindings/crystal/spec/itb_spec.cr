@@ -371,4 +371,59 @@ describe ITB do
       ITB.write_heap_profile("/proc/itb-no-such-directory/heap.pprof")
     end
   end
+
+  it "round-trips a DRBG choice and carries it in the blob" do
+    plain = payload(2048, 76_u64)
+    ["csprng", "aesitb128"].each do |name|
+      sender = ITB::Pipeline.new("singlemsg-triple-mac-v1",
+        ITB::Opts.new.with_drbg(name))
+      blob = sender.save
+      receiver = ITB::Pipeline.load(blob)
+      receiver.decrypt_message(sender.encrypt_message(plain)).should eq plain
+      sender.decrypt_message(receiver.encrypt_message(plain)).should eq plain
+      # The choice is a recipe field: inspect reports it.
+      prof = ITB.inspect(blob)
+      prof.drbg.should eq name
+      prof.to_json.includes?(%("drbg":"#{name}")).should be_true
+    end
+  end
+
+  it "omits drbg by default" do
+    pipe = ITB::Pipeline.new("singlemsg-triple-mac-v1")
+    prof = ITB.inspect(pipe.save)
+    prof.drbg.should be_empty
+    prof.to_json.includes?("drbg").should be_false
+    registry = ITB.lookup("singlemsg-triple-mac-v1")
+    registry.drbg.should be_empty
+    registry.to_json.includes?("drbg").should be_false
+  end
+
+  it "keeps drbg on a registered copy of an inspected record" do
+    plain = payload(2048, 77_u64)
+    sender = ITB::Pipeline.new("singlemsg-triple-mac-v1",
+      ITB::Opts.new.with_drbg("csprng"))
+    # drbg is a recipe field and stays; the name and the
+    # inspection-only fields are cleared before registering.
+    copy = ITB.inspect(sender.save)
+    copy.name = ""
+    copy.nonce_bits = nil
+    copy.barrier_fill = nil
+    copy.container_mode = nil
+    copy.drbg.should eq "csprng"
+    ITB.register("crystal-binding-test-drbg-copy", copy)
+    back = ITB.lookup("crystal-binding-test-drbg-copy")
+    back.drbg.should eq "csprng"
+    back.to_json.includes?(%("drbg":"csprng")).should be_true
+    pipe = ITB::Pipeline.new("crystal-binding-test-drbg-copy")
+    receiver = ITB::Pipeline.load(pipe.save)
+    receiver.decrypt_message(pipe.encrypt_message(plain)).should eq plain
+  end
+
+  it "maps an unknown DRBG name to RecipePrimitiveUnknown" do
+    ex = expect_status([ITB::Status::RecipePrimitiveUnknown]) do
+      ITB::Pipeline.new("singlemsg-triple-mac-v1",
+        opts: ITB::Opts.new.with_drbg("nope"))
+    end
+    ex.message.not_nil!.should contain("nope")
+  end
 end

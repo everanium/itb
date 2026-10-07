@@ -101,6 +101,10 @@ class Opts {
         withRaw('outerCipher', name)
     }
 
+    Opts withDrbg(String name) {
+        withRaw('drbg', name)
+    }
+
     /** Comma-joins the palette names ({@code parallaxPalette}). */
     Opts withParallaxPalette(String... names) {
         withRaw('parallaxPalette', names.join(','))

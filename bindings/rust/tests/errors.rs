@@ -123,3 +123,11 @@ fn per_call_inner_hashes_override_round_trips() {
     let prof = itb3::inspect(&sender.save().unwrap()).unwrap();
     assert_eq!(prof.mixed_hashes, mix);
 }
+
+#[test]
+fn unknown_drbg_name_is_recipe_primitive_unknown() {
+    let opts = OptsBuilder::new().with_drbg("nope");
+    let err = Pipeline::init("singlemsg-triple-mac-v1", &opts).unwrap_err();
+    assert_eq!(err.status(), Some(ItbStatus::RecipePrimitiveUnknown));
+    assert!(err.to_string().contains("nope"), "{err}");
+}

@@ -77,6 +77,8 @@ module Opts =
 
     let withOuterCipher (name: string) (opts: Opts) : Opts = withRaw "outerCipher" name opts
 
+    let withDrbg (name: string) (opts: Opts) : Opts = withRaw "drbg" name opts
+
     /// Comma-joins the palette names (<c>parallaxPalette</c>).
     let withParallaxPalette (names: string list) (opts: Opts) : Opts =
         withRaw "parallaxPalette" (String.concat "," names) opts

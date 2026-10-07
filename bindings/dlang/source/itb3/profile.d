@@ -52,6 +52,8 @@ struct Profile
     /// field: 1 per-region, 2 per-container. Same inspection-only
     /// lifecycle as `nonceBits`.
     Nullable!long containerMode;
+    /// DRBG fill primitive name; empty for the auto tier.
+    string drbg;
     /// MAC name; empty for No MAC modes.
     string macName;
     /// MAC tag stub size; 0 for the profile default.
@@ -83,6 +85,7 @@ struct Profile
         p.nonceBits = optNum(v, "nonce_bits");
         p.barrierFill = optNum(v, "barrier_fill");
         p.containerMode = optNum(v, "container_mode");
+        p.drbg = str(v, "drbg");
         p.macName = str(v, "mac");
         p.tagStubSize = num(v, "tagstub");
         p.chunkSize = num(v, "chunk");
@@ -107,6 +110,7 @@ struct Profile
         if (!nonceBits.isNull) v["nonce_bits"] = nonceBits.get;
         if (!barrierFill.isNull) v["barrier_fill"] = barrierFill.get;
         if (!containerMode.isNull) v["container_mode"] = containerMode.get;
+        if (drbg.length) v["drbg"] = drbg;
         if (macName.length) v["mac"] = macName;
         if (tagStubSize) v["tagstub"] = tagStubSize;
         if (chunkSize) v["chunk"] = chunkSize;

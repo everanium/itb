@@ -47,6 +47,11 @@ package Itb3.Opts is
 
    procedure Set_Outer_Cipher (O : in out Opts; Name : String);
 
+   --  Fill primitive for container noise and lane residue on
+   --  encrypt, passed through opaquely ("drbg"); an unknown name is
+   --  rejected by libitb3 as Recipe_Primitive_Unknown at Init.
+   procedure Set_DRBG (O : in out Opts; Name : String);
+
    --  Comma-separated palette names, passed through opaquely
    --  ("parallaxPalette").
    procedure Set_Parallax_Palette (O : in out Opts; Names : String);

@@ -155,4 +155,45 @@ defmodule ITB.SmokeTest do
     :ok = ITB.free(receiver)
     :ok = ITB.free(sender)
   end
+
+  test "drbg opts key round trips and inspect reports it" do
+    for drbg <- ["csprng", "aesitb128"] do
+      {:ok, sender} = ITB.init("singlemsg-triple-mac-v1", %{drbg: drbg})
+      {:ok, blob} = ITB.save(sender)
+      {:ok, receiver} = ITB.load(blob)
+      plain = "drbg round-trip payload"
+      {:ok, wire} = ITB.encrypt_message(receiver, plain)
+      assert {:ok, plain} == ITB.decrypt_message(sender, wire)
+      assert ITB.inspect!(blob)["drbg"] == drbg
+      :ok = ITB.free(receiver)
+      :ok = ITB.free(sender)
+    end
+  end
+
+  test "drbg unknown name" do
+    assert {:error, {:recipe_primitive_unknown, detail}} =
+             ITB.init("singlemsg-triple-mac-v1", %{drbg: "nope"})
+
+    assert detail =~ "nope"
+  end
+
+  test "drbg absent by default" do
+    {:ok, pipe} = ITB.init("singlemsg-triple-mac-v1")
+    {:ok, blob} = ITB.save(pipe)
+    :ok = ITB.free(pipe)
+    refute Map.has_key?(ITB.inspect!(blob), "drbg")
+    refute Map.has_key?(ITB.lookup!("singlemsg-triple-mac-v1"), "drbg")
+  end
+
+  test "drbg survives a register copy of an inspected record" do
+    {:ok, pipe} = ITB.init("singlemsg-triple-mac-v1", %{drbg: "csprng"})
+    {:ok, blob} = ITB.save(pipe)
+    :ok = ITB.free(pipe)
+
+    copy =
+      Map.drop(ITB.inspect!(blob), ["name", "nonce_bits", "barrier_fill", "container_mode"])
+
+    :ok = ITB.register("elixir-binding-test-drbg-copy", copy)
+    assert ITB.lookup!("elixir-binding-test-drbg-copy")["drbg"] == "csprng"
+  end
 end

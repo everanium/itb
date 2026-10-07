@@ -39,7 +39,7 @@ export ITBError, Opts, Pipeline, StreamEncryptor, StreamDecryptor,
     with_wrapper!, with_max_workers!, with_nonce_bits!, with_barrier_fill!,
     with_chunk_size!, with_key_bits!, with_parallax_segment_size!,
     with_mac_name!, with_inner_hash!, with_inner_hashes!,
-    with_outer_cipher!, with_parallax_palette!, build
+    with_outer_cipher!, with_drbg!, with_parallax_palette!, build
 
 "The binding's own version (the library version is [`version`](@ref))."
 const BINDING_VERSION = v"0.5.1"

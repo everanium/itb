@@ -155,4 +155,15 @@ final class ErrorsTest extends TestCase
             $this->assertNotSame(Status::OK, $e->getStatus());
         }
     }
+
+    public function testUnknownDrbgIsRecipePrimitiveUnknown(): void
+    {
+        try {
+            Itb::create('singlemsg-triple-mac-v1', ['drbg' => 'nope']);
+            $this->fail('expected ItbException');
+        } catch (ItbException $e) {
+            $this->assertSame(Status::RECIPE_PRIMITIVE_UNKNOWN, $e->getStatus());
+            $this->assertStringContainsString('nope', $e->getMessage());
+        }
+    }
 }

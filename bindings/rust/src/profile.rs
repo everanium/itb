@@ -59,6 +59,9 @@ pub struct Profile {
     /// lifecycle as [`Profile::nonce_bits`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub container_mode: Option<i64>,
+    /// DRBG fill primitive name; empty for the auto tier.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub drbg: String,
     /// MAC name; empty for No MAC modes.
     #[serde(default, rename = "mac", skip_serializing_if = "String::is_empty")]
     pub mac_name: String,

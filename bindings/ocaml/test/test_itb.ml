@@ -480,6 +480,78 @@ let test_long_diagnostic_survives_the_retry () =
          in
          find 0)
 
+let test_drbg_round_trip () =
+  List.iter
+    (fun name ->
+      let sender = Itb3.create "singlemsg-triple-mac-v1" ~opts:[ ("drbg", name) ] () in
+      let receiver = Itb3.load (Itb3.save sender) in
+      let plain = Bytes.of_string ("drbg " ^ name) in
+      Alcotest.(check bool) (name ^ " round trip") true
+        (Bytes.equal plain
+           (Itb3.decrypt_message receiver (Itb3.encrypt_message sender plain)));
+      let back = Bytes.of_string ("reverse " ^ name) in
+      Alcotest.(check bool) (name ^ " reverse round trip") true
+        (Bytes.equal back
+           (Itb3.decrypt_message sender (Itb3.encrypt_message receiver back)));
+      Itb3.close receiver;
+      Itb3.close sender)
+    [ "csprng"; "aesitb128" ]
+
+let test_drbg_inspect_default_and_unknown () =
+  let sender = Itb3.create "singlemsg-triple-mac-v1" ~opts:[ ("drbg", "csprng") ] () in
+  Alcotest.(check bool) "inspect carries drbg" true
+    (contains (Itb3.inspect (Itb3.save sender)) "\"drbg\":\"csprng\"");
+  Itb3.close sender;
+  (* With no drbg set the record carries no drbg key, and no shipped
+     profile names one. *)
+  let plain = Itb3.create "singlemsg-triple-mac-v1" () in
+  Alcotest.(check bool) "default inspect omits drbg" false
+    (contains (Itb3.inspect (Itb3.save plain)) "\"drbg\":");
+  Itb3.close plain;
+  Alcotest.(check bool) "lookup omits drbg" false
+    (contains (Itb3.lookup "singlemsg-triple-mac-v1") "\"drbg\":");
+  (* Status 12 = RECIPE_PRIMITIVE_UNKNOWN. *)
+  match Itb3.create "singlemsg-triple-mac-v1" ~opts:[ ("drbg", "nope") ] () with
+  | exception Itb3.ITB_error (12, msg) ->
+      Alcotest.(check bool) "diagnostic names the token" true (contains msg "nope")
+  | exception Itb3.ITB_error (st, msg) ->
+      Alcotest.failf "expected status 12, got %d (%s)" st msg
+  | _ -> Alcotest.fail "expected ITB_error with status 12, call succeeded"
+
+(* Removes a "key":value, member with a scalar value from a flat JSON
+   object rendering; the record is left unchanged when the key is
+   absent. *)
+let drop_scalar_key record key =
+  let needle = "\"" ^ key ^ "\":" in
+  let n = String.length record and k = String.length needle in
+  let rec find i =
+    if i + k > n then None
+    else if String.sub record i k = needle then Some i
+    else find (i + 1)
+  in
+  match find 0 with
+  | None -> record
+  | Some i ->
+      let j = match String.index_from_opt record (i + k) ',' with
+        | Some c -> c + 1
+        | None -> n
+      in
+      String.sub record 0 i ^ String.sub record j (n - j)
+
+let test_drbg_register_copy () =
+  let sender = Itb3.create "singlemsg-triple-mac-v1" ~opts:[ ("drbg", "csprng") ] () in
+  (* The inspection-only fields are dropped; drbg is a recipe field and
+     stays in the registered copy. *)
+  let record =
+    List.fold_left drop_scalar_key
+      (Itb3.inspect (Itb3.save sender))
+      [ "name"; "nonce_bits"; "barrier_fill"; "container_mode" ]
+  in
+  Itb3.register ~name:"ocaml-binding-test-drbg-copy" ~profile:record;
+  Alcotest.(check bool) "register copy keeps drbg" true
+    (contains (Itb3.lookup "ocaml-binding-test-drbg-copy") "\"drbg\":\"csprng\"");
+  Itb3.close sender
+
 let () =
   (* Go-runtime pacing caps applied before any cipher work. *)
   Itb3.set_memory_limit (512 * 1024 * 1024);
@@ -544,5 +616,12 @@ let () =
           case "hash registry enumeration" (fun () -> test_hash_names_registry ());
           case "long diagnostic survives the retry" (fun () ->
               test_long_diagnostic_survives_the_retry ());
+        ] );
+      ( "drbg",
+        [
+          case "round trip through a loaded blob" (fun () -> test_drbg_round_trip ());
+          case "inspect, default and unknown name" (fun () ->
+              test_drbg_inspect_default_and_unknown ());
+          case "register copy keeps drbg" (fun () -> test_drbg_register_copy ());
         ] );
     ]

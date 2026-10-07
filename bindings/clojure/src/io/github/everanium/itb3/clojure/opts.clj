@@ -36,6 +36,7 @@
                             When both this and :inner-hash are set,
                             the mixed override wins on the Go side.
     :outer-cipher           string
+    :drbg                   string
     :parallax-palette       seq of strings (comma-joined)
     :raw                    map (or seq of pairs) of raw key=value
                             pass-through entries — covers every key
@@ -67,6 +68,7 @@
         :inner-hash (.withInnerHash o (str v))
         :inner-hashes (.withInnerHashes o ^"[Ljava.lang.String;" (into-array String (map str v)))
         :outer-cipher (.withOuterCipher o (str v))
+        :drbg (.withDrbg o (str v))
         :parallax-palette (.withParallaxPalette o ^"[Ljava.lang.String;" (into-array String (map str v)))
         :raw (doseq [[rk rv] v] (.withRaw o (raw-key rk) (str rv)))
         (throw (ex-info (str "itb: unknown opts key " k

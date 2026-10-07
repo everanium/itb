@@ -84,3 +84,9 @@
            (itb/init "singlemsg-triple-mac-v1" {:inner-hash "no-such-hash"}))]
     (is (some? e))
     (is (not= :ok (err/error-status e)))))
+
+(deftest unknown-drbg-is-recipe-primitive-unknown
+  (let [e (thrown-error (itb/init "singlemsg-triple-mac-v1" {:drbg "nope"}))]
+    (is (= :recipe-primitive-unknown (err/error-status e)))
+    (is (= 12 (:code (ex-data e))))
+    (is (.contains ^String (ex-message e) "nope"))))

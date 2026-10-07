@@ -109,6 +109,11 @@ Public NotInheritable Class Opts
         Return Me
     End Function
 
+    Public Function WithDrbg(name As String) As Opts
+        _inner.WithDrbg(name)
+        Return Me
+    End Function
+
     ''' <summary>Comma-joins the palette names
     ''' (<c>parallaxPalette</c>).</summary>
     Public Function WithParallaxPalette(ParamArray names As String()) As Opts

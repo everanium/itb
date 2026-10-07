@@ -695,6 +695,29 @@ package body Test_Cases is
          end;
          Check (Got /= Itb3.Status.OK, "opaque name relay status");
       end;
+
+      --  An unknown drbg name is relayed to Go and rejected there as
+      --  Recipe_Primitive_Unknown, with the token in the diagnostic.
+      declare
+         Bad   : Itb3.Opts.Opts;
+         P     : Itb3.Pipeline.Pipeline;
+         Got   : Integer := -1;
+         Named : Boolean := False;
+      begin
+         Bad.Set_DRBG ("nope");
+         begin
+            P.Init ("singlemsg-triple-mac-v1", Bad);
+            Check (False, "init with unknown drbg name must raise");
+         exception
+            when E : Itb3.Error.Itb_Error =>
+               Got := Itb3.Error.Status_Code (E);
+               Named := Ada.Strings.Fixed.Index
+                          (Itb3.Error.Message (E), "nope") > 0;
+         end;
+         Check (Got = Itb3.Status.Recipe_Primitive_Unknown,
+                "unknown drbg status");
+         Check (Named, "unknown drbg diagnostic must name the token");
+      end;
    end Errors;
 
    -----------------
@@ -719,13 +742,14 @@ package body Test_Cases is
       O.Set_MAC_Name ("hmac-blake3");
       O.Set_Inner_Hash ("areion512");
       O.Set_Outer_Cipher ("chacha20");
+      O.Set_DRBG ("csprng");
       O.Set_Parallax_Palette ("aescmac,chacha20,blake3");
       Check
         (Itb3.Opts.Build (O) =
            "pm=ab01&wm=cdef&withParallax=true&withWrapper=false&"
            & "maxWorkers=4&nonceBits=512&barrierFill=4&chunkSize=4096&"
            & "keyBits=1024&parallaxSegmentSize=65536&macName=hmac-blake3&"
-           & "innerHash=areion512&outerCipher=chacha20&"
+           & "innerHash=areion512&outerCipher=chacha20&drbg=csprng&"
            & "parallaxPalette=aescmac,chacha20,blake3",
          "typed setters render expected keys");
 
@@ -804,6 +828,11 @@ package body Test_Cases is
                (Integer (Ada.Calendar.Seconds (Ada.Calendar.Clock))),
              Ada.Strings.Left)
         & ".blob";
+      type Name_Access is access constant String;
+      Csprng_Name    : aliased constant String := "csprng";
+      Aesitb128_Name : aliased constant String := "aesitb128";
+      Drbg_Names     : constant array (1 .. 2) of Name_Access :=
+        [Csprng_Name'Access, Aesitb128_Name'Access];
    begin
       Sender.Init ("singlemsg-triple-mac-v1", O);
 
@@ -930,6 +959,79 @@ package body Test_Cases is
          Check_Eq
            (Receiver.Decrypt_Message (Sender.Encrypt_Message (Plain)),
             Plain, "workers round trip");
+      end;
+
+      --  The drbg recipe key: an Init under each named fill primitive
+      --  round-trips through a loaded blob and is reported by
+      --  Inspect; an inspected record re-registers under a new name
+      --  and keeps the key. The register payload drops the name and
+      --  the inspection-only nonce_bits / barrier_fill /
+      --  container_mode keys, which sit contiguously between keybits
+      --  and drbg.
+      for Name of Drbg_Names loop
+         declare
+            D_Opts   : Itb3.Opts.Opts;
+            D_Sender : Itb3.Pipeline.Pipeline;
+            D_Recv   : Itb3.Pipeline.Pipeline;
+            Tag      : constant String := Name.all;
+         begin
+            D_Opts.Set_DRBG (Tag);
+            D_Sender.Init ("singlemsg-triple-mac-v1", D_Opts);
+            declare
+               Blob : constant Itb3.Byte_Array := D_Sender.Save;
+               Want : constant String := """drbg"":""" & Tag & """";
+            begin
+               D_Recv.Load (Blob);
+               Check_Eq
+                 (D_Recv.Decrypt_Message (D_Sender.Encrypt_Message (Plain)),
+                  Plain, "drbg round trip");
+               Check_Eq
+                 (D_Sender.Decrypt_Message (D_Recv.Encrypt_Message (Plain)),
+                  Plain, "drbg reverse round trip");
+               declare
+                  Inspected : constant String :=
+                    Itb3.Pipeline.Inspect (Blob);
+                  P_Mode    : constant Natural :=
+                    Ada.Strings.Fixed.Index (Inspected, """mode""");
+                  P_Cut     : constant Natural :=
+                    Ada.Strings.Fixed.Index (Inspected, """nonce_bits""");
+                  P_Drbg    : constant Natural :=
+                    Ada.Strings.Fixed.Index (Inspected, """drbg""");
+               begin
+                  Check (Ada.Strings.Fixed.Index (Inspected, Want) > 0,
+                         "inspect must carry the drbg key");
+                  if Tag = "csprng" then
+                     Check (P_Mode > 0 and then P_Cut > P_Mode
+                              and then P_Drbg > P_Cut,
+                            "inspect key order for the register payload");
+                     Itb3.Pipeline.Register
+                       ("ada-binding-test-drbg-copy",
+                        "{" & Inspected (P_Mode .. P_Cut - 1)
+                        & Inspected (P_Drbg .. Inspected'Last));
+                     Check (Ada.Strings.Fixed.Index
+                              (Itb3.Pipeline.Lookup
+                                 ("ada-binding-test-drbg-copy"),
+                               Want) > 0,
+                            "lookup must keep the drbg key");
+                  end if;
+               end;
+            end;
+         end;
+      end loop;
+
+      --  Default: no drbg key in Inspect, nor in a shipped Lookup.
+      declare
+         Plain_Opts : Itb3.Opts.Opts;
+         D_Sender   : Itb3.Pipeline.Pipeline;
+      begin
+         D_Sender.Init ("singlemsg-triple-mac-v1", Plain_Opts);
+         Check (Ada.Strings.Fixed.Index
+                  (Itb3.Pipeline.Inspect (D_Sender.Save), """drbg""") = 0,
+                "default inspect must omit drbg");
+         Check (Ada.Strings.Fixed.Index
+                  (Itb3.Pipeline.Lookup ("singlemsg-triple-mac-v1"),
+                   """drbg""") = 0,
+                "shipped lookup must omit drbg");
       end;
    end Persist;
 

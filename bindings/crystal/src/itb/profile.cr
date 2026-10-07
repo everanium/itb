@@ -53,6 +53,8 @@ module ITB
     # blob's inner mode field: 1 per-region, 2 per-container. Same
     # inspection-only lifecycle as `#nonce_bits`.
     property container_mode : Int32?
+    # DRBG fill primitive name (`drbg`); empty for the auto tier.
+    property drbg : String
     # MAC name (`mac`); empty on a No MAC profile.
     property mac : String
     # Tag stub size (`tagstub`); 0 when absent.
@@ -75,7 +77,7 @@ module ITB
                    @tag_stub = 0, @chunk = 0, @wrapper = false, @outer = "",
                    @parallax = false, @palette = [] of String, @segment = 0,
                    @nonce_bits = nil, @barrier_fill = nil,
-                   @container_mode = nil)
+                   @container_mode = nil, @drbg = "")
     end
 
     # Renders the record as the wire JSON object.
@@ -97,6 +99,7 @@ module ITB
           if cm = @container_mode
             j.field "container_mode", cm
           end
+          j.field "drbg", @drbg unless @drbg.empty?
           j.field "mac", @mac unless @mac.empty?
           j.field "tagstub", @tag_stub unless @tag_stub == 0
           j.field "chunk", @chunk unless @chunk == 0
@@ -123,6 +126,7 @@ module ITB
         nonce_bits: m["nonce_bits"]?.try(&.as_i?),
         barrier_fill: m["barrier_fill"]?.try(&.as_i?),
         container_mode: m["container_mode"]?.try(&.as_i?),
+        drbg: m["drbg"]?.try(&.as_s) || "",
         mac: m["mac"]?.try(&.as_s) || "",
         tag_stub: m["tagstub"]?.try(&.as_i) || 0,
         chunk: m["chunk"]?.try(&.as_i) || 0,

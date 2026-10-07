@@ -110,4 +110,19 @@ final class ErrorsTests: XCTestCase {
             XCTAssertEqual((error as? ItbError)?.status, .badInput)
         }
     }
+
+    func testUnknownDrbg() throws {
+        // An unknown drbg name is relayed to Go and rejected there as
+        // an unknown recipe primitive, with the token in the sentence.
+        let opts = try Opts().set("drbg", "nope")
+        XCTAssertThrowsError(
+            try Pipeline(profile: "singlemsg-triple-mac-v1", opts: opts)
+        ) { error in
+            guard let err = error as? ItbError else {
+                return XCTFail("not an ItbError: \(error)")
+            }
+            XCTAssertEqual(err.status, .recipePrimitiveUnknown)
+            XCTAssertTrue(err.message.contains("nope"), err.message)
+        }
+    }
 }

@@ -48,6 +48,7 @@ public final class Profile {
     private Integer nonceBits;
     private Integer barrierFill;
     private Integer containerMode;
+    private String drbg = "";
     private String mac = "";
     private int tagStub;
     private int chunk;
@@ -112,6 +113,13 @@ public final class Profile {
      * inspection-only lifecycle as {@link #nonceBits()}. */
     public Integer containerMode() {
         return containerMode;
+    }
+
+    /** DRBG fill primitive name ({@code drbg}); empty when absent,
+     * which selects the auto tier. A recipe field: a registered copy
+     * of an inspected record keeps it. */
+    public String drbg() {
+        return drbg;
     }
 
     /** MAC name ({@code mac}); empty on a No MAC profile. */
@@ -210,6 +218,11 @@ public final class Profile {
         return this;
     }
 
+    public Profile drbg(String value) {
+        this.drbg = value == null ? "" : value;
+        return this;
+    }
+
     public Profile mac(String value) {
         this.mac = value == null ? "" : value;
         return this;
@@ -264,7 +277,8 @@ public final class Profile {
         return width == p.width && keyBits == p.keyBits && tagStub == p.tagStub
                 && chunk == p.chunk && wrapper == p.wrapper && parallax == p.parallax
                 && segment == p.segment && name.equals(p.name) && mode.equals(p.mode)
-                && hash.equals(p.hash) && hashes.equals(p.hashes) && mac.equals(p.mac)
+                && hash.equals(p.hash) && hashes.equals(p.hashes) && drbg.equals(p.drbg)
+                && mac.equals(p.mac)
                 && outer.equals(p.outer) && palette.equals(p.palette)
                 && Objects.equals(nonceBits, p.nonceBits)
                 && Objects.equals(barrierFill, p.barrierFill)
@@ -274,7 +288,7 @@ public final class Profile {
     @Override
     public int hashCode() {
         return Objects.hash(name, mode, width, hash, hashes, keyBits, nonceBits,
-                barrierFill, containerMode, mac, tagStub, chunk, wrapper, outer, parallax, palette,
+                barrierFill, containerMode, drbg, mac, tagStub, chunk, wrapper, outer, parallax, palette,
                 segment);
     }
 
@@ -310,6 +324,9 @@ public final class Profile {
         }
         if (containerMode != null) {
             key(sb, first, "container_mode").append(containerMode.intValue());
+        }
+        if (!drbg.isEmpty()) {
+            key(sb, first, "drbg").append(quote(drbg));
         }
         if (!mac.isEmpty()) {
             key(sb, first, "mac").append(quote(mac));
@@ -376,6 +393,9 @@ public final class Profile {
                     break;
                 case "container_mode":
                     out.containerMode = Integer.valueOf(p.integer());
+                    break;
+                case "drbg":
+                    out.drbg = p.string();
                     break;
                 case "mac":
                     out.mac = p.string();

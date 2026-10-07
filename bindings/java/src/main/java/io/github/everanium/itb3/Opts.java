@@ -86,6 +86,10 @@ public final class Opts {
         return withRaw("outerCipher", name);
     }
 
+    public Opts withDrbg(String name) {
+        return withRaw("drbg", name);
+    }
+
     /** Comma-joins the palette names ({@code parallaxPalette}). */
     public Opts withParallaxPalette(String... names) {
         return withRaw("parallaxPalette", String.join(",", names));

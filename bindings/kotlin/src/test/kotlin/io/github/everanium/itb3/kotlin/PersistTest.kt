@@ -7,6 +7,7 @@ import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -136,6 +137,62 @@ class PersistTest {
             pipe.maxWorkers(-1)
             pipe.maxWorkers(1000)
             assertContentEquals(plain, pipe.decryptMessage(pipe.encryptMessage(plain)))
+        }
+    }
+
+    @Test
+    fun drbgRoundTripsThroughLoadedBlob() {
+        for (drbg in listOf("csprng", "aesitb128")) {
+            Pipeline.init("singlemsg-triple-mac-v1", Opts().drbg(drbg)).use { sender ->
+                Pipeline.load(sender.save()).use { receiver ->
+                    assertContentEquals(plain, receiver.decryptMessage(sender.encryptMessage(plain)))
+                    assertContentEquals(plain, sender.decryptMessage(receiver.encryptMessage(plain)))
+                }
+            }
+        }
+    }
+
+    @Test
+    fun inspectReportsTheDrbg() {
+        Pipeline.init("singlemsg-triple-mac-v1", Opts().drbg("csprng")).use { pipe ->
+            val prof = Pipeline.inspect(pipe.save())
+            assertEquals("csprng", prof.drbg())
+            assertTrue("\"drbg\":\"csprng\"" in prof.toJson())
+        }
+    }
+
+    @Test
+    fun unknownDrbgIsRecipePrimitiveUnknown() {
+        val ex = assertFailsWith<ItbException> {
+            Pipeline.init("singlemsg-triple-mac-v1", Opts().drbg("nope"))
+        }
+        assertEquals(Status.RecipePrimitiveUnknown, ex.status)
+        assertTrue("nope" in (ex.message ?: ""))
+    }
+
+    @Test
+    fun defaultDrbgIsAbsent() {
+        Pipeline.init("singlemsg-triple-mac-v1").use { pipe ->
+            val prof = Pipeline.inspect(pipe.save())
+            assertEquals("", prof.drbg())
+            assertFalse("\"drbg\"" in prof.toJson())
+        }
+        assertEquals("", Pipeline.lookup("singlemsg-triple-mac-v1").drbg())
+    }
+
+    @Test
+    fun registerCopyKeepsTheDrbg() {
+        Pipeline.init("singlemsg-triple-mac-v1", Opts().drbg("csprng")).use { pipe ->
+            val copy = Pipeline.inspect(pipe.save())
+                .name("").nonceBits(null).barrierFill(null).containerMode(null)
+            Pipeline.register("kotlin-binding-test-drbg-copy", copy)
+            assertEquals("csprng", Pipeline.lookup("kotlin-binding-test-drbg-copy").drbg())
+            Pipeline.init("kotlin-binding-test-drbg-copy").use { sender ->
+                Pipeline.load(sender.save()).use { receiver ->
+                    assertEquals("csprng", Pipeline.inspect(sender.save()).drbg())
+                    assertContentEquals(plain, receiver.decryptMessage(sender.encryptMessage(plain)))
+                }
+            }
         }
     }
 }

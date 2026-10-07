@@ -28,12 +28,13 @@ Public Class OptsTests
             WithMacName("hmac-blake3").
             WithInnerHash("areion512").
             WithOuterCipher("chacha20").
+            WithDrbg("csprng").
             WithParallaxPalette("aescmac", "chacha20", "blake3")
         Assert.Equal(
             "pm=ab01&wm=cdef&withParallax=true&withWrapper=false&" &
             "maxWorkers=4&nonceBits=512&barrierFill=4&chunkSize=4096&" &
             "keyBits=1024&parallaxSegmentSize=65536&macName=hmac-blake3&" &
-            "innerHash=areion512&outerCipher=chacha20&" &
+            "innerHash=areion512&outerCipher=chacha20&drbg=csprng&" &
             "parallaxPalette=aescmac,chacha20,blake3",
             Render(opts))
     End Sub

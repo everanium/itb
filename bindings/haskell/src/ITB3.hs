@@ -65,6 +65,7 @@ module ITB3
   , innerHash
   , innerHashes
   , outerCipher
+  , drbg
   , parallaxPalette
     -- * Errors
   , module ITB3.Errors

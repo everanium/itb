@@ -51,6 +51,8 @@ type
       ## Container floor sizing mode, read from the blob's inner mode
       ## field: 1 per-region, 2 per-container. Same inspection-only
       ## lifecycle as ``nonceBits``.
+    drbg*: string
+      ## DRBG fill primitive name; empty for the auto tier.
     macName*: string
       ## MAC name; empty for No MAC modes.
     tagStubSize*: int
@@ -98,6 +100,7 @@ proc fromJson*(_: typedesc[Profile], json: string): Profile =
     nonceBits: optIntOf(n, "nonce_bits"),
     barrierFill: optIntOf(n, "barrier_fill"),
     containerMode: optIntOf(n, "container_mode"),
+    drbg: strOf(n, "drbg"),
     macName: strOf(n, "mac"),
     tagStubSize: intOf(n, "tagstub"),
     chunkSize: intOf(n, "chunk"),
@@ -119,6 +122,7 @@ proc toJson*(p: Profile): string =
   if p.nonceBits.isSome: n["nonce_bits"] = %p.nonceBits.get
   if p.barrierFill.isSome: n["barrier_fill"] = %p.barrierFill.get
   if p.containerMode.isSome: n["container_mode"] = %p.containerMode.get
+  if p.drbg.len > 0: n["drbg"] = %p.drbg
   if p.macName.len > 0: n["mac"] = %p.macName
   if p.tagStubSize != 0: n["tagstub"] = %p.tagStubSize
   if p.chunkSize != 0: n["chunk"] = %p.chunkSize

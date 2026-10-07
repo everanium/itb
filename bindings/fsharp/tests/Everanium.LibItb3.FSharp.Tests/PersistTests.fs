@@ -120,3 +120,59 @@ let ``maxWorkers clamps`` () =
     unwrap (Pipeline.maxWorkers pipe 1000)
     let wire = unwrap (Pipeline.encryptMessage pipe plain)
     Assert.Equal<byte[]>(plain, unwrap (Pipeline.decryptMessage pipe wire))
+
+[<Fact>]
+let ``drbg round trips through a loaded blob`` () =
+    for drbg in [ "csprng"; "aesitb128" ] do
+        let opts = Opts.empty |> Opts.withDrbg drbg
+        use sender = unwrap (Pipeline.init "singlemsg-triple-mac-v1" opts)
+        use receiver = unwrap (Pipeline.load (unwrap (Pipeline.save sender)))
+        let wire = unwrap (Pipeline.encryptMessage sender plain)
+        Assert.Equal<byte[]>(plain, unwrap (Pipeline.decryptMessage receiver wire))
+        let back = unwrap (Pipeline.encryptMessage receiver plain)
+        Assert.Equal<byte[]>(plain, unwrap (Pipeline.decryptMessage sender back))
+
+[<Fact>]
+let ``inspect reports the drbg`` () =
+    let opts = Opts.empty |> Opts.withDrbg "csprng"
+    use pipe = unwrap (Pipeline.init "singlemsg-triple-mac-v1" opts)
+    let prof = unwrap (Pipeline.inspect (unwrap (Pipeline.save pipe)))
+    Assert.Equal("csprng", prof.Drbg)
+    Assert.Contains("\"drbg\":\"csprng\"", prof.ToJson())
+
+[<Fact>]
+let ``unknown drbg is RecipePrimitiveUnknown`` () =
+    let opts = Opts.empty |> Opts.withDrbg "nope"
+    let err = unwrapError (Pipeline.init "singlemsg-triple-mac-v1" opts)
+    Assert.Equal(Status.RecipePrimitiveUnknown, err.Status)
+    Assert.Equal(12, err.Code)
+    Assert.Contains("nope", err.Detail)
+
+[<Fact>]
+let ``default drbg is absent`` () =
+    use pipe = unwrap (Pipeline.init "singlemsg-triple-mac-v1" Opts.empty)
+    let prof = unwrap (Pipeline.inspect (unwrap (Pipeline.save pipe)))
+    Assert.Equal("", prof.Drbg)
+    Assert.DoesNotContain("\"drbg\"", prof.ToJson())
+    let registry = unwrap (Pipeline.lookup "singlemsg-triple-mac-v1")
+    Assert.Equal("", registry.Drbg)
+    Assert.DoesNotContain("\"drbg\"", registry.ToJson())
+
+[<Fact>]
+let ``register copy keeps the drbg`` () =
+    let opts = Opts.empty |> Opts.withDrbg "csprng"
+    use pipe = unwrap (Pipeline.init "singlemsg-triple-mac-v1" opts)
+    // The drbg key is part of the recipe; only the inspection-only
+    // fields and the name are cleared before registering.
+    let copy = unwrap (Pipeline.inspect (unwrap (Pipeline.save pipe)))
+    copy.Name <- ""
+    copy.NonceBits <- System.Nullable()
+    copy.BarrierFill <- System.Nullable()
+    copy.ContainerMode <- System.Nullable()
+    unwrap (Pipeline.register "fsharp-binding-test-drbg-copy" copy)
+    let back = unwrap (Pipeline.lookup "fsharp-binding-test-drbg-copy")
+    Assert.Equal("csprng", back.Drbg)
+    use sender = unwrap (Pipeline.init "fsharp-binding-test-drbg-copy" Opts.empty)
+    use receiver = unwrap (Pipeline.load (unwrap (Pipeline.save sender)))
+    let wire = unwrap (Pipeline.encryptMessage sender plain)
+    Assert.Equal<byte[]>(plain, unwrap (Pipeline.decryptMessage receiver wire))

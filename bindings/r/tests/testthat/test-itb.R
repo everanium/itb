@@ -531,3 +531,57 @@ test_that("pool_stats reports the library's pool counters", {
   expect_true(all(second >= first))
   expect_true(any(second > first))
 })
+
+test_that("drbg round trip through a loaded blob", {
+  for (name in c("csprng", "aesitb128")) {
+    sender <- pipeline_create("singlemsg-triple-mac-v1",
+      opts = itb_opts(drbg = name)
+    )
+    receiver <- pipeline_load(pipeline_save(sender))
+    plain <- charToRaw(paste("drbg", name))
+    expect_identical(
+      pipeline_decrypt_message(receiver, pipeline_encrypt_message(sender, plain)),
+      plain
+    )
+    back <- charToRaw(paste("reverse", name))
+    expect_identical(
+      pipeline_decrypt_message(sender, pipeline_encrypt_message(receiver, back)),
+      back
+    )
+    pipeline_free(receiver)
+    pipeline_free(sender)
+  }
+})
+
+test_that("drbg inspect, default and unknown name", {
+  pipe <- pipeline_create("singlemsg-triple-mac-v1",
+    opts = itb_opts(drbg = "csprng")
+  )
+  expect_true(grepl('"drbg":"csprng"', inspect(pipeline_save(pipe)), fixed = TRUE))
+  pipeline_free(pipe)
+  # With no drbg set the record carries no drbg key, and no shipped
+  # profile names one.
+  plain <- pipeline_create("singlemsg-triple-mac-v1")
+  expect_false(grepl('"drbg":', inspect(pipeline_save(plain)), fixed = TRUE))
+  pipeline_free(plain)
+  expect_false(grepl('"drbg":', lookup("singlemsg-triple-mac-v1"), fixed = TRUE))
+  err <- expect_itb_status(
+    pipeline_create("singlemsg-triple-mac-v1", opts = itb_opts(drbg = "nope")),
+    itb_status$RECIPE_PRIMITIVE_UNKNOWN
+  )
+  expect_true(grepl("nope", conditionMessage(err), fixed = TRUE))
+})
+
+test_that("drbg survives a register copy", {
+  pipe <- pipeline_create("singlemsg-triple-mac-v1",
+    opts = itb_opts(drbg = "csprng")
+  )
+  # The inspection-only fields are dropped; drbg is a recipe field and
+  # stays in the registered copy.
+  record <- inspect(pipeline_save(pipe))
+  record <- gsub('"name":"[^"]*",?', "", record)
+  record <- gsub('"(nonce_bits|barrier_fill|container_mode)":[0-9]+,?', "", record)
+  register("r-binding-test-drbg-copy", record)
+  expect_true(grepl('"drbg":"csprng"', lookup("r-binding-test-drbg-copy"), fixed = TRUE))
+  pipeline_free(pipe)
+})

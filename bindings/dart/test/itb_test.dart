@@ -551,4 +551,57 @@ void main() {
       );
     });
   });
+
+  group('drbg fill primitive', () {
+    final plain = payload(2048, 113);
+
+    test('drbg round trips and inspect reports it', () {
+      for (final name in const ['csprng', 'aesitb128']) {
+        final sender = Itb.create('singlemsg-triple-mac-v1', Opts().withDrbg(name));
+        final blob = sender.save();
+        final prof = Itb.inspect(blob);
+        expect(prof.drbg, name);
+        expect(prof.toJson(), contains('"drbg":"$name"'));
+        final receiver = Itb.load(blob);
+        expect(sender.decryptMessage(receiver.encryptMessage(plain)), plain);
+        sender.free();
+        receiver.free();
+      }
+    });
+
+    test('drbg is absent by default', () {
+      final pipe = Itb.create('singlemsg-triple-mac-v1');
+      final prof = Itb.inspect(pipe.save());
+      pipe.free();
+      expect(prof.drbg, isEmpty);
+      expect(prof.toJson(), isNot(contains('drbg')));
+      final registry = Itb.lookup('singlemsg-triple-mac-v1');
+      expect(registry.drbg, isEmpty);
+      expect(registry.toJson(), isNot(contains('drbg')));
+    });
+
+    test('unknown drbg is RecipePrimitiveUnknown', () {
+      expect(
+        () => Itb.create('singlemsg-triple-mac-v1', Opts().withDrbg('nope')),
+        throwsA(isA<ItbException>()
+            .having((e) => e.statusCode, 'statusCode',
+                Status.recipePrimitiveUnknown)
+            .having((e) => e.lastError, 'lastError', contains('nope'))),
+      );
+    });
+
+    test('drbg survives a register copy of an inspected record', () {
+      // drbg is a recipe field: unlike the inspection-only fields, it
+      // stays in a registered copy of an inspected record.
+      final pipe = Itb.create('singlemsg-triple-mac-v1', Opts().withDrbg('csprng'));
+      final recipe = Itb.inspect(pipe.save())
+        ..name = ''
+        ..nonceBits = null
+        ..barrierFill = null
+        ..containerMode = null;
+      pipe.free();
+      Itb.register('dart-binding-test-drbg-copy', recipe);
+      expect(Itb.lookup('dart-binding-test-drbg-copy').drbg, 'csprng');
+    });
+  });
 }

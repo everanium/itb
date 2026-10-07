@@ -49,6 +49,7 @@ local KEY_MAP = {
     mac_name = "macName",
     inner_hash = "innerHash",
     outer_cipher = "outerCipher",
+    drbg = "drbg",
     parallax_palette = "parallaxPalette",
     perm_master = "pm",
     wrap_master = "wm",

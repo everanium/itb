@@ -430,6 +430,51 @@ run("pool counters", function()
     assert(rose, "no counter moved across a round trip")
 end)
 
+run("drbg round trip through a loaded blob", function()
+    for _, name in ipairs({ "csprng", "aesitb128" }) do
+        local sender <close> = itb.create("singlemsg-triple-mac-v1",
+            itb.opts({ drbg = name }))
+        local receiver <close> = itb.load(sender:save())
+        local wire = sender:encrypt_message("drbg " .. name)
+        assert(receiver:decrypt_message(wire) == "drbg " .. name)
+        local back = receiver:encrypt_message("reverse " .. name)
+        assert(sender:decrypt_message(back) == "reverse " .. name)
+    end
+end)
+
+run("drbg inspect, default and unknown name", function()
+    local pipe <close> = itb.create("singlemsg-triple-mac-v1",
+        itb.opts({ drbg = "csprng" }))
+    local record = itb.inspect(pipe:save())
+    assert(record:find('"drbg":"csprng"', 1, true), record)
+    -- With no drbg set the record carries no drbg key, and no shipped
+    -- profile names one.
+    local plain <close> = itb.create("singlemsg-triple-mac-v1")
+    local default = itb.inspect(plain:save())
+    assert(not default:find('"drbg":', 1, true), default)
+    local looked = itb.lookup("singlemsg-triple-mac-v1")
+    assert(not looked:find('"drbg":', 1, true), looked)
+    local err = assert_status({ itb.status.RECIPE_PRIMITIVE_UNKNOWN }, function()
+        itb.create("singlemsg-triple-mac-v1", itb.opts({ drbg = "nope" }))
+    end)
+    assert(tostring(err):find("nope", 1, true), tostring(err))
+end)
+
+run("drbg survives a register copy", function()
+    local pipe <close> = itb.create("singlemsg-triple-mac-v1",
+        itb.opts({ drbg = "csprng" }))
+    -- The inspection-only fields are dropped; drbg is a recipe field
+    -- and stays in the registered copy.
+    local record = itb.inspect(pipe:save())
+        :gsub('"name":"[^"]*",?', "")
+        :gsub('"nonce_bits":%d+,?', "")
+        :gsub('"barrier_fill":%d+,?', "")
+        :gsub('"container_mode":%d+,?', "")
+    itb.register("lua-binding-test-drbg-copy", record)
+    local looked = itb.lookup("lua-binding-test-drbg-copy")
+    assert(looked:find('"drbg":"csprng"', 1, true), looked)
+end)
+
 -- ---------------------------------------------------------------------
 
 if failures > 0 then

@@ -76,6 +76,10 @@ public sealed class Profile
     /// <see cref="NonceBits"/>.</summary>
     public int? ContainerMode { get; set; }
 
+    /// <summary>DRBG fill primitive name (<c>drbg</c>); empty when
+    /// absent, which keeps the auto tier.</summary>
+    public string Drbg { get; set; } = "";
+
     /// <summary>MAC name (<c>mac</c>); empty on a No MAC
     /// profile.</summary>
     public string Mac { get; set; } = "";
@@ -123,6 +127,7 @@ public sealed class Profile
             if (NonceBits.HasValue) w.WriteNumber("nonce_bits", NonceBits.Value);
             if (BarrierFill.HasValue) w.WriteNumber("barrier_fill", BarrierFill.Value);
             if (ContainerMode.HasValue) w.WriteNumber("container_mode", ContainerMode.Value);
+            if (Drbg.Length > 0) w.WriteString("drbg", Drbg);
             if (Mac.Length > 0) w.WriteString("mac", Mac);
             if (TagStub != 0) w.WriteNumber("tagstub", TagStub);
             if (Chunk != 0) w.WriteNumber("chunk", Chunk);
@@ -156,6 +161,7 @@ public sealed class Profile
                 case "nonce_bits": p.NonceBits = prop.Value.GetInt32(); break;
                 case "barrier_fill": p.BarrierFill = prop.Value.GetInt32(); break;
                 case "container_mode": p.ContainerMode = prop.Value.GetInt32(); break;
+                case "drbg": p.Drbg = prop.Value.GetString() ?? ""; break;
                 case "mac": p.Mac = prop.Value.GetString() ?? ""; break;
                 case "tagstub": p.TagStub = prop.Value.GetInt32(); break;
                 case "chunk": p.Chunk = prop.Value.GetInt32(); break;
