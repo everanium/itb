@@ -18,7 +18,7 @@ The blob `Wrap` / `Unwrap` paths split the keystream XOR across up to 32 worker 
 Reproduction:
 
 ```sh
-go test -run='^$' -bench='.' -benchtime=5s -count=1 ./wrapper/
+go test -run='^$' -bench='.' -benchtime=5s -count=1 -timeout 30m ./wrapper/
 ```
 
 Filter examples:
