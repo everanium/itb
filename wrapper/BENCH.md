@@ -36,7 +36,7 @@ go test -run='^$' -bench='BenchmarkStreamingTriple/.*/aescmac' -benchtime=5s -co
 * Outer cipher path: every PRF-grade registry primitive, keystream built by the `ctr` package; blob XOR parallelised across up to 32 workers.
 * ITB primitive: Areion-SoEM-512.
 * ITB seed width: 1024 bits.
-* ITB cipher config: `NonceBits=128`, `BarrierFill=1` (minimum config so the outer cipher delta is not masked by inner feature cost). The 48-bit Interlocked Barrier is always engaged and non-disableable by construction.
+* ITB cipher config: `NonceBits=512`, `BarrierFill=1` (the nonce width the ITB benchmarks in [BENCH3.md](../BENCH3.md) use; `BarrierFill=1` keeps the inner feature cost at its minimum so the outer cipher delta is not masked). The 48-bit Interlocked Barrier is always engaged and non-disableable by construction.
 * `MaxWorkers=0` on the shared `*itb.Config` (use every available HT for the inner hash kernels).
 * MAC factory: HMAC-BLAKE3, 32-byte CSPRNG key (where applicable).
 * Single Message plaintext: 16 MiB random.
@@ -49,15 +49,15 @@ Column abbreviations in the Full ITB + wrapper tables: **IO** = IO-Driven (`io.R
 
 | Cipher | `Wrap` (alloc) MB/s | `WrapInPlace` (no output-buffer alloc) MB/s |
 |---|---|---|
-| **Areion-SoEM-256** | 1635 | 2157 |
-| **Areion-SoEM-512** | 1724 | 2126 |
-| **BLAKE2b-256** | 610 | 642 |
-| **BLAKE2b-512** | 1027 | 1222 |
-| **BLAKE2s** | 657 | 760 |
-| **BLAKE3** | 1155 | 1408 |
-| **AES-128-CTR** | 3082 | 12688 |
-| **SipHash-2-4** | 1914 | 3202 |
-| **ChaCha20** | 2156 | 2959 |
+| **Areion-SoEM-256** | 1355 | 2281 |
+| **Areion-SoEM-512** | 1484 | 2307 |
+| **BLAKE2b-256** | 491 | 694 |
+| **BLAKE2b-512** | 803 | 1247 |
+| **BLAKE2s** | 520 | 722 |
+| **BLAKE3** | 993 | 1517 |
+| **AES-128-CTR** | 3095 | 13172 |
+| **SipHash-2-4** | 2001 | 3100 |
+| **ChaCha20** | 2174 | 2384 |
 
 `WrapInPlace` mutates the caller's blob and returns the per-stream nonce; no output buffer is allocated. A fresh nonce (~16 bytes) is allocated per call on the encrypt side, and the parallel XOR path additionally allocates per-worker keystream state for buffers at or above the 256 KiB threshold. `Wrap` returns a fresh wire = `nonce || keystream-XOR(blob)` and allocates `len(nonce) + len(blob)` bytes per call. The AES-128-CTR delta is dominated by the heap-page-fault cost of the 16 MiB output buffer; the PRF-counter ciphers are more compute-bound and the allocation savings are a smaller fraction of the total.
 
@@ -69,44 +69,44 @@ Numbers below route through `triple.Pipeline` (Single Message via `EncryptMessag
 
 | Cipher | No MAC Enc | No MAC Dec | MAC Enc | MAC Dec |
 |---|---:|---:|---:|---:|
-| **Areion-SoEM-256** | 461 | 488 | 409 | 439 |
-| **Areion-SoEM-512** | 464 | 492 | 387 | 448 |
-| **BLAKE2b-256** | 364 | 389 | 335 | 361 |
-| **BLAKE2b-512** | 421 | 460 | 387 | 407 |
-| **BLAKE2s** | 375 | 405 | 342 | 360 |
-| **BLAKE3** | 437 | 463 | 387 | 412 |
-| **AES-128-CTR** | 470 | 542 | 433 | 466 |
-| **SipHash-2-4** | 486 | 492 | 423 | 466 |
-| **ChaCha20** | 480 | 487 | 412 | 453 |
+| **Areion-SoEM-256** | 353 | 375 | 328 | 348 |
+| **Areion-SoEM-512** | 360 | 379 | 327 | 337 |
+| **BLAKE2b-256** | 298 | 312 | 274 | 288 |
+| **BLAKE2b-512** | 329 | 333 | 233 | 298 |
+| **BLAKE2s** | 260 | 240 | 205 | 226 |
+| **BLAKE3** | 312 | 346 | 302 | 316 |
+| **AES-128-CTR** | 346 | 377 | 323 | 360 |
+| **SipHash-2-4** | 341 | 374 | 318 | 341 |
+| **ChaCha20** | 335 | 373 | 319 | 337 |
 
 #### Streaming AEAD (64 MiB plaintext, 16 MiB chunk)
 
 | Cipher | AEAD IO Enc | AEAD IO Dec |
 |---|---:|---:|
-| **Areion-SoEM-256** | 390 | 446 |
-| **Areion-SoEM-512** | 395 | 426 |
-| **BLAKE2b-256** | 325 | 356 |
-| **BLAKE2b-512** | 363 | 403 |
-| **BLAKE2s** | 323 | 357 |
-| **BLAKE3** | 375 | 419 |
-| **AES-128-CTR** | 416 | 480 |
-| **SipHash-2-4** | 408 | 449 |
-| **ChaCha20** | 409 | 463 |
+| **Areion-SoEM-256** | 292 | 321 |
+| **Areion-SoEM-512** | 304 | 324 |
+| **BLAKE2b-256** | 255 | 268 |
+| **BLAKE2b-512** | 268 | 308 |
+| **BLAKE2s** | 261 | 279 |
+| **BLAKE3** | 288 | 318 |
+| **AES-128-CTR** | 321 | 356 |
+| **SipHash-2-4** | 302 | 337 |
+| **ChaCha20** | 313 | 340 |
 
 #### Streaming Non-AEAD (64 MiB plaintext, 16 MiB chunk)
 
 | Cipher | IO Enc | IO Dec |
 |---|---:|---:|
-| **Areion-SoEM-256** | 469 | 503 |
-| **Areion-SoEM-512** | 461 | 486 |
-| **BLAKE2b-256** | 370 | 383 |
-| **BLAKE2b-512** | 424 | 443 |
-| **BLAKE2s** | 369 | 385 |
-| **BLAKE3** | 441 | 464 |
-| **AES-128-CTR** | 491 | 534 |
-| **SipHash-2-4** | 477 | 514 |
-| **ChaCha20** | 489 | 522 |
+| **Areion-SoEM-256** | 350 | 352 |
+| **Areion-SoEM-512** | 347 | 360 |
+| **BLAKE2b-256** | 281 | 270 |
+| **BLAKE2b-512** | 323 | 333 |
+| **BLAKE2s** | 280 | 299 |
+| **BLAKE3** | 320 | 344 |
+| **AES-128-CTR** | 361 | 380 |
+| **SipHash-2-4** | 362 | 368 |
+| **ChaCha20** | 359 | 371 |
 
-Decryption runs 5–15 % faster than encryption across ciphers (the encrypt path additionally derives interlock nonce material and the Interlocked Barrier fill state). ITB's inner pipeline hashing dominates the combined cost, so the outer cipher choice moves the totals only at the margin: AES-NI and PRF-counter ciphers span ~20 % top to bottom, with the smaller-state BLAKE variants at the low end and the AES / SipHash / ChaCha families at the high end.
+Decryption runs up to ~15 % faster than encryption across ciphers (the encrypt path additionally derives interlock nonce material and the Interlocked Barrier fill state). ITB's inner pipeline hashing dominates the combined cost, so the outer cipher choice moves the totals only at the margin: AES-NI and PRF-counter ciphers span ~30 % top to bottom, with the smaller-state BLAKE variants at the low end and the AES / SipHash / ChaCha families at the high end.
 
 This file is updated by re-running the reproduction command and pasting the bench output into the tables. Numbers above are rounded to MB/s.
