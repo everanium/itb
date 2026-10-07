@@ -395,6 +395,20 @@ The composite bound: a wire attack on the fill output would require breaking the
 
 **Empirical closure of the divmod-preservation caveat.** The order-4 idx cube {0,1,2,3} at shapes 20 / 36 / 68 at r = 4 (the shallowest shipped depth for pure ChainHash and Pixel Barrier at `keyBits = 512`, matching Stage 1 setup derivation) is passed through the full fill chain — `ChainHash-4` → `(lo, hi)` split → `splitRank48` divmod → `rankToMaskTriple48` combinadic unrank — and the byte-level XOR-sum balance across the resulting mask triple is measured over the 2³² texts per set. (Note that the hot-loop Rank Barrier cascade fill runs an additional round deeper at r = 1 + 512/128 = 5 rounds, so testing at the r = 4 baseline provides a strict lower bound). At every shape the mask-triple bytes register **0 / 6 balanced on m0 / m1 / m2** (1 seed × 1 set × 2³² texts per shape, ≈ 295 s per set at 15 threads, `scripts/redteam/itb/theory/aesitb128/order4_unrank_go`), matching the `h_r` primary-observable floor from [§3.10.2](#3102-dissolution-mode--cost-versus-cascade-depth) at the same cells (0 / 8 raw `h_r` on shape 20 / 36 / 68 at r = 4). The Λ-set has been fully absorbed by the cascade before the divmod stage — the divmod + unrank composition sees uniform-band input and produces uniform-band mask-triple output. The composite bound reads as measured, not argued.
 
+#### 3.10.4. DRBG noise fill — statistical battery
+
+The `aesitb128` DRBG fill (`aesitb.FillNoise`) runs the primitive in counter mode: block i is the generic hash with the 128-bit block index in the seed slot and a 32-byte nonce in the data slot, five AES rounds per block, under a key and nonce drawn from crypto/rand for each call. Unlike the two inner-Barrier sites, the fill reaches the container as is, so its uniformity is measured on the generator stream itself. [`tools/aesitbnoise`](tools/aesitbnoise/main.go) writes the stream to stdout and PractRand 0.95 reads it (`RNG_test stdin -multithreaded`, core test set, standard folding):
+
+| Stream | Key and nonce | Length | Result |
+|---|---|---|---|
+| `fresh` | fresh per 6 MiB call (one third of the container of a 16 MB message) | 512 GB | two isolated `unusual` flags at 512 MB and 1 GB (p = 2.0·10⁻³, p = 1 − 1.5·10⁻⁴), neither recurring at any greater length |
+| `fresh -call=4096` | fresh per 4 KiB call (256 blocks) | 512 GB | no flag at any length |
+| `fixed` | one key and one nonce for the whole run, one unbroken counter stream | 512 GB | no flag at any length |
+| `oneblock` — negative control | one key, empty data slot: the stock primitive in its three-round one-block form | 128 MB | **FAIL** (BRank, p ≈ 4.5·10⁻¹⁴) |
+| `csprng` — positive control | crypto/rand | 128 GB | one isolated `unusual` flag at 8 GB (p = 1 − 9.5·10⁻⁴) |
+
+Isolated `unusual` flags at p ≈ 10⁻³ – 10⁻⁴ are the expected background of a battery evaluating several hundred statistics per length doubling; the crypto/rand control shows the same. The negative control establishes that the battery resolves the structure this primitive leaves when run as a plain counter generator: the one-block form, with no nonce in the data slot, is flagged at 128 MB. The fill's form reads clean to 512 GB, including the `fixed` stream, which runs one key about 10⁵ times longer than a shipped call does. These are statistical results at the tested lengths: they bound what this battery distinguishes, not the predictability of the stream, and the primitive stays Non-PRF standalone.
+
 ## 4. Primitive shelf
 
 Provenance and the published SMHasher weakness each primitive is selected to stress. The per-axis measured results are in [§3](#3-results); the consolidated Axis C seed-recovery verdicts (with the rounds = 1 vs rounds ≥ 2 split) are in the [§3.4 table](#34-axis-c--sat-kpa-seed-recovery-resistance).
@@ -673,4 +687,15 @@ python3 ../_common/stats_comparison_a2r_a128.py --all --samples 100000 --bases 1
 python3 ../_common/stats_comparison_a2r_a128.py --config marginal --samples 1000000 --trials 3 --seed 1 --json ~/scratch/redteam/aesitb128/stats_comparison_1e6.jsonl
 python3 ../_common/stats_comparison_a2r_a128.py --primitive aesitb128 --shape block --config avalanche --bases 100000 --trials 3 --seed 1 --json ~/scratch/redteam/aesitb128/stats_comparison_aval1e5.jsonl
 python3 ../_common/stats_comparison_a2r_a128.py --report ~/scratch/redteam/aesitb128/stats_comparison_1e6.jsonl
+```
+
+The §3.10.4 battery runs from the repository root against PractRand 0.95 (`RNG_test`); each line streams until the length limit and needs about 45 minutes per 512 GB on one host:
+
+```bash
+go build -o aesitbnoise ./tools/aesitbnoise
+./aesitbnoise -mode=fresh             | RNG_test stdin -tlmax 512GB -multithreaded
+./aesitbnoise -mode=fresh -call=4096  | RNG_test stdin -tlmax 512GB -multithreaded
+./aesitbnoise -mode=fixed             | RNG_test stdin -tlmax 512GB -multithreaded
+./aesitbnoise -mode=oneblock          | RNG_test stdin -tlmax 4GB   -multithreaded   # negative control
+./aesitbnoise -mode=csprng            | RNG_test stdin -tlmax 128GB -multithreaded   # positive control
 ```

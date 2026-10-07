@@ -1,4 +1,4 @@
-# figures — computed documentation figures
+## ITB Figures Computed Documentation
 
 `figures` computes every deterministic figure the documentation publishes from the library itself and checks the documentation against the computed values, so a format or parameter change shows at once which published numbers went stale.
 

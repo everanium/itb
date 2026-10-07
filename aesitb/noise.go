@@ -19,7 +19,9 @@ import (
 // to len(dst). Every block is a function of the key, the nonce and its
 // index alone, so the per-architecture kernels of internal/aesitbasm
 // evaluate the blocks in parallel; a build or host without a kernel
-// runs the same construction one block at a time.
+// runs the same construction one block at a time. The key and the first
+// half of the nonce meet the block index in the same XOR ahead of the
+// first round, so a call is fixed by 256 fresh bits rather than 384.
 //
 // FillNoise is the carrier-noise and residue filler of the "aesitb128"
 // DRBG arm. It is not a PRF, not a cipher and not a general-purpose
