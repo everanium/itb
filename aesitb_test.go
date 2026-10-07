@@ -1070,3 +1070,34 @@ func BenchmarkAESITBProfileCell(b *testing.B) {
 		}
 	})
 }
+
+// BenchmarkExtTripleAESITB128DRBG measures Triple Encrypt at 1024-bit
+// key width and 16 MB of plaintext under every accepted DRBG fill
+// name: the empty auto tier, aesitb128, csprng and each
+// keystream-eligible registry primitive. Only the container fill
+// changes between cells, so the spread isolates the fill cost under
+// the fastest pixel pipeline. Decryption never runs the fill and is
+// not measured here.
+func BenchmarkExtTripleAESITB128DRBG(b *testing.B) {
+	names := append([]string{"", "aesitb128", "csprng"}, hashes.KeystreamNames()...)
+	for _, name := range names {
+		label := name
+		if label == "" {
+			label = "auto"
+		}
+		b.Run(label, func(b *testing.B) {
+			ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightAESITB128SeedsExt(b, 1024)
+			data := generateDataExt(16 << 20)
+			cfg := extTripleBenchCfg()
+			cfg.DRBG = name
+			if _, err := itb.Encrypt3x128Cfg(cfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data); err != nil {
+				b.Fatal(err)
+			}
+			b.SetBytes(int64(len(data)))
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				_, _ = itb.Encrypt3x128Cfg(cfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
+			}
+		})
+	}
+}

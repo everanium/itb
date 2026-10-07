@@ -157,3 +157,30 @@ The AES-ITB-128 rows appear here, in the AMD EPYC 9655P section further down, an
 | **AES-CMAC** | 128 | 2048 | PRF | 189 | 191 | 191 | 194 | 199 | 196 |
 | **SipHash-2-4** | 128 | 2048 | PRF | 65 | 65 | 65 | 66 | 65 | 67 |
 | **ChaCha20** | 256 | 2048 | PRF | 46 | 48 | 48 | 45 | 48 | 48 |
+
+## DRBG ITB Container Fill (Benchmark)
+
+DRBG Standalone Benchmark Fill and Low-Level Triple Ouroboros Encrypt with AES-ITB-128 seeds at 1024-bit key width and 16 MB of plaintext, `ITB_NONCE_BITS=512`, no parallax or wrapper layer, Intel Core i7-11700K, median of three 5 s runs. The DRBG columns measure the fill alone, without ITB: 18 MB split into three 6 MB thirds filled by three goroutines, aggregate MB/s, median of three 2 s runs.
+
+| DRBG | ITB Encrypt 16 MB | DRBG Rocket Lake | DRBG Zen 5 | DRBG Graviton 4 |
+|---|---|---|---|---|
+| `""` (auto) | 675 | 16793 | 17117 | 18568 |
+| `aesitb128` | 670 | 29487 | 84929 | 59931 |
+| `csprng` | 642 | 2284 | 1761 | 933 |
+| `areion256` | 564 | 1671 | 1529 | 835 |
+| `areion512` | 560 | 1662 | 1648 | 838 |
+| `blake2b256` | 240 | 362 | 280 | 238 |
+| `blake2b512` | 365 | 660 | 510 | 449 |
+| `blake2s` | 275 | 431 | 345 | 271 |
+| `blake3` | 465 | 950 | 798 | 590 |
+| `aescmac` | 717 | 19833 | 23137 | 22116 |
+| `siphash24` | 651 | 2237 | 1753 | 1880 |
+| `chacha20` | 646 | 2040 | 1801 | 3661 |
+
+Reproduction:
+
+```sh
+ITB_NONCE_BITS=512 ITB_GOMEMLIMIT=4GiB ITB_GOGC=100 \
+  go test -bench='BenchmarkExtTripleAESITB128DRBG' -run='^$' -benchtime=5s -count=3
+  go test -bench='BenchmarkArmsParallel3/.*/18MB' -run='^$' -benchtime=2s -count=3 ./internal/drbg/
+```
