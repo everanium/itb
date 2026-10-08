@@ -217,7 +217,7 @@ func chunk48lock(x, m0, m1, m2 uint64) (l0, l1, l2 uint16) {
 // used by chunk48lock — encoder and decoder agree by deriving
 // identical masks from the shared lockSeed and chunk index.
 //
-// On amd64 with hardware BMI2, dispatches to the [interlock.Unchunk48Lock]
+// On amd64 with BMI2, dispatches to the [interlock.Unchunk48Lock]
 // hardware path (three PDEPQ plus two ORs); otherwise falls back to
 // three [softPDEP48] calls. The three PDEP-expansions land in
 // disjoint bit positions (m0|m1|m2 covers all 48 bits with no
