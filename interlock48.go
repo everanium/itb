@@ -189,10 +189,11 @@ func softPDEP48(v uint16, mask uint64) uint64 {
 // [rankToMaskTriple48] from a per-chunk PRF output). Each lane
 // receives exactly 16 bits compressed by its mask.
 //
-// On amd64 with BMI2 (Haswell+, Excavator+), dispatches to the
-// [interlock.Chunk48Lock] hardware path — three PEXTQ instructions
-// total, ~10 cycles per chunk. On other platforms or when BMI2 is
-// unavailable, falls back to three [softPEXT48] calls. The branch
+// On amd64 with hardware BMI2 (Intel Haswell+, AMD Zen 3+), dispatches
+// to the [interlock.Chunk48Lock] hardware path — three PEXTQ
+// instructions total, ~10 cycles per chunk. On other platforms, when
+// BMI2 is unavailable, or when PEXT / PDEP run in microcode (AMD before
+// Zen 3, Hygon), falls back to three [softPEXT48] calls. The branch
 // predicts perfectly because [interlock.HasBMI2] is a
 // process-lifetime constant.
 //
@@ -217,7 +218,7 @@ func chunk48lock(x, m0, m1, m2 uint64) (l0, l1, l2 uint16) {
 // used by chunk48lock — encoder and decoder agree by deriving
 // identical masks from the shared lockSeed and chunk index.
 //
-// On amd64 with BMI2, dispatches to the [interlock.Unchunk48Lock]
+// On amd64 with hardware BMI2, dispatches to the [interlock.Unchunk48Lock]
 // hardware path (three PDEPQ plus two ORs); otherwise falls back to
 // three [softPDEP48] calls. The three PDEP-expansions land in
 // disjoint bit positions (m0|m1|m2 covers all 48 bits with no

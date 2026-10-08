@@ -3,8 +3,7 @@
 package blake2sasm
 
 import (
-	"golang.org/x/sys/cpu"
-
+	"github.com/everanium/itb/internal/cpuid"
 	"github.com/everanium/itb/internal/forcetier"
 )
 
@@ -39,14 +38,14 @@ func init() {
 func applyHashTier() {
 	switch forcetier.HashTier() {
 	case "avx512":
-		if !cpu.X86.HasAVX512F {
+		if !cpuid.AVX512F {
 			forcetier.Warnf("blake2sasm: avx512 fused tier needs AVX-512F; keeping auto-dispatch")
 			return
 		}
 		FusedHasAVX512, FusedHasAVX2 = true, false
 		HasAVX512X16, HasAVX2X16 = true, false
 	case "avx2", "vex":
-		if !cpu.X86.HasAVX2 {
+		if !cpuid.AVX2 {
 			forcetier.Warnf("blake2sasm: %s fused tier needs AVX2; keeping auto-dispatch", forcetier.HashTier())
 			return
 		}
@@ -78,13 +77,13 @@ func applyHashTier() {
 func applyInterlockPRFFillTier() {
 	switch forcetier.InterlockPRFFillTier() {
 	case "avx512":
-		if !cpu.X86.HasAVX512F {
+		if !cpuid.AVX512F {
 			forcetier.Warnf("blake2sasm: avx512 batch-16 tier needs AVX-512F; keeping auto-dispatch")
 			return
 		}
 		HasAVX512X16, HasAVX2X16 = true, false
 	case "avx2", "vex":
-		if !cpu.X86.HasAVX2 {
+		if !cpuid.AVX2 {
 			forcetier.Warnf("blake2sasm: %s batch-16 tier needs AVX2; keeping auto-dispatch", forcetier.InterlockPRFFillTier())
 			return
 		}

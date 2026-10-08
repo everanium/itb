@@ -2,7 +2,7 @@
 
 package siphashasm
 
-import "golang.org/x/sys/cpu"
+import "github.com/everanium/itb/internal/cpuid"
 
 // Fused-cascade tier flags. The fused kernels amortise lane gather and
 // word packing over every cascade round and keep the (lo, hi) carry in
@@ -18,11 +18,11 @@ var (
 	// FusedHasAVX512 selects the EVEX YMM four-lane kernels, the ZMM
 	// eight-lane kernels and the ZMM batch-16 kernel. Needs AVX-512F
 	// (with DQ, present on every shipping AVX-512F part).
-	FusedHasAVX512 = cpu.X86.HasAVX512F
+	FusedHasAVX512 = cpuid.AVX512F
 
 	// FusedHasAVX2 selects the VEX YMM four-lane and eight-lane kernels
 	// on AVX2 hosts without AVX-512F; yields to the AVX-512 tier.
-	FusedHasAVX2 = cpu.X86.HasAVX2 && !FusedHasAVX512
+	FusedHasAVX2 = cpuid.AVX2 && !FusedHasAVX512
 
 	// FusedHasNEON is always false on amd64 builds.
 	FusedHasNEON = false

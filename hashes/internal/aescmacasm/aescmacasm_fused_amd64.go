@@ -2,7 +2,7 @@
 
 package aescmacasm
 
-import aes "github.com/jedisct1/go-aes"
+import "github.com/everanium/itb/internal/cpuid"
 
 // Fused-cascade tier flags. The fused kernels amortise lane gather,
 // staging and the round-key broadcast over every cascade round; the
@@ -16,20 +16,20 @@ import aes "github.com/jedisct1/go-aes"
 var (
 	// FusedHasVAESAVX512 selects the ZMM fused kernels (four lanes in
 	// one register). Needs VAES + AVX-512.
-	FusedHasVAESAVX512 = aes.CPU.HasVAES && aes.CPU.HasAVX512
+	FusedHasVAESAVX512 = cpuid.VAESZMM
 
 	// FusedHasVAESAVX2 selects the YMM fused kernels (two lanes per
 	// register). Needs VAES + AVX2; yields to the ZMM tier.
-	FusedHasVAESAVX2 = aes.CPU.HasVAES && aes.CPU.HasAVX2 && !FusedHasVAESAVX512
+	FusedHasVAESAVX2 = cpuid.VAESYMM && !FusedHasVAESAVX512
 
 	// FusedHasAVXAESNI selects the VEX-encoded XMM fused kernels.
 	// Needs AES-NI + AVX (AVX2 used as the detection superset); yields
 	// to both VAES tiers.
-	FusedHasAVXAESNI = aes.CPU.HasAESNI && aes.CPU.HasAVX2 && !FusedHasVAESAVX512 && !FusedHasVAESAVX2
+	FusedHasAVXAESNI = cpuid.AESNI && cpuid.AVX2 && !FusedHasVAESAVX512 && !FusedHasVAESAVX2
 
 	// FusedHasAESNI selects the legacy-SSE XMM fused kernels on AES-NI
 	// hosts without AVX.
-	FusedHasAESNI = aes.CPU.HasAESNI && !aes.CPU.HasAVX2
+	FusedHasAESNI = cpuid.AESNI && !cpuid.AVX2
 
 	// FusedHasARMAES is always false on amd64 builds.
 	FusedHasARMAES = false

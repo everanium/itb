@@ -2,14 +2,15 @@
 
 package interlock
 
-import "golang.org/x/sys/cpu"
+import "github.com/everanium/itb/internal/cpuid"
 
 // HasChunk48Batch caches whether the batched chunk-apply kernels
 // ([Chunk48LockBatch] / [Unchunk48LockBatch]) are selected. The kernels
 // are plain BMI2 (PEXTQ / PDEPQ with memory mask operands, scalar
-// loads and stores), so every BMI2-capable host benefits from the
-// amortised Go-loop overhead removal.
-var HasChunk48Batch = cpu.X86.HasBMI2
+// loads and stores), so every host with hardware BMI2
+// ([cpuid.BMI2Fast]) benefits from the amortised Go-loop overhead
+// removal.
+var HasChunk48Batch = cpuid.BMI2Fast
 
 // Chunk48LockBatch applies [Chunk48Lock] to n = len(masks) consecutive
 // chunks in one kernel call. Chunk j is the six little-endian bytes

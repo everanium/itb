@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"testing"
 
-	aes "github.com/jedisct1/go-aes"
+	"github.com/everanium/itb/internal/cpuid"
 )
 
 type fusedAsmX4 func(*[176]byte, *uint64, int, *[4]*byte, *[4][2]uint64)
@@ -38,7 +38,7 @@ type fusedTier struct {
 func amd64FusedTiers() []fusedTier {
 	return []fusedTier{
 		{
-			name: "aesni", ok: aes.CPU.HasAESNI, skipMsg: "requires AES-NI",
+			name: "aesni", ok: cpuid.AESNI, skipMsg: "requires AES-NI",
 			x4: map[int]fusedX4Fn{13: wrapX4(aesCMAC128FusedChain13x4AesNiAsm), 20: wrapX4(aesCMAC128FusedChain20x4AesNiAsm),
 				36: wrapX4(aesCMAC128FusedChain36x4AesNiAsm), 68: wrapX4(aesCMAC128FusedChain68x4AesNiAsm)},
 			x1: map[int]fusedX1Fn{13: wrapX1(aesCMAC128FusedChain13x1AesNiAsm), 20: wrapX1(aesCMAC128FusedChain20x1AesNiAsm),
@@ -46,7 +46,7 @@ func amd64FusedTiers() []fusedTier {
 			aesni: true,
 		},
 		{
-			name: "vex", ok: aes.CPU.HasAESNI && aes.CPU.HasAVX2, skipMsg: "requires AES-NI + AVX",
+			name: "vex", ok: cpuid.AESNI && cpuid.AVX2, skipMsg: "requires AES-NI + AVX",
 			x4: map[int]fusedX4Fn{13: wrapX4(aesCMAC128FusedChain13x4VexAsm), 20: wrapX4(aesCMAC128FusedChain20x4VexAsm),
 				36: wrapX4(aesCMAC128FusedChain36x4VexAsm), 68: wrapX4(aesCMAC128FusedChain68x4VexAsm)},
 			x1: map[int]fusedX1Fn{13: wrapX1(aesCMAC128FusedChain13x1VexAsm), 20: wrapX1(aesCMAC128FusedChain20x1VexAsm),
@@ -54,13 +54,13 @@ func amd64FusedTiers() []fusedTier {
 			vex: true,
 		},
 		{
-			name: "vaesavx2", ok: aes.CPU.HasVAES && aes.CPU.HasAVX2, skipMsg: "requires VAES + AVX2",
+			name: "vaesavx2", ok: cpuid.VAESYMM, skipMsg: "requires VAES + AVX2",
 			x4: map[int]fusedX4Fn{13: wrapX4(aesCMAC128FusedChain13x4VaesAvx2Asm), 20: wrapX4(aesCMAC128FusedChain20x4VaesAvx2Asm),
 				36: wrapX4(aesCMAC128FusedChain36x4VaesAvx2Asm), 68: wrapX4(aesCMAC128FusedChain68x4VaesAvx2Asm)},
 			ymm: true,
 		},
 		{
-			name: "avx512", ok: aes.CPU.HasVAES && aes.CPU.HasAVX512, skipMsg: "requires VAES + AVX-512",
+			name: "avx512", ok: cpuid.VAESZMM, skipMsg: "requires VAES + AVX-512",
 			x4: map[int]fusedX4Fn{13: wrapX4(aesCMAC128FusedChain13x4Avx512Asm), 20: wrapX4(aesCMAC128FusedChain20x4Avx512Asm),
 				36: wrapX4(aesCMAC128FusedChain36x4Avx512Asm), 68: wrapX4(aesCMAC128FusedChain68x4Avx512Asm)},
 			zmm: true,

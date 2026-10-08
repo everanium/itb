@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"testing"
 
-	"golang.org/x/sys/cpu"
+	"github.com/everanium/itb/internal/cpuid"
 )
 
 func wrap8_256(f func(*[32]byte, *uint64, int, *[8]*byte, *[8][4]uint64)) x8fn256 {
@@ -23,7 +23,7 @@ func fill512x8Kernel(k *[64]byte, c []uint64, base uint64, o *[8][8]uint64) {
 	blake2b512FusedChain13x8Avx512Asm(k, &c[0], len(c)/8, base, o)
 }
 
-func hasZMM() bool { return cpu.X86.HasAVX512F }
+func hasZMM() bool { return cpuid.AVX512F }
 
 // TestFusedWideKernelParityAmd64 pins every wide ZMM kernel to the
 // pure-Go cascade by direct call, independent of the dispatch flags.
@@ -193,7 +193,7 @@ func BenchmarkGprX1(b *testing.B) {
 					}
 				})
 			}
-			if cpu.X86.HasAVX2 {
+			if cpuid.AVX2 {
 				b.Run(fmt.Sprintf("256x1/x4rep-avx2/%s/groups%d", shapeName(n), g), func(b *testing.B) {
 					f := kernels256x4["avx2"][n]
 					for i := 0; i < b.N; i++ {
@@ -219,7 +219,7 @@ func BenchmarkGprX1(b *testing.B) {
 					}
 				})
 			}
-			if cpu.X86.HasAVX2 {
+			if cpuid.AVX2 {
 				b.Run(fmt.Sprintf("512x1/x4rep-avx2/%s/groups%d", shapeName(n), g), func(b *testing.B) {
 					f := kernels512x4["avx2"][n]
 					for i := 0; i < b.N; i++ {

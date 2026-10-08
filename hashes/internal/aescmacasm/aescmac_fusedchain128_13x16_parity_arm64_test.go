@@ -5,13 +5,13 @@ package aescmacasm
 import (
 	"testing"
 
-	aes "github.com/jedisct1/go-aes"
+	"github.com/everanium/itb/internal/cpuid"
 )
 
 // TestFusedChain13x16KernelParityNeon pins the NEON batch-16 kernel to
 // the reference by direct call, independent of the dispatch flag.
 func TestFusedChain13x16KernelParityNeon(t *testing.T) {
-	if !aes.CPU.HasARMCrypto {
+	if !cpuid.ARMAES {
 		t.Skip("requires the ARM crypto extension")
 	}
 	checkFusedX16Parity(t, "neon", func(s *Schedule, comps []uint64, groupIdxBase uint64, out *[16][2]uint64) {
@@ -25,7 +25,7 @@ func TestFusedChain13x16KernelParityNeon(t *testing.T) {
 func TestFusedChain13x16DispatcherNeon(t *testing.T) {
 	saved := HasARMAESX16
 	t.Cleanup(func() { HasARMAESX16 = saved })
-	if aes.CPU.HasARMCrypto {
+	if cpuid.ARMAES {
 		HasARMAESX16 = true
 		checkFusedX16Parity(t, "dispatch-neon", FusedChain13x16)
 	}

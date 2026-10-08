@@ -5,8 +5,7 @@ package blake3asm
 import (
 	"testing"
 
-	"golang.org/x/sys/cpu"
-
+	"github.com/everanium/itb/internal/cpuid"
 	"github.com/everanium/itb/internal/forcetier"
 )
 
@@ -33,12 +32,12 @@ func TestForceHashTierApplied(t *testing.T) {
 	case "":
 		t.Skip("ITB_FORCE_HASH_TIER unset; auto-dispatch")
 	case "avx512":
-		if !cpu.X86.HasAVX512F {
+		if !cpuid.AVX512F {
 			t.Skip("avx512 tier not executable on this host")
 		}
 		want(true, false)
 	case "avx2", "vex":
-		if !cpu.X86.HasAVX2 {
+		if !cpuid.AVX2 {
 			t.Skipf("%s tier not executable on this host", tier)
 		}
 		want(false, true)
@@ -53,7 +52,7 @@ func TestForceHashTierApplied(t *testing.T) {
 			t.Fatalf("scalar: GPR arms armed (fused=%v fill=%v)", FusedHasGPR, HasGPRX16)
 		}
 	case "aesni", "vaesavx2":
-		want(cpu.X86.HasAVX512F, cpu.X86.HasAVX2 && !cpu.X86.HasAVX512F)
+		want(cpuid.AVX512F, cpuid.AVX2 && !cpuid.AVX512F)
 	case "sve2", "sve", "neon":
 		t.Skipf("%s: arm64-only tier; not applicable on amd64", tier)
 	default:
@@ -77,12 +76,12 @@ func TestForceInterlockPRFFillTierApplied(t *testing.T) {
 	case "":
 		t.Skip("ITB_FORCE_INTERLOCK_PRF_FILL_TIER unset; auto-dispatch")
 	case "avx512":
-		if !cpu.X86.HasAVX512F {
+		if !cpuid.AVX512F {
 			t.Skip("avx512 batch-16 tier not executable on this host")
 		}
 		want(true, false)
 	case "avx2", "vex":
-		if !cpu.X86.HasAVX2 {
+		if !cpuid.AVX2 {
 			t.Skipf("%s batch-16 tier not executable on this host", tier)
 		}
 		want(false, true)
@@ -124,17 +123,17 @@ func TestForceChainHashX4Applied(t *testing.T) {
 func fillFlagsFromHashTier() (avx512, avx2 bool) {
 	switch forcetier.HashTier() {
 	case "avx512":
-		if cpu.X86.HasAVX512F {
+		if cpuid.AVX512F {
 			return true, false
 		}
 	case "avx2", "vex":
-		if cpu.X86.HasAVX2 {
+		if cpuid.AVX2 {
 			return false, true
 		}
 	case "scalar":
 		return false, false
 	}
-	return cpu.X86.HasAVX512F, cpu.X86.HasAVX2 && !cpu.X86.HasAVX512F
+	return cpuid.AVX512F, cpuid.AVX2 && !cpuid.AVX512F
 }
 
 // TestForceTiersKeepGPR asserts that every token other than scalar

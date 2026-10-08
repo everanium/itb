@@ -2,7 +2,7 @@
 
 package siphashasm
 
-import "golang.org/x/sys/cpu"
+import "github.com/everanium/itb/internal/cpuid"
 
 // Batch-16 tier flags: auto-select the AVX-512 tier when the host offers
 // it, else the AVX2 tier. The flags are package variables so the
@@ -13,8 +13,8 @@ import "golang.org/x/sys/cpu"
 // Interlocked Barrier fill kernel: the sixteen-lane ZMM kernel under
 // HasAVX512X16, two calls of the eight-lane YMM kernel under HasAVX2X16.
 var (
-	HasAVX512X16 = cpu.X86.HasAVX512F
-	HasAVX2X16   = cpu.X86.HasAVX2 && !HasAVX512X16
+	HasAVX512X16 = cpuid.AVX512F
+	HasAVX2X16   = cpuid.AVX2 && !HasAVX512X16
 
 	// HasNEONX16 is always false on amd64 builds.
 	HasNEONX16 = false

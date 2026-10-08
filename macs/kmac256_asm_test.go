@@ -6,8 +6,8 @@ import (
 	"testing"
 
 	"golang.org/x/crypto/sha3"
-	xcpu "golang.org/x/sys/cpu"
 
+	"github.com/everanium/itb/internal/cpuid"
 	"github.com/everanium/itb/macs/internal/keccakasm"
 )
 
@@ -31,8 +31,8 @@ func refKMAC256(key, customization, data []byte) []byte {
 // silent scalar fallback on capable hosts would leave the kernel
 // untested everywhere.
 func TestKMAC256AsmPathSelected(t *testing.T) {
-	cpuHas := xcpu.X86.HasAVX512F && xcpu.X86.HasAVX512BW &&
-		xcpu.X86.HasAVX512VL && xcpu.X86.HasAVX512DQ
+	cpuHas := cpuid.AVX512F && cpuid.AVX512BW &&
+		cpuid.AVX512VL && cpuid.AVX512DQ
 	if cpuHas && isASMBuild() && !keccakasm.HasAVX512Fused {
 		t.Fatal("AVX-512 baseline present but keccakasm.HasAVX512Fused is false: silent scalar fallback")
 	}

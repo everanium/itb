@@ -6,7 +6,8 @@ import (
 	"testing"
 
 	"golang.org/x/crypto/sha3"
-	xcpu "golang.org/x/sys/cpu"
+
+	"github.com/everanium/itb/internal/cpuid"
 )
 
 // ─── test-local NIST SP 800-185 framing helpers ────────────────────
@@ -63,8 +64,8 @@ func vendoredCShake256(n, s, x []byte) [32]byte {
 // a silent fall-through to the scalar arm on capable hosts would
 // invalidate every parity result below.
 func TestDispatcherGuard(t *testing.T) {
-	cpuHas := xcpu.X86.HasAVX512F && xcpu.X86.HasAVX512BW &&
-		xcpu.X86.HasAVX512VL && xcpu.X86.HasAVX512DQ
+	cpuHas := cpuid.AVX512F && cpuid.AVX512BW &&
+		cpuid.AVX512VL && cpuid.AVX512DQ
 	if asmCompiled && cpuHas && !HasAVX512Fused {
 		t.Fatal("AVX-512 F/BW/VL/DQ present but HasAVX512Fused is false: silent scalar fallback")
 	}

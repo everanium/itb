@@ -3,8 +3,7 @@
 package areionasm
 
 import (
-	"github.com/jedisct1/go-aes"
-
+	"github.com/everanium/itb/internal/cpuid"
 	"github.com/everanium/itb/internal/forcetier"
 )
 
@@ -48,7 +47,7 @@ func init() {
 func applyHashTier() {
 	switch forcetier.HashTier() {
 	case "avx512":
-		if !(aes.CPU.HasVAES && aes.CPU.HasAVX512) {
+		if !cpuid.VAESZMM {
 			forcetier.Warnf("areionasm: avx512 tier needs VAES+AVX-512; keeping auto-dispatch")
 			return
 		}
@@ -56,7 +55,7 @@ func applyHashTier() {
 		FusedHasVAESAVX512, FusedHasVAESAVX2, FusedHasAESNI = true, false, false
 		HasVAESAVX512X16, HasVAESAVX2X16, HasAESNIX16 = true, false, false
 	case "vaesavx2":
-		if !(aes.CPU.HasVAES && aes.CPU.HasAVX2) {
+		if !cpuid.VAESYMM {
 			forcetier.Warnf("areionasm: vaesavx2 tier needs VAES+AVX2; keeping auto-dispatch")
 			return
 		}
@@ -64,7 +63,7 @@ func applyHashTier() {
 		FusedHasVAESAVX512, FusedHasVAESAVX2, FusedHasAESNI = false, true, false
 		HasVAESAVX512X16, HasVAESAVX2X16, HasAESNIX16 = false, true, false
 	case "avx2":
-		if !(aes.CPU.HasVAES && aes.CPU.HasAVX2) {
+		if !cpuid.VAESYMM {
 			forcetier.Warnf("areionasm: avx2 tier needs VAES+AVX2; keeping auto-dispatch")
 			return
 		}
@@ -72,7 +71,7 @@ func applyHashTier() {
 		FusedHasVAESAVX512, FusedHasVAESAVX2, FusedHasAESNI = false, false, false
 		HasVAESAVX512X16, HasVAESAVX2X16, HasAESNIX16 = false, false, false
 	case "vex", "aesni":
-		if !aes.CPU.HasAESNI {
+		if !cpuid.AESNI {
 			forcetier.Warnf("areionasm: %s tier needs AES-NI; keeping auto-dispatch", forcetier.HashTier())
 			return
 		}
@@ -102,13 +101,13 @@ func applyHashTier() {
 func applyInterlockPRFFillTier() {
 	switch forcetier.InterlockPRFFillTier() {
 	case "avx512":
-		if !(aes.CPU.HasVAES && aes.CPU.HasAVX512) {
+		if !cpuid.VAESZMM {
 			forcetier.Warnf("areionasm: avx512 batch-16 tier needs VAES+AVX-512; keeping auto-dispatch")
 			return
 		}
 		HasVAESAVX512X16, HasVAESAVX2X16, HasAESNIX16 = true, false, false
 	case "vaesavx2":
-		if !(aes.CPU.HasVAES && aes.CPU.HasAVX2) {
+		if !cpuid.VAESYMM {
 			forcetier.Warnf("areionasm: vaesavx2 batch-16 tier needs VAES+AVX2; keeping auto-dispatch")
 			return
 		}
@@ -117,7 +116,7 @@ func applyInterlockPRFFillTier() {
 		forcetier.Warnf("areionasm: no avx2 batch-16 arm; forcing scalar")
 		HasVAESAVX512X16, HasVAESAVX2X16, HasAESNIX16 = false, false, false
 	case "vex", "aesni":
-		if !aes.CPU.HasAESNI {
+		if !cpuid.AESNI {
 			forcetier.Warnf("areionasm: %s batch-16 tier needs AES-NI; keeping auto-dispatch", forcetier.InterlockPRFFillTier())
 			return
 		}

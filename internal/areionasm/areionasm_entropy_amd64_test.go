@@ -5,7 +5,7 @@ package areionasm
 import (
 	"testing"
 
-	aes "github.com/jedisct1/go-aes"
+	"github.com/everanium/itb/internal/cpuid"
 )
 
 // The input-entropy differential audit of every amd64 kernel by direct
@@ -33,7 +33,7 @@ func TestInputEntropyKernelsAmd64(t *testing.T) {
 		})
 	}
 	t.Run("aesni-x1", func(t *testing.T) {
-		if !aes.CPU.HasAESNI {
+		if !cpuid.AESNI {
 			t.Skip("requires AES-NI")
 		}
 		for _, n := range Shapes {

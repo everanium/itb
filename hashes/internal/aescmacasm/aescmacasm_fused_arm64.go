@@ -2,15 +2,15 @@
 
 package aescmacasm
 
-import aes "github.com/jedisct1/go-aes"
+import "github.com/everanium/itb/internal/cpuid"
 
 var (
 	// FusedHasARMAES selects the NEON fused kernels on arm64 hosts that
 	// carry the AES crypto extension. Runtime-gated on
-	// aes.CPU.HasARMCrypto so the pure-Go scalar cascade runs on cores
+	// cpuid.ARMAES so the pure-Go scalar cascade runs on cores
 	// without the extension. The batch-16 fill kernel is gated
 	// separately via HasARMAESX16.
-	FusedHasARMAES = aes.CPU.HasARMCrypto
+	FusedHasARMAES = cpuid.ARMAES
 
 	FusedHasVAESAVX512 = false
 	FusedHasVAESAVX2   = false

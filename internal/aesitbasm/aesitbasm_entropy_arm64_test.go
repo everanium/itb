@@ -5,7 +5,7 @@ package aesitbasm
 import (
 	"testing"
 
-	aes "github.com/jedisct1/go-aes"
+	"github.com/everanium/itb/internal/cpuid"
 )
 
 // The input-entropy differential audit of every NEON kernel by
@@ -14,7 +14,7 @@ import (
 // TestInputEntropyKernelsArm64 audits the four-lane and single-lane NEON
 // kernels of every shape and the NEON batch-16 fill kernel.
 func TestInputEntropyKernelsArm64(t *testing.T) {
-	if !aes.CPU.HasARMCrypto {
+	if !cpuid.ARMAES {
 		t.Skip("ARM crypto extension not available")
 	}
 	x4, x1 := neonFusedX4(), neonFusedX1()

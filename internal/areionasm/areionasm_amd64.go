@@ -29,7 +29,11 @@
 // and the Go-side hash closures live in the parent `itb` package.
 package areionasm
 
-import "github.com/jedisct1/go-aes"
+import (
+	"github.com/jedisct1/go-aes"
+
+	"github.com/everanium/itb/internal/cpuid"
+)
 
 // AreionRC4x holds the 15 Areion round constants in pre-broadcast form
 // (each 16-byte constant replicated four times to fill a 64-byte ZMM
@@ -127,14 +131,14 @@ func Areion512Permutex4Avx2(x0, x1, x2, x3 *aes.Block4)
 // Resolved once at init time from the upstream `aes` package's
 // CPUID-driven detection. Both flags must be set for the AVX-512 path
 // to be selected.
-var HasVAESAVX512 = aes.CPU.HasVAES && aes.CPU.HasAVX512
+var HasVAESAVX512 = cpuid.VAESZMM
 
 // HasVAESAVX2NoAVX512 is true for x86-64 CPUs that have VAES + AVX2 but
 // lack AVX-512. The runtime dispatcher in the parent itb package picks
 // this path when HasVAESAVX512 is false but VAES is still available, so
 // the YMM assembly variants run instead of falling all the way back to
 // the portable Go path.
-var HasVAESAVX2NoAVX512 = aes.CPU.HasVAES && aes.CPU.HasAVX2 && !aes.CPU.HasAVX512
+var HasVAESAVX2NoAVX512 = cpuid.VAESYMM && !cpuid.AVX512F
 
 // HasARMAESBatched is always false on amd64 builds — this is the ARM
 // Crypto Extension batched flag set by areionasm_arm64.go on arm64

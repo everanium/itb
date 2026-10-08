@@ -3,8 +3,7 @@
 package blake3asm
 
 import (
-	"golang.org/x/sys/cpu"
-
+	"github.com/everanium/itb/internal/cpuid"
 	"github.com/everanium/itb/internal/forcetier"
 )
 
@@ -31,7 +30,7 @@ func applyHashTier() {
 	switch forcetier.HashTier() {
 	case "":
 	case "neon", "sve2", "sve":
-		if !cpu.ARM64.HasASIMD {
+		if !cpuid.ASIMD {
 			forcetier.Warnf("blake3asm: %s tier needs Advanced SIMD; keeping auto-dispatch", forcetier.HashTier())
 			return
 		}
@@ -54,7 +53,7 @@ func applyInterlockPRFFillTier() {
 	switch forcetier.InterlockPRFFillTier() {
 	case "":
 	case "neon":
-		if !cpu.ARM64.HasASIMD {
+		if !cpuid.ASIMD {
 			forcetier.Warnf("blake3asm: neon batch-16 tier needs Advanced SIMD; keeping auto-dispatch")
 			return
 		}

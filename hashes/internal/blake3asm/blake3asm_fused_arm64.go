@@ -2,7 +2,7 @@
 
 package blake3asm
 
-import "golang.org/x/sys/cpu"
+import "github.com/everanium/itb/internal/cpuid"
 
 // Fused-cascade tier flags on arm64: the NEON kernels (four dword lanes
 // per register, one pass) run on every ARMv8-A host; the amd64 flags are
@@ -10,7 +10,7 @@ import "golang.org/x/sys/cpu"
 var (
 	FusedHasAVX512 = false
 	FusedHasAVX2   = false
-	FusedHasNEON   = cpu.ARM64.HasASIMD
+	FusedHasNEON   = cpuid.ASIMD
 )
 
 // Batch-16 fill tier flags: the NEON arm runs two four-lane kernel calls
@@ -18,7 +18,7 @@ var (
 var (
 	HasAVX512X16 = false
 	HasAVX2X16   = false
-	HasNEONX16   = cpu.ARM64.HasASIMD
+	HasNEONX16   = cpuid.ASIMD
 )
 
 // FusedHasGPR arms the single-lane general-purpose-register kernels, the

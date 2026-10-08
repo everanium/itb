@@ -31,7 +31,7 @@ func TestAreionRC4x_TableInit(t *testing.T) {
 // HasVAESAVX512 and HasVAESAVX2NoAVX512 are never both true on the
 // same CPU — the AVX-2 flag is defined to exclude AVX-512 explicitly,
 // so any future regression in the derivation expressions (e.g.
-// dropping the `&& !aes.CPU.HasAVX512` clause) would create
+// dropping the `&& !cpuid.AVX512F` clause) would create
 // ambiguous dispatch routing in the parent package.
 func TestVAESFlags_MutualExclusion(t *testing.T) {
 	if HasVAESAVX512 && HasVAESAVX2NoAVX512 {

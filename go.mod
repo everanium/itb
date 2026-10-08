@@ -5,6 +5,7 @@ go 1.27
 require (
 	github.com/dchest/siphash v1.2.3
 	github.com/jedisct1/go-aes v0.1.1
+	github.com/klauspost/cpuid/v2 v2.2.10
 	github.com/spf13/cobra v1.10.2
 	github.com/zeebo/blake3 v0.2.4
 	golang.org/x/crypto v0.49.0
@@ -14,7 +15,6 @@ require (
 
 require (
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
-	github.com/klauspost/cpuid/v2 v2.2.10 // indirect
 	github.com/spf13/pflag v1.0.9 // indirect
 	github.com/zeebo/assert v1.3.0 // indirect
 )

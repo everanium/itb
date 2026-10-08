@@ -5,7 +5,7 @@ package aescmacasm
 import (
 	"testing"
 
-	aes "github.com/jedisct1/go-aes"
+	"github.com/everanium/itb/internal/cpuid"
 )
 
 type fusedAsmX16 func(*[176]byte, *uint64, int, uint64, *[16][2]uint64)
@@ -30,10 +30,10 @@ type fusedX16Tier struct {
 
 func amd64FusedX16Tiers() []fusedX16Tier {
 	return []fusedX16Tier{
-		{"avx512", func() bool { return aes.CPU.HasVAES && aes.CPU.HasAVX512 }, wrapX16(aesCMAC128FusedChain13x16Avx512Asm), true, false, false, false},
-		{"vaesavx2", func() bool { return aes.CPU.HasVAES && aes.CPU.HasAVX2 }, wrapX16(aesCMAC128FusedChain13x16VaesAvx2Asm), false, true, false, false},
-		{"vex", func() bool { return aes.CPU.HasAESNI && aes.CPU.HasAVX2 }, wrapX16(aesCMAC128FusedChain13x16VexAsm), false, false, true, false},
-		{"aesni", func() bool { return aes.CPU.HasAESNI }, wrapX16(aesCMAC128FusedChain13x16AesNiAsm), false, false, false, true},
+		{"avx512", func() bool { return cpuid.VAESZMM }, wrapX16(aesCMAC128FusedChain13x16Avx512Asm), true, false, false, false},
+		{"vaesavx2", func() bool { return cpuid.VAESYMM }, wrapX16(aesCMAC128FusedChain13x16VaesAvx2Asm), false, true, false, false},
+		{"vex", func() bool { return cpuid.AESNI && cpuid.AVX2 }, wrapX16(aesCMAC128FusedChain13x16VexAsm), false, false, true, false},
+		{"aesni", func() bool { return cpuid.AESNI }, wrapX16(aesCMAC128FusedChain13x16AesNiAsm), false, false, false, true},
 		{"scalar", func() bool { return true }, nil, false, false, false, false},
 	}
 }
@@ -89,7 +89,7 @@ func TestFusedChain13x16DispatcherTiers(t *testing.T) {
 // output on the same inputs at every cascade length — the assembly tiers
 // agree with each other, not only with the reference.
 func TestFusedChain13x16CrossTier(t *testing.T) {
-	if !aes.CPU.HasAESNI {
+	if !cpuid.AESNI {
 		t.Skip("AES-NI not available")
 	}
 	saveFusedX16Flags(t)

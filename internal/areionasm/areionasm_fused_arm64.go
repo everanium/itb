@@ -2,14 +2,14 @@
 
 package areionasm
 
-import aes "github.com/jedisct1/go-aes"
+import "github.com/everanium/itb/internal/cpuid"
 
 var (
 	// FusedHasARMAES selects the NEON fused kernels on arm64 hosts that
 	// carry the AES crypto extension; the pure-Go cascade runs on cores
 	// without it. The batch-16 fill arms are gated separately through
 	// HasARMAESX16.
-	FusedHasARMAES = aes.CPU.HasARMCrypto
+	FusedHasARMAES = cpuid.ARMAES
 
 	FusedHasVAESAVX512 = false
 	FusedHasVAESAVX2   = false
@@ -21,7 +21,7 @@ var (
 // fill kernels (blocks synthesised in the frame), the width-512
 // batch-16 hook a four-lane kernel call over Go-synthesised blocks.
 var (
-	HasARMAESX16     = aes.CPU.HasARMCrypto
+	HasARMAESX16     = cpuid.ARMAES
 	HasVAESAVX512X16 = false
 	HasVAESAVX2X16   = false
 	HasAESNIX16      = false

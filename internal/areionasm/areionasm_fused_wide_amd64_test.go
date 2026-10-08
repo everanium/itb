@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"testing"
 
-	aes "github.com/jedisct1/go-aes"
+	"github.com/everanium/itb/internal/cpuid"
 )
 
 func wrap8_256(f func(*[32]byte, *uint64, int, *[8]*byte, *[8][4]uint64)) x8fn256 {
@@ -23,7 +23,7 @@ func fill512x8Kernel(k *[64]byte, c []uint64, base uint64, o *[8][8]uint64) {
 	areion512FusedChain13x8Avx512Asm(k, &c[0], len(c)/8, base, o)
 }
 
-func hasZMM() bool { return aes.CPU.HasVAES && aes.CPU.HasAVX512 }
+func hasZMM() bool { return cpuid.VAESZMM }
 
 // TestFusedWideKernelParityAmd64 pins every wide ZMM kernel to the
 // pure-Go cascade by direct call, independent of the dispatch flags.

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"testing"
 
-	"golang.org/x/sys/cpu"
+	"github.com/everanium/itb/internal/cpuid"
 )
 
 func wrap8_256(f func(*[32]byte, *uint64, int, *[8]*byte, *[8][4]uint64)) x8fn256 {
@@ -31,7 +31,7 @@ var fill256x8Kernels = map[string]fill8fn256{
 	"avx2":   wrapFill8_256(blake2sFusedChain13x8Avx2Asm),
 }
 
-func hasEVEX() bool { return cpu.X86.HasAVX512F }
+func hasEVEX() bool { return cpuid.AVX512F }
 
 // setX8Arm sets every eight-lane arm flag as one set.
 func setX8Arm(arm bool) { FusedHasAVX512X8, FusedHasAVX2X8 = arm, arm }
@@ -244,7 +244,7 @@ func BenchmarkGprX1(b *testing.B) {
 					}
 				})
 			}
-			if cpu.X86.HasAVX2 {
+			if cpuid.AVX2 {
 				b.Run(fmt.Sprintf("256x1/x4rep-avx2/%s/groups%d", shapeName(n), g), func(b *testing.B) {
 					f := kernels256x4["avx2"][n]
 					for i := 0; i < b.N; i++ {

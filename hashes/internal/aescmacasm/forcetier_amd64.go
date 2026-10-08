@@ -3,8 +3,7 @@
 package aescmacasm
 
 import (
-	aes "github.com/jedisct1/go-aes"
-
+	"github.com/everanium/itb/internal/cpuid"
 	"github.com/everanium/itb/internal/forcetier"
 )
 
@@ -32,25 +31,25 @@ func init() {
 func applyHashTier() {
 	switch forcetier.HashTier() {
 	case "avx512":
-		if !(aes.CPU.HasVAES && aes.CPU.HasAVX512) {
+		if !cpuid.VAESZMM {
 			forcetier.Warnf("aescmacasm: avx512 tier needs VAES+AVX-512; keeping auto-dispatch")
 			return
 		}
 		FusedHasVAESAVX512, FusedHasVAESAVX2, FusedHasAVXAESNI, FusedHasAESNI = true, false, false, false
 	case "vaesavx2", "avx2":
-		if !(aes.CPU.HasVAES && aes.CPU.HasAVX2) {
+		if !cpuid.VAESYMM {
 			forcetier.Warnf("aescmacasm: %s tier needs VAES+AVX2; keeping auto-dispatch", forcetier.HashTier())
 			return
 		}
 		FusedHasVAESAVX512, FusedHasVAESAVX2, FusedHasAVXAESNI, FusedHasAESNI = false, true, false, false
 	case "vex":
-		if !(aes.CPU.HasAESNI && aes.CPU.HasAVX2) {
+		if !(cpuid.AESNI && cpuid.AVX2) {
 			forcetier.Warnf("aescmacasm: vex tier needs AES-NI+AVX2; keeping auto-dispatch")
 			return
 		}
 		FusedHasVAESAVX512, FusedHasVAESAVX2, FusedHasAVXAESNI, FusedHasAESNI = false, false, true, false
 	case "aesni":
-		if !aes.CPU.HasAESNI {
+		if !cpuid.AESNI {
 			forcetier.Warnf("aescmacasm: aesni tier needs AES-NI; keeping auto-dispatch")
 			return
 		}
@@ -71,25 +70,25 @@ func applyHashTier() {
 func applyInterlockPRFFillTier() {
 	switch forcetier.InterlockPRFFillTier() {
 	case "avx512":
-		if !(aes.CPU.HasVAES && aes.CPU.HasAVX512) {
+		if !cpuid.VAESZMM {
 			forcetier.Warnf("aescmacasm: avx512 batch-16 tier needs VAES+AVX-512; keeping auto-dispatch")
 			return
 		}
 		HasVAESAVX512X16, HasVAESAVX2X16, HasAVXAESNIX16, HasAESNIX16 = true, false, false, false
 	case "vaesavx2":
-		if !(aes.CPU.HasVAES && aes.CPU.HasAVX2) {
+		if !cpuid.VAESYMM {
 			forcetier.Warnf("aescmacasm: vaesavx2 batch-16 tier needs VAES+AVX2; keeping auto-dispatch")
 			return
 		}
 		HasVAESAVX512X16, HasVAESAVX2X16, HasAVXAESNIX16, HasAESNIX16 = false, true, false, false
 	case "vex":
-		if !(aes.CPU.HasAESNI && aes.CPU.HasAVX2) {
+		if !(cpuid.AESNI && cpuid.AVX2) {
 			forcetier.Warnf("aescmacasm: vex batch-16 tier needs AES-NI+AVX2; keeping auto-dispatch")
 			return
 		}
 		HasVAESAVX512X16, HasVAESAVX2X16, HasAVXAESNIX16, HasAESNIX16 = false, false, true, false
 	case "aesni":
-		if !aes.CPU.HasAESNI {
+		if !cpuid.AESNI {
 			forcetier.Warnf("aescmacasm: aesni batch-16 tier needs AES-NI; keeping auto-dispatch")
 			return
 		}

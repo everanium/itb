@@ -5,14 +5,14 @@ package aesitbasm
 import (
 	"testing"
 
-	aes "github.com/jedisct1/go-aes"
+	"github.com/everanium/itb/internal/cpuid"
 )
 
 // TestFusedChain13x16NeonParity pins the NEON batch-16 kernel to the
 // reference by direct call at every cascade length, independent of the
 // dispatch flag.
 func TestFusedChain13x16NeonParity(t *testing.T) {
-	if !aes.CPU.HasARMCrypto {
+	if !cpuid.ARMAES {
 		t.Skip("ARM crypto extension not available")
 	}
 	checkFusedX16Parity(t, "neon", func(key *[16]byte, comps []uint64, groupIdxBase uint64, out *[16][2]uint64) {
@@ -31,7 +31,7 @@ func TestFusedChain13x16DispatcherTiers(t *testing.T) {
 		ok   bool
 		arm  bool
 	}{
-		{"neon", aes.CPU.HasARMCrypto, true},
+		{"neon", cpuid.ARMAES, true},
 		{"scalar", true, false},
 	} {
 		tier := tier

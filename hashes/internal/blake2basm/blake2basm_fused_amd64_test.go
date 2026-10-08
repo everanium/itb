@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"testing"
 
-	"golang.org/x/sys/cpu"
+	"github.com/everanium/itb/internal/cpuid"
 )
 
 // fusedTier describes one amd64 fused dispatch state: the silicon it
@@ -22,8 +22,8 @@ type fusedTier struct {
 
 func amd64FusedTiers() []fusedTier {
 	return []fusedTier{
-		{name: "avx2", ok: cpu.X86.HasAVX2, skipMsg: "requires AVX2", avx2: true, gpr: true},
-		{name: "avx512", ok: cpu.X86.HasAVX512F, skipMsg: "requires AVX-512F", avx512: true, gpr: true},
+		{name: "avx2", ok: cpuid.AVX2, skipMsg: "requires AVX2", avx2: true, gpr: true},
+		{name: "avx512", ok: cpuid.AVX512F, skipMsg: "requires AVX-512F", avx512: true, gpr: true},
 	}
 }
 

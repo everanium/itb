@@ -7,8 +7,7 @@ import (
 	"fmt"
 	"testing"
 
-	aes "github.com/jedisct1/go-aes"
-
+	"github.com/everanium/itb/internal/cpuid"
 	"github.com/everanium/itb/internal/forcetier"
 )
 
@@ -29,7 +28,7 @@ func avx512X8Kernels() map[int]fusedX8Fn {
 	}
 }
 
-func hostHasZMMFused() bool { return aes.CPU.HasVAES && aes.CPU.HasAVX512 }
+func hostHasZMMFused() bool { return cpuid.VAESZMM }
 
 // x8Tier is one eight-lane kernel tier: its kernels, the four-lane
 // kernels of the same tier and the silicon it needs.
@@ -44,15 +43,15 @@ func amd64X8Tiers() []x8Tier {
 	return []x8Tier{
 		{"avx512", hostHasZMMFused(), avx512X8Kernels(), map[int]fusedX4Fn{20: wrapX4(aesITB128FusedChain20x4Avx512Asm),
 			36: wrapX4(aesITB128FusedChain36x4Avx512Asm), 68: wrapX4(aesITB128FusedChain68x4Avx512Asm)}},
-		{"vaesavx2", aes.CPU.HasVAES && aes.CPU.HasAVX2, map[int]fusedX8Fn{20: wrapX8(aesITB128FusedChain20x8VaesAvx2Asm),
+		{"vaesavx2", cpuid.VAESYMM, map[int]fusedX8Fn{20: wrapX8(aesITB128FusedChain20x8VaesAvx2Asm),
 			36: wrapX8(aesITB128FusedChain36x8VaesAvx2Asm), 68: wrapX8(aesITB128FusedChain68x8VaesAvx2Asm)},
 			map[int]fusedX4Fn{20: wrapX4(aesITB128FusedChain20x4VaesAvx2Asm),
 				36: wrapX4(aesITB128FusedChain36x4VaesAvx2Asm), 68: wrapX4(aesITB128FusedChain68x4VaesAvx2Asm)}},
-		{"vex", aes.CPU.HasAESNI && aes.CPU.HasAVX2, map[int]fusedX8Fn{20: wrapX8(aesITB128FusedChain20x8VexAsm),
+		{"vex", cpuid.AESNI && cpuid.AVX2, map[int]fusedX8Fn{20: wrapX8(aesITB128FusedChain20x8VexAsm),
 			36: wrapX8(aesITB128FusedChain36x8VexAsm), 68: wrapX8(aesITB128FusedChain68x8VexAsm)},
 			map[int]fusedX4Fn{20: wrapX4(aesITB128FusedChain20x4VexAsm),
 				36: wrapX4(aesITB128FusedChain36x4VexAsm), 68: wrapX4(aesITB128FusedChain68x4VexAsm)}},
-		{"aesni", aes.CPU.HasAESNI, map[int]fusedX8Fn{20: wrapX8(aesITB128FusedChain20x8AesNiAsm),
+		{"aesni", cpuid.AESNI, map[int]fusedX8Fn{20: wrapX8(aesITB128FusedChain20x8AesNiAsm),
 			36: wrapX8(aesITB128FusedChain36x8AesNiAsm), 68: wrapX8(aesITB128FusedChain68x8AesNiAsm)},
 			map[int]fusedX4Fn{20: wrapX4(aesITB128FusedChain20x4AesNiAsm),
 				36: wrapX4(aesITB128FusedChain36x4AesNiAsm), 68: wrapX4(aesITB128FusedChain68x4AesNiAsm)}},
@@ -112,7 +111,7 @@ func TestFusedX8ActiveImpliesTier(t *testing.T) {
 	if FusedHasVAESAVX512X8 && !hostHasZMMFused() {
 		t.Fatal("FusedHasVAESAVX512X8 set on a host without VAES + AVX-512")
 	}
-	if FusedHasAESNIX8 && !aes.CPU.HasAESNI {
+	if FusedHasAESNIX8 && !cpuid.AESNI {
 		t.Fatal("FusedHasAESNIX8 set on a host without AES-NI")
 	}
 }

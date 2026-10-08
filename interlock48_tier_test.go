@@ -5,8 +5,7 @@ package itb
 import (
 	"testing"
 
-	"golang.org/x/sys/cpu"
-
+	"github.com/everanium/itb/internal/cpuid"
 	"github.com/everanium/itb/internal/interlock"
 )
 
@@ -26,11 +25,11 @@ type interlockTier struct {
 // AVX-512F hosts.
 func runnableInterlockTiers() []interlockTier {
 	tiers := []interlockTier{{name: "scalar"}}
-	if cpu.X86.HasAVX2 && cpu.X86.HasBMI2 {
+	if cpuid.AVX2 && cpuid.BMI2 {
 		tiers = append(tiers, interlockTier{name: "avx2", avx2: true, bmi2: true})
 	}
-	if cpu.X86.HasAVX512F {
-		tiers = append(tiers, interlockTier{name: "avx512", avx512: true, bmi2: cpu.X86.HasBMI2})
+	if cpuid.AVX512F {
+		tiers = append(tiers, interlockTier{name: "avx512", avx512: true, bmi2: cpuid.BMI2})
 	}
 	return tiers
 }

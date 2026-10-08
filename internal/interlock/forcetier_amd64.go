@@ -3,19 +3,18 @@
 package interlock
 
 import (
-	"golang.org/x/sys/cpu"
-
+	"github.com/everanium/itb/internal/cpuid"
 	"github.com/everanium/itb/internal/forcetier"
 )
 
 // init applies ITB_FORCE_INTERLOCK_TIER to the 48-bit interlock
 // dispatch flags.
 //
-//	avx512 — requires AVX-512F silicon; keeps the batched AVX-512
+//	avx512 — requires AVX-512F + BMI2 silicon; keeps the batched AVX-512
 //	         rank-unrank kernel selected. HasBMI2 keeps its auto
 //	         value: the PEXT/PDEP apply micro-kernel is orthogonal to
 //	         the rank-mask kernel choice.
-//	avx512x8 — requires AVX-512F silicon; keeps the AVX-512 rank-unrank
+//	avx512x8 — requires AVX-512F + BMI2 silicon; keeps the AVX-512 rank-unrank
 //	           kernel selected but clears UseUnrank16, so every 16-chunk
 //	           superblock runs as two 8-lane passes instead of the one
 //	           16-lane pass. Makes the x8×2 geometry reachable end-to-end
@@ -34,25 +33,27 @@ import (
 //	         scalar rankToMaskTriple48 paths run.
 //
 // Production auto-dispatch is unaffected when the variable is unset: a
-// CPU with BMI2 keeps its BMI2 rank-mask and batched chunk-apply fast
-// path exactly as auto-selection would set them.
+// CPU with hardware BMI2 keeps its BMI2 rank-mask and batched
+// chunk-apply fast path exactly as auto-selection would set them. The
+// avx2 token needs BMI2 only to execute, so it also forces the arm on
+// microcoded-PEXT hosts (AMD before Zen 3) for parity runs.
 func init() {
 	switch forcetier.InterlockTier() {
 	case "avx512":
-		if !cpu.X86.HasAVX512F {
-			forcetier.Warnf("interlock: avx512 tier needs AVX-512F; keeping auto-dispatch")
+		if !cpuid.AVX512F || !cpuid.BMI2 {
+			forcetier.Warnf("interlock: avx512 tier needs AVX-512F+BMI2 silicon; keeping auto-dispatch")
 			return
 		}
 		HasAVX512RankMask = true
 	case "avx512x8":
-		if !cpu.X86.HasAVX512F {
-			forcetier.Warnf("interlock: avx512x8 tier needs AVX-512F; keeping auto-dispatch")
+		if !cpuid.AVX512F || !cpuid.BMI2 {
+			forcetier.Warnf("interlock: avx512x8 tier needs AVX-512F+BMI2 silicon; keeping auto-dispatch")
 			return
 		}
 		HasAVX512RankMask = true
 		UseUnrank16 = false
 	case "avx2":
-		if !cpu.X86.HasAVX2 || !cpu.X86.HasBMI2 {
+		if !cpuid.AVX2 || !cpuid.BMI2 {
 			forcetier.Warnf("interlock: avx2 tier needs AVX2+BMI2 silicon; keeping auto-dispatch")
 			return
 		}

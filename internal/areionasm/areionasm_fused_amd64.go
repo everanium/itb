@@ -3,8 +3,7 @@
 package areionasm
 
 import (
-	aes "github.com/jedisct1/go-aes"
-
+	"github.com/everanium/itb/internal/cpuid"
 	"github.com/everanium/itb/internal/forcetier"
 )
 
@@ -17,15 +16,15 @@ import (
 var (
 	// FusedHasVAESAVX512 selects the ZMM fused kernels (four lanes per
 	// register). Needs VAES + AVX-512.
-	FusedHasVAESAVX512 = aes.CPU.HasVAES && aes.CPU.HasAVX512
+	FusedHasVAESAVX512 = cpuid.VAESZMM
 
 	// FusedHasVAESAVX2 selects the YMM fused kernels (two lanes per
 	// pass). Needs VAES + AVX2; yields to the ZMM tier.
-	FusedHasVAESAVX2 = aes.CPU.HasVAES && aes.CPU.HasAVX2 && !aes.CPU.HasAVX512
+	FusedHasVAESAVX2 = cpuid.VAESYMM && !cpuid.AVX512F
 
 	// FusedHasAESNI selects the XMM AES-NI fused kernels on hosts
 	// without VAES.
-	FusedHasAESNI = aes.CPU.HasAESNI && !aes.CPU.HasVAES
+	FusedHasAESNI = cpuid.AESNI && !cpuid.VAESYMM && !cpuid.VAESZMM
 
 	// FusedHasARMAES is always false on amd64 builds.
 	FusedHasARMAES = false
@@ -38,9 +37,9 @@ var (
 // the width-512 batch-32 hook); every other arm runs four-lane kernel
 // calls over Go-synthesised fill blocks.
 var (
-	HasVAESAVX512X16 = aes.CPU.HasVAES && aes.CPU.HasAVX512
-	HasVAESAVX2X16   = aes.CPU.HasVAES && aes.CPU.HasAVX2 && !aes.CPU.HasAVX512
-	HasAESNIX16      = aes.CPU.HasAESNI && !aes.CPU.HasVAES
+	HasVAESAVX512X16 = cpuid.VAESZMM
+	HasVAESAVX2X16   = cpuid.VAESYMM && !cpuid.AVX512F
+	HasAESNIX16      = cpuid.AESNI && !cpuid.VAESYMM && !cpuid.VAESZMM
 	HasARMAESX16     = false
 )
 
@@ -481,7 +480,7 @@ func areion256FusedChain13x8Avx512Asm(fixedKey *[32]byte, comps *uint64, nGroups
 // The eight-lane arm is selected only together with the ZMM fused tier
 // (see [FusedX8Active]); it does not add a tier of its own to the
 // exclusive fused flag set above.
-var FusedHasVAESAVX512X8 = aes.CPU.HasVAES && aes.CPU.HasAVX512 && !forcetier.ChainHashX4()
+var FusedHasVAESAVX512X8 = cpuid.VAESZMM && !forcetier.ChainHashX4()
 
 // FusedHasAESNIX8 arms the eight-lane per-pixel arm of the VAES YMM and
 // AES-NI XMM tiers: two calls of the tier's four-lane kernel on the lane
@@ -494,7 +493,7 @@ var FusedHasVAESAVX512X8 = aes.CPU.HasVAES && aes.CPU.HasAVX512 && !forcetier.Ch
 // as it does for every other. Needs AES-NI; cleared at init by
 // ITB_FORCE_CHAINHASH_X4 exactly as [FusedHasVAESAVX512X8] is, and
 // selected only together with one of those two fused tiers.
-var FusedHasAESNIX8 = aes.CPU.HasAESNI && !forcetier.ChainHashX4()
+var FusedHasAESNIX8 = cpuid.AESNI && !forcetier.ChainHashX4()
 
 // FusedX8Active reports whether an eight-lane per-pixel arm is the
 // selected arm: [FusedHasVAESAVX512X8] together with

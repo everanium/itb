@@ -7,7 +7,7 @@ import (
 	"math/rand"
 	"testing"
 
-	"golang.org/x/sys/cpu"
+	"github.com/everanium/itb/internal/cpuid"
 )
 
 const (
@@ -172,7 +172,7 @@ func checkX16Lanes(t *testing.T, label string, idx0 *[16]uint64, idx1 *[16]uint3
 	}
 	var out16 [3][16]uint64
 	RankToMaskTripleUnrank48x16(idx0, idx1, &out16)
-	avx2OK := cpu.X86.HasAVX2 && cpu.X86.HasBMI2
+	avx2OK := cpuid.AVX2 && cpuid.BMI2
 	const domain uint64 = 0x0000_FFFF_FFFF_FFFF
 	for half := 0; half < 16; half += 8 {
 		i0 := (*[8]uint64)(idx0[half : half+8])

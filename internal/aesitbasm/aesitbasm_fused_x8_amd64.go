@@ -3,8 +3,7 @@
 package aesitbasm
 
 import (
-	aes "github.com/jedisct1/go-aes"
-
+	"github.com/everanium/itb/internal/cpuid"
 	"github.com/everanium/itb/internal/forcetier"
 )
 
@@ -19,7 +18,7 @@ import (
 // The eight-lane arm is selected only together with the ZMM fused tier
 // (see [FusedX8Active]); it does not add a tier of its own to the
 // exclusive fused flag set of aesitbasm_fused_amd64.go.
-var FusedHasVAESAVX512X8 = aes.CPU.HasVAES && aes.CPU.HasAVX512 && !forcetier.ChainHashX4()
+var FusedHasVAESAVX512X8 = cpuid.VAESZMM && !forcetier.ChainHashX4()
 
 // FusedHasAESNIX8 arms the eight-lane fused kernels of the AES-NI tiers
 // below ZMM: four YMM states of two lanes on the VAES YMM tier, eight
@@ -27,7 +26,7 @@ var FusedHasVAESAVX512X8 = aes.CPU.HasVAES && aes.CPU.HasAVX512 && !forcetier.Ch
 // rounds of the states interleaved. Needs AES-NI; cleared at init by
 // ITB_FORCE_CHAINHASH_X4 exactly as [FusedHasVAESAVX512X8] is, and
 // selected only together with one of those three fused tiers.
-var FusedHasAESNIX8 = aes.CPU.HasAESNI && !forcetier.ChainHashX4()
+var FusedHasAESNIX8 = cpuid.AESNI && !forcetier.ChainHashX4()
 
 // FusedX8Active reports whether an eight-lane fused arm is the selected
 // arm: [FusedHasVAESAVX512X8] together with [FusedHasVAESAVX512], or

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"testing"
 
-	"golang.org/x/sys/cpu"
+	"github.com/everanium/itb/internal/cpuid"
 )
 
 // fusedX16Tier describes one batch-16 dispatch state: the silicon it
@@ -22,10 +22,10 @@ type fusedX16Tier struct {
 
 func amd64FusedX16Tiers() []fusedX16Tier {
 	return []fusedX16Tier{
-		{"avx512", func() bool { return cpu.X86.HasAVX512F }, func(comps []uint64, base uint64, out *[16][2]uint64) {
+		{"avx512", func() bool { return cpuid.AVX512F }, func(comps []uint64, base uint64, out *[16][2]uint64) {
 			sipHash24FusedChain13x16Avx512Asm(&comps[0], len(comps)/2, base, out)
 		}, true, false},
-		{"avx2", func() bool { return cpu.X86.HasAVX2 }, func(comps []uint64, base uint64, out *[16][2]uint64) {
+		{"avx2", func() bool { return cpuid.AVX2 }, func(comps []uint64, base uint64, out *[16][2]uint64) {
 			sipHash24FusedChain13x8Avx2Asm(&comps[0], len(comps)/2, base, x16Half(out, 0))
 			sipHash24FusedChain13x8Avx2Asm(&comps[0], len(comps)/2, base+8, x16Half(out, 1))
 		}, false, true},

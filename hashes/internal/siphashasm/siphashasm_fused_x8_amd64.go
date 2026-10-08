@@ -3,8 +3,7 @@
 package siphashasm
 
 import (
-	"golang.org/x/sys/cpu"
-
+	"github.com/everanium/itb/internal/cpuid"
 	"github.com/everanium/itb/internal/forcetier"
 )
 
@@ -18,14 +17,14 @@ import (
 // The eight-lane arm is selected only together with the AVX-512 fused
 // tier (see [FusedX8Active]); it does not add a tier of its own to the
 // exclusive fused flag set of siphashasm_fused_amd64.go.
-var FusedHasAVX512X8 = cpu.X86.HasAVX512F && !forcetier.ChainHashX4()
+var FusedHasAVX512X8 = cpuid.AVX512F && !forcetier.ChainHashX4()
 
 // FusedHasAVX2X8 arms the eight-lane YMM fused kernels of the AVX2 tier:
 // two four-lane groups with interleaved instruction streams, the
 // register plan of the eight-lane fill kernel. Needs AVX2; cleared at
 // init by ITB_FORCE_CHAINHASH_X4 exactly as [FusedHasAVX512X8] is, and
 // selected only together with the AVX2 fused tier.
-var FusedHasAVX2X8 = cpu.X86.HasAVX2 && !forcetier.ChainHashX4()
+var FusedHasAVX2X8 = cpuid.AVX2 && !forcetier.ChainHashX4()
 
 // FusedX8Active reports whether an eight-lane fused arm is the selected
 // arm: [FusedHasAVX512X8] together with [FusedHasAVX512], or

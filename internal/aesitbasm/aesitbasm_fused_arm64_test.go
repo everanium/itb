@@ -5,7 +5,7 @@ package aesitbasm
 import (
 	"testing"
 
-	aes "github.com/jedisct1/go-aes"
+	"github.com/everanium/itb/internal/cpuid"
 )
 
 type fusedAsmX4Neon func(*[16]byte, *uint64, int, *[4]*byte, *[4][2]uint64)
@@ -42,7 +42,7 @@ func neonFusedX1() map[int]fusedX1Fn {
 // call, independent of the dispatch flag, on the fixed lane cases and a
 // random sweep at every component-pair count.
 func TestFusedKernelParityNeon(t *testing.T) {
-	if !aes.CPU.HasARMCrypto {
+	if !cpuid.ARMAES {
 		t.Skip("requires the ARM crypto extension")
 	}
 	x4, x1 := neonFusedX4(), neonFusedX1()

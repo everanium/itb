@@ -11,9 +11,6 @@ import (
 	"strings"
 	"testing"
 
-	aes "github.com/jedisct1/go-aes"
-	"golang.org/x/sys/cpu"
-
 	"github.com/everanium/itb/hashes/internal/aescmacasm"
 	"github.com/everanium/itb/hashes/internal/blake2basm"
 	"github.com/everanium/itb/hashes/internal/blake2sasm"
@@ -22,6 +19,7 @@ import (
 	"github.com/everanium/itb/hashes/internal/siphashasm"
 	"github.com/everanium/itb/internal/aesitbasm"
 	"github.com/everanium/itb/internal/areionasm"
+	"github.com/everanium/itb/internal/cpuid"
 	"github.com/everanium/itb/internal/forcetier"
 )
 
@@ -178,12 +176,12 @@ func on(pairs ...string) matrixExpect {
 // Host capability predicates: a token whose arm the host cannot execute
 // keeps auto-dispatch with a note in every family.
 var (
-	hostVAES512 = aes.CPU.HasVAES && aes.CPU.HasAVX512
-	hostVAES2   = aes.CPU.HasVAES && aes.CPU.HasAVX2
-	hostAESNI2  = aes.CPU.HasAESNI && aes.CPU.HasAVX2
-	hostAESNI   = aes.CPU.HasAESNI
-	hostAVX512F = cpu.X86.HasAVX512F
-	hostAVX2    = cpu.X86.HasAVX2
+	hostVAES512 = cpuid.VAESZMM
+	hostVAES2   = cpuid.VAESYMM
+	hostAESNI2  = cpuid.AESNI && cpuid.AVX2
+	hostAESNI   = cpuid.AESNI
+	hostAVX512F = cpuid.AVX512F
+	hostAVX2    = cpuid.AVX2
 )
 
 // expectHashTier is the ITB_FORCE_HASH_TIER map of every family class.

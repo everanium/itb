@@ -65,9 +65,9 @@ import (
 	"sync"
 
 	"golang.org/x/crypto/chacha20"
-	"golang.org/x/sys/cpu"
 
 	"github.com/everanium/itb/aesitb"
+	"github.com/everanium/itb/internal/cpuid"
 )
 
 // fillFn is the tier-specific fill worker. Every implementation reads
@@ -134,10 +134,10 @@ func pickTier() (fillFn, string) {
 // slower Go generic path in its absence, at which point ChaCha20 (with
 // its own SIMD path) is the better fallback.
 func hostHasAES() bool {
-	if cpu.X86.HasAES {
+	if cpuid.AESNI {
 		return true
 	}
-	if cpu.ARM64.HasAES {
+	if cpuid.ARMAES {
 		return true
 	}
 	return false

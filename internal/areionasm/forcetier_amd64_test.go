@@ -5,8 +5,7 @@ package areionasm
 import (
 	"testing"
 
-	aes "github.com/jedisct1/go-aes"
-
+	"github.com/everanium/itb/internal/cpuid"
 	"github.com/everanium/itb/internal/forcetier"
 )
 
@@ -35,17 +34,17 @@ func TestForceHashTierApplied(t *testing.T) {
 	case "":
 		t.Skip("ITB_FORCE_HASH_TIER unset; auto-dispatch")
 	case "avx512":
-		if !(aes.CPU.HasVAES && aes.CPU.HasAVX512) {
+		if !cpuid.VAESZMM {
 			t.Skip("avx512 tier not executable on this host")
 		}
 		want(true, false, false)
 	case "vaesavx2":
-		if !(aes.CPU.HasVAES && aes.CPU.HasAVX2) {
+		if !cpuid.VAESYMM {
 			t.Skip("vaesavx2 tier not executable on this host")
 		}
 		want(false, true, false)
 	case "avx2":
-		if !(aes.CPU.HasVAES && aes.CPU.HasAVX2) {
+		if !cpuid.VAESYMM {
 			t.Skip("avx2 tier not executable on this host")
 		}
 		// The arms-only probe: the YMM batched permutation, fused
@@ -55,7 +54,7 @@ func TestForceHashTierApplied(t *testing.T) {
 			t.Fatalf("avx2: arm flags ymm=%v zmm=%v, want true/false", HasVAESAVX2NoAVX512, HasVAESAVX512)
 		}
 	case "vex", "aesni":
-		if !aes.CPU.HasAESNI {
+		if !cpuid.AESNI {
 			t.Skipf("%s tier not executable on this host", tier)
 		}
 		want(false, false, true)
@@ -87,17 +86,17 @@ func TestForceInterlockPRFFillTierApplied(t *testing.T) {
 	case "":
 		t.Skip("ITB_FORCE_INTERLOCK_PRF_FILL_TIER unset; auto-dispatch")
 	case "avx512":
-		if !(aes.CPU.HasVAES && aes.CPU.HasAVX512) {
+		if !cpuid.VAESZMM {
 			t.Skip("avx512 batch-16 tier not executable on this host")
 		}
 		want(true, false, false)
 	case "vaesavx2":
-		if !(aes.CPU.HasVAES && aes.CPU.HasAVX2) {
+		if !cpuid.VAESYMM {
 			t.Skip("vaesavx2 batch-16 tier not executable on this host")
 		}
 		want(false, true, false)
 	case "vex", "aesni":
-		if !aes.CPU.HasAESNI {
+		if !cpuid.AESNI {
 			t.Skipf("%s batch-16 tier not executable on this host", tier)
 		}
 		want(false, false, true)

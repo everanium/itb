@@ -21,15 +21,15 @@
 // oracle in tests.
 package keccakasm
 
-import "golang.org/x/sys/cpu"
+import "github.com/everanium/itb/internal/cpuid"
 
 // HasAVX512Fused reports whether the runtime CPU supports the AVX-512
 // Keccak-f[1600] kernel. VPROLQ / VPTERNLOGQ / VPXORQ in EVEX 128-bit
 // form need AVX512F + AVX512VL; BW and DQ are required alongside per
 // the fleet-wide gating discipline (every shipping AVX-512F part
 // carries the full F/BW/VL/DQ baseline).
-var HasAVX512Fused = cpu.X86.HasAVX512F && cpu.X86.HasAVX512BW &&
-	cpu.X86.HasAVX512VL && cpu.X86.HasAVX512DQ
+var HasAVX512Fused = cpuid.AVX512F && cpuid.AVX512BW &&
+	cpuid.AVX512VL && cpuid.AVX512DQ
 
 // asmCompiled reports whether this build carries the AVX-512 kernel
 // at all (build-tag arm), independent of runtime CPU capability.

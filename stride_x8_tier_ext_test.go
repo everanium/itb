@@ -27,11 +27,9 @@ import (
 	"sync/atomic"
 	"testing"
 
-	aes "github.com/jedisct1/go-aes"
-	"golang.org/x/sys/cpu"
-
 	"github.com/everanium/itb"
 	"github.com/everanium/itb/hashes"
+	"github.com/everanium/itb/internal/cpuid"
 	"github.com/everanium/itb/internal/forcetier"
 )
 
@@ -43,14 +41,15 @@ const (
 )
 
 // strideX8Expected reports whether the process state must carry the
-// eight-lane hook on every registry entry: a host with AVX2 (every AVX2
-// host of the registry's AES families carries AES-NI), the fused tier
-// not forced to the GPR or scalar arm, and neither disarm knob set. A
+// eight-lane hook on the registry entries: a host with AVX2, the fused
+// tier not forced to the GPR or scalar arm, and neither disarm knob
+// set. The AES families additionally need AES-NI, which AVX2 does not
+// imply (see strideX8EntryExpected). A
 // tier token a family does not implement keeps that family on its
 // auto-selected SIMD tier, so the condition holds under every token
 // but gpr and scalar.
 func strideX8Expected() bool {
-	if !cpu.X86.HasAVX2 || forcetier.ChainHashSeq() || forcetier.ChainHashX4() {
+	if !cpuid.AVX2 || forcetier.ChainHashSeq() || forcetier.ChainHashX4() {
 		return false
 	}
 	switch forcetier.HashTier() {
@@ -62,6 +61,8 @@ func strideX8Expected() bool {
 
 // strideX8EntryExpected reports whether the process state must carry
 // the eight-lane hook on the named entry: strideX8Expected, except that
+// every eight-lane arm of the AES families (the aes* and areion*
+// entries) executes AES rounds and so needs AES-NI, and that
 // ITB_FORCE_HASH_TIER=avx2 is the arms-only probe of the Areion
 // families on VAES + AVX2 silicon — their fused cascade is off under
 // that token, so no fused hook of any lane count attaches.
@@ -69,7 +70,10 @@ func strideX8EntryExpected(name string) bool {
 	if !strideX8Expected() {
 		return false
 	}
-	if strings.HasPrefix(name, "areion") && forcetier.HashTier() == "avx2" && aes.CPU.HasVAES && aes.CPU.HasAVX2 {
+	if (strings.HasPrefix(name, "aes") || strings.HasPrefix(name, "areion")) && !cpuid.AESNI {
+		return false
+	}
+	if strings.HasPrefix(name, "areion") && forcetier.HashTier() == "avx2" && cpuid.VAESYMM {
 		return false
 	}
 	return true
@@ -514,7 +518,7 @@ func TestStrideX8TierMatrix(t *testing.T) {
 	if testing.Short() {
 		t.Skip("spawns one process per matrix cell")
 	}
-	if !cpu.X86.HasAVX2 {
+	if !cpuid.AVX2 {
 		t.Skip("requires AVX2")
 	}
 	states := strideX8States()

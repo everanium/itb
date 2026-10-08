@@ -20,7 +20,11 @@
 // to state position k lives at `bk[i*16 : i*16+16]`.
 package areionasm
 
-import "github.com/jedisct1/go-aes"
+import (
+	"github.com/jedisct1/go-aes"
+
+	"github.com/everanium/itb/internal/cpuid"
+)
 
 var (
 	// AreionRC4x is unused on arm64 builds; declared for symbol
@@ -36,7 +40,7 @@ var (
 	// package's MakeAreionSoEM{256,512}Hash factories provide a
 	// non-nil batched arm that routes through `Areion{256,512}Permutex4`,
 	// running 4 independent ARM AES extension chains in one ASM block.
-	HasARMAESBatched = aes.CPU.HasARMCrypto
+	HasARMAESBatched = cpuid.ARMAES
 )
 
 // Areion256Permutex4 applies the 10-round Areion256 permutation to four

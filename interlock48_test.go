@@ -13,9 +13,8 @@ import (
 	"sync"
 	"testing"
 
-	aes "github.com/jedisct1/go-aes"
-
 	"github.com/everanium/itb/internal/aesitbasm"
+	"github.com/everanium/itb/internal/cpuid"
 	"github.com/everanium/itb/internal/forcetier"
 	"github.com/everanium/itb/internal/interlock"
 )
@@ -1160,31 +1159,31 @@ func x16HostTiers() []struct {
 	}{
 		{"auto", readX16TierFlags()},
 	}
-	if aes.CPU.HasVAES && aes.CPU.HasAVX512 {
+	if cpuid.VAESZMM {
 		tiers = append(tiers, struct {
 			name  string
 			flags x16TierFlags
 		}{"avx512", x16TierFlags{zmm: true}})
 	}
-	if aes.CPU.HasVAES && aes.CPU.HasAVX2 {
+	if cpuid.VAESYMM {
 		tiers = append(tiers, struct {
 			name  string
 			flags x16TierFlags
 		}{"vaesavx2", x16TierFlags{ymm: true}})
 	}
-	if aes.CPU.HasAESNI && aes.CPU.HasAVX2 {
+	if cpuid.AESNI && cpuid.AVX2 {
 		tiers = append(tiers, struct {
 			name  string
 			flags x16TierFlags
 		}{"vex", x16TierFlags{vex: true}})
 	}
-	if aes.CPU.HasAESNI {
+	if cpuid.AESNI {
 		tiers = append(tiers, struct {
 			name  string
 			flags x16TierFlags
 		}{"aesni", x16TierFlags{aesni: true}})
 	}
-	if aes.CPU.HasARMCrypto {
+	if cpuid.ARMAES {
 		tiers = append(tiers, struct {
 			name  string
 			flags x16TierFlags

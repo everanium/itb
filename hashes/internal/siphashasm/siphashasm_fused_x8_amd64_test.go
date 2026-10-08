@@ -7,8 +7,7 @@ import (
 	"fmt"
 	"testing"
 
-	"golang.org/x/sys/cpu"
-
+	"github.com/everanium/itb/internal/cpuid"
 	"github.com/everanium/itb/internal/forcetier"
 )
 
@@ -49,9 +48,9 @@ type x8Tier struct {
 
 func amd64X8Tiers() []x8Tier {
 	return []x8Tier{
-		{"avx512", cpu.X86.HasAVX512F, avx512X8Kernels(), map[int]fusedX4Fn{20: wrapX4(sipHash24FusedChain20x4Avx512Asm),
+		{"avx512", cpuid.AVX512F, avx512X8Kernels(), map[int]fusedX4Fn{20: wrapX4(sipHash24FusedChain20x4Avx512Asm),
 			36: wrapX4(sipHash24FusedChain36x4Avx512Asm), 68: wrapX4(sipHash24FusedChain68x4Avx512Asm)}},
-		{"avx2", cpu.X86.HasAVX2, avx2X8Kernels(), map[int]fusedX4Fn{20: wrapX4(sipHash24FusedChain20x4Avx2Asm),
+		{"avx2", cpuid.AVX2, avx2X8Kernels(), map[int]fusedX4Fn{20: wrapX4(sipHash24FusedChain20x4Avx2Asm),
 			36: wrapX4(sipHash24FusedChain36x4Avx2Asm), 68: wrapX4(sipHash24FusedChain68x4Avx2Asm)}},
 	}
 }
@@ -105,10 +104,10 @@ func TestFusedX8ActiveImpliesTier(t *testing.T) {
 	if FusedX8Active() && !FusedHasAVX512 && !FusedHasAVX2 {
 		t.Fatal("FusedX8Active without a SIMD fused tier")
 	}
-	if FusedHasAVX512X8 && !cpu.X86.HasAVX512F {
+	if FusedHasAVX512X8 && !cpuid.AVX512F {
 		t.Fatal("FusedHasAVX512X8 set on a host without AVX-512F")
 	}
-	if FusedHasAVX2X8 && !cpu.X86.HasAVX2 {
+	if FusedHasAVX2X8 && !cpuid.AVX2 {
 		t.Fatal("FusedHasAVX2X8 set on a host without AVX2")
 	}
 }

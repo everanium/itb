@@ -5,8 +5,7 @@ package interlock
 import (
 	"testing"
 
-	"golang.org/x/sys/cpu"
-
+	"github.com/everanium/itb/internal/cpuid"
 	"github.com/everanium/itb/internal/forcetier"
 )
 
@@ -22,14 +21,14 @@ func TestForceInterlockTierApplied(t *testing.T) {
 	case "":
 		t.Skip("ITB_FORCE_INTERLOCK_TIER unset; auto-dispatch")
 	case "avx512":
-		if !cpu.X86.HasAVX512F {
+		if !cpuid.AVX512F || !cpuid.BMI2 {
 			t.Skip("avx512 tier not executable on this host")
 		}
 		if !HasAVX512RankMask {
 			t.Fatal("avx512: HasAVX512RankMask is false")
 		}
 	case "avx512x8":
-		if !cpu.X86.HasAVX512F {
+		if !cpuid.AVX512F || !cpuid.BMI2 {
 			t.Skip("avx512x8 tier not executable on this host")
 		}
 		if !HasAVX512RankMask {
@@ -39,7 +38,7 @@ func TestForceInterlockTierApplied(t *testing.T) {
 			t.Fatal("avx512x8: UseUnrank16 is still set; the 16-chunk superblock would run the 16-lane kernel")
 		}
 	case "avx2":
-		if !cpu.X86.HasAVX2 || !cpu.X86.HasBMI2 {
+		if !cpuid.AVX2 || !cpuid.BMI2 {
 			t.Skip("avx2 tier not executable on this host")
 		}
 		if !HasAVX2RankMask || HasAVX512RankMask {

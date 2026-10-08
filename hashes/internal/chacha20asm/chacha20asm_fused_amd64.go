@@ -3,8 +3,7 @@
 package chacha20asm
 
 import (
-	"golang.org/x/sys/cpu"
-
+	"github.com/everanium/itb/internal/cpuid"
 	"github.com/everanium/itb/internal/forcetier"
 )
 
@@ -15,11 +14,11 @@ import (
 var (
 	// FusedHasAVX512 selects the EVEX fused kernels (XMM at four lanes,
 	// YMM at eight). Needs AVX-512F.
-	FusedHasAVX512 = cpu.X86.HasAVX512F
+	FusedHasAVX512 = cpuid.AVX512F
 
 	// FusedHasAVX2 selects the VEX fused kernels (XMM at four lanes,
 	// YMM at eight) on AVX2 hosts without AVX-512F.
-	FusedHasAVX2 = cpu.X86.HasAVX2 && !cpu.X86.HasAVX512F
+	FusedHasAVX2 = cpuid.AVX2 && !cpuid.AVX512F
 
 	// FusedHasNEON is always false on amd64 builds.
 	FusedHasNEON = false
@@ -31,8 +30,8 @@ var (
 // dedicated eight-lane YMM kernel over fill blocks synthesised
 // in-register.
 var (
-	HasAVX512X16 = cpu.X86.HasAVX512F
-	HasAVX2X16   = cpu.X86.HasAVX2 && !cpu.X86.HasAVX512F
+	HasAVX512X16 = cpuid.AVX512F
+	HasAVX2X16   = cpuid.AVX2 && !cpuid.AVX512F
 	HasNEONX16   = false
 )
 
@@ -227,7 +226,7 @@ func Fused256Fill13x8(fixedKey *[32]byte, components []uint64, groupIdxBase uint
 // The eight-lane arm is selected only together with the AVX-512 fused
 // tier (see [FusedX8Active]); it does not add a tier of its own to the
 // exclusive fused flag set above.
-var FusedHasAVX512X8 = cpu.X86.HasAVX512F && !forcetier.ChainHashX4()
+var FusedHasAVX512X8 = cpuid.AVX512F && !forcetier.ChainHashX4()
 
 // FusedHasAVX2X8 arms the eight-lane YMM per-pixel kernels of the AVX2
 // tier: the four-lane VEX XMM plan on YMM registers, one dword lane per
@@ -235,7 +234,7 @@ var FusedHasAVX512X8 = cpu.X86.HasAVX512F && !forcetier.ChainHashX4()
 // spill. Needs AVX2; cleared at init by ITB_FORCE_CHAINHASH_X4 exactly
 // as [FusedHasAVX512X8] is, and selected only together with the AVX2
 // fused tier.
-var FusedHasAVX2X8 = cpu.X86.HasAVX2 && !forcetier.ChainHashX4()
+var FusedHasAVX2X8 = cpuid.AVX2 && !forcetier.ChainHashX4()
 
 // FusedX8Active reports whether an eight-lane per-pixel arm is the
 // selected arm: [FusedHasAVX512X8] together with [FusedHasAVX512], or

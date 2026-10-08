@@ -10,8 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	aes "github.com/jedisct1/go-aes"
-
+	"github.com/everanium/itb/internal/cpuid"
 	"github.com/everanium/itb/internal/forcetier"
 )
 
@@ -25,10 +24,10 @@ type noiseTier struct {
 
 func amd64NoiseTiers() []noiseTier {
 	return []noiseTier{
-		{name: "aesni", ok: aes.CPU.HasAESNI, skipMsg: "requires AES-NI", fn: noiseFillX8AesNiAsm, gran: 8},
-		{name: "vex", ok: aes.CPU.HasAESNI && aes.CPU.HasAVX2, skipMsg: "requires AES-NI + AVX2", fn: noiseFillX8VexAsm, gran: 8},
-		{name: "vaesavx2", ok: aes.CPU.HasVAES && aes.CPU.HasAVX2, skipMsg: "requires VAES + AVX2", fn: noiseFillX16VaesAvx2Asm, gran: 16},
-		{name: "avx512", ok: aes.CPU.HasVAES && aes.CPU.HasAVX512, skipMsg: "requires VAES + AVX-512", fn: noiseFillX16Avx512Asm, gran: 16},
+		{name: "aesni", ok: cpuid.AESNI, skipMsg: "requires AES-NI", fn: noiseFillX8AesNiAsm, gran: 8},
+		{name: "vex", ok: cpuid.AESNI && cpuid.AVX2, skipMsg: "requires AES-NI + AVX2", fn: noiseFillX8VexAsm, gran: 8},
+		{name: "vaesavx2", ok: cpuid.VAESYMM, skipMsg: "requires VAES + AVX2", fn: noiseFillX16VaesAvx2Asm, gran: 16},
+		{name: "avx512", ok: cpuid.VAESZMM, skipMsg: "requires VAES + AVX-512", fn: noiseFillX16Avx512Asm, gran: 16},
 	}
 }
 
@@ -78,7 +77,7 @@ func TestNoiseFillTierSelectedOnCapableHost(t *testing.T) {
 	if forcetier.HashTier() != "" {
 		t.Skip("ITB_FORCE_HASH_TIER set; selection asserted by TestForceHashTierAppliedNoiseFill")
 	}
-	if !aes.CPU.HasAESNI {
+	if !cpuid.AESNI {
 		t.Skip("host has no AES-NI")
 	}
 	if gran := noiseFillGran(); gran == 0 {
@@ -103,10 +102,10 @@ func TestNoiseFillForcedTierParity(t *testing.T) {
 		flags [4]bool
 		zmm   bool
 	}{
-		{"avx512", aes.CPU.HasVAES && aes.CPU.HasAVX512, [4]bool{true, false, false, false}, true},
-		{"vaesavx2", aes.CPU.HasVAES && aes.CPU.HasAVX2, [4]bool{false, true, false, false}, false},
-		{"vex", aes.CPU.HasAESNI && aes.CPU.HasAVX2, [4]bool{false, false, true, false}, false},
-		{"aesni", aes.CPU.HasAESNI, [4]bool{false, false, false, true}, false},
+		{"avx512", cpuid.VAESZMM, [4]bool{true, false, false, false}, true},
+		{"vaesavx2", cpuid.VAESYMM, [4]bool{false, true, false, false}, false},
+		{"vex", cpuid.AESNI && cpuid.AVX2, [4]bool{false, false, true, false}, false},
+		{"aesni", cpuid.AESNI, [4]bool{false, false, false, true}, false},
 		{"scalar", true, [4]bool{false, false, false, false}, false},
 	}
 	for _, c := range cases {
@@ -160,23 +159,23 @@ func TestForceHashTierAppliedNoiseFill(t *testing.T) {
 	case "":
 		t.Skip("ITB_FORCE_HASH_TIER unset; auto-dispatch")
 	case "avx512":
-		if !(aes.CPU.HasVAES && aes.CPU.HasAVX512) {
+		if !cpuid.VAESZMM {
 			t.Skip("avx512 tier not executable on this host")
 		}
 		wantZMM = true
 		want(16)
 	case "vaesavx2", "avx2":
-		if !(aes.CPU.HasVAES && aes.CPU.HasAVX2) {
+		if !cpuid.VAESYMM {
 			t.Skip("vaesavx2 tier not executable on this host")
 		}
 		want(16)
 	case "vex":
-		if !(aes.CPU.HasAESNI && aes.CPU.HasAVX2) {
+		if !(cpuid.AESNI && cpuid.AVX2) {
 			t.Skip("vex tier not executable on this host")
 		}
 		want(8)
 	case "aesni":
-		if !aes.CPU.HasAESNI {
+		if !cpuid.AESNI {
 			t.Skip("aesni tier not executable on this host")
 		}
 		want(8)
@@ -233,7 +232,7 @@ func BenchmarkNoiseFillTiers(b *testing.B) {
 // length, start and alignment, so the carry split and the tail hand-off
 // are covered on this kernel too.
 func TestNoiseFillZMMParity(t *testing.T) {
-	if !(aes.CPU.HasVAES && aes.CPU.HasAVX512) {
+	if !cpuid.VAESZMM {
 		t.Skip("requires VAES + AVX-512")
 	}
 	key, nonce := randomNoiseKeyNonce(t)
@@ -316,7 +315,7 @@ func TestNoiseFillZMMSelection(t *testing.T) {
 	if os.Getenv(noiseZMMChildEnv) != "" {
 		t.Skip("parent half; running as child")
 	}
-	zmmHost := aes.CPU.HasVAES && aes.CPU.HasAVX512
+	zmmHost := cpuid.VAESZMM
 	cases := []struct {
 		name    string
 		tier    string
@@ -360,7 +359,7 @@ func TestNoiseFillZMMSelection(t *testing.T) {
 			if want := fmt.Sprintf("zmm=%v", c.wantZMM); !strings.Contains(line, want) {
 				t.Fatalf("%s: child reports %q, want %s", c.name, line, want)
 			}
-			if c.name == "auto" && aes.CPU.HasVAES && aes.CPU.HasAVX2 && !strings.Contains(line, "gran=16") {
+			if c.name == "auto" && cpuid.VAESYMM && !strings.Contains(line, "gran=16") {
 				t.Fatalf("auto on a VAES host: child reports %q, want the sixteen-block YMM kernel", line)
 			}
 		})

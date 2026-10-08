@@ -5,8 +5,7 @@ package aescmacasm
 import (
 	"testing"
 
-	aes "github.com/jedisct1/go-aes"
-
+	"github.com/everanium/itb/internal/cpuid"
 	"github.com/everanium/itb/internal/forcetier"
 )
 
@@ -33,22 +32,22 @@ func TestForceHashTierApplied(t *testing.T) {
 	case "":
 		t.Skip("ITB_FORCE_HASH_TIER unset; auto-dispatch")
 	case "avx512":
-		if !(aes.CPU.HasVAES && aes.CPU.HasAVX512) {
+		if !cpuid.VAESZMM {
 			t.Skip("avx512 tier not executable on this host")
 		}
 		want(true, false, false, false)
 	case "vaesavx2", "avx2":
-		if !(aes.CPU.HasVAES && aes.CPU.HasAVX2) {
+		if !cpuid.VAESYMM {
 			t.Skip("vaesavx2 tier not executable on this host")
 		}
 		want(false, true, false, false)
 	case "vex":
-		if !(aes.CPU.HasAESNI && aes.CPU.HasAVX2) {
+		if !(cpuid.AESNI && cpuid.AVX2) {
 			t.Skip("vex tier not executable on this host")
 		}
 		want(false, false, true, false)
 	case "aesni":
-		if !aes.CPU.HasAESNI {
+		if !cpuid.AESNI {
 			t.Skip("aesni tier not executable on this host")
 		}
 		want(false, false, false, true)
@@ -87,22 +86,22 @@ func TestForceInterlockPRFFillTierApplied(t *testing.T) {
 	case "":
 		t.Skip("ITB_FORCE_INTERLOCK_PRF_FILL_TIER unset; auto-dispatch")
 	case "avx512":
-		if !(aes.CPU.HasVAES && aes.CPU.HasAVX512) {
+		if !cpuid.VAESZMM {
 			t.Skip("avx512 batch-16 tier not executable on this host")
 		}
 		want(true, false, false, false)
 	case "vaesavx2":
-		if !(aes.CPU.HasVAES && aes.CPU.HasAVX2) {
+		if !cpuid.VAESYMM {
 			t.Skip("vaesavx2 batch-16 tier not executable on this host")
 		}
 		want(false, true, false, false)
 	case "vex":
-		if !(aes.CPU.HasAESNI && aes.CPU.HasAVX2) {
+		if !(cpuid.AESNI && cpuid.AVX2) {
 			t.Skip("vex batch-16 tier not executable on this host")
 		}
 		want(false, false, true, false)
 	case "aesni":
-		if !aes.CPU.HasAESNI {
+		if !cpuid.AESNI {
 			t.Skip("aesni batch-16 tier not executable on this host")
 		}
 		want(false, false, false, true)

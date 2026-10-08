@@ -16,15 +16,16 @@ package interlock
 import (
 	"unsafe"
 
-	"golang.org/x/sys/cpu"
+	"github.com/everanium/itb/internal/cpuid"
 )
 
-// HasBMI2 caches whether the runtime CPU supports BMI2 (PEXT, PDEP).
-// Resolved once at init time from the upstream cpu package's
-// CPUID-driven detection. Available on Intel Haswell+ and AMD
-// Excavator+ (Zen 1+); essentially every modern x86 SKU shipped after
-// 2013.
-var HasBMI2 = cpu.X86.HasBMI2
+// HasBMI2 caches whether the runtime CPU executes BMI2 (PEXT, PDEP) in
+// hardware at fixed latency. Resolved once at init time from
+// [cpuid.BMI2Fast]: Intel Haswell+ and AMD Zen 3+. AMD parts before
+// Zen 3 and Hygon carry BMI2 but run PEXT / PDEP in microcode with
+// data-dependent latency, so they report false and take the pure-Go
+// softPEXT48 / softPDEP48 path.
+var HasBMI2 = cpuid.BMI2Fast
 
 // Chunk48Lock applies the 48-bit interlock keyed bit-permutation to
 // an input x (low 48 bits carry six chunk bytes in little-endian
@@ -61,8 +62,9 @@ func Unchunk48Lock(l0, l1, l2, m0, m1, m2 uint64) (x uint64)
 // ZMM; VPTERNLOGQ / VPSLLQ / VPSRLQ for EVEX-only constant synthesis).
 // Resolved once at init time from CPUID. Available on Intel
 // Skylake-X / Ice Lake / Rocket Lake / Sapphire Rapids+, AMD Zen 4 /
-// Zen 5. Only base AVX-512F is required.
-var HasAVX512RankMask = cpu.X86.HasAVX512F
+// Zen 5. Only base AVX-512F is required, plus hardware BMI2 for the
+// scalar PDEPQ remap tail ([cpuid.BMI2Fast]).
+var HasAVX512RankMask = cpuid.AVX512F && cpuid.BMI2Fast
 
 // crow48Table holds C(p, 0..16) in qword lanes 0..16 — the canonical
 // binomial rows of the combinatorial-number-system unrank. It is the
@@ -138,12 +140,13 @@ func init() {
 }
 
 // HasAVX2RankMask caches whether the runtime CPU should use the AVX2
-// 4-lane batched rank-unrank kernel: AVX2 present, BMI2 present (the
-// kernel's remap tail issues scalar PDEPQ), and AVX-512F absent (an
-// AVX-512F CPU takes the wider 8-lane ZMM kernel instead). Covers
-// AVX2-only silicon such as AMD Zen 1-3, Intel Haswell through Comet
-// Lake, and AVX2-only cloud VMs.
-var HasAVX2RankMask = cpu.X86.HasAVX2 && cpu.X86.HasBMI2 && !cpu.X86.HasAVX512F
+// 4-lane batched rank-unrank kernel: AVX2 present, hardware BMI2
+// present (the kernel's remap tail issues scalar PDEPQ;
+// [cpuid.BMI2Fast]), and AVX-512F absent (an AVX-512F CPU takes the
+// wider 8-lane ZMM kernel instead). Covers AVX2-only silicon such as
+// AMD Zen 3, Intel Haswell through Comet Lake, and AVX2-only cloud VMs;
+// AMD Zen 1 / Zen 2 keep the scalar rank-unrank path.
+var HasAVX2RankMask = cpuid.AVX2 && cpuid.BMI2Fast && !cpuid.AVX512F
 
 // RankToMaskTripleUnrank48AVX2 derives 8 balanced (m0, m1, m2) 48-bit
 // mask triples from 8 precomputed combinadic index pairs — the same

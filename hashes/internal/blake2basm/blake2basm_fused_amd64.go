@@ -3,8 +3,7 @@
 package blake2basm
 
 import (
-	"golang.org/x/sys/cpu"
-
+	"github.com/everanium/itb/internal/cpuid"
 	"github.com/everanium/itb/internal/forcetier"
 )
 
@@ -15,11 +14,11 @@ import (
 var (
 	// FusedHasAVX512 selects the EVEX YMM fused kernels (and the ZMM
 	// eight-lane fill kernel of width 256). Needs AVX-512F.
-	FusedHasAVX512 = cpu.X86.HasAVX512F
+	FusedHasAVX512 = cpuid.AVX512F
 
 	// FusedHasAVX2 selects the VEX YMM fused kernels on AVX2 hosts
 	// without AVX-512F.
-	FusedHasAVX2 = cpu.X86.HasAVX2 && !cpu.X86.HasAVX512F
+	FusedHasAVX2 = cpuid.AVX2 && !cpuid.AVX512F
 
 	// FusedHasNEON is always false on amd64 builds.
 	FusedHasNEON = false
@@ -32,8 +31,8 @@ var (
 // hook, the width-512 batch-32 hook); every other arm runs four-lane
 // kernel calls over Go-synthesised fill blocks.
 var (
-	HasAVX512X16 = cpu.X86.HasAVX512F
-	HasAVX2X16   = cpu.X86.HasAVX2 && !cpu.X86.HasAVX512F
+	HasAVX512X16 = cpuid.AVX512F
+	HasAVX2X16   = cpuid.AVX2 && !cpuid.AVX512F
 	HasNEONX16   = false
 )
 
@@ -462,7 +461,7 @@ func blake2b256FusedChain13x8Avx512Asm(fixedKey *[32]byte, comps *uint64, nGroup
 // The eight-lane arm is selected only together with the AVX-512 fused
 // tier (see [FusedX8Active]); it does not add a tier of its own to the
 // exclusive fused flag set above.
-var FusedHasAVX512X8 = cpu.X86.HasAVX512F && !forcetier.ChainHashX4()
+var FusedHasAVX512X8 = cpuid.AVX512F && !forcetier.ChainHashX4()
 
 // FusedHasAVX2X8 arms the eight-lane per-pixel arm of the AVX2 tier:
 // two calls of the four-lane VEX YMM kernel on the lane halves. No
@@ -475,7 +474,7 @@ var FusedHasAVX512X8 = cpu.X86.HasAVX512F && !forcetier.ChainHashX4()
 // for every other. Needs AVX2; cleared at init by ITB_FORCE_CHAINHASH_X4
 // exactly as [FusedHasAVX512X8] is, and selected only together with
 // the AVX2 fused tier.
-var FusedHasAVX2X8 = cpu.X86.HasAVX2 && !forcetier.ChainHashX4()
+var FusedHasAVX2X8 = cpuid.AVX2 && !forcetier.ChainHashX4()
 
 // FusedX8Active reports whether an eight-lane per-pixel arm is the
 // selected arm: [FusedHasAVX512X8] together with [FusedHasAVX512], or

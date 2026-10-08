@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"testing"
 
-	"golang.org/x/sys/cpu"
+	"github.com/everanium/itb/internal/cpuid"
 )
 
 // The eight-lane fill kernel of the AVX2 tier: each half of a batch-16
@@ -37,7 +37,7 @@ func fillX16ViaX8Avx2(comps []uint64, base uint64, out *[16][2]uint64) {
 // probe base, including the lane-offset carries of the in-register
 // synthesis.
 func TestFusedChain13x8Avx2MatchesX4(t *testing.T) {
-	if !cpu.X86.HasAVX2 {
+	if !cpuid.AVX2 {
 		t.Skip("AVX2 not available")
 	}
 	for _, pairs := range fusedX16PairCounts {
@@ -60,7 +60,7 @@ func TestFusedChain13x8Avx2MatchesX4(t *testing.T) {
 // (four calls over Go-synthesised blocks) at the cascade lengths of the
 // 512 / 1024 / 2048-bit lockSeeds.
 func BenchmarkFill13x8VsX4Avx2(b *testing.B) {
-	if !cpu.X86.HasAVX2 {
+	if !cpuid.AVX2 {
 		b.Skip("AVX2 not available")
 	}
 	for _, arm := range []struct {

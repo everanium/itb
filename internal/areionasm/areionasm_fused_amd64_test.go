@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"testing"
 
-	aes "github.com/jedisct1/go-aes"
+	"github.com/everanium/itb/internal/cpuid"
 )
 
 // fusedTier describes one amd64 fused dispatch state: the silicon it
@@ -22,9 +22,9 @@ type fusedTier struct {
 
 func amd64FusedTiers() []fusedTier {
 	return []fusedTier{
-		{name: "aesni", ok: aes.CPU.HasAESNI, skipMsg: "requires AES-NI", xmm: true},
-		{name: "vaesavx2", ok: aes.CPU.HasVAES && aes.CPU.HasAVX2, skipMsg: "requires VAES+AVX2", ymm: true},
-		{name: "avx512", ok: aes.CPU.HasVAES && aes.CPU.HasAVX512, skipMsg: "requires VAES+AVX-512", zmm: true},
+		{name: "aesni", ok: cpuid.AESNI, skipMsg: "requires AES-NI", xmm: true},
+		{name: "vaesavx2", ok: cpuid.VAESYMM, skipMsg: "requires VAES+AVX2", ymm: true},
+		{name: "avx512", ok: cpuid.VAESZMM, skipMsg: "requires VAES+AVX-512", zmm: true},
 	}
 }
 

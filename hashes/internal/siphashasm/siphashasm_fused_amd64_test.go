@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"testing"
 
-	"golang.org/x/sys/cpu"
+	"github.com/everanium/itb/internal/cpuid"
 )
 
 type fusedAsmX4 func(*uint64, int, *[4]*byte, *[4][2]uint64)
@@ -40,13 +40,13 @@ type fusedTier struct {
 func amd64FusedTiers() []fusedTier {
 	return []fusedTier{
 		{
-			name: "avx2", ok: cpu.X86.HasAVX2, skipMsg: "requires AVX2",
+			name: "avx2", ok: cpuid.AVX2, skipMsg: "requires AVX2",
 			x4: map[int]fusedX4Fn{13: wrapX4(sipHash24FusedChain13x4Avx2Asm), 20: wrapX4(sipHash24FusedChain20x4Avx2Asm),
 				36: wrapX4(sipHash24FusedChain36x4Avx2Asm), 68: wrapX4(sipHash24FusedChain68x4Avx2Asm)},
 			avx2: true, gpr: true,
 		},
 		{
-			name: "avx512", ok: cpu.X86.HasAVX512F, skipMsg: "requires AVX-512F",
+			name: "avx512", ok: cpuid.AVX512F, skipMsg: "requires AVX-512F",
 			x4: map[int]fusedX4Fn{13: wrapX4(sipHash24FusedChain13x4Avx512Asm), 20: wrapX4(sipHash24FusedChain20x4Avx512Asm),
 				36: wrapX4(sipHash24FusedChain36x4Avx512Asm), 68: wrapX4(sipHash24FusedChain68x4Avx512Asm)},
 			avx512: true, gpr: true,

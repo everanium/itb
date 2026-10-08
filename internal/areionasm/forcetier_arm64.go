@@ -3,8 +3,7 @@
 package areionasm
 
 import (
-	"github.com/jedisct1/go-aes"
-
+	"github.com/everanium/itb/internal/cpuid"
 	"github.com/everanium/itb/internal/forcetier"
 )
 
@@ -34,7 +33,7 @@ func applyHashTier() {
 	switch forcetier.HashTier() {
 	case "":
 	case "neon", "sve2", "sve":
-		if !aes.CPU.HasARMCrypto {
+		if !cpuid.ARMAES {
 			forcetier.Warnf("areionasm: %s tier needs the ARM crypto extension; keeping auto-dispatch", forcetier.HashTier())
 			return
 		}
@@ -55,7 +54,7 @@ func applyInterlockPRFFillTier() {
 	switch forcetier.InterlockPRFFillTier() {
 	case "":
 	case "neon":
-		if !aes.CPU.HasARMCrypto {
+		if !cpuid.ARMAES {
 			forcetier.Warnf("areionasm: neon batch-16 tier needs the ARM crypto extension; keeping auto-dispatch")
 			return
 		}

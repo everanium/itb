@@ -6,8 +6,7 @@ import (
 	"bytes"
 	"testing"
 
-	aes "github.com/jedisct1/go-aes"
-
+	"github.com/everanium/itb/internal/cpuid"
 	"github.com/everanium/itb/internal/forcetier"
 )
 
@@ -16,7 +15,7 @@ import (
 // keeps the run clear of the 64-bit wrap, at every dst alignment
 // offset 0 .. 15, and pins each output to the pure-Go reference.
 func TestNoiseFillNeonParity(t *testing.T) {
-	if !aes.CPU.HasARMCrypto {
+	if !cpuid.ARMAES {
 		t.Skip("requires the ARM crypto extension")
 	}
 	for trial := 0; trial < 200; trial++ {
@@ -50,7 +49,7 @@ func TestNoiseFillTierSelectedOnCapableHostARM64(t *testing.T) {
 	if forcetier.HashTier() != "" {
 		t.Skip("ITB_FORCE_HASH_TIER set")
 	}
-	if !aes.CPU.HasARMCrypto {
+	if !cpuid.ARMAES {
 		t.Skip("host has no ARM crypto extension")
 	}
 	if gran := noiseFillGran(); gran == 0 {
@@ -66,7 +65,7 @@ func TestNoiseFillForcedTierParityARM64(t *testing.T) {
 	saved := FusedHasARMAES
 	defer func() { FusedHasARMAES = saved }()
 	for _, armed := range []bool{true, false} {
-		if armed && !aes.CPU.HasARMCrypto {
+		if armed && !cpuid.ARMAES {
 			continue
 		}
 		FusedHasARMAES = armed

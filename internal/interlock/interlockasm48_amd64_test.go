@@ -6,7 +6,7 @@ import (
 	"math/rand"
 	"testing"
 
-	"golang.org/x/sys/cpu"
+	"github.com/everanium/itb/internal/cpuid"
 )
 
 // softPEXT48Ref / softPDEP48Ref are local pure-Go references for the
@@ -483,7 +483,7 @@ func TestRankToMaskTripleUnrank48Boundary(t *testing.T) {
 // cannot execute the AVX2 kernel (AVX2 for the unrank body, BMI2 for
 // the scalar-PDEPQ remap tail).
 func forceAVX2RankMask(t testing.TB) func() {
-	if !cpu.X86.HasAVX2 || !cpu.X86.HasBMI2 {
+	if !cpuid.AVX2 || !cpuid.BMI2 {
 		t.Skip("AVX2+BMI2 not available")
 	}
 	origAVX2, origAVX512 := HasAVX2RankMask, HasAVX512RankMask
