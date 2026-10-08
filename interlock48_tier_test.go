@@ -28,8 +28,8 @@ func runnableInterlockTiers() []interlockTier {
 	if cpuid.AVX2 && cpuid.BMI2 {
 		tiers = append(tiers, interlockTier{name: "avx2", avx2: true, bmi2: true})
 	}
-	if cpuid.AVX512F {
-		tiers = append(tiers, interlockTier{name: "avx512", avx512: true, bmi2: cpuid.BMI2})
+	if cpuid.AVX512F && cpuid.BMI2 {
+		tiers = append(tiers, interlockTier{name: "avx512", avx512: true, bmi2: true})
 	}
 	return tiers
 }

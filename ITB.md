@@ -67,7 +67,7 @@ Plaintext never reaches the regions as contiguous bytes. Every message first pas
 1. A 4-byte big-endian length prefix is prepended to the plaintext, allowing exact restoration of the original extent.
 2. The byte stream is processed in 48-bit (6-byte) chunks.
 3. For each chunk, lane distribution is evaluated through a **two-stage cascade fill** (`lockSeed` + `interlock_nonce`) followed by combinadic unranking into balanced mask triple `(m0, m1, m2)` (see §12 for full derivation).
-4. `chunk48lock(x, m0, m1, m2)` compresses the 48-bit chunk into three 16-bit lane values `(l0, l1, l2)` using three BMI2 `PEXTQ` instructions on x86 (or portable fallback) in ~3 cycles per chunk in constant time.
+4. `chunk48lock(x, m0, m1, m2)` compresses the 48-bit chunk into three 16-bit lane values `(l0, l1, l2)` using three BMI2 `PEXTQ` instructions on x86 (or portable fallback) in ~3 cycles per chunk in constant time (AMD Zen 1 / Zen 2: [microcoded](HWTHREATS.md#52-microarchitecture-floors--tier-dispatch)).
 5. Region 0 receives `l0` (2 bytes), Region 1 receives `l1`, and Region 2 receives `l2`, advancing in lockstep.
 6. Each region's lane buffer begins with its respective fragment of the interlock nonce. The accumulated payload enters COBS encoding; these fragments sit inside the Pixel Barrier's encryption coverage and are authenticated under AEAD modes (MAC-Inside-Encrypt composition). Nonce splitting is derived deterministically from the configured nonce width, requiring no wire length metadata.
 
@@ -273,7 +273,7 @@ Rank Barrier denies a stable bit-to-lane mapping; Pixel Barrier denies a per-byt
    Distinction from Pixel Barrier: The Pixel Barrier operates directly over session components at depth `r = keyBits / width` (4 / 8 / 16 rounds at width 128 for 512 / 1024 / 2048-bit keys; 2 / 4 / 8 at width 256; 1 / 2 / 4 at width 512), without an intermediate key. The Interlocked Barrier operates at depth `r = 1 + keyBits / width` (5 / 9 / 17 rounds at width 128; 3 / 5 / 9 at width 256; 2 / 3 / 5 at width 512), where the additional primer round binds every chunk's rank to `interlock_nonce` before session components are mixed. The Rank Barrier cascade fill is **exactly 1 round deeper** than the Pixel Barrier cascade.
 3. **Per-chunk rank evaluation:** Each group evaluates input block `[0x03 ‖ LE64(groupIdx) ‖ 4×0x00]` (13 bytes) through the cascade over `lockComps`, yielding a 128-bit rank per chunk.
 4. **Combinadic unranking:** The rank reduces to `(idx0, idx1)` via `(q, idx1) = divmod128(rank, B)` and `idx0 = q mod A`, mapped to disjoint 16-of-48 masks `(m0, m1, m2)` via binomial combinatorial unranking.
-5. **Constant-time hardware execution:** Three BMI2 `PEXTQ` instructions (`chunk48LockBatch`) compress the 48-bit chunk into three 16-bit lane values in ~3 cycles per chunk in constant time. Reassembly uses three BMI2 `PDEPQ` instructions followed by pairwise `ORQ`.
+5. **Constant-time hardware execution:** Three BMI2 `PEXTQ` instructions (`chunk48LockBatch`) compress the 48-bit chunk into three 16-bit lane values in ~3 cycles per chunk in constant time (AMD Zen 1 / Zen 2: [microcoded](HWTHREATS.md#52-microarchitecture-floors--tier-dispatch)). Reassembly uses three BMI2 `PDEPQ` instructions followed by pairwise `ORQ`.
 
 **Mask-space cardinality (Theorem 11).** The number of balanced partitions per chunk is ([Proof 11](PROOFS.md#proof-11-48-bit-rank-barrier-mask-space-interlocked-barrier), [SCIENCE.md § 2.15](SCIENCE.md#215-48-bit-rank-barrier-mask-space-theorem-11)):
 

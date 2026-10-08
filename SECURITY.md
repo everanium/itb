@@ -204,7 +204,7 @@ The optional C pixel processing backend (`CGO_ENABLED=1`, GCC `-O3 -mavx2`) was 
 
 | Concern | Status | Detail |
 |---|---|---|
-| AVX2 / AVX-512 / GFNI / VBMI / AES-NI / BMI2 instruction timing | **Constant-time** | Fixed latency across supporting Intel / AMD microarchitectures for all five pixel tiers (Tiers A, A′, B, B′, C) and hash / interlock SIMD kernels. See [HWTHREATS.md § Category 5](HWTHREATS.md#category-5-instruction-set-side-channel-profile) for the complete per-instruction inventory and microarchitecture latency table |
+| AVX2 / AVX-512 / GFNI / VBMI / AES-NI / BMI2 instruction timing | **Constant-time** | Fixed latency across supporting Intel / AMD microarchitectures (BMI2 on AMD Zen 1 / Zen 2: [microcoded](HWTHREATS.md#52-microarchitecture-floors--tier-dispatch)) for all five pixel tiers (Tiers A, A′, B, B′, C) and hash / interlock SIMD kernels. See [HWTHREATS.md § Category 5](HWTHREATS.md#category-5-instruction-set-side-channel-profile) for the complete per-instruction inventory and microarchitecture latency table |
 | `dataHash % 7` | **Constant-time** | GCC optimizes to `imulq` multiply-by-reciprocal, no `div` instruction |
 | `% totalPixels` (pixel wrap) | Variable-time `idivl` | Not secret: totalPixels = W × H from public header |
 | Container access pattern | Same as Pure Go | `container[pixelOffset]` — startPixel cache pattern unchanged |
