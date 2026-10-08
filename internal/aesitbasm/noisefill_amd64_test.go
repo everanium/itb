@@ -5,6 +5,9 @@ package aesitbasm
 import (
 	"bytes"
 	"fmt"
+	"os"
+	"os/exec"
+	"strings"
 	"testing"
 
 	aes "github.com/jedisct1/go-aes"
@@ -25,6 +28,7 @@ func amd64NoiseTiers() []noiseTier {
 		{name: "aesni", ok: aes.CPU.HasAESNI, skipMsg: "requires AES-NI", fn: noiseFillX8AesNiAsm, gran: 8},
 		{name: "vex", ok: aes.CPU.HasAESNI && aes.CPU.HasAVX2, skipMsg: "requires AES-NI + AVX2", fn: noiseFillX8VexAsm, gran: 8},
 		{name: "vaesavx2", ok: aes.CPU.HasVAES && aes.CPU.HasAVX2, skipMsg: "requires VAES + AVX2", fn: noiseFillX16VaesAvx2Asm, gran: 16},
+		{name: "avx512", ok: aes.CPU.HasVAES && aes.CPU.HasAVX512, skipMsg: "requires VAES + AVX-512", fn: noiseFillX16Avx512Asm, gran: 16},
 	}
 }
 
@@ -88,18 +92,22 @@ func TestNoiseFillTierSelectedOnCapableHost(t *testing.T) {
 // flags.
 func TestNoiseFillForcedTierParity(t *testing.T) {
 	saved := [4]bool{FusedHasVAESAVX512, FusedHasVAESAVX2, FusedHasAVXAESNI, FusedHasAESNI}
+	savedZMM := noiseFillZMM
 	defer func() {
 		FusedHasVAESAVX512, FusedHasVAESAVX2, FusedHasAVXAESNI, FusedHasAESNI = saved[0], saved[1], saved[2], saved[3]
+		noiseFillZMM = savedZMM
 	}()
 	cases := []struct {
 		name  string
 		ok    bool
 		flags [4]bool
+		zmm   bool
 	}{
-		{"vaesavx2", aes.CPU.HasVAES && aes.CPU.HasAVX2, [4]bool{false, true, false, false}},
-		{"vex", aes.CPU.HasAESNI && aes.CPU.HasAVX2, [4]bool{false, false, true, false}},
-		{"aesni", aes.CPU.HasAESNI, [4]bool{false, false, false, true}},
-		{"scalar", true, [4]bool{false, false, false, false}},
+		{"avx512", aes.CPU.HasVAES && aes.CPU.HasAVX512, [4]bool{true, false, false, false}, true},
+		{"vaesavx2", aes.CPU.HasVAES && aes.CPU.HasAVX2, [4]bool{false, true, false, false}, false},
+		{"vex", aes.CPU.HasAESNI && aes.CPU.HasAVX2, [4]bool{false, false, true, false}, false},
+		{"aesni", aes.CPU.HasAESNI, [4]bool{false, false, false, true}, false},
+		{"scalar", true, [4]bool{false, false, false, false}, false},
 	}
 	for _, c := range cases {
 		c := c
@@ -108,6 +116,7 @@ func TestNoiseFillForcedTierParity(t *testing.T) {
 				t.Skip("tier not executable on this host")
 			}
 			FusedHasVAESAVX512, FusedHasVAESAVX2, FusedHasAVXAESNI, FusedHasAESNI = c.flags[0], c.flags[1], c.flags[2], c.flags[3]
+			noiseFillZMM = c.zmm
 			gran := noiseFillGran()
 			if c.name == "scalar" && gran != 0 || c.name != "scalar" && gran == 0 {
 				t.Fatalf("%s: tier selection gran=%d", c.name, gran)
@@ -130,17 +139,21 @@ func TestNoiseFillForcedTierParity(t *testing.T) {
 }
 
 // TestForceHashTierAppliedNoiseFill asserts the kernel NoiseFill
-// selects follows ITB_FORCE_HASH_TIER: the ZMM token lands on the YMM
-// kernel (the filler ships no ZMM tier), every other token on its own
-// kernel, scalar on none. Skips when the variable is unset or the host
-// cannot honour the token, mirroring TestForceHashTierApplied.
+// selects follows ITB_FORCE_HASH_TIER: the ZMM token arms the VAES ZMM
+// kernel, every other token selects its own kernel with the ZMM kernel
+// disarmed, scalar selects none. Skips when the variable is unset or the
+// host cannot honour the token, mirroring TestForceHashTierApplied.
 func TestForceHashTierAppliedNoiseFill(t *testing.T) {
 	tier := forcetier.HashTier()
 	gran := noiseFillGran()
+	wantZMM := false
 	want := func(g int) {
 		t.Helper()
 		if gran != g {
 			t.Fatalf("%s: noise filler group width %d, want %d", tier, gran, g)
+		}
+		if got := noiseFillZMM && FusedHasVAESAVX512; got != wantZMM {
+			t.Fatalf("%s: noise filler ZMM kernel selected=%v, want %v", tier, got, wantZMM)
 		}
 	}
 	switch tier {
@@ -150,6 +163,7 @@ func TestForceHashTierAppliedNoiseFill(t *testing.T) {
 		if !(aes.CPU.HasVAES && aes.CPU.HasAVX512) {
 			t.Skip("avx512 tier not executable on this host")
 		}
+		wantZMM = true
 		want(16)
 	case "vaesavx2", "avx2":
 		if !(aes.CPU.HasVAES && aes.CPU.HasAVX2) {
@@ -205,6 +219,149 @@ func BenchmarkNoiseFillTiers(b *testing.B) {
 			b.SetBytes(int64(size))
 			for i := 0; i < b.N; i++ {
 				noiseFillGeneric(&s, dst, 0, 0)
+			}
+		})
+	}
+}
+
+// TestNoiseFillZMMParity pins the VAES ZMM kernel, called directly, to
+// the pure-Go reference at one to eight groups, from every start (a run
+// that would reach the 64-bit wrap of lo is placed so it ends on
+// lo == 2^64 - 1, the last block before the carry), into a dst at every
+// alignment offset 0 .. 15, and checks no byte past the run is written.
+// It then runs the NoiseFill driver with the ZMM kernel armed over every
+// length, start and alignment, so the carry split and the tail hand-off
+// are covered on this kernel too.
+func TestNoiseFillZMMParity(t *testing.T) {
+	if !(aes.CPU.HasVAES && aes.CPU.HasAVX512) {
+		t.Skip("requires VAES + AVX-512")
+	}
+	key, nonce := randomNoiseKeyNonce(t)
+	s := NewNoiseSchedule(key, nonce)
+	for groups := 1; groups <= 8; groups++ {
+		nblk := 16 * groups
+		for _, st := range noiseStarts {
+			lo, hi := st[0], st[1]
+			if room := ^lo; uint64(nblk-1) > room {
+				lo = ^uint64(0) - uint64(nblk-1)
+			}
+			want := make([]byte, 16*nblk)
+			noiseRefFill(key, nonce, want, lo, hi)
+			for off := 0; off < 16; off++ {
+				got := make([]byte, 16*nblk+32)
+				noiseFillX16Avx512Asm(&s, &got[off], nblk, lo, hi)
+				if !bytes.Equal(got[off:off+16*nblk], want) {
+					t.Fatalf("nblk=%d ctr=(%d,%d) off=%d: ZMM kernel differs from reference", nblk, lo, hi, off)
+				}
+				for i := range got {
+					if (i < off || i >= off+16*nblk) && got[i] != 0 {
+						t.Fatalf("nblk=%d ctr=(%d,%d) off=%d: ZMM kernel wrote outside the run at %d", nblk, lo, hi, off, i)
+					}
+				}
+			}
+		}
+	}
+
+	saved := [4]bool{FusedHasVAESAVX512, FusedHasVAESAVX2, FusedHasAVXAESNI, FusedHasAESNI}
+	savedZMM := noiseFillZMM
+	defer func() {
+		FusedHasVAESAVX512, FusedHasVAESAVX2, FusedHasAVXAESNI, FusedHasAESNI = saved[0], saved[1], saved[2], saved[3]
+		noiseFillZMM = savedZMM
+	}()
+	FusedHasVAESAVX512, FusedHasVAESAVX2, FusedHasAVXAESNI, FusedHasAESNI = true, false, false, false
+	noiseFillZMM = true
+	for _, n := range noiseLengths {
+		for _, st := range noiseStarts {
+			want := make([]byte, n)
+			noiseRefFill(key, nonce, want, st[0], st[1])
+			for off := 0; off < 16; off++ {
+				got := make([]byte, n+32)
+				for i := range got {
+					got[i] = 0xA5
+				}
+				NoiseFill(&s, got[off:off+n], st[0], st[1])
+				if !bytes.Equal(got[off:off+n], want) {
+					t.Fatalf("n=%d ctr=%v off=%d: ZMM-armed fill differs from reference", n, st, off)
+				}
+				for i := range got {
+					if (i < off || i >= off+n) && got[i] != 0xA5 {
+						t.Fatalf("n=%d ctr=%v off=%d: byte outside dst at %d overwritten", n, st, off, i)
+					}
+				}
+			}
+		}
+	}
+}
+
+// noiseZMMChildEnv marks the child half of TestNoiseFillZMMSelection.
+const noiseZMMChildEnv = "ITB_NOISEFILL_ZMM_CHILD"
+
+// TestNoiseFillZMMSelectionChild is the child half: it prints whether
+// the process it runs in selects the VAES ZMM noise-filler kernel and
+// the group width the filler runs at. It is a no-op unless the parent
+// set the child marker.
+func TestNoiseFillZMMSelectionChild(t *testing.T) {
+	if os.Getenv(noiseZMMChildEnv) == "" {
+		t.Skip("child half of TestNoiseFillZMMSelection")
+	}
+	fmt.Printf("NOISEFILL zmm=%v gran=%d\n", noiseFillZMM && FusedHasVAESAVX512, noiseFillGran())
+}
+
+// TestNoiseFillZMMSelection asserts the VAES ZMM noise filler is never
+// auto-selected and is selected under ITB_FORCE_HASH_TIER=avx512. The
+// variable is read once at init, so each case re-executes the test
+// binary with every ITB_FORCE_* variable of the parent environment
+// removed and the case's own set, and reads back the child's selection.
+func TestNoiseFillZMMSelection(t *testing.T) {
+	if os.Getenv(noiseZMMChildEnv) != "" {
+		t.Skip("parent half; running as child")
+	}
+	zmmHost := aes.CPU.HasVAES && aes.CPU.HasAVX512
+	cases := []struct {
+		name    string
+		tier    string
+		wantZMM bool
+	}{
+		{"auto", "", false},
+		{"avx512", "avx512", zmmHost},
+		{"vaesavx2", "vaesavx2", false},
+		{"vex", "vex", false},
+		{"aesni", "aesni", false},
+		{"scalar", "scalar", false},
+	}
+	for _, c := range cases {
+		c := c
+		t.Run(c.name, func(t *testing.T) {
+			cmd := exec.Command(os.Args[0], "-test.run=^TestNoiseFillZMMSelectionChild$", "-test.v")
+			env := []string{noiseZMMChildEnv + "=1"}
+			for _, kv := range os.Environ() {
+				if strings.HasPrefix(kv, "ITB_FORCE_") || strings.HasPrefix(kv, noiseZMMChildEnv+"=") {
+					continue
+				}
+				env = append(env, kv)
+			}
+			if c.tier != "" {
+				env = append(env, "ITB_FORCE_HASH_TIER="+c.tier)
+			}
+			cmd.Env = env
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				t.Fatalf("child: %v\n%s", err, out)
+			}
+			var line string
+			for _, l := range strings.Split(string(out), "\n") {
+				if strings.HasPrefix(l, "NOISEFILL ") {
+					line = l
+				}
+			}
+			if line == "" {
+				t.Fatalf("child printed no selection line:\n%s", out)
+			}
+			if want := fmt.Sprintf("zmm=%v", c.wantZMM); !strings.Contains(line, want) {
+				t.Fatalf("%s: child reports %q, want %s", c.name, line, want)
+			}
+			if c.name == "auto" && aes.CPU.HasVAES && aes.CPU.HasAVX2 && !strings.Contains(line, "gran=16") {
+				t.Fatalf("auto on a VAES host: child reports %q, want the sixteen-block YMM kernel", line)
 			}
 		})
 	}

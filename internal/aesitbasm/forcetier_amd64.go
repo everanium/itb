@@ -27,7 +27,9 @@ func init() {
 // legacy-SSE-encoded XMM kernels on AES-NI hosts without AVX. "scalar"
 // means no assembly anywhere in this package's dispatch, so it also
 // disarms the batch-16 flags; ITB_FORCE_INTERLOCK_PRF_FILL_TIER, applied
-// afterwards, can re-arm a batch-16 tier on its own.
+// afterwards, can re-arm a batch-16 tier on its own. "avx512" also arms
+// the VAES ZMM noise filler (noiseFillZMM), which auto-dispatch never
+// selects; every other token leaves it disarmed.
 func applyHashTier() {
 	switch forcetier.HashTier() {
 	case "avx512":
@@ -36,6 +38,7 @@ func applyHashTier() {
 			return
 		}
 		FusedHasVAESAVX512, FusedHasVAESAVX2, FusedHasAVXAESNI, FusedHasAESNI = true, false, false, false
+		noiseFillZMM = true
 	case "vaesavx2", "avx2":
 		if !(aes.CPU.HasVAES && aes.CPU.HasAVX2) {
 			forcetier.Warnf("aesitbasm: %s tier needs VAES+AVX2; keeping auto-dispatch", forcetier.HashTier())
