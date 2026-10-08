@@ -19,8 +19,11 @@
 // claims under the batched dispatch path (any divergence breaks the
 // PRF assumption invocation in SECURITY.md).
 //
-// Algorithm reference. The SoEM construction is from Iwata-Mennink
-// (Sum of Even-Mansour, beyond-birthday-bound PRF):
+// Algorithm reference. The SoEM construction (Sum of Even-Mansour, a
+// PRF rather than a permutation) is from Chen-Lambooij-Mennink, CRYPTO
+// 2019; its beyond-birthday bound holds for two independent
+// permutations, while the instance below evaluates one permutation P in
+// both branches and is therefore relied on up to the birthday bound:
 //
 //	F(k1, k2, m) = P(m ⊕ k1) ⊕ P(m ⊕ k2 ⊕ d)
 //

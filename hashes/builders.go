@@ -127,6 +127,13 @@ func scratchAtLeast(pool *sync.Pool, need int) (*[]byte, []byte) {
 // followed by block.Encrypt; a length tag is folded into the initial
 // state to break the trailing-zero collision class.
 //
+// The tag separates only inputs that differ by trailing zero bytes:
+// chosen data of another length can cancel it in the first block, and
+// unpadded chaining admits CBC-MAC extension across block counts. The
+// closure is a PRF for one fixed input length under the PRP assumption
+// on the block cipher; call it at one length per key and seed, as every
+// ITB call site does.
+//
 // The block cipher must have BlockSize() >= 16. AES-128 / AES-192 /
 // AES-256, Camellia, ARIA, SM4 — all qualify. The cipher's key is
 // embedded inside the cipher.Block; the builder does not see the key
@@ -166,8 +173,8 @@ func BuildCBCMACChainAbsorb128(block cipher.Block) itb.HashFunc128 {
 // chain-absorb passes over the same data, each domain-separated by a
 // distinct constant XOR'd into the initial state, and concatenates the
 // 16-byte halves into a 32-byte digest. The construction inherits the
-// full nonce absorption property of BuildCBCMACChainAbsorb128 and adds
-// a 2x throughput cost.
+// full nonce absorption property and the fixed-length use of
+// BuildCBCMACChainAbsorb128 and adds a 2x throughput cost.
 func BuildCBCMACChainAbsorb256(block cipher.Block) itb.HashFunc256 {
 	bs := block.BlockSize()
 	if bs < 16 {
@@ -189,8 +196,8 @@ func BuildCBCMACChainAbsorb256(block cipher.Block) itb.HashFunc256 {
 // chain-absorb passes over the same data, each domain-separated by a
 // distinct constant XOR'd into the initial state, and concatenates the
 // 16-byte quarters into a 64-byte digest. The construction inherits
-// the full nonce absorption property of BuildCBCMACChainAbsorb128 and
-// adds a 4x throughput cost.
+// the full nonce absorption property and the fixed-length use of
+// BuildCBCMACChainAbsorb128 and adds a 4x throughput cost.
 //
 // For 64-byte ITB nonce (512-bit nonce) configurations, this
 // closure runs 4 * ceil(68 / BlockSize()) block.Encrypt calls per

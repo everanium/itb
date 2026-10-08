@@ -6,20 +6,21 @@
 // shapes and for the batch-16 Interlocked Barrier fill hook, and one
 // lane in general-purpose registers as the single-lane arm of every
 // tier. Every cascade round rebuilds the eight key words from the fixed
-// key, the component group and the previous output and runs one
-// ChaCha20 block per counter value from the constants, the key words,
-// the counter and the zero nonce; the kernels are emitted by the
-// generator (scripts/kernels/chacha20/gen_fused_kernels.py). Register
-// layout: one register per state word, one dword lane per pixel, the
-// quarter round never crossing lanes, VPROLD for the four ARX rotates
-// on the EVEX tier.
+// key, the component group and the previous output and runs the
+// HChaCha20 chain over the slot blocks of the data: one ChaCha20
+// permutation per block from the constants, the chaining key and the
+// block, the eight output words becoming the key of the next block; the
+// kernels are emitted by the generator
+// (scripts/kernels/chacha20/gen_fused_kernels.py). Register layout: one
+// register per state word, one dword lane per pixel, the quarter round
+// never crossing lanes, VPROLD for the four ARX rotates on the EVEX
+// tier.
 package chacha20asm
 
 import (
 	"encoding/binary"
+	"math/bits"
 	"unsafe"
-
-	"golang.org/x/crypto/chacha20"
 )
 
 // Fused cascade kernels evaluate the whole ChainHash256 cascade of the
@@ -32,19 +33,17 @@ import (
 //	    h = ChaCha20-PRF(fixedKey ⊕ seed, data)
 //	out = h
 //
-// The per-round ChaCha20 key is the 32-byte fixed key XOR the seed words,
-// the nonce is zero, and the 32-byte state [LE64(len(data)) | 24-byte
-// data window] absorbs the data 24 bytes at a time — each window XORed
-// into the state, then the state XORed with the next 32 bytes of
-// keystream. The keystream does not depend on the state, so the absorb
-// is one XOR of the folded data windows with the keystream halves the
-// shape consumes: the low half of block 0 at 13 / 20 bytes, both halves
-// of block 0 at 36 bytes, both halves of block 0 and the low half of
-// block 1 at 68 bytes. Every 64-bit seed and output word straddles two
-// 32-bit key words, low half first. The data words are staged once per
-// call; the key words are rebuilt each cascade round from the fixed key,
-// the component group and the previous round's output, all of which
-// stay in registers or the frame.
+// ChaCha20-PRF is the HChaCha20 chain of [HChaCha20Chain]: the per-round
+// key is the 32-byte fixed key XOR the seed words, the data is encoded
+// as 16-byte slot blocks of 15 data bytes and one tag byte, and every
+// block runs one ChaCha20 permutation over [σ | key | block] whose
+// output words 0..3 and 12..15 (no feed-forward — the HChaCha20
+// convention) are the key of the next block; the last key is the
+// 32-byte output. Every 64-bit seed and output word straddles two 32-bit
+// key words, low half first. The block words are staged once per call;
+// the key words are rebuilt each cascade round from the fixed key, the
+// component group and the previous round's output, all of which stay in
+// registers or the frame.
 //
 // x4 kernels run four lanes with distinct data over one shared component
 // slice — the shape Seed256.BatchChainHash evaluates — and the x8 kernels
@@ -59,8 +58,192 @@ import (
 // nonce-buf shapes.
 var Shapes = [4]int{13, 20, 36, 68}
 
+// SlotBytes is the number of data bytes one 16-byte slot block carries;
+// the sixteenth byte is the tag.
+const SlotBytes = 15
+
+// SlotTagFinal is the tag bit of the final slot block; the low four bits
+// of the final tag carry the number of data bytes in that block.
+const SlotTagFinal = 0x80
+
+// sigma is the "expand 32-byte k" constant of ChaCha20 (RFC 8439 § 2.3).
+var sigma = [4]uint32{0x61707865, 0x3320646e, 0x79622d32, 0x6b206574}
+
+// HChaCha20 runs the ChaCha20 permutation (RFC 8439 § 2.3, twenty rounds)
+// over the state [σ | key | in] and returns words 0..3 and 12..15 of the
+// permuted state without the feed-forward — the HChaCha20 function of
+// the XChaCha20 construction, which is a PRF in the 128-bit input under
+// the ChaCha20 block-function PRF assumption. key is the eight key words
+// and in the four input words (the counter and nonce words of a ChaCha20
+// block), both little-endian; the output words map to key words 0..7 of
+// the next block in order.
+func HChaCha20(key *[8]uint32, in *[4]uint32) [8]uint32 {
+	x0, x1, x2, x3 := sigma[0], sigma[1], sigma[2], sigma[3]
+	x4, x5, x6, x7 := key[0], key[1], key[2], key[3]
+	x8, x9, x10, x11 := key[4], key[5], key[6], key[7]
+	x12, x13, x14, x15 := in[0], in[1], in[2], in[3]
+	for i := 0; i < 10; i++ {
+		// Column round.
+		x0 += x4
+		x12 ^= x0
+		x12 = bits.RotateLeft32(x12, 16)
+		x8 += x12
+		x4 ^= x8
+		x4 = bits.RotateLeft32(x4, 12)
+		x0 += x4
+		x12 ^= x0
+		x12 = bits.RotateLeft32(x12, 8)
+		x8 += x12
+		x4 ^= x8
+		x4 = bits.RotateLeft32(x4, 7)
+
+		x1 += x5
+		x13 ^= x1
+		x13 = bits.RotateLeft32(x13, 16)
+		x9 += x13
+		x5 ^= x9
+		x5 = bits.RotateLeft32(x5, 12)
+		x1 += x5
+		x13 ^= x1
+		x13 = bits.RotateLeft32(x13, 8)
+		x9 += x13
+		x5 ^= x9
+		x5 = bits.RotateLeft32(x5, 7)
+
+		x2 += x6
+		x14 ^= x2
+		x14 = bits.RotateLeft32(x14, 16)
+		x10 += x14
+		x6 ^= x10
+		x6 = bits.RotateLeft32(x6, 12)
+		x2 += x6
+		x14 ^= x2
+		x14 = bits.RotateLeft32(x14, 8)
+		x10 += x14
+		x6 ^= x10
+		x6 = bits.RotateLeft32(x6, 7)
+
+		x3 += x7
+		x15 ^= x3
+		x15 = bits.RotateLeft32(x15, 16)
+		x11 += x15
+		x7 ^= x11
+		x7 = bits.RotateLeft32(x7, 12)
+		x3 += x7
+		x15 ^= x3
+		x15 = bits.RotateLeft32(x15, 8)
+		x11 += x15
+		x7 ^= x11
+		x7 = bits.RotateLeft32(x7, 7)
+
+		// Diagonal round.
+		x0 += x5
+		x15 ^= x0
+		x15 = bits.RotateLeft32(x15, 16)
+		x10 += x15
+		x5 ^= x10
+		x5 = bits.RotateLeft32(x5, 12)
+		x0 += x5
+		x15 ^= x0
+		x15 = bits.RotateLeft32(x15, 8)
+		x10 += x15
+		x5 ^= x10
+		x5 = bits.RotateLeft32(x5, 7)
+
+		x1 += x6
+		x12 ^= x1
+		x12 = bits.RotateLeft32(x12, 16)
+		x11 += x12
+		x6 ^= x11
+		x6 = bits.RotateLeft32(x6, 12)
+		x1 += x6
+		x12 ^= x1
+		x12 = bits.RotateLeft32(x12, 8)
+		x11 += x12
+		x6 ^= x11
+		x6 = bits.RotateLeft32(x6, 7)
+
+		x2 += x7
+		x13 ^= x2
+		x13 = bits.RotateLeft32(x13, 16)
+		x8 += x13
+		x7 ^= x8
+		x7 = bits.RotateLeft32(x7, 12)
+		x2 += x7
+		x13 ^= x2
+		x13 = bits.RotateLeft32(x13, 8)
+		x8 += x13
+		x7 ^= x8
+		x7 = bits.RotateLeft32(x7, 7)
+
+		x3 += x4
+		x14 ^= x3
+		x14 = bits.RotateLeft32(x14, 16)
+		x9 += x14
+		x4 ^= x9
+		x4 = bits.RotateLeft32(x4, 12)
+		x3 += x4
+		x14 ^= x3
+		x14 = bits.RotateLeft32(x14, 8)
+		x9 += x14
+		x4 ^= x9
+		x4 = bits.RotateLeft32(x4, 7)
+	}
+	return [8]uint32{x0, x1, x2, x3, x12, x13, x14, x15}
+}
+
+// SlotBlocks is the number of 16-byte slot blocks the encoding of n data
+// bytes occupies: fifteen data bytes per block, at least one block.
+func SlotBlocks(n int) int {
+	if n == 0 {
+		return 1
+	}
+	return (n + SlotBytes - 1) / SlotBytes
+}
+
+// slotWords encodes slot block j of data as its four little-endian
+// words: data[15j .. 15j+15) zero-padded, then the tag byte — 0x00 for
+// a block that is not the last, [SlotTagFinal] | r for the last block
+// carrying r data bytes.
+func slotWords(data []byte, j, blocks int) [4]uint32 {
+	var slot [16]byte
+	off := j * SlotBytes
+	r := copy(slot[:SlotBytes], data[off:])
+	if j == blocks-1 {
+		slot[15] = SlotTagFinal | byte(r)
+	}
+	return [4]uint32{
+		binary.LittleEndian.Uint32(slot[0:]),
+		binary.LittleEndian.Uint32(slot[4:]),
+		binary.LittleEndian.Uint32(slot[8:]),
+		binary.LittleEndian.Uint32(slot[12:]),
+	}
+}
+
+// HChaCha20Chain is the ChaCha20 PRF of the parent hashes package over a
+// 32-byte key: the HChaCha20 chain over the slot blocks of data. The key
+// of block 0 is key; every block's output is the key of the next; the
+// output is the last key as four little-endian 64-bit words.
+func HChaCha20Chain(key *[32]byte, data []byte) [4]uint64 {
+	var k [8]uint32
+	for i := range k {
+		k[i] = binary.LittleEndian.Uint32(key[4*i:])
+	}
+	blocks := SlotBlocks(len(data))
+	for j := 0; j < blocks; j++ {
+		in := slotWords(data, j, blocks)
+		k = HChaCha20(&k, &in)
+	}
+	return [4]uint64{
+		uint64(k[0]) | uint64(k[1])<<32,
+		uint64(k[2]) | uint64(k[3])<<32,
+		uint64(k[4]) | uint64(k[5])<<32,
+		uint64(k[6]) | uint64(k[7])<<32,
+	}
+}
+
 // absorb256 is the parent package's ChaCha20 PRF of one (key, seed,
-// data) triple.
+// data) triple: the HChaCha20 chain under fixedKey XOR seed.
 func absorb256(fixedKey *[32]byte, seed *[4]uint64, data []byte) [4]uint64 {
 	var key [32]byte
 	copy(key[:], fixedKey[:])
@@ -68,36 +251,7 @@ func absorb256(fixedKey *[32]byte, seed *[4]uint64, data []byte) [4]uint64 {
 		off := 8 * i
 		binary.LittleEndian.PutUint64(key[off:], binary.LittleEndian.Uint64(key[off:])^seed[i])
 	}
-	var nonce [12]byte
-	c, err := chacha20.NewUnauthenticatedCipher(key[:], nonce[:])
-	if err != nil {
-		panic(err)
-	}
-	var state [32]byte
-	binary.LittleEndian.PutUint64(state[:8], uint64(len(data)))
-	const window = 24
-	if len(data) <= window {
-		copy(state[8:8+len(data)], data)
-		c.XORKeyStream(state[:], state[:])
-	} else {
-		copy(state[8:8+window], data[:window])
-		c.XORKeyStream(state[:], state[:])
-		for off := window; off < len(data); off += window {
-			end := off + window
-			if end > len(data) {
-				end = len(data)
-			}
-			for i := 0; i < end-off; i++ {
-				state[8+i] ^= data[off+i]
-			}
-			c.XORKeyStream(state[:], state[:])
-		}
-	}
-	var out [4]uint64
-	for i := range out {
-		out[i] = binary.LittleEndian.Uint64(state[8*i:])
-	}
-	return out
+	return HChaCha20Chain(&key, data)
 }
 
 // ScalarFusedChain256 is the pure-Go reference cascade: one ChaCha20

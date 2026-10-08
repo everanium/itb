@@ -54,7 +54,7 @@ Reused from the aes2r-era engines (sibling scripts in this directory tree):
 the peel / InvMixColumns / S-box tables from
 `_common/chainhashes/aesitb128.py` (`_inv_mix_batch` L244, `_ISB_T` L225,
 `_SR_IDX` L228, `_RC_ARR` L230, `hash_generic` for the oracle); the
-Λ-set / oracle / TR=5-seed harness shape from this directory's
+Λ-set / oracle / per-seed trial harness shape from this directory's
 `keyrecover_r2.py` (`oracle_full` / `square_recover_r2`); GF helpers from
 `chainhashes/aes2r.py` (`_gmul`). The r ≥ 2 negative control mirrors
 `keyrecover_r2.py`'s r-sweep: the same engine is run against the r = 2
@@ -78,7 +78,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from screens_common import prim  # noqa: E402
 from chainhashes.aes2r import _gmul  # noqa: E402
 
-TR = 5                      # seeds per cell, matching keyrecover_r2.py
+TR = 20                     # seeds per cell, the documented run
 DATA_LEN = 15              # one-block lab shape (three AES rounds); pad = 1 byte 0x01
 NPOS = DATA_LEN            # Λ-set active positions 0..14 (byte 15 = pad const)
 A_SET = (1, 2, 3)         # round-1 MixColumns coefficients
@@ -398,7 +398,7 @@ def main_negative(trials: int = TR):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description="lo-lane structured key recovery, r = 1 one-block lab shape")
-    ap.add_argument("--trials", type=int, default=TR, help="seeds per cell (default 5, the documented run)")
+    ap.add_argument("--trials", type=int, default=TR, help="seeds per cell (default 20, the documented run; ~30 min single-threaded)")
     ap.add_argument("--skip-negative", action="store_true", help="run the r = 1 recovery only")
     ap.add_argument("--only-negative", action="store_true", help="run the r = 2 negative control only")
     ap.add_argument("--shape-probe", type=int, default=0, metavar="DATA_LEN",

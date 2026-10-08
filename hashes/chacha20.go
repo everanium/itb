@@ -5,8 +5,6 @@ import (
 	"encoding/binary"
 	"fmt"
 
-	"golang.org/x/crypto/chacha20"
-
 	"github.com/everanium/itb"
 	"github.com/everanium/itb/hashes/internal/chacha20asm"
 	"github.com/everanium/itb/internal/forcetier"
@@ -20,20 +18,23 @@ import (
 //
 // Construction (ARX-only PRF, no S-box / no table lookups): the
 // fixed key is XOR'd with the seed components to derive a per-call
-// 256-bit ChaCha20 key. Data is absorbed CBC-MAC-style into a
-// 32-byte state via repeated `state ← E_K(state ⊕ chunk)`-shaped
-// rounds, where E_K is one ChaCha20 keystream block applied to the
-// state and the counter advances automatically between rounds. A
-// length-tag prefix in the initial state and a 24-byte data window
-// per round (8 bytes of chaining feedback) ensure every byte of the
-// input contributes to the digest regardless of input length —
-// 128-, 256-, and 512-bit nonce configurations all reach the digest
-// with full strength.
+// 256-bit key, and the data is absorbed through an HChaCha20 chain —
+// the data is encoded as 16-byte slot blocks of 15 data bytes and one
+// tag byte, each block enters the counter / nonce words of a ChaCha20
+// block state [σ | key | block], and the permuted words 0..3 and
+// 12..15 (the HChaCha20 output, no feed-forward) are the key of the
+// next block. The last key is the digest. The tag byte marks the final
+// block and carries its data byte count, so the encoding is injective
+// and prefix-free; every data byte enters a permutation input and the
+// chaining state is 256 bits at every step, so the 128-, 256-, and
+// 512-bit nonce configurations all reach the digest with full
+// strength. See hashes/internal/chacha20asm.HChaCha20Chain for the
+// step and the encoding.
 //
-// Per-call allocation is bounded by the cipher initialisation; the
-// state, length tag, and chain feedback all live on the closure's
-// stack frame. Concurrent goroutines may invoke the returned
-// closure in parallel — there is no shared mutable state.
+// The closure allocates nothing: the per-call key, the block words
+// and the chaining state live on the closure's stack frame.
+// Concurrent goroutines may invoke the returned closure in parallel —
+// there is no shared mutable state.
 func ChaCha20(key ...[32]byte) (itb.HashFunc256, [32]byte) {
 	var k [32]byte
 	if len(key) > 0 {
@@ -48,7 +49,12 @@ func ChaCha20(key ...[32]byte) (itb.HashFunc256, [32]byte) {
 // caller-supplied 32-byte fixed key, for serialization paths.
 func ChaCha20WithKey(fixedKey [32]byte) itb.HashFunc256 {
 	return func(data []byte, seed [4]uint64) [4]uint64 {
-		// Per-call key derivation: fixedKey XOR seed components.
+		// Per-call key derivation: fixedKey XOR seed components. The
+		// seed never touches the block input words, and the data
+		// never touches the key words: the data reaches the digest
+		// only through the permutation inputs of the chain, keyed by
+		// the per-call key and then by the pseudorandom key each
+		// block produces for the next.
 		var key [32]byte
 		copy(key[:], fixedKey[:])
 		for i := 0; i < 4; i++ {
@@ -56,65 +62,7 @@ func ChaCha20WithKey(fixedKey [32]byte) itb.HashFunc256 {
 			v := binary.LittleEndian.Uint64(key[off:])
 			binary.LittleEndian.PutUint64(key[off:], v^seed[i])
 		}
-
-		// Fixed zero nonce — the seed-mixed key carries the per-call
-		// freshness, so a constant nonce is safe for hash purposes.
-		// (Stream-cipher nonce reuse is dangerous for confidentiality
-		// because it discloses keystream XOR keystream; for a PRF
-		// where the output is the encrypted state, the per-call key
-		// alone gives PRF security.)
-		var nonce [12]byte
-		c, err := chacha20.NewUnauthenticatedCipher(key[:], nonce[:])
-		if err != nil {
-			panic(err)
-		}
-
-		// Absorb data CBC-MAC-style into a 32-byte state. The first
-		// 8 bytes hold a length tag (disambiguates inputs of
-		// different lengths and prevents extension equivalences);
-		// the remaining 24 bytes absorb each 24-byte slice of data
-		// in turn. Each absorb step XORs a chunk into the state and
-		// then runs a ChaCha20 keystream block over the state, which
-		// is the cipher equivalent of CBC-MAC's "encrypt-after-XOR"
-		// chaining.
-		//
-		// Hot-path fast track: ITB's three buf shapes (20 / 36 /
-		// 68 bytes) take 1, 2, or 3 rounds respectively. The 20-byte
-		// case (default 128-bit nonce, the only path most callers
-		// hit) goes through the single-round branch with no loop
-		// overhead. Absorb XOR is bulk uint64 via absorbXOR.
-		var state [32]byte
-		binary.LittleEndian.PutUint64(state[:8], uint64(len(data)))
-
-		const chunkSize = 24
-		if len(data) <= chunkSize {
-			// Fast path: state[8:32] is zero — bulk copy beats
-			// absorb-XOR for the first (only) round.
-			copy(state[8:8+len(data)], data)
-			c.XORKeyStream(state[:], state[:])
-		} else {
-			// First round: state[8:32] is zero, copy is enough.
-			// Subsequent rounds need real XOR.
-			copy(state[8:8+chunkSize], data[0:chunkSize])
-			c.XORKeyStream(state[:], state[:])
-			off := chunkSize
-			for off < len(data) {
-				end := off + chunkSize
-				if end > len(data) {
-					end = len(data)
-				}
-				absorbXOR(state[8:8+(end-off)], data[off:end])
-				c.XORKeyStream(state[:], state[:])
-				off = end
-			}
-		}
-
-		return [4]uint64{
-			binary.LittleEndian.Uint64(state[0:]),
-			binary.LittleEndian.Uint64(state[8:]),
-			binary.LittleEndian.Uint64(state[16:]),
-			binary.LittleEndian.Uint64(state[24:]),
-		}
+		return chacha20asm.HChaCha20Chain(&key, data)
 	}
 }
 

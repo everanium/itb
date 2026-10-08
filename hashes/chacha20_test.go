@@ -7,7 +7,7 @@ import (
 )
 
 // TestChaCha20DigestDependsOnEveryByte verifies that under the
-// CBC-MAC-style absorb construction every input byte contributes —
+// HChaCha20 chain construction every input byte contributes —
 // flipping any single byte of `data` must produce a different
 // digest, preventing truncation to standard cipher nonce length. The
 // test runs at three input lengths matching the buf shapes ITB uses internally with the
@@ -49,8 +49,8 @@ func TestChaCha20DigestDependsOnEveryByte(t *testing.T) {
 // truncation-class regression: the empty-input digest must differ
 // from the digest of any single-byte input, and a length-only
 // difference (zero-padded inputs of different lengths) must
-// likewise diverge. The length-tag prefix in the initial state
-// is what guarantees this.
+// likewise diverge. The tag byte of the final slot block, which
+// carries the block's data byte count, is what guarantees this.
 func TestChaCha20EmptyVsShortDistinct(t *testing.T) {
 	mac := ChaCha20WithKey([32]byte{0xAA, 0xBB, 0xCC, 0xDD})
 	seed := [4]uint64{1, 2, 3, 4}
@@ -100,8 +100,8 @@ func TestChaCha20Determinism(t *testing.T) {
 // TestBLAKE3256BatchedParityWithSingle — the chain-absorb step has
 // to run in lock-step between the two dispatch paths, and any
 // divergence (different per-call key XOR, different state init,
-// different absorb sequence, different keystream consumption order
-// across compression boundaries) would surface here.
+// different slot encoding, different key chaining order across
+// block boundaries) would surface here.
 func TestChaCha20256BatchedParityWithSingle(t *testing.T) {
 	single, batched, _ := ChaCha20256Pair()
 	if batched == nil {

@@ -16,7 +16,7 @@ For the standards' own conformance, refer to the upstream specifications and lib
 - RFC 2104 / FIPS 198-1 — HMAC; RFC 4231 — HMAC-SHA-256 test vectors.
 - `golang.org/x/crypto/sha3` — the cSHAKE256 sponge underlying KMAC256.
 - `crypto/hmac` + `crypto/sha256` — the stdlib HMAC-SHA-256.
-- `github.com/zeebo/blake3` — BLAKE3 native keyed mode (BLAKE3 spec §6).
+- `github.com/zeebo/blake3` — BLAKE3 native keyed mode (BLAKE3 spec §2.3).
 
 The primitive-math layer is the upstream libraries' (and the stdlib's) responsibility. This document describes the ITB-construction wrapping around those primitives, and the `macs/` test suite pins that wrapping (bit-exact KAT against pycryptodome's KMAC256, the RFC 4231 HMAC-SHA-256 vectors, the official BLAKE3 keyed-mode KAT, plus integration testing under `TestRegisterTripleIntegration` and `TestMakeIncrementalParity`).
 
@@ -76,10 +76,10 @@ The `left_encode` / `right_encode` / `encode_string` / `bytepad` helpers in `kma
 
 **Per-call flow** (data):
 
-1. Once at construction: `template = blake3.NewKeyed(key)` (the 32-byte key replaces the IV constants in BLAKE3's chunk chaining values — the spec keyed-PRF mode, §6).
+1. Once at construction: `template = blake3.NewKeyed(key)` (the 32-byte key replaces the IV constants in BLAKE3's chunk chaining values — the spec keyed-PRF mode, §2.3).
 2. Per call: clone the template (internal-state copy), `Write` the data, finalise to 32 bytes. Each clone is independent, so concurrent goroutines may call the closure in parallel.
 
-**Why this is not RFC 2104 HMAC.** The name `hmac-blake3` is a **deliberate misnomer**, not a claim of the nested `H(K ⊕ opad ‖ H(K ⊕ ipad ‖ M))` HMAC construction. BLAKE3-keyed mode is chosen here **precisely because the BLAKE3 authors recommend it instead of HMAC**: BLAKE3's keyed mode is itself a sound keyed PRF (BLAKE3 spec §6), so the nested HMAC wrapper RFC 2104 builds around an unkeyed Merkle-Damgård hash is unnecessary with BLAKE3 — and would only add cost without adding security. Wrapping BLAKE3 in literal RFC 2104 HMAC is redundant for this primitive and adds cost without cryptographic benefit.
+**Why this is not RFC 2104 HMAC.** The name `hmac-blake3` is a **deliberate misnomer**, not a claim of the nested `H(K ⊕ opad ‖ H(K ⊕ ipad ‖ M))` HMAC construction. BLAKE3-keyed mode is chosen here **precisely because the BLAKE3 authors recommend it instead of HMAC**: BLAKE3's keyed mode is itself a sound keyed PRF (BLAKE3 spec §6.1), so the nested HMAC wrapper RFC 2104 builds around an unkeyed Merkle-Damgård hash is unnecessary with BLAKE3 — and would only add cost without adding security. Wrapping BLAKE3 in literal RFC 2104 HMAC is redundant for this primitive and adds cost without cryptographic benefit.
 
 The registry name is nonetheless kept as `hmac-blake3` for two reasons. First, **user familiarity and registry symmetry**: alongside `hmac-sha256`, the `hmac-` prefix marks the MAC role ("a keyed authentication tag") that integrators recognise and scan for, where a bare `blake3-keyed` would read as something unrelated to the MAC slot. Second, **wire-level stability**: the name is embedded in every `triple.Profile` and travels on the wire through `MacName`, so renaming would churn every binding, example, and test that references it. The standard-conformant name would be `blake3-keyed`; this section is where the divergence is stated rather than implied, so an auditor reads what is actually computed regardless of the label.
 
@@ -99,6 +99,6 @@ The registry name is nonetheless kept as `hmac-blake3` for two reasons. First, *
 
 ## Design rationale and PRF sufficiency
 
-ITB's MAC-Inside-Encrypt construction places the 32-byte tag **inside** the encrypted container, where the Pixel Barrier dispersal already destroys any lane payload / tag boundary an attacker could see (the tag is appended to the post-Rank-Barrier lane payload before pixel encoding). The surrounding ITB construction therefore takes care of placement-hiding, replay-resistance (via the per-message nonce), and CCA-resistance, which means the MAC primitive itself only has to be a sound keyed PRF. Every shipped MAC meets that bar under standard assumptions, and the selection spans independent primitive families (Keccak-sponge, SHA-2 Merkle-Damgård, BLAKE3 tree) so a structural weakness discovered in one family leaves the remaining families unaffected.
+ITB's MAC-Inside-Encrypt construction places the 32-byte tag **inside** the encrypted container, where the Pixel Barrier dispersal already destroys any lane payload / tag boundary an attacker could see (the tag is appended to the post-Rank-Barrier lane payload before pixel encoding). The surrounding ITB construction therefore takes care of placement-hiding, per-message freshness (a fresh nonce for every message, so no two wires repeat; rejecting a replayed wire needs receiver-side state, which ITB does not keep; within a stream, the MAC binds every chunk to its stream ID, offset and final flag, so a chunk replayed, reordered or spliced from another stream fails verification), and the bounded CCA leak of the MAC Authenticated shapes (at most the per-pixel noise position, [Proof 6](../PROOFS.md#proof-6-cca-leak-upper-bound), under the PRF assumption on the MAC), which means the MAC primitive itself only has to be a sound keyed PRF. Every shipped MAC meets that bar under standard assumptions, and the selection spans independent primitive families (Keccak-sponge, SHA-2 Merkle-Damgård, BLAKE3 tree) so a structural weakness discovered in one family leaves the remaining families unaffected.
 
 The C shared-library ABI exports a curated, non-pluggable set serving the FFI / mobile distribution. In Go-native environments, custom MACs can be plugged via `macs.Register` and `macs.BuildHMAC` / `macs.BuildKeyedHash`, or supplied as a custom `itb.MACFunc` directly.

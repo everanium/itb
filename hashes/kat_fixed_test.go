@@ -62,8 +62,8 @@ type fixedKATVector struct {
 //
 //   - it is one of the three batched fast-path lengths (20 / 36 / 68);
 //   - 36 > chunkSize=24 forces the multi-round CBC-MAC chain in
-//     Areion-SoEM-256, AES-CMAC, and ChaCha20 (state-feedback path
-//     exercised);
+//     Areion-SoEM-256 and AES-CMAC, and three slot blocks in ChaCha20
+//     (key-chaining path exercised);
 //   - 36 < chunkSize=56 keeps Areion-SoEM-512 in the single-round
 //     fast path;
 //   - 36 < 64 keeps BLAKE2b-512 inside the seed-injection zero-pad
@@ -80,7 +80,7 @@ var fixedKATVectors = []fixedKATVector{
 	{"blake3", 36, 3, "83b2dd6bfa674378681acec053aa4da70b1a830f4d09a6fb767bc76f90d407bc"},
 	{"aescmac", 36, 3, "78c789d0614ce11c4af42e3cf358ab03"},
 	{"siphash24", 36, 3, "9b6300d1be6dad7001187452459eb8b6"},
-	{"chacha20", 36, 3, "6683213fb17e72c7a77e01e73d43386de84c4f85574238171b292d214e39acf4"},
+	{"chacha20", 36, 3, "cffa99b9d6d06cea14a3e2fab23f19506b3d6daa85835eeec49ff4fb84cb600b"},
 }
 
 // TestFixedKAT runs each frozen vector through the production single

@@ -59,16 +59,16 @@ func AESCMACWithKey(aesKey [16]byte) itb.HashFunc128 {
 		// XOR the available data bytes (up to 16) on top.
 		//
 		// A 64-bit length tag is XOR'd into both halves of the
-		// seed prefix to disambiguate inputs of different lengths.
-		// Without it, empty input, [0x00], [0x00, 0x00], ... all
-		// hash to the same AES_K(seed0||seed1) because zero data
-		// bytes XOR'd into the state are no-ops. The length tag
-		// breaks that collision class. AES-CMAC's 16-byte state
-		// has no dedicated metadata region (unlike Areion /
-		// ChaCha20 which keep state[0..8) for the length tag and
-		// state[8..N) for data), so the tag is folded symmetric-
-		// ally into both halves rather than stealing a fixed
-		// region from the seed input.
+		// seed prefix to disambiguate inputs that differ only by
+		// trailing zero bytes. Without it, empty input, [0x00],
+		// [0x00, 0x00], ... all hash to the same AES_K(seed0||seed1)
+		// because zero data bytes XOR'd into the state are
+		// no-ops. The length tag breaks that collision class.
+		// AES-CMAC's 16-byte state has no dedicated metadata region
+		// (unlike Areion, which keeps state[0..8) for the length tag
+		// and state[8..N) for data), so the tag is folded
+		// symmetrically into both halves rather than stealing a
+		// fixed region from the seed input.
 		lenTag := uint64(len(data))
 		var b1 [16]byte
 		binary.LittleEndian.PutUint64(b1[0:], seed0^lenTag)
@@ -97,10 +97,10 @@ func AESCMACWithKey(aesKey [16]byte) itb.HashFunc128 {
 //
 // Caller invariant: len(dst) == len(src). The helper does not
 // double-check; the resulting smaller body cost lets the Go
-// compiler inline this at all call sites (CBC-MAC slow path in
-// the ChaCha20 closure here, AES-CMAC's per-block absorb).
+// compiler inline this at its call sites (AES-CMAC's per-block
+// absorb).
 //
-// Shared across the AES-CMAC factory and the ChaCha20 CBC-MAC closure.
+// Used by the AES-CMAC factory alone within this package.
 // The Areion-SoEM closures in itb/areion.go carry an internal
 // copy with the same shape since they cannot import this
 // subpackage without a dependency cycle.

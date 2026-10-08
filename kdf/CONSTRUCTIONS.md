@@ -36,7 +36,7 @@ For the standards' own conformance, refer to the upstream specifications and lib
 
 ## SP 800-108 Counter Mode over Areion-SoEM (registry: `areion256`, `areion512`)
 
-**Construction.** NIST SP 800-108 KDF in Counter Mode, fixed-input representation **r1**, with PRF = the registry Areion-SoEM keyed hash. The Areion-SoEM keyed `HashFunc` is a CBC-MAC over the keyed SoEM permutation; the PRF hashes the block input under a zero seed and serialises the resulting uint64 words little-endian.
+**Construction.** NIST SP 800-108 KDF in Counter Mode, fixed-input representation **r1**, with PRF = the registry Areion-SoEM keyed hash. The Areion-SoEM keyed `HashFunc` is a CBC-MAC over the keyed SoEM function (a PRF, not a permutation); the PRF hashes the block input under a zero seed and serialises the resulting uint64 words little-endian.
 
 - **`areion256`** — PRF = registry Areion-SoEM-256 keyed hash. The 32-byte master is the family key; each PRF call returns a 32-byte output.
 - **`areion512`** — PRF = registry Areion-SoEM-512 keyed hash, which requires a 64-byte family key. The 32-byte master is first stretched to 64 bytes by an internal key schedule — SP 800-108 Counter Mode over the `areion256` PRF (keyed by `master[:32]`) under a fixed family-internal label, producing 64 bytes — and the stretched key then keys the Areion-SoEM-512 PRF. The fixed internal label keeps the stretch isolated from any caller-chosen label. Each PRF call returns a 64-byte output.
@@ -59,7 +59,7 @@ The subkey is the leftmost `outLen` bytes of the concatenated PRF outputs `K(1) 
 
 **Output is NOT cross-length prefix-consistent.** As with every SP 800-108 construction here, the bound `[L]_32be` field makes the output specific to `outLen`; slicing a longer derivation does **not** equal deriving the shorter length directly.
 
-**Security claim.** SP 800-108 Counter Mode is a NIST-standard KDF; the Areion-SoEM keyed hash is a CBC-MAC over the SoEM keyed permutation, beyond-birthday-bound secure under the SoEM PRP assumption. The Areion-SoEM PRF is **not** NIST-approved, so the construction is sound under that PRP assumption without claiming NIST conformance.
+**Security claim.** SP 800-108 Counter Mode is a NIST-standard KDF; the Areion-SoEM keyed hash is a CBC-MAC over the SoEM keyed function, secure up to the birthday bound under the SoEM PRF assumption (no beyond-birthday bound is claimed: both SoEM branches share one Areion permutation). The Areion-SoEM PRF is **not** NIST-approved, so the construction is sound under that PRF assumption without claiming NIST conformance.
 
 ## SP 800-108 Counter Mode over native keyed BLAKE (registry: `blake2b256`, `blake2b512`, `blake2s`, `blake3`)
 

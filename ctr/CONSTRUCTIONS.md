@@ -35,7 +35,7 @@ For the standards' own conformance, refer to the upstream specifications and lib
 
 ## Areion-CTR (registry: `areion256`, `areion512`)
 
-**Underlying primitive.** The registry Areion-SoEM keyed hash (`github.com/everanium/itb/hashes`, `Areion256PairWithKey` / `Areion512PairWithKey`), used as a fixed-output-width PRF. The keyed `HashFunc` is a CBC-MAC over the keyed SoEM permutation; the PRF hashes the input under a zero seed and serialises the resulting uint64 words little-endian.
+**Underlying primitive.** The registry Areion-SoEM keyed hash (`github.com/everanium/itb/hashes`, `Areion256PairWithKey` / `Areion512PairWithKey`), used as a fixed-output-width PRF. The keyed `HashFunc` is a CBC-MAC over the keyed SoEM function (a PRF, not a permutation); the PRF hashes the input under a zero seed and serialises the resulting uint64 words little-endian.
 
 **Construction.** PRF-counter mode, hashing a 24-byte input composed of the stream nonce and block counter:
 
@@ -54,7 +54,7 @@ Each keystream block hashes a 24-byte PRF input and emits the full `blockSize`-b
 
 **Stream shape.** PRF-counter mode, **not** a permutation-native CTR. The keystream-block collision birthday bound is `2^(blockSize*8/2)` — **2^128** for `areion256` and **2^256** for `areion512`, both well clear of any practical bound. The 64-bit counter admits 2^64 blocks per nonce before the counter space is exhausted.
 
-**Security claim.** PRF-secure keystream under the same PRF assumption that justifies AES-CTR — XORing PRF output with plaintext is the canonical PRF-secure stream — conditional on the `(key, nonce)` pair not being reused across distinct streams. The Areion-SoEM keyed hash is a CBC-MAC over the SoEM keyed permutation, beyond-birthday-bound secure under the SoEM PRP assumption; it is **not** a NIST-approved cipher. No security beyond a sound PRF-counter construction is claimed.
+**Security claim.** PRF-secure keystream under the same PRF assumption that justifies AES-CTR — XORing PRF output with plaintext is the canonical PRF-secure stream — conditional on the `(key, nonce)` pair not being reused across distinct streams. The Areion-SoEM keyed hash is a CBC-MAC over the SoEM keyed function, secure up to the birthday bound under the SoEM PRF assumption (no beyond-birthday bound is claimed: both SoEM branches share one Areion permutation); it is **not** a NIST-approved cipher. No security beyond a sound PRF-counter construction is claimed.
 
 ## BLAKE-CTR (registry: `blake2b256`, `blake2b512`, `blake2s`, `blake3`)
 
@@ -141,4 +141,4 @@ Each keystream block hashes a 16-byte PRF input formed from `nonce_hi || (nonce_
 
 **Nonce-reuse caveat.** As with every counter-mode keystream, reusing a `(key, nonce)` pair across two distinct messages reuses the same keystream and is a confidentiality break (the XOR of the two ciphertexts equals the XOR of the two plaintexts). A distinct per-stream nonce under a fixed key is required for all constructions.
 
-**Standards posture.** `aescmac` (AES-128-CTR) and `chacha20` (RFC 8439 ChaCha20) are standard, widely analysed keystreams. The remaining primitives are sound PRF-counter constructions over non-NIST PRFs: the Areion family inherits the SoEM-PRP argument behind the Areion-SoEM keyed hash, the BLAKE family inherits the keyed-BLAKE PRF argument, and `siphash24` inherits SipHash-2-4's PRF argument. None of the PRF-counter constructions is a NIST-approved cipher. These distinctions are stated so an integrator selecting a construction for a regulated context knows which keystreams are standard and which are PRF-counter constructions.
+**Standards posture.** `aescmac` (AES-128-CTR) and `chacha20` (RFC 8439 ChaCha20) are standard, widely analysed keystreams. The remaining primitives are sound PRF-counter constructions over non-NIST PRFs: the Areion family inherits the SoEM-PRF argument behind the Areion-SoEM keyed hash, the BLAKE family inherits the keyed-BLAKE PRF argument, and `siphash24` inherits SipHash-2-4's PRF argument. None of the PRF-counter constructions is a NIST-approved cipher. These distinctions are stated so an integrator selecting a construction for a regulated context knows which keystreams are standard and which are PRF-counter constructions.

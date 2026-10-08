@@ -714,52 +714,42 @@ func TestKAT_SipHash24(t *testing.T) {
 // ChaCha20 KAT.
 // -----------------------------------------------------------------------------
 
-// chacha20RefClosure rebuilds the hashes.ChaCha20 closure body:
-// per-call key = fixedKey ^ seed (LE uint64 over 4 components),
-// chacha20.NewUnauthenticatedCipher with zero nonce, then a CBC-MAC-
-// style absorb where state[0..8] holds the lenTag, state[8..32]
-// absorbs `data` in 24-byte chunks, with c.XORKeyStream applied after
-// each chunk's XOR-into-state.
+// chacha20RefClosure rebuilds the hashes.ChaCha20 closure body over
+// the upstream HChaCha20 of golang.org/x/crypto/chacha20: per-call key
+// = fixedKey ^ seed (LE uint64 over 4 components), then the chain over
+// the 16-byte slot blocks of data — 15 data bytes zero-padded plus a
+// tag byte, 0x00 on every block but the last and 0x80 | r on the last
+// block carrying r data bytes — each HChaCha20 output keying the next
+// block, the last output being the digest.
 func chacha20RefClosure(fixedKey [32]byte, data []byte, seed [4]uint64) [4]uint64 {
-	var key [32]byte
-	copy(key[:], fixedKey[:])
+	key := make([]byte, 32)
+	copy(key, fixedKey[:])
 	for i := 0; i < 4; i++ {
 		off := i * 8
 		v := binary.LittleEndian.Uint64(key[off:]) ^ seed[i]
 		binary.LittleEndian.PutUint64(key[off:], v)
 	}
-	var nonce [12]byte
-	c, err := chacha20.NewUnauthenticatedCipher(key[:], nonce[:])
-	if err != nil {
-		panic(err)
+	blocks := (len(data) + 14) / 15
+	if blocks == 0 {
+		blocks = 1
 	}
-	var state [32]byte
-	binary.LittleEndian.PutUint64(state[:8], uint64(len(data)))
-	const chunkSize = 24
-	if len(data) <= chunkSize {
-		copy(state[8:8+len(data)], data)
-		c.XORKeyStream(state[:], state[:])
-	} else {
-		copy(state[8:8+chunkSize], data[0:chunkSize])
-		c.XORKeyStream(state[:], state[:])
-		off := chunkSize
-		for off < len(data) {
-			end := off + chunkSize
-			if end > len(data) {
-				end = len(data)
-			}
-			for i := 0; i < end-off; i++ {
-				state[8+i] ^= data[off+i]
-			}
-			c.XORKeyStream(state[:], state[:])
-			off = end
+	for j := 0; j < blocks; j++ {
+		var slot [16]byte
+		r := copy(slot[:15], data[15*j:])
+		if j == blocks-1 {
+			slot[15] = 0x80 | byte(r)
+		}
+		var err error
+		key, err = chacha20.HChaCha20(key, slot[:])
+		if err != nil {
+			panic(err)
 		}
 	}
 	return [4]uint64{
-		binary.LittleEndian.Uint64(state[0:]),
-		binary.LittleEndian.Uint64(state[8:]),
-		binary.LittleEndian.Uint64(state[16:]),
-		binary.LittleEndian.Uint64(state[24:]),
+		binary.LittleEndian.Uint64(key[0:]),
+		binary.LittleEndian.Uint64(key[8:]),
+		binary.LittleEndian.Uint64(key[16:]),
+		binary.LittleEndian.Uint64(key[24:]),
 	}
 }
 
