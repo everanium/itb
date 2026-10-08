@@ -7,7 +7,7 @@
 // block C, five VAESENC rounds under the broadcast RK[0..4], one
 // 32-byte store. The sixteen blocks are independent AES chains. See
 // noisefill.go for the construction and the in-package parity tests
-// for the bit-exact pin against the pure-Go sponge.
+// for the bit-exact pin against the pure-Go reference.
 //
 // Register allocation:
 //   Y0..Y7   the eight state registers (two blocks each)

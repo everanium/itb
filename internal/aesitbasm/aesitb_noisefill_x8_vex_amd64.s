@@ -8,7 +8,7 @@
 // RK[0..4], one 16-byte store. The eight blocks are independent AES
 // chains, so the eight VAESENC of a round issue back to back. See
 // noisefill.go for the construction and the in-package parity tests
-// for the bit-exact pin against the pure-Go sponge.
+// for the bit-exact pin against the pure-Go reference.
 //
 // Register allocation:
 //   X0..X7   the eight block states

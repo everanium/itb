@@ -10,7 +10,7 @@
 // as a trailing EOR. Eight running counters [lo + j, hi] feed the eight
 // independent AES chains. See noisefill.go for the construction and the
 // in-package parity tests for the bit-exact pin against the pure-Go
-// sponge.
+// reference.
 //
 // Register allocation:
 //   V0..V7   the eight block states

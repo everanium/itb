@@ -8,7 +8,7 @@
 // store. The eight blocks are independent AES chains, so the eight
 // AESENC of a round issue back to back. See noisefill.go for the
 // construction and the in-package parity tests for the bit-exact pin
-// against the pure-Go sponge.
+// against the pure-Go reference.
 //
 // Register allocation:
 //   X0..X7   the eight block states

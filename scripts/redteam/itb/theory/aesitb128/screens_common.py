@@ -1,8 +1,8 @@
 """Shared plumbing for the AES-ITB-128 reduced-round-primitive screens.
 
-Every screen in this directory evaluates the shipped aesitb128 sponge
-(`chainhashes.aesitb128`, bit-exact with `aesitb.go`) standalone (r = 1, no
-feedforward — the raw primitive) and under the ChainHash cascade at
+Every screen in this directory evaluates the shipped aesitb128 chain
+absorption (`chainhashes.aesitb128`, bit-exact with `aesitb.go`) standalone
+(r = 1, no feedforward — the raw primitive) and under the ChainHash cascade at
 r ∈ R_SET primitive calls, with three attacker observables per depth:
 
   * `discard on`          — lo lane only (8 bytes), what ITB's encoding

@@ -76,8 +76,8 @@ model. Reproduction commands are cited from REDTEAM.md.
   / higher-order calibration. Result in HARNESS.md §3.7, reproduction block
   §5.8; also carried in the §3.4 / §3.5 tables.
 - `itb/theory/aesitb128/{integral_aesitb128,keyrecover_r2,keyrecover_r1_2p20,distinguisher_chainhash,higher_order_chainhash,order3_chainhash,order4_chainhash,differential_chainhash,uniformity_chainhash,screens_common}.py`
-  — the same treatment on the shipped AES-ITB-128 sponge: standalone Square
-  integral + one-pair inversion, the lo-lane last-round peel on the encoder's
+  — the same treatment on the shipped AES-ITB-128 chain absorption:
+  standalone Square integral + one-pair inversion, the lo-lane last-round peel on the encoder's
   own observable, then the cascade sweep r ∈ {1 … 16} with the lo-lane /
   full-state / peeled observables, up to 2^32-text Λ-sets.
   Cited from HARNESS.md §3.10 / §5.10 and the §3.5 tables.

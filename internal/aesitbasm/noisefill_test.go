@@ -8,7 +8,7 @@ import (
 )
 
 // noiseRefBlock is the test-side definition of one filler block: the
-// pure-Go sponge over the software AES round, with the nonce in the
+// pure-Go reference over the software AES round, with the nonce in the
 // data slot and the block index in the seed slot — the reference the
 // folded schedule and every kernel tier are pinned to.
 func noiseRefBlock(key *[16]byte, nonce *[32]byte, lo, hi uint64) [16]byte {
@@ -53,9 +53,9 @@ var noiseLengths = []int{0, 1, 15, 16, 17, 31, 33, 127, 128, 129, 255, 256, 257,
 // counter, a run that crosses the 64-bit wrap of lo, and a non-zero hi.
 var noiseStarts = [][2]uint64{{0, 0}, {255, 0}, {1<<32 - 1, 0}, {^uint64(0) - 3, 0}, {^uint64(0) - 40, 7}, {0, 1}}
 
-// TestNoiseScheduleMatchesSponge pins the folded schedule evaluated by
-// the Go single-block path to the pure-Go sponge at every start.
-func TestNoiseScheduleMatchesSponge(t *testing.T) {
+// TestNoiseScheduleMatchesReference pins the folded schedule evaluated by
+// the Go single-block path to the pure-Go reference at every start.
+func TestNoiseScheduleMatchesReference(t *testing.T) {
 	for trial := 0; trial < 50; trial++ {
 		key, nonce := randomNoiseKeyNonce(t)
 		s := NewNoiseSchedule(key, nonce)
@@ -63,16 +63,16 @@ func TestNoiseScheduleMatchesSponge(t *testing.T) {
 			var got [16]byte
 			noiseBlockHW(&s, &got, c[0], c[1])
 			if want := noiseRefBlock(key, nonce, c[0], c[1]); got != want {
-				t.Fatalf("trial %d ctr=%v: schedule %x, sponge %x", trial, c, got, want)
+				t.Fatalf("trial %d ctr=%v: schedule %x, reference %x", trial, c, got, want)
 			}
 		}
 	}
 }
 
-// TestNoiseFillMatchesSponge pins NoiseFill — whichever tier the build
-// and host select — to the pure-Go sponge over every length and start,
+// TestNoiseFillMatchesReference pins NoiseFill — whichever tier the build
+// and host select — to the pure-Go reference over every length and start,
 // including the carry split and the partial tail.
-func TestNoiseFillMatchesSponge(t *testing.T) {
+func TestNoiseFillMatchesReference(t *testing.T) {
 	for _, n := range noiseLengths {
 		for _, c := range noiseStarts {
 			key, nonce := randomNoiseKeyNonce(t)
@@ -85,7 +85,7 @@ func TestNoiseFillMatchesSponge(t *testing.T) {
 			}
 			NoiseFill(&s, got[16:16+n], c[0], c[1])
 			if !bytes.Equal(got[16:16+n], want) {
-				t.Fatalf("n=%d ctr=%v: fill differs from sponge", n, c)
+				t.Fatalf("n=%d ctr=%v: fill differs from reference", n, c)
 			}
 			for _, i := range []int{0, 15, 16 + n, 16 + n + 15} {
 				if got[i] != 0xA5 {
@@ -96,10 +96,10 @@ func TestNoiseFillMatchesSponge(t *testing.T) {
 	}
 }
 
-// TestNoiseFillGenericMatchesSponge pins the Go single-block path on
+// TestNoiseFillGenericMatchesReference pins the Go single-block path on
 // its own, so the fallback is covered on hosts whose auto-dispatch
 // selects a kernel.
-func TestNoiseFillGenericMatchesSponge(t *testing.T) {
+func TestNoiseFillGenericMatchesReference(t *testing.T) {
 	for _, n := range []int{0, 1, 16, 17, 255, 256, 4103} {
 		for _, c := range noiseStarts {
 			key, nonce := randomNoiseKeyNonce(t)
@@ -109,7 +109,7 @@ func TestNoiseFillGenericMatchesSponge(t *testing.T) {
 			got := make([]byte, n)
 			noiseFillGeneric(&s, got, c[0], c[1])
 			if !bytes.Equal(got, want) {
-				t.Fatalf("n=%d ctr=%v: generic fill differs from sponge", n, c)
+				t.Fatalf("n=%d ctr=%v: generic fill differs from reference", n, c)
 			}
 		}
 	}

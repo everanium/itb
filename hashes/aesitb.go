@@ -15,8 +15,9 @@ import (
 // bit-exact (the parity invariant required by itb.BatchHashFunc128).
 //
 // AES-ITB is an ITB-native primitive: reduced-round AES structure
-// (one AES round per absorbed block plus two finalising rounds over a
-// Merkle–Damgård absorption) intentionally weak standalone — HARNESS.md
+// (CBC-MAC-style chain absorption over public AES rounds, keyed through
+// the initial state: one AES round per absorbed block plus two
+// finalising rounds) intentionally weak standalone — HARNESS.md
 // § 3.10 records its standalone breaks and their dissolution through
 // the cascade, alongside the aes2r control of § 3.7. Safe only under
 // ITB's compound defence stack (ChainHash cascade + Rank Barrier
@@ -25,11 +26,9 @@ import (
 // The returned (HashFunc128, BatchHashFunc128) pair is the standard
 // shipped factory shape used by every AES-ITB-128 seed-plumbing path:
 // the single arm is [itb.MakeAESITB128Hash]'s aesITB128GenericHash
-// (nonce-free 16-byte-block sponge with per-block RC rotation) and
-// the batched arm applies the pure-Go 4-lane scalar cascade
-// reference from internal/aesitbasm at the four ITB per-pixel
-// shapes (13 / 20 / 36 / 68 bytes, all lanes equal), falling back
-// to four single-arm calls for any other lane-length configuration.
+// (nonce-free 16-byte-block chain absorption with per-block RC
+// rotation) and the batched arm evaluates the four lanes through four
+// single-arm calls.
 // The shipping-runtime dispatch attaches the fused-cascade hooks
 // through the name-keyed constructors, which intercept before this
 // batched arm is reached — see [Spec.FusedChainHash128].

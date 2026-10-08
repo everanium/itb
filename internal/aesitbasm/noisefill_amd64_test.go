@@ -31,7 +31,7 @@ func amd64NoiseTiers() []noiseTier {
 // TestNoiseFillTiersParity drives every amd64 kernel the host can
 // execute directly, at block counts from one group up to several
 // groups plus every residue, from every start, and pins each output to
-// the pure-Go sponge — including a dst at every alignment offset
+// the pure-Go reference — including a dst at every alignment offset
 // 0 .. 15 so unaligned stores are covered.
 func TestNoiseFillTiersParity(t *testing.T) {
 	for _, tier := range amd64NoiseTiers() {
@@ -55,7 +55,7 @@ func TestNoiseFillTiersParity(t *testing.T) {
 				got := make([]byte, 16*nblk+32)
 				tier.fn(&s, &got[off], nblk, lo, hi)
 				if !bytes.Equal(got[off:off+16*nblk], want) {
-					t.Fatalf("%s trial %d nblk=%d off=%d: kernel differs from sponge", tier.name, trial, nblk, off)
+					t.Fatalf("%s trial %d nblk=%d off=%d: kernel differs from reference", tier.name, trial, nblk, off)
 				}
 				for i := 16*nblk + off; i < len(got); i++ {
 					if got[i] != 0 {
@@ -121,7 +121,7 @@ func TestNoiseFillForcedTierParity(t *testing.T) {
 					got := make([]byte, n)
 					NoiseFill(&s, got, st[0], st[1])
 					if !bytes.Equal(got, want) {
-						t.Fatalf("%s n=%d ctr=%v: fill differs from sponge", c.name, n, st)
+						t.Fatalf("%s n=%d ctr=%v: fill differs from reference", c.name, n, st)
 					}
 				}
 			}

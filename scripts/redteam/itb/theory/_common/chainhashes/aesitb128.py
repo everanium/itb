@@ -1,5 +1,5 @@
 """AES-ITB-128 as a pluggable ChainHash inner primitive — the shipped
-reduced-round AES sponge (`aesitb.go` `aesITB128GenericHash`, reference
+reduced-round AES chain absorption (`aesitb.go` `aesITB128GenericHash`, reference
 `aesitb/aesitb.go` `HashGeneric`), mirrored here so the HARNESS.md
 reduced-round-primitive screens (the aes2r control) can be run against
 the primitive that actually ships in the registry.

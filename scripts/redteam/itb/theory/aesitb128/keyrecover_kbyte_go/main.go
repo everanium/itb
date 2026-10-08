@@ -1160,7 +1160,7 @@ func squareEngine(name string) (family string, designT int, ok bool) {
 }
 
 // shapeT returns the per-pixel round count T for a data length (nblk + 2
-// finaliser rounds), matching the shipped sponge.
+// finaliser rounds), matching the shipped chain absorption.
 func shapeT(dataLen int) int {
 	pad := 16 - dataLen%16
 	return (dataLen+pad)/16 + 2

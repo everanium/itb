@@ -7,8 +7,8 @@
 //	go run scripts/redteam/itb/theory/aes2r/square5_go/main.go [flags]
 //
 // aes2r is raw standard AES over one padded block with a secret key = seed
-// (chainhashes/aes2r.py). Unlike the AES-ITB-128 sponge (public round constants,
-// additive seed, MixColumns on every round), aes2r's final round has NO
+// (chainhashes/aes2r.py). Unlike the AES-ITB-128 chain absorption (public
+// round constants, additive seed, MixColumns on every round), aes2r's final round has NO
 // MixColumns and its rounds use secret expanded round keys, so the recovery is
 // the textbook last-round-key Square: over a set balanced before the last round
 // the peel is

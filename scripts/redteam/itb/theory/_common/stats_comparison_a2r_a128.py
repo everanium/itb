@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Head-to-head statistical uniformity / bias comparison of the two
 reduced-round AES primitives on the HARNESS shelf — the shipped AES-ITB-128
-sponge (`chainhashes.aesitb128`, bit-exact with `aesitb.go`) and the 2-round
+chain absorption (`chainhashes.aesitb128`, bit-exact with `aesitb.go`) and the 2-round
 AES lab control (`chainhashes.aes2r`) — measured RAW (no ChainHash cascade,
 no ITB envelope) under ONE harness, ONE sample size, ONE seed stream and ONE
 set of input configurations, so the two primitives can be compared cell by
@@ -56,7 +56,7 @@ INPUT SHAPES
             aes2r: `_pad_block` -> data || 0x80, its native block). Same
             120 varying bits, same data array, fed to both.
   * 13 / 20 / 36 / 68 — the shipped per-pixel / fill shapes. aesitb128 runs
-            its native sponge (1 / 2 / 3 / 5 absorbed blocks -> 3 / 4 / 5 / 7
+            its native chain absorption (1 / 2 / 3 / 5 absorbed blocks -> 3 / 4 / 5 / 7
             rounds). aes2r has NO shipping multi-block shape; it is taken
             through a LAB WRAPPER — CBC-MAC-style absorption under key = seed
             (state = AES2r_K(state XOR PKCS#7 block_i), zero IV). The wrapper
@@ -100,7 +100,7 @@ output and the 8-byte lo lane, per `uniformity_chainhash.py`:
     uniform-occupancy mean and sd (`birthday_expect`); reported as the worst
     |z| over windows, Bonferroni ceiling over windows x trials. Tests joint 24-bit distribution beyond the
     marginals. (Full 128-bit collisions are 0 by construction at these N —
-    aes2r under a fixed key is a permutation, the sponge collides at 2^-128
+    aes2r under a fixed key is a permutation, the chain absorption collides at 2^-128
     — and are not reported.)
 Avalanche cells (aval_data / aval_key):
   * avw_mean / avw_sd — Hamming weight of the output difference per single

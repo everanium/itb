@@ -22,12 +22,13 @@
 //     in-register from a group index base.
 //
 // The four-lane dispatchers [AESITB128ChainAbsorb13x4] and siblings
-// evaluate one sponge absorption per lane through the pure-Go
+// evaluate one chain absorption per lane through the pure-Go
 // reference on every build.
 //
-// Each family runs the same sponge. Per lane, with key = the primitive's
-// 16-byte fixed key and (seed0, seed1) the ChainHash128 seed pair of that
-// lane:
+// Each family runs the same chain absorption: CBC-MAC-style over public
+// AES rounds, keyed through the initial state. Per lane, with key = the
+// primitive's 16-byte fixed key and (seed0, seed1) the ChainHash128 seed
+// pair of that lane:
 //
 //	state  = key XOR (LE64(seed0) || LE64(seed1))
 //	padded = data || PKCS#7 padding to a 16-byte multiple (always >= 1 byte)

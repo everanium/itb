@@ -194,7 +194,8 @@ func (s *Session) HashPixel(tag byte, idx uint64) [16]byte {
 	return state
 }
 
-// HashGeneric is the nonce-free sponge absorption fallback:
+// HashGeneric is the nonce-free chain absorption fallback, CBC-MAC-style
+// over public AES rounds and keyed through the initial state:
 //
 //	state  = key XOR (LE64(seed0) || LE64(seed1))
 //	padded = data || PKCS#7 padding to a 16-byte multiple (always ≥ 1 byte)

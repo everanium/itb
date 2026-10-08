@@ -67,8 +67,9 @@ var aesITBRoundConstants = [8][16]byte{
 }
 
 // aesITB128GenericHash is the standard HashFunc128 for use through the
-// shipped ChainHash128 dispatch. It is a nonce-free Merkle–Damgård
-// construction over 16-byte blocks:
+// shipped ChainHash128 dispatch. It is a nonce-free CBC-MAC-style chain
+// absorption over public AES rounds, keyed through the initial state, on
+// 16-byte blocks:
 //
 //	state  = fixedKey XOR (LE64(seed0) || LE64(seed1))
 //	padded = data || PKCS#7 padding to a 16-byte multiple (always ≥ 1 byte)
