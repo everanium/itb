@@ -5,7 +5,10 @@ package siphashasm
 // No eight-lane kernel applies on this build; the eight-lane dispatchers
 // run two four-lane calls of the build's x4 dispatcher (NEON on arm64,
 // the pure-Go cascade elsewhere).
-var FusedHasAVX512X8 = false
+var (
+	FusedHasAVX512X8 = false
+	FusedHasAVX2X8   = false
+)
 
 // FusedX8Active is always false on this build.
 func FusedX8Active() bool { return false }

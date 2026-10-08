@@ -6,12 +6,14 @@ lanes over one shared component slice) and x1 (single lane); amd64 tiers
 aesni / vex / vaesavx2 / avx512 for x4, aesni / vex for x1; arm64 tier neon
 for both.
 
-The avx512 tier additionally carries an x8 variant at the three nonce-buf
-shapes 20/36/68 (aescmac_fusedchain128_<shape>x8_avx512_amd64.s): eight
-lanes in two ZMM state groups (lanes 0..3 in Z0, lanes 4..7 in Z1) whose
-cascade rounds are interleaved instruction by instruction, so the two
-independent VAESENC dependency chains overlap on the AES unit. See
-zmm_fused_x8 for the register plan.
+Every amd64 tier additionally carries an x8 variant at the three
+nonce-buf shapes 20/36/68 (aescmac_fusedchain128_<shape>x8_<tier>_amd64.s):
+on avx512 eight lanes in two ZMM state groups (lanes 0..3 in Z0, lanes
+4..7 in Z1), on vaesavx2 four YMM states of two lanes, on vex / aesni
+eight XMM states of one lane — in every case the cascade rounds of the
+states are interleaved instruction by instruction, so the independent
+VAESENC dependency chains overlap on the AES unit. See zmm_fused_x8,
+ymm_fused_x8 and xmm_fused_x8 for the register plans.
 
 A third family, x16 at shape 13 only, is the Interlocked Barrier PRF fill
 kernel (aescmac_fusedchain128_13x16_<tier>_amd64.s for the four amd64 tiers
@@ -34,8 +36,8 @@ blocks are round-invariant and are staged once with K0 folded in (block 0
 additionally with the length tag), so every permutation in the loop runs
 nine AESENC under K1..K9 and one AESENCLAST under K10 from the staged
 block XOR. The XMM tiers stage the blocks into the stack frame at
-SP + 64*b + 16*lane; the YMM tier stages them as 32-byte lane-pair slots
-at SP + 64*b + 32*half; the ZMM tiers keep them in registers. On arm64 the
+SP + 16*lanes*b + 16*lane; the YMM tier stages them as 32-byte lane-pair
+slots at SP + 16*lanes*b + 32*pair; the ZMM tiers keep them in registers. On arm64 the
 zero-padded tail block sits in V28..V31 and full blocks are reloaded from
 the lane pointer each round.
 
@@ -56,6 +58,12 @@ Round-key residency per tier (K1..K10 are the keys the loop consumes):
                   in the frame
     zmm x4        Z1..Z10 = K1..K10; Z11 pair; Z15.. blocks
     zmm x8        Z2..Z11 = K1..K10; Z12 pair; Z16.. blocks (two groups)
+    ymm x8        Y4..Y13 = K1..K10 broadcasts; Y14 pair broadcast; blocks
+                  in the frame as 32-byte lane-pair slots
+    xmm x8 vex    X8..X15 = K1..K8; K9 / K10 and the pair as VEX memory
+                  operands; blocks in the frame
+    xmm x8 aesni  X9..X15 = K4..K10; K1..K3, the pair and the blocks
+                  reloaded through X8 per round
     xmm x16 vex   X8..X15 = K1..K8; K9 / K10 as VAESENC memory operands
     xmm x16 aesni X9..X15 = K4..K10; K1..K3 reloaded through X8 per round
                   (legacy-SSE AESENC m128 needs a 16-byte-aligned operand
@@ -73,7 +81,7 @@ import sys
 
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "hashes", "internal", "aescmacasm")
 SHAPES = [13, 20, 36, 68]
-# Shapes with an eight-lane ZMM fused kernel: the 128 / 256 / 512-bit
+# Shapes with an eight-lane fused kernel: the 128 / 256 / 512-bit
 # nonce-buf shapes the pixel pipeline drives through the batched hook.
 X8_SHAPES = [20, 36, 68]
 AMD = "amd64 && !purego && !noitbasm"
@@ -421,6 +429,146 @@ def zmm_fused_x8(shape):
           "\tVMOVDQU X1, 64(DI)", "\tVEXTRACTI64X2 $1, Z1, 80(DI)",
           "\tVEXTRACTI64X2 $2, Z1, 96(DI)", "\tVEXTRACTI64X2 $3, Z1, 112(DI)",
           "\tVZEROUPPER", "\tRET"]
+    return "\n".join(L) + "\n"
+
+
+def ymm_fused_x8(shape):
+    """VAES YMM, eight lanes: lane pair (2i, 2i+1) in Y(i), i = 0..3.
+
+    Register plan: Y4..Y13 K1..K10 broadcasts, Y14 the per-round pair
+    broadcast, Y15 free — 15 of 16, no spill. Every block of every pair
+    is staged into the frame as a 32-byte lane-pair slot at
+    SP + 128*b + 32*i with K0 (and the length tag for block 0) folded
+    in, and consumed as a 32-byte VPXOR memory operand every round (the
+    plan of the four-lane kernel at twice the states; X13 / Y14 / Y15
+    serve the staging before the keys land). The lane pointers are read
+    four at a time through R8..R11 (group 0 from dataPtrs[0..3], group
+    1 from dataPtrs[4..7]) with the same exact-width block-0 / tail
+    inserts as the four-lane kernel.
+
+    Loop body: the pair and every block fold into each state, then every
+    AES round issues for the four states back to back, so four
+    independent AES round chains overlap on the AES unit. Output: eight
+    16-byte stores, the width the Go side reads back.
+    """
+    nb = blocks(shape)
+    regs = ["R8", "R9", "R10", "R11"]
+    frame = 128 * nb
+    L = [f"// func aesCMAC128FusedChain{shape}x8VaesAvx2Asm(roundKeys *[176]byte, comps *uint64, nPairs int, dataPtrs *[8]*byte, out *[8][2]uint64)",
+         f"TEXT ·aesCMAC128FusedChain{shape}x8VaesAvx2Asm(SB), NOSPLIT, ${frame}-40",
+         "\tMOVQ roundKeys+0(FP), AX", "\tMOVQ comps+8(FP), BX", "\tMOVQ nPairs+16(FP), CX",
+         "\tMOVQ dataPtrs+24(FP), DX", "\tMOVQ out+32(FP), DI", ""]
+    L += ["\tVPXOR X13, X13, X13", "\tVBROADCASTI128 0(AX), Y14", f"\tMOVQ ${shape}, R12", "\tVMOVQ R12, X15",
+          "\tVPBROADCASTQ X15, Y15", "\tVPXOR Y14, Y15, Y15"]
+    for g in range(2):
+        L.append(f"\t// Lanes {4 * g}..{4 * g + 3}: pairs {2 * g} and {2 * g + 1}")
+        for l in range(4):
+            L.append(f"\tMOVQ {32 * g + 8 * l}(DX), {regs[l]}")
+        for b in range(nb):
+            fold = "Y15" if b == 0 else "Y14"
+            for ra, rb, off in ((regs[0], regs[1], 128 * b + 64 * g), (regs[2], regs[3], 128 * b + 64 * g + 32)):
+                if 0 < b < nb - 1:
+                    L.append(f"\tVMOVDQU {16 * b}({ra}), X2")
+                    L.append(f"\tVINSERTI128 $1, {16 * b}({rb}), Y2, Y2")
+                else:
+                    L += lane_block(shape, b, ra, True, dst="X2")
+                    L += lane_block(shape, b, rb, True)
+                    L.append("\tVINSERTI128 $1, X4, Y2, Y2")
+                L.append(f"\tVPXOR {fold}, Y2, Y2")
+                L.append(f"\tVMOVDQU Y2, {off}(SP)")
+    L.append("")
+    for r in range(1, 11):
+        L.append(f"\tVBROADCASTI128 {16 * r}(AX), Y{3 + r}")
+    states = [f"Y{i}" for i in range(4)]
+    L += [f"\tVPXOR {y}, {y}, {y}" for y in states]
+    L += ["", "loop:", "\tVBROADCASTI128 0(BX), Y14"]
+    L += [f"\tVPXOR Y14, {y}, {y}" for y in states]
+    for b in range(nb):
+        for i, y in enumerate(states):
+            L.append(f"\tVPXOR {128 * b + 32 * i}(SP), {y}, {y}")
+        for r in range(1, 10):
+            L.append("\t" + "; ".join(f"VAESENC Y{3 + r}, {y}, {y}" for y in states))
+        L.append("\t" + "; ".join(f"VAESENCLAST Y13, {y}, {y}" for y in states))
+    L += ["\tADDQ $16, BX", "\tDECQ CX", "\tJNZ loop", ""]
+    for i, y in enumerate(states):
+        L += [f"\tVMOVDQU X{i}, {32 * i}(DI)", f"\tVEXTRACTI128 $1, {y}, {32 * i + 16}(DI)"]
+    L += ["\tVZEROUPPER", "\tRET"]
+    return "\n".join(L) + "\n"
+
+
+def xmm_fused_x8(shape, vex):
+    """XMM, eight lanes: lane l in X(l), l = 0..7, eight independent AES
+    chains per call.
+
+    Register plan (the plan of the batch-16 XMM kernels): on the VEX
+    tier X8..X15 = K1..K8 and K9 / K10 are VAESENC memory operands, the
+    pair a VPXOR memory operand; on the legacy-SSE tier X9..X15 = K4..K10
+    and K1..K3, the pair and every block are reloaded through X8 per
+    round (legacy-SSE AESENC / PXOR m128 need a 16-byte-aligned operand
+    the Go frame does not guarantee) — 16 of 16, no spill. Every block
+    of every lane is staged into the frame at SP + 128*b + 16*l with K0
+    (and the length tag for block 0) folded in; X13 / X14 / X15 serve
+    the staging before the keys land. The lane pointers are read four at
+    a time through R8..R11 with the same exact-width block-0 / tail
+    inserts as the four-lane kernel. Output: eight 16-byte stores.
+    """
+    nb = blocks(shape)
+    tier = "Vex" if vex else "AesNi"
+    regs = ["R8", "R9", "R10", "R11"]
+    frame = 128 * nb
+    mov = "VMOVDQU" if vex else "MOVOU"
+    L = [f"// func aesCMAC128FusedChain{shape}x8{tier}Asm(roundKeys *[176]byte, comps *uint64, nPairs int, dataPtrs *[8]*byte, out *[8][2]uint64)",
+         f"TEXT ·aesCMAC128FusedChain{shape}x8{tier}Asm(SB), NOSPLIT, ${frame}-40",
+         "\tMOVQ roundKeys+0(FP), AX", "\tMOVQ comps+8(FP), BX", "\tMOVQ nPairs+16(FP), CX",
+         "\tMOVQ dataPtrs+24(FP), DX", "\tMOVQ out+32(FP), DI", ""]
+    L += xmm_consts(shape, vex)
+    for g in range(2):
+        L.append(f"\t// Lanes {4 * g}..{4 * g + 3}")
+        for l in range(4):
+            L.append(f"\tMOVQ {32 * g + 8 * l}(DX), {regs[l]}")
+        for b in range(nb):
+            for l in range(4):
+                L += lane_block(shape, b, regs[l], vex)
+                L.append(f"\tVPXOR {xmm_fold(b)}, X4, X4" if vex else f"\tPXOR {xmm_fold(b)}, X4")
+                L.append(f"\t{mov} X4, {128 * b + 16 * (4 * g + l)}(SP)")
+    L.append("")
+    if vex:
+        for r in range(1, 9):
+            L.append(f"\tVMOVDQU {16 * r}(AX), X{7 + r}")
+        key = lambda r: f"X{7 + r}" if r <= 8 else f"{16 * r}(AX)"
+    else:
+        for r in range(4, 11):
+            L.append(f"\tMOVOU {16 * r}(AX), X{5 + r}")
+        key = lambda r: f"X{5 + r}"
+    for l in range(8):
+        L.append(f"\tVPXOR X{l}, X{l}, X{l}" if vex else f"\tPXOR X{l}, X{l}")
+    L += ["", "loop:"]
+    if vex:
+        for l in range(8):
+            L.append(f"\tVPXOR 0(BX), X{l}, X{l}")
+        for b in range(nb):
+            for l in range(8):
+                L.append(f"\tVPXOR {128 * b + 16 * l}(SP), X{l}, X{l}")
+            L += xmm_rounds(8, True, key)
+    else:
+        L.append("\tMOVOU 0(BX), X8")
+        for l in range(8):
+            L.append(f"\tPXOR X8, X{l}")
+        for b in range(nb):
+            for l in range(8):
+                L.append(f"\tMOVOU {128 * b + 16 * l}(SP), X8")
+                L.append(f"\tPXOR X8, X{l}")
+            for r in range(1, 10):
+                if r < 4:
+                    L.append(f"\tMOVOU {16 * r}(AX), X8")
+                    L.append("\t" + "; ".join(f"AESENC X8, X{l}" for l in range(8)))
+                else:
+                    L.append("\t" + "; ".join(f"AESENC {key(r)}, X{l}" for l in range(8)))
+            L.append("\t" + "; ".join(f"AESENCLAST {key(10)}, X{l}" for l in range(8)))
+    L += ["\tADDQ $16, BX", "\tDECQ CX", "\tJNZ loop", ""]
+    for l in range(8):
+        L.append(f"\t{mov} X{l}, {16 * l}(DI)")
+    L.append("\tRET")
     return "\n".join(L) + "\n"
 
 
@@ -912,6 +1060,12 @@ def render_all():
     for s in X8_SHAPES:
         files[f"aescmac_fusedchain128_{s}x8_avx512_amd64.s"] = (
             header(s, 8, "VAES ZMM (four lanes per register, two state groups)", AMD, "zmm") + "\n" + zmm_fused_x8(s))
+        files[f"aescmac_fusedchain128_{s}x8_vaesavx2_amd64.s"] = (
+            header(s, 8, "VAES YMM (two lanes per register, four state groups)", AMD, "ymm") + "\n" + ymm_fused_x8(s))
+        files[f"aescmac_fusedchain128_{s}x8_vex_amd64.s"] = (
+            header(s, 8, "VEX-encoded AES-NI XMM (eight state chains)", AMD, "xmm") + "\n" + xmm_fused_x8(s, True))
+        files[f"aescmac_fusedchain128_{s}x8_aesni_amd64.s"] = (
+            header(s, 8, "Legacy-SSE AES-NI XMM (eight state chains)", AMD, "xmm") + "\n" + xmm_fused_x8(s, False))
     return files
 
 

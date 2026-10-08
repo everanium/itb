@@ -27,13 +27,16 @@ cascade in one call (see `hashes/internal/aescmacasm/aescmacasm_fused.go`):
 vaesavx2 / avx512), `aescmac_fusedchain128_<shape>x1_<tier>_amd64.s` (tiers
 aesni / vex), `aescmac_fusedchain128_<shape>x{1,4}_neon_arm64.s`, and — at
 the three nonce-buf shapes 20 / 36 / 68 only —
-`aescmac_fusedchain128_<shape>x8_avx512_amd64.s`, the eight-lane ZMM
-kernels the pixel pipeline drives through its eight-pixel stride on
-VAES + AVX-512 hosts: two four-lane state groups per call whose cascade
-rounds are interleaved instruction by instruction. The eight-lane arm is
-pinned to two calls of the four-lane ZMM kernel and to the pure-Go
-cascade by the in-package parity tests, and disarmed by
-`ITB_FORCE_CHAINHASH_X4=1`.
+`aescmac_fusedchain128_<shape>x8_<tier>_amd64.s` (tiers aesni / vex /
+vaesavx2 / avx512), the eight-lane kernels the pixel pipeline drives
+through its eight-pixel stride: two four-lane ZMM state groups on
+VAES + AVX-512 hosts, four two-lane YMM states on VAES + AVX2 hosts,
+eight XMM states on the VEX and legacy-SSE AES-NI tiers — in every case
+the cascade rounds of the states are interleaved instruction by
+instruction, so the independent AES round chains overlap on the AES
+unit. Each eight-lane arm is pinned to two calls of its tier's
+four-lane kernel and to the pure-Go cascade by the in-package parity
+tests, and disarmed by `ITB_FORCE_CHAINHASH_X4=1`.
 
 Every cascade round of every lane is one full AES-128 permutation per
 zero-padded data block. The blocks are staged once with the first round

@@ -7,11 +7,14 @@ lane); amd64 tiers avx512 (EVEX YMM, VPROLQ rotates) and avx2 (VEX YMM,
 synthesised rotates) for x4, one GPR kernel for x1 (reached under any
 selected assembly tier); arm64 tiers neon for x4 and gpr for x1.
 
-The avx512 tier additionally carries an x8 variant at the three nonce-buf
-shapes 20/36/68 (siphash_fusedchain128_<shape>x8_avx512_amd64.s): eight
-lanes in ZMM registers, one qword per lane — SipHash's 64-bit state words
-fill a 512-bit register at exactly eight lanes, so the x8 kernel runs the
-same instruction stream as the x4 kernel over twice the lanes.
+The avx512 and avx2 tiers additionally carry an x8 variant at the three
+nonce-buf shapes 20/36/68 (siphash_fusedchain128_<shape>x8_{avx512,avx2}_amd64.s):
+on avx512 eight lanes in ZMM registers, one qword per lane — SipHash's
+64-bit state words fill a 512-bit register at exactly eight lanes, so the
+x8 kernel runs the same instruction stream as the x4 kernel over twice the
+lanes; on avx2 two four-lane YMM groups whose instruction streams are
+interleaved — the register plan of the eight-lane fill kernel — so the
+two SipRound dependency chains overlap on the vector ALUs.
 
 A third family, x16 at shape 13 only, is the Interlocked Barrier PRF fill
 kernel (siphash_fusedchain128_13x16_avx512_amd64.s): the kernel receives
@@ -58,10 +61,12 @@ Register plans:
                 memory operands
     avx2 x8     two four-lane groups: Y0..Y3 / Y4..Y7 state, Y8/Y9 and
                 Y10/Y11 lo/hi, Y12/Y13 rotate scratch, Y14 pair broadcast;
-                the six constants live in RODATA (sipc<>) and the two
-                synthesised words in the frame, both read as VPXOR memory
-                operands — 15 of 16 registers, no spill (16 lanes would
-                need 16 registers of state alone)
+                the six constants live in RODATA (sipc<>) and the words —
+                the two synthesised fill words at shape 13, the 3 / 5 / 9
+                words staged from the lane pointers at shapes 20 / 36 /
+                68 — in the frame, both read as VPXOR memory operands — 15
+                of 16 registers, no spill (16 lanes would need 16
+                registers of state alone)
     gpr x1      R8..R11 state, R12/R13 lo/hi, AX/SI k0/k1, R14 the tail
                 word, word 0 in the frame, R15 scratch
     neon x4     lanes (0,1) and (2,3) in two register halves: V0/V1 v0,
@@ -477,6 +482,77 @@ def avx2_x8_fill():
     return "\n".join(L) + "\n"
 
 
+AVX2_X8_PIX_DATA = "".join(
+    f"DATA sipc<>+{32 * i + 8 * j}(SB)/8, ${c:#x}\n" for i, c in enumerate(CONSTS) for j in range(4)
+) + "GLOBL sipc<>(SB), RODATA|NOPTR, $192\n" + """DATA rol16q<>+0(SB)/8,  $0x0504030201000706
+DATA rol16q<>+8(SB)/8,  $0x0d0c0b0a09080f0e
+DATA rol16q<>+16(SB)/8, $0x0504030201000706
+DATA rol16q<>+24(SB)/8, $0x0d0c0b0a09080f0e
+GLOBL rol16q<>(SB), RODATA|NOPTR, $32
+"""
+
+
+def avx2_x8(shape):
+    """Eight-lane per-pixel kernel on the AVX2 tier: the register plan of
+    the eight-lane fill kernel (two four-lane YMM groups with
+    interleaved instruction streams, the six constants and the staged
+    words as VPXOR memory operands) over words staged from the eight
+    lane pointers exactly as the four-lane kernel stages its four: word w
+    of group g sits at 64*w + 32*g (SP). The lane pointers are read four
+    at a time through R8..R11 (group 0 from dataPtrs[0..3], group 1 from
+    dataPtrs[4..7])."""
+    nw = words(shape)
+    regs = ["R8", "R9", "R10", "R11"]
+    L = [AVX2_X8_PIX_DATA,
+         f"// func sipHash24FusedChain{shape}x8Avx2Asm(comps *uint64, nPairs int, dataPtrs *[8]*byte, out *[8][2]uint64)",
+         f"TEXT ·sipHash24FusedChain{shape}x8Avx2Asm(SB), NOSPLIT, ${64 * nw}-32",
+         "\tMOVQ comps+0(FP), BX", "\tMOVQ nPairs+8(FP), CX", "\tMOVQ dataPtrs+16(FP), DX", "\tMOVQ out+24(FP), DI"]
+    for g in range(2):
+        L += ["", f"\t// Lanes {4 * g}..{4 * g + 3}: stage the {nw} message words into the frame at 64*w + {32 * g}(SP)"]
+        for i, r in enumerate(regs):
+            L.append(f"\tMOVQ {32 * g + 8 * i}(DX), {r}")
+        for w in range(nw):
+            L += gpr_word(shape, w, regs[0], "R12", "R13") + ["\tVMOVQ R12, X4"]
+            L += gpr_word(shape, w, regs[1], "R12", "R13") + ["\tVPINSRQ $1, R12, X4, X4"]
+            L += gpr_word(shape, w, regs[2], "R12", "R13") + ["\tVMOVQ R12, X5"]
+            L += gpr_word(shape, w, regs[3], "R12", "R13") + ["\tVPINSRQ $1, R12, X5, X5", "\tVINSERTI128 $1, X5, Y4, Y4"]
+            if w == nw - 1:
+                L += [f"\tMOVQ ${tag(shape):#x}, R12", "\tVMOVQ R12, X5", "\tVPBROADCASTQ X5, Y5", "\tVPXOR Y5, Y4, Y4"]
+            L.append(f"\tVMOVDQU Y4, {64 * w + 32 * g}(SP)")
+    L += ["", "\tVPXOR Y8, Y8, Y8", "\tVPXOR Y9, Y9, Y9", "\tVPXOR Y10, Y10, Y10", "\tVPXOR Y11, Y11, Y11", "", "loop:",
+          "\tVPBROADCASTQ 0(BX), Y14",
+          "\tVPXOR Y8, Y14, Y12; VPXOR Y10, Y14, Y13",
+          "\tVPXOR sipc<>+0(SB), Y12, Y0; VPXOR sipc<>+0(SB), Y13, Y4",
+          "\tVPXOR sipc<>+64(SB), Y12, Y2; VPXOR sipc<>+64(SB), Y13, Y6",
+          "\tVPBROADCASTQ 8(BX), Y14",
+          "\tVPXOR Y9, Y14, Y12; VPXOR Y11, Y14, Y13",
+          "\tVPXOR sipc<>+32(SB), Y12, Y1; VPXOR sipc<>+32(SB), Y13, Y5",
+          "\tVPXOR sipc<>+96(SB), Y12, Y3; VPXOR sipc<>+96(SB), Y13, Y7"]
+    for w in range(nw):
+        L.append(f"\tVPXOR {64 * w}(SP), Y3, Y3; VPXOR {64 * w + 32}(SP), Y7, Y7")
+        L += avx2_round2() + avx2_round2()
+        L.append(f"\tVPXOR {64 * w}(SP), Y0, Y0; VPXOR {64 * w + 32}(SP), Y4, Y4")
+    L.append("\tVPXOR sipc<>+128(SB), Y2, Y2; VPXOR sipc<>+128(SB), Y6, Y6")
+    for _ in range(4):
+        L += avx2_round2()
+    L += ["\tVPXOR Y1, Y0, Y8; VPXOR Y5, Y4, Y10",
+          "\tVPXOR Y3, Y8, Y8; VPXOR Y7, Y10, Y10",
+          "\tVPXOR Y2, Y8, Y8; VPXOR Y6, Y10, Y10",
+          "\tVPXOR sipc<>+160(SB), Y1, Y1; VPXOR sipc<>+160(SB), Y5, Y5"]
+    for _ in range(4):
+        L += avx2_round2()
+    L += ["\tVPXOR Y1, Y0, Y9; VPXOR Y5, Y4, Y11",
+          "\tVPXOR Y3, Y9, Y9; VPXOR Y7, Y11, Y11",
+          "\tVPXOR Y2, Y9, Y9; VPXOR Y6, Y11, Y11",
+          "\tADDQ $16, BX", "\tDECQ CX", "\tJNZ loop", ""]
+    for g, (lo, hi) in enumerate((("Y8", "Y9"), ("Y10", "Y11"))):
+        L += [f"\tVPUNPCKLQDQ {hi}, {lo}, Y12", f"\tVPUNPCKHQDQ {hi}, {lo}, Y13",
+              f"\tVMOVDQU X12, {64 * g}(DI)", f"\tVMOVDQU X13, {64 * g + 16}(DI)",
+              f"\tVEXTRACTI128 $1, Y12, {64 * g + 32}(DI)", f"\tVEXTRACTI128 $1, Y13, {64 * g + 48}(DI)"]
+    L += ["\tVZEROUPPER", "\tRET"]
+    return "\n".join(L) + "\n"
+
+
 # ---------------------------------------------------------------- GPR x1 (amd64)
 
 GPR_ROUND_AMD64 = ["\tADDQ R9, R8", "\tROLQ $13, R9", "\tXORQ R8, R9", "\tROLQ $32, R8",
@@ -798,6 +874,8 @@ def render_all():
     for s in X8_SHAPES:
         files[f"siphash_fusedchain128_{s}x8_avx512_amd64.s"] = (
             header(s, 8, "AVX-512 ZMM (one lane per qword, eight lanes per register)", AMD) + "\n" + evex_x8(s))
+        files[f"siphash_fusedchain128_{s}x8_avx2_amd64.s"] = (
+            header(s, 8, "AVX2 VEX YMM (one lane per qword, two four-lane groups with interleaved rounds)", AMD) + "\n" + avx2_x8(s))
     return files
 
 

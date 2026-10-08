@@ -26,13 +26,16 @@ files, `aesitb_fusedchain128_<shape>x4_<tier>_amd64.s` (tiers aesni / vex /
 vaesavx2 / avx512), `aesitb_fusedchain128_<shape>x1_<tier>_amd64.s` (tiers
 aesni / vex), `aesitb_fusedchain128_<shape>x{1,4}_neon_arm64.s`, and — at
 the three nonce-buf shapes 20 / 36 / 68 only —
-`aesitb_fusedchain128_<shape>x8_avx512_amd64.s`, the eight-lane ZMM
-kernels the pixel pipeline drives through its eight-pixel stride on
-VAES + AVX-512 hosts: two four-lane state groups per call whose cascade
-rounds are interleaved instruction by instruction, so the two independent
-VAESENC chains overlap on the AES unit. The eight-lane arm is pinned to
-two calls of the four-lane ZMM kernel and to the pure-Go cascade by the
-in-package parity tests, and disarmed by `ITB_FORCE_CHAINHASH_X4=1`.
+`aesitb_fusedchain128_<shape>x8_<tier>_amd64.s` (tiers aesni / vex /
+vaesavx2 / avx512), the eight-lane kernels the pixel pipeline drives
+through its eight-pixel stride: two four-lane ZMM state groups on
+VAES + AVX-512 hosts, four two-lane YMM states on VAES + AVX2 hosts,
+eight XMM states on the VEX and legacy-SSE AES-NI tiers — in every case
+the cascade rounds of the states are interleaved instruction by
+instruction, so the independent AES round chains overlap on the AES unit.
+Each eight-lane arm is pinned to two calls of its tier's four-lane
+kernel and to the pure-Go cascade by the in-package parity tests, and
+disarmed by `ITB_FORCE_CHAINHASH_X4=1`.
 
 ## Batch-16 Interlocked Barrier fill kernels — `gen_fused_kernels.py`
 

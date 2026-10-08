@@ -126,8 +126,8 @@ func areion256InterlockFillBatch16(key []byte) (itb.InterlockFillFunc16x256, err
 // inside one internal/areionasm eight-lane dispatcher call for the
 // three nonce-buf shapes (20 / 36 / 68 bytes, all lanes equal); any
 // other lane-length configuration reports ok = false and the seed runs
-// the four-lane path twice. The hook is returned only where the
-// eight-lane ZMM arm is the selected tier (areionasm.FusedX8Active), so a
+// the four-lane path twice. The hook is returned only where an
+// eight-lane arm is the selected tier (areionasm.FusedX8Active), so a
 // seed built on any other host or tier keeps the four-lane stride; under
 // ITB_FORCE_CHAINHASH_SEQ it is nil as the four-lane evaluators are.
 func areion256FusedChainHash8(key []byte) (itb.BatchFusedChainHashFunc256x8, error) {

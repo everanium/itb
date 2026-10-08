@@ -330,7 +330,10 @@ func blake2b512FusedChain68x4NeonAsm(fixedKey *[64]byte, comps *uint64, nGroups 
 
 // Eight-lane per-pixel arm: no NEON eight-lane kernel exists; the
 // eight-lane dispatchers run two four-lane NEON calls.
-var FusedHasAVX512X8 = false
+var (
+	FusedHasAVX512X8 = false
+	FusedHasAVX2X8   = false
+)
 
 // FusedX8Active is always false on arm64 builds.
 func FusedX8Active() bool { return false }

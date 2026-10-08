@@ -255,31 +255,27 @@ func BenchmarkFusedTierPix(b *testing.B) {
 
 // TestFusedDispatchersZeroAllocTiers runs the allocation check under
 // every dispatch state the host can execute: each fused tier with its
-// batch-16 arm, the eight-lane arm armed and disarmed on the AVX-512
+// batch-16 arm, the eight-lane arm armed and disarmed on every SIMD
 // tier, and the scalar state.
 func TestFusedDispatchersZeroAllocTiers(t *testing.T) {
 	saveFusedFlags(t)
-	x16, x8, gx := [2]bool{HasAVX512X16, HasAVX2X16}, FusedHasAVX512X8, HasGPRX16
-	t.Cleanup(func() { HasAVX512X16, HasAVX2X16, FusedHasAVX512X8, HasGPRX16 = x16[0], x16[1], x8, gx })
+	x16, x8, gx := [2]bool{HasAVX512X16, HasAVX2X16}, [2]bool{FusedHasAVX512X8, FusedHasAVX2X8}, HasGPRX16
+	t.Cleanup(func() {
+		HasAVX512X16, HasAVX2X16, FusedHasAVX512X8, FusedHasAVX2X8, HasGPRX16 = x16[0], x16[1], x8[0], x8[1], gx
+	})
 	for _, tier := range amd64FusedTiers() {
 		if !tier.ok {
 			continue
 		}
 		for _, armX8 := range []bool{false, true} {
-			if armX8 && !tier.avx512 {
-				continue
-			}
-			label := tier.name
-			if tier.avx512 {
-				label += map[bool]string{false: "-x4", true: "-x8"}[armX8]
-			}
+			label := tier.name + map[bool]string{false: "-x4", true: "-x8"}[armX8]
 			FusedHasAVX512, FusedHasAVX2, FusedHasGPR = tier.avx512, tier.avx2, tier.gpr
 			HasAVX512X16, HasAVX2X16 = tier.avx512, tier.avx2
-			FusedHasAVX512X8 = armX8
+			FusedHasAVX512X8, FusedHasAVX2X8 = armX8, armX8
 			checkDispatchersZeroAlloc(t, label)
 		}
 	}
-	FusedHasAVX512, FusedHasAVX2, HasAVX512X16, HasAVX2X16, FusedHasAVX512X8 = false, false, false, false, false
+	FusedHasAVX512, FusedHasAVX2, HasAVX512X16, HasAVX2X16, FusedHasAVX512X8, FusedHasAVX2X8 = false, false, false, false, false, false
 	FusedHasGPR, HasGPRX16 = true, true
 	checkDispatchersZeroAlloc(t, "gpr")
 	FusedHasGPR, HasGPRX16 = false, false

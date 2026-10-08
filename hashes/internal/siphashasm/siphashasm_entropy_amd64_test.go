@@ -4,8 +4,6 @@ package siphashasm
 
 import (
 	"testing"
-
-	"golang.org/x/sys/cpu"
 )
 
 // The input-entropy differential audit of every amd64 kernel by direct
@@ -32,14 +30,16 @@ func TestInputEntropyKernelsAmd64(t *testing.T) {
 			auditX1(t, "gpr", n, f)
 		}
 	})
-	t.Run("avx512-x8", func(t *testing.T) {
-		if !cpu.X86.HasAVX512F {
-			t.Skip("requires AVX-512F")
-		}
-		for n, f := range avx512X8Kernels() {
-			auditX8(t, "avx512", n, f)
-		}
-	})
+	for _, tier := range amd64X8Tiers() {
+		t.Run(tier.name+"-x8", func(t *testing.T) {
+			if !tier.ok {
+				t.Skip("tier not executable on this host")
+			}
+			for n, f := range tier.x8 {
+				auditX8(t, tier.name, n, f)
+			}
+		})
+	}
 	for _, tier := range amd64FusedX16Tiers() {
 		if tier.k == nil {
 			continue

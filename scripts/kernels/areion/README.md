@@ -39,7 +39,13 @@ width 512) and `areion_fusedchain{256,512}_13x8_neon_arm64.s`, with the
 eight 13-byte fill blocks synthesised from `groupIdxBase` (in-register on
 ZMM, into the frame on NEON). The YMM / XMM tiers run every fill hook as
 four-lane kernel calls over Go-synthesised blocks, and the width-512
-batch-16 hook runs that way on every tier. The module docstring of the
+batch-16 hook runs that way on every tier; their eight-lane per-pixel
+arm is two four-lane calls on the lane halves — the SoEM construction
+holds two 128-bit states and two temporaries per lane pair, six
+registers, so four lane pairs exceed the sixteen-register file before
+the zero, the key halves and the chaining state — which keeps the pixel
+pipeline's eight-pixel stride engaged on those tiers at the four-lane
+kernel's per-lane cost. The module docstring of the
 generator records the wide cells that are register-legal but not
 emitted, with the measurement or the hook-width reason behind each.
 

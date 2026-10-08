@@ -106,15 +106,15 @@ func TestForceInterlockPRFFillTierApplied(t *testing.T) {
 }
 
 // TestForceChainHashX4Applied asserts that ITB_FORCE_CHAINHASH_X4 disarms
-// the eight-lane per-pixel arm: the flag is false and the eight-lane
+// the eight-lane per-pixel arms: both flags are false and the eight-lane
 // dispatchers run the four-lane kernels. Skips when the variable is
 // unset.
 func TestForceChainHashX4Applied(t *testing.T) {
 	if !forcetier.ChainHashX4() {
 		t.Skip("ITB_FORCE_CHAINHASH_X4 unset")
 	}
-	if FusedHasAVX512X8 || FusedX8Active() {
-		t.Fatalf("ITB_FORCE_CHAINHASH_X4: eight-lane arm armed (flag=%v active=%v)", FusedHasAVX512X8, FusedX8Active())
+	if FusedHasAVX512X8 || FusedHasAVX2X8 || FusedX8Active() {
+		t.Fatalf("ITB_FORCE_CHAINHASH_X4: eight-lane arm armed (flags=%v/%v active=%v)", FusedHasAVX512X8, FusedHasAVX2X8, FusedX8Active())
 	}
 }
 

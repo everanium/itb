@@ -4,12 +4,14 @@ package aesitbasm
 // / [FusedChain68x8]) run the ChainHash128 cascade of aesitbasm_fused.go on
 // eight lanes with distinct data over one shared component slice — the
 // shape the parent package's pixel pipeline drives through its eight-lane
-// batched hook at the 128 / 256 / 512-bit nonce-buf shapes. The ZMM x8
-// kernels (aesitb_fusedchain128_<shape>x8_avx512_amd64.s) keep the eight
-// states in two registers whose cascade rounds are interleaved; every
-// other build and every other selected tier runs the eight lanes as two
-// four-lane calls of the x4 dispatcher, so the result is bit-exact with
-// eight [ScalarFusedChain] evaluations on every arm.
+// batched hook at the 128 / 256 / 512-bit nonce-buf shapes. The x8
+// kernels (aesitb_fusedchain128_<shape>x8_<tier>_amd64.s) keep the eight
+// states in two ZMM registers, four YMM registers or eight XMM
+// registers, as the tier allows, with the cascade rounds of the states
+// interleaved; every other build and every other selected tier runs
+// the eight lanes as two four-lane calls of the x4 dispatcher, so the
+// result is bit-exact with eight [ScalarFusedChain] evaluations on
+// every arm.
 
 // fusedX4Dispatch is the signature of the four-lane fused dispatchers.
 type fusedX4Dispatch func(key *[16]byte, components []uint64, dataPtrs *[4]*byte, out *[4][2]uint64)

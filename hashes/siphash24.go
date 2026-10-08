@@ -152,7 +152,7 @@ func sipHash24FusedChainHash8() itb.BatchFusedChainHashFunc128x8 {
 
 // sipHash24FusedChainHash128x8 is the [Spec.FusedChainHash128x8] factory
 // of the siphash24 entry: [sipHash24FusedChainHash8], returned only
-// where the eight-lane ZMM arm is the selected tier
+// where an eight-lane arm is the selected tier
 // (siphashasm.FusedX8Active), so a seed built on any other host or tier
 // keeps the four-lane stride; under ITB_FORCE_CHAINHASH_SEQ it is nil as
 // the four-lane evaluators are. The primitive is keyed by its seed

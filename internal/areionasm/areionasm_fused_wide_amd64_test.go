@@ -44,8 +44,8 @@ func TestFusedWideKernelParityAmd64(t *testing.T) {
 // then the scalar state.
 func TestFusedWideDispatcherTiersAmd64(t *testing.T) {
 	saveFusedFlags(t)
-	x8 := FusedHasVAESAVX512X8
-	t.Cleanup(func() { FusedHasVAESAVX512X8 = x8 })
+	x8, x8narrow := FusedHasVAESAVX512X8, FusedHasAESNIX8
+	t.Cleanup(func() { FusedHasVAESAVX512X8, FusedHasAESNIX8 = x8, x8narrow })
 	for _, tier := range amd64FusedTiers() {
 		for _, arm := range []bool{true, false} {
 			t.Run(fmt.Sprintf("%s/x8arm=%v", tier.name, arm), func(t *testing.T) {
@@ -53,8 +53,8 @@ func TestFusedWideDispatcherTiersAmd64(t *testing.T) {
 					t.Skip(tier.skipMsg)
 				}
 				setTier(tier)
-				FusedHasVAESAVX512X8 = arm
-				if FusedX8Active() != (arm && tier.zmm) {
+				FusedHasVAESAVX512X8, FusedHasAESNIX8 = arm, arm
+				if FusedX8Active() != (arm && (tier.zmm || tier.ymm || tier.xmm)) {
 					t.Fatalf("FusedX8Active=%v under tier %s arm=%v", FusedX8Active(), tier.name, arm)
 				}
 				checkWideDispatchers(t, tier.name)
@@ -64,7 +64,7 @@ func TestFusedWideDispatcherTiersAmd64(t *testing.T) {
 	}
 	t.Run("scalar", func(t *testing.T) {
 		setTier(fusedTier{})
-		FusedHasVAESAVX512X8 = true
+		FusedHasVAESAVX512X8, FusedHasAESNIX8 = true, true
 		if FusedX8Active() {
 			t.Fatal("FusedX8Active under the scalar state")
 		}

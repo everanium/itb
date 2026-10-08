@@ -464,20 +464,36 @@ func blake2b256FusedChain13x8Avx512Asm(fixedKey *[32]byte, comps *uint64, nGroup
 // exclusive fused flag set above.
 var FusedHasAVX512X8 = cpu.X86.HasAVX512F && !forcetier.ChainHashX4()
 
-// FusedX8Active reports whether the eight-lane ZMM per-pixel kernels are
-// the selected arm: [FusedHasAVX512X8] together with [FusedHasAVX512],
-// so ITB_FORCE_HASH_TIER — which reassigns the fused tier flags as one
-// set — steers the eight-lane arm with the rest of the family. Under
-// any other flag state the eight-lane dispatchers run two four-lane
-// calls of the selected tier. The parent package's attach step consults
-// this predicate, so a seed built on a host or tier without the arm
-// carries no eight-lane hook and its pixel loop keeps the four-lane
-// stride.
-func FusedX8Active() bool { return FusedHasAVX512X8 && FusedHasAVX512 }
+// FusedHasAVX2X8 arms the eight-lane per-pixel arm of the AVX2 tier:
+// two calls of the four-lane VEX YMM kernel on the lane halves. No
+// eight-lane AVX2 kernel exists — one qword lane per pixel makes eight
+// lanes two YMM registers per state word, 32 registers of state on a
+// sixteen-register file, so half of every G function's words would
+// pass through memory on its critical path — and the two four-lane
+// calls are the eight-lane plan of this tier, so the pixel pipeline
+// takes the eight-pixel stride on AVX2 hosts for this family as it does
+// for every other. Needs AVX2; cleared at init by ITB_FORCE_CHAINHASH_X4
+// exactly as [FusedHasAVX512X8] is, and selected only together with
+// the AVX2 fused tier.
+var FusedHasAVX2X8 = cpu.X86.HasAVX2 && !forcetier.ChainHashX4()
+
+// FusedX8Active reports whether an eight-lane per-pixel arm is the
+// selected arm: [FusedHasAVX512X8] together with [FusedHasAVX512], or
+// [FusedHasAVX2X8] together with [FusedHasAVX2], so ITB_FORCE_HASH_TIER
+// — which reassigns the fused tier flags as one set — steers the
+// eight-lane arm with the rest of the family. The eight-lane
+// dispatchers run the ZMM kernels under the first arm and two four-lane
+// calls of the selected tier under any other flag state. The parent
+// package's attach step consults this predicate, so a seed built on a
+// host or tier without an arm carries no eight-lane hook and its pixel
+// loop keeps the four-lane stride.
+func FusedX8Active() bool {
+	return (FusedHasAVX512X8 && FusedHasAVX512) || (FusedHasAVX2X8 && FusedHasAVX2)
+}
 
 // Fused256Chain20x8 runs the width-256 cascade on eight 20-byte lanes.
 func Fused256Chain20x8(fixedKey *[32]byte, components []uint64, dataPtrs *[8]*byte, out *[8][4]uint64) {
-	if FusedX8Active() && validComponents256(components) {
+	if FusedHasAVX512X8 && FusedHasAVX512 && validComponents256(components) {
 		blake2b256FusedChain20x8Avx512Asm(fixedKey, &components[0], len(components)/4, dataPtrs, out)
 		return
 	}
@@ -487,7 +503,7 @@ func Fused256Chain20x8(fixedKey *[32]byte, components []uint64, dataPtrs *[8]*by
 
 // Fused256Chain36x8 runs the width-256 cascade on eight 36-byte lanes.
 func Fused256Chain36x8(fixedKey *[32]byte, components []uint64, dataPtrs *[8]*byte, out *[8][4]uint64) {
-	if FusedX8Active() && validComponents256(components) {
+	if FusedHasAVX512X8 && FusedHasAVX512 && validComponents256(components) {
 		blake2b256FusedChain36x8Avx512Asm(fixedKey, &components[0], len(components)/4, dataPtrs, out)
 		return
 	}
@@ -497,7 +513,7 @@ func Fused256Chain36x8(fixedKey *[32]byte, components []uint64, dataPtrs *[8]*by
 
 // Fused256Chain68x8 runs the width-256 cascade on eight 68-byte lanes.
 func Fused256Chain68x8(fixedKey *[32]byte, components []uint64, dataPtrs *[8]*byte, out *[8][4]uint64) {
-	if FusedX8Active() && validComponents256(components) {
+	if FusedHasAVX512X8 && FusedHasAVX512 && validComponents256(components) {
 		blake2b256FusedChain68x8Avx512Asm(fixedKey, &components[0], len(components)/4, dataPtrs, out)
 		return
 	}
@@ -507,7 +523,7 @@ func Fused256Chain68x8(fixedKey *[32]byte, components []uint64, dataPtrs *[8]*by
 
 // Fused512Chain20x8 runs the width-512 cascade on eight 20-byte lanes.
 func Fused512Chain20x8(fixedKey *[64]byte, components []uint64, dataPtrs *[8]*byte, out *[8][8]uint64) {
-	if FusedX8Active() && validComponents512(components) {
+	if FusedHasAVX512X8 && FusedHasAVX512 && validComponents512(components) {
 		blake2b512FusedChain20x8Avx512Asm(fixedKey, &components[0], len(components)/8, dataPtrs, out)
 		return
 	}
@@ -517,7 +533,7 @@ func Fused512Chain20x8(fixedKey *[64]byte, components []uint64, dataPtrs *[8]*by
 
 // Fused512Chain36x8 runs the width-512 cascade on eight 36-byte lanes.
 func Fused512Chain36x8(fixedKey *[64]byte, components []uint64, dataPtrs *[8]*byte, out *[8][8]uint64) {
-	if FusedX8Active() && validComponents512(components) {
+	if FusedHasAVX512X8 && FusedHasAVX512 && validComponents512(components) {
 		blake2b512FusedChain36x8Avx512Asm(fixedKey, &components[0], len(components)/8, dataPtrs, out)
 		return
 	}
@@ -527,7 +543,7 @@ func Fused512Chain36x8(fixedKey *[64]byte, components []uint64, dataPtrs *[8]*by
 
 // Fused512Chain68x8 runs the width-512 cascade on eight 68-byte lanes.
 func Fused512Chain68x8(fixedKey *[64]byte, components []uint64, dataPtrs *[8]*byte, out *[8][8]uint64) {
-	if FusedX8Active() && validComponents512(components) {
+	if FusedHasAVX512X8 && FusedHasAVX512 && validComponents512(components) {
 		blake2b512FusedChain68x8Avx512Asm(fixedKey, &components[0], len(components)/8, dataPtrs, out)
 		return
 	}

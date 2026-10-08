@@ -24,7 +24,8 @@ func init() {
 // silicon cannot execute keeps auto-dispatch with a stderr note.
 //
 //	avx512 — EVEX fused cascade and the YMM batch-16 fill
-//	avx2   — VEX XMM fused cascade and batch-16 fill
+//	avx2   — VEX XMM four-lane and YMM eight-lane fused cascade and
+//	         the YMM eight-lane batch-16 fill
 //	vex    — the VEX XMM kernels are the avx2 tier; the token selects
 //	         them with a stderr note
 //	aesni / vaesavx2 — BLAKE3 has no AES-based arm; the token names no

@@ -25,12 +25,13 @@ The kernels evaluate the whole `Seed256.ChainHash256` cascade in one call
 (see `hashes/internal/chacha20asm/chacha20asm_fused.go`):
 `chacha20_fusedchain256_<shape>x4_<tier>_amd64.s` (tiers avx512 / avx2),
 `chacha20_fusedchain256_<shape>x4_neon_arm64.s`, and the eight-lane YMM
-kernels of the avx512 tier: `chacha20_fusedchain256_{20,36,68}x8_avx512_amd64.s`,
-the per-pixel kernels at the nonce-buf shapes, and the Interlocked
-Barrier fill kernel `chacha20_fusedchain256_13x8_avx512_amd64.s` (the
+kernels of both amd64 tiers:
+`chacha20_fusedchain256_{20,36,68}x8_{avx512,avx2}_amd64.s`, the
+per-pixel kernels at the nonce-buf shapes, and the Interlocked Barrier
+fill kernel `chacha20_fusedchain256_13x8_{avx512,avx2}_amd64.s` (the
 batch-16 hook), with the eight 13-byte fill blocks synthesised
-in-register from `groupIdxBase`. The avx2 and neon tiers run the fill
-hook as two four-lane kernel calls over Go-synthesised blocks. The
+in-register from `groupIdxBase`. The neon tier runs the fill hook as
+two four-lane kernel calls over Go-synthesised blocks. The
 single-lane entry points of every tier run
 `chacha20_fusedchain256_<shape>x1_gpr_{amd64,arm64}.s`, the
 general-purpose-register kernels: the ChaCha20 block state in 32-bit
@@ -72,11 +73,16 @@ pipeline and the fill kernel), 24 of 32 in both forms. The output of a
 block is the key of the next, so no accumulator exists. No sixteen-lane
 fill kernel exists: sixteen lanes would be the ZMM form of the same
 plan, and the cell is waived — the batch-16 hook is the widest fill
-rung of width 256. The avx2 tier has 16 XMM registers: `X0..X14` hold
+rung of width 256. The avx2 tier has 16 registers at either width: `X0..X14` (`Y0..Y14` at the eight-lane YMM width) hold
 `v[0..14]`, `X15` is the rotate temp, `v[15]` lives in a frame slot with
 `v[12]` spilled around the two quarter rounds that touch `v[15]`, and
 the key words, the slot words and the replicated constants are memory
-operands; every frame fits the NOSPLIT budget. The NEON tier holds the
+operands; every four-lane frame fits the NOSPLIT budget. The eight-lane
+kernels of the avx2 tier are the same plan on YMM registers — eight
+dword lanes per register, one per pixel, the frame slots and memory
+operands 32 bytes wide — so they carry the one spill of the four-lane
+plan and no other; the shape-68 kernel (960-byte frame) carries the
+stack check. The NEON tier holds the
 four dword lanes of every state word in one register — one pass — with
 the key words in eight more registers, one alternate register for the
 shift-insert rotates and one byte mask for the rotate by 8.

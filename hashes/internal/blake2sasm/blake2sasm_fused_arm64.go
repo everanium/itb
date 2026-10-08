@@ -167,7 +167,10 @@ func Fused256Fill13x8(fixedKey *[32]byte, components []uint64, groupIdxBase uint
 
 // Eight-lane per-pixel arm: no NEON eight-lane kernel exists; the
 // eight-lane dispatchers run two four-lane NEON calls.
-var FusedHasAVX512X8 = false
+var (
+	FusedHasAVX512X8 = false
+	FusedHasAVX2X8   = false
+)
 
 // FusedX8Active is always false on arm64 builds.
 func FusedX8Active() bool { return false }

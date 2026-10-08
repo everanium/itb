@@ -84,11 +84,11 @@ func TestFusedX8DispatchParity(t *testing.T) {
 	for _, n := range x8Shapes {
 		t.Run("auto/"+shapeName(n), func(t *testing.T) { runFusedX8Parity(t, "dispatch-x8", n, x8[n]) })
 	}
-	saved := FusedHasAVX512X8
-	FusedHasAVX512X8 = false
-	t.Cleanup(func() { FusedHasAVX512X8 = saved })
+	saved, savedAVX2 := FusedHasAVX512X8, FusedHasAVX2X8
+	FusedHasAVX512X8, FusedHasAVX2X8 = false, false
+	t.Cleanup(func() { FusedHasAVX512X8, FusedHasAVX2X8 = saved, savedAVX2 })
 	if FusedX8Active() {
-		t.Fatal("FusedX8Active with the x8 flag cleared")
+		t.Fatal("FusedX8Active with the x8 flags cleared")
 	}
 	for _, n := range x8Shapes {
 		t.Run("viax4/"+shapeName(n), func(t *testing.T) { runFusedX8Parity(t, "dispatch-x8-via-x4", n, x8[n]) })

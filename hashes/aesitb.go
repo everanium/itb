@@ -158,7 +158,7 @@ func attachFused128(s *itb.Seed128, name string, key []byte) error {
 
 // aesITB128FusedChainHash128x8 is the [Spec.FusedChainHash128x8] factory
 // of the aesitb128 entry: [aesITB128FusedChainHash8] under the 16-byte
-// fixed key, returned only where the eight-lane ZMM arm is the selected
+// fixed key, returned only where an eight-lane arm is the selected
 // tier (aesitbasm.FusedX8Active), so a seed built on any other host or
 // tier keeps the four-lane stride; under ITB_FORCE_CHAINHASH_SEQ it is
 // nil as the four-lane evaluators are.

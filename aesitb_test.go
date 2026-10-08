@@ -483,7 +483,7 @@ func TestAESITBFusedWireRoundTrip(t *testing.T) {
 // --- Fused ChainHash cascade parity: eight lanes ---
 
 // Eight-lane fused-cascade parity: on hosts whose selected tier carries
-// the eight-lane ZMM arm, every shipping aesitb128 constructor attaches
+// the eight-lane arm, every shipping aesitb128 constructor attaches
 // the eight-lane hook, the hook agrees lane for lane with the four-lane
 // path, and the wire produced through the eight-pixel stride decrypts
 // through the four-pixel stride and vice versa.
@@ -494,7 +494,7 @@ func TestAESITBFusedWireRoundTrip(t *testing.T) {
 func x8Hosted(t *testing.T) {
 	t.Helper()
 	if !aesitbasm.FusedX8Active() {
-		t.Skip("eight-lane ZMM fused arm not selected on this host / tier")
+		t.Skip("eight-lane fused arm not selected on this host / tier")
 	}
 	if forcetier.ChainHashSeq() {
 		t.Skip("ITB_FORCE_CHAINHASH_SEQ set: the fused hooks stay nil by design")
@@ -506,9 +506,9 @@ func x8Hosted(t *testing.T) {
 // when armed is true.
 func withX8Arm(t *testing.T, armed bool, fn func()) {
 	t.Helper()
-	saved := aesitbasm.FusedHasVAESAVX512X8
-	aesitbasm.FusedHasVAESAVX512X8 = armed
-	defer func() { aesitbasm.FusedHasVAESAVX512X8 = saved }()
+	saved, savedNarrow := aesitbasm.FusedHasVAESAVX512X8, aesitbasm.FusedHasAESNIX8
+	aesitbasm.FusedHasVAESAVX512X8, aesitbasm.FusedHasAESNIX8 = armed, armed
+	defer func() { aesitbasm.FusedHasVAESAVX512X8, aesitbasm.FusedHasAESNIX8 = saved, savedNarrow }()
 	fn()
 }
 

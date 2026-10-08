@@ -238,9 +238,9 @@ func blake3InterlockFillBatch16(key []byte) (itb.InterlockFillFunc16x256, error)
 // inside one hashes/internal/blake3asm eight-lane dispatcher call for
 // the three nonce-buf shapes (20 / 36 / 68 bytes, all lanes equal); any
 // other lane-length configuration reports ok = false and the seed runs
-// the four-lane path twice. The hook is returned only where the
-// eight-lane YMM arm is the selected tier (blake3asm.FusedX8Active), so
-// a seed built on any other host or tier keeps the four-lane stride;
+// the four-lane path twice. The hook is returned only where an
+// eight-lane arm is the selected tier (blake3asm.FusedX8Active), so a
+// seed built on any other host or tier keeps the four-lane stride;
 // under ITB_FORCE_CHAINHASH_SEQ it is nil as the four-lane evaluators
 // are.
 func blake3FusedChainHash8(key []byte) (itb.BatchFusedChainHashFunc256x8, error) {

@@ -33,11 +33,11 @@
 # opposite build with the scalar reference forced, so a
 # self-consistent-but-wrong kernel cannot pass. Non-existent
 # (hash, arm) pairs are skipped explicitly and audited — never silently
-# passed as green. The pseudo-arm avx512x4 (ITB_FORCE_HASH_TIER=avx512
-# plus ITB_FORCE_CHAINHASH_X4=1) pins the four-lane ZMM fused ChainHash
-# kernels on a host whose avx512 arm otherwise runs the eight-lane
-# AES-ITB-128 kernels, so both ZMM fused arms are crossed against the
-# scalar reference.
+# passed as green. The pseudo-arms avx512x4, vaesavx2x4, avx2x4, vexx4 and
+# aesnix4 (the ITB_FORCE_HASH_TIER token plus ITB_FORCE_CHAINHASH_X4=1)
+# pin the four-lane fused ChainHash kernels of a tier whose arm
+# otherwise runs the eight-lane kernels, so both fused arms of every
+# tier are crossed against the scalar reference.
 #
 # Interlock-tier axis: ITB_FORCE_INTERLOCK_TIER sweeps the 48-bit
 # interlock rank-mask / apply kernel tiers on two lockSeed widths
@@ -215,15 +215,15 @@ done
 # checked against the independent scalar reference implementation.
 # Non-existent pairs are skipped with an audit line.
 # ---------------------------------------------------------------------------
-HASHARMS=(avx512 avx512x4 vaesavx2 avx2 vex aesni gpr scalar)
+HASHARMS=(avx512 avx512x4 vaesavx2 vaesavx2x4 avx2 avx2x4 vex vexx4 aesni aesnix4 gpr scalar)
 
 # arm_env ARM — prints the forcing environment of an arm: the
-# ITB_FORCE_HASH_TIER token, plus ITB_FORCE_CHAINHASH_X4=1 for the
-# avx512x4 pseudo-arm (ZMM tier with the eight-lane fused ChainHash
-# kernels disarmed).
+# ITB_FORCE_HASH_TIER token, plus ITB_FORCE_CHAINHASH_X4=1 for the x4
+# pseudo-arms (the tier with its eight-lane fused ChainHash arm
+# disarmed).
 arm_env() {
     case "$1" in
-        avx512x4) echo "ITB_FORCE_HASH_TIER=avx512 ITB_FORCE_CHAINHASH_X4=1" ;;
+        *x4) echo "ITB_FORCE_HASH_TIER=${1%x4} ITB_FORCE_CHAINHASH_X4=1" ;;
         *) echo "ITB_FORCE_HASH_TIER=$1" ;;
     esac
 }
@@ -239,6 +239,13 @@ arm_env() {
 #     (hashes/internal/aescmacasm), siphash24
 #     (hashes/internal/siphashasm) and chacha20
 #     (hashes/internal/chacha20asm) — so the pseudo-arm applies to all.
+#   * vaesavx2x4 / avx2x4 / aesnix4: every tier below AVX-512 carries an
+#     eight-lane fused ChainHash arm of its own (eight-lane kernels, or
+#     two four-lane calls where the register file holds no eight-lane
+#     plan), so each x4 pseudo-arm applies exactly where its tier does.
+#   * vex / vexx4: aesitb128 and aescmac carry VEX XMM fused cascade
+#     kernels (four and eight lanes); areion256 / areion512 map the vex
+#     token to their AES-NI tier; every other primitive is skipped.
 #   * aesni: only the AES-based primitives carry AES-NI XMM fused
 #     cascade kernels (aesitb128 / areion256 / areion512 / aescmac).
 #   * vaesavx2: aesitb128, areion256, areion512 and aescmac carry VAES
@@ -255,8 +262,18 @@ arm_env() {
 #   * avx512 / scalar: every primitive has both.
 arm_applicable() {
     case "$2" in
-        avx512|scalar|avx2) return 0 ;;
+        avx512|scalar|avx2|avx2x4) return 0 ;;
         avx512x4) return 0 ;;
+        vex|vexx4)
+            case "$1" in
+                aesitb128|areion256|areion512|aescmac) return 0 ;;
+                *) return 1 ;;
+            esac ;;
+        vaesavx2x4|aesnix4)
+            case "$1" in
+                aesitb128|areion256|areion512|aescmac) return 0 ;;
+                *) return 1 ;;
+            esac ;;
         vaesavx2)
             case "$1" in
                 aesitb128|areion256|areion512|aescmac) return 0 ;;

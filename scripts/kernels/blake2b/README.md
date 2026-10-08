@@ -77,7 +77,13 @@ The avx2 tier has 16 YMM registers: `Y0..Y14` hold `v[0..14]`, `Y15` is
 the ror63 temp, `v[15]` lives in a frame slot with `v[12]` spilled
 around the two G functions that touch `v[15]`, and the message words are
 frame slots read as memory operands; the frame exceeds the NOSPLIT
-budget, so these kernels carry the stack check. The NEON tier runs two
+budget, so these kernels carry the stack check. No eight-lane AVX2
+kernel exists: one qword lane per pixel makes eight lanes two YMM
+registers per state word, 32 registers of state on a sixteen-register
+file, so half of every G function's words would pass through memory on
+its critical path; the eight-lane arm of the avx2 tier is two four-lane
+calls on the lane halves, which keeps the pixel pipeline's eight-pixel
+stride engaged at the four-lane kernel's per-lane cost. The NEON tier runs two
 lanes per pass over the same 16-register state with the words loaded
 pairwise from the frame.
 

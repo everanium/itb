@@ -6,10 +6,12 @@ package siphashasm
 // shape the itb pixel pipeline drives through its eight-lane batched hook
 // at the 128 / 256 / 512-bit nonce-buf shapes. The ZMM x8 kernels
 // (siphash_fusedchain128_<shape>x8_avx512_amd64.s) hold the eight lanes in
-// one qword each of the 512-bit state registers; every other build and
-// every other selected tier runs the eight lanes as two four-lane calls
-// of the x4 dispatcher, so the result is bit-exact with eight
-// [ScalarFusedChain] evaluations on every arm.
+// one qword each of the 512-bit state registers, the AVX2 x8 kernels
+// (siphash_fusedchain128_<shape>x8_avx2_amd64.s) in two four-lane YMM
+// groups with interleaved rounds; every other build and every other
+// selected tier runs the eight lanes as two four-lane calls of the x4
+// dispatcher, so the result is bit-exact with eight [ScalarFusedChain]
+// evaluations on every arm.
 
 // fusedChainX8ViaX4 runs an eight-lane cascade at shape n as two
 // four-lane calls of the shape's x4 dispatcher: lanes 0..3 first, then

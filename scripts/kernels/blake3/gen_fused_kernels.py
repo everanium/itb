@@ -9,20 +9,22 @@ lane per pixel), x8 (eight lanes, the widened per-pixel hooks and the
 Interlocked Barrier fill) and x1 (the single-lane general-purpose-register
 kernel of every tier); amd64 tiers avx512 (EVEX XMM at four lanes, EVEX
 YMM at eight, VPRORD rotates, VPTERNLOGD seed-word rebuild) and avx2 (VEX
-XMM, synthesised rotates, the message words as memory operands); arm64
-tier neon (four dword lanes per register, one pass).
+XMM at four lanes, VEX YMM at eight, synthesised rotates, the message
+words as memory operands); arm64 tier neon (four dword lanes per
+register, one pass).
 
-The avx512 tier carries the eight-lane YMM kernels — the same instruction
-stream as the four-lane EVEX kernel over twice the lanes, one dword lane
-per pixel: the per-pixel kernels blake3_fusedchain256_{20,36,68}x8_avx512_amd64.s
+Both amd64 tiers carry the eight-lane YMM kernels — the same instruction
+stream as the tier's four-lane kernel over twice the lanes, one dword
+lane per pixel: the per-pixel kernels blake3_fusedchain256_{20,36,68}x8_{avx512,avx2}_amd64.s
 (eight lane pointers, staged four at a time) and the Interlocked Barrier
-fill kernel blake3_fusedchain256_13x8_avx512_amd64.s (the batch-16 hook of
-width 256), with the eight 13-byte fill blocks
+fill kernel blake3_fusedchain256_13x8_{avx512,avx2}_amd64.s (the batch-16
+hook of width 256), with the eight 13-byte fill blocks
 [0x03 | LE64(groupIdxBase+i) | 4×0x00] synthesised in-register from
 groupIdxBase as the three data dwords (idx << 8) | 0x03, idx >> 24 and
-idx >> 56 (the qword lane arithmetic on ZMM, narrowed to the dword lanes
-by VPMOVQD). The avx2 and neon tiers run the fill hook as two four-lane
-kernel calls over Go-synthesised blocks. The single-lane entry points of
+idx >> 56 (the qword lane arithmetic on ZMM narrowed to the dword lanes
+by VPMOVQD on avx512; on two YMM halves narrowed by VPSHUFD + VPERMQ and
+joined by VINSERTI128 on avx2). The neon tier runs the fill hook as two
+four-lane kernel calls over Go-synthesised blocks. The single-lane entry points of
 every tier run the general-purpose-register kernels
 blake3_fusedchain256_{13,20,36,68}x1_gpr_{amd64,arm64}.s: the compression
 state in 32-bit general-purpose registers, the message words as frame
@@ -32,8 +34,6 @@ Cells that are not emitted, with the reason:
     13x16 avx512    sixteen dword lanes would be the ZMM form of the same
                     plan (32 of 32 registers); the cell is waived — the
                     batch-16 hook is the widest fill rung of width 256
-    x8 avx2         16 v × 2 XMM per word at eight lanes = 32 > 16 → spill;
-                    the four-lane kernel stays the top of the avx2 tier
     x8 neon         16 v × 2 V per word at eight lanes = 32 + the rotate
                     alternate, the byte-rotate mask and the word loads >
                     32 → spill; the four-lane kernel stays the top of the
@@ -80,6 +80,12 @@ Register plans:
                 memory operands; ror16 / ror8 = VPSHUFB with byte masks,
                 ror12 / ror7 = shift-shift-or; every frame fits the
                 NOSPLIT budget
+    avx2 x8     the same plan on YMM registers (eight dword lanes, one
+                per pixel): Y0..Y14 v[0..14], Y15 the rotate temp, v[15]
+                and the v[12] spill as 32-byte frame slots, the message
+                words and byte masks as 32-byte memory operands — 16 of
+                16 with the one spill of the four-lane plan and no other;
+                every eight-lane frame carries the stack check
     neon x4     V0..V15 v[0..15] (four dword lanes per register, one
                 pass); the message words in the frame, loaded pairwise
                 into V16 / V17; V18 the rotate alternate (VSHL + VSRI —
@@ -470,7 +476,11 @@ def evex_kernel(n, x8=False, fill=False):
 
 # -------------------------------------------------------- AVX2 family --
 
-AVX2_MACROS = """#define RORD(x, n, ln, t) \\
+def avx2_macros(p, lane_bytes):
+    """The G function, the frame-slot offsets and the round on the
+    register prefix p (X at four lanes, Y at eight): the message words
+    M(0..15) and the v[15] / v[12] slots are lane_bytes wide."""
+    return f"""#define RORD(x, n, ln, t) \\
 \tVPSRLD n, x, t; \\
 \tVPSLLD ln, x, x; \\
 \tVPOR t, x, x
@@ -491,44 +501,100 @@ AVX2_MACROS = """#define RORD(x, n, ln, t) \\
 \tVPXOR c, b, b; \\
 \tRORD(b, $7, $25, t)
 
-#define M(i)   (i*16)
-#define V15    256
-#define V12    272
+#define M(i)   (i*{lane_bytes})
+#define V15    {16 * lane_bytes}
+#define V12    {17 * lane_bytes}
 
 #define ROUND(s0,s1,s2,s3,s4,s5,s6,s7,s8,s9,s10,s11,s12,s13,s14,s15) \\
-\tGA(X0, X4, X8,  X12, M(s0),  M(s1),  X15); \\
-\tGA(X1, X5, X9,  X13, M(s2),  M(s3),  X15); \\
-\tGA(X2, X6, X10, X14, M(s4),  M(s5),  X15); \\
-\tVMOVDQU X12, V12(SP); \\
-\tVMOVDQU V15(SP), X15; \\
-\tGA(X3, X7, X11, X15, M(s6),  M(s7),  X12); \\
-\tGA(X0, X5, X10, X15, M(s8),  M(s9),  X12); \\
-\tVMOVDQU X15, V15(SP); \\
-\tVMOVDQU V12(SP), X12; \\
-\tGA(X1, X6, X11, X12, M(s10), M(s11), X15); \\
-\tGA(X2, X7, X8,  X13, M(s12), M(s13), X15); \\
-\tGA(X3, X4, X9,  X14, M(s14), M(s15), X15)
+\tGA({p}0, {p}4, {p}8,  {p}12, M(s0),  M(s1),  {p}15); \\
+\tGA({p}1, {p}5, {p}9,  {p}13, M(s2),  M(s3),  {p}15); \\
+\tGA({p}2, {p}6, {p}10, {p}14, M(s4),  M(s5),  {p}15); \\
+\tVMOVDQU {p}12, V12(SP); \\
+\tVMOVDQU V15(SP), {p}15; \\
+\tGA({p}3, {p}7, {p}11, {p}15, M(s6),  M(s7),  {p}12); \\
+\tGA({p}0, {p}5, {p}10, {p}15, M(s8),  M(s9),  {p}12); \\
+\tVMOVDQU {p}15, V15(SP); \\
+\tVMOVDQU V12(SP), {p}12; \\
+\tGA({p}1, {p}6, {p}11, {p}12, M(s10), M(s11), {p}15); \\
+\tGA({p}2, {p}7, {p}8,  {p}13, M(s12), M(s13), {p}15); \\
+\tGA({p}3, {p}4, {p}9,  {p}14, M(s14), M(s15), {p}15)
 """
 
-AVX2_TABLES = """DATA ror16<>+0(SB)/8, $0x0504070601000302
-DATA ror16<>+8(SB)/8, $0x0d0c0f0e09080b0a
-GLOBL ror16<>(SB), RODATA|NOPTR, $16
 
-DATA ror8<>+0(SB)/8, $0x0407060500030201
-DATA ror8<>+8(SB)/8, $0x0c0f0e0d080b0a09
-GLOBL ror8<>(SB), RODATA|NOPTR, $16
+def avx2_tables(lane_bytes):
+    """The byte-rotate masks of VPSHUFB, one 16-byte pattern per 128-bit
+    register half (lane_bytes 16 or 32)."""
+    reps = lane_bytes // 16
+    lines = []
+    for name, lo, hi in (("ror16", "0x0504070601000302", "0x0d0c0f0e09080b0a"),
+                         ("ror8", "0x0407060500030201", "0x0c0f0e0d080b0a09")):
+        for r in range(reps):
+            lines.append(f"DATA {name}<>+{16 * r}(SB)/8, ${lo}")
+            lines.append(f"DATA {name}<>+{16 * r + 8}(SB)/8, ${hi}")
+        lines.append(f"GLOBL {name}<>(SB), RODATA|NOPTR, ${lane_bytes}")
+        lines.append("")
+    return "\n".join(lines)
+
+
+# The constant of the eight-lane fill kernel: the qword 3 in every lane
+# (the tag byte 0x03 of the fill block).
+AVX2_FILL_TABLES = """DATA fillc<>+0(SB)/8, $3
+DATA fillc<>+8(SB)/8, $3
+DATA fillc<>+16(SB)/8, $3
+DATA fillc<>+24(SB)/8, $3
+GLOBL fillc<>(SB), RODATA|NOPTR, $32
 """
+
+
+def avx2_fill_build(frame):
+    """Synthesise the data dwords of the eight 13-byte fill blocks on YMM
+    registers — D0 = (idx << 8) | 0x03, D1 = idx >> 24, D2 = idx >> 56,
+    the remaining seed-injected words zero: the lane indices as qwords
+    (lanes 0..3 in Y1, 4..7 in Y2), each word as a qword shift of the
+    index, narrowed to the dword lanes by VPSHUFD + VPERMQ per register
+    half and joined by VINSERTI128 into one 32-byte slot store."""
+    d = [frame.alloc(("D", k), 32) for k in range(8)]
+    lines = [
+        "\tVPBROADCASTQ groupIdxBase+24(FP), Y0",
+        "\tVPADDQ laneIdx<>+0(SB), Y0, Y1",
+        "\tVPADDQ laneIdx<>+32(SB), Y0, Y2",
+    ]
+
+    def pack(off):
+        return ["\tVPSHUFD $0x08, Y3, Y3", "\tVPERMQ $0x08, Y3, Y3",
+                "\tVPSHUFD $0x08, Y4, Y4", "\tVPERMQ $0x08, Y4, Y4",
+                "\tVINSERTI128 $1, X4, Y3, Y3", f"\tVMOVDQU Y3, {off}(SP)"]
+
+    lines += ["\tVPSLLQ $8, Y1, Y3", "\tVPSLLQ $8, Y2, Y4",
+              "\tVPOR fillc<>+0(SB), Y3, Y3", "\tVPOR fillc<>+0(SB), Y4, Y4"] + pack(d[0])
+    lines += ["\tVPSRLQ $24, Y1, Y3", "\tVPSRLQ $24, Y2, Y4"] + pack(d[1])
+    lines += ["\tVPSRLQ $56, Y1, Y3", "\tVPSRLQ $56, Y2, Y4"] + pack(d[2])
+    lines.append("\tVPXOR Y3, Y3, Y3")
+    lines += [f"\tVMOVDQU Y3, {d[k]}(SP)" for k in range(3, 8)]
+    return lines
 
 
 def avx2_rounds():
     return [f"\tROUND({','.join(str(s) for s in sigma)})" for sigma in ROUNDS]
 
 
-def avx2_kernel(n):
+def avx2_kernel(n, x8=False, fill=False):
+    """The avx2 x4 (XMM) kernel, the x8 (YMM) per-pixel kernel, or the
+    x8 (YMM) fill kernel at shape 13 (fill implies x8): one register
+    plan, one dword lane per pixel, the register width following the
+    lane count."""
+    p = "Y" if x8 else "X"
+    lanes = 8 if x8 else 4
+    lane_bytes = 4 * lanes
     blocks = layout(n)
     nb = len(blocks)
-    frame = Frame(288)  # M(0..15), V15, V12
-    build = stage_amd64(blocks, frame, 16)
+    frame = Frame(18 * lane_bytes)  # M(0..15), V15, V12
+    if fill:
+        build = avx2_fill_build(frame)
+    elif x8:
+        build = stage_amd64_x8(blocks, frame)
+    else:
+        build = stage_amd64(blocks, frame, lane_bytes)
 
     def slot(w):
         return f"M({w})"
@@ -537,71 +603,85 @@ def avx2_kernel(n):
         out = []
         for w, e in enumerate(blocks[b]["words"]):
             if e[0] == "data":
-                out.append(f"\tVMOVDQU {frame.slots[('T', b, w)]}(SP), X15")
-                out.append(f"\tVMOVDQU X15, {slot(w)}(SP)")
+                out.append(f"\tVMOVDQU {frame.slots[('T', b, w)]}(SP), {p}15")
+                out.append(f"\tVMOVDQU {p}15, {slot(w)}(SP)")
             elif e[0] == "zero":
-                out.append("\tVPXOR X15, X15, X15")
-                out.append(f"\tVMOVDQU X15, {slot(w)}(SP)")
+                out.append(f"\tVPXOR {p}15, {p}15, {p}15")
+                out.append(f"\tVMOVDQU {p}15, {slot(w)}(SP)")
         return out
 
-    tmp2 = "X8"  # free between the fold and the state init
+    tmp2 = f"{p}8"  # free between the fold and the state init
     lines = []
-    lines.append(header(AMD, n, 4, "AVX2 XMM (four lanes)"))
-    lines.append(AVX2_MACROS)
-    fn = f"blake3FusedChain{n}x4Avx2Asm"
-    lines.append(f"// func {fn}(fixedKey *[32]byte, comps *uint64, nGroups int, dataPtrs *[4]*byte, out *[4][4]uint64)")
+    lines.append(header(AMD, n, lanes, "AVX2 " + ("YMM (eight lanes)" if x8 else "XMM (four lanes)"), fill=fill))
+    lines.append(avx2_macros(p, lane_bytes))
+    if fill:
+        kind = "groupIdxBase uint64, out *[8][4]uint64"
+    else:
+        kind = f"dataPtrs *[{lanes}]*byte, out *[{lanes}][4]uint64"
+    fn = f"blake3FusedChain{n}x{lanes}Avx2Asm"
+    lines.append(f"// func {fn}(fixedKey *[32]byte, comps *uint64, nGroups int, {kind})")
     lines.append(f"TEXT ·{fn}(SB), {text_flags(frame)}${frame.aligned}-40")
-    lines += prologue_amd64(False)
+    lines += prologue_amd64(x8)
     lines.append("")
     lines += build
     lines.append("")
     if nb == 1:
         lines += load_words(0)
     for i in range(WORDS):
-        lines.append(f"\tVPXOR X{i}, X{i}, X{i}")
+        lines.append(f"\tVPXOR {p}{i}, {p}{i}, {p}{i}")
     lines.append("")
     lines.append("loop:")
     for w, e in seed_words(blocks[0]):
         k = e[1]
-        lines.append(f"\tVMOVDQU {frame.slots[('D', k)]}(SP), X15")
-        lines.append(f"\tVPXOR X{k}, X15, X15")
+        lines.append(f"\tVMOVDQU {frame.slots[('D', k)]}(SP), {p}15")
+        lines.append(f"\tVPXOR {p}{k}, {p}15, {p}15")
         lines.append(f"\tVPBROADCASTD {4 * k}(BX), {tmp2}")
-        lines.append(f"\tVPXOR {tmp2}, X15, X15")
-        lines.append(f"\tVMOVDQU X15, {slot(w)}(SP)")
+        lines.append(f"\tVPXOR {tmp2}, {p}15, {p}15")
+        lines.append(f"\tVMOVDQU {p}15, {slot(w)}(SP)")
     if nb > 1:
         lines += load_words(0)
     for b, block in enumerate(blocks):
         lines.append("")
         if b == 0:
             for k in range(8):
-                lines.append(f"\tVPBROADCASTD {4 * k}(AX), X{k}")
+                lines.append(f"\tVPBROADCASTD {4 * k}(AX), {p}{k}")
         else:
             lines += load_words(b)
         for k in range(7):
-            lines.append(f"\tVPBROADCASTD tab{b}<>+{4 * k}(SB), X{8 + k}")
-        lines.append(f"\tVPBROADCASTD tab{b}<>+28(SB), X15")
-        lines.append("\tVMOVDQU X15, V15(SP)")
+            lines.append(f"\tVPBROADCASTD tab{b}<>+{4 * k}(SB), {p}{8 + k}")
+        lines.append(f"\tVPBROADCASTD tab{b}<>+28(SB), {p}15")
+        lines.append(f"\tVMOVDQU {p}15, V15(SP)")
         lines.append("")
         lines += avx2_rounds()
         lines.append("")
         for i in range(8):
             if i == 7:
-                lines.append("\tVPXOR V15(SP), X7, X7")
+                lines.append(f"\tVPXOR V15(SP), {p}7, {p}7")
             else:
-                lines.append(f"\tVPXOR X{8 + i}, X{i}, X{i}")
+                lines.append(f"\tVPXOR {p}{8 + i}, {p}{i}, {p}{i}")
     lines.append("")
     lines.append("\tADDQ $32, BX")
     lines.append("\tDECQ CX")
     lines.append("\tJNZ loop")
     lines.append("")
     for i in range(WORDS):
-        for l in range(4):
-            lines.append(f"\tVPEXTRD ${l}, X{i}, {32 * l + 4 * i}(DX)")
+        if x8:
+            # X8 (a dead c word) is the extract temp of the upper half.
+            for l in range(4):
+                lines.append(f"\tVPEXTRD ${l}, X{i}, {32 * l + 4 * i}(DX)")
+            lines.append(f"\tVEXTRACTI128 $1, Y{i}, X8")
+            for l in range(4):
+                lines.append(f"\tVPEXTRD ${l}, X8, {32 * (4 + l) + 4 * i}(DX)")
+        else:
+            for l in range(4):
+                lines.append(f"\tVPEXTRD ${l}, X{i}, {32 * l + 4 * i}(DX)")
     lines.append("\tVZEROUPPER")
     lines.append("\tRET")
     lines.append("")
-    lines += tables(blocks)
-    lines.append(AVX2_TABLES)
+    lines += tables(blocks, fill)
+    lines.append(avx2_tables(lane_bytes))
+    if fill:
+        lines.append(AVX2_FILL_TABLES)
     return "\n".join(lines)
 
 
@@ -1038,7 +1118,9 @@ def render_all():
         files[f"blake3_fusedchain256_{n}x1_gpr_arm64.s"] = gpr_kernel_arm64(n)
     for n in (20, 36, 68):
         files[f"blake3_fusedchain256_{n}x8_avx512_amd64.s"] = evex_kernel(n, x8=True) + "\n"
+        files[f"blake3_fusedchain256_{n}x8_avx2_amd64.s"] = avx2_kernel(n, x8=True) + "\n"
     files["blake3_fusedchain256_13x8_avx512_amd64.s"] = evex_kernel(13, x8=True, fill=True) + "\n"
+    files["blake3_fusedchain256_13x8_avx2_amd64.s"] = avx2_kernel(13, x8=True, fill=True) + "\n"
     return files
 
 

@@ -18,7 +18,7 @@ func fill256x8Kernel(k *[32]byte, c []uint64, base uint64, o *[8][4]uint64) {
 
 // TestInputEntropyKernelsAmd64 audits every kernel the host can execute:
 // the four-lane kernels of every tier at both widths, the single-lane
-// AES-NI kernels, the eight-lane ZMM kernels and the eight-lane ZMM fill
+// AES-NI kernels, the eight-lane kernels and the eight-lane fill
 // kernels of both widths.
 func TestInputEntropyKernelsAmd64(t *testing.T) {
 	for _, tier := range amd64FusedTiers() {

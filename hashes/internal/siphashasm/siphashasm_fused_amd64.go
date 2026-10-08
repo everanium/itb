@@ -20,8 +20,8 @@ var (
 	// (with DQ, present on every shipping AVX-512F part).
 	FusedHasAVX512 = cpu.X86.HasAVX512F
 
-	// FusedHasAVX2 selects the VEX YMM four-lane kernels on AVX2 hosts
-	// without AVX-512F; yields to the AVX-512 tier.
+	// FusedHasAVX2 selects the VEX YMM four-lane and eight-lane kernels
+	// on AVX2 hosts without AVX-512F; yields to the AVX-512 tier.
 	FusedHasAVX2 = cpu.X86.HasAVX2 && !FusedHasAVX512
 
 	// FusedHasNEON is always false on amd64 builds.

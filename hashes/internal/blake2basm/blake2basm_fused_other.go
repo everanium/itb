@@ -81,8 +81,11 @@ func Fused512Fill13x4(fixedKey *[64]byte, components []uint64, groupIdxBase uint
 	scalarFill512X4(fixedKey, components, groupIdxBase, out)
 }
 
-// Eight-lane per-pixel arm: absent on this build.
-var FusedHasAVX512X8 = false
+// Eight-lane per-pixel arms: absent on this build.
+var (
+	FusedHasAVX512X8 = false
+	FusedHasAVX2X8   = false
+)
 
 // FusedX8Active is always false on this build.
 func FusedX8Active() bool { return false }

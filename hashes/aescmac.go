@@ -283,9 +283,9 @@ func aesCMACFusedChainHash8(s *aescmacasm.Schedule) itb.BatchFusedChainHashFunc1
 
 // aesCMACFusedChainHash128x8 is the [Spec.FusedChainHash128x8] factory
 // of the aescmac entry: [aesCMACFusedChainHash8] over the key schedule
-// of the 16-byte fixed key, returned only where the eight-lane ZMM arm
-// is the selected tier (aescmacasm.FusedX8Active), so a seed built on
-// any other host or tier keeps the four-lane stride; under
+// of the 16-byte fixed key, returned only where an eight-lane arm is
+// the selected tier (aescmacasm.FusedX8Active), so a seed built on any
+// other host or tier keeps the four-lane stride; under
 // ITB_FORCE_CHAINHASH_SEQ it is nil as the four-lane evaluators are.
 func aesCMACFusedChainHash128x8(key []byte) (itb.BatchFusedChainHashFunc128x8, error) {
 	if len(key) != 16 {

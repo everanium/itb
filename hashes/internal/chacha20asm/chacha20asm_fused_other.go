@@ -50,8 +50,11 @@ func Fused256Fill13x8(fixedKey *[32]byte, components []uint64, groupIdxBase uint
 	scalarFill256X8(fixedKey, components, groupIdxBase, out)
 }
 
-// Eight-lane per-pixel arm: absent on this build.
-var FusedHasAVX512X8 = false
+// Eight-lane per-pixel arms: absent on this build.
+var (
+	FusedHasAVX512X8 = false
+	FusedHasAVX2X8   = false
+)
 
 // FusedX8Active is always false on this build.
 func FusedX8Active() bool { return false }

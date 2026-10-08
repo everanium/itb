@@ -159,7 +159,7 @@ type Spec struct {
 	// eight-pixel stride at width 128. key is the primitive's fixed key
 	// exactly as returned by the Make128Pair factory. A factory returns a
 	// nil evaluator on hosts whose selected tier carries no eight-lane
-	// kernel, which leaves the seed on the four-pixel stride; a populated
+	// arm, which leaves the seed on the four-pixel stride; a populated
 	// evaluator must be bit-exact with two four-lane evaluations over the
 	// lane halves (and hence with the sequential loop). The hook is a
 	// performance path only and never changes the wire. Shipped: aesitb128,
@@ -216,7 +216,7 @@ type Spec struct {
 	// the pixel pipeline's eight-pixel stride at the two wide widths. key
 	// is the primitive's fixed key exactly as returned by the Make256Pair
 	// / Make512Pair factory. A factory returns a nil evaluator on hosts
-	// whose selected tier carries no eight-lane kernel, which leaves the
+	// whose selected tier carries no eight-lane arm, which leaves the
 	// seed on the four-pixel stride; a populated evaluator must be
 	// bit-exact with two four-lane evaluations over the lane halves (and
 	// hence with the sequential loop). The hooks are performance paths

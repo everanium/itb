@@ -232,7 +232,10 @@ func areion512FusedChain68x1NeonAsm(fixedKey *[64]byte, comps *uint64, nGroups i
 
 // Eight-lane per-pixel arm: no NEON eight-lane per-pixel kernel exists;
 // the eight-lane dispatchers run two four-lane NEON calls.
-var FusedHasVAESAVX512X8 = false
+var (
+	FusedHasVAESAVX512X8 = false
+	FusedHasAESNIX8      = false
+)
 
 // FusedX8Active is always false on arm64 builds.
 func FusedX8Active() bool { return false }

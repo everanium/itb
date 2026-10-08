@@ -10,7 +10,7 @@ import "testing"
 
 // TestInputEntropyKernelsAmd64 audits every kernel the host can execute:
 // the four-lane kernels of every tier, the single-lane kernels of the
-// aesni and vex tiers, the eight-lane ZMM kernels and the batch-16 fill
+// aesni and vex tiers, the eight-lane kernels of every tier and the batch-16 fill
 // kernel of every tier.
 func TestInputEntropyKernelsAmd64(t *testing.T) {
 	for _, tier := range amd64FusedTiers() {
@@ -26,14 +26,16 @@ func TestInputEntropyKernelsAmd64(t *testing.T) {
 			}
 		})
 	}
-	t.Run("avx512-x8", func(t *testing.T) {
-		if !hostHasZMMFused() {
-			t.Skip("requires VAES + AVX-512")
-		}
-		for n, f := range avx512X8Kernels() {
-			auditX8(t, "avx512", n, f)
-		}
-	})
+	for _, tier := range amd64X8Tiers() {
+		t.Run(tier.name+"-x8", func(t *testing.T) {
+			if !tier.ok {
+				t.Skip("tier not executable on this host")
+			}
+			for n, f := range tier.x8 {
+				auditX8(t, tier.name, n, f)
+			}
+		})
+	}
 	for _, tier := range amd64FusedX16Tiers() {
 		if tier.k == nil {
 			continue

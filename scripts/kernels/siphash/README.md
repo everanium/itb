@@ -28,14 +28,18 @@ cascade in one call (see `hashes/internal/siphashasm/siphashasm_fused.go`):
 both amd64 tiers), `siphash_fusedchain128_<shape>x4_neon_arm64.s`,
 `siphash_fusedchain128_<shape>x1_gpr_arm64.s`, and — at the three
 nonce-buf shapes 20 / 36 / 68 only —
-`siphash_fusedchain128_<shape>x8_avx512_amd64.s`, the eight-lane ZMM
-kernels the pixel pipeline drives through its eight-pixel stride on
-AVX-512F hosts: SipHash's four 64-bit state words fill a 512-bit
+`siphash_fusedchain128_<shape>x8_{avx512,avx2}_amd64.s`, the eight-lane
+kernels the pixel pipeline drives through its eight-pixel stride: on
+AVX-512F hosts SipHash's four 64-bit state words fill a 512-bit
 register at exactly eight lanes, so the eight-lane kernel runs the
-four-lane instruction stream over twice the lanes. The eight-lane arm is
-pinned to two calls of the four-lane EVEX kernel and to the pure-Go
-cascade by the in-package parity tests, and disarmed by
-`ITB_FORCE_CHAINHASH_X4=1`.
+four-lane instruction stream over twice the lanes; on AVX2 hosts the
+eight lanes run as two four-lane YMM groups with interleaved
+instruction streams — the register plan of the AVX2 batch-16 fill
+kernel, 15 of 16 registers, over words staged from the lane pointers —
+so the two SipRound dependency chains overlap on the vector ALUs. Each
+eight-lane arm is pinned to two calls of its tier's four-lane kernel
+and to the pure-Go cascade by the in-package parity tests, and disarmed
+by `ITB_FORCE_CHAINHASH_X4=1`.
 
 SipHash is keyed by the ChainHash seed pair alone, so every cascade
 round re-keys the state from the previous round's output XOR the
