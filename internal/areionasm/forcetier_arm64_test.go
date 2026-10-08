@@ -12,9 +12,10 @@ import (
 
 // TestForceHashTierApplied asserts that the arm64 dispatch flags carry
 // the state ITB_FORCE_HASH_TIER names: neon, sve2 and sve select the
-// crypto-extension kernels of every family, scalar clears them, and the
-// amd64 tokens keep auto-dispatch. When ITB_FORCE_INTERLOCK_PRF_FILL_TIER
-// is also set the batch-16 flag belongs to that variable.
+// crypto-extension kernels of every family, scalar clears them, and gpr
+// and the amd64 tokens keep auto-dispatch (this family has no gpr arm
+// on arm64). When ITB_FORCE_INTERLOCK_PRF_FILL_TIER is also set the
+// batch-16 flag belongs to that variable.
 func TestForceHashTierApplied(t *testing.T) {
 	tier := forcetier.HashTier()
 	x16Owned := forcetier.InterlockPRFFillTier() == ""
@@ -38,6 +39,14 @@ func TestForceHashTierApplied(t *testing.T) {
 		if x16Owned && HasARMAESX16 {
 			t.Fatal("scalar: HasARMAESX16 is still set")
 		}
+	case "gpr":
+		if FusedHasARMAES != aes.CPU.HasARMCrypto || HasARMAESBatched != aes.CPU.HasARMCrypto {
+			t.Fatalf("gpr: fused=%v batched=%v, want %v/%v (no arm in this family; auto-dispatch kept)",
+				FusedHasARMAES, HasARMAESBatched, aes.CPU.HasARMCrypto, aes.CPU.HasARMCrypto)
+		}
+		if x16Owned && HasARMAESX16 != aes.CPU.HasARMCrypto {
+			t.Fatalf("gpr: HasARMAESX16=%v, want %v (no arm in this family; auto-dispatch kept)", HasARMAESX16, aes.CPU.HasARMCrypto)
+		}
 	case "avx512", "vaesavx2", "avx2", "vex", "aesni":
 		t.Skipf("%s tier keeps auto-dispatch on arm64", tier)
 	default:
@@ -46,7 +55,9 @@ func TestForceHashTierApplied(t *testing.T) {
 }
 
 // TestForceInterlockPRFFillTierApplied asserts that the batch-16 flag
-// carries the state ITB_FORCE_INTERLOCK_PRF_FILL_TIER names.
+// carries the state ITB_FORCE_INTERLOCK_PRF_FILL_TIER names: neon arms
+// the NEON batch-16 arm, scalar clears it, and gpr names no arm of this
+// family and keeps the state the hash tier left.
 func TestForceInterlockPRFFillTierApplied(t *testing.T) {
 	tier := forcetier.InterlockPRFFillTier()
 	switch tier {
@@ -63,9 +74,23 @@ func TestForceInterlockPRFFillTierApplied(t *testing.T) {
 		if HasARMAESX16 {
 			t.Fatal("scalar: HasARMAESX16 is still set")
 		}
+	case "gpr":
+		if want := fillFlagFromHashTier(); HasARMAESX16 != want {
+			t.Fatalf("gpr: HasARMAESX16=%v, want %v (no arm in this family; hash tier state kept)", HasARMAESX16, want)
+		}
 	case "avx512", "vaesavx2", "avx2", "vex", "aesni":
 		t.Skipf("%s batch-16 tier keeps auto-dispatch on arm64", tier)
 	default:
 		t.Fatalf("unexpected validated tier %q", tier)
 	}
+}
+
+// fillFlagFromHashTier returns the batch-16 flag ITB_FORCE_HASH_TIER
+// leaves behind on arm64 — the state a batch-16 token that names no arm
+// of this family keeps.
+func fillFlagFromHashTier() bool {
+	if forcetier.HashTier() == "scalar" {
+		return false
+	}
+	return aes.CPU.HasARMCrypto
 }
