@@ -19,7 +19,7 @@ func TestMatchesXSys(t *testing.T) {
 	if SVE2BitPerm && !cpu.ARM64.HasSVE2 {
 		t.Error("SVE2BitPerm without x/sys HasSVE2")
 	}
-	if SSE2 || AESNI || AVX2 || AVX512F || VAESYMM || VAESZMM || BMI2 || BMI2Fast {
+	if SSE2 || AESNI || AVX2 || AVX512F || VAESYMM || VAESZMM || BMI2 {
 		t.Error("x86 field set on arm64")
 	}
 }

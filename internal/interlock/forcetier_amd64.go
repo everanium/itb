@@ -33,10 +33,8 @@ import (
 //	         scalar rankToMaskTriple48 paths run.
 //
 // Production auto-dispatch is unaffected when the variable is unset: a
-// CPU with hardware BMI2 keeps its BMI2 rank-mask and batched
-// chunk-apply fast path exactly as auto-selection would set them. The
-// avx2 token needs BMI2 only to execute, so it also forces the arm on
-// microcoded-PEXT hosts (AMD before Zen 3) for parity runs.
+// CPU with BMI2 keeps its BMI2 rank-mask and batched chunk-apply fast
+// path exactly as auto-selection would set them.
 func init() {
 	switch forcetier.InterlockTier() {
 	case "avx512":

@@ -45,15 +45,10 @@ var (
 	// bit together with AVX-512F.
 	VAESZMM bool
 
-	// BMI2 reports the BMI2 instructions (PEXT / PDEP among them),
-	// whatever their latency.
+	// BMI2 reports the BMI2 instructions (PEXT / PDEP among them).
+	// AMD parts before family 0x19 (Zen 1 / Zen 2) execute PEXT / PDEP
+	// in microcode with a latency that grows with the mask popcount.
 	BMI2 bool
-
-	// BMI2Fast reports BMI2 with PEXT / PDEP executed in hardware at
-	// fixed latency. AMD and Hygon parts before family 0x19 (Zen 1 /
-	// Zen 2 and older) execute the two instructions in microcode with
-	// data-dependent latency and report false.
-	BMI2Fast bool
 
 	// X86Vendor and X86Family describe the host for diagnostics.
 	X86Vendor string
@@ -72,27 +67,6 @@ var (
 	// extension (FEAT_SVE_BitPerm: BEXT / BDEP).
 	SVE2BitPerm bool
 )
-
-// vendorAMD and vendorHygon are the vendor names [bmi2Fast] treats as
-// microcoded-PEXT parts below family 0x19.
-const (
-	vendorAMD   = "AMD"
-	vendorHygon = "Hygon"
-)
-
-// bmi2Fast reports whether PEXT / PDEP run at fixed latency on a host
-// with the given BMI2 bit, vendor and family. AMD families below 0x19
-// (Zen 1 / Zen 2 at 0x17 and the earlier BMI2 parts) and Hygon (Zen 1
-// derived, family 0x18) microcode both instructions.
-func bmi2Fast(bmi2 bool, vendor string, family int) bool {
-	if !bmi2 {
-		return false
-	}
-	if (vendor == vendorAMD || vendor == vendorHygon) && family < 0x19 {
-		return false
-	}
-	return true
-}
 
 // vaesUsable reports whether the VAES bit is usable in a form whose
 // register state is reported by state (AVX2 for YMM, AVX-512F for ZMM).

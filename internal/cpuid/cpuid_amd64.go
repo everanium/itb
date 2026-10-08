@@ -19,5 +19,4 @@ func init() {
 	BMI2 = c.Supports(kcpuid.BMI2)
 	X86Vendor = c.VendorID.String()
 	X86Family = c.Family
-	BMI2Fast = bmi2Fast(BMI2, X86Vendor, X86Family)
 }

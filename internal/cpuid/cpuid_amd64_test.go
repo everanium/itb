@@ -49,13 +49,3 @@ func TestMatchesXSys(t *testing.T) {
 		}
 	}
 }
-
-// TestVendorNames pins the vendor spellings bmi2Fast compares against.
-func TestVendorNames(t *testing.T) {
-	if kcpuid.AMD.String() != vendorAMD || kcpuid.Hygon.String() != vendorHygon {
-		t.Fatalf("vendor names changed: %q %q", kcpuid.AMD.String(), kcpuid.Hygon.String())
-	}
-	if want := bmi2Fast(BMI2, kcpuid.CPU.VendorID.String(), kcpuid.CPU.Family); BMI2Fast != want {
-		t.Fatalf("BMI2Fast = %v, want %v", BMI2Fast, want)
-	}
-}
