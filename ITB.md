@@ -222,7 +222,7 @@ Without the barrier, an attacker could test 56 candidates per pixel, invert the 
 
 The construction utilizes two independent nonces: `main_nonce` (governing per-pixel and per-region derivations) and `interlock_nonce` (governing per-chunk mask selections). Both are generated internally from `crypto/rand` and enforced distinct. Reaching a caller-forced reuse condition through the shipped API is prevented by internal CSPRNG generation; birthday collisions at 512 bits require ~2^256 messages, and reuse can only be simulated in the lab via test overrides.
 
-At the default 512-bit width, birthday collision on either slot requires ~2^256 messages. Simultaneous collision on both slots requires a CSPRNG hardware failure.
+At the default 512-bit width, birthday collision on either slot requires ~2^256 messages. Within one message (64 MB cap, about 2^23.4 chunks of 48 bits) a repeated per-chunk mask is expected with probability ~2^-24. Simultaneous collision on both slots requires a CSPRNG hardware failure.
 
 Three collision scenarios exist in lab testing:
 

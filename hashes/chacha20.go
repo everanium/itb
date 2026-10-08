@@ -27,8 +27,8 @@ import (
 // block and carries its data byte count, so the encoding is injective
 // and prefix-free; every data byte enters a permutation input and the
 // chaining state is 256 bits at every step, so the 128-, 256-, and
-// 512-bit nonce configurations all reach the digest with full
-// strength. See hashes/internal/chacha20asm.HChaCha20Chain for the
+// 512-bit nonce configurations all reach the digest with no truncation
+// below the 256-bit chaining state. See hashes/internal/chacha20asm.HChaCha20Chain for the
 // step and the encoding.
 //
 // The closure allocates nothing: the per-call key, the block words

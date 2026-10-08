@@ -5,8 +5,12 @@
 //
 //   - Areion family ("areion256", "areion512") — keyed via the ITB
 //     registry HashFunc factories (hashes.Areion256PairWithKey /
-//     hashes.Areion512PairWithKey). The PRF hashes the input under a
-//     zero seed and serialises the resulting uint64 words little-endian.
+//     hashes.Areion512PairWithKey). The key is the registry fixed key,
+//     SoEM's first subkey; the registry seed argument, SoEM's second
+//     subkey, is derived from the key once at construction (see
+//     areionSeed256).
+//     The PRF hashes the input under that secret seed and serialises the
+//     resulting uint64 words little-endian.
 //   - BLAKE family ("blake2b256", "blake2b512", "blake2s", "blake3") —
 //     keyed via the upstream keyed-hash mode. The PRF output is the
 //     leading blockSize bytes of the keyed digest over the input.
@@ -23,6 +27,7 @@
 package hashprf
 
 import (
+	"crypto/sha512"
 	"encoding/binary"
 	"fmt"
 	"hash"
@@ -105,16 +110,84 @@ func New(name string, key []byte) (prf func(dst, in []byte), blockSize int, err 
 	}
 }
 
+// Domain-separation labels of the Areion second-subkey derivation. Each
+// width has its own label, so the two derivations never share an input.
+const (
+	areion256SubkeyLabel = "itb hashprf areion256 subkey"
+	areion512SubkeyLabel = "itb hashprf areion512 subkey"
+)
+
+// areionSeed256 derives the secret second SoEM subkey of the areion256 PRF
+// from its 32-byte key: seed = SHA-512(areion256SubkeyLabel || key)[:32],
+// read as four little-endian uint64 words.
+//
+// The registry Areion-SoEM round function is
+//
+//	F(m) = P(m ^ k1) ^ P(m ^ k2 ^ d)
+//
+// with k1 the fixed key, k2 the seed and d a public domain constant. Both
+// subkeys must be secret: with a public k2 the second term P(m ^ k2 ^ d)
+// is computable by anyone, so one known input / output block yields
+// P(m ^ k1), and one inverse permutation yields k1. Deriving k2 from the
+// key closes that path while the PRF key length stays the registry key
+// length. SHA-512 is used as a standard, domain-separated derivation that
+// lives entirely inside this package; modelling it as a random oracle, k2
+// is indistinguishable from a subkey drawn independently of k1 by anyone
+// who does not hold the key.
+//
+// Security. Two secret subkeys restore the SoEM key setting. The claim
+// is the birthday-level PRF assumption on SoEM in the state width n, with
+// the Areion permutation modelled as a random permutation and SHA-512 as
+// a random oracle for k2. No beyond-birthday bound is claimed: the
+// beyond-birthday SoEM bound of Chen, Lambooij and Mennink (CRYPTO 2019)
+// requires two independent permutations, and with one permutation
+// F(m) = F(m ^ k1 ^ k2 ^ d) for every m gives a matching birthday-bound
+// attack. The CBC-MAC chain over this round
+// function, length-tagged in its first block, carries the bound to
+// variable-length inputs with the q^2 * l^2 / 2^n term of
+// hashes/CONSTRUCTIONS.md, n = 256 for areion256 and n = 512 for
+// areion512.
+func areionSeed256(key []byte) [4]uint64 {
+	h := sha512.New()
+	h.Write([]byte(areion256SubkeyLabel))
+	h.Write(key)
+	var sum [sha512.Size]byte
+	h.Sum(sum[:0])
+	var seed [4]uint64
+	for i := range seed {
+		seed[i] = binary.LittleEndian.Uint64(sum[i*8:])
+	}
+	return seed
+}
+
+// areionSeed512 is the areion512 counterpart of areionSeed256:
+// seed = SHA-512(areion512SubkeyLabel || key), all 64 bytes, read as eight
+// little-endian uint64 words, under the same security statement at
+// n = 512.
+func areionSeed512(key []byte) [8]uint64 {
+	h := sha512.New()
+	h.Write([]byte(areion512SubkeyLabel))
+	h.Write(key)
+	var sum [sha512.Size]byte
+	h.Sum(sum[:0])
+	var seed [8]uint64
+	for i := range seed {
+		seed[i] = binary.LittleEndian.Uint64(sum[i*8:])
+	}
+	return seed
+}
+
 // newAreion256PRF builds a keyed Areion-SoEM-256 HashFunc256 and returns
-// a PRF that hashes the input under a zero seed and serialises the four
-// resulting uint64 words little-endian into 32 bytes.
+// a PRF that hashes the input under the key-derived seed of areionSeed256
+// and serialises the four resulting uint64 words little-endian into 32
+// bytes.
 func newAreion256PRF(key []byte) func(dst, in []byte) {
 	var k [32]byte
 	copy(k[:], key)
 	hf, _ := hashes.Areion256PairWithKey(k)
-	var zero [4]uint64
+	seed := areionSeed256(key)
 	return func(dst, in []byte) {
-		out := hf(in, zero)
+		out := hf(in, seed)
 		for i := 0; i < 4; i++ {
 			binary.LittleEndian.PutUint64(dst[i*8:], out[i])
 		}
@@ -122,15 +195,16 @@ func newAreion256PRF(key []byte) func(dst, in []byte) {
 }
 
 // newAreion512PRF builds a keyed Areion-SoEM-512 HashFunc512 and returns
-// a PRF that hashes the input under a zero seed and serialises the eight
-// resulting uint64 words little-endian into 64 bytes.
+// a PRF that hashes the input under the key-derived seed of areionSeed512
+// and serialises the eight resulting uint64 words little-endian into 64
+// bytes.
 func newAreion512PRF(key []byte) func(dst, in []byte) {
 	var k [64]byte
 	copy(k[:], key)
 	hf, _ := hashes.Areion512PairWithKey(k)
-	var zero [8]uint64
+	seed := areionSeed512(key)
 	return func(dst, in []byte) {
-		out := hf(in, zero)
+		out := hf(in, seed)
 		for i := 0; i < 8; i++ {
 			binary.LittleEndian.PutUint64(dst[i*8:], out[i])
 		}
@@ -247,8 +321,10 @@ func NewBatch(name string, key []byte) (batch func(dst, in *[4][]byte), blockSiz
 }
 
 // newAreion256BatchPRF builds a keyed Areion-SoEM-256 BatchHashFunc256 and
-// returns a 4-wide PRF: it hashes four inputs under a zero seed in one SIMD
-// batch and serialises each four-word result little-endian into 32 bytes.
+// returns a 4-wide PRF: it hashes four inputs in one SIMD batch, every lane
+// under the key-derived seed of areionSeed256 (the seed of the single-input
+// PRF, so the two paths are bit-exact), and serialises each four-word result
+// little-endian into 32 bytes.
 //
 // Returns nil on hosts where hashes.Areion256PairWithKey reports no batched
 // arm (non-VAES x86 / non-ARM-AES arm64 / -tags noitbasm builds). Callers
@@ -260,9 +336,13 @@ func newAreion256BatchPRF(key []byte) func(dst, in *[4][]byte) {
 	if bhf == nil {
 		return nil
 	}
-	var zero [4][4]uint64
+	var seeds [4][4]uint64
+	s := areionSeed256(key)
+	for lane := range seeds {
+		seeds[lane] = s
+	}
 	return func(dst, in *[4][]byte) {
-		out := bhf(in, zero)
+		out := bhf(in, seeds)
 		for lane := 0; lane < 4; lane++ {
 			for i := 0; i < 4; i++ {
 				binary.LittleEndian.PutUint64(dst[lane][i*8:], out[lane][i])
@@ -272,7 +352,8 @@ func newAreion256BatchPRF(key []byte) func(dst, in *[4][]byte) {
 }
 
 // newAreion512BatchPRF is the Areion-SoEM-512 counterpart: four inputs per
-// SIMD batch, each eight-word result serialised into 64 bytes. Returns nil
+// SIMD batch, every lane under the key-derived seed of areionSeed512, each
+// eight-word result serialised into 64 bytes. Returns nil
 // on hosts without a batched arm, per the SoEM-256 rationale above.
 func newAreion512BatchPRF(key []byte) func(dst, in *[4][]byte) {
 	var k [64]byte
@@ -281,9 +362,13 @@ func newAreion512BatchPRF(key []byte) func(dst, in *[4][]byte) {
 	if bhf == nil {
 		return nil
 	}
-	var zero [4][8]uint64
+	var seeds [4][8]uint64
+	s := areionSeed512(key)
+	for lane := range seeds {
+		seeds[lane] = s
+	}
 	return func(dst, in *[4][]byte) {
-		out := bhf(in, zero)
+		out := bhf(in, seeds)
 		for lane := 0; lane < 4; lane++ {
 			for i := 0; i < 8; i++ {
 				binary.LittleEndian.PutUint64(dst[lane][i*8:], out[lane][i])

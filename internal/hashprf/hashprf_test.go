@@ -2,8 +2,12 @@ package hashprf
 
 import (
 	"bytes"
+	"crypto/sha512"
+	"encoding/binary"
 	"encoding/hex"
 	"testing"
+
+	aes "github.com/jedisct1/go-aes"
 
 	"github.com/everanium/itb/hashes"
 )
@@ -125,8 +129,8 @@ func TestPRFRegression(t *testing.T) {
 		name string
 		want string
 	}{
-		{hashes.CipherAreion256, "4e4dba2c59c8fe930649304b16365131028038d4efe7dd1c351b7e6b5d56b880"},
-		{hashes.CipherAreion512, "571772eb3d57f5d75be5b28fd960bdb32fab0594dea148decaa27002c99b1dd29f881c3e6347a512269b71e8685ef3cf38f2f655d062fa70af49cf9de8130213"},
+		{hashes.CipherAreion256, "f8f5c5f76d1f9dcf4928b3437be92f9c50092d22293dee7398570ff31b9796fc"},
+		{hashes.CipherAreion512, "4b30541da788b56659671cc10c0b0b9a252e757f49e54ab3a78c610d3f3bf61efbe74f82e5294d4be5c3a4a645c56329d5e75b171c651c0857e0de622f9b35e0"},
 		{hashes.CipherBLAKE2b256, "7a172a3e6d568847321a0f43318e77f8fa0566fd38230a0f39232d729a7d2fda"},
 		{hashes.CipherBLAKE2b512, "3a8f333fff6613bfc0b0d0490f9529eee4642b91e7df425e4da1bc4f290ba38b36ee17e8f6130916985d38ee0a46ae4a45c03c9018252b770b011552c48c786d"},
 		{hashes.CipherBLAKE2s, "45d3b20804c1380a77049cb9c89829e23d7e32a5a98bc15a9aea274fcdf19c97"},
@@ -304,6 +308,216 @@ func TestNewBatchErrors(t *testing.T) {
 			if _, _, _, err := NewBatch(p.name, make([]byte, bad)); err == nil {
 				t.Errorf("NewBatch(%q): accepted key length %d (want %d)", p.name, bad, p.keySize)
 			}
+		}
+	}
+}
+
+// soemState256 is the Areion-SoEM-256 CBC-MAC state of a single-round input:
+// LE64(len(in)) || in, zero-padded to 32 bytes (len(in) <= 24).
+func soemState256(in []byte) [32]byte {
+	var m [32]byte
+	binary.LittleEndian.PutUint64(m[:8], uint64(len(in)))
+	copy(m[8:], in)
+	return m
+}
+
+// soemState512 is the 64-byte counterpart (len(in) <= 56).
+func soemState512(in []byte) [64]byte {
+	var m [64]byte
+	binary.LittleEndian.PutUint64(m[:8], uint64(len(in)))
+	copy(m[8:], in)
+	return m
+}
+
+// recoverK1x256 runs the one-block key-recovery attack against a SoEM-256
+// round function whose second subkey is the public value zero:
+// k1 = m ^ P^-1(F(m) ^ P(m ^ d)), with d = {0x01, 0, ...}.
+func recoverK1x256(m [32]byte, out []byte) []byte {
+	var b aes.Areion256
+	copy(b[:], m[:])
+	b[0] ^= 0x01
+	b.Permute()
+	var a aes.Areion256
+	for i := range a {
+		a[i] = out[i] ^ b[i]
+	}
+	a.InversePermute()
+	k := make([]byte, 32)
+	for i := range k {
+		k[i] = a[i] ^ m[i]
+	}
+	return k
+}
+
+// recoverK1x512 is the SoEM-512 counterpart of recoverK1x256.
+func recoverK1x512(m [64]byte, out []byte) []byte {
+	var b aes.Areion512
+	copy(b[:], m[:])
+	b[0] ^= 0x01
+	b.Permute()
+	var a aes.Areion512
+	for i := range a {
+		a[i] = out[i] ^ b[i]
+	}
+	a.InversePermute()
+	k := make([]byte, 64)
+	for i := range k {
+		k[i] = a[i] ^ m[i]
+	}
+	return k
+}
+
+// TestAreionOneBlockKeyRecovery runs the one-block key-recovery attack that
+// applies to an Areion-SoEM round function with a public second subkey. The
+// attack must recover the key from a registry hash evaluated under the zero
+// seed (negative control: it confirms the attack itself is correct), and must
+// fail against the hashprf PRF, single and batched, whose second subkey is
+// derived from the key. The input is 24 bytes, the ctr keystream block shape
+// (nonce || counter), which runs the single-round CBC-MAC path, so the SoEM
+// input state is fully known to the attacker.
+func TestAreionOneBlockKeyRecovery(t *testing.T) {
+	in := make([]byte, 24)
+	for i := range in {
+		in[i] = byte(0xc0 + i)
+	}
+
+	t.Run(hashes.CipherAreion256, func(t *testing.T) {
+		key := make([]byte, 32)
+		for i := range key {
+			key[i] = byte(0x31 * (i + 1))
+		}
+		var k [32]byte
+		copy(k[:], key)
+		m := soemState256(in)
+
+		// Negative control: zero second subkey.
+		hf, _ := hashes.Areion256PairWithKey(k)
+		w := hf(in, [4]uint64{})
+		zeroOut := make([]byte, 32)
+		for i := 0; i < 4; i++ {
+			binary.LittleEndian.PutUint64(zeroOut[i*8:], w[i])
+		}
+		if got := recoverK1x256(m, zeroOut); !bytes.Equal(got, key) {
+			t.Fatalf("negative control: attack failed against the zero-seed construction (got %x)", got)
+		}
+
+		prf, bs, err := New(hashes.CipherAreion256, key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := make([]byte, bs)
+		prf(out, in)
+		if bytes.Equal(out, zeroOut) {
+			t.Fatal("PRF output equals the zero-seed output")
+		}
+		if got := recoverK1x256(m, out); bytes.Equal(got, key) {
+			t.Fatal("one-block key recovery succeeded against the PRF")
+		}
+
+		batch, bbs, ok, err := NewBatch(hashes.CipherAreion256, key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !ok {
+			t.Log("no batch path on this host; batched arm not exercised")
+			return
+		}
+		var bin, bout [4][]byte
+		for lane := range bin {
+			bin[lane] = in
+			bout[lane] = make([]byte, bbs)
+		}
+		batch(&bout, &bin)
+		for lane := range bout {
+			if !bytes.Equal(bout[lane], out) {
+				t.Errorf("batch lane %d differs from the single-input PRF", lane)
+			}
+			if got := recoverK1x256(m, bout[lane]); bytes.Equal(got, key) {
+				t.Errorf("batch lane %d: one-block key recovery succeeded", lane)
+			}
+		}
+	})
+
+	t.Run(hashes.CipherAreion512, func(t *testing.T) {
+		key := make([]byte, 64)
+		for i := range key {
+			key[i] = byte(0x53 * (i + 1))
+		}
+		var k [64]byte
+		copy(k[:], key)
+		m := soemState512(in)
+
+		hf, _ := hashes.Areion512PairWithKey(k)
+		w := hf(in, [8]uint64{})
+		zeroOut := make([]byte, 64)
+		for i := 0; i < 8; i++ {
+			binary.LittleEndian.PutUint64(zeroOut[i*8:], w[i])
+		}
+		if got := recoverK1x512(m, zeroOut); !bytes.Equal(got, key) {
+			t.Fatalf("negative control: attack failed against the zero-seed construction (got %x)", got)
+		}
+
+		prf, bs, err := New(hashes.CipherAreion512, key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := make([]byte, bs)
+		prf(out, in)
+		if bytes.Equal(out, zeroOut) {
+			t.Fatal("PRF output equals the zero-seed output")
+		}
+		if got := recoverK1x512(m, out); bytes.Equal(got, key) {
+			t.Fatal("one-block key recovery succeeded against the PRF")
+		}
+
+		batch, bbs, ok, err := NewBatch(hashes.CipherAreion512, key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !ok {
+			t.Log("no batch path on this host; batched arm not exercised")
+			return
+		}
+		var bin, bout [4][]byte
+		for lane := range bin {
+			bin[lane] = in
+			bout[lane] = make([]byte, bbs)
+		}
+		batch(&bout, &bin)
+		for lane := range bout {
+			if !bytes.Equal(bout[lane], out) {
+				t.Errorf("batch lane %d differs from the single-input PRF", lane)
+			}
+			if got := recoverK1x512(m, bout[lane]); bytes.Equal(got, key) {
+				t.Errorf("batch lane %d: one-block key recovery succeeded", lane)
+			}
+		}
+	})
+}
+
+// TestAreionSubkeyDerivation pins the second-subkey derivation against an
+// independent SHA-512 evaluation, so a change to the label, the hash or the
+// word order is caught directly rather than only through output vectors.
+func TestAreionSubkeyDerivation(t *testing.T) {
+	key32 := make([]byte, 32)
+	key64 := make([]byte, 64)
+	for i := range key64 {
+		key64[i] = byte(i)
+	}
+	copy(key32, key64)
+
+	sum := sha512.Sum512(append([]byte("itb hashprf areion256 subkey"), key32...))
+	s256 := areionSeed256(key32)
+	for i := range s256 {
+		if want := binary.LittleEndian.Uint64(sum[i*8:]); s256[i] != want {
+			t.Errorf("areion256 seed word %d = %#x, want %#x", i, s256[i], want)
+		}
+	}
+	sum = sha512.Sum512(append([]byte("itb hashprf areion512 subkey"), key64...))
+	s512 := areionSeed512(key64)
+	for i := range s512 {
+		if want := binary.LittleEndian.Uint64(sum[i*8:]); s512[i] != want {
+			t.Errorf("areion512 seed word %d = %#x, want %#x", i, s512[i], want)
 		}
 	}
 }

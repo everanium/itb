@@ -102,6 +102,20 @@ func scratchAtLeast(pool *sync.Pool, need int) (*[]byte, []byte) {
 // nonce width by construction; no caller-side knowledge of the chain-
 // absorb pattern is required.
 //
+// Wide builders and seed width
+//
+// BuildCBCMACChainAbsorb256 / 512, BuildSpongeChainAbsorb256 / 512 and
+// BuildARXChainAbsorb256 (with its HMAC alias) concatenate two or four
+// independent 128-bit passes, each keyed by its own pair of seed words;
+// BuildARXChainAbsorb512 absorbs all eight seed words in one hash call
+// and is not affected. Under ChainHash a lane of the next round
+// depends only on the same lane of the previous round, so a 256- or 512-bit seed over one of these
+// closures runs as two or four independent 128-bit cascades, each over
+// a half or a quarter of the seed components. The effective-security
+// figure of [itb.Seed256] / [itb.Seed512] assumes a primitive whose state
+// mixes every seed word; for these builders each lane carries its own
+// share of the key bits.
+//
 // Performance note
 //
 // The chain-absorb state / scratch buffer escapes to the heap in every
@@ -224,7 +238,7 @@ func BuildCBCMACChainAbsorb512(block cipher.Block) itb.HashFunc512 {
 
 // cbcMACChainAbsorbOne runs one CBC-MAC chain over data and returns
 // the first 16 bytes of the final state as a (lo, hi) uint64 pair.
-// The domain byte is OR'd into the high byte of the seed0 word in
+// The domain byte is XOR'd into the high byte of the seed0 word in
 // the initial state to differentiate parallel chains in the 256/512
 // width builders. seed1 is XOR'd with length-tag in the high word.
 func cbcMACChainAbsorbOne(block cipher.Block, state []byte, data []byte, seed0, seed1 uint64, domain byte) (uint64, uint64) {
