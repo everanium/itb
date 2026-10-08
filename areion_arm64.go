@@ -20,12 +20,21 @@ import (
 // lanes carried interleaved across (b0, b1) — for lane i, b0[i*16:i*16+16]
 // holds the first 16-byte AES block and b1[i*16:i*16+16] the second.
 //
-// On arm64 this dispatches to `areionasm.Areion256Permutex4` — a single
-// Plan9 AArch64 ASM block running all 10 rounds across 4 independent
-// ARM AES extension chains. Bit-exact with the portable scalar
-// reference (verified by parity tests in areion_test.go).
+// On arm64 with the ARM Crypto Extension ([areionasm.HasARMAESBatched])
+// this dispatches to `areionasm.Areion256Permutex4` — a single Plan9
+// AArch64 ASM block running all 10 rounds across 4 independent ARM AES
+// extension chains. Bit-exact with the portable scalar reference
+// (verified by parity tests in areion_test.go). Without the extension,
+// or under ITB_FORCE_HASH_TIER=scalar, the portable Go permutation runs.
 func areion256Permutex4SoA(b0, b1 *aes.Block4) {
-	areionasm.Areion256Permutex4(b0, b1)
+	if areionasm.HasARMAESBatched {
+		areionasm.Areion256Permutex4(b0, b1)
+		return
+	}
+	var states [4][32]byte
+	unpack256x4SoA(b0, b1, &states)
+	areion256Permutex4Default(&states)
+	*b0, *b1 = pack256x4SoA(&states)
 }
 
 // areion512Permutex4SoA runs the Areion512 permutation on each of the 4
@@ -35,9 +44,17 @@ func areion256Permutex4SoA(b0, b1 *aes.Block4) {
 // On arm64 this dispatches to `areionasm.Areion512Permutex4` — a single
 // Plan9 AArch64 ASM block running all 15 rounds (12 main + 3 final) and
 // the spec final cyclic rotation across 4 independent ARM AES extension
-// chains.
+// chains, under the same [areionasm.HasARMAESBatched] gate and portable
+// fallback as the 256-bit case.
 func areion512Permutex4SoA(b0, b1, b2, b3 *aes.Block4) {
-	areionasm.Areion512Permutex4(b0, b1, b2, b3)
+	if areionasm.HasARMAESBatched {
+		areionasm.Areion512Permutex4(b0, b1, b2, b3)
+		return
+	}
+	var states [4][64]byte
+	unpack512x4SoA(b0, b1, b2, b3, &states)
+	areion512Permutex4Default(&states)
+	*b0, *b1, *b2, *b3 = pack512x4SoA(&states)
 }
 
 // areionSoEM256Permutex4SoA — fused per-half permute + SoEM XOR fold.
