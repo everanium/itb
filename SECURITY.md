@@ -200,7 +200,7 @@ For detailed per-CVE analysis of 20+ hardware attacks (Spectre variants, Downfal
 
 ### CGO Backend Side-Channel Equivalence
 
-The optional C pixel processing backend (`CGO_ENABLED=1`, GCC `-O3 -mavx2`) was verified for side-channel equivalence with the Pure Go backend:
+The optional C pixel processing backend (`CGO_ENABLED=1`, GCC `-O3`, SIMD tiers selected at runtime) was verified for side-channel equivalence with the Pure Go backend:
 
 | Concern | Status | Detail |
 |---|---|---|

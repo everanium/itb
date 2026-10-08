@@ -4,7 +4,6 @@ package itb
 
 /*
 #cgo CFLAGS: -O3
-#cgo amd64 CFLAGS: -mavx2
 
 #include <stdint.h>
 

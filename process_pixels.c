@@ -33,7 +33,10 @@ static int itb_parity_tier_cap(void) {
 }
 #endif
 
-// AVX2 auto-vectorization is enabled via cgo CFLAGS (-mavx2 on amd64).
+// The translation unit compiles for the baseline ISA (SSE2 on amd64); GCC
+// auto-vectorises the plain-C path at that width. Every wider SIMD tier
+// below carries its own target attribute and is selected at runtime, so a
+// CGO build runs on any x86-64 host.
 // On x86_64 with GFNI present, the per-pixel kernel additionally dispatches
 // to a 4-pixel SIMD batch using vgf2p8affineqb for Phase 4 rotation and
 // Phase 5 noise-bit insertion — two of the per-pixel operations that GCC
@@ -439,9 +442,13 @@ static inline void process4PixelsDecodeAVX2GFNI(
     pack56bitsX4AVX2(data, dataLen, bitIndex, vals);
 }
 
+#pragma GCC pop_options
+
 // itb_simd_avx2_gfni_supported caches the runtime CPU feature detection so the
 // hot loop reads a hoisted flag rather than calling __builtin_cpu_supports per
 // chunk. -1 means uninitialised; resolved on first call.
+// The resolver sits outside the target pragma so it compiles for baseline
+// x86-64: it runs on every host before any tier is selected.
 static int itb_simd_avx2_gfni_supported = -1;
 
 static inline int itb_check_avx2_gfni(void) {
@@ -455,8 +462,6 @@ static inline int itb_check_avx2_gfni(void) {
     }
     return v;
 }
-
-#pragma GCC pop_options
 
 // =============================================================================
 // AVX-512 + GFNI 8-pixel SIMD batch (Tier A)
@@ -788,8 +793,12 @@ static inline void process8PixelsDecodeAVX512GFNI(
     pack56bitsX8AVX512VBMI(data, dataLen, bitIndex, vals);
 }
 
+#pragma GCC pop_options
+
 // itb_simd_avx512_gfni_supported caches the AVX-512+GFNI feature detection.
 // -1 means uninitialised; resolved on first call.
+// The resolver sits outside the target pragma so it compiles for baseline
+// x86-64: it runs on every host before any tier is selected.
 static int itb_simd_avx512_gfni_supported = -1;
 
 static inline int itb_check_avx512_gfni(void) {
@@ -817,8 +826,6 @@ static inline int itb_check_avx512_gfni(void) {
     }
     return v;
 }
-
-#pragma GCC pop_options
 
 // =============================================================================
 // AVX2 no-GFNI 4-pixel SIMD batch (Tier B')
@@ -1105,8 +1112,12 @@ static inline void process4PixelsDecodeAVX2NoGFNI(
     pack56bitsX4AVX2NoGFNI(data, dataLen, bitIndex, vals);
 }
 
+#pragma GCC pop_options
+
 // itb_simd_avx2_nogfni_supported caches the AVX2 feature detection for
 // the Tier B' path. -1 means uninitialised; resolved on first call.
+// The resolver sits outside the target pragma so it compiles for baseline
+// x86-64: it runs on every host before any tier is selected.
 static int itb_simd_avx2_nogfni_supported = -1;
 
 static inline int itb_check_avx2_nogfni(void) {
@@ -1120,8 +1131,6 @@ static inline int itb_check_avx2_nogfni(void) {
     }
     return v;
 }
-
-#pragma GCC pop_options
 
 // =============================================================================
 // AVX-512 no-GFNI no-VBMI 8-pixel SIMD batch (Tier A')
@@ -1494,9 +1503,13 @@ static inline void process8PixelsDecodeAVX512NoGFNI(
     pack56bitsX8AVX512NoVBMI(data, dataLen, bitIndex, vals);
 }
 
+#pragma GCC pop_options
+
 // itb_simd_avx512_nogfni_supported caches the AVX-512 F+BW+VL feature
 // detection for the Tier A' path. -1 means uninitialised; resolved on
 // first call.
+// The resolver sits outside the target pragma so it compiles for baseline
+// x86-64: it runs on every host before any tier is selected.
 static int itb_simd_avx512_nogfni_supported = -1;
 
 static inline int itb_check_avx512_nogfni(void) {
@@ -1513,20 +1526,19 @@ static inline int itb_check_avx512_nogfni(void) {
     return v;
 }
 
-#pragma GCC pop_options
-
 #endif  // x86_64 with GFNI
 
 // itb_process_pixels performs per-pixel encode/decode using pre-computed hashes.
 // Two-stage layout: a 4-pixel batched outer loop runs while four full-chCount
 // pixels still fit in the remaining bit budget, packing per-pixel data into
-// vals[4][8] / xors[4][8] arrays (32 bytes each) so GCC -O3 -mavx2
+// vals[4][8] / xors[4][8] arrays (32 bytes each) so GCC -O3
 // auto-vectorises the byte-parallel phases (Phase 3 XOR, the channel-byte
-// load/store in extract/insert) to single YMM ops. Phases 4 (rotate) and 5
-// (insert) stay scalar-unrolled because their per-pixel variable shifts have
-// no AVX2 8-bit variable-shift primitive — explicit intrinsics for those land
-// in a separate change. The scalar tail loop handles 0-3 leftover pixels and
-// any pixel with partial chCount (last pixel of an underfull bit budget).
+// load/store in extract/insert) to 16-byte vector ops (SSE2 on amd64, NEON
+// on arm64). Phases 4 (rotate) and 5 (insert) stay scalar-unrolled because
+// their per-pixel variable shifts have no AVX2 8-bit variable-shift
+// primitive — explicit intrinsics for those land in a separate change. The
+// scalar tail loop handles 0-3 leftover pixels and any pixel with partial
+// chCount (last pixel of an underfull bit budget).
 #pragma GCC diagnostic push
 #if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC diagnostic ignored "-Wstringop-overflow"
@@ -1674,8 +1686,9 @@ void itb_process_pixels(
     // 4-pixel batched loop. Runs while four full-chCount pixels still fit in
     // the remaining bit budget; otherwise the scalar tail below picks up the
     // remainder. Packed vals[4][8] / xors[4][8] arrays expose 32 contiguous
-    // bytes per phase, which GCC widens to YMM ops for the byte-parallel
-    // phases on amd64+AVX2 (and to NEON on ARM via the same auto-vec path).
+    // bytes per phase, which GCC widens to 16-byte vector ops for the
+    // byte-parallel phases (SSE2 on amd64, NEON on ARM via the same auto-vec
+    // path). On amd64 this body runs only on hosts without AVX2.
     while (p + 4 <= totalP && bitIndex + 4 * DataBitsPerPixel <= totalBits) {
         if (p + PrefetchDistance < totalP) {
             int prefetchIdx = basePixel + PrefetchDistance;
@@ -1756,8 +1769,8 @@ void itb_process_pixels(
             }
 
             // Phase 3: XOR — 32 contiguous bytes accessed via flat-pointer
-            // cast so GCC -O3 -mavx2 sees the linear iteration pattern and
-            // widens the loop to a single VPXOR ymm. The nested-array form
+            // cast so GCC -O3 sees the linear iteration pattern and
+            // widens the loop to vector XORs. The nested-array form
             // looks equivalent at source level, but GCC declined to vectorise
             // it (verified via -fopt-info-vec-missed) — flat pointer over the
             // exact same memory removes the ambiguity.
@@ -1824,15 +1837,15 @@ void itb_process_pixels(
 
             // Phase 3: derive xor masks from each pixel's xorMask uint64
             // (mirrors encode Phase 2; split out so the apply-XOR step below
-            // collapses to a flat 32-byte loop GCC widens to a single YMM op).
+            // collapses to a flat 32-byte loop GCC widens to vector XORs).
             for (int b = 0; b < 4; b++) {
                 for (int ch = 0; ch < Channels; ch++) {
                     xors[b][ch] = (uint8_t)((xorMask[b] >> (unsigned)(ch * DataBitsPerChannel)) & 0x7F);
                 }
             }
 
-            // Phase 3: XOR — 32 contiguous bytes via flat-pointer cast, single
-            // VPXOR ymm under -O3 -mavx2. See encode-side note for why the
+            // Phase 3: XOR — 32 contiguous bytes via flat-pointer cast,
+            // vectorised under -O3. See encode-side note for why the
             // flat pointer is needed.
             {
                 uint8_t *valsFlat = &vals[0][0];
