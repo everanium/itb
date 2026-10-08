@@ -1528,6 +1528,9 @@ def render_all():
 
 def main(argv):
     check = "--check" in argv
+    unknown = [a for a in argv if a != "--check"]
+    if unknown:
+        raise SystemExit(f"gen_fused_kernels.py: unknown argument(s) {unknown}; known: --check")
     files = render_all()
     drift = 0
     for name, text in sorted(files.items()):
