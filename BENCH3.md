@@ -32,7 +32,7 @@ The AES-ITB-128 rows appear here, in the AMD EPYC 9655P section further down, an
 | **BLAKE3** | 256 | 512 | PRF | 299 | 343 | 343 | 309 | 356 | 371 |
 | **AES-CMAC** | 128 | 512 | PRF | 509 | 580 | 665 | 501 | 635 | 758 |
 | **SipHash-2-4** | 128 | 512 | PRF | 375 | 419 | 457 | 385 | 442 | 481 |
-| **ChaCha20** | 256 | 512 | PRF | 271 | 304 | 307 | 275 | 316 | 326 |
+| **ChaCha20** | 256 | 512 | PRF | 147 | 172 | 171 | 150 | 174 | 175 |
 
 ### ITB Triple 1024-bit (security: P × 2^(3×1024) = P × 2^3072)
 
@@ -47,7 +47,7 @@ The AES-ITB-128 rows appear here, in the AMD EPYC 9655P section further down, an
 | **BLAKE3** | 256 | 1024 | PRF | 201 | 225 | 227 | 205 | 233 | 231 |
 | **AES-CMAC** | 128 | 1024 | PRF | 402 | 459 | 505 | 413 | 472 | 549 |
 | **SipHash-2-4** | 128 | 1024 | PRF | 254 | 280 | 296 | 257 | 290 | 307 |
-| **ChaCha20** | 256 | 1024 | PRF | 174 | 192 | 195 | 175 | 199 | 198 |
+| **ChaCha20** | 256 | 1024 | PRF | 89 | 100 | 100 | 89 | 100 | 98 |
 
 ### ITB Triple 2048-bit (security: P × 2^(3×2048) = P × 2^6144)
 
@@ -62,7 +62,7 @@ The AES-ITB-128 rows appear here, in the AMD EPYC 9655P section further down, an
 | **BLAKE3** | 256 | 2048 | PRF | 121 | 134 | 132 | 122 | 136 | 134 |
 | **AES-CMAC** | 128 | 2048 | PRF | 280 | 304 | 337 | 280 | 324 | 345 |
 | **SipHash-2-4** | 128 | 2048 | PRF | 154 | 167 | 173 | 156 | 169 | 176 |
-| **ChaCha20** | 256 | 2048 | PRF | 102 | 112 | 111 | 102 | 112 | 113 |
+| **ChaCha20** | 256 | 2048 | PRF | 49 | 53 | 52 | 49 | 57 | 55 |
 
 ## AMD EPYC 9655P 96C/192HT
 
@@ -79,7 +79,7 @@ The AES-ITB-128 rows appear here, in the AMD EPYC 9655P section further down, an
 | **BLAKE3** | 256 | 512 | PRF | 767 | 1348 | 1536 | 861 | 1649 | 1818 |
 | **AES-CMAC** | 128 | 512 | PRF | 985 | 1754 | 2174 | 1141 | 2283 | 2609 |
 | **SipHash-2-4** | 128 | 512 | PRF | 869 | 1575 | 1852 | 1024 | 2008 | 2246 |
-| **ChaCha20** | 256 | 512 | PRF | 737 | 1327 | 1453 | 820 | 1517 | 1625 |
+| **ChaCha20** | 256 | 512 | PRF | 575 | 886 | 986 | 621 | 978 | 1089 |
 
 ### ITB Triple 1024-bit (security: P × 2^(3×1024) = P × 2^3072)
 
@@ -94,7 +94,7 @@ The AES-ITB-128 rows appear here, in the AMD EPYC 9655P section further down, an
 | **BLAKE3** | 256 | 1024 | PRF | 615 | 1064 | 1142 | 702 | 1210 | 1275 |
 | **AES-CMAC** | 128 | 1024 | PRF | 852 | 1578 | 1829 | 980 | 2017 | 2145 |
 | **SipHash-2-4** | 128 | 1024 | PRF | 754 | 1405 | 1492 | 843 | 1616 | 1787 |
-| **ChaCha20** | 256 | 1024 | PRF | 589 | 976 | 1032 | 635 | 1081 | 1154 |
+| **ChaCha20** | 256 | 1024 | PRF | 410 | 570 | 668 | 449 | 619 | 712 |
 
 ### ITB Triple 2048-bit (security: P × 2^(3×2048) = P × 2^6144)
 
@@ -109,7 +109,7 @@ The AES-ITB-128 rows appear here, in the AMD EPYC 9655P section further down, an
 | **BLAKE3** | 256 | 2048 | PRF | 477 | 726 | 798 | 519 | 802 | 878 |
 | **AES-CMAC** | 128 | 2048 | PRF | 704 | 1336 | 1440 | 804 | 1553 | 1627 |
 | **SipHash-2-4** | 128 | 2048 | PRF | 611 | 1001 | 1035 | 665 | 1103 | 1165 |
-| **ChaCha20** | 256 | 2048 | PRF | 439 | 656 | 726 | 472 | 683 | 778 |
+| **ChaCha20** | 256 | 2048 | PRF | 276 | 356 | 406 | 288 | 385 | 435 |
 
 ## ARM64 Graviton 4 16C/16HT
 
@@ -126,7 +126,7 @@ The AES-ITB-128 rows appear here, in the AMD EPYC 9655P section further down, an
 | **BLAKE3** | 256 | 512 | PRF | 158 | 158 | 158 | 159 | 159 | 161 |
 | **AES-CMAC** | 128 | 512 | PRF | 346 | 358 | 352 | 359 | 380 | 374 |
 | **SipHash-2-4** | 128 | 512 | PRF | 181 | 180 | 180 | 184 | 190 | 186 |
-| **ChaCha20** | 256 | 512 | PRF | 141 | 141 | 140 | 142 | 142 | 144 |
+| **ChaCha20** | 256 | 512 | PRF | 77 | 77 | 78 | 76 | 77 | 79 |
 
 ### ITB Triple 1024-bit (security: P × 2^(3×1024) = P × 2^3072)
 
@@ -141,7 +141,7 @@ The AES-ITB-128 rows appear here, in the AMD EPYC 9655P section further down, an
 | **BLAKE3** | 256 | 1024 | PRF | 99 | 99 | 99 | 100 | 101 | 101 |
 | **AES-CMAC** | 128 | 1024 | PRF | 271 | 278 | 271 | 280 | 294 | 287 |
 | **SipHash-2-4** | 128 | 1024 | PRF | 114 | 112 | 114 | 112 | 115 | 116 |
-| **ChaCha20** | 256 | 1024 | PRF | 84 | 85 | 85 | 86 | 86 | 87 |
+| **ChaCha20** | 256 | 1024 | PRF | 42 | 43 | 43 | 42 | 43 | 43 |
 
 ### ITB Triple 2048-bit (security: P × 2^(3×2048) = P × 2^6144)
 
@@ -156,7 +156,7 @@ The AES-ITB-128 rows appear here, in the AMD EPYC 9655P section further down, an
 | **BLAKE3** | 256 | 2048 | PRF | 55 | 55 | 57 | 55 | 56 | 57 |
 | **AES-CMAC** | 128 | 2048 | PRF | 189 | 191 | 191 | 194 | 199 | 196 |
 | **SipHash-2-4** | 128 | 2048 | PRF | 65 | 65 | 65 | 66 | 65 | 67 |
-| **ChaCha20** | 256 | 2048 | PRF | 46 | 48 | 48 | 45 | 48 | 48 |
+| **ChaCha20** | 256 | 2048 | PRF | 22 | 23 | 23 | 22 | 23 | 23 |
 
 ## DRBG ITB Container Fill (Benchmark)
 
