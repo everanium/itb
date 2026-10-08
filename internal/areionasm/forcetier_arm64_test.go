@@ -5,8 +5,7 @@ package areionasm
 import (
 	"testing"
 
-	aes "github.com/jedisct1/go-aes"
-
+	"github.com/everanium/itb/internal/cpuid"
 	"github.com/everanium/itb/internal/forcetier"
 )
 
@@ -23,7 +22,7 @@ func TestForceHashTierApplied(t *testing.T) {
 	case "":
 		t.Skip("ITB_FORCE_HASH_TIER unset; auto-dispatch")
 	case "neon", "sve2", "sve":
-		if !aes.CPU.HasARMCrypto {
+		if !cpuid.ARMAES {
 			t.Skipf("%s tier not executable on this host", tier)
 		}
 		if !FusedHasARMAES || !HasARMAESBatched {
@@ -40,12 +39,12 @@ func TestForceHashTierApplied(t *testing.T) {
 			t.Fatal("scalar: HasARMAESX16 is still set")
 		}
 	case "gpr":
-		if FusedHasARMAES != aes.CPU.HasARMCrypto || HasARMAESBatched != aes.CPU.HasARMCrypto {
+		if FusedHasARMAES != cpuid.ARMAES || HasARMAESBatched != cpuid.ARMAES {
 			t.Fatalf("gpr: fused=%v batched=%v, want %v/%v (no arm in this family; auto-dispatch kept)",
-				FusedHasARMAES, HasARMAESBatched, aes.CPU.HasARMCrypto, aes.CPU.HasARMCrypto)
+				FusedHasARMAES, HasARMAESBatched, cpuid.ARMAES, cpuid.ARMAES)
 		}
-		if x16Owned && HasARMAESX16 != aes.CPU.HasARMCrypto {
-			t.Fatalf("gpr: HasARMAESX16=%v, want %v (no arm in this family; auto-dispatch kept)", HasARMAESX16, aes.CPU.HasARMCrypto)
+		if x16Owned && HasARMAESX16 != cpuid.ARMAES {
+			t.Fatalf("gpr: HasARMAESX16=%v, want %v (no arm in this family; auto-dispatch kept)", HasARMAESX16, cpuid.ARMAES)
 		}
 	case "avx512", "vaesavx2", "avx2", "vex", "aesni":
 		t.Skipf("%s tier keeps auto-dispatch on arm64", tier)
@@ -64,7 +63,7 @@ func TestForceInterlockPRFFillTierApplied(t *testing.T) {
 	case "":
 		t.Skip("ITB_FORCE_INTERLOCK_PRF_FILL_TIER unset; auto-dispatch")
 	case "neon":
-		if !aes.CPU.HasARMCrypto {
+		if !cpuid.ARMAES {
 			t.Skip("neon batch-16 tier not executable on this host")
 		}
 		if !HasARMAESX16 {
@@ -92,5 +91,5 @@ func fillFlagFromHashTier() bool {
 	if forcetier.HashTier() == "scalar" {
 		return false
 	}
-	return aes.CPU.HasARMCrypto
+	return cpuid.ARMAES
 }

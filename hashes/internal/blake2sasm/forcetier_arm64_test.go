@@ -5,8 +5,7 @@ package blake2sasm
 import (
 	"testing"
 
-	"golang.org/x/sys/cpu"
-
+	"github.com/everanium/itb/internal/cpuid"
 	"github.com/everanium/itb/internal/forcetier"
 )
 
@@ -41,7 +40,7 @@ func TestForceHashTierApplied(t *testing.T) {
 	case "":
 		t.Skip("ITB_FORCE_HASH_TIER unset; auto-dispatch")
 	case "neon", "sve2", "sve":
-		if !cpu.ARM64.HasASIMD {
+		if !cpuid.ASIMD {
 			t.Skipf("%s tier not executable on this host", tier)
 		}
 		want(true, true)
@@ -50,7 +49,7 @@ func TestForceHashTierApplied(t *testing.T) {
 	case "scalar":
 		want(false, false)
 	case "avx512", "vaesavx2", "avx2", "vex", "aesni":
-		want(cpu.ARM64.HasASIMD, true)
+		want(cpuid.ASIMD, true)
 	default:
 		t.Fatalf("unexpected validated tier %q", tier)
 	}
@@ -80,7 +79,7 @@ func TestForceInterlockPRFFillTierApplied(t *testing.T) {
 	case "":
 		t.Skip("ITB_FORCE_INTERLOCK_PRF_FILL_TIER unset; auto-dispatch")
 	case "neon":
-		if !cpu.ARM64.HasASIMD {
+		if !cpuid.ASIMD {
 			t.Skip("neon batch-16 tier not executable on this host")
 		}
 		_, gpr := fillFlagsFromHashTier()
@@ -106,7 +105,7 @@ func fillFlagsFromHashTier() (neon, gpr bool) {
 	case "scalar":
 		return false, false
 	}
-	return cpu.ARM64.HasASIMD, true
+	return cpuid.ASIMD, true
 }
 
 // TestForceTiersKeepGPR asserts that every token other than scalar
