@@ -7,7 +7,7 @@ import (
 	"github.com/everanium/itb/third/goaes"
 )
 
-// The fused ChainHash cascade of Areion-SoEM-256 / -512 and its pure-Go
+// The fused ChainHash cascade of Areion-SoEM-256 / 512 and its pure-Go
 // reference.
 //
 // The cascade is Seed256.ChainHash256 / Seed512.ChainHash512 over the

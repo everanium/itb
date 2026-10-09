@@ -66,7 +66,7 @@ The 64-bit-lane state of BLAKE2b fills 16 registers at one qword lane
 per pixel, and the 16 message words fill the other 16 of the EVEX
 register file: the avx512 tier keeps state and words in YMM registers at
 four lanes and in ZMM registers at eight lanes (the eight-pixel stride
-of the width-256 / -512 pipelines and the fill kernels), 32 of 32 in
+of the width-256 / 512 pipelines and the fill kernels), 32 of 32 in
 both forms with the seed-word rebuild and the fold as embedded-broadcast
 memory operands. No sixteen-lane fill kernel exists: sixteen lanes would
 need two ZMM registers per state word, the whole file, with the message

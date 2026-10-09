@@ -1,5 +1,5 @@
 // Package blake2basm holds the fused ChainHash cascade kernels of
-// BLAKE2b-256 / -512 for the parent hashes package: the whole component
+// BLAKE2b-256 / 512 for the parent hashes package: the whole component
 // cascade of a seed evaluated in one kernel call at the four per-pixel
 // shapes (13 / 20 / 36 / 68 bytes) — four lanes on the AVX-512 EVEX YMM,
 // AVX2 VEX YMM and NEON tiers, eight lanes on ZMM registers at the
