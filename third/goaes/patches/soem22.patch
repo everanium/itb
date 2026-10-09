@@ -1,0 +1,525 @@
+diff --git a/areion.go b/areion.go
+index 0e3e057..5f4bec0 100644
+--- a/areion.go
++++ b/areion.go
+@@ -51,6 +51,44 @@ var areionRoundConstants = [15][16]byte{
+ 	{0xb6, 0x10, 0xab, 0x2a, 0x6a, 0x39, 0xca, 0x55, 0x40, 0x14, 0xe8, 0x63, 0x62, 0x98, 0x48, 0x57},
+ }
+ 
++// Round constants of the second Areion permutation, used by the SoEM branch
++// keyed with k2: the 15 128-bit words of the hexadecimal digits of pi that
++// follow those of areionRoundConstants, in the same little-endian format. A
++// permutation with different round constants is modelled as independent of
++// the first.
++var areionRoundConstants2 = [15][16]byte{
++	// 0xb4cc5c341141e8cea15486af7c72e993
++	{0x93, 0xe9, 0x72, 0x7c, 0xaf, 0x86, 0x54, 0xa1, 0xce, 0xe8, 0x41, 0x11, 0x34, 0x5c, 0xcc, 0xb4},
++	// 0xb3ee1411636fbc2a2ba9c55d741831f6
++	{0xf6, 0x31, 0x18, 0x74, 0x5d, 0xc5, 0xa9, 0x2b, 0x2a, 0xbc, 0x6f, 0x63, 0x11, 0x14, 0xee, 0xb3},
++	// 0xce5c3e169b87931eafd6ba336c24cf5c
++	{0x5c, 0xcf, 0x24, 0x6c, 0x33, 0xba, 0xd6, 0xaf, 0x1e, 0x93, 0x87, 0x9b, 0x16, 0x3e, 0x5c, 0xce},
++	// 0x7a325381289586773b8f48986b4bb9af
++	{0xaf, 0xb9, 0x4b, 0x6b, 0x98, 0x48, 0x8f, 0x3b, 0x77, 0x86, 0x95, 0x28, 0x81, 0x53, 0x32, 0x7a},
++	// 0xc4bfe81b6628219361d809ccfb21a991
++	{0x91, 0xa9, 0x21, 0xfb, 0xcc, 0x09, 0xd8, 0x61, 0x93, 0x21, 0x28, 0x66, 0x1b, 0xe8, 0xbf, 0xc4},
++	// 0x487cac605dec8032ef845d5de98575b1
++	{0xb1, 0x75, 0x85, 0xe9, 0x5d, 0x5d, 0x84, 0xef, 0x32, 0x80, 0xec, 0x5d, 0x60, 0xac, 0x7c, 0x48},
++	// 0xdc262302eb651b8823893e81d396acc5
++	{0xc5, 0xac, 0x96, 0xd3, 0x81, 0x3e, 0x89, 0x23, 0x88, 0x1b, 0x65, 0xeb, 0x02, 0x23, 0x26, 0xdc},
++	// 0x0f6d6ff383f442392e0b4482a4842004
++	{0x04, 0x20, 0x84, 0xa4, 0x82, 0x44, 0x0b, 0x2e, 0x39, 0x42, 0xf4, 0x83, 0xf3, 0x6f, 0x6d, 0x0f},
++	// 0x69c8f04a9e1f9b5e21c66842f6e96c9a
++	{0x9a, 0x6c, 0xe9, 0xf6, 0x42, 0x68, 0xc6, 0x21, 0x5e, 0x9b, 0x1f, 0x9e, 0x4a, 0xf0, 0xc8, 0x69},
++	// 0x670c9c61abd388f06a51a0d2d8542f68
++	{0x68, 0x2f, 0x54, 0xd8, 0xd2, 0xa0, 0x51, 0x6a, 0xf0, 0x88, 0xd3, 0xab, 0x61, 0x9c, 0x0c, 0x67},
++	// 0x960fa728ab5133a36eef0b6c137a3be4
++	{0xe4, 0x3b, 0x7a, 0x13, 0x6c, 0x0b, 0xef, 0x6e, 0xa3, 0x33, 0x51, 0xab, 0x28, 0xa7, 0x0f, 0x96},
++	// 0xba3bf0507efb2a98a1f1651d39af0176
++	{0x76, 0x01, 0xaf, 0x39, 0x1d, 0x65, 0xf1, 0xa1, 0x98, 0x2a, 0xfb, 0x7e, 0x50, 0xf0, 0x3b, 0xba},
++	// 0x66ca593e82430e888cee8619456f9fb4
++	{0xb4, 0x9f, 0x6f, 0x45, 0x19, 0x86, 0xee, 0x8c, 0x88, 0x0e, 0x43, 0x82, 0x3e, 0x59, 0xca, 0x66},
++	// 0x7d84a5c33b8b5ebee06f75d885c12073
++	{0x73, 0x20, 0xc1, 0x85, 0xd8, 0x75, 0x6f, 0xe0, 0xbe, 0x5e, 0x8b, 0x3b, 0xc3, 0xa5, 0x84, 0x7d},
++	// 0x401a449f56c16aa64ed3aa62363f7706
++	{0x06, 0x77, 0x3f, 0x36, 0x62, 0xaa, 0xd3, 0x4e, 0xa6, 0x6a, 0xc1, 0x56, 0x9f, 0x44, 0x1a, 0x40},
++}
++
+ // Permute applies the 10-round Areion256 permutation in-place. The permutation
+ // transforms the 32-byte state using AES round functions and pi-based constants.
+ // Automatically uses hardware acceleration (AES-NI or ARM Crypto) when available,
+@@ -86,11 +124,17 @@ func (state *Areion512) InversePermute() {
+ 
+ // Software implementation of Areion256 permutation
+ func areion256PermuteSoftware(state *Areion256) {
++	areion256PermuteSoftwareRC(state, &areionRoundConstants)
++}
++
++// areion256PermuteSoftwareRC is the software Areion256 permutation under the
++// round constants rcs.
++func areion256PermuteSoftwareRC(state *Areion256, rcs *[15][16]byte) {
+ 	x0 := (*[16]byte)(state[0:16])
+ 	x1 := (*[16]byte)(state[16:32])
+ 
+ 	for r := 0; r < 10; r++ {
+-		rc := areionRoundConstants[r]
++		rc := rcs[r]
+ 
+ 		if r%2 == 0 {
+ 			var temp [16]byte
+@@ -141,6 +185,12 @@ func areion256InversePermuteSoftware(state *Areion256) {
+ 
+ // Software implementation of Areion512 permutation
+ func areion512PermuteSoftware(state *Areion512) {
++	areion512PermuteSoftwareRC(state, &areionRoundConstants)
++}
++
++// areion512PermuteSoftwareRC is the software Areion512 permutation under the
++// round constants rcs.
++func areion512PermuteSoftwareRC(state *Areion512, rcs *[15][16]byte) {
+ 	x0 := (*[16]byte)(state[0:16])
+ 	x1 := (*[16]byte)(state[16:32])
+ 	x2 := (*[16]byte)(state[32:48])
+@@ -165,16 +215,16 @@ func areion512PermuteSoftware(state *Areion512) {
+ 
+ 	// Main 12 rounds
+ 	for i := 0; i < 12; i += 4 {
+-		areion512Round(x0, x1, x2, x3, &areionRoundConstants[i+0])
+-		areion512Round(x1, x2, x3, x0, &areionRoundConstants[i+1])
+-		areion512Round(x2, x3, x0, x1, &areionRoundConstants[i+2])
+-		areion512Round(x3, x0, x1, x2, &areionRoundConstants[i+3])
++		areion512Round(x0, x1, x2, x3, &rcs[i+0])
++		areion512Round(x1, x2, x3, x0, &rcs[i+1])
++		areion512Round(x2, x3, x0, x1, &rcs[i+2])
++		areion512Round(x3, x0, x1, x2, &rcs[i+3])
+ 	}
+ 
+ 	// Final 3 rounds
+-	areion512Round(x0, x1, x2, x3, &areionRoundConstants[12])
+-	areion512Round(x1, x2, x3, x0, &areionRoundConstants[13])
+-	areion512Round(x2, x3, x0, x1, &areionRoundConstants[14])
++	areion512Round(x0, x1, x2, x3, &rcs[12])
++	areion512Round(x1, x2, x3, x0, &rcs[13])
++	areion512Round(x2, x3, x0, x1, &rcs[14])
+ 
+ 	// Final rotation: temp=x0; x0=x3; x3=x2; x2=x1; x1=temp
+ 	var temp [16]byte
+@@ -288,47 +338,50 @@ func Areion512EMDecrypt(key *[64]byte, block *[64]byte) [64]byte {
+ 	return [64]byte(state)
+ }
+ 
+-// Domain separation constants for Sum of Even-Mansour.
+-// Non-zero in the first byte to ensure the two branches never evaluate P at the same point.
+-var (
+-	areionSoEM256DomainSep [32]byte = [32]byte{0x01}
+-	areionSoEM512DomainSep [64]byte = [64]byte{0x01}
+-)
+-
+-// AreionSoEM256 computes a PRF using Sum of Even-Mansour with Areion256.
+-// F(k1, k2, m) = P(m XOR k1) XOR P(m XOR k2 XOR d), where d is a domain
+-// separation constant and P is the Areion256 permutation. With two independent
+-// 32-byte subkeys, this achieves ~170-bit PRF security (beyond birthday bound).
+-// Key is 64 bytes (two independent 32-byte subkeys). Input and output are 32 bytes.
++// AreionSoEM256 computes a PRF using Sum of Even-Mansour with two Areion256
++// permutations: F(k1, k2, m) = P1(m XOR k1) XOR P2(m XOR k2) XOR k1 XOR k2,
++// where P1 is the Areion256 permutation and P2 is Areion256 with the round
++// constants areionRoundConstants2, modelled as an independent permutation.
++// With two independent permutations and two independent subkeys this is SoEM22
++// of Chen, Lambooij and Mennink (CRYPTO 2019; ePrint 2019/554, Eq. (4) and
++// Theorem 1), a PRF up to about 2^(2n/3) queries (~170-bit PRF security) in
++// the random-permutation model.
++// Key is 64 bytes: two 32-byte subkeys k1 || k2, both secret and
++// independently random. Input and output are 32 bytes.
+ func AreionSoEM256(key *[64]byte, input *[32]byte) [32]byte {
+ 	var state1, state2 Areion256
+ 	for i := range state1 {
+ 		state1[i] = input[i] ^ key[i]
+-		state2[i] = input[i] ^ key[32+i] ^ areionSoEM256DomainSep[i]
++		state2[i] = input[i] ^ key[32+i]
+ 	}
+ 	state1.Permute()
+-	state2.Permute()
++	areion256Permute2(&state2)
+ 	for i := range state1 {
+-		state1[i] ^= state2[i]
++		state1[i] ^= state2[i] ^ key[i] ^ key[32+i]
+ 	}
+ 	return [32]byte(state1)
+ }
+ 
+-// AreionSoEM512 computes a PRF using Sum of Even-Mansour with Areion512.
+-// F(k1, k2, m) = P(m XOR k1) XOR P(m XOR k2 XOR d), where d is a domain
+-// separation constant and P is the Areion512 permutation. With two independent
+-// 64-byte subkeys, this achieves ~341-bit PRF security (beyond birthday bound).
+-// Key is 128 bytes (two independent 64-byte subkeys). Input and output are 64 bytes.
++// AreionSoEM512 computes a PRF using Sum of Even-Mansour with two Areion512
++// permutations: F(k1, k2, m) = P1(m XOR k1) XOR P2(m XOR k2) XOR k1 XOR k2,
++// where P1 is the Areion512 permutation and P2 is Areion512 with the round
++// constants areionRoundConstants2, modelled as an independent permutation.
++// With two independent permutations and two independent subkeys this is SoEM22
++// of Chen, Lambooij and Mennink (CRYPTO 2019; ePrint 2019/554, Eq. (4) and
++// Theorem 1), a PRF up to about 2^(2n/3) queries (~341-bit PRF security) in
++// the random-permutation model.
++// Key is 128 bytes: two 64-byte subkeys k1 || k2, both secret and
++// independently random. Input and output are 64 bytes.
+ func AreionSoEM512(key *[128]byte, input *[64]byte) [64]byte {
+ 	var state1, state2 Areion512
+ 	for i := range state1 {
+ 		state1[i] = input[i] ^ key[i]
+-		state2[i] = input[i] ^ key[64+i] ^ areionSoEM512DomainSep[i]
++		state2[i] = input[i] ^ key[64+i]
+ 	}
+ 	state1.Permute()
+-	state2.Permute()
++	areion512Permute2(&state2)
+ 	for i := range state1 {
+-		state1[i] ^= state2[i]
++		state1[i] ^= state2[i] ^ key[i] ^ key[64+i]
+ 	}
+ 	return [64]byte(state1)
+ }
+diff --git a/areion_amd64.go b/areion_amd64.go
+index e01bc1f..d14aebf 100644
+--- a/areion_amd64.go
++++ b/areion_amd64.go
+@@ -3,13 +3,23 @@
+ package aes
+ 
+ //go:noescape
+-func areion256PermuteAsm(state *Areion256)
++func areion256PermuteRCAsm(state *Areion256, rc *[15][16]byte)
++
++// areion256PermuteAsm applies the Areion256 permutation in assembly.
++func areion256PermuteAsm(state *Areion256) {
++	areion256PermuteRCAsm(state, &areionRoundConstants)
++}
+ 
+ //go:noescape
+ func areion256InversePermuteAsm(state *Areion256)
+ 
+ //go:noescape
+-func areion512PermuteAsm(state *Areion512)
++func areion512PermuteRCAsm(state *Areion512, rc *[15][16]byte)
++
++// areion512PermuteAsm applies the Areion512 permutation in assembly.
++func areion512PermuteAsm(state *Areion512) {
++	areion512PermuteRCAsm(state, &areionRoundConstants)
++}
+ 
+ //go:noescape
+ func areion512InversePermuteAsm(state *Areion512)
+diff --git a/areion_amd64.s b/areion_amd64.s
+index f879227..7e635a1 100644
+--- a/areion_amd64.s
++++ b/areion_amd64.s
+@@ -3,8 +3,8 @@
+ #include "textflag.h"
+ 
+ // Areion256 permutation using AES-NI instructions
+-// func areion256PermuteAsm(state *Areion256)
+-TEXT ·areion256PermuteAsm(SB),NOSPLIT,$0
++// func areion256PermuteRCAsm(state *Areion256, rc *[15][16]byte)
++TEXT ·areion256PermuteRCAsm(SB),NOSPLIT,$0-16
+ 	MOVQ state+0(FP), AX
+ 
+ 	// Load the two blocks
+@@ -12,7 +12,7 @@ TEXT ·areion256PermuteAsm(SB),NOSPLIT,$0
+ 	MOVOU 16(AX), X1  // x1
+ 
+ 	// Load round constants
+-	LEAQ ·areionRoundConstants(SB), BX
++	MOVQ rc+8(FP), BX
+ 	PXOR X15, X15  // X15 = zero block
+ 
+ 	MOVQ $10, CX  // round counter
+@@ -122,8 +122,8 @@ inv_loop:
+ 	RET
+ 
+ // Areion512 permutation using AES-NI instructions
+-// func areion512PermuteAsm(state *Areion512)
+-TEXT ·areion512PermuteAsm(SB),NOSPLIT,$0
++// func areion512PermuteRCAsm(state *Areion512, rc *[15][16]byte)
++TEXT ·areion512PermuteRCAsm(SB),NOSPLIT,$0-16
+ 	MOVQ state+0(FP), AX
+ 
+ 	// Load the four blocks
+@@ -133,7 +133,7 @@ TEXT ·areion512PermuteAsm(SB),NOSPLIT,$0
+ 	MOVOU 48(AX), X3  // x3
+ 
+ 	// Load round constants address
+-	LEAQ ·areionRoundConstants(SB), BX
++	MOVQ rc+8(FP), BX
+ 	PXOR X15, X15  // X15 = zero block
+ 
+ 	// Main 12 rounds (i=0 to 11, step 4)
+diff --git a/areion_arm64.go b/areion_arm64.go
+index e01bc1f..d14aebf 100644
+--- a/areion_arm64.go
++++ b/areion_arm64.go
+@@ -3,13 +3,23 @@
+ package aes
+ 
+ //go:noescape
+-func areion256PermuteAsm(state *Areion256)
++func areion256PermuteRCAsm(state *Areion256, rc *[15][16]byte)
++
++// areion256PermuteAsm applies the Areion256 permutation in assembly.
++func areion256PermuteAsm(state *Areion256) {
++	areion256PermuteRCAsm(state, &areionRoundConstants)
++}
+ 
+ //go:noescape
+ func areion256InversePermuteAsm(state *Areion256)
+ 
+ //go:noescape
+-func areion512PermuteAsm(state *Areion512)
++func areion512PermuteRCAsm(state *Areion512, rc *[15][16]byte)
++
++// areion512PermuteAsm applies the Areion512 permutation in assembly.
++func areion512PermuteAsm(state *Areion512) {
++	areion512PermuteRCAsm(state, &areionRoundConstants)
++}
+ 
+ //go:noescape
+ func areion512InversePermuteAsm(state *Areion512)
+diff --git a/areion_arm64.s b/areion_arm64.s
+index 05b85ca..3961215 100644
+--- a/areion_arm64.s
++++ b/areion_arm64.s
+@@ -3,12 +3,12 @@
+ #include "textflag.h"
+ 
+ // Areion256 permutation using ARM Crypto extensions
+-// func areion256PermuteAsm(state *Areion256)
++// func areion256PermuteRCAsm(state *Areion256, rc *[15][16]byte)
+ //
+ // ARM AESE does: XOR key → ShiftRows → SubBytes (key XOR FIRST)
+ // For RoundNoKey, we need: ShiftRows → SubBytes → MixColumns (no key XOR)
+ // Solution: Use AESE with zero, then AESMC, then manually XOR keys with VEOR
+-TEXT ·areion256PermuteAsm(SB),NOSPLIT,$0
++TEXT ·areion256PermuteRCAsm(SB),NOSPLIT,$0-16
+ 	MOVD state+0(FP), R0
+ 
+ 	// Load the two blocks
+@@ -17,7 +17,7 @@ TEXT ·areion256PermuteAsm(SB),NOSPLIT,$0
+ 	VLD1 (R1), [V1.B16]       // x1
+ 
+ 	// Load round constants address
+-	MOVD $·areionRoundConstants(SB), R2
++	MOVD rc+8(FP), R2
+ 	VEOR V15.B16, V15.B16, V15.B16  // V15 = zero block
+ 
+ 	MOVD $10, R3  // round counter
+@@ -137,8 +137,8 @@ areion256_inv_loop:
+ 	RET
+ 
+ // Areion512 permutation using ARM Crypto extensions
+-// func areion512PermuteAsm(state *Areion512)
+-TEXT ·areion512PermuteAsm(SB),NOSPLIT,$0
++// func areion512PermuteRCAsm(state *Areion512, rc *[15][16]byte)
++TEXT ·areion512PermuteRCAsm(SB),NOSPLIT,$0-16
+ 	MOVD state+0(FP), R0
+ 
+ 	// Load the four blocks
+@@ -148,7 +148,7 @@ TEXT ·areion512PermuteAsm(SB),NOSPLIT,$0
+ 	VLD1 (R0), [V3.B16]       // x3
+ 
+ 	// Load round constants address
+-	MOVD $·areionRoundConstants(SB), R2
++	MOVD rc+8(FP), R2
+ 	VEOR V15.B16, V15.B16, V15.B16  // V15 = zero block
+ 
+ 	// Main 12 rounds (i=0 to 11, step 4)
+diff --git a/areion_hw.go b/areion_hw.go
+index 3285681..1ca84f2 100644
+--- a/areion_hw.go
++++ b/areion_hw.go
+@@ -11,6 +11,16 @@ func areion256Permute(state *Areion256) {
+ 	}
+ }
+ 
++// areion256Permute2 applies the second Areion256 permutation (round constants
++// areionRoundConstants2) used by AreionSoEM256.
++func areion256Permute2(state *Areion256) {
++	if CPU.HasAESNI || CPU.HasARMCrypto {
++		areion256PermuteRCAsm(state, &areionRoundConstants2)
++	} else {
++		areion256PermuteSoftwareRC(state, &areionRoundConstants2)
++	}
++}
++
+ // areion256InversePermute dispatches to hardware or software implementation
+ func areion256InversePermute(state *Areion256) {
+ 	if CPU.HasAESNI || CPU.HasARMCrypto {
+@@ -29,6 +39,16 @@ func areion512Permute(state *Areion512) {
+ 	}
+ }
+ 
++// areion512Permute2 applies the second Areion512 permutation (round constants
++// areionRoundConstants2) used by AreionSoEM512.
++func areion512Permute2(state *Areion512) {
++	if CPU.HasAESNI || CPU.HasARMCrypto {
++		areion512PermuteRCAsm(state, &areionRoundConstants2)
++	} else {
++		areion512PermuteSoftwareRC(state, &areionRoundConstants2)
++	}
++}
++
+ // areion512InversePermute dispatches to hardware or software implementation
+ func areion512InversePermute(state *Areion512) {
+ 	if CPU.HasAESNI || CPU.HasARMCrypto {
+diff --git a/areion_purego.go b/areion_purego.go
+index ef26fd2..bb0669c 100644
+--- a/areion_purego.go
++++ b/areion_purego.go
+@@ -19,3 +19,11 @@ func areion512Permute(state *Areion512) {
+ func areion512InversePermute(state *Areion512) {
+ 	areion512InversePermuteSoftware(state)
+ }
++
++func areion256Permute2(state *Areion256) {
++	areion256PermuteSoftwareRC(state, &areionRoundConstants2)
++}
++
++func areion512Permute2(state *Areion512) {
++	areion512PermuteSoftwareRC(state, &areionRoundConstants2)
++}
+diff --git a/areion_test.go b/areion_test.go
+index 6a54c7f..0843fd7 100644
+--- a/areion_test.go
++++ b/areion_test.go
+@@ -359,7 +359,7 @@ func TestAreionSoEM256(t *testing.T) {
+ 	var key [64]byte
+ 	var input [32]byte
+ 	out := AreionSoEM256(&key, &input)
+-	expected, _ := hex.DecodeString("d2754ec03e7025e852ab85dc0b38dae087add5a6522261dfc7b424c96cbed761")
++	expected, _ := hex.DecodeString("e135afb2be0dee2857cc14aa4de7f022acd1e6489d8c1e53a20c99c4bf48f392")
+ 	if !bytes.Equal(out[:], expected) {
+ 		t.Errorf("AreionSoEM256(zeros) failed\nGot:      %x\nExpected: %x", out[:], expected)
+ 	}
+@@ -372,7 +372,7 @@ func TestAreionSoEM256(t *testing.T) {
+ 		input[i] = byte(i + 64)
+ 	}
+ 	out = AreionSoEM256(&key, &input)
+-	expected, _ = hex.DecodeString("8cf756fef9750beb329f700a83e50493cec0615d698a7af94ab1654225d9320f")
++	expected, _ = hex.DecodeString("7d988f8b9974656d7573b291fe378d7a6c5f9a9c0d71f4510953a27cc23a6baf")
+ 	if !bytes.Equal(out[:], expected) {
+ 		t.Errorf("AreionSoEM256(seq) failed\nGot:      %x\nExpected: %x", out[:], expected)
+ 	}
+@@ -383,7 +383,7 @@ func TestAreionSoEM512(t *testing.T) {
+ 	var key [128]byte
+ 	var input [64]byte
+ 	out := AreionSoEM512(&key, &input)
+-	expected, _ := hex.DecodeString("53f751fa1dc08e0fd2bc595d06ebd77244aa9c66cd2a0c1823e27b31d114840622022da12be0ece250735ce6d170d77aa57d69191f1d01f3db3e3886b23e1918")
++	expected, _ := hex.DecodeString("4ac61c79b8575a64a2a037a267e37375951aa9f1dc09ce4df0686488e48a0712d1d684bc003d906940e5a2d5c1eae993409b10d864da8886404c73f63890e07a")
+ 	if !bytes.Equal(out[:], expected) {
+ 		t.Errorf("AreionSoEM512(zeros) failed\nGot:      %x\nExpected: %x", out[:], expected)
+ 	}
+@@ -396,7 +396,7 @@ func TestAreionSoEM512(t *testing.T) {
+ 		input[i] = byte(i + 128)
+ 	}
+ 	out = AreionSoEM512(&key, &input)
+-	expected, _ = hex.DecodeString("3cb3f1cc85dede951a4f8f7f3ad229457ed67c61cdf31ec7ad9e4e0aaa9a917897d2a5b2d561da88e503d701fdf15dbfdc1a69f39bd316785f10bb893ce17d32")
++	expected, _ = hex.DecodeString("6970032eb5721f8d819a49a2ee8ca7a0416977cf58666de3848c6449315c6a05ee6c30d2de89bee708db8f9f2a045dbd71e8f5291f4912ca033364402989a6be")
+ 	if !bytes.Equal(out[:], expected) {
+ 		t.Errorf("AreionSoEM512(seq) failed\nGot:      %x\nExpected: %x", out[:], expected)
+ 	}
+@@ -600,3 +600,99 @@ func BenchmarkAreion512InversePermute(b *testing.B) {
+ 		state.InversePermute()
+ 	}
+ }
++
++// TestAreionSoEMNoKeyShiftSymmetry checks that F(m) != F(m XOR k1 XOR k2): a sum
++// of two calls to the same permutation would satisfy it for every m.
++func TestAreionSoEMNoKeyShiftSymmetry(t *testing.T) {
++	var k256 [64]byte
++	var m256, s256 [32]byte
++	for i := range k256 {
++		k256[i] = byte(7*i + 1)
++	}
++	for i := range m256 {
++		m256[i] = byte(3 * i)
++		s256[i] = m256[i] ^ k256[i] ^ k256[32+i]
++	}
++	if AreionSoEM256(&k256, &m256) == AreionSoEM256(&k256, &s256) {
++		t.Error("AreionSoEM256: F(m) == F(m XOR k1 XOR k2)")
++	}
++
++	var k512 [128]byte
++	var m512, s512 [64]byte
++	for i := range k512 {
++		k512[i] = byte(7*i + 1)
++	}
++	for i := range m512 {
++		m512[i] = byte(3 * i)
++		s512[i] = m512[i] ^ k512[i] ^ k512[64+i]
++	}
++	if AreionSoEM512(&k512, &m512) == AreionSoEM512(&k512, &s512) {
++		t.Error("AreionSoEM512: F(m) == F(m XOR k1 XOR k2)")
++	}
++}
++
++// TestAreionPermute2KnownAnswer pins the second Areion permutation (round
++// constants areionRoundConstants2) used by the SoEM branch keyed with k2.
++func TestAreionPermute2KnownAnswer(t *testing.T) {
++	var state256 Areion256
++	areion256Permute2(&state256)
++	expected, _ := hex.DecodeString("c9270896dbbf80b79db9975ca9f5ca83e5dfd3af48ac201800e5be74f767be2a")
++	if !bytes.Equal(state256[:], expected) {
++		t.Errorf("Areion256 second permutation (zeros) failed\nGot:      %x\nExpected: %x", state256[:], expected)
++	}
++	for i := range state256 {
++		state256[i] = byte(i)
++	}
++	areion256Permute2(&state256)
++	expected, _ = hex.DecodeString("2a105b2728271062195d5711cbfc592cafbe71252fb872fcdfd5b91b668be331")
++	if !bytes.Equal(state256[:], expected) {
++		t.Errorf("Areion256 second permutation (seq) failed\nGot:      %x\nExpected: %x", state256[:], expected)
++	}
++
++	var state512 Areion512
++	areion512Permute2(&state512)
++	expected, _ = hex.DecodeString("f86bac361148ca71fb964680acdfe5dcedd597156b35a419cf8eb80d931b05f53223d4ac16f37d7492212fde03f81294ed8d974cd94c47751945be2edab7a952")
++	if !bytes.Equal(state512[:], expected) {
++		t.Errorf("Areion512 second permutation (zeros) failed\nGot:      %x\nExpected: %x", state512[:], expected)
++	}
++	for i := range state512 {
++		state512[i] = byte(i)
++	}
++	areion512Permute2(&state512)
++	expected, _ = hex.DecodeString("d2581b6f5b464de84bb66ce14f1310f38de46e1781633cd4fcbcc6c49e26fcf4e90764efc7e9fddf4083c1aafa5017c45dd2d429de57bbbf6df5e82934458645")
++	if !bytes.Equal(state512[:], expected) {
++		t.Errorf("Areion512 second permutation (seq) failed\nGot:      %x\nExpected: %x", state512[:], expected)
++	}
++}
++
++// TestAreionPermute2HardwareSoftwareMatch checks the assembly path of the
++// second Areion permutation against the software path.
++func TestAreionPermute2HardwareSoftwareMatch(t *testing.T) {
++	if !CPU.HasAESNI && !CPU.HasARMCrypto {
++		t.Skip("No hardware AES support available")
++	}
++
++	for _, seed := range []byte{0x00, 0x5a, 0xa5, 0xff} {
++		var hw256, sw256 Areion256
++		for i := range hw256 {
++			hw256[i] = byte(i*5) ^ seed
++		}
++		copy(sw256[:], hw256[:])
++		areion256PermuteRCAsm(&hw256, &areionRoundConstants2)
++		areion256PermuteSoftwareRC(&sw256, &areionRoundConstants2)
++		if !bytes.Equal(hw256[:], sw256[:]) {
++			t.Errorf("Areion256 second permutation hardware/software mismatch (seed %#x)\nHardware: %x\nSoftware: %x", seed, hw256[:], sw256[:])
++		}
++
++		var hw512, sw512 Areion512
++		for i := range hw512 {
++			hw512[i] = byte(i*5) ^ seed
++		}
++		copy(sw512[:], hw512[:])
++		areion512PermuteRCAsm(&hw512, &areionRoundConstants2)
++		areion512PermuteSoftwareRC(&sw512, &areionRoundConstants2)
++		if !bytes.Equal(hw512[:], sw512[:]) {
++			t.Errorf("Areion512 second permutation hardware/software mismatch (seed %#x)\nHardware: %x\nSoftware: %x", seed, hw512[:], sw512[:])
++		}
++	}
++}

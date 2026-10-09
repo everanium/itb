@@ -39,8 +39,9 @@ func init() {
 //	vex      — no VEX-encoded XMM arm exists for Areion; the token
 //	           selects the AES-NI XMM kernels with a stderr note
 //	aesni    — XMM AES-NI fused cascade and batch-16 fill; the batched
-//	           arm runs the single-lane XMM cascade kernel per lane
-//	           and the single arm the Go permutation
+//	           arm runs the single-lane XMM cascade kernel per lane at
+//	           the kernel shapes and the XMM fused SoEM kernel at every
+//	           other length, and the single arm the Go permutation
 //	scalar   — every kernel off
 //
 // The arm64 tokens (neon / sve2 / sve) keep auto-dispatch with a note.
@@ -51,7 +52,7 @@ func applyHashTier() {
 			forcetier.Warnf("areionasm: avx512 tier needs VAES+AVX-512; keeping auto-dispatch")
 			return
 		}
-		HasVAESAVX512, HasVAESAVX2NoAVX512, HasARMAESBatched = true, false, false
+		HasVAESAVX512, HasVAESAVX2NoAVX512, HasAESNIBatched, HasARMAESBatched = true, false, false, false
 		FusedHasVAESAVX512, FusedHasVAESAVX2, FusedHasAESNI = true, false, false
 		HasVAESAVX512X16, HasVAESAVX2X16, HasAESNIX16 = true, false, false
 	case "vaesavx2":
@@ -59,7 +60,7 @@ func applyHashTier() {
 			forcetier.Warnf("areionasm: vaesavx2 tier needs VAES+AVX2; keeping auto-dispatch")
 			return
 		}
-		HasVAESAVX512, HasVAESAVX2NoAVX512, HasARMAESBatched = false, true, false
+		HasVAESAVX512, HasVAESAVX2NoAVX512, HasAESNIBatched, HasARMAESBatched = false, true, false, false
 		FusedHasVAESAVX512, FusedHasVAESAVX2, FusedHasAESNI = false, true, false
 		HasVAESAVX512X16, HasVAESAVX2X16, HasAESNIX16 = false, true, false
 	case "avx2":
@@ -67,7 +68,7 @@ func applyHashTier() {
 			forcetier.Warnf("areionasm: avx2 tier needs VAES+AVX2; keeping auto-dispatch")
 			return
 		}
-		HasVAESAVX512, HasVAESAVX2NoAVX512, HasARMAESBatched = false, true, false
+		HasVAESAVX512, HasVAESAVX2NoAVX512, HasAESNIBatched, HasARMAESBatched = false, true, false, false
 		FusedHasVAESAVX512, FusedHasVAESAVX2, FusedHasAESNI = false, false, false
 		HasVAESAVX512X16, HasVAESAVX2X16, HasAESNIX16 = false, false, false
 	case "vex", "aesni":
@@ -78,7 +79,7 @@ func applyHashTier() {
 		if forcetier.HashTier() == "vex" {
 			forcetier.Warnf("areionasm: no vex arm; selecting the AES-NI XMM kernels")
 		}
-		HasVAESAVX512, HasVAESAVX2NoAVX512, HasARMAESBatched = false, false, false
+		HasVAESAVX512, HasVAESAVX2NoAVX512, HasAESNIBatched, HasARMAESBatched = false, false, true, false
 		FusedHasVAESAVX512, FusedHasVAESAVX2, FusedHasAESNI = false, false, true
 		HasVAESAVX512X16, HasVAESAVX2X16, HasAESNIX16 = false, false, true
 	case "gpr":
@@ -86,7 +87,7 @@ func applyHashTier() {
 	case "neon", "sve2", "sve":
 		forcetier.Warnf("areionasm: %s tier is arm64-only; keeping auto-dispatch", forcetier.HashTier())
 	case "scalar":
-		HasVAESAVX512, HasVAESAVX2NoAVX512, HasARMAESBatched = false, false, false
+		HasVAESAVX512, HasVAESAVX2NoAVX512, HasAESNIBatched, HasARMAESBatched = false, false, false, false
 		FusedHasVAESAVX512, FusedHasVAESAVX2, FusedHasAESNI = false, false, false
 		HasVAESAVX512X16, HasVAESAVX2X16, HasAESNIX16 = false, false, false
 	}

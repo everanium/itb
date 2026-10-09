@@ -12,7 +12,7 @@ Audience: external auditors, paper reviewers, downstream integrators reading the
 
 For RFC / NIST primitive math conformance, refer to the upstream library tests:
 
-- `github.com/jedisct1/go-aes` — Areion paper vectors.
+- `third/goaes` (an in-module subset of `github.com/jedisct1/go-aes` v0.1.1 carrying the SoEM22 patch; see its README) — Areion paper vectors and the SoEM22 known answers.
 - `golang.org/x/crypto/blake2b` — RFC 7693 vectors.
 - `golang.org/x/crypto/blake2s` — RFC 7693 vectors.
 - `github.com/zeebo/blake3` — official BLAKE3 reference vectors.
@@ -31,8 +31,8 @@ Listed in canonical primitive order. Below-spec lab helpers (CRC128, FNV-1a, MD5
 | # | Registry name | Native width | Underlying primitive | Construction shape |
 |---|---|---|---|---|
 | 1 | `aesitb128` | 128 | AES-ITB-128 (ITB-native reduced-round AES chain, `aesitb.go` + `internal/aesitbasm`) | CBC-MAC-style chain absorption over public AES rounds (one per block + two finalising rounds), keyed through the initial state; NUMS round constants (SHA-2 IVs); intentionally Non-PRF, inner-role only (Interlocked Barrier fill + Pixel Barrier) |
-| 2 | `areion256` | 256 | AreionSoEM-256 (`jedisct1/go-aes` building blocks) | CBC-MAC with SoEM-256 as keyed round function |
-| 3 | `areion512` | 512 | AreionSoEM-512 (`jedisct1/go-aes` building blocks) | CBC-MAC with SoEM-512 as keyed round function |
+| 2 | `areion256` | 256 | AreionSoEM-256 (`third/goaes` building blocks; SoEM22, two Areion permutations) | CBC-MAC with SoEM-256 as keyed round function |
+| 3 | `areion512` | 512 | AreionSoEM-512 (`third/goaes` building blocks; SoEM22, two Areion permutations) | CBC-MAC with SoEM-512 as keyed round function |
 | 4 | `blake2b256` | 256 | BLAKE2b-256 unkeyed (`x/crypto/blake2b`) | Prepend-key MAC with seed XOR into data prefix |
 | 5 | `blake2b512` | 512 | BLAKE2b-512 unkeyed (`x/crypto/blake2b`) | Prepend-key MAC, scaled to 64-byte key + 512-bit output |
 | 6 | `blake2s` | 256 | BLAKE2s-256 unkeyed (`x/crypto/blake2s`) | Prepend-key MAC with seed XOR into data prefix |
@@ -83,7 +83,13 @@ Empirical validation of the cascade dissolving every standalone break at `r ≥ 
 
 ### Areion-SoEM-256 (registry: `areion256`)
 
-**Underlying primitive.** AreionSoEM-256 (Sum of Even-Mansour over the AES-round-based Areion permutation; built atop `github.com/jedisct1/go-aes` round building blocks).
+**Underlying primitive.** AreionSoEM-256: the Sum of Even-Mansour SoEM22 of Chen–Lambooij–Mennink (CRYPTO 2019; ePrint 2019/554, Eq. (4)) over two AES-round-based Areion-256 permutations,
+
+    F(k1, k2, m) = P1(m ⊕ k1) ⊕ P2(m ⊕ k2) ⊕ k1 ⊕ k2
+
+where `P1` is Areion-256 under its published round constants and `P2` is Areion-256 under a second round-constant table (the next words of the hexadecimal digits of π), modelled as a permutation independent of `P1`; built atop the `third/goaes` round building blocks.
+
+**ITB uses a patched in-module copy of go-aes (`third/goaes`), because the upstream `AreionSoEM256` / `AreionSoEM512` evaluate one Areion permutation in both branches, which leaves `F(m) = F(m ⊕ k1 ⊕ k2 ⊕ d)` for every `m` and caps the PRF at the birthday bound; the ~170 / ~341-bit figure quoted upstream is the SoEM22 bound and is not reachable there (<https://github.com/jedisct1/go-aes/issues/1>).**
 
 **Construction.** CBC-MAC with the SoEM-256 keyed function (a PRF, not a permutation) as the round function. Defined in `itb/areion.go::MakeAreionSoEM256HashWithKey` (re-exported via `hashes/areion256.go`).
 
@@ -108,13 +114,13 @@ Empirical validation of the cascade dissolving every standalone break at `r ≥ 
 - **AVX-512 fit.** The 4-pixel-parallel ZMM kernels carry full SoEM state per lane through VAESENC without rate / capacity arithmetic. A sponge would impose extra state-shuffle overhead per absorb to maintain the rate / capacity split across lanes.
 - **Single-round fast-path for ITB short inputs.** ITB feeds 20- / 36- / 68-byte buffers per pixel. SoEM-256 with chunkSize=24 single-rounds the 20-byte case; SoEM-512 with chunkSize=56 single-rounds the 20- and 36-byte cases. A sponge with `rate < state_size` would force multi-round absorbs even for these short inputs.
 
-The security argument does not regress relative to a sponge framing. CBC-MAC over prefix-free inputs is PRF-secure under a PRF assumption on the round function (`Adv_PRF(CBC-MAC[F_K]) ≤ Adv_PRF(F_K) + q² · ℓ² / 2^n`; Bellare–Kilian–Rogaway for fixed-length inputs, Petrank–Rackoff for prefix-free inputs); the length tag in the first block makes the absorbed inputs prefix-free. Applying it to SoEM gives `Adv_PRF ≤ Adv_PRF(SoEM) + q² · ℓ² / 2^n` with `n ∈ {256, 512}`. Both SoEM branches evaluate the same Areion permutation, so `SoEM(x) = SoEM(x ⊕ k1 ⊕ k2 ⊕ d)` for every `x`; the beyond-birthday PRF bound for Sum of Even-Mansour (Chen–Lambooij–Mennink, CRYPTO 2019) requires two independent permutations, and with identical permutations a birthday-bound attack applies. No beyond-birthday bound is therefore claimed: the claim rests on the assumption that `Adv_PRF(SoEM)` stays negligible for `q` well below `2^{n/2}` — `2^128` / `2^256` queries under one subkey, far above any practical query budget. A sponge over the Areion permutation gives `Adv_PRF ≤ q² / 2^c` for capacity `c < n`; in either framing the dominant term is birthday-level in the width that carries the security (`n` for the CBC-MAC chain, `c` for the sponge), so the CBC-MAC framing's birthday-level term is no narrower than that of a sponge over the same state size. The trade-off is purely throughput / state efficiency versus academic narrative cleanliness; this construction takes the throughput side and characterises the framing explicitly here so a reader expecting the sponge framing has it stated rather than implied.
+The security argument does not regress relative to a sponge framing. CBC-MAC over prefix-free inputs is PRF-secure under a PRF assumption on the round function (`Adv_PRF(CBC-MAC[F_K]) ≤ Adv_PRF(F_K) + q² · ℓ² / 2^n`; Bellare–Kilian–Rogaway for fixed-length inputs, Petrank–Rackoff for prefix-free inputs); the length tag in the first block makes the absorbed inputs prefix-free. Applying it to SoEM gives `Adv_PRF ≤ Adv_PRF(SoEM22) + q² · ℓ² / 2^n` with `n ∈ {256, 512}`. For `Adv_PRF(SoEM22)`, Theorem 1 of Chen–Lambooij–Mennink (CRYPTO 2019; ePrint 2019/554) bounds the PRF advantage of SoEM22 — two independent permutations, two independent keys, output whitening `k1 ⊕ k2` — by about `q^{3/2} / 2^n` in the random-permutation model, so the round function is a PRF up to about `2^{2n/3}` queries (`≈ 2^170` for `n = 256`, `≈ 2^341` for `n = 512`) under one subkey pair, conditional on modelling `P2` (Areion under its second constant table) as independent of `P1`. The `q² · ℓ² / 2^n` chaining term is then the dominant one; it is birthday-level in `n`. A sponge over the Areion permutation gives `Adv_PRF ≤ q² / 2^c` for capacity `c < n`; in either framing the dominant term is birthday-level in the width that carries the security (`n` for the CBC-MAC chain, `c` for the sponge), so the CBC-MAC framing's birthday-level term is no narrower than that of a sponge over the same state size. The trade-off is purely throughput / state efficiency versus academic narrative cleanliness; this construction takes the throughput side and characterises the framing explicitly here so a reader expecting the sponge framing has it stated rather than implied.
 
-**Security claim.** PRF-secure under the assumption that SoEM-256 (Sum of Even-Mansour: two Even-Mansour evaluations of the single Areion-256 permutation under two subkeys, XORed) is a PRF up to the birthday bound. No beyond-birthday bound is claimed — the beyond-birthday SoEM proof requires two independent permutations.
+**Security claim.** PRF-secure under the assumption that SoEM22 over Areion-256 (`P1(m ⊕ k1) ⊕ P2(m ⊕ k2) ⊕ k1 ⊕ k2`, two Areion-256 permutations under distinct round-constant tables, two subkeys) is a PRF — CLM19 Theorem 1 gives about `2^{2n/3}` queries, `n = 256`, in the random-permutation model with `P2` modelled as independent of `P1` — with both subkeys secret, composed through the CBC-MAC chaining term `q² · ℓ² / 2^256` above.
 
 ### Areion-SoEM-512 (registry: `areion512`)
 
-**Underlying primitive.** AreionSoEM-512.
+**Underlying primitive.** AreionSoEM-512: SoEM22 over two Areion-512 permutations (`P1` under the published constants, `P2` under the second table), the same shape as AreionSoEM-256 at `n = 512`.
 
 **Construction.** Identical shape to Areion-SoEM-256 — CBC-MAC with the SoEM-512 keyed function (a PRF, not a permutation) as the round function. Scaled to a 64-byte fixed key, 64-byte state, 56-byte chunks per round (8 bytes reserved for the length tag), and 512-bit output. Defined in `itb/areion.go::MakeAreionSoEM512HashWithKey` (re-exported via `hashes/areion512.go`).
 
@@ -128,7 +134,7 @@ The security argument does not regress relative to a sponge framing. CBC-MAC ove
 
 **Why this is not a strict sponge.** Same reasoning as Areion-SoEM-256.
 
-**Security claim.** PRF-secure under the same birthday-level PRF assumption on SoEM-512 (single Areion-512 permutation), scaled to 512-bit output width.
+**Security claim.** PRF-secure under the same SoEM22 PRF assumption at `n = 512` (CLM19 Theorem 1, about `2^{2n/3} ≈ 2^341` queries in the random-permutation model, `P2` modelled as independent of `P1`), scaled to 512-bit output width, with the chaining term `q² · ℓ² / 2^512`.
 
 ### BLAKE2b-256 (registry: `blake2b256`)
 

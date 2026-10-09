@@ -6,14 +6,14 @@ import (
 	"crypto/rand"
 	"testing"
 
-	"github.com/jedisct1/go-aes"
+	"github.com/everanium/itb/third/goaes"
 )
 
 // TestAreion512SoEMPermutex4Interleaved_Parity verifies that the fused
 // 512-bit kernel produces the same result as the reference path:
 //
 //	state1 = Areion512Permutex4(s1)
-//	state2 = Areion512Permutex4(s2)
+//	state2 = Areion512Permute2x4(s2)
 //	output = state1 ⊕ state2
 //
 // across random inputs. Tests round-body correctness, the
@@ -55,7 +55,7 @@ func TestAreion512SoEMPermutex4Interleaved_Parity(t *testing.T) {
 		refA1, refB1, refC1, refD1 := a1, b1, c1, d1
 		refA2, refB2, refC2, refD2 := a2, b2, c2, d2
 		Areion512Permutex4(&refA1, &refB1, &refC1, &refD1)
-		Areion512Permutex4(&refA2, &refB2, &refC2, &refD2)
+		Areion512Permute2x4(&refA2, &refB2, &refC2, &refD2)
 		for i := 0; i < 64; i++ {
 			refA1[i] ^= refA2[i]
 			refB1[i] ^= refB2[i]

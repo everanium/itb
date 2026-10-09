@@ -1,10 +1,13 @@
 //go:build amd64 && !purego && !noitbasm
 
-// Fused AVX-512 + VAES kernel for the Areion-SoEM-512 4-way batched
-// PRF. Mirrors the SoEM-256 fused kernel one tier up:
+// Fused AVX-512 + VAES kernel for the two permutations of the
+// Areion-SoEM-512 4-way batched PRF: P1 (round constants `·AreionRC4x`)
+// on state1 and P2 (round constants `·AreionRC4x2`) on state2. Mirrors
+// the SoEM-256 fused kernel one tier up:
 //
-//  1. Loads the 15 Areion512 round constants once (vs twice for two
-//     separate `Areion512Permutex4` calls).
+//  1. Pre-loads the 15 P1 round constants into registers once and reads
+//     the P2 constants as memory operands of the second chain's
+//     VAESENCLAST.
 //  2. Interleaves the state1 and state2 round bodies — two
 //     independent VAES dependency chains issued in lock-step,
 //     masking the 5-cycle VAESENC latency on Intel Sunny Cove /
@@ -18,8 +21,8 @@
 //     writeback to (a1, b1, c1, d1) — the rotation only renames
 //     register roles, so the rotated XOR pattern (Z3⊕Z11 → a1, ...)
 //     uses the existing register contents directly.
-//  4. Reuses the same `·AreionRC4x` 64-byte pre-broadcast round-
-//     constant table as the per-half kernel.
+//  4. Reads the same `·AreionRC4x` / `·AreionRC4x2` 64-byte
+//     pre-broadcast round-constant tables as the per-half kernels.
 
 #include "textflag.h"
 
@@ -28,15 +31,17 @@
 // Caller is responsible for the SoEM input setup:
 //
 //   (a1, b1, c1, d1) = input ⊕ key1                    (SoA Block4 layout)
-//   (a2, b2, c2, d2) = input ⊕ key2 ⊕ domainSep
+//   (a2, b2, c2, d2) = input ⊕ key2
 //
-// The kernel runs both 15-round Areion512 permutations interleaved,
-// applies the final cyclic rotation `(x0,x1,x2,x3) → (x3,x0,x1,x2)`
-// fused with the SoEM XOR `state1' ⊕ state2'`, and writes the
-// result back to (a1, b1, c1, d1). The state2 buffers are scratch
-// and their contents after the call are unspecified.
+// The kernel runs the 15-round Areion512 permutation P1 on state1 and
+// P2 on state2 interleaved, applies the final cyclic rotation
+// `(x0,x1,x2,x3) → (x3,x0,x1,x2)` fused with the output XOR
+// `P1(state1) ⊕ P2(state2)`, and writes the result back to (a1, b1,
+// c1, d1). The state2 buffers are left intact. The SoEM22 whitening
+// `⊕ key1 ⊕ key2` is the caller's.
 //
-// Per round (15 rounds, (a,b,c,d) rotates by `i%4`):
+// Per round (15 rounds, (a,b,c,d) rotates by `i%4`; rc = P1's
+// constant for state1, rc2 = P2's for state2):
 //
 //   temp1 = a;  temp1 = RoundNoKey(temp1);  b ^= temp1
 //   temp2 = c;  temp2 = RoundNoKey(temp2);  d ^= temp2
@@ -70,7 +75,8 @@ TEXT ·Areion512SoEMPermutex4Interleaved(SB), NOSPLIT, $0-64
 
 	VPXORD Z6, Z6, Z6    // Z6 = zero (RoundNoKey / FinalRoundNoKey "key")
 
-	// Pre-load all 15 round constants Z16..Z30.
+	// Pre-load all 15 P1 round constants Z16..Z30; the P2 constants are
+	// memory operands below.
 	VMOVDQU64 ·AreionRC4x+0(SB),   Z16  // rc[0]
 	VMOVDQU64 ·AreionRC4x+64(SB),  Z17  // rc[1]
 	VMOVDQU64 ·AreionRC4x+128(SB), Z18  // rc[2]
@@ -104,7 +110,7 @@ TEXT ·Areion512SoEMPermutex4Interleaved(SB), NOSPLIT, $0-64
 	VAESENCLAST Z6, Z0, Z0
 	VAESENCLAST Z6, Z8, Z8
 	VAESENCLAST Z16, Z2, Z2
-	VAESENCLAST Z16, Z10, Z10
+	VAESENCLAST ·AreionRC4x2+0(SB), Z10, Z10  // rc2[0]
 	VAESENC     Z6, Z2, Z2
 	VAESENC     Z6, Z10, Z10
 
@@ -125,7 +131,7 @@ TEXT ·Areion512SoEMPermutex4Interleaved(SB), NOSPLIT, $0-64
 	VAESENCLAST Z6, Z1, Z1
 	VAESENCLAST Z6, Z9, Z9
 	VAESENCLAST Z17, Z3, Z3
-	VAESENCLAST Z17, Z11, Z11
+	VAESENCLAST ·AreionRC4x2+64(SB), Z11, Z11  // rc2[1]
 	VAESENC     Z6, Z3, Z3
 	VAESENC     Z6, Z11, Z11
 
@@ -146,7 +152,7 @@ TEXT ·Areion512SoEMPermutex4Interleaved(SB), NOSPLIT, $0-64
 	VAESENCLAST Z6, Z2, Z2
 	VAESENCLAST Z6, Z10, Z10
 	VAESENCLAST Z18, Z0, Z0
-	VAESENCLAST Z18, Z8, Z8
+	VAESENCLAST ·AreionRC4x2+128(SB), Z8, Z8  // rc2[2]
 	VAESENC     Z6, Z0, Z0
 	VAESENC     Z6, Z8, Z8
 
@@ -167,7 +173,7 @@ TEXT ·Areion512SoEMPermutex4Interleaved(SB), NOSPLIT, $0-64
 	VAESENCLAST Z6, Z3, Z3
 	VAESENCLAST Z6, Z11, Z11
 	VAESENCLAST Z19, Z1, Z1
-	VAESENCLAST Z19, Z9, Z9
+	VAESENCLAST ·AreionRC4x2+192(SB), Z9, Z9  // rc2[3]
 	VAESENC     Z6, Z1, Z1
 	VAESENC     Z6, Z9, Z9
 
@@ -187,7 +193,7 @@ TEXT ·Areion512SoEMPermutex4Interleaved(SB), NOSPLIT, $0-64
 	VAESENCLAST Z6, Z0, Z0
 	VAESENCLAST Z6, Z8, Z8
 	VAESENCLAST Z20, Z2, Z2
-	VAESENCLAST Z20, Z10, Z10
+	VAESENCLAST ·AreionRC4x2+256(SB), Z10, Z10  // rc2[4]
 	VAESENC     Z6, Z2, Z2
 	VAESENC     Z6, Z10, Z10
 
@@ -207,7 +213,7 @@ TEXT ·Areion512SoEMPermutex4Interleaved(SB), NOSPLIT, $0-64
 	VAESENCLAST Z6, Z1, Z1
 	VAESENCLAST Z6, Z9, Z9
 	VAESENCLAST Z21, Z3, Z3
-	VAESENCLAST Z21, Z11, Z11
+	VAESENCLAST ·AreionRC4x2+320(SB), Z11, Z11  // rc2[5]
 	VAESENC     Z6, Z3, Z3
 	VAESENC     Z6, Z11, Z11
 
@@ -227,7 +233,7 @@ TEXT ·Areion512SoEMPermutex4Interleaved(SB), NOSPLIT, $0-64
 	VAESENCLAST Z6, Z2, Z2
 	VAESENCLAST Z6, Z10, Z10
 	VAESENCLAST Z22, Z0, Z0
-	VAESENCLAST Z22, Z8, Z8
+	VAESENCLAST ·AreionRC4x2+384(SB), Z8, Z8  // rc2[6]
 	VAESENC     Z6, Z0, Z0
 	VAESENC     Z6, Z8, Z8
 
@@ -247,7 +253,7 @@ TEXT ·Areion512SoEMPermutex4Interleaved(SB), NOSPLIT, $0-64
 	VAESENCLAST Z6, Z3, Z3
 	VAESENCLAST Z6, Z11, Z11
 	VAESENCLAST Z23, Z1, Z1
-	VAESENCLAST Z23, Z9, Z9
+	VAESENCLAST ·AreionRC4x2+448(SB), Z9, Z9  // rc2[7]
 	VAESENC     Z6, Z1, Z1
 	VAESENC     Z6, Z9, Z9
 
@@ -267,7 +273,7 @@ TEXT ·Areion512SoEMPermutex4Interleaved(SB), NOSPLIT, $0-64
 	VAESENCLAST Z6, Z0, Z0
 	VAESENCLAST Z6, Z8, Z8
 	VAESENCLAST Z24, Z2, Z2
-	VAESENCLAST Z24, Z10, Z10
+	VAESENCLAST ·AreionRC4x2+512(SB), Z10, Z10  // rc2[8]
 	VAESENC     Z6, Z2, Z2
 	VAESENC     Z6, Z10, Z10
 
@@ -287,7 +293,7 @@ TEXT ·Areion512SoEMPermutex4Interleaved(SB), NOSPLIT, $0-64
 	VAESENCLAST Z6, Z1, Z1
 	VAESENCLAST Z6, Z9, Z9
 	VAESENCLAST Z25, Z3, Z3
-	VAESENCLAST Z25, Z11, Z11
+	VAESENCLAST ·AreionRC4x2+576(SB), Z11, Z11  // rc2[9]
 	VAESENC     Z6, Z3, Z3
 	VAESENC     Z6, Z11, Z11
 
@@ -307,7 +313,7 @@ TEXT ·Areion512SoEMPermutex4Interleaved(SB), NOSPLIT, $0-64
 	VAESENCLAST Z6, Z2, Z2
 	VAESENCLAST Z6, Z10, Z10
 	VAESENCLAST Z26, Z0, Z0
-	VAESENCLAST Z26, Z8, Z8
+	VAESENCLAST ·AreionRC4x2+640(SB), Z8, Z8  // rc2[10]
 	VAESENC     Z6, Z0, Z0
 	VAESENC     Z6, Z8, Z8
 
@@ -327,7 +333,7 @@ TEXT ·Areion512SoEMPermutex4Interleaved(SB), NOSPLIT, $0-64
 	VAESENCLAST Z6, Z3, Z3
 	VAESENCLAST Z6, Z11, Z11
 	VAESENCLAST Z27, Z1, Z1
-	VAESENCLAST Z27, Z9, Z9
+	VAESENCLAST ·AreionRC4x2+704(SB), Z9, Z9  // rc2[11]
 	VAESENC     Z6, Z1, Z1
 	VAESENC     Z6, Z9, Z9
 
@@ -347,7 +353,7 @@ TEXT ·Areion512SoEMPermutex4Interleaved(SB), NOSPLIT, $0-64
 	VAESENCLAST Z6, Z0, Z0
 	VAESENCLAST Z6, Z8, Z8
 	VAESENCLAST Z28, Z2, Z2
-	VAESENCLAST Z28, Z10, Z10
+	VAESENCLAST ·AreionRC4x2+768(SB), Z10, Z10  // rc2[12]
 	VAESENC     Z6, Z2, Z2
 	VAESENC     Z6, Z10, Z10
 
@@ -367,7 +373,7 @@ TEXT ·Areion512SoEMPermutex4Interleaved(SB), NOSPLIT, $0-64
 	VAESENCLAST Z6, Z1, Z1
 	VAESENCLAST Z6, Z9, Z9
 	VAESENCLAST Z29, Z3, Z3
-	VAESENCLAST Z29, Z11, Z11
+	VAESENCLAST ·AreionRC4x2+832(SB), Z11, Z11  // rc2[13]
 	VAESENC     Z6, Z3, Z3
 	VAESENC     Z6, Z11, Z11
 
@@ -387,7 +393,7 @@ TEXT ·Areion512SoEMPermutex4Interleaved(SB), NOSPLIT, $0-64
 	VAESENCLAST Z6, Z2, Z2
 	VAESENCLAST Z6, Z10, Z10
 	VAESENCLAST Z30, Z0, Z0
-	VAESENCLAST Z30, Z8, Z8
+	VAESENCLAST ·AreionRC4x2+896(SB), Z8, Z8  // rc2[14]
 	VAESENC     Z6, Z0, Z0
 	VAESENC     Z6, Z8, Z8
 

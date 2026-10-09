@@ -5,7 +5,7 @@ import (
 	"encoding/binary"
 	"testing"
 
-	aes "github.com/jedisct1/go-aes"
+	aes "github.com/everanium/itb/third/goaes"
 )
 
 // Shapes lists every per-lane input length the kernels are specialised for.

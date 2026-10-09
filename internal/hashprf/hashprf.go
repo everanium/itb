@@ -121,28 +121,27 @@ const (
 // from its 32-byte key: seed = SHA-512(areion256SubkeyLabel || key)[:32],
 // read as four little-endian uint64 words.
 //
-// The registry Areion-SoEM round function is
+// The registry Areion-SoEM round function is SoEM22,
 //
-//	F(m) = P(m ^ k1) ^ P(m ^ k2 ^ d)
+//	F(m) = P1(m ^ k1) ^ P2(m ^ k2) ^ k1 ^ k2
 //
-// with k1 the fixed key, k2 the seed and d a public domain constant. Both
-// subkeys must be secret: with a public k2 the second term P(m ^ k2 ^ d)
-// is computable by anyone, so one known input / output block yields
-// P(m ^ k1), and one inverse permutation yields k1. Deriving k2 from the
-// key closes that path while the PRF key length stays the registry key
-// length. SHA-512 is used as a standard, domain-separated derivation that
-// lives entirely inside this package; modelling it as a random oracle, k2
-// is indistinguishable from a subkey drawn independently of k1 by anyone
-// who does not hold the key.
+// with k1 the fixed key, k2 the seed, and P1 / P2 the Areion permutation
+// under its first and second round-constant table. Both subkeys must be
+// secret: the SoEM22 PRF bound is stated for two independent secret keys,
+// and with a public k2 the second term P2(m ^ k2) is computable by anyone,
+// which reduces F to a single-key Even-Mansour instance in k1 (the one-
+// block inversion is blocked only by the whitening). Deriving k2 from the
+// key keeps both subkeys secret while the PRF key length stays the
+// registry key length. SHA-512 is used as a standard, domain-separated
+// derivation that lives entirely inside this package; modelling it as a
+// random oracle, k2 is indistinguishable from a subkey drawn independently
+// of k1 by anyone who does not hold the key.
 //
-// Security. Two secret subkeys restore the SoEM key setting. The claim
-// is the birthday-level PRF assumption on SoEM in the state width n, with
-// the Areion permutation modelled as a random permutation and SHA-512 as
-// a random oracle for k2. No beyond-birthday bound is claimed: the
-// beyond-birthday SoEM bound of Chen, Lambooij and Mennink (CRYPTO 2019)
-// requires two independent permutations, and with one permutation
-// F(m) = F(m ^ k1 ^ k2 ^ d) for every m gives a matching birthday-bound
-// attack. The CBC-MAC chain over this round
+// Security. Two secret subkeys restore the SoEM22 key setting. The claim
+// is the PRF bound of Chen, Lambooij and Mennink (CRYPTO 2019; ePrint
+// 2019/554, Theorem 1): about 2^(2n/3) queries in the state width n, in
+// the random-permutation model with P2 modelled as independent of P1 and
+// SHA-512 as a random oracle for k2. The CBC-MAC chain over this round
 // function, length-tagged in its first block, carries the bound to
 // variable-length inputs with the q^2 * l^2 / 2^n term of
 // hashes/CONSTRUCTIONS.md, n = 256 for areion256 and n = 512 for

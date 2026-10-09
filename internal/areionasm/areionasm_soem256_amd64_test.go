@@ -6,14 +6,14 @@ import (
 	"crypto/rand"
 	"testing"
 
-	"github.com/jedisct1/go-aes"
+	"github.com/everanium/itb/third/goaes"
 )
 
 // TestAreion256SoEMPermutex4Interleaved_Parity verifies that the fused
 // kernel produces the same result as the reference path:
 //
 //	state1 = Areion256Permutex4(s1)
-//	state2 = Areion256Permutex4(s2)
+//	state2 = Areion256Permute2x4(s2)
 //	output = state1 ⊕ state2
 //
 // against random inputs. A divergence here (round-body copy direction,
@@ -48,7 +48,7 @@ func TestAreion256SoEMPermutex4Interleaved_Parity(t *testing.T) {
 		refS2b0 = s2b0
 		refS2b1 = s2b1
 		Areion256Permutex4(&refS1b0, &refS1b1)
-		Areion256Permutex4(&refS2b0, &refS2b1)
+		Areion256Permute2x4(&refS2b0, &refS2b1)
 		for i := 0; i < 64; i++ {
 			refS1b0[i] ^= refS2b0[i]
 			refS1b1[i] ^= refS2b1[i]
@@ -95,7 +95,7 @@ func TestAreion256SoEMPermutex4Interleaved_FixedVector(t *testing.T) {
 	refS2b0 := s2b0
 	refS2b1 := s2b1
 	Areion256Permutex4(&refS1b0, &refS1b1)
-	Areion256Permutex4(&refS2b0, &refS2b1)
+	Areion256Permute2x4(&refS2b0, &refS2b1)
 	for i := 0; i < 64; i++ {
 		refS1b0[i] ^= refS2b0[i]
 		refS1b1[i] ^= refS2b1[i]

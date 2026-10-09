@@ -55,7 +55,7 @@ import (
 	"encoding/binary"
 	"unsafe"
 
-	aes "github.com/jedisct1/go-aes"
+	aes "github.com/everanium/itb/third/goaes"
 )
 
 // RC holds the eight AES-ITB round constants, big-endian packings of

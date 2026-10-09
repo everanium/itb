@@ -6,7 +6,7 @@ import (
 	"crypto/rand"
 	"testing"
 
-	"github.com/jedisct1/go-aes"
+	"github.com/everanium/itb/third/goaes"
 
 	"github.com/everanium/itb/internal/areionasm"
 )

@@ -2,10 +2,11 @@
 
 // AVX2 + VAES YMM (two lanes per pass, two passes) fused ChainHash cascade kernel for Areion-SoEM-256 at the
 // 20-byte shape, 4 lanes (1 absorb chunk, 1 SoEM evaluation —
-// 2 10-round Areion-256 permutations — per cascade round). The message
-// blocks are staged once per call; see areionasm_fused.go for the
-// construction and the in-package parity tests for the bit-exact pin
-// against the pure-Go cascade.
+// 2 10-round Areion-256 permutations, P1 under the first constant
+// table and P2 under the second — per cascade round). The message blocks
+// are staged once per call; see areionasm_fused.go for the construction
+// and the in-package parity tests for the bit-exact pin against the
+// pure-Go cascade.
 
 #include "textflag.h"
 
@@ -63,7 +64,6 @@ TEXT ·areion256FusedChain20x4VaesAvx2Asm(SB), NOSPLIT, $128-40
 	VPXOR Y6, Y6, Y6
 	VBROADCASTI128 0(AX), Y10
 	VBROADCASTI128 16(AX), Y11
-	VMOVDQU ·AreionSoEMDomainSep256(SB), Y12
 
 	// pass 0: lanes 0, 1
 	MOVQ comps+8(FP), BX
@@ -74,7 +74,6 @@ TEXT ·areion256FusedChain20x4VaesAvx2Asm(SB), NOSPLIT, $128-40
 loop0:
 	VBROADCASTI128 0(BX), Y7
 	VPXOR Y7, Y8, Y13
-	VPXOR Y12, Y13, Y13
 	VBROADCASTI128 16(BX), Y7
 	VPXOR Y7, Y9, Y14
 	ADDQ $32, BX
@@ -83,7 +82,7 @@ loop0:
 	VPXOR 64(SP), Y11, Y1
 	VPXOR 64(SP), Y14, Y3
 	VAESENC ·AreionRC4x+0(SB), Y0, Y4
-	VAESENC ·AreionRC4x+0(SB), Y2, Y5
+	VAESENC ·AreionRC4x2+0(SB), Y2, Y5
 	VAESENC Y1, Y4, Y4
 	VAESENC Y3, Y5, Y5
 	VAESENCLAST Y6, Y0, Y0
@@ -91,7 +90,7 @@ loop0:
 	VMOVDQA Y4, Y1
 	VMOVDQA Y5, Y3
 	VAESENC ·AreionRC4x+64(SB), Y1, Y4
-	VAESENC ·AreionRC4x+64(SB), Y3, Y5
+	VAESENC ·AreionRC4x2+64(SB), Y3, Y5
 	VAESENC Y0, Y4, Y4
 	VAESENC Y2, Y5, Y5
 	VAESENCLAST Y6, Y1, Y1
@@ -99,7 +98,7 @@ loop0:
 	VMOVDQA Y4, Y0
 	VMOVDQA Y5, Y2
 	VAESENC ·AreionRC4x+128(SB), Y0, Y4
-	VAESENC ·AreionRC4x+128(SB), Y2, Y5
+	VAESENC ·AreionRC4x2+128(SB), Y2, Y5
 	VAESENC Y1, Y4, Y4
 	VAESENC Y3, Y5, Y5
 	VAESENCLAST Y6, Y0, Y0
@@ -107,7 +106,7 @@ loop0:
 	VMOVDQA Y4, Y1
 	VMOVDQA Y5, Y3
 	VAESENC ·AreionRC4x+192(SB), Y1, Y4
-	VAESENC ·AreionRC4x+192(SB), Y3, Y5
+	VAESENC ·AreionRC4x2+192(SB), Y3, Y5
 	VAESENC Y0, Y4, Y4
 	VAESENC Y2, Y5, Y5
 	VAESENCLAST Y6, Y1, Y1
@@ -115,7 +114,7 @@ loop0:
 	VMOVDQA Y4, Y0
 	VMOVDQA Y5, Y2
 	VAESENC ·AreionRC4x+256(SB), Y0, Y4
-	VAESENC ·AreionRC4x+256(SB), Y2, Y5
+	VAESENC ·AreionRC4x2+256(SB), Y2, Y5
 	VAESENC Y1, Y4, Y4
 	VAESENC Y3, Y5, Y5
 	VAESENCLAST Y6, Y0, Y0
@@ -123,7 +122,7 @@ loop0:
 	VMOVDQA Y4, Y1
 	VMOVDQA Y5, Y3
 	VAESENC ·AreionRC4x+320(SB), Y1, Y4
-	VAESENC ·AreionRC4x+320(SB), Y3, Y5
+	VAESENC ·AreionRC4x2+320(SB), Y3, Y5
 	VAESENC Y0, Y4, Y4
 	VAESENC Y2, Y5, Y5
 	VAESENCLAST Y6, Y1, Y1
@@ -131,7 +130,7 @@ loop0:
 	VMOVDQA Y4, Y0
 	VMOVDQA Y5, Y2
 	VAESENC ·AreionRC4x+384(SB), Y0, Y4
-	VAESENC ·AreionRC4x+384(SB), Y2, Y5
+	VAESENC ·AreionRC4x2+384(SB), Y2, Y5
 	VAESENC Y1, Y4, Y4
 	VAESENC Y3, Y5, Y5
 	VAESENCLAST Y6, Y0, Y0
@@ -139,7 +138,7 @@ loop0:
 	VMOVDQA Y4, Y1
 	VMOVDQA Y5, Y3
 	VAESENC ·AreionRC4x+448(SB), Y1, Y4
-	VAESENC ·AreionRC4x+448(SB), Y3, Y5
+	VAESENC ·AreionRC4x2+448(SB), Y3, Y5
 	VAESENC Y0, Y4, Y4
 	VAESENC Y2, Y5, Y5
 	VAESENCLAST Y6, Y1, Y1
@@ -147,7 +146,7 @@ loop0:
 	VMOVDQA Y4, Y0
 	VMOVDQA Y5, Y2
 	VAESENC ·AreionRC4x+512(SB), Y0, Y4
-	VAESENC ·AreionRC4x+512(SB), Y2, Y5
+	VAESENC ·AreionRC4x2+512(SB), Y2, Y5
 	VAESENC Y1, Y4, Y4
 	VAESENC Y3, Y5, Y5
 	VAESENCLAST Y6, Y0, Y0
@@ -155,7 +154,7 @@ loop0:
 	VMOVDQA Y4, Y1
 	VMOVDQA Y5, Y3
 	VAESENC ·AreionRC4x+576(SB), Y1, Y4
-	VAESENC ·AreionRC4x+576(SB), Y3, Y5
+	VAESENC ·AreionRC4x2+576(SB), Y3, Y5
 	VAESENC Y0, Y4, Y4
 	VAESENC Y2, Y5, Y5
 	VAESENCLAST Y6, Y1, Y1
@@ -163,7 +162,11 @@ loop0:
 	VMOVDQA Y4, Y0
 	VMOVDQA Y5, Y2
 	VPXOR Y2, Y0, Y8
+	VPXOR Y10, Y8, Y8
+	VPXOR Y13, Y8, Y8
 	VPXOR Y3, Y1, Y9
+	VPXOR Y11, Y9, Y9
+	VPXOR Y14, Y9, Y9
 	DECQ CX
 	JNZ loop0
 	VEXTRACTI128 $0, Y8, 0(DX)
@@ -180,7 +183,6 @@ loop0:
 loop1:
 	VBROADCASTI128 0(BX), Y7
 	VPXOR Y7, Y8, Y13
-	VPXOR Y12, Y13, Y13
 	VBROADCASTI128 16(BX), Y7
 	VPXOR Y7, Y9, Y14
 	ADDQ $32, BX
@@ -189,7 +191,7 @@ loop1:
 	VPXOR 96(SP), Y11, Y1
 	VPXOR 96(SP), Y14, Y3
 	VAESENC ·AreionRC4x+0(SB), Y0, Y4
-	VAESENC ·AreionRC4x+0(SB), Y2, Y5
+	VAESENC ·AreionRC4x2+0(SB), Y2, Y5
 	VAESENC Y1, Y4, Y4
 	VAESENC Y3, Y5, Y5
 	VAESENCLAST Y6, Y0, Y0
@@ -197,7 +199,7 @@ loop1:
 	VMOVDQA Y4, Y1
 	VMOVDQA Y5, Y3
 	VAESENC ·AreionRC4x+64(SB), Y1, Y4
-	VAESENC ·AreionRC4x+64(SB), Y3, Y5
+	VAESENC ·AreionRC4x2+64(SB), Y3, Y5
 	VAESENC Y0, Y4, Y4
 	VAESENC Y2, Y5, Y5
 	VAESENCLAST Y6, Y1, Y1
@@ -205,7 +207,7 @@ loop1:
 	VMOVDQA Y4, Y0
 	VMOVDQA Y5, Y2
 	VAESENC ·AreionRC4x+128(SB), Y0, Y4
-	VAESENC ·AreionRC4x+128(SB), Y2, Y5
+	VAESENC ·AreionRC4x2+128(SB), Y2, Y5
 	VAESENC Y1, Y4, Y4
 	VAESENC Y3, Y5, Y5
 	VAESENCLAST Y6, Y0, Y0
@@ -213,7 +215,7 @@ loop1:
 	VMOVDQA Y4, Y1
 	VMOVDQA Y5, Y3
 	VAESENC ·AreionRC4x+192(SB), Y1, Y4
-	VAESENC ·AreionRC4x+192(SB), Y3, Y5
+	VAESENC ·AreionRC4x2+192(SB), Y3, Y5
 	VAESENC Y0, Y4, Y4
 	VAESENC Y2, Y5, Y5
 	VAESENCLAST Y6, Y1, Y1
@@ -221,7 +223,7 @@ loop1:
 	VMOVDQA Y4, Y0
 	VMOVDQA Y5, Y2
 	VAESENC ·AreionRC4x+256(SB), Y0, Y4
-	VAESENC ·AreionRC4x+256(SB), Y2, Y5
+	VAESENC ·AreionRC4x2+256(SB), Y2, Y5
 	VAESENC Y1, Y4, Y4
 	VAESENC Y3, Y5, Y5
 	VAESENCLAST Y6, Y0, Y0
@@ -229,7 +231,7 @@ loop1:
 	VMOVDQA Y4, Y1
 	VMOVDQA Y5, Y3
 	VAESENC ·AreionRC4x+320(SB), Y1, Y4
-	VAESENC ·AreionRC4x+320(SB), Y3, Y5
+	VAESENC ·AreionRC4x2+320(SB), Y3, Y5
 	VAESENC Y0, Y4, Y4
 	VAESENC Y2, Y5, Y5
 	VAESENCLAST Y6, Y1, Y1
@@ -237,7 +239,7 @@ loop1:
 	VMOVDQA Y4, Y0
 	VMOVDQA Y5, Y2
 	VAESENC ·AreionRC4x+384(SB), Y0, Y4
-	VAESENC ·AreionRC4x+384(SB), Y2, Y5
+	VAESENC ·AreionRC4x2+384(SB), Y2, Y5
 	VAESENC Y1, Y4, Y4
 	VAESENC Y3, Y5, Y5
 	VAESENCLAST Y6, Y0, Y0
@@ -245,7 +247,7 @@ loop1:
 	VMOVDQA Y4, Y1
 	VMOVDQA Y5, Y3
 	VAESENC ·AreionRC4x+448(SB), Y1, Y4
-	VAESENC ·AreionRC4x+448(SB), Y3, Y5
+	VAESENC ·AreionRC4x2+448(SB), Y3, Y5
 	VAESENC Y0, Y4, Y4
 	VAESENC Y2, Y5, Y5
 	VAESENCLAST Y6, Y1, Y1
@@ -253,7 +255,7 @@ loop1:
 	VMOVDQA Y4, Y0
 	VMOVDQA Y5, Y2
 	VAESENC ·AreionRC4x+512(SB), Y0, Y4
-	VAESENC ·AreionRC4x+512(SB), Y2, Y5
+	VAESENC ·AreionRC4x2+512(SB), Y2, Y5
 	VAESENC Y1, Y4, Y4
 	VAESENC Y3, Y5, Y5
 	VAESENCLAST Y6, Y0, Y0
@@ -261,7 +263,7 @@ loop1:
 	VMOVDQA Y4, Y1
 	VMOVDQA Y5, Y3
 	VAESENC ·AreionRC4x+576(SB), Y1, Y4
-	VAESENC ·AreionRC4x+576(SB), Y3, Y5
+	VAESENC ·AreionRC4x2+576(SB), Y3, Y5
 	VAESENC Y0, Y4, Y4
 	VAESENC Y2, Y5, Y5
 	VAESENCLAST Y6, Y1, Y1
@@ -269,7 +271,11 @@ loop1:
 	VMOVDQA Y4, Y0
 	VMOVDQA Y5, Y2
 	VPXOR Y2, Y0, Y8
+	VPXOR Y10, Y8, Y8
+	VPXOR Y13, Y8, Y8
 	VPXOR Y3, Y1, Y9
+	VPXOR Y11, Y9, Y9
+	VPXOR Y14, Y9, Y9
 	DECQ CX
 	JNZ loop1
 	VEXTRACTI128 $0, Y8, 64(DX)

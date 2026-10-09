@@ -2,10 +2,11 @@
 
 // AVX-512 + VAES ZMM (two interleaved four-lane groups) batch-16 Interlocked Barrier fill kernel for Areion-SoEM-256 at the
 // 13-byte shape, 8 lanes (1 absorb chunk, 1 SoEM evaluation —
-// 2 10-round Areion-256 permutations — per cascade round). The message
-// blocks are staged once per call; see areionasm_fused.go for the
-// construction and the in-package parity tests for the bit-exact pin
-// against the pure-Go cascade.
+// 2 10-round Areion-256 permutations, P1 under the first constant
+// table and P2 under the second — per cascade round). The message blocks
+// are staged once per call; see areionasm_fused.go for the construction
+// and the in-package parity tests for the bit-exact pin against the
+// pure-Go cascade.
 
 #include "textflag.h"
 
@@ -55,7 +56,6 @@ TEXT ·areion256FusedChain13x8Avx512Asm(SB), NOSPLIT, $0-40
 	VPXORD Z3, Z3, Z3
 	VBROADCASTI32X4 0(AX), Z8
 	VBROADCASTI32X4 16(AX), Z9
-	VMOVDQU64 ·AreionSoEMDomainSep256(SB), Z12
 	VPBROADCASTQ groupIdxBase+24(FP), Z13
 	VMOVDQU64 areionFill13<>+128(SB), Z19
 	VPADDQ areionFill13<>+0(SB), Z13, Z7
@@ -78,9 +78,7 @@ TEXT ·areion256FusedChain13x8Avx512Asm(SB), NOSPLIT, $0-40
 loop:
 	VBROADCASTI32X4 0(BX), Z13
 	VPXORD Z13, Z14, Z10
-	VPXORD Z12, Z10, Z10
 	VPXORD Z13, Z30, Z26
-	VPXORD Z12, Z26, Z26
 	VBROADCASTI32X4 16(BX), Z13
 	VPXORD Z13, Z15, Z11
 	VPXORD Z13, Z31, Z27
@@ -99,8 +97,8 @@ loop:
 	VMOVDQA64 Z20, Z22
 	VAESENC ·AreionRC4x+0(SB), Z2, Z2
 	VAESENC ·AreionRC4x+0(SB), Z18, Z18
-	VAESENC ·AreionRC4x+0(SB), Z6, Z6
-	VAESENC ·AreionRC4x+0(SB), Z22, Z22
+	VAESENC ·AreionRC4x2+0(SB), Z6, Z6
+	VAESENC ·AreionRC4x2+0(SB), Z22, Z22
 	VAESENC Z1, Z2, Z2
 	VAESENC Z17, Z18, Z18
 	VAESENC Z5, Z6, Z6
@@ -119,8 +117,8 @@ loop:
 	VMOVDQA64 Z21, Z22
 	VAESENC ·AreionRC4x+64(SB), Z2, Z2
 	VAESENC ·AreionRC4x+64(SB), Z18, Z18
-	VAESENC ·AreionRC4x+64(SB), Z6, Z6
-	VAESENC ·AreionRC4x+64(SB), Z22, Z22
+	VAESENC ·AreionRC4x2+64(SB), Z6, Z6
+	VAESENC ·AreionRC4x2+64(SB), Z22, Z22
 	VAESENC Z0, Z2, Z2
 	VAESENC Z16, Z18, Z18
 	VAESENC Z4, Z6, Z6
@@ -139,8 +137,8 @@ loop:
 	VMOVDQA64 Z20, Z22
 	VAESENC ·AreionRC4x+128(SB), Z2, Z2
 	VAESENC ·AreionRC4x+128(SB), Z18, Z18
-	VAESENC ·AreionRC4x+128(SB), Z6, Z6
-	VAESENC ·AreionRC4x+128(SB), Z22, Z22
+	VAESENC ·AreionRC4x2+128(SB), Z6, Z6
+	VAESENC ·AreionRC4x2+128(SB), Z22, Z22
 	VAESENC Z1, Z2, Z2
 	VAESENC Z17, Z18, Z18
 	VAESENC Z5, Z6, Z6
@@ -159,8 +157,8 @@ loop:
 	VMOVDQA64 Z21, Z22
 	VAESENC ·AreionRC4x+192(SB), Z2, Z2
 	VAESENC ·AreionRC4x+192(SB), Z18, Z18
-	VAESENC ·AreionRC4x+192(SB), Z6, Z6
-	VAESENC ·AreionRC4x+192(SB), Z22, Z22
+	VAESENC ·AreionRC4x2+192(SB), Z6, Z6
+	VAESENC ·AreionRC4x2+192(SB), Z22, Z22
 	VAESENC Z0, Z2, Z2
 	VAESENC Z16, Z18, Z18
 	VAESENC Z4, Z6, Z6
@@ -179,8 +177,8 @@ loop:
 	VMOVDQA64 Z20, Z22
 	VAESENC ·AreionRC4x+256(SB), Z2, Z2
 	VAESENC ·AreionRC4x+256(SB), Z18, Z18
-	VAESENC ·AreionRC4x+256(SB), Z6, Z6
-	VAESENC ·AreionRC4x+256(SB), Z22, Z22
+	VAESENC ·AreionRC4x2+256(SB), Z6, Z6
+	VAESENC ·AreionRC4x2+256(SB), Z22, Z22
 	VAESENC Z1, Z2, Z2
 	VAESENC Z17, Z18, Z18
 	VAESENC Z5, Z6, Z6
@@ -199,8 +197,8 @@ loop:
 	VMOVDQA64 Z21, Z22
 	VAESENC ·AreionRC4x+320(SB), Z2, Z2
 	VAESENC ·AreionRC4x+320(SB), Z18, Z18
-	VAESENC ·AreionRC4x+320(SB), Z6, Z6
-	VAESENC ·AreionRC4x+320(SB), Z22, Z22
+	VAESENC ·AreionRC4x2+320(SB), Z6, Z6
+	VAESENC ·AreionRC4x2+320(SB), Z22, Z22
 	VAESENC Z0, Z2, Z2
 	VAESENC Z16, Z18, Z18
 	VAESENC Z4, Z6, Z6
@@ -219,8 +217,8 @@ loop:
 	VMOVDQA64 Z20, Z22
 	VAESENC ·AreionRC4x+384(SB), Z2, Z2
 	VAESENC ·AreionRC4x+384(SB), Z18, Z18
-	VAESENC ·AreionRC4x+384(SB), Z6, Z6
-	VAESENC ·AreionRC4x+384(SB), Z22, Z22
+	VAESENC ·AreionRC4x2+384(SB), Z6, Z6
+	VAESENC ·AreionRC4x2+384(SB), Z22, Z22
 	VAESENC Z1, Z2, Z2
 	VAESENC Z17, Z18, Z18
 	VAESENC Z5, Z6, Z6
@@ -239,8 +237,8 @@ loop:
 	VMOVDQA64 Z21, Z22
 	VAESENC ·AreionRC4x+448(SB), Z2, Z2
 	VAESENC ·AreionRC4x+448(SB), Z18, Z18
-	VAESENC ·AreionRC4x+448(SB), Z6, Z6
-	VAESENC ·AreionRC4x+448(SB), Z22, Z22
+	VAESENC ·AreionRC4x2+448(SB), Z6, Z6
+	VAESENC ·AreionRC4x2+448(SB), Z22, Z22
 	VAESENC Z0, Z2, Z2
 	VAESENC Z16, Z18, Z18
 	VAESENC Z4, Z6, Z6
@@ -259,8 +257,8 @@ loop:
 	VMOVDQA64 Z20, Z22
 	VAESENC ·AreionRC4x+512(SB), Z2, Z2
 	VAESENC ·AreionRC4x+512(SB), Z18, Z18
-	VAESENC ·AreionRC4x+512(SB), Z6, Z6
-	VAESENC ·AreionRC4x+512(SB), Z22, Z22
+	VAESENC ·AreionRC4x2+512(SB), Z6, Z6
+	VAESENC ·AreionRC4x2+512(SB), Z22, Z22
 	VAESENC Z1, Z2, Z2
 	VAESENC Z17, Z18, Z18
 	VAESENC Z5, Z6, Z6
@@ -279,8 +277,8 @@ loop:
 	VMOVDQA64 Z21, Z22
 	VAESENC ·AreionRC4x+576(SB), Z2, Z2
 	VAESENC ·AreionRC4x+576(SB), Z18, Z18
-	VAESENC ·AreionRC4x+576(SB), Z6, Z6
-	VAESENC ·AreionRC4x+576(SB), Z22, Z22
+	VAESENC ·AreionRC4x2+576(SB), Z6, Z6
+	VAESENC ·AreionRC4x2+576(SB), Z22, Z22
 	VAESENC Z0, Z2, Z2
 	VAESENC Z16, Z18, Z18
 	VAESENC Z4, Z6, Z6
@@ -297,6 +295,10 @@ loop:
 	VPXORD Z20, Z16, Z30
 	VPXORD Z5, Z1, Z15
 	VPXORD Z21, Z17, Z31
+	VPTERNLOGD $0x96, Z8, Z10, Z14
+	VPTERNLOGD $0x96, Z8, Z26, Z30
+	VPTERNLOGD $0x96, Z9, Z11, Z15
+	VPTERNLOGD $0x96, Z9, Z27, Z31
 	DECQ CX
 	JNZ loop
 

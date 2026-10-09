@@ -7,7 +7,7 @@ import (
 	"encoding/hex"
 	"testing"
 
-	aes "github.com/jedisct1/go-aes"
+	aes "github.com/everanium/itb/third/goaes"
 
 	"github.com/everanium/itb/hashes"
 )
@@ -129,8 +129,8 @@ func TestPRFRegression(t *testing.T) {
 		name string
 		want string
 	}{
-		{hashes.CipherAreion256, "f8f5c5f76d1f9dcf4928b3437be92f9c50092d22293dee7398570ff31b9796fc"},
-		{hashes.CipherAreion512, "4b30541da788b56659671cc10c0b0b9a252e757f49e54ab3a78c610d3f3bf61efbe74f82e5294d4be5c3a4a645c56329d5e75b171c651c0857e0de622f9b35e0"},
+		{hashes.CipherAreion256, "66616f2edad58b8280e135a6a27439fae10f06202e38723a12d41830f270a219"},
+		{hashes.CipherAreion512, "2ecb37bbf1403fbb00102d56e3940e0a4df95b61a3ee82c8b7cfcc741e9721073d3bcf685d68b5eff72ac35007738888f14fd74d1fc83c132e2661ffccce278b"},
 		{hashes.CipherBLAKE2b256, "7a172a3e6d568847321a0f43318e77f8fa0566fd38230a0f39232d729a7d2fda"},
 		{hashes.CipherBLAKE2b512, "3a8f333fff6613bfc0b0d0490f9529eee4642b91e7df425e4da1bc4f290ba38b36ee17e8f6130916985d38ee0a46ae4a45c03c9018252b770b011552c48c786d"},
 		{hashes.CipherBLAKE2s, "45d3b20804c1380a77049cb9c89829e23d7e32a5a98bc15a9aea274fcdf19c97"},
@@ -329,14 +329,38 @@ func soemState512(in []byte) [64]byte {
 	return m
 }
 
+// permute2x256 evaluates the second Areion-256 permutation P2 of SoEM22
+// through the exported API: under the all-zero key, F(m) = P1(m) ^ P2(m)
+// with zero whitening, so P2(m) = F(m) ^ P1(m).
+func permute2x256(x [32]byte) [32]byte {
+	var zeroKey [64]byte
+	f := aes.AreionSoEM256(&zeroKey, &x)
+	p1 := aes.Areion256(x)
+	p1.Permute()
+	for i := range f {
+		f[i] ^= p1[i]
+	}
+	return f
+}
+
+// permute2x512 is the 512-bit counterpart of permute2x256.
+func permute2x512(x [64]byte) [64]byte {
+	var zeroKey [128]byte
+	f := aes.AreionSoEM512(&zeroKey, &x)
+	p1 := aes.Areion512(x)
+	p1.Permute()
+	for i := range f {
+		f[i] ^= p1[i]
+	}
+	return f
+}
+
 // recoverK1x256 runs the one-block key-recovery attack against a SoEM-256
-// round function whose second subkey is the public value zero:
-// k1 = m ^ P^-1(F(m) ^ P(m ^ d)), with d = {0x01, 0, ...}.
+// round function whose second subkey is the public value zero and whose
+// output carries no whitening: out = P1(m ^ k1) ^ P2(m), so
+// k1 = m ^ P1^-1(out ^ P2(m)).
 func recoverK1x256(m [32]byte, out []byte) []byte {
-	var b aes.Areion256
-	copy(b[:], m[:])
-	b[0] ^= 0x01
-	b.Permute()
+	b := permute2x256(m)
 	var a aes.Areion256
 	for i := range a {
 		a[i] = out[i] ^ b[i]
@@ -351,10 +375,7 @@ func recoverK1x256(m [32]byte, out []byte) []byte {
 
 // recoverK1x512 is the SoEM-512 counterpart of recoverK1x256.
 func recoverK1x512(m [64]byte, out []byte) []byte {
-	var b aes.Areion512
-	copy(b[:], m[:])
-	b[0] ^= 0x01
-	b.Permute()
+	b := permute2x512(m)
 	var a aes.Areion512
 	for i := range a {
 		a[i] = out[i] ^ b[i]
@@ -368,13 +389,16 @@ func recoverK1x512(m [64]byte, out []byte) []byte {
 }
 
 // TestAreionOneBlockKeyRecovery runs the one-block key-recovery attack that
-// applies to an Areion-SoEM round function with a public second subkey. The
-// attack must recover the key from a registry hash evaluated under the zero
-// seed (negative control: it confirms the attack itself is correct), and must
-// fail against the hashprf PRF, single and batched, whose second subkey is
-// derived from the key. The input is 24 bytes, the ctr keystream block shape
-// (nonce || counter), which runs the single-round CBC-MAC path, so the SoEM
-// input state is fully known to the attacker.
+// applies to a sum of two permutations keyed with a public second subkey and
+// no output whitening. The attack must recover the key from such a sum built
+// by hand (negative control: it confirms the attack itself is correct), and
+// must fail against the registry hash under the zero seed (the SoEM22
+// whitening k1 ^ k2 alone leaves a single-key Even-Mansour instance in k1,
+// which one block does not invert) and against the hashprf PRF, single and
+// batched, whose second subkey is derived from the key. The input is 24
+// bytes, the ctr keystream block shape (nonce || counter), which runs the
+// single-round CBC-MAC path, so the SoEM input state is fully known to the
+// attacker.
 func TestAreionOneBlockKeyRecovery(t *testing.T) {
 	in := make([]byte, 24)
 	for i := range in {
@@ -390,15 +414,29 @@ func TestAreionOneBlockKeyRecovery(t *testing.T) {
 		copy(k[:], key)
 		m := soemState256(in)
 
-		// Negative control: zero second subkey.
+		// Negative control: P1(m ^ k1) ^ P2(m), public zero second subkey,
+		// no whitening — the sum F(k1 || 0, m) with the whitening k1
+		// removed.
+		var k10 [64]byte
+		copy(k10[:32], key)
+		unwhitened := aes.AreionSoEM256(&k10, &m)
+		for i := range key {
+			unwhitened[i] ^= key[i]
+		}
+		if got := recoverK1x256(m, unwhitened[:]); !bytes.Equal(got, key) {
+			t.Fatalf("negative control: attack failed against the unwhitened zero-subkey sum (got %x)", got)
+		}
+
+		// Registry hash under the zero seed: public second subkey, but the
+		// whitening is in place.
 		hf, _ := hashes.Areion256PairWithKey(k)
 		w := hf(in, [4]uint64{})
 		zeroOut := make([]byte, 32)
 		for i := 0; i < 4; i++ {
 			binary.LittleEndian.PutUint64(zeroOut[i*8:], w[i])
 		}
-		if got := recoverK1x256(m, zeroOut); !bytes.Equal(got, key) {
-			t.Fatalf("negative control: attack failed against the zero-seed construction (got %x)", got)
+		if got := recoverK1x256(m, zeroOut); bytes.Equal(got, key) {
+			t.Fatal("one-block key recovery succeeded against the whitened zero-seed hash")
 		}
 
 		prf, bs, err := New(hashes.CipherAreion256, key)
@@ -447,14 +485,24 @@ func TestAreionOneBlockKeyRecovery(t *testing.T) {
 		copy(k[:], key)
 		m := soemState512(in)
 
+		var k10 [128]byte
+		copy(k10[:64], key)
+		unwhitened := aes.AreionSoEM512(&k10, &m)
+		for i := range key {
+			unwhitened[i] ^= key[i]
+		}
+		if got := recoverK1x512(m, unwhitened[:]); !bytes.Equal(got, key) {
+			t.Fatalf("negative control: attack failed against the unwhitened zero-subkey sum (got %x)", got)
+		}
+
 		hf, _ := hashes.Areion512PairWithKey(k)
 		w := hf(in, [8]uint64{})
 		zeroOut := make([]byte, 64)
 		for i := 0; i < 8; i++ {
 			binary.LittleEndian.PutUint64(zeroOut[i*8:], w[i])
 		}
-		if got := recoverK1x512(m, zeroOut); !bytes.Equal(got, key) {
-			t.Fatalf("negative control: attack failed against the zero-seed construction (got %x)", got)
+		if got := recoverK1x512(m, zeroOut); bytes.Equal(got, key) {
+			t.Fatal("one-block key recovery succeeded against the whitened zero-seed hash")
 		}
 
 		prf, bs, err := New(hashes.CipherAreion512, key)

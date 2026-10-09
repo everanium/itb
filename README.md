@@ -1099,6 +1099,8 @@ Name-keyed dispatch is used by the FFI layer and by any code that selects the pr
 
 Per-primitive technical notes:
 
+**The Areion-SoEM primitives (`areion256` / `areion512`) compute SoEM22 — `P1(m ⊕ k1) ⊕ P2(m ⊕ k2) ⊕ k1 ⊕ k2`, two Areion permutations under distinct round-constant tables (Chen–Lambooij–Mennink, CRYPTO 2019, Theorem 1: a PRF up to about 2^(2n/3) queries in the random-permutation model, with `P2` modelled as independent of `P1`) — from a patched in-module copy of go-aes, [`third/goaes`](third/goaes/README.md), because the upstream `AreionSoEM256` / `AreionSoEM512` evaluate one permutation in both branches and the ~170 / ~341-bit figure quoted there is not reachable in that construction (<https://github.com/jedisct1/go-aes/issues/1>).**
+
 See [hashes/CONSTRUCTIONS.md](hashes/CONSTRUCTIONS.md) for per-primitive construction descriptions (how each registry name wraps its underlying RFC / NIST primitive, where the wrappers diverge from the canonical specification, and why).
 
 ## MACs (`macs/`)

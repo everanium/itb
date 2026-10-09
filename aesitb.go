@@ -36,7 +36,7 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 
-	aes "github.com/jedisct1/go-aes"
+	aes "github.com/everanium/itb/third/goaes"
 )
 
 // aesITBRoundConstants are eight pairwise-distinct Nothing-Up-My-Sleeve

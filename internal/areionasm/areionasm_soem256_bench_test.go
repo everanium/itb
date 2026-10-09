@@ -5,7 +5,7 @@ package areionasm
 import (
 	"testing"
 
-	"github.com/jedisct1/go-aes"
+	"github.com/everanium/itb/third/goaes"
 )
 
 // BenchmarkAreion256SoEM_TwoCallsPlusXor measures the baseline cost

@@ -59,21 +59,32 @@ Cascade evaluated per lane (see areionasm_fused.go):
         for each absorb chunk c:
             if c > 0: state ^= X_c             # [0(8) | data chunk c | 0…]
             s1 = state ^ K1                    # K1 = fixed key
-            s2 = state ^ k2 ^ D                # D = 0x01 in byte 0
-            state = P(s1) ^ P(s2)              # Areion permutation, SoEM
+            s2 = state ^ k2
+            state = P1(s1) ^ P2(s2) ^ K1 ^ k2  # SoEM22: two Areion permutations
         h = state
     out = h
 which is Seed{256,512}.ChainHash over the root package's Areion-SoEM
 chain-absorb closure: the length-tagged first chunk, the XOR absorb of
 every further chunk, and the (single, batched) arms' fixed-key ‖ seed
 SoEM keying, with the seed re-derived from the previous round's output
-XOR the component group. The message blocks S0 / X_c are data-invariant
-across cascade rounds and are staged once per call (GPR stores into the
-frame, then one vector load per block); the tiers with register room keep
-them in registers, the others read them back as memory operands. The
-domain-separation constant D is folded into k2's first block once per
-group. The SoEM keys K1 / k2 never leave registers on the ZMM tier; the
-YMM width-512 and XMM tiers hold k2 in the frame.
+XOR the component group. P1 is Areion under the round constants of
+AreionRC4x / AreionRCTable, P2 is Areion under the second table AreionRC4x2
+/ AreionRCTable2; the output whitening K1 ^ k2 is applied per SoEM
+evaluation, before the state feeds the next chunk or the next group's k2.
+The message blocks S0 / X_c are data-invariant across cascade rounds and
+are staged once per call (GPR stores into the frame, then one vector load
+per block); the tiers with register room keep them in registers, the
+others read them back as memory operands. The SoEM keys K1 / k2 never
+leave registers on the ZMM tier; the YMM width-512 and XMM tiers hold k2
+in the frame, and the eight-lane NEON fill kernels hold K1 ^ k2 in the
+frame.
+
+General-purpose kernels (areion_soem_aesni_amd64.s): the legacy-SSE AES-NI
+XMM arm of the root package's AreionSoEM256x4 / AreionSoEM512x4 — the
+four-lane permutation under a caller-supplied constant table and the fused
+SoEM kernel P1(s1) ^ P2(s2) over four SoA lanes (the whitening is the
+caller's, as for the VAES fused kernels) — emitted from the same round
+bodies as the cascade kernels so the XMM round is written once.
 
 Load shapes follow the stores the Go call sites leave in flight: the
 caller writes a 4-byte pixel index at offset 0 of every lane buffer
@@ -83,50 +94,57 @@ every tier, the width the Go side reads them back with.
 
 Register plans:
     zmm 256 x4    Z0/Z1 s1, Z4/Z5 s2, Z2/Z6 temps, Z3 zero, Z8/Z9 K1,
-                  Z10/Z11 k2, Z12 D, Z13 scratch, Z14/Z15 state, Z16..Z25
-                  RC[0..9], Z26.. staged blocks (S0, X1, X2)
+                  Z10/Z11 k2, Z13 scratch, Z14/Z15 state, Z16..Z25
+                  RC[0..9] of P1, Z26.. staged blocks (S0, X1, X2); the P2
+                  constants as memory operands
     zmm 256 x8    group A: Z0/Z1 s1, Z4/Z5 s2, Z2/Z6 temps, Z10/Z11 k2,
                   Z14/Z15 state, Z24/Z25 S0; group B: Z16/Z17, Z20/Z21,
                   Z18/Z22, Z26/Z27, Z30/Z31, Z28/Z29; shared Z3 zero,
-                  Z8/Z9 K1, Z12 D, Z7 / Z13 / Z19 / Z23 scratch; RC as
-                  memory operands
+                  Z8/Z9 K1, Z7 / Z13 / Z19 / Z23 scratch; RC as memory
+                  operands
     zmm 512 x4    Z0..Z3 s1, Z8..Z11 s2, Z4/Z5/Z12/Z13 temps, Z6 zero, Z7
                   scratch, Z14..Z17 state, Z18..Z21 K1, Z22..Z25 k2,
-                  Z26..Z31 staged blocks; RC and D as memory operands
+                  Z26..Z31 staged blocks; RC as memory operands
     ymm 256 x4    Y0/Y1 s1, Y2/Y3 s2, Y4/Y5 temps, Y6 zero, Y7 scratch,
-                  Y8/Y9 state, Y10/Y11 K1, Y12 D, Y13/Y14 k2; RC and the
-                  staged blocks as memory operands
+                  Y8/Y9 state, Y10/Y11 K1, Y13/Y14 k2; RC and the staged
+                  blocks as memory operands
     ymm 512 x4    Y0..Y3 s1 and state, Y8..Y11 s2, Y4/Y5/Y12/Y13 temps,
                   Y6 zero, Y7 scratch; K1 broadcast from the key pointer,
-                  k2 in the frame, RC / D / staged blocks as memory operands
+                  k2 in the frame, RC / staged blocks as memory operands
     xmm 256       X0..X3 lane A (s1 a/b, s2 a/b), X4..X7 lane B, X8..X11
-                  temps, X12 zero, X13 RC, X14/X15 K1; k2 in the frame
-                  (x4) or X6/X7 (x1); staged blocks reloaded from the frame
-    xmm 512       X0..X3 s1, X4..X7 s2, X8..X11 temps, X12 zero, X13 RC,
-                  X14/X15 scratch; K1 from the key pointer, k2 in the frame
+                  temps, X12 zero, X13 RC of P1, X14 RC of P2, X15 scratch;
+                  K1 from the key pointer, k2 in the frame (x4) or X6/X7
+                  (x1); staged blocks reloaded from the frame
+    xmm 512       X0..X3 s1, X4..X7 s2, X8..X11 temps, X12 zero, X13 RC of
+                  P1, X14 RC of P2, X15 scratch; K1 from the key pointer,
+                  k2 in the frame
     neon 256      V0..V3 lane A, V4..V7 lane B, V8..V11 temps, V12 zero,
-                  V13 RC, V14/V15 K1, V16..V19 k2, V20..V23 S0, V24..V27
-                  X1, V28..V31 X2
-    neon 512      V0..V3 s1, V4..V7 s2, V8..V11 temps, V12 zero, V13 RC,
-                  V14..V17 K1, V18..V21 k2, V22..V25 S0, V26/V27 X1
+                  V13 RC of P1, V14 RC of P2, V16..V19 k2, V20..V23 S0,
+                  V24..V27 X1, V28..V31 X2; K1 from the key pointer
+    neon 512      V0..V3 s1, V4..V7 s2, V8..V11 temps, V12 zero, V13 RC of
+                  P1, V28 RC of P2, V14..V17 K1, V18..V21 k2, V22..V25 S0,
+                  V26/V27 X1
     zmm 256 x8    (shapes 20 / 36 / 68) group g: Z{6g}/Z{6g+1} s1 — and the
                   feed-forward state between permutations — Z{6g+2}/Z{6g+3}
-                  s2, Z{6g+4}/Z{6g+5} temps; Z12..Z15 k2 at the multi-chunk
-                  shapes; then zero, K1 (2), broadcast scratch; RC / D /
-                  staged blocks as memory operands (20 of 32)
+                  s2, Z{6g+4}/Z{6g+5} temps; Z12..Z15 k2; then zero, K1 (2),
+                  broadcast scratch; RC / staged blocks as memory operands
+                  (20 of 32)
     zmm 512 x8    group g: s1 (4), s2 (4, and the state between
-                  permutations), k2 (4, multi-chunk shapes only); then zero,
-                  K1 (4), one scratch per group (broadcast / rotation temp);
-                  RC / D / staged or synthesised blocks as memory operands
-                  (31 of 32 at shape 68, 27 elsewhere)
+                  permutations), k2 (4); then zero, K1 (4), one scratch per
+                  group (broadcast / rotation temp); RC / staged or
+                  synthesised blocks as memory operands (31 of 32)
     neon 256 x8   V{4l}..V{4l+3} lane l of the pass (s1 a/b, s2 a/b),
-                  V16..V19 temps, V24 zero, V25 RC, V26/V27 K1, V28/V29
-                  group words, V30 D; S0 reloaded from the frame per
-                  cascade round (27 of 32)
+                  V16..V19 temps, V24 zero, V25 RC of P1, V30 RC of P2,
+                  V26/V27 K1, V28/V29 group words; S0 reloaded and K1 ^ k2
+                  staged in the frame per cascade round (27 of 32)
     neon 512 x8   V{8l}..V{8l+7} lane l of the pass (s1, s2), V16..V19
-                  temps, V20 RC, V21 zero, V22..V25 K1, V26..V29 group
-                  words, V30 D; S0 reloaded from the frame per cascade
-                  round (31 of 32)
+                  temps, V20 RC of P1, V30 RC of P2, V21 zero, V22..V25 K1,
+                  V26..V29 group words; S0 reloaded and K1 ^ k2 staged in
+                  the frame per cascade round (31 of 32)
+    xmm soem x4   (general-purpose) two lanes per pass at width 256: X0..X7
+                  the lanes' s1 / s2 blocks, X8..X11 temps, X12 zero, X13 /
+                  X14 RC; one lane per pass at width 512: X0..X3 s1, X4..X7
+                  s2, X8..X11 temps, X12 zero, X13 / X14 RC
 """
 import os
 import sys
@@ -140,7 +158,12 @@ WIDTHS = {
     512: dict(nb=4, chunk=56, key=64, rounds=15, words=8),
 }
 RC = "·AreionRC4x"
-DSEP = "·AreionSoEMDomainSep256"
+RC2 = "·AreionRC4x2"
+
+
+def rc_pair(r):
+    """Memory operands of round r's constants: (P1 table, P2 table)."""
+    return f"{RC}+{64 * r}(SB)", f"{RC2}+{64 * r}(SB)"
 
 
 # ---------------------------------------------------------------- layout --
@@ -279,10 +302,11 @@ def header(build, width, n, lanes, tier_desc, fill=False):
 
 // {tier_desc} {what} for Areion-SoEM-{width} at the
 // {n}-byte shape, {lanes} lane{'s' if lanes > 1 else ''} ({nch} absorb chunk{'s' if nch > 1 else ''}, {nch} SoEM evaluation{'s' if nch > 1 else ''} —
-// {2 * nch} {w['rounds']}-round Areion-{width} permutations — per cascade round). The message
-// blocks are staged once per call; see areionasm_fused.go for the
-// construction and the in-package parity tests for the bit-exact pin
-// against the pure-Go cascade.
+// {2 * nch} {w['rounds']}-round Areion-{width} permutations, P1 under the first constant
+// table and P2 under the second — per cascade round). The message blocks
+// are staged once per call; see areionasm_fused.go for the construction
+// and the in-package parity tests for the bit-exact pin against the
+// pure-Go cascade.
 
 #include "textflag.h"
 """
@@ -290,19 +314,23 @@ def header(build, width, n, lanes, tier_desc, fill=False):
 
 # ------------------------------------------------------------- zmm 256 --
 
-def zmm256_round(s1a, s1b, s2a, s2b, rc, ta="Z2", tb="Z6", zero="Z3"):
+def zmm256_round(s1a, s1b, s2a, s2b, rc, rc2, ta="Z2", tb="Z6", zero="Z3"):
+    """One Areion-256 round of branch 1 (constant rc, P1) and branch 2
+    (constant rc2, P2) interleaved."""
     return [f"\tVMOVDQA64 {s1a}, {ta}", f"\tVMOVDQA64 {s2a}, {tb}",
-            f"\tVAESENC {rc}, {ta}, {ta}", f"\tVAESENC {rc}, {tb}, {tb}",
+            f"\tVAESENC {rc}, {ta}, {ta}", f"\tVAESENC {rc2}, {tb}, {tb}",
             f"\tVAESENC {s1b}, {ta}, {ta}", f"\tVAESENC {s2b}, {tb}, {tb}",
             f"\tVAESENCLAST {zero}, {s1a}, {s1a}", f"\tVAESENCLAST {zero}, {s2a}, {s2a}",
             f"\tVMOVDQA64 {ta}, {s1b}", f"\tVMOVDQA64 {tb}, {s2b}"]
 
 
 def zmm256_perm(s1, s2, rc_of):
+    """rc_of(r) returns the (P1, P2) constant operands of round r."""
     lines = []
     for r in range(10):
         a, b = (0, 1) if r % 2 == 0 else (1, 0)
-        lines += zmm256_round(s1[a], s1[b], s2[a], s2[b], rc_of(r))
+        rc, rc2 = rc_of(r)
+        lines += zmm256_round(s1[a], s1[b], s2[a], s2[b], rc, rc2)
     return lines
 
 
@@ -311,8 +339,7 @@ def zmm256_x4(n):
     lines = header(AMD, 256, n, 4, "AVX-512 + VAES ZMM (four lanes per register)")
     body = prologue_amd64(4, "x4")
     body += stage_amd64(256, n, 4, ["R8", "R9", "R10", "R11"], frame)
-    body += ["\tVPXORD Z3, Z3, Z3", "\tVBROADCASTI32X4 0(AX), Z8", "\tVBROADCASTI32X4 16(AX), Z9",
-             f"\tVMOVDQU64 {DSEP}(SB), Z12"]
+    body += ["\tVPXORD Z3, Z3, Z3", "\tVBROADCASTI32X4 0(AX), Z8", "\tVBROADCASTI32X4 16(AX), Z9"]
     body += [f"\tVMOVDQU64 {RC}+{64 * r}(SB), Z{16 + r}" for r in range(10)]
     chunks = chunk_maps(256, n)
     reg = {}
@@ -324,7 +351,7 @@ def zmm256_x4(n):
                 body.append(f"\tVMOVDQU64 {frame.slots[(c, b)]}(SP), Z{nxt}")
                 nxt += 1
     body += ["\tVPXORD Z14, Z14, Z14", "\tVPXORD Z15, Z15, Z15", "", "loop:"]
-    body += ["\tVBROADCASTI32X4 0(BX), Z13", "\tVPXORD Z13, Z14, Z10", "\tVPXORD Z12, Z10, Z10",
+    body += ["\tVBROADCASTI32X4 0(BX), Z13", "\tVPXORD Z13, Z14, Z10",
              "\tVBROADCASTI32X4 16(BX), Z13", "\tVPXORD Z13, Z15, Z11", "\tADDQ $32, BX"]
     st = ["Z14", "Z15"]
     k1 = ["Z8", "Z9"]
@@ -345,8 +372,9 @@ def zmm256_x4(n):
                     body.append(f"\tVPXORD {reg[(c, b)]}, {st[b]}, {st[b]}")
             for b in range(2):
                 body += [f"\tVPXORD {k1[b]}, {st[b]}, {s1[b]}", f"\tVPXORD {k2[b]}, {st[b]}, {s2[b]}"]
-        body += zmm256_perm(s1, s2, lambda r: f"Z{16 + r}")
-        body += [f"\tVPXORD {s2[b]}, {s1[b]}, {st[b]}" for b in range(2)]
+        body += zmm256_perm(s1, s2, lambda r: (f"Z{16 + r}", rc_pair(r)[1]))
+        for b in range(2):
+            body += [f"\tVPXORD {s2[b]}, {s1[b]}, {st[b]}", f"\tVPTERNLOGD $0x96, {k1[b]}, {k2[b]}, {st[b]}"]
     body += ["\tDECQ CX", "\tJNZ loop", ""]
     for l in range(4):
         body += [f"\tVEXTRACTI64X2 ${l}, Z14, {32 * l}(DX)", f"\tVEXTRACTI64X2 ${l}, Z15, {32 * l + 16}(DX)"]
@@ -387,7 +415,6 @@ DATA areionFill13<>+0x078(SB)/8, $0
     lines += "GLOBL areionFill13<>(SB), RODATA|NOPTR, $256\n"
     body = ["\tMOVQ fixedKey+0(FP), AX", "\tMOVQ comps+8(FP), BX", "\tMOVQ nGroups+16(FP), CX", "\tMOVQ out+32(FP), DX"]
     body += ["\tVPXORD Z3, Z3, Z3", "\tVBROADCASTI32X4 0(AX), Z8", "\tVBROADCASTI32X4 16(AX), Z9",
-             f"\tVMOVDQU64 {DSEP}(SB), Z12",
              "\tVPBROADCASTQ groupIdxBase+24(FP), Z13",
              "\tVMOVDQU64 areionFill13<>+128(SB), Z19",
              "\tVPADDQ areionFill13<>+0(SB), Z13, Z7",
@@ -398,20 +425,22 @@ DATA areionFill13<>+0x078(SB)/8, $0
              "\tVPSRLQ $56, Z23, Z29", "\tVPUNPCKLQDQ Z3, Z29, Z29",
              "\tVPXORD Z14, Z14, Z14", "\tVPXORD Z15, Z15, Z15", "\tVPXORD Z30, Z30, Z30", "\tVPXORD Z31, Z31, Z31",
              "", "loop:"]
-    body += ["\tVBROADCASTI32X4 0(BX), Z13", "\tVPXORD Z13, Z14, Z10", "\tVPXORD Z12, Z10, Z10",
-             "\tVPXORD Z13, Z30, Z26", "\tVPXORD Z12, Z26, Z26",
+    body += ["\tVBROADCASTI32X4 0(BX), Z13", "\tVPXORD Z13, Z14, Z10", "\tVPXORD Z13, Z30, Z26",
              "\tVBROADCASTI32X4 16(BX), Z13", "\tVPXORD Z13, Z15, Z11", "\tVPXORD Z13, Z31, Z27",
              "\tADDQ $32, BX"]
     body += ["\tVPXORD Z8, Z24, Z0", "\tVPXORD Z8, Z28, Z16", "\tVPXORD Z9, Z25, Z1", "\tVPXORD Z9, Z29, Z17",
              "\tVPXORD Z10, Z24, Z4", "\tVPXORD Z26, Z28, Z20", "\tVPXORD Z11, Z25, Z5", "\tVPXORD Z27, Z29, Z21"]
     for r in range(10):
         a, b = (0, 1) if r % 2 == 0 else (1, 0)
-        ra = zmm256_round(["Z0", "Z1"][a], ["Z0", "Z1"][b], ["Z4", "Z5"][a], ["Z4", "Z5"][b], f"{RC}+{64 * r}(SB)")
+        rc, rc2 = rc_pair(r)
+        ra = zmm256_round(["Z0", "Z1"][a], ["Z0", "Z1"][b], ["Z4", "Z5"][a], ["Z4", "Z5"][b], rc, rc2)
         rb = zmm256_round(["Z16", "Z17"][a], ["Z16", "Z17"][b], ["Z20", "Z21"][a], ["Z20", "Z21"][b],
-                          f"{RC}+{64 * r}(SB)", ta="Z18", tb="Z22")
+                          rc, rc2, ta="Z18", tb="Z22")
         for x, y in zip(ra, rb):
             body += [x, y]
-    body += ["\tVPXORD Z4, Z0, Z14", "\tVPXORD Z20, Z16, Z30", "\tVPXORD Z5, Z1, Z15", "\tVPXORD Z21, Z17, Z31"]
+    body += ["\tVPXORD Z4, Z0, Z14", "\tVPXORD Z20, Z16, Z30", "\tVPXORD Z5, Z1, Z15", "\tVPXORD Z21, Z17, Z31",
+             "\tVPTERNLOGD $0x96, Z8, Z10, Z14", "\tVPTERNLOGD $0x96, Z8, Z26, Z30",
+             "\tVPTERNLOGD $0x96, Z9, Z11, Z15", "\tVPTERNLOGD $0x96, Z9, Z27, Z31"]
     body += ["\tDECQ CX", "\tJNZ loop", ""]
     for l in range(4):
         body += [f"\tVEXTRACTI64X2 ${l}, Z14, {32 * l}(DX)", f"\tVEXTRACTI64X2 ${l}, Z15, {32 * l + 16}(DX)"]
@@ -424,7 +453,8 @@ DATA areionFill13<>+0x078(SB)/8, $0
 
 # ------------------------------------------------------------- zmm 512 --
 
-def zmm512_round(s1, s2, rc, zero="Z6", t=("Z4", "Z5", "Z12", "Z13")):
+def zmm512_round(s1, s2, rc, rc2, zero="Z6", t=("Z4", "Z5", "Z12", "Z13")):
+    """One Areion-512 round of branch 1 (rc, P1) and branch 2 (rc2, P2)."""
     a, b, c, d = s1
     e, f, g, h = s2
     return [f"\tVMOVDQA64 {a}, {t[0]}", f"\tVMOVDQA64 {e}, {t[2]}",
@@ -434,7 +464,7 @@ def zmm512_round(s1, s2, rc, zero="Z6", t=("Z4", "Z5", "Z12", "Z13")):
             f"\tVAESENC {zero}, {t[1]}, {t[1]}", f"\tVAESENC {zero}, {t[3]}, {t[3]}",
             f"\tVPXORD {t[1]}, {d}, {d}", f"\tVPXORD {t[3]}, {h}, {h}",
             f"\tVAESENCLAST {zero}, {a}, {a}", f"\tVAESENCLAST {zero}, {e}, {e}",
-            f"\tVAESENCLAST {rc}, {c}, {c}", f"\tVAESENCLAST {rc}, {g}, {g}",
+            f"\tVAESENCLAST {rc}, {c}, {c}", f"\tVAESENCLAST {rc2}, {g}, {g}",
             f"\tVAESENC {zero}, {c}, {c}", f"\tVAESENC {zero}, {g}, {g}"]
 
 
@@ -445,7 +475,7 @@ def roles(regs, r):
 def zmm512_perm(s1, s2):
     lines = []
     for r in range(15):
-        lines += zmm512_round(roles(s1, r), roles(s2, r), f"{RC}+{64 * r}(SB)")
+        lines += zmm512_round(roles(s1, r), roles(s2, r), *rc_pair(r))
     return lines
 
 
@@ -475,8 +505,6 @@ def zmm512_x4(n):
     body += [f"\tVPXORD {s}, {s}, {s}" for s in st] + ["", "loop:"]
     for b in range(4):
         body += [f"\tVBROADCASTI32X4 {16 * b}(BX), Z7", f"\tVPXORD Z7, {st[b]}, {k2[b]}"]
-        if b == 0:
-            body.append(f"\tVPXORD {DSEP}(SB), {k2[0]}, {k2[0]}")
     body.append("\tADDQ $64, BX")
     for c, blocks in enumerate(chunks):
         if c == 0:
@@ -493,7 +521,8 @@ def zmm512_x4(n):
             for b in range(4):
                 body += [f"\tVPXORD {k1[b]}, {st[b]}, {s1[b]}", f"\tVPXORD {k2[b]}, {st[b]}, {s2[b]}"]
         body += zmm512_perm(s1, s2)
-        body += [f"\tVPXORD {s2[ROT[b]]}, {s1[ROT[b]]}, {st[b]}" for b in range(4)]
+        for b in range(4):
+            body += [f"\tVPXORD {s2[ROT[b]]}, {s1[ROT[b]]}, {st[b]}", f"\tVPTERNLOGD $0x96, {k1[b]}, {k2[b]}, {st[b]}"]
     body += ["\tDECQ CX", "\tJNZ loop", ""]
     for l in range(4):
         body += [f"\tVEXTRACTI64X2 ${l}, {st[b]}, {64 * l + 16 * b}(DX)" for b in range(4)]
@@ -505,8 +534,8 @@ def zmm512_x4(n):
 # ------------------------------------------------------------- ymm 256 --
 
 def ymm256_round(s1a, s1b, s2a, s2b, r):
-    rc = f"{RC}+{64 * r}(SB)"
-    return [f"\tVAESENC {rc}, {s1a}, Y4", f"\tVAESENC {rc}, {s2a}, Y5",
+    rc, rc2 = rc_pair(r)
+    return [f"\tVAESENC {rc}, {s1a}, Y4", f"\tVAESENC {rc2}, {s2a}, Y5",
             f"\tVAESENC {s1b}, Y4, Y4", f"\tVAESENC {s2b}, Y5, Y5",
             f"\tVAESENCLAST Y6, {s1a}, {s1a}", f"\tVAESENCLAST Y6, {s2a}, {s2a}",
             f"\tVMOVDQA Y4, {s1b}", f"\tVMOVDQA Y5, {s2b}"]
@@ -517,14 +546,13 @@ def ymm256_x4(n):
     lines = header(AMD, 256, n, 4, "AVX2 + VAES YMM (two lanes per pass, two passes)")
     body = prologue_amd64(4, "x4")
     body += stage_amd64(256, n, 4, ["R8", "R9", "R10", "R11"], frame)
-    body += ["\tVPXOR Y6, Y6, Y6", "\tVBROADCASTI128 0(AX), Y10", "\tVBROADCASTI128 16(AX), Y11",
-             f"\tVMOVDQU {DSEP}(SB), Y12"]
+    body += ["\tVPXOR Y6, Y6, Y6", "\tVBROADCASTI128 0(AX), Y10", "\tVBROADCASTI128 16(AX), Y11"]
     chunks = chunk_maps(256, n)
     for p in range(2):
         body += ["", f"\t// pass {p}: lanes {2 * p}, {2 * p + 1}",
                  "\tMOVQ comps+8(FP), BX", "\tMOVQ nGroups+16(FP), CX",
                  "\tVPXOR Y8, Y8, Y8", "\tVPXOR Y9, Y9, Y9", "", f"loop{p}:"]
-        body += ["\tVBROADCASTI128 0(BX), Y7", "\tVPXOR Y7, Y8, Y13", "\tVPXOR Y12, Y13, Y13",
+        body += ["\tVBROADCASTI128 0(BX), Y7", "\tVPXOR Y7, Y8, Y13",
                  "\tVBROADCASTI128 16(BX), Y7", "\tVPXOR Y7, Y9, Y14", "\tADDQ $32, BX"]
         st, k1, k2, s1, s2 = ["Y8", "Y9"], ["Y10", "Y11"], ["Y13", "Y14"], ["Y0", "Y1"], ["Y2", "Y3"]
         for c, blocks in enumerate(chunks):
@@ -544,7 +572,9 @@ def ymm256_x4(n):
             for r in range(10):
                 a, b = (0, 1) if r % 2 == 0 else (1, 0)
                 body += ymm256_round(s1[a], s1[b], s2[a], s2[b], r)
-            body += [f"\tVPXOR {s2[b]}, {s1[b]}, {st[b]}" for b in range(2)]
+            for b in range(2):
+                body += [f"\tVPXOR {s2[b]}, {s1[b]}, {st[b]}", f"\tVPXOR {k1[b]}, {st[b]}, {st[b]}",
+                         f"\tVPXOR {k2[b]}, {st[b]}, {st[b]}"]
         body += ["\tDECQ CX", f"\tJNZ loop{p}"]
         body += [f"\tVEXTRACTI128 $0, Y8, {64 * p}(DX)", f"\tVEXTRACTI128 $0, Y9, {64 * p + 16}(DX)",
                  f"\tVEXTRACTI128 $1, Y8, {64 * p + 32}(DX)", f"\tVEXTRACTI128 $1, Y9, {64 * p + 48}(DX)"]
@@ -556,7 +586,7 @@ def ymm256_x4(n):
 # ------------------------------------------------------------- ymm 512 --
 
 def ymm512_round(s1, s2, r, zero="Y6", t=("Y4", "Y5", "Y12", "Y13")):
-    rc = f"{RC}+{64 * r}(SB)"
+    rc, rc2 = rc_pair(r)
     a, b, c, d = s1
     e, f, g, h = s2
     return [f"\tVMOVDQA {a}, {t[0]}", f"\tVMOVDQA {e}, {t[2]}",
@@ -566,7 +596,7 @@ def ymm512_round(s1, s2, r, zero="Y6", t=("Y4", "Y5", "Y12", "Y13")):
             f"\tVAESENC {zero}, {t[1]}, {t[1]}", f"\tVAESENC {zero}, {t[3]}, {t[3]}",
             f"\tVPXOR {t[1]}, {d}, {d}", f"\tVPXOR {t[3]}, {h}, {h}",
             f"\tVAESENCLAST {zero}, {a}, {a}", f"\tVAESENCLAST {zero}, {e}, {e}",
-            f"\tVAESENCLAST {rc}, {c}, {c}", f"\tVAESENCLAST {rc}, {g}, {g}",
+            f"\tVAESENCLAST {rc}, {c}, {c}", f"\tVAESENCLAST {rc2}, {g}, {g}",
             f"\tVAESENC {zero}, {c}, {c}", f"\tVAESENC {zero}, {g}, {g}"]
 
 
@@ -585,10 +615,8 @@ def ymm512_x4(n):
                  "\tMOVQ comps+8(FP), BX", "\tMOVQ nGroups+16(FP), CX"]
         body += [f"\tVPXOR {s}, {s}, {s}" for s in s1] + ["", f"loop{p}:"]
         for b in range(4):
-            body += [f"\tVBROADCASTI128 {16 * b}(BX), Y7", f"\tVPXOR Y7, {s1[b]}, Y7"]
-            if b == 0:
-                body.append(f"\tVPXOR {DSEP}(SB), Y7, Y7")
-            body.append(f"\tVMOVDQU Y7, {k2off + 32 * b}(SP)")
+            body += [f"\tVBROADCASTI128 {16 * b}(BX), Y7", f"\tVPXOR Y7, {s1[b]}, Y7",
+                     f"\tVMOVDQU Y7, {k2off + 32 * b}(SP)"]
         body.append("\tADDQ $64, BX")
         for c, blocks in enumerate(chunks):
             if c == 0:
@@ -610,9 +638,12 @@ def ymm512_x4(n):
                              f"\tVBROADCASTI128 {16 * b}(AX), Y7", f"\tVPXOR Y7, {s1[b]}, {s1[b]}"]
             for r in range(15):
                 body += ymm512_round(roles(s1, r), roles(s2, r), r)
-            # state = rotate(s1 ^ s2) into Y0..Y3
+            # state = rotate(s1 ^ s2) ^ K1 ^ k2 into Y0..Y3
             body += ["\tVPXOR Y11, Y3, Y12", "\tVPXOR Y8, Y0, Y13", "\tVPXOR Y9, Y1, Y4", "\tVPXOR Y10, Y2, Y5",
                      "\tVMOVDQA Y12, Y0", "\tVMOVDQA Y13, Y1", "\tVMOVDQA Y4, Y2", "\tVMOVDQA Y5, Y3"]
+            for b in range(4):
+                body += [f"\tVPXOR {k2off + 32 * b}(SP), {s1[b]}, {s1[b]}",
+                         f"\tVBROADCASTI128 {16 * b}(AX), Y7", f"\tVPXOR Y7, {s1[b]}, {s1[b]}"]
         body += ["\tDECQ CX", f"\tJNZ loop{p}"]
         for b in range(4):
             body += [f"\tVEXTRACTI128 $0, {s1[b]}, {128 * p + 16 * b}(DX)",
@@ -625,12 +656,15 @@ def ymm512_x4(n):
 # ------------------------------------------------------------- xmm 256 --
 
 def xmm256_round(chains, r):
-    """chains: list of (a, b) register pairs; temps X8.. in order."""
-    lines = [f"\tMOVOU {RC}+{64 * r}(SB), X13"]
+    """chains: list of (a, b) register pairs, branch 1 at even indices
+    and branch 2 at odd indices; temps X8.. in order; X13 / X14 hold the
+    P1 / P2 constants of the round."""
+    rc, rc2 = rc_pair(r)
+    lines = [f"\tMOVOU {rc}, X13", f"\tMOVOU {rc2}, X14"]
     for i, (a, b) in enumerate(chains):
         lines.append(f"\tMOVOU {a}, X{8 + i}")
     for i in range(len(chains)):
-        lines.append(f"\tAESENC X13, X{8 + i}")
+        lines.append(f"\tAESENC {('X13', 'X14')[i % 2]}, X{8 + i}")
     for i, (a, b) in enumerate(chains):
         lines.append(f"\tAESENC {b}, X{8 + i}")
     for a, b in chains:
@@ -661,7 +695,7 @@ def xmm256(n, lanes):
     body = prologue_amd64(lanes, "x4" if lanes == 4 else "x1")
     body += stage_amd64(256, n, lanes, ["R8", "R9", "R10", "R11"][:lanes], frame)
     chunks = chunk_maps(256, n)
-    body += ["\tMOVOU 0(AX), X14", "\tMOVOU 16(AX), X15", "\tPXOR X12, X12"]
+    body += ["\tPXOR X12, X12"]
     if lanes == 4:
         k2off = frame.alloc("k2", 64)
         lane_regs = [("X0", "X1", "X2", "X3"), ("X4", "X5", "X6", "X7")]
@@ -669,41 +703,42 @@ def xmm256(n, lanes):
     else:
         lane_regs = [("X0", "X1", "X2", "X3")]
         passes = 1
+
+    def k2_of(li, b):
+        return f"{k2off + 32 * li + 16 * b}(SP)" if lanes == 4 else f"X{6 + b}"
+
     for p in range(passes):
         body += ["", f"\t// pass {p}", "\tMOVQ comps+8(FP), BX", "\tMOVQ nGroups+16(FP), CX"]
         for s1a, s1b, _, _ in lane_regs:
             body += [f"\tPXOR {s1a}, {s1a}", f"\tPXOR {s1b}, {s1b}"]
         body += ["", f"loop{p}:"]
-        # k2 = comps ^ h (D folded into block 0)
-        body.append(f"\tMOVOU {DSEP}(SB), X10")
+        # k2 = comps ^ h
         for li, (s1a, s1b, s2a, s2b) in enumerate(lane_regs):
             h = [s1a, s1b]
             for b in range(2):
                 body += [f"\tMOVOU {16 * b}(BX), X8", f"\tPXOR {h[b]}, X8"]
-                if b == 0:
-                    body.append("\tPXOR X10, X8")
                 if lanes == 4:
-                    body.append(f"\tMOVOU X8, {k2off + 32 * li + 16 * b}(SP)")
+                    body.append(f"\tMOVOU X8, {k2_of(li, b)}")
                 else:
-                    body.append(f"\tMOVOU X8, X{6 + b}")
+                    body.append(f"\tMOVOU X8, {k2_of(li, b)}")
         body.append("\tADDQ $32, BX")
         for c, blocks in enumerate(chunks):
             for li, (s1a, s1b, s2a, s2b) in enumerate(lane_regs):
                 lane = 2 * p + li
                 st, s1, s2 = [s1a, s1b], [s1a, s1b], [s2a, s2b]
-                k1 = ["X14", "X15"]
                 for b in range(2):
-                    k2 = f"{k2off + 32 * li + 16 * b}(SP)" if lanes == 4 else f"X{6 + b}"
+                    k2 = k2_of(li, b)
+                    body.append(f"\tMOVOU {16 * b}(AX), X9")
                     if c == 0:
                         if (0, b) in frame.slots:
                             o = frame.slots[(0, b)] + 16 * lane
-                            body += [f"\tMOVOU {o}(SP), {s1[b]}", f"\tMOVOU {s1[b]}, {s2[b]}", f"\tPXOR {k1[b]}, {s1[b]}"]
+                            body += [f"\tMOVOU {o}(SP), {s1[b]}", f"\tMOVOU {s1[b]}, {s2[b]}", f"\tPXOR X9, {s1[b]}"]
                             if lanes == 4:
                                 body += [f"\tMOVOU {k2}, X8", f"\tPXOR X8, {s2[b]}"]
                             else:
                                 body.append(f"\tPXOR {k2}, {s2[b]}")
                         else:
-                            body.append(f"\tMOVOU {k1[b]}, {s1[b]}")
+                            body.append(f"\tMOVOU X9, {s1[b]}")
                             body.append(f"\tMOVOU {k2}, {s2[b]}")
                     else:
                         if (c, b) in frame.slots:
@@ -712,10 +747,16 @@ def xmm256(n, lanes):
                             body += [f"\tMOVOU {k2}, {s2[b]}", f"\tPXOR {st[b]}, {s2[b]}"]
                         else:
                             body += [f"\tMOVOU {st[b]}, {s2[b]}", f"\tPXOR {k2}, {s2[b]}"]
-                        body.append(f"\tPXOR {k1[b]}, {s1[b]}")
+                        body.append(f"\tPXOR X9, {s1[b]}")
             body += xmm256_perm(lane_regs)
-            for s1a, s1b, s2a, s2b in lane_regs:
-                body += [f"\tPXOR {s2a}, {s1a}", f"\tPXOR {s2b}, {s1b}"]
+            # state = s1 ^ s2 ^ K1 ^ k2
+            for li, (s1a, s1b, s2a, s2b) in enumerate(lane_regs):
+                for b, (sa, sb) in enumerate(((s1a, s2a), (s1b, s2b))):
+                    body += [f"\tPXOR {sb}, {sa}", f"\tMOVOU {16 * b}(AX), X9", f"\tPXOR X9, {sa}"]
+                    if lanes == 4:
+                        body += [f"\tMOVOU {k2_of(li, b)}, X8", f"\tPXOR X8, {sa}"]
+                    else:
+                        body.append(f"\tPXOR {k2_of(li, b)}, {sa}")
         body += ["\tDECQ CX", f"\tJNZ loop{p}"]
         for li, (s1a, s1b, _, _) in enumerate(lane_regs):
             lane = 2 * p + li
@@ -733,15 +774,17 @@ def xmm256(n, lanes):
 # ------------------------------------------------------------- xmm 512 --
 
 def xmm512_round(s1, s2, r):
+    """One Areion-512 round of branch 1 (X13, P1) and branch 2 (X14, P2)."""
+    rc, rc2 = rc_pair(r)
     a, b, c, d = s1
     e, f, g, h = s2
-    return [f"\tMOVOU {RC}+{64 * r}(SB), X13",
+    return [f"\tMOVOU {rc}, X13", f"\tMOVOU {rc2}, X14",
             f"\tMOVOU {a}, X8", f"\tMOVOU {e}, X10", f"\tAESENC X12, X8", f"\tAESENC X12, X10",
             f"\tPXOR X8, {b}", f"\tPXOR X10, {f}",
             f"\tMOVOU {c}, X9", f"\tMOVOU {g}, X11", f"\tAESENC X12, X9", f"\tAESENC X12, X11",
             f"\tPXOR X9, {d}", f"\tPXOR X11, {h}",
             f"\tAESENCLAST X12, {a}", f"\tAESENCLAST X12, {e}",
-            f"\tAESENCLAST X13, {c}", f"\tAESENCLAST X13, {g}",
+            f"\tAESENCLAST X13, {c}", f"\tAESENCLAST X14, {g}",
             f"\tAESENC X12, {c}", f"\tAESENC X12, {g}"]
 
 
@@ -759,12 +802,8 @@ def xmm512(n, lanes):
     for p in range(lanes):
         body += ["", f"\t// pass {p}: lane {p}", "\tMOVQ comps+8(FP), BX", "\tMOVQ nGroups+16(FP), CX"]
         body += [f"\tPXOR {s}, {s}" for s in s1] + ["", f"loop{p}:"]
-        body.append(f"\tMOVOU {DSEP}(SB), X15")
         for b in range(4):
-            body += [f"\tMOVOU {16 * b}(BX), X14", f"\tPXOR {s1[b]}, X14"]
-            if b == 0:
-                body.append("\tPXOR X15, X14")
-            body.append(f"\tMOVOU X14, {k2off + 16 * b}(SP)")
+            body += [f"\tMOVOU {16 * b}(BX), X14", f"\tPXOR {s1[b]}, X14", f"\tMOVOU X14, {k2off + 16 * b}(SP)"]
         body.append("\tADDQ $64, BX")
         for c, blocks in enumerate(chunks):
             for b in range(4):
@@ -784,9 +823,12 @@ def xmm512(n, lanes):
                              f"\tMOVOU {16 * b}(AX), X14", f"\tPXOR X14, {s1[b]}"]
             for r in range(15):
                 body += xmm512_round(roles(s1, r), roles(s2, r), r)
-            # state = rotate(s1 ^ s2) into X0..X3
+            # state = rotate(s1 ^ s2) ^ K1 ^ k2 into X0..X3
             body += ["\tPXOR X7, X3", "\tPXOR X4, X0", "\tPXOR X5, X1", "\tPXOR X6, X2",
                      "\tMOVOU X3, X8", "\tMOVOU X2, X3", "\tMOVOU X1, X2", "\tMOVOU X0, X1", "\tMOVOU X8, X0"]
+            for b in range(4):
+                body += [f"\tMOVOU {16 * b}(AX), X14", f"\tPXOR X14, {s1[b]}",
+                         f"\tMOVOU {k2off + 16 * b}(SP), X15", f"\tPXOR X15, {s1[b]}"]
         body += ["\tDECQ CX", f"\tJNZ loop{p}"]
         body += [f"\tMOVOU {s1[b]}, {64 * p + 16 * b}(DX)" for b in range(4)]
     body.append("\tRET")
@@ -833,8 +875,10 @@ def stage_arm64(width, n, lanes, lane_regs, frame, base="R7", tmp="R12"):
     return lines
 
 
-def neon256_round(chains, r, zero="V12", rc="V13", t0=8):
-    """chains: (a, b) pairs; temps V{t0}.. ; rc register already loaded."""
+def neon256_round(chains, r, zero="V12", rc="V13", rc2="V14", t0=8):
+    """chains: (a, b) pairs, branch 1 (P1, constant rc) at even indices
+    and branch 2 (P2, constant rc2) at odd indices; temps V{t0}..; the
+    constant registers are already loaded."""
     lines = []
     for i, (a, b) in enumerate(chains):
         lines.append(f"\tVMOV {a}.B16, V{t0 + i}.B16")
@@ -843,7 +887,7 @@ def neon256_round(chains, r, zero="V12", rc="V13", t0=8):
     for i in range(len(chains)):
         lines.append(f"\tAESMC V{t0 + i}.B16, V{t0 + i}.B16")
     for i in range(len(chains)):
-        lines.append(f"\tAESE {rc}.B16, V{t0 + i}.B16")
+        lines.append(f"\tAESE {(rc, rc2)[i % 2]}.B16, V{t0 + i}.B16")
     for i in range(len(chains)):
         lines.append(f"\tAESMC V{t0 + i}.B16, V{t0 + i}.B16")
     for i, (a, b) in enumerate(chains):
@@ -856,9 +900,9 @@ def neon256_round(chains, r, zero="V12", rc="V13", t0=8):
 
 
 def neon256_perm(states):
-    lines = ["\tMOVD $·AreionRCTable(SB), R5"]
+    lines = ["\tMOVD $·AreionRCTable(SB), R5", "\tMOVD $·AreionRCTable2(SB), R13"]
     for r in range(10):
-        lines.append("\tVLD1.P 16(R5), [V13.B16]")
+        lines += ["\tVLD1.P 16(R5), [V13.B16]", "\tVLD1.P 16(R13), [V14.B16]"]
         chains = []
         for s1a, s1b, s2a, s2b in states:
             if r % 2 == 0:
@@ -889,11 +933,9 @@ def neon256(n, lanes):
     chunks = chunk_maps(256, n)
     # frame: staging + D slot
     body_stage = stage_arm64(256, n, lanes, ["R8", "R9", "R10", "R11"][:lanes], frame)
-    doff = frame.alloc("d", 16)
     body.append(f"\tMOVD $frame-{frame.aligned}(SP), R7")
     body += body_stage
-    body += ["\tMOVD $1, R12", f"\tMOVD R12, {doff}(R7)", f"\tMOVD ZR, {doff + 8}(R7)"]
-    body += ["\tVEOR V12.B16, V12.B16, V12.B16", "\tVLD1 (R0), [V14.B16, V15.B16]"]
+    body += ["\tVEOR V12.B16, V12.B16, V12.B16"]
     lane_regs = [("V0", "V1", "V2", "V3"), ("V4", "V5", "V6", "V7")] if lanes == 4 else [("V0", "V1", "V2", "V3")]
     k2 = [("V16", "V17"), ("V18", "V19")]
     passes = 2 if lanes == 4 else 1
@@ -914,14 +956,15 @@ def neon256(n, lanes):
         for s1a, s1b, _, _ in lane_regs:
             body += [f"\tVEOR {s1a}.B16, {s1a}.B16, {s1a}.B16", f"\tVEOR {s1b}.B16, {s1b}.B16, {s1b}.B16"]
         body += ["", f"loop{p}:"]
-        body += ["\tVLD1.P 32(R1), [V8.B16, V9.B16]", f"\tADD ${doff}, R7, R6", "\tVLD1 (R6), [V10.B16]"]
+        body += ["\tVLD1.P 32(R1), [V8.B16, V9.B16]"]
         for li, (s1a, s1b, _, _) in enumerate(lane_regs):
-            body += [f"\tVEOR {s1a}.B16, V8.B16, {k2[li][0]}.B16", f"\tVEOR V10.B16, {k2[li][0]}.B16, {k2[li][0]}.B16",
-                     f"\tVEOR {s1b}.B16, V9.B16, {k2[li][1]}.B16"]
+            body += [f"\tVEOR {s1a}.B16, V8.B16, {k2[li][0]}.B16", f"\tVEOR {s1b}.B16, V9.B16, {k2[li][1]}.B16"]
+        k1 = ["V10", "V11"]
         for c, blocks in enumerate(chunks):
+            # K1 through two temps: the round bodies use V8..V11.
+            body.append("\tVLD1 (R0), [V10.B16, V11.B16]")
             for li, (s1a, s1b, s2a, s2b) in enumerate(lane_regs):
                 st, s1, s2 = [s1a, s1b], [s1a, s1b], [s2a, s2b]
-                k1 = ["V14", "V15"]
                 for b in range(2):
                     if c == 0:
                         src = reg.get((0, b, li))
@@ -934,8 +977,12 @@ def neon256(n, lanes):
                             body.append(f"\tVEOR {reg[(c, b, li)]}.B16, {st[b]}.B16, {st[b]}.B16")
                         body += [f"\tVEOR {k2[li][b]}.B16, {st[b]}.B16, {s2[b]}.B16", f"\tVEOR {k1[b]}.B16, {st[b]}.B16, {s1[b]}.B16"]
             body += neon256_perm(lane_regs)
-            for s1a, s1b, s2a, s2b in lane_regs:
-                body += [f"\tVEOR {s2a}.B16, {s1a}.B16, {s1a}.B16", f"\tVEOR {s2b}.B16, {s1b}.B16, {s1b}.B16"]
+            # state = s1 ^ s2 ^ K1 ^ k2
+            body.append("\tVLD1 (R0), [V10.B16, V11.B16]")
+            for li, (s1a, s1b, s2a, s2b) in enumerate(lane_regs):
+                body += [f"\tVEOR {s2a}.B16, {s1a}.B16, {s1a}.B16", f"\tVEOR {s2b}.B16, {s1b}.B16, {s1b}.B16",
+                         f"\tVEOR V10.B16, {s1a}.B16, {s1a}.B16", f"\tVEOR V11.B16, {s1b}.B16, {s1b}.B16",
+                         f"\tVEOR {k2[li][0]}.B16, {s1a}.B16, {s1a}.B16", f"\tVEOR {k2[li][1]}.B16, {s1b}.B16, {s1b}.B16"]
         body += ["\tSUBS $1, R2, R2", f"\tBNE loop{p}"]
         for li, (s1a, s1b, _, _) in enumerate(lane_regs):
             lane = 2 * p + li
@@ -950,7 +997,8 @@ def neon256(n, lanes):
     return lines + f"\n{sig}\nTEXT ·{name}(SB), NOSPLIT, ${frame.aligned}-40\n" + "\n".join(body) + "\n"
 
 
-def neon512_round(s1, s2, zero="V12", rc="V13"):
+def neon512_round(s1, s2, zero="V12", rc="V13", rc2="V28"):
+    """One Areion-512 round of branch 1 (rc, P1) and branch 2 (rc2, P2)."""
     a, b, c, d = s1
     e, f, g, h = s2
     return [f"\tVMOV {a}.B16, V8.B16", f"\tVMOV {e}.B16, V10.B16",
@@ -963,7 +1011,7 @@ def neon512_round(s1, s2, zero="V12", rc="V13"):
             f"\tVEOR V9.B16, {d}.B16, {d}.B16", f"\tVEOR V11.B16, {h}.B16, {h}.B16",
             f"\tAESE {zero}.B16, {a}.B16", f"\tAESE {zero}.B16, {e}.B16",
             f"\tAESE {zero}.B16, {c}.B16", f"\tAESE {zero}.B16, {g}.B16",
-            f"\tAESE {rc}.B16, {c}.B16", f"\tAESE {rc}.B16, {g}.B16",
+            f"\tAESE {rc}.B16, {c}.B16", f"\tAESE {rc2}.B16, {g}.B16",
             f"\tAESMC {c}.B16, {c}.B16", f"\tAESMC {g}.B16, {g}.B16"]
 
 
@@ -974,10 +1022,8 @@ def neon512(n, lanes):
     body = neon_prologue("x4" if lanes == 4 else "x1")
     chunks = chunk_maps(512, n)
     body_stage = stage_arm64(512, n, lanes, ["R8", "R9", "R10", "R11"][:lanes], frame)
-    doff = frame.alloc("d", 16)
     body.append(f"\tMOVD $frame-{frame.aligned}(SP), R7")
     body += body_stage
-    body += ["\tMOVD $1, R12", f"\tMOVD R12, {doff}(R7)", f"\tMOVD ZR, {doff + 8}(R7)"]
     body += ["\tVEOR V12.B16, V12.B16, V12.B16", "\tVLD1 (R0), [V14.B16, V15.B16, V16.B16, V17.B16]"]
     s1 = [f"V{b}" for b in range(4)]
     s2 = [f"V{4 + b}" for b in range(4)]
@@ -995,10 +1041,9 @@ def neon512(n, lanes):
                     nxt += 1
         body += ["\tMOVD comps+8(FP), R1", "\tMOVD nGroups+16(FP), R2"]
         body += [f"\tVEOR {s}.B16, {s}.B16, {s}.B16" for s in s1] + ["", f"loop{p}:"]
-        body += ["\tVLD1.P 64(R1), [V8.B16, V9.B16, V10.B16, V11.B16]", f"\tADD ${doff}, R7, R6", "\tVLD1 (R6), [V13.B16]"]
+        body += ["\tVLD1.P 64(R1), [V8.B16, V9.B16, V10.B16, V11.B16]"]
         for b in range(4):
             body.append(f"\tVEOR {s1[b]}.B16, V{8 + b}.B16, {k2[b]}.B16")
-        body.append(f"\tVEOR V13.B16, {k2[0]}.B16, {k2[0]}.B16")
         for c, blocks in enumerate(chunks):
             for b in range(4):
                 if c == 0:
@@ -1011,14 +1056,16 @@ def neon512(n, lanes):
                     if (c, b) in reg:
                         body.append(f"\tVEOR {reg[(c, b)]}.B16, {s1[b]}.B16, {s1[b]}.B16")
                     body += [f"\tVEOR {k2[b]}.B16, {s1[b]}.B16, {s2[b]}.B16", f"\tVEOR {k1[b]}.B16, {s1[b]}.B16, {s1[b]}.B16"]
-            body.append("\tMOVD $·AreionRCTable(SB), R5")
+            body += ["\tMOVD $·AreionRCTable(SB), R5", "\tMOVD $·AreionRCTable2(SB), R13"]
             for r in range(15):
-                body.append("\tVLD1.P 16(R5), [V13.B16]")
+                body += ["\tVLD1.P 16(R5), [V13.B16]", "\tVLD1.P 16(R13), [V28.B16]"]
                 body += neon512_round(roles(s1, r), roles(s2, r))
-            # state = rotate(s1 ^ s2) into V0..V3
+            # state = rotate(s1 ^ s2) ^ K1 ^ k2 into V0..V3
             body += ["\tVEOR V7.B16, V3.B16, V8.B16", "\tVEOR V4.B16, V0.B16, V9.B16",
                      "\tVEOR V5.B16, V1.B16, V10.B16", "\tVEOR V6.B16, V2.B16, V11.B16",
                      "\tVMOV V8.B16, V0.B16", "\tVMOV V9.B16, V1.B16", "\tVMOV V10.B16, V2.B16", "\tVMOV V11.B16, V3.B16"]
+            for b in range(4):
+                body += [f"\tVEOR {k1[b]}.B16, {s1[b]}.B16, {s1[b]}.B16", f"\tVEOR {k2[b]}.B16, {s1[b]}.B16, {s1[b]}.B16"]
         body += ["\tSUBS $1, R2, R2", f"\tBNE loop{p}"]
         body += [f"\tADD ${64 * p}, R4, R6", "\tVST1 [V0.B16, V1.B16, V2.B16, V3.B16], (R6)"]
     body.append("\tRET")
@@ -1043,22 +1090,21 @@ def neon512(n, lanes):
 # that produces it), the feed-forward state is carried in the s1 (width
 # 256) / s2 (width 512) registers between permutations rather than in
 # registers of its own (it is dead during the permutation), and the
-# staged message blocks, the round constants and the domain constant
-# are memory operands.
+# staged message blocks and the round constants are memory operands.
 
-def zmm256_round_w(s1a, s1b, s2a, s2b, rc, t1, t2, zero):
-    return [f"\tVAESENC {rc}, {s1a}, {t1}", f"\tVAESENC {rc}, {s2a}, {t2}",
+def zmm256_round_w(s1a, s1b, s2a, s2b, rc, rc2, t1, t2, zero):
+    return [f"\tVAESENC {rc}, {s1a}, {t1}", f"\tVAESENC {rc2}, {s2a}, {t2}",
             f"\tVAESENC {s1b}, {t1}, {s1b}", f"\tVAESENC {s2b}, {t2}, {s2b}",
             f"\tVAESENCLAST {zero}, {s1a}, {s1a}", f"\tVAESENCLAST {zero}, {s2a}, {s2a}"]
 
 
-def zmm512_round_w(s1, s2, rc, zero):
+def zmm512_round_w(s1, s2, rc, rc2, zero):
     a, b, c, d = s1
     e, f, g, h = s2
     return [f"\tVAESENC {b}, {a}, {b}", f"\tVAESENC {f}, {e}, {f}",
             f"\tVAESENC {d}, {c}, {d}", f"\tVAESENC {h}, {g}, {h}",
             f"\tVAESENCLAST {zero}, {a}, {a}", f"\tVAESENCLAST {zero}, {e}, {e}",
-            f"\tVAESENCLAST {rc}, {c}, {c}", f"\tVAESENCLAST {rc}, {g}, {g}",
+            f"\tVAESENCLAST {rc}, {c}, {c}", f"\tVAESENCLAST {rc2}, {g}, {g}",
             f"\tVAESENC {zero}, {c}, {c}", f"\tVAESENC {zero}, {g}, {g}"]
 
 
@@ -1180,10 +1226,8 @@ def zmm256_wide(n, groups):
     s2 = [[f"Z{6 * g + 2}", f"Z{6 * g + 3}"] for g in range(groups)]
     tt = [[f"Z{6 * g + 4}", f"Z{6 * g + 5}"] for g in range(groups)]
     nxt = 6 * groups
-    k2 = None
-    if nch > 1:
-        k2 = [[f"Z{nxt + 2 * g}", f"Z{nxt + 2 * g + 1}"] for g in range(groups)]
-        nxt += 2 * groups
+    k2 = [[f"Z{nxt + 2 * g}", f"Z{nxt + 2 * g + 1}"] for g in range(groups)]
+    nxt += 2 * groups
     zero, k1, scr = f"Z{nxt}", [f"Z{nxt + 1}", f"Z{nxt + 2}"], f"Z{nxt + 3}"
     body = ["\tMOVQ fixedKey+0(FP), AX", "\tMOVQ comps+8(FP), BX", "\tMOVQ nGroups+16(FP), CX"]
     body += [f"\tVPXORD {zero}, {zero}, {zero}"]
@@ -1196,22 +1240,13 @@ def zmm256_wide(n, groups):
     def blk(c, b, g):
         return f"{frame.slots[(c, b)] + 64 * g}(SP)"
 
-    # k2 = comps ^ h (D folded into block 0); s1 = S0 ^ K1; s2 = S0 ^ k2.
+    # k2 = comps ^ h; s1 = S0 ^ K1; s2 = S0 ^ k2.
     for b in range(2):
         body.append(f"\tVBROADCASTI32X4 {16 * b}(BX), {scr}")
         for g in range(groups):
-            if k2 is not None:
-                body.append(f"\tVPXORD {scr}, {s1[g][b]}, {k2[g][b]}")
-                if b == 0:
-                    body.append(f"\tVPXORD {DSEP}(SB), {k2[g][0]}, {k2[g][0]}")
-                body += [f"\tVPXORD {blk(0, b, g)}, {k2[g][b]}, {s2[g][b]}",
-                         f"\tVPXORD {blk(0, b, g)}, {k1[b]}, {s1[g][b]}"]
-            else:
-                body.append(f"\tVPXORD {scr}, {s1[g][b]}, {s2[g][b]}")
-                if b == 0:
-                    body.append(f"\tVPXORD {DSEP}(SB), {s2[g][0]}, {s2[g][0]}")
-                body += [f"\tVPXORD {blk(0, b, g)}, {s2[g][b]}, {s2[g][b]}",
-                         f"\tVPXORD {blk(0, b, g)}, {k1[b]}, {s1[g][b]}"]
+            body += [f"\tVPXORD {scr}, {s1[g][b]}, {k2[g][b]}",
+                     f"\tVPXORD {blk(0, b, g)}, {k2[g][b]}, {s2[g][b]}",
+                     f"\tVPXORD {blk(0, b, g)}, {k1[b]}, {s1[g][b]}"]
     body.append("\tADDQ $32, BX")
     for c in range(nch):
         if c > 0:
@@ -1223,11 +1258,13 @@ def zmm256_wide(n, groups):
                              f"\tVPXORD {k1[b]}, {s1[g][b]}, {s1[g][b]}"]
         for r in range(10):
             a, b = (0, 1) if r % 2 == 0 else (1, 0)
-            body += interleave([zmm256_round_w(s1[g][a], s1[g][b], s2[g][a], s2[g][b], f"{RC}+{64 * r}(SB)",
+            body += interleave([zmm256_round_w(s1[g][a], s1[g][b], s2[g][a], s2[g][b], *rc_pair(r),
                                                tt[g][0], tt[g][1], zero) for g in range(groups)])
+        # state = s1 ^ s2 ^ K1 ^ k2, carried in s1.
         for b in range(2):
             for g in range(groups):
-                body.append(f"\tVPXORD {s2[g][b]}, {s1[g][b]}, {s1[g][b]}")
+                body += [f"\tVPXORD {s2[g][b]}, {s1[g][b]}, {s1[g][b]}",
+                         f"\tVPTERNLOGD $0x96, {k1[b]}, {k2[g][b]}, {s1[g][b]}"]
     body += ["\tDECQ CX", "\tJNZ loop", ""]
     for g in range(groups):
         for l in range(4):
@@ -1253,10 +1290,10 @@ def zmm512_wide(n, groups, fill=False):
     lines = header(AMD, 512, n, lanes, tier, fill=fill)
     if fill:
         lines = lines.replace("batch-16 Interlocked Barrier fill kernel", "batch-32 Interlocked Barrier fill kernel")
-    per = 8 if nch == 1 else 12
+    per = 12
     s1 = [[f"Z{per * g + b}" for b in range(4)] for g in range(groups)]
     s2 = [[f"Z{per * g + 4 + b}" for b in range(4)] for g in range(groups)]
-    k2 = [[f"Z{per * g + 8 + b}" for b in range(4)] for g in range(groups)] if nch > 1 else None
+    k2 = [[f"Z{per * g + 8 + b}" for b in range(4)] for g in range(groups)]
     nxt = per * groups
     zero, k1 = f"Z{nxt}", [f"Z{nxt + 1 + b}" for b in range(4)]
     scr = [f"Z{nxt + 5 + g}" for g in range(groups)]
@@ -1278,30 +1315,18 @@ def zmm512_wide(n, groups, fill=False):
     def blk(c, b, g):
         return f"{frame.slots[(c, b)] + 64 * g}(SP)"
 
-    # h sits in s2 (canonical order). k2 = comps ^ h (D folded into block
-    # 0); s1 = S0 ^ K1; s2 = S0 ^ k2.
+    # h sits in s2 (canonical order). k2 = comps ^ h; s1 = S0 ^ K1;
+    # s2 = S0 ^ k2.
     for b in range(4):
         body.append(f"\tVBROADCASTI32X4 {16 * b}(BX), {scr[0]}")
         for g in range(groups):
             staged = (0, b) in frame.slots
-            if k2 is not None:
-                body.append(f"\tVPXORD {scr[0]}, {s2[g][b]}, {k2[g][b]}")
-                if b == 0:
-                    body.append(f"\tVPXORD {DSEP}(SB), {k2[g][0]}, {k2[g][0]}")
-                if staged:
-                    body += [f"\tVPXORD {blk(0, b, g)}, {k2[g][b]}, {s2[g][b]}",
-                             f"\tVPXORD {blk(0, b, g)}, {k1[b]}, {s1[g][b]}"]
-                else:
-                    body += [f"\tVMOVDQA64 {k2[g][b]}, {s2[g][b]}", f"\tVMOVDQA64 {k1[b]}, {s1[g][b]}"]
+            body.append(f"\tVPXORD {scr[0]}, {s2[g][b]}, {k2[g][b]}")
+            if staged:
+                body += [f"\tVPXORD {blk(0, b, g)}, {k2[g][b]}, {s2[g][b]}",
+                         f"\tVPXORD {blk(0, b, g)}, {k1[b]}, {s1[g][b]}"]
             else:
-                body.append(f"\tVPXORD {scr[0]}, {s2[g][b]}, {s2[g][b]}")
-                if b == 0:
-                    body.append(f"\tVPXORD {DSEP}(SB), {s2[g][0]}, {s2[g][0]}")
-                if staged:
-                    body += [f"\tVPXORD {blk(0, b, g)}, {s2[g][b]}, {s2[g][b]}",
-                             f"\tVPXORD {blk(0, b, g)}, {k1[b]}, {s1[g][b]}"]
-                else:
-                    body.append(f"\tVMOVDQA64 {k1[b]}, {s1[g][b]}")
+                body += [f"\tVMOVDQA64 {k2[g][b]}, {s2[g][b]}", f"\tVMOVDQA64 {k1[b]}, {s1[g][b]}"]
     body.append("\tADDQ $64, BX")
     for c in range(nch):
         if c > 0:
@@ -1312,17 +1337,18 @@ def zmm512_wide(n, groups, fill=False):
                     body += [f"\tVPXORD {k1[b]}, {s2[g][b]}, {s1[g][b]}",
                              f"\tVPXORD {k2[g][b]}, {s2[g][b]}, {s2[g][b]}"]
         for r in range(15):
-            body += interleave([zmm512_round_w(roles(s1[g], r), roles(s2[g], r), f"{RC}+{64 * r}(SB)", zero)
+            body += interleave([zmm512_round_w(roles(s1[g], r), roles(s2[g], r), *rc_pair(r), zero)
                                 for g in range(groups)])
-        # state block b = s1[ROT[b]] ^ s2[ROT[b]], rotated into s2 in
-        # canonical order through one temp per group.
+        # state block b = s1[ROT[b]] ^ s2[ROT[b]] ^ K1[b] ^ k2[b], rotated
+        # into s2 in canonical order through one temp per group.
         rot = []
         for g in range(groups):
             rot.append([f"\tVPXORD {s2[g][3]}, {s1[g][3]}, {scr[g]}",
                         f"\tVPXORD {s2[g][2]}, {s1[g][2]}, {s2[g][3]}",
                         f"\tVPXORD {s2[g][1]}, {s1[g][1]}, {s2[g][2]}",
                         f"\tVPXORD {s2[g][0]}, {s1[g][0]}, {s2[g][1]}",
-                        f"\tVMOVDQA64 {scr[g]}, {s2[g][0]}"])
+                        f"\tVMOVDQA64 {scr[g]}, {s2[g][0]}"]
+                       + [f"\tVPTERNLOGD $0x96, {k1[b]}, {k2[g][b]}, {s2[g][b]}" for b in range(4)])
         body += interleave(rot)
     body += ["\tDECQ CX", "\tJNZ loop", ""]
     for g in range(groups):
@@ -1360,8 +1386,9 @@ def synth_fill_arm64(lanes, base="R7"):
     return lines
 
 
-def neon256_round_w(chains, rc, zero, temps):
-    """chains: (a, b) pairs; temps: one per chain slot, chains are
+def neon256_round_w(chains, rc, rc2, zero, temps):
+    """chains: (a, b) pairs, branch 1 (P1, rc) at even indices and branch
+    2 (P2, rc2) at odd indices; temps: one per chain slot, chains are
     processed in blocks of len(temps) so no temp is live across its
     reuse."""
     lines = []
@@ -1370,7 +1397,7 @@ def neon256_round_w(chains, rc, zero, temps):
         blk = chains[i0:i0 + k]
         lines += [f"\tAESE {zero}.B16, {a}.B16" for a, b in blk]
         lines += [f"\tAESMC {a}.B16, {temps[i]}.B16" for i, (a, b) in enumerate(blk)]
-        lines += [f"\tAESE {rc}.B16, {temps[i]}.B16" for i in range(len(blk))]
+        lines += [f"\tAESE {(rc, rc2)[(i0 + i) % 2]}.B16, {temps[i]}.B16" for i in range(len(blk))]
         lines += [f"\tAESMC {temps[i]}.B16, {temps[i]}.B16" for i in range(len(blk))]
         lines += [f"\tVEOR {temps[i]}.B16, {b}.B16, {b}.B16" for i, (a, b) in enumerate(blk)]
     return lines
@@ -1382,13 +1409,11 @@ def neon256_x8_fill():
     lines = header(ARM, 256, 13, lanes, "NEON + ARM Crypto Extension (four lanes per pass, two passes)", fill=True)
     body = ["\tMOVD fixedKey+0(FP), R0", "\tMOVD out+32(FP), R4"]
     frame.alloc("s0", 32 * lanes)
-    doff = frame.alloc("d", 16)
+    woff = frame.alloc("w", 32 * lanes)
     body.append(f"\tMOVD $frame-{frame.aligned}(SP), R7")
     body += synth_fill_arm64(lanes)
-    body += ["\tMOVD $1, R12", f"\tMOVD R12, {doff}(R7)", f"\tMOVD ZR, {doff + 8}(R7)",
-             f"\tADD ${doff}, R7, R6", "\tVLD1 (R6), [V30.B16]",
-             "\tVEOR V24.B16, V24.B16, V24.B16", "\tVLD1 (R0), [V26.B16, V27.B16]"]
-    zero, rc, k1, comps, dsep = "V24", "V25", ["V26", "V27"], ["V28", "V29"], "V30"
+    body += ["\tVEOR V24.B16, V24.B16, V24.B16", "\tVLD1 (R0), [V26.B16, V27.B16]"]
+    zero, rc, rc2, k1, comps = "V24", "V25", "V30", ["V26", "V27"], ["V28", "V29"]
     temps = ["V16", "V17", "V18", "V19"]
     regs = [(f"V{4 * l}", f"V{4 * l + 1}", f"V{4 * l + 2}", f"V{4 * l + 3}") for l in range(4)]
     for p in range(2):
@@ -1396,26 +1421,34 @@ def neon256_x8_fill():
         for s1a, s1b, _, _ in regs:
             body += [f"\tVEOR {s1a}.B16, {s1a}.B16, {s1a}.B16", f"\tVEOR {s1b}.B16, {s1b}.B16, {s1b}.B16"]
         body += ["", f"loop{p}:", f"\tVLD1.P 32(R1), [{comps[0]}.B16, {comps[1]}.B16]"]
+        # k2 = comps ^ h into s2; K1 ^ k2 staged in the frame; then
+        # s2 = S0 ^ k2, s1 = S0 ^ K1.
         for li, (s1a, s1b, s2a, s2b) in enumerate(regs):
             lane = 4 * p + li
-            t0, t1 = temps[0], temps[1]
-            body += [f"\tADD ${32 * lane}, R7, R6", f"\tVLD1 (R6), [{t0}.B16, {t1}.B16]",
-                     f"\tVEOR {comps[0]}.B16, {s1a}.B16, {s2a}.B16", f"\tVEOR {dsep}.B16, {s2a}.B16, {s2a}.B16",
-                     f"\tVEOR {comps[1]}.B16, {s1b}.B16, {s2b}.B16",
+            t0, t1, t2, t3 = temps
+            body += [f"\tVEOR {comps[0]}.B16, {s1a}.B16, {s2a}.B16", f"\tVEOR {comps[1]}.B16, {s1b}.B16, {s2b}.B16",
+                     f"\tVEOR {k1[0]}.B16, {s2a}.B16, {t2}.B16", f"\tVEOR {k1[1]}.B16, {s2b}.B16, {t3}.B16",
+                     f"\tADD ${woff + 32 * lane}, R7, R6", f"\tVST1 [{t2}.B16, {t3}.B16], (R6)",
+                     f"\tADD ${32 * lane}, R7, R6", f"\tVLD1 (R6), [{t0}.B16, {t1}.B16]",
                      f"\tVEOR {t0}.B16, {s2a}.B16, {s2a}.B16", f"\tVEOR {t1}.B16, {s2b}.B16, {s2b}.B16",
                      f"\tVEOR {t0}.B16, {k1[0]}.B16, {s1a}.B16", f"\tVEOR {t1}.B16, {k1[1]}.B16, {s1b}.B16"]
-        body.append("\tMOVD $·AreionRCTable(SB), R5")
+        body += ["\tMOVD $·AreionRCTable(SB), R5", "\tMOVD $·AreionRCTable2(SB), R13"]
         for r in range(10):
-            body.append(f"\tVLD1.P 16(R5), [{rc}.B16]")
+            body += [f"\tVLD1.P 16(R5), [{rc}.B16]", f"\tVLD1.P 16(R13), [{rc2}.B16]"]
             chains = []
             for s1a, s1b, s2a, s2b in regs:
                 if r % 2 == 0:
                     chains += [(s1a, s1b), (s2a, s2b)]
                 else:
                     chains += [(s1b, s1a), (s2b, s2a)]
-            body += neon256_round_w(chains, rc, zero, temps)
-        for s1a, s1b, s2a, s2b in regs:
-            body += [f"\tVEOR {s2a}.B16, {s1a}.B16, {s1a}.B16", f"\tVEOR {s2b}.B16, {s1b}.B16, {s1b}.B16"]
+            body += neon256_round_w(chains, rc, rc2, zero, temps)
+        # state = s1 ^ s2 ^ (K1 ^ k2) from the frame.
+        for li, (s1a, s1b, s2a, s2b) in enumerate(regs):
+            lane = 4 * p + li
+            t0, t1 = temps[0], temps[1]
+            body += [f"\tADD ${woff + 32 * lane}, R7, R6", f"\tVLD1 (R6), [{t0}.B16, {t1}.B16]",
+                     f"\tVEOR {s2a}.B16, {s1a}.B16, {s1a}.B16", f"\tVEOR {s2b}.B16, {s1b}.B16, {s1b}.B16",
+                     f"\tVEOR {t0}.B16, {s1a}.B16, {s1a}.B16", f"\tVEOR {t1}.B16, {s1b}.B16, {s1b}.B16"]
         body += ["\tSUBS $1, R2, R2", f"\tBNE loop{p}"]
         for li, (s1a, s1b, _, _) in enumerate(regs):
             lane = 4 * p + li
@@ -1425,10 +1458,10 @@ def neon256_x8_fill():
     return lines + f"\n{sig}\nTEXT ·areion256FusedChain13x8NeonAsm(SB), NOSPLIT, ${frame.aligned}-40\n" + "\n".join(body) + "\n"
 
 
-def neon512_round_w(quads, rc, zero, temps):
+def neon512_round_w(quads, rc, rc2, zero, temps):
     """quads: (s1, s2) register quads per lane; the (a, b) / (e, f) steps
     of every lane go first, then the (c, d) / (g, h) steps, each block
-    over its own temps."""
+    over its own temps. Branch 1 (P1) takes rc, branch 2 (P2) rc2."""
     lines = []
     first, second = [], []
     for s1, s2 in quads:
@@ -1440,7 +1473,7 @@ def neon512_round_w(quads, rc, zero, temps):
         lines += [f"\tAESE {zero}.B16, {a}.B16" for a, b in blk]
         lines += [f"\tAESMC {a}.B16, {temps[i]}.B16" for i, (a, b) in enumerate(blk)]
         lines += [f"\tVEOR {temps[i]}.B16, {b}.B16, {b}.B16" for i, (a, b) in enumerate(blk)]
-    lines += [f"\tAESE {rc}.B16, {c}.B16" for c, d in second]
+    lines += [f"\tAESE {(rc, rc2)[i % 2]}.B16, {c}.B16" for i, (c, d) in enumerate(second)]
     lines += [f"\tAESMC {c}.B16, {c}.B16" for c, d in second]
     return lines
 
@@ -1452,13 +1485,11 @@ def neon512_x8_fill():
     lines = lines.replace("batch-16 Interlocked Barrier fill kernel", "batch-32 Interlocked Barrier fill kernel")
     body = ["\tMOVD fixedKey+0(FP), R0", "\tMOVD out+32(FP), R4"]
     frame.alloc("s0", 32 * lanes)
-    doff = frame.alloc("d", 16)
+    woff = frame.alloc("w", 64 * lanes)
     body.append(f"\tMOVD $frame-{frame.aligned}(SP), R7")
     body += synth_fill_arm64(lanes)
-    body += ["\tMOVD $1, R12", f"\tMOVD R12, {doff}(R7)", f"\tMOVD ZR, {doff + 8}(R7)",
-             f"\tADD ${doff}, R7, R6", "\tVLD1 (R6), [V30.B16]",
-             "\tVEOR V21.B16, V21.B16, V21.B16", "\tVLD1 (R0), [V22.B16, V23.B16, V24.B16, V25.B16]"]
-    zero, rc, dsep = "V21", "V20", "V30"
+    body += ["\tVEOR V21.B16, V21.B16, V21.B16", "\tVLD1 (R0), [V22.B16, V23.B16, V24.B16, V25.B16]"]
+    zero, rc, rc2 = "V21", "V20", "V30"
     k1 = [f"V{22 + b}" for b in range(4)]
     comps = [f"V{26 + b}" for b in range(4)]
     temps = ["V16", "V17", "V18", "V19"]
@@ -1469,26 +1500,37 @@ def neon512_x8_fill():
         for l in range(2):
             body += [f"\tVEOR {r}.B16, {r}.B16, {r}.B16" for r in s2[l]]
         body += ["", f"loop{p}:", f"\tVLD1.P 64(R1), [{comps[0]}.B16, {comps[1]}.B16, {comps[2]}.B16, {comps[3]}.B16]"]
+        # k2 = comps ^ h into s2; K1 ^ k2 staged in the frame; then
+        # s2 = S0 ^ k2, s1 = S0 ^ K1.
         for l in range(2):
             lane = 2 * p + l
             t0, t1 = temps[2 * l], temps[2 * l + 1]
-            body += [f"\tADD ${32 * lane}, R7, R6", f"\tVLD1 (R6), [{t0}.B16, {t1}.B16]"]
             body += [f"\tVEOR {comps[b]}.B16, {s2[l][b]}.B16, {s2[l][b]}.B16" for b in range(4)]
-            body += [f"\tVEOR {dsep}.B16, {s2[l][0]}.B16, {s2[l][0]}.B16",
-                     f"\tVEOR {t0}.B16, {s2[l][0]}.B16, {s2[l][0]}.B16", f"\tVEOR {t1}.B16, {s2[l][1]}.B16, {s2[l][1]}.B16",
+            body += [f"\tVEOR {k1[b]}.B16, {s2[l][b]}.B16, {temps[b]}.B16" for b in range(4)]
+            body += [f"\tADD ${woff + 64 * lane}, R7, R6",
+                     f"\tVST1 [{temps[0]}.B16, {temps[1]}.B16, {temps[2]}.B16, {temps[3]}.B16], (R6)"]
+            body += [f"\tADD ${32 * lane}, R7, R6", f"\tVLD1 (R6), [{t0}.B16, {t1}.B16]"]
+            body += [f"\tVEOR {t0}.B16, {s2[l][0]}.B16, {s2[l][0]}.B16", f"\tVEOR {t1}.B16, {s2[l][1]}.B16, {s2[l][1]}.B16",
                      f"\tVEOR {t0}.B16, {k1[0]}.B16, {s1[l][0]}.B16", f"\tVEOR {t1}.B16, {k1[1]}.B16, {s1[l][1]}.B16",
                      f"\tVMOV {k1[2]}.B16, {s1[l][2]}.B16", f"\tVMOV {k1[3]}.B16, {s1[l][3]}.B16"]
-        body.append("\tMOVD $·AreionRCTable(SB), R5")
+        body += ["\tMOVD $·AreionRCTable(SB), R5", "\tMOVD $·AreionRCTable2(SB), R13"]
         for r in range(15):
-            body.append(f"\tVLD1.P 16(R5), [{rc}.B16]")
-            body += neon512_round_w([(roles(s1[l], r), roles(s2[l], r)) for l in range(2)], rc, zero, temps)
+            body += [f"\tVLD1.P 16(R5), [{rc}.B16]", f"\tVLD1.P 16(R13), [{rc2}.B16]"]
+            body += neon512_round_w([(roles(s1[l], r), roles(s2[l], r)) for l in range(2)], rc, rc2, zero, temps)
+        # state = rotate(s1 ^ s2) ^ (K1 ^ k2) from the frame, into s2.
         for l in range(2):
+            lane = 2 * p + l
             t = temps[l]
             body += [f"\tVEOR {s2[l][3]}.B16, {s1[l][3]}.B16, {t}.B16",
                      f"\tVEOR {s2[l][2]}.B16, {s1[l][2]}.B16, {s2[l][3]}.B16",
                      f"\tVEOR {s2[l][1]}.B16, {s1[l][1]}.B16, {s2[l][2]}.B16",
                      f"\tVEOR {s2[l][0]}.B16, {s1[l][0]}.B16, {s2[l][1]}.B16",
                      f"\tVMOV {t}.B16, {s2[l][0]}.B16"]
+        for l in range(2):
+            lane = 2 * p + l
+            body += [f"\tADD ${woff + 64 * lane}, R7, R6",
+                     f"\tVLD1 (R6), [{temps[0]}.B16, {temps[1]}.B16, {temps[2]}.B16, {temps[3]}.B16]"]
+            body += [f"\tVEOR {temps[b]}.B16, {s2[l][b]}.B16, {s2[l][b]}.B16" for b in range(4)]
         body += ["\tSUBS $1, R2, R2", f"\tBNE loop{p}"]
         for l in range(2):
             lane = 2 * p + l
@@ -1497,6 +1539,135 @@ def neon512_x8_fill():
     body.append("\tRET")
     sig = "// func areion512FusedChain13x8NeonAsm(fixedKey *[64]byte, comps *uint64, nGroups int, groupIdxBase uint64, out *[8][8]uint64)"
     return lines + f"\n{sig}\nTEXT ·areion512FusedChain13x8NeonAsm(SB), NOSPLIT, ${frame.aligned}-40\n" + "\n".join(body) + "\n"
+
+
+# ------------------------------------------- general-purpose aes-ni --
+#
+# The legacy-SSE AES-NI XMM arm of the root package's AreionSoEM256x4 /
+# AreionSoEM512x4 (hosts with AES-NI but no VAES): the four-lane
+# permutation under a caller-supplied constant table (the pre-broadcast
+# 64-byte-stride tables AreionRC4x / AreionRC4x2, read through MOVOU so
+# no alignment is assumed) and the fused SoEM kernel P1(s1) ^ P2(s2),
+# written back into the s1 buffers; the s2 buffers are left intact. The
+# round bodies are the cascade kernels' xmm256_round / xmm512_round.
+
+def xmm256_round_regs(chains, rc_regs, rc_loads):
+    """xmm256_round with explicit constant registers: rc_regs[i] is the
+    constant of chain i, rc_loads the MOVOUs that fill them."""
+    lines = list(rc_loads)
+    for i, (a, b) in enumerate(chains):
+        lines.append(f"\tMOVOU {a}, X{8 + i}")
+    for i in range(len(chains)):
+        lines.append(f"\tAESENC {rc_regs[i]}, X{8 + i}")
+    for i, (a, b) in enumerate(chains):
+        lines.append(f"\tAESENC {b}, X{8 + i}")
+    for a, b in chains:
+        lines.append(f"\tAESENCLAST X12, {a}")
+    for i, (a, b) in enumerate(chains):
+        lines.append(f"\tMOVOU X{8 + i}, {b}")
+    return lines
+
+
+def xmm512_round_regs(s1, s2, rc_a, rc_b, rc_loads):
+    """xmm512_round over two independent states with explicit constant
+    registers rc_a (state s1) and rc_b (state s2)."""
+    a, b, c, d = s1
+    e, f, g, h = s2
+    return list(rc_loads) + [
+        f"\tMOVOU {a}, X8", f"\tMOVOU {e}, X10", f"\tAESENC X12, X8", f"\tAESENC X12, X10",
+        f"\tPXOR X8, {b}", f"\tPXOR X10, {f}",
+        f"\tMOVOU {c}, X9", f"\tMOVOU {g}, X11", f"\tAESENC X12, X9", f"\tAESENC X12, X11",
+        f"\tPXOR X9, {d}", f"\tPXOR X11, {h}",
+        f"\tAESENCLAST X12, {a}", f"\tAESENCLAST X12, {e}",
+        f"\tAESENCLAST {rc_a}, {c}", f"\tAESENCLAST {rc_b}, {g}",
+        f"\tAESENC X12, {c}", f"\tAESENC X12, {g}"]
+
+
+def xmm_general():
+    lines = f"""//go:build {AMD}
+
+// Legacy-SSE AES-NI XMM general-purpose Areion kernels: the four-lane
+// Areion-256 / Areion-512 permutation under a caller-supplied round
+// constant table (the 64-byte-stride pre-broadcast tables AreionRC4x /
+// AreionRC4x2) and the fused SoEM kernels P1(s1) ^ P2(s2) of the root
+// package's AreionSoEM256x4 / AreionSoEM512x4 on AES-NI hosts without
+// VAES. SoA layout as the VAES kernels: lane l's block k lives at
+// xk[16*l : 16*l+16]. The fused kernels write the result into the s1
+// buffers and leave the s2 buffers intact; the whitening K1 ^ K2 is
+// the caller's.
+
+#include "textflag.h"
+"""
+    # ---- Areion-256 permutation, four lanes as four chains per round.
+    body = ["\tMOVQ x0+0(FP), AX", "\tMOVQ x1+8(FP), BX", "\tMOVQ rc+16(FP), CX", "\tPXOR X12, X12"]
+    lanes = [(f"X{2 * l}", f"X{2 * l + 1}") for l in range(4)]
+    for l, (a, b) in enumerate(lanes):
+        body += [f"\tMOVOU {16 * l}(AX), {a}", f"\tMOVOU {16 * l}(BX), {b}"]
+    for r in range(10):
+        chains = [(a, b) if r % 2 == 0 else (b, a) for a, b in lanes]
+        body += xmm256_round_regs(chains, ["X13"] * 4, [f"\tMOVOU {64 * r}(CX), X13"])
+    for l, (a, b) in enumerate(lanes):
+        body += [f"\tMOVOU {a}, {16 * l}(AX)", f"\tMOVOU {b}, {16 * l}(BX)"]
+    body.append("\tRET")
+    lines += "\n// func areion256Permutex4AesNiRC(x0, x1 *aes.Block4, rc *[15 * 64]byte)\n"
+    lines += "TEXT ·areion256Permutex4AesNiRC(SB), NOSPLIT, $0-24\n" + "\n".join(body) + "\n"
+
+    # ---- Areion-512 permutation, two lanes per pass, two passes.
+    body = ["\tMOVQ x0+0(FP), AX", "\tMOVQ x1+8(FP), BX", "\tMOVQ x2+16(FP), CX", "\tMOVQ x3+24(FP), DX",
+            "\tMOVQ rc+32(FP), SI", "\tPXOR X12, X12"]
+    ptrs = ["AX", "BX", "CX", "DX"]
+    sA = [f"X{b}" for b in range(4)]
+    sB = [f"X{4 + b}" for b in range(4)]
+    for p in range(2):
+        body.append(f"\t// pass {p}: lanes {2 * p}, {2 * p + 1}")
+        for b in range(4):
+            body += [f"\tMOVOU {32 * p}({ptrs[b]}), {sA[b]}", f"\tMOVOU {32 * p + 16}({ptrs[b]}), {sB[b]}"]
+        for r in range(15):
+            body += xmm512_round_regs(roles(sA, r), roles(sB, r), "X13", "X13", [f"\tMOVOU {64 * r}(SI), X13"])
+        # final rotation: output block b comes from register ROT[b]
+        for b in range(4):
+            body += [f"\tMOVOU {sA[ROT[b]]}, {32 * p}({ptrs[b]})", f"\tMOVOU {sB[ROT[b]]}, {32 * p + 16}({ptrs[b]})"]
+    body.append("\tRET")
+    lines += "\n// func areion512Permutex4AesNiRC(x0, x1, x2, x3 *aes.Block4, rc *[15 * 64]byte)\n"
+    lines += "TEXT ·areion512Permutex4AesNiRC(SB), NOSPLIT, $0-40\n" + "\n".join(body) + "\n"
+
+    # ---- fused SoEM-256, two lanes per pass (s1 a/b, s2 a/b per lane).
+    body = ["\tMOVQ s1b0+0(FP), AX", "\tMOVQ s1b1+8(FP), BX", "\tMOVQ s2b0+16(FP), CX", "\tMOVQ s2b1+24(FP), DX",
+            "\tPXOR X12, X12"]
+    lane_regs = [("X0", "X1", "X2", "X3"), ("X4", "X5", "X6", "X7")]
+    for p in range(2):
+        body.append(f"\t// pass {p}: lanes {2 * p}, {2 * p + 1}")
+        for li, (s1a, s1b, s2a, s2b) in enumerate(lane_regs):
+            o = 16 * (2 * p + li)
+            body += [f"\tMOVOU {o}(AX), {s1a}", f"\tMOVOU {o}(BX), {s1b}", f"\tMOVOU {o}(CX), {s2a}", f"\tMOVOU {o}(DX), {s2b}"]
+        body += xmm256_perm(lane_regs)
+        for li, (s1a, s1b, s2a, s2b) in enumerate(lane_regs):
+            o = 16 * (2 * p + li)
+            body += [f"\tPXOR {s2a}, {s1a}", f"\tPXOR {s2b}, {s1b}", f"\tMOVOU {s1a}, {o}(AX)", f"\tMOVOU {s1b}, {o}(BX)"]
+    body.append("\tRET")
+    lines += "\n// func Areion256SoEMPermutex4AesNi(s1b0, s1b1, s2b0, s2b1 *aes.Block4)\n"
+    lines += "TEXT ·Areion256SoEMPermutex4AesNi(SB), NOSPLIT, $0-32\n" + "\n".join(body) + "\n"
+
+    # ---- fused SoEM-512, one lane per pass.
+    body = ["\tMOVQ a1+0(FP), AX", "\tMOVQ b1+8(FP), BX", "\tMOVQ c1+16(FP), CX", "\tMOVQ d1+24(FP), DX",
+            "\tMOVQ a2+32(FP), SI", "\tMOVQ b2+40(FP), DI", "\tMOVQ c2+48(FP), R8", "\tMOVQ d2+56(FP), R9",
+            "\tPXOR X12, X12"]
+    p1 = ["AX", "BX", "CX", "DX"]
+    p2 = ["SI", "DI", "R8", "R9"]
+    s1 = [f"X{b}" for b in range(4)]
+    s2 = [f"X{4 + b}" for b in range(4)]
+    for l in range(4):
+        body.append(f"\t// pass {l}: lane {l}")
+        for b in range(4):
+            body += [f"\tMOVOU {16 * l}({p1[b]}), {s1[b]}", f"\tMOVOU {16 * l}({p2[b]}), {s2[b]}"]
+        for r in range(15):
+            body += xmm512_round(roles(s1, r), roles(s2, r), r)
+        for b in range(4):
+            body += [f"\tPXOR {s2[ROT[b]]}, {s1[ROT[b]]}", f"\tMOVOU {s1[ROT[b]]}, {16 * l}({p1[b]})"]
+    body.append("\tRET")
+    lines += "\n// func Areion512SoEMPermutex4AesNi(a1, b1, c1, d1, a2, b2, c2, d2 *aes.Block4)\n"
+    lines += "TEXT ·Areion512SoEMPermutex4AesNi(SB), NOSPLIT, $0-64\n" + "\n".join(body) + "\n"
+    return lines
 
 
 # ------------------------------------------------------------ render --
@@ -1523,6 +1694,7 @@ def render_all():
     files["areion_fusedchain512_13x8_avx512_amd64.s"] = zmm512_wide(13, 2, fill=True)
     files["areion_fusedchain256_13x8_neon_arm64.s"] = neon256_x8_fill()
     files["areion_fusedchain512_13x8_neon_arm64.s"] = neon512_x8_fill()
+    files["areion_soem_aesni_amd64.s"] = xmm_general()
     return files
 
 

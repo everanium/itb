@@ -1,13 +1,13 @@
 // 4-way batched Areion-SoEM primitives.
 //
 // AreionSoEM256x4 and AreionSoEM512x4 process four independent
-// (key, input) tuples simultaneously using the upstream
-// `github.com/jedisct1/go-aes` parallel AES-round primitives. On x86-64
-// CPUs with VAES (AVX-512) the inner loop dispatches to a single
-// `vaesenc` instruction processing four AES blocks in one ZMM register;
-// without VAES the same Block4 path falls back to four sequential
-// AES-NI instructions. ARM64 with Crypto Extensions uses the analogous
-// parallel hardware instruction.
+// (key, input) tuples simultaneously using the vendored
+// `third/goaes` parallel AES-round primitives. On x86-64 CPUs with VAES
+// the inner loop dispatches to the ZMM / YMM assembly kernels of
+// internal/areionasm (one `vaesenc` per four or two AES blocks); AES-NI
+// hosts without VAES dispatch to the XMM AES-NI kernels; ARM64 with the
+// Crypto Extension dispatches to the NEON kernels; every other build
+// runs the portable Go permutation over Block4.
 //
 // Bit-exact parity invariant. For every i in {0,1,2,3}:
 //
@@ -20,22 +20,25 @@
 // PRF assumption invocation in SECURITY.md).
 //
 // Algorithm reference. The SoEM construction (Sum of Even-Mansour, a
-// PRF rather than a permutation) is from Chen-Lambooij-Mennink, CRYPTO
-// 2019; its beyond-birthday bound holds for two independent
-// permutations, while the instance below evaluates one permutation P in
-// both branches and is therefore relied on up to the birthday bound:
+// PRF rather than a permutation) is SoEM22 of Chen, Lambooij and
+// Mennink (CRYPTO 2019; ePrint 2019/554, Eq. (4)): two independent
+// permutations, two independent keys, and output whitening,
 //
-//	F(k1, k2, m) = P(m ⊕ k1) ⊕ P(m ⊕ k2 ⊕ d)
+//	F(k1, k2, m) = P1(m ⊕ k1) ⊕ P2(m ⊕ k2) ⊕ k1 ⊕ k2
 //
-// where P is the Areion permutation (10 rounds for Areion256, 15 for
-// Areion512), d is a fixed domain separation constant (`[N]byte{0x01}`),
-// k1 is the first half of the SoEM key, k2 the second half. The
-// upstream serial reference is in
-// `github.com/jedisct1/go-aes/areion.go` (`AreionSoEM256` /
-// `AreionSoEM512`). The 4-way batched composition here applies the
+// where P1 is the Areion permutation (10 rounds for Areion256, 15 for
+// Areion512) under the round constants areionRC, P2 is the Areion
+// permutation under the second round-constant table areionRC2 (the
+// next words of the hexadecimal digits of pi, modelled as an
+// independent permutation), k1 is the first half of the SoEM key and k2
+// the second half. CLM19 Theorem 1 proves SoEM22 a PRF up to about
+// 2^(2n/3) queries in the random-permutation model (n = 256 / 512 the
+// state width), with both subkeys secret and independently random. The
+// serial reference is `third/goaes/areion.go` (`AreionSoEM256` /
+// `AreionSoEM512`). The 4-way batched composition here applies each
 // permutation to four independent states in parallel using the
-// `Block4`/`RoundNoKey4HW`/`FinalRoundNoKey4HW`/`XorBlock4` primitives
-// from the same upstream package.
+// `Block4`/`Round4HW`/`FinalRound4HW`/`XorBlock4` primitives of the
+// same package.
 //
 // Layout. Each batched permutation reshapes the four Areion states from
 // the natural array-of-structures layout (one contiguous 32- or 64-byte
@@ -54,15 +57,15 @@ import (
 	"unsafe"
 
 	"github.com/everanium/itb/internal/areionasm"
-	"github.com/jedisct1/go-aes"
+	"github.com/everanium/itb/third/goaes"
 )
 
-// Areion round constants (digits of pi, little-endian) — must match
-// `github.com/jedisct1/go-aes/areion.go:areionRoundConstants`. Areion256
-// uses entries 0..9; Areion512 uses entries 0..14. The upstream constants
-// are package-private so the values are duplicated here verbatim. Any
-// drift from upstream breaks the parity invariant; the parity test
-// catches divergence on every run.
+// Areion round constants of P1 (digits of pi, little-endian) — must
+// match `third/goaes/areion.go:areionRoundConstants`. Areion256 uses
+// entries 0..9; Areion512 uses entries 0..14. The vendored constants are
+// package-private so the values are duplicated here verbatim. Any drift
+// breaks the parity invariant; the parity test catches divergence on
+// every run.
 var areionRC = [15][16]byte{
 	{0x44, 0x73, 0x70, 0x03, 0x2e, 0x8a, 0x19, 0x13, 0xd3, 0x08, 0xa3, 0x85, 0x88, 0x6a, 0x3f, 0x24},
 	{0x89, 0x6c, 0x4e, 0xec, 0x98, 0xfa, 0x2e, 0x08, 0xd0, 0x31, 0x9f, 0x29, 0x22, 0x38, 0x09, 0xa4},
@@ -81,11 +84,33 @@ var areionRC = [15][16]byte{
 	{0xb6, 0x10, 0xab, 0x2a, 0x6a, 0x39, 0xca, 0x55, 0x40, 0x14, 0xe8, 0x63, 0x62, 0x98, 0x48, 0x57},
 }
 
-// The pre-broadcast round constant table (`AreionRC4x`) used by the
-// VAES assembly path lives in `internal/areionasm` because Go does not
-// allow assembly files in CGO-using packages. The amd64 ASM symbol
-// references `·AreionRC4x(SB)` from that subpackage; the dispatch
-// functions in `areion_amd64.go` import it.
+// Areion round constants of P2, the second permutation of SoEM22 — must
+// match `third/goaes/areion.go:areionRoundConstants2`: the fifteen
+// 128-bit words of the hexadecimal digits of pi that follow those of
+// areionRC, in the same little-endian format.
+var areionRC2 = [15][16]byte{
+	{0x93, 0xe9, 0x72, 0x7c, 0xaf, 0x86, 0x54, 0xa1, 0xce, 0xe8, 0x41, 0x11, 0x34, 0x5c, 0xcc, 0xb4},
+	{0xf6, 0x31, 0x18, 0x74, 0x5d, 0xc5, 0xa9, 0x2b, 0x2a, 0xbc, 0x6f, 0x63, 0x11, 0x14, 0xee, 0xb3},
+	{0x5c, 0xcf, 0x24, 0x6c, 0x33, 0xba, 0xd6, 0xaf, 0x1e, 0x93, 0x87, 0x9b, 0x16, 0x3e, 0x5c, 0xce},
+	{0xaf, 0xb9, 0x4b, 0x6b, 0x98, 0x48, 0x8f, 0x3b, 0x77, 0x86, 0x95, 0x28, 0x81, 0x53, 0x32, 0x7a},
+	{0x91, 0xa9, 0x21, 0xfb, 0xcc, 0x09, 0xd8, 0x61, 0x93, 0x21, 0x28, 0x66, 0x1b, 0xe8, 0xbf, 0xc4},
+	{0xb1, 0x75, 0x85, 0xe9, 0x5d, 0x5d, 0x84, 0xef, 0x32, 0x80, 0xec, 0x5d, 0x60, 0xac, 0x7c, 0x48},
+	{0xc5, 0xac, 0x96, 0xd3, 0x81, 0x3e, 0x89, 0x23, 0x88, 0x1b, 0x65, 0xeb, 0x02, 0x23, 0x26, 0xdc},
+	{0x04, 0x20, 0x84, 0xa4, 0x82, 0x44, 0x0b, 0x2e, 0x39, 0x42, 0xf4, 0x83, 0xf3, 0x6f, 0x6d, 0x0f},
+	{0x9a, 0x6c, 0xe9, 0xf6, 0x42, 0x68, 0xc6, 0x21, 0x5e, 0x9b, 0x1f, 0x9e, 0x4a, 0xf0, 0xc8, 0x69},
+	{0x68, 0x2f, 0x54, 0xd8, 0xd2, 0xa0, 0x51, 0x6a, 0xf0, 0x88, 0xd3, 0xab, 0x61, 0x9c, 0x0c, 0x67},
+	{0xe4, 0x3b, 0x7a, 0x13, 0x6c, 0x0b, 0xef, 0x6e, 0xa3, 0x33, 0x51, 0xab, 0x28, 0xa7, 0x0f, 0x96},
+	{0x76, 0x01, 0xaf, 0x39, 0x1d, 0x65, 0xf1, 0xa1, 0x98, 0x2a, 0xfb, 0x7e, 0x50, 0xf0, 0x3b, 0xba},
+	{0xb4, 0x9f, 0x6f, 0x45, 0x19, 0x86, 0xee, 0x8c, 0x88, 0x0e, 0x43, 0x82, 0x3e, 0x59, 0xca, 0x66},
+	{0x73, 0x20, 0xc1, 0x85, 0xd8, 0x75, 0x6f, 0xe0, 0xbe, 0x5e, 0x8b, 0x3b, 0xc3, 0xa5, 0x84, 0x7d},
+	{0x06, 0x77, 0x3f, 0x36, 0x62, 0xaa, 0xd3, 0x4e, 0xa6, 0x6a, 0xc1, 0x56, 0x9f, 0x44, 0x1a, 0x40},
+}
+
+// The pre-broadcast round constant tables (`AreionRC4x` / `AreionRC4x2`)
+// used by the VAES assembly path live in `internal/areionasm` because Go
+// does not allow assembly files in CGO-using packages. The amd64 ASM
+// symbols reference `·AreionRC4x(SB)` / `·AreionRC4x2(SB)` from that
+// subpackage; the dispatch functions in `areion_amd64.go` import it.
 
 // rcBlock4 broadcasts one 16-byte round constant into a Block4 (four
 // identical 16-byte copies, one per lane). Result is suitable for
@@ -153,23 +178,23 @@ func unpack256x4SoA(b0, b1 *aes.Block4, states *[4][32]byte) {
 }
 
 // areion256Permutex4Default is the portable Go implementation of the
-// 4-way batched Areion256 permutation. Used directly on non-amd64
-// platforms and as the parity reference / fallback path on amd64 when
-// VAES is unavailable. The amd64 fast path (`areion_amd64.s`)
-// implements the same operation with full-loop-unrolled VAES ZMM
-// instructions, avoiding the per-round Go function call overhead that
-// dominates this implementation's wall-clock cost.
+// 4-way batched Areion256 permutation under the round-constant table
+// rcs (areionRC for P1, areionRC2 for P2). Used directly on platforms
+// and builds without an Areion assembly tier and as the parity
+// reference. The assembly kernels (`internal/areionasm`) implement the
+// same operation fully unrolled, avoiding the per-round Go function
+// call overhead that dominates this implementation's wall-clock cost.
 //
 // Mirrors the serial round structure in
-// `github.com/jedisct1/go-aes/areion.go:areion256PermuteSoftware`
-// bit-for-bit; the only difference is each operation runs on four
-// lanes via `Round4HW` (with zero key, equivalent to `RoundNoKey4`) /
-// `FinalRound4HW` / `XorBlock4` instead of per-block primitives.
-func areion256Permutex4Default(states *[4][32]byte) {
+// `third/goaes/areion.go:areion256PermuteSoftwareRC` bit-for-bit; the
+// only difference is each operation runs on four lanes via `Round4HW`
+// (with zero key, equivalent to `RoundNoKey4`) / `FinalRound4HW` /
+// `XorBlock4` instead of per-block primitives.
+func areion256Permutex4Default(states *[4][32]byte, rcs *[15][16]byte) {
 	x0, x1 := pack256x4SoA(states)
 
 	for r := 0; r < 10; r++ {
-		rc := rcBlock4(&areionRC[r])
+		rc := rcBlock4(&rcs[r])
 		var temp aes.Block4
 
 		if r%2 == 0 {
@@ -212,28 +237,28 @@ func areion256Permutex4Default(states *[4][32]byte) {
 // `inputs[i]` is 32 bytes. The result is four independent 32-byte PRF
 // outputs.
 //
-// The function is `crypto/rand`-equivalent in security to four serial
-// `aes.AreionSoEM256` calls — output is bit-exact identical (verified
-// in `TestAreionSoEM256x4Parity`). Throughput is faster on x86-64 with
-// VAES (AVX-512) because the four lanes share VAES instruction issue;
-// on hardware without VAES the function falls back to per-lane AES-NI
-// at near-identical cost to four serial calls.
+// The function is equivalent to four serial `aes.AreionSoEM256` calls —
+// output is bit-exact identical (verified in
+// `TestAreionSoEM256x4Parity`). Throughput is higher wherever an Areion
+// assembly tier is active (VAES ZMM / YMM, AES-NI XMM, the ARM Crypto
+// Extension) because the four lanes and the two permutations share
+// instruction issue; the portable Go path runs at near-identical cost
+// to four serial calls.
 func AreionSoEM256x4(keys *[4][64]byte, inputs *[4][32]byte) [4][32]byte {
-	// Build state1 = input ⊕ key[0:32] and state2 = input ⊕ key[32:64] ⊕ d
+	// Build state1 = input ⊕ key[0:32] and state2 = input ⊕ key[32:64]
 	// for every lane, **directly in SoA Block4 layout** so the
-	// downstream VAES kernel runs without a separate pack pass.
+	// downstream kernel runs without a separate pack pass.
 	// SoA convention (matches pack256x4SoA): lane i's first 16-byte
 	// AES block lives at &b0[i*16], second at &b1[i*16].
 	//
-	// Cuts ~16 inline MOVUPS per call vs the previous AoS-then-pack
-	// flow (was: 32 uint64 XORs → 2 × 8-MOVUPS pack → permute →
-	// 2 × 8-MOVUPS unpack → 16 uint64 XORs; now: 32 uint64 XORs to
-	// SoA destinations → permute → 16 uint64 XORs unpack-and-XOR
-	// in one pass). Each Areion256x4 batched call drops ~5-10 ns
-	// of Go-side overhead — measurable on slow-path
-	// 256-bit / 512-bit ITB nonce workloads where the closure dispatches
-	// 2-3 batched calls per ChainHash round.
-	const domainSepU64 = uint64(0x01) // Areion-SoEM-256 domain separator, first u64 word
+	// Cuts ~16 inline MOVUPS per call vs an AoS-then-pack flow (32
+	// uint64 XORs → 2 × 8-MOVUPS pack → permute → 2 × 8-MOVUPS unpack
+	// → 16 uint64 XORs; here: 32 uint64 XORs to SoA destinations →
+	// permute → 16 uint64 XORs unpack-and-whiten in one pass). Each
+	// Areion256x4 batched call drops ~5-10 ns of Go-side overhead —
+	// measurable on slow-path 256-bit / 512-bit ITB nonce workloads
+	// where the closure dispatches 2-3 batched calls per ChainHash
+	// round.
 	keysU64 := (*[4][8]uint64)(unsafe.Pointer(keys))
 	inputsU64 := (*[4][4]uint64)(unsafe.Pointer(inputs))
 
@@ -249,32 +274,32 @@ func AreionSoEM256x4(keys *[4][64]byte, inputs *[4][32]byte) [4][32]byte {
 		s1b1U64[0] = inputsU64[lane][2] ^ keysU64[lane][2]
 		s1b1U64[1] = inputsU64[lane][3] ^ keysU64[lane][3]
 
-		s2b0U64[0] = inputsU64[lane][0] ^ keysU64[lane][4] ^ domainSepU64
+		s2b0U64[0] = inputsU64[lane][0] ^ keysU64[lane][4]
 		s2b0U64[1] = inputsU64[lane][1] ^ keysU64[lane][5]
 		s2b1U64[0] = inputsU64[lane][2] ^ keysU64[lane][6]
 		s2b1U64[1] = inputsU64[lane][3] ^ keysU64[lane][7]
 	}
 
-	// On AVX-512 + VAES, the fused kernel runs both permutes
-	// interleaved (masking VAESENC latency) and computes the SoEM
-	// XOR in registers, writing the result back into (s1b0, s1b1).
-	// On other paths, the dispatcher falls through to two separate
-	// permutex4 calls + a manual XOR loop, bit-exact identical.
+	// The dispatcher delivers P1(state1) ⊕ P2(state2) into (s1b0, s1b1):
+	// on the fused tiers both permutations run interleaved in one kernel
+	// (masking VAESENC latency) with the XOR in registers; on the other
+	// paths it runs the two permutations separately and XORs in Go,
+	// bit-exact identical.
 	areionSoEM256Permutex4SoA(&s1b0, &s1b1, &s2b0, &s2b1)
 
-	// Unpack the SoEM-XOR'd state from SoA (already in s1b0/s1b1) to
-	// AoS output. No second XOR step — the dispatcher delivered the
-	// final state1' ⊕ state2' result.
+	// Unpack from SoA to AoS output and apply the SoEM22 output
+	// whitening k1 ⊕ k2 in the same pass.
 	var out [4][32]byte
 	for lane := 0; lane < 4; lane++ {
 		s1b0U64 := (*[2]uint64)(unsafe.Pointer(&s1b0[lane*16]))
 		s1b1U64 := (*[2]uint64)(unsafe.Pointer(&s1b1[lane*16]))
 		outU64 := (*[4]uint64)(unsafe.Pointer(&out[lane]))
+		k := &keysU64[lane]
 
-		outU64[0] = s1b0U64[0]
-		outU64[1] = s1b0U64[1]
-		outU64[2] = s1b1U64[0]
-		outU64[3] = s1b1U64[1]
+		outU64[0] = s1b0U64[0] ^ k[0] ^ k[4]
+		outU64[1] = s1b0U64[1] ^ k[1] ^ k[5]
+		outU64[2] = s1b1U64[0] ^ k[2] ^ k[6]
+		outU64[3] = s1b1U64[1] ^ k[3] ^ k[7]
 	}
 	return out
 }
@@ -302,7 +327,7 @@ func unpack512x4SoA(b0, b1, b2, b3 *aes.Block4, states *[4][64]byte) {
 }
 
 // areion512Roundx4 mirrors the serial `areion512Round` closure from
-// `github.com/jedisct1/go-aes/areion.go:areion512PermuteSoftware`. The
+// `third/goaes/areion.go:areion512PermuteSoftwareRC`. The
 // inner work pattern is:
 //
 //	temp1 = a; RoundNoKey(temp1); b = temp1 ⊕ b
@@ -330,28 +355,28 @@ func areion512Roundx4(a, b, c, d *aes.Block4, rc *[16]byte) {
 }
 
 // areion512Permutex4Default is the portable Go implementation of the
-// 4-way batched Areion512 permutation. Used directly on non-amd64
-// platforms and as the fallback path on amd64 (until a dedicated VAES
-// assembly variant is added).
+// 4-way batched Areion512 permutation under the round-constant table
+// rcs (areionRC for P1, areionRC2 for P2). Used directly on platforms
+// and builds without an Areion assembly tier and as the parity
+// reference.
 //
 // Mirrors the serial round + final rotation structure of
-// `github.com/jedisct1/go-aes/areion.go:areion512PermuteSoftware`
-// bit-for-bit; same per-round pattern as the serial reference, four
-// lanes wide.
-func areion512Permutex4Default(states *[4][64]byte) {
+// `third/goaes/areion.go:areion512PermuteSoftwareRC` bit-for-bit; same
+// per-round pattern as the serial reference, four lanes wide.
+func areion512Permutex4Default(states *[4][64]byte, rcs *[15][16]byte) {
 	x0, x1, x2, x3 := pack512x4SoA(states)
 
 	// Main 12 rounds (3 outer iterations of 4 sub-rounds each).
 	for i := 0; i < 12; i += 4 {
-		areion512Roundx4(&x0, &x1, &x2, &x3, &areionRC[i+0])
-		areion512Roundx4(&x1, &x2, &x3, &x0, &areionRC[i+1])
-		areion512Roundx4(&x2, &x3, &x0, &x1, &areionRC[i+2])
-		areion512Roundx4(&x3, &x0, &x1, &x2, &areionRC[i+3])
+		areion512Roundx4(&x0, &x1, &x2, &x3, &rcs[i+0])
+		areion512Roundx4(&x1, &x2, &x3, &x0, &rcs[i+1])
+		areion512Roundx4(&x2, &x3, &x0, &x1, &rcs[i+2])
+		areion512Roundx4(&x3, &x0, &x1, &x2, &rcs[i+3])
 	}
 	// Final 3 rounds.
-	areion512Roundx4(&x0, &x1, &x2, &x3, &areionRC[12])
-	areion512Roundx4(&x1, &x2, &x3, &x0, &areionRC[13])
-	areion512Roundx4(&x2, &x3, &x0, &x1, &areionRC[14])
+	areion512Roundx4(&x0, &x1, &x2, &x3, &rcs[12])
+	areion512Roundx4(&x1, &x2, &x3, &x0, &rcs[13])
+	areion512Roundx4(&x2, &x3, &x0, &x1, &rcs[14])
 
 	// Final rotation: temp=x0; x0=x3; x3=x2; x2=x1; x1=temp
 	temp := x0
@@ -377,7 +402,6 @@ func AreionSoEM512x4(keys *[4][128]byte, inputs *[4][64]byte) [4][64]byte {
 	// counterpart, scaled to four Block4 buffers per state (b0..b3
 	// holding AES blocks 0..3 of every lane). Skips the AoS pack/
 	// unpack steps the AoS dispatcher would otherwise emit.
-	const domainSepU64 = uint64(0x01) // Areion-SoEM-512 domain separator, first u64 word
 	keysU64 := (*[4][16]uint64)(unsafe.Pointer(keys))
 	inputsU64 := (*[4][8]uint64)(unsafe.Pointer(inputs))
 
@@ -401,7 +425,7 @@ func AreionSoEM512x4(keys *[4][128]byte, inputs *[4][64]byte) [4][64]byte {
 		s1b3U64[0] = inputsU64[lane][6] ^ keysU64[lane][6]
 		s1b3U64[1] = inputsU64[lane][7] ^ keysU64[lane][7]
 
-		s2b0U64[0] = inputsU64[lane][0] ^ keysU64[lane][8] ^ domainSepU64
+		s2b0U64[0] = inputsU64[lane][0] ^ keysU64[lane][8]
 		s2b0U64[1] = inputsU64[lane][1] ^ keysU64[lane][9]
 		s2b1U64[0] = inputsU64[lane][2] ^ keysU64[lane][10]
 		s2b1U64[1] = inputsU64[lane][3] ^ keysU64[lane][11]
@@ -411,17 +435,16 @@ func AreionSoEM512x4(keys *[4][128]byte, inputs *[4][64]byte) [4][64]byte {
 		s2b3U64[1] = inputsU64[lane][7] ^ keysU64[lane][15]
 	}
 
-	// On AVX-512 + VAES, the fused 15-round kernel runs both permutes
-	// interleaved, applies the cyclic state rotation
-	// `(x0,x1,x2,x3) → (x3,x0,x1,x2)` fused with the SoEM XOR, and
-	// writes the result back into (s1b0..s1b3). On other paths, the
-	// dispatcher falls through to two separate permutex4 calls + a
-	// manual XOR loop, bit-exact identical.
+	// The dispatcher delivers P1(state1) ⊕ P2(state2), with the cyclic
+	// state rotation `(x0,x1,x2,x3) → (x3,x0,x1,x2)` of both
+	// permutations applied, into (s1b0..s1b3): on the fused tiers both
+	// 15-round permutations run interleaved in one kernel with the
+	// rotation folded into the XOR; on the other paths it runs the two
+	// permutations separately and XORs in Go, bit-exact identical.
 	areionSoEM512Permutex4SoA(&s1b0, &s1b1, &s1b2, &s1b3, &s2b0, &s2b1, &s2b2, &s2b3)
 
-	// Unpack the SoEM-XOR'd state from SoA (already in s1b0..s1b3) to
-	// AoS output. No second XOR step — the dispatcher delivered the
-	// final state1' ⊕ state2' result.
+	// Unpack from SoA to AoS output and apply the SoEM22 output
+	// whitening k1 ⊕ k2 in the same pass.
 	var out [4][64]byte
 	for lane := 0; lane < 4; lane++ {
 		s1b0U64 := (*[2]uint64)(unsafe.Pointer(&s1b0[lane*16]))
@@ -429,15 +452,16 @@ func AreionSoEM512x4(keys *[4][128]byte, inputs *[4][64]byte) [4][64]byte {
 		s1b2U64 := (*[2]uint64)(unsafe.Pointer(&s1b2[lane*16]))
 		s1b3U64 := (*[2]uint64)(unsafe.Pointer(&s1b3[lane*16]))
 		outU64 := (*[8]uint64)(unsafe.Pointer(&out[lane]))
+		k := &keysU64[lane]
 
-		outU64[0] = s1b0U64[0]
-		outU64[1] = s1b0U64[1]
-		outU64[2] = s1b1U64[0]
-		outU64[3] = s1b1U64[1]
-		outU64[4] = s1b2U64[0]
-		outU64[5] = s1b2U64[1]
-		outU64[6] = s1b3U64[0]
-		outU64[7] = s1b3U64[1]
+		outU64[0] = s1b0U64[0] ^ k[0] ^ k[8]
+		outU64[1] = s1b0U64[1] ^ k[1] ^ k[9]
+		outU64[2] = s1b1U64[0] ^ k[2] ^ k[10]
+		outU64[3] = s1b1U64[1] ^ k[3] ^ k[11]
+		outU64[4] = s1b2U64[0] ^ k[4] ^ k[12]
+		outU64[5] = s1b2U64[1] ^ k[5] ^ k[13]
+		outU64[6] = s1b3U64[0] ^ k[6] ^ k[14]
+		outU64[7] = s1b3U64[1] ^ k[7] ^ k[15]
 	}
 	return out
 }
@@ -476,7 +500,8 @@ func AreionSoEM512x4(keys *[4][128]byte, inputs *[4][64]byte) [4][64]byte {
 // or the ARM Crypto Extension) the BatchHash path runs each of the
 // four pixels of a call through the fused ChainHash cascade kernel of
 // its tier for the ITB buf shapes; other lengths, and hosts without
-// such a tier, route four pixels per call through AreionSoEM256x4.
+// such a tier, route four pixels per call through AreionSoEM256x4
+// (itself on the batched kernel of the tier where one exists).
 func MakeAreionSoEM256Hash(key ...[32]byte) (HashFunc256, BatchHashFunc256, [32]byte) {
 	var fixedKey [32]byte
 	if len(key) > 0 {
@@ -561,8 +586,9 @@ func MakeAreionSoEM256HashWithKey(fixedKey [32]byte) (HashFunc256, BatchHashFunc
 	// Areion assembly tier the ITB buf shapes run the single-lane
 	// fused cascade kernel per lane; everywhere else, and for other
 	// lengths, the 4 lanes run their CBC-MAC chain in lock-step, each
-	// round dispatching one AreionSoEM256x4 call (VAES ZMM / YMM, the
-	// ARM Crypto Extension, or the portable Go permutation). ITB
+	// round dispatching one AreionSoEM256x4 call (VAES ZMM / YMM,
+	// AES-NI XMM, the ARM Crypto Extension, or the portable Go
+	// permutation). ITB
 	// feeds equal-length data per batched call (one ChainHash round
 	// across 4 pixels), the contract the batched arm requires.
 	batched := func(data *[4][]byte, seeds [4][4]uint64) [4][4]uint64 {

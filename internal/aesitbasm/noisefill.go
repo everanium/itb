@@ -3,7 +3,7 @@ package aesitbasm
 import (
 	"encoding/binary"
 
-	aes "github.com/jedisct1/go-aes"
+	aes "github.com/everanium/itb/third/goaes"
 )
 
 // AES-ITB noise filler.

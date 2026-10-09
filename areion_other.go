@@ -2,38 +2,48 @@
 
 package itb
 
-import "github.com/jedisct1/go-aes"
+import "github.com/everanium/itb/third/goaes"
 
 // On non-amd64 / non-arm64 platforms (or under the `purego` / `noitbasm`
 // build tags) there is no VAES or ARM Crypto Extension assembly; the
 // 4-way batched permutations dispatch directly to the portable Go
 // fallback.
 
-// SoA-native shims for non-amd64: unpack to AoS, run default,
-// repack. Falls back through the same path the amd64 default
-// branch uses, so behaviour matches across platforms.
-func areion256Permutex4SoA(b0, b1 *aes.Block4) {
+// SoA-native shims for non-amd64: unpack to AoS, run default under the
+// requested constant table (P1, or P2 when second is set), repack. Falls
+// back through the same path the amd64 default branch uses, so
+// behaviour matches across platforms.
+func areion256Permutex4SoA(b0, b1 *aes.Block4, second bool) {
+	rcs := &areionRC
+	if second {
+		rcs = &areionRC2
+	}
 	var states [4][32]byte
 	unpack256x4SoA(b0, b1, &states)
-	areion256Permutex4Default(&states)
+	areion256Permutex4Default(&states, rcs)
 	*b0, *b1 = pack256x4SoA(&states)
 }
 
-func areion512Permutex4SoA(b0, b1, b2, b3 *aes.Block4) {
+func areion512Permutex4SoA(b0, b1, b2, b3 *aes.Block4, second bool) {
+	rcs := &areionRC
+	if second {
+		rcs = &areionRC2
+	}
 	var states [4][64]byte
 	unpack512x4SoA(b0, b1, b2, b3, &states)
-	areion512Permutex4Default(&states)
+	areion512Permutex4Default(&states, rcs)
 	*b0, *b1, *b2, *b3 = pack512x4SoA(&states)
 }
 
 // areionSoEM256Permutex4SoA — non-amd64 fallback. Mirrors the AVX2
-// branch of the amd64 dispatcher: two separate per-half permutes (each
-// dispatching to the platform's best available AES path inside
-// areion256Permutex4SoA) plus a manual XOR loop. Bit-exact identical
-// to the amd64 fused result by construction.
+// branch of the amd64 dispatcher: P1 on state1 and P2 on state2 as two
+// separate per-half permutes (each dispatching to the platform's best
+// available AES path inside areion256Permutex4SoA) plus a manual XOR
+// loop. Bit-exact identical to the amd64 fused result by construction;
+// the SoEM22 whitening is the caller's.
 func areionSoEM256Permutex4SoA(s1b0, s1b1, s2b0, s2b1 *aes.Block4) {
-	areion256Permutex4SoA(s1b0, s1b1)
-	areion256Permutex4SoA(s2b0, s2b1)
+	areion256Permutex4SoA(s1b0, s1b1, false)
+	areion256Permutex4SoA(s2b0, s2b1, true)
 	for i := 0; i < 64; i++ {
 		s1b0[i] ^= s2b0[i]
 		s1b1[i] ^= s2b1[i]
@@ -44,8 +54,8 @@ func areionSoEM256Permutex4SoA(s1b0, s1b1, s2b0, s2b1 *aes.Block4) {
 // shape as the SoEM-256 fallback, scaled to 4 Block4 buffers per
 // state. Bit-exact identical to the amd64 fused result.
 func areionSoEM512Permutex4SoA(a1, b1, c1, d1, a2, b2, c2, d2 *aes.Block4) {
-	areion512Permutex4SoA(a1, b1, c1, d1)
-	areion512Permutex4SoA(a2, b2, c2, d2)
+	areion512Permutex4SoA(a1, b1, c1, d1, false)
+	areion512Permutex4SoA(a2, b2, c2, d2, true)
 	for i := 0; i < 64; i++ {
 		a1[i] ^= a2[i]
 		b1[i] ^= b2[i]

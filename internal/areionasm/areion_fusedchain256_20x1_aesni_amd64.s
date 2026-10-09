@@ -2,10 +2,11 @@
 
 // Legacy-SSE AES-NI XMM (single lane) fused ChainHash cascade kernel for Areion-SoEM-256 at the
 // 20-byte shape, 1 lane (1 absorb chunk, 1 SoEM evaluation —
-// 2 10-round Areion-256 permutations — per cascade round). The message
-// blocks are staged once per call; see areionasm_fused.go for the
-// construction and the in-package parity tests for the bit-exact pin
-// against the pure-Go cascade.
+// 2 10-round Areion-256 permutations, P1 under the first constant
+// table and P2 under the second — per cascade round). The message blocks
+// are staged once per call; see areionasm_fused.go for the construction
+// and the in-package parity tests for the bit-exact pin against the
+// pure-Go cascade.
 
 #include "textflag.h"
 
@@ -26,8 +27,6 @@ TEXT ·areion256FusedChain20x1AesNiAsm(SB), NOSPLIT, $32-40
 	MOVL 16(R8), R12
 	MOVL R12, 24(SP)
 	MOVL $0, 28(SP)
-	MOVOU 0(AX), X14
-	MOVOU 16(AX), X15
 	PXOR X12, X12
 
 	// pass 0
@@ -37,28 +36,29 @@ TEXT ·areion256FusedChain20x1AesNiAsm(SB), NOSPLIT, $32-40
 	PXOR X1, X1
 
 loop0:
-	MOVOU ·AreionSoEMDomainSep256(SB), X10
 	MOVOU 0(BX), X8
 	PXOR X0, X8
-	PXOR X10, X8
 	MOVOU X8, X6
 	MOVOU 16(BX), X8
 	PXOR X1, X8
 	MOVOU X8, X7
 	ADDQ $32, BX
+	MOVOU 0(AX), X9
 	MOVOU 0(SP), X0
 	MOVOU X0, X2
-	PXOR X14, X0
+	PXOR X9, X0
 	PXOR X6, X2
+	MOVOU 16(AX), X9
 	MOVOU 16(SP), X1
 	MOVOU X1, X3
-	PXOR X15, X1
+	PXOR X9, X1
 	PXOR X7, X3
 	MOVOU ·AreionRC4x+0(SB), X13
+	MOVOU ·AreionRC4x2+0(SB), X14
 	MOVOU X0, X8
 	MOVOU X2, X9
 	AESENC X13, X8
-	AESENC X13, X9
+	AESENC X14, X9
 	AESENC X1, X8
 	AESENC X3, X9
 	AESENCLAST X12, X0
@@ -66,10 +66,11 @@ loop0:
 	MOVOU X8, X1
 	MOVOU X9, X3
 	MOVOU ·AreionRC4x+64(SB), X13
+	MOVOU ·AreionRC4x2+64(SB), X14
 	MOVOU X1, X8
 	MOVOU X3, X9
 	AESENC X13, X8
-	AESENC X13, X9
+	AESENC X14, X9
 	AESENC X0, X8
 	AESENC X2, X9
 	AESENCLAST X12, X1
@@ -77,10 +78,11 @@ loop0:
 	MOVOU X8, X0
 	MOVOU X9, X2
 	MOVOU ·AreionRC4x+128(SB), X13
+	MOVOU ·AreionRC4x2+128(SB), X14
 	MOVOU X0, X8
 	MOVOU X2, X9
 	AESENC X13, X8
-	AESENC X13, X9
+	AESENC X14, X9
 	AESENC X1, X8
 	AESENC X3, X9
 	AESENCLAST X12, X0
@@ -88,10 +90,11 @@ loop0:
 	MOVOU X8, X1
 	MOVOU X9, X3
 	MOVOU ·AreionRC4x+192(SB), X13
+	MOVOU ·AreionRC4x2+192(SB), X14
 	MOVOU X1, X8
 	MOVOU X3, X9
 	AESENC X13, X8
-	AESENC X13, X9
+	AESENC X14, X9
 	AESENC X0, X8
 	AESENC X2, X9
 	AESENCLAST X12, X1
@@ -99,10 +102,11 @@ loop0:
 	MOVOU X8, X0
 	MOVOU X9, X2
 	MOVOU ·AreionRC4x+256(SB), X13
+	MOVOU ·AreionRC4x2+256(SB), X14
 	MOVOU X0, X8
 	MOVOU X2, X9
 	AESENC X13, X8
-	AESENC X13, X9
+	AESENC X14, X9
 	AESENC X1, X8
 	AESENC X3, X9
 	AESENCLAST X12, X0
@@ -110,10 +114,11 @@ loop0:
 	MOVOU X8, X1
 	MOVOU X9, X3
 	MOVOU ·AreionRC4x+320(SB), X13
+	MOVOU ·AreionRC4x2+320(SB), X14
 	MOVOU X1, X8
 	MOVOU X3, X9
 	AESENC X13, X8
-	AESENC X13, X9
+	AESENC X14, X9
 	AESENC X0, X8
 	AESENC X2, X9
 	AESENCLAST X12, X1
@@ -121,10 +126,11 @@ loop0:
 	MOVOU X8, X0
 	MOVOU X9, X2
 	MOVOU ·AreionRC4x+384(SB), X13
+	MOVOU ·AreionRC4x2+384(SB), X14
 	MOVOU X0, X8
 	MOVOU X2, X9
 	AESENC X13, X8
-	AESENC X13, X9
+	AESENC X14, X9
 	AESENC X1, X8
 	AESENC X3, X9
 	AESENCLAST X12, X0
@@ -132,10 +138,11 @@ loop0:
 	MOVOU X8, X1
 	MOVOU X9, X3
 	MOVOU ·AreionRC4x+448(SB), X13
+	MOVOU ·AreionRC4x2+448(SB), X14
 	MOVOU X1, X8
 	MOVOU X3, X9
 	AESENC X13, X8
-	AESENC X13, X9
+	AESENC X14, X9
 	AESENC X0, X8
 	AESENC X2, X9
 	AESENCLAST X12, X1
@@ -143,10 +150,11 @@ loop0:
 	MOVOU X8, X0
 	MOVOU X9, X2
 	MOVOU ·AreionRC4x+512(SB), X13
+	MOVOU ·AreionRC4x2+512(SB), X14
 	MOVOU X0, X8
 	MOVOU X2, X9
 	AESENC X13, X8
-	AESENC X13, X9
+	AESENC X14, X9
 	AESENC X1, X8
 	AESENC X3, X9
 	AESENCLAST X12, X0
@@ -154,10 +162,11 @@ loop0:
 	MOVOU X8, X1
 	MOVOU X9, X3
 	MOVOU ·AreionRC4x+576(SB), X13
+	MOVOU ·AreionRC4x2+576(SB), X14
 	MOVOU X1, X8
 	MOVOU X3, X9
 	AESENC X13, X8
-	AESENC X13, X9
+	AESENC X14, X9
 	AESENC X0, X8
 	AESENC X2, X9
 	AESENCLAST X12, X1
@@ -165,7 +174,13 @@ loop0:
 	MOVOU X8, X0
 	MOVOU X9, X2
 	PXOR X2, X0
+	MOVOU 0(AX), X9
+	PXOR X9, X0
+	PXOR X6, X0
 	PXOR X3, X1
+	MOVOU 16(AX), X9
+	PXOR X9, X1
+	PXOR X7, X1
 	DECQ CX
 	JNZ loop0
 	MOVOU X0, 0(DX)

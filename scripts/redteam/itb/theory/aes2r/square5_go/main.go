@@ -63,7 +63,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	aes "github.com/jedisct1/go-aes"
+	aes "github.com/everanium/itb/third/goaes"
 )
 
 const lanes = 4

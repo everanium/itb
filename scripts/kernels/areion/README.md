@@ -1,11 +1,14 @@
 ## ITB Areion-SoEM Kernels Generator
 
 One deterministic generator emits every Areion-SoEM fused ChainHash
-cascade kernel under `internal/areionasm/`. It takes no input beyond its
-own source (the round constants are read from the Go side — `·AreionRC4x`
-on amd64, `·AreionRCTable` on arm64 — and the SoEM domain-separation
-constant from `·AreionSoEMDomainSep256`), and must reproduce the committed
-`.s` files byte for byte. The generator accepts `--check`, which
+cascade kernel under `internal/areionasm/`, and the legacy-SSE AES-NI
+general-purpose kernels (`areion_soem_aesni_amd64.s`: the four-lane
+permutation under a caller-supplied constant table and the fused SoEM
+kernel of the root package's batched API). It takes no input beyond its
+own source (the round constants of both Areion permutations are read from
+the Go side — `·AreionRC4x` / `·AreionRC4x2` on amd64, `·AreionRCTable` /
+`·AreionRCTable2` on arm64), and must reproduce the committed `.s` files
+byte for byte. The generator accepts `--check`, which
 regenerates in memory, compares against the committed files without
 writing, and exits non-zero on any drift.
 
@@ -53,16 +56,19 @@ Per cascade round the kernel re-keys the SoEM state from the previous
 round's output XOR the component group (k2 = group ⊕ h; k1 is the fixed
 key, constant across rounds) and re-absorbs the length-tagged message
 chunk by chunk (24-byte chunks at width 256, 56 at width 512): per chunk
-`state = P(state ⊕ k1) ⊕ P(state ⊕ k2 ⊕ D)` with the Areion permutation
-`P` (10 rounds at width 256, 15 at width 512, both permutations
-interleaved) and the domain-separation constant `D`. The message blocks
-are data-invariant across rounds and are staged once per call; the
-four-lane ZMM kernels keep them and both keys in registers, the wide ZMM
-kernels read the blocks, the round constants and the domain constant as
-memory operands and carry the feed-forward state in the permutation
-registers between chunks, the YMM tier reads the blocks back as memory
-operands (and, at width 512, keeps k2 in the frame), the XMM and NEON
-tiers reload the blocks from the frame per chunk. The module docstring
+`state = P1(state ⊕ k1) ⊕ P2(state ⊕ k2) ⊕ k1 ⊕ k2` — SoEM22 with the
+Areion permutation `P1` under the first round-constant table and `P2`
+under the second (10 rounds at width 256, 15 at width 512, both
+permutations interleaved), the whitening applied before the state feeds
+the next chunk or the next group. The message blocks are data-invariant
+across rounds and are staged once per call; the four-lane ZMM kernels
+keep them and both keys in registers, the wide ZMM kernels read the
+blocks and the round constants as memory operands and carry the
+feed-forward state in the permutation registers between chunks, the YMM
+tier reads the blocks back as memory operands (and, at width 512, keeps
+k2 in the frame), the XMM and NEON tiers reload the blocks from the frame
+per chunk (the eight-lane NEON fill kernels stage `k1 ⊕ k2` in the frame
+as well). The module docstring
 of the generator lists the register plan of every tier.
 
 ## Store-to-load forwarding discipline (amd64)

@@ -1,40 +1,43 @@
 //go:build amd64 && !purego && !noitbasm
 
-// Fused AVX-512 + VAES kernel for the Areion-SoEM-256 4-way batched
-// PRF. Compared with calling `Areion256Permutex4` twice (once per
-// SoEM half-state) plus a Go-side XOR finalize, this kernel:
+// Fused AVX-512 + VAES kernel for the two permutations of the
+// Areion-SoEM-256 4-way batched PRF: P1 (round constants `·AreionRC4x`)
+// on state1 and P2 (round constants `·AreionRC4x2`) on state2. Compared
+// with calling the per-half permutation kernels twice plus a Go-side XOR
+// finalize, this kernel:
 //
-//  1. Loads the 10 Areion256 round constants once for both halves
-//     instead of twice. Reuses the same `·AreionRC4x` 64-byte
-//     pre-broadcast round-constant table as the per-half kernel.
+//  1. Pre-loads the 10 P1 round constants into registers once and
+//     reads the P2 constants as memory operands of the second chain's
+//     VAESENC.
 //  2. Interleaves the state1 and state2 round bodies — independent
 //     dependency chains issued in lock-step, masking the 5-cycle
 //     VAESENC latency on Intel Sunny Cove / Cypress Cove (Rocket
 //     Lake i7-11700K) and AMD Zen 4. With one ZMM-VAESENC issuing
 //     per cycle and the 2-VAESENC critical path per round leaving
 //     8 idle cycles, the interleaved second state fills the gap.
-//  3. Performs the SoEM output XOR (state1' ⊕ state2') in registers
+//  3. Performs the output XOR (P1(state1) ⊕ P2(state2)) in registers
 //     before writing back, eliminating the Go-side per-lane uint64
 //     XOR loop that runs after the two separate permute calls.
 //
 // Caller is responsible for the SoEM input setup:
 //   s1b0, s1b1 = input ⊕ key1   (in SoA Block4 layout)
-//   s2b0, s2b1 = input ⊕ key2 ⊕ domainSep
-// The fused result `state1' ⊕ state2'` is written back into the
-// state1 buffers (s1b0, s1b1); the (s2b0, s2b1) buffers are scratch
-// and their contents after the call are unspecified.
+//   s2b0, s2b1 = input ⊕ key2
+// The fused result `P1(state1) ⊕ P2(state2)` is written back into the
+// state1 buffers (s1b0, s1b1); the (s2b0, s2b1) buffers are left
+// intact. The SoEM22 whitening `⊕ key1 ⊕ key2` is the caller's.
 
 #include "textflag.h"
 
 // func Areion256SoEMPermutex4Interleaved(s1b0, s1b1, s2b0, s2b1 *aes.Block4)
 //
-// Runs the 10-round Areion256 permutation on (s1b0, s1b1) and
-// (s2b0, s2b1) interleaved, XORs the two output halves together,
-// and stores the SoEM output back into (s1b0, s1b1).
+// Runs the 10-round Areion256 permutation P1 on (s1b0, s1b1) and P2
+// on (s2b0, s2b1) interleaved, XORs the two outputs together, and
+// stores the result back into (s1b0, s1b1).
 //
-// Per round (10 rounds total, alternating x0/x1 roles):
+// Per round (10 rounds total, alternating x0/x1 roles; rc = P1's
+// constant, rc2 = P2's):
 //   even r:  t1 = s1_x0;  t2 = s2_x0
-//            t1 = RoundNoKey(t1) ⊕ rc[r];  t2 = RoundNoKey(t2) ⊕ rc[r]
+//            t1 = RoundNoKey(t1) ⊕ rc[r];  t2 = RoundNoKey(t2) ⊕ rc2[r]
 //            t1 = RoundNoKey(t1) ⊕ s1_x1;  t2 = RoundNoKey(t2) ⊕ s2_x1
 //            s1_x0 = FinalRoundNoKey(s1_x0); s2_x0 = FinalRoundNoKey(s2_x0)
 //            s1_x1 = t1;  s2_x1 = t2
@@ -58,7 +61,8 @@ TEXT ·Areion256SoEMPermutex4Interleaved(SB), NOSPLIT, $0-32
 	// Z3 = zero (used by VAESENCLAST as the FinalRoundNoKey "round key").
 	VPXORD Z3, Z3, Z3
 
-	// Pre-load all 10 round constants into Z16..Z25.
+	// Pre-load all 10 P1 round constants into Z16..Z25; the P2 constants
+	// are memory operands below.
 	VMOVDQU64 ·AreionRC4x+0(SB),   Z16  // rc[0]
 	VMOVDQU64 ·AreionRC4x+64(SB),  Z17  // rc[1]
 	VMOVDQU64 ·AreionRC4x+128(SB), Z18  // rc[2]
@@ -74,7 +78,7 @@ TEXT ·Areion256SoEMPermutex4Interleaved(SB), NOSPLIT, $0-32
 	VMOVDQA64   Z0, Z2          // t1 = s1_x0
 	VMOVDQA64   Z4, Z6          // t2 = s2_x0
 	VAESENC     Z16, Z2, Z2     // t1 = RoundNoKey(t1) ⊕ rc[0]
-	VAESENC     Z16, Z6, Z6     // t2 = RoundNoKey(t2) ⊕ rc[0]
+	VAESENC     ·AreionRC4x2+0(SB), Z6, Z6  // t2 = RoundNoKey(t2) ⊕ rc2[0]
 	VAESENC     Z1, Z2, Z2      // t1 = RoundNoKey(t1) ⊕ s1_x1
 	VAESENC     Z5, Z6, Z6      // t2 = RoundNoKey(t2) ⊕ s2_x1
 	VAESENCLAST Z3, Z0, Z0      // s1_x0 = FinalRoundNoKey(s1_x0)
@@ -86,7 +90,7 @@ TEXT ·Areion256SoEMPermutex4Interleaved(SB), NOSPLIT, $0-32
 	VMOVDQA64   Z1, Z2
 	VMOVDQA64   Z5, Z6
 	VAESENC     Z17, Z2, Z2     // rc[1]
-	VAESENC     Z17, Z6, Z6
+	VAESENC     ·AreionRC4x2+64(SB), Z6, Z6  // rc2[1]
 	VAESENC     Z0, Z2, Z2
 	VAESENC     Z4, Z6, Z6
 	VAESENCLAST Z3, Z1, Z1
@@ -98,7 +102,7 @@ TEXT ·Areion256SoEMPermutex4Interleaved(SB), NOSPLIT, $0-32
 	VMOVDQA64   Z0, Z2
 	VMOVDQA64   Z4, Z6
 	VAESENC     Z18, Z2, Z2     // rc[2]
-	VAESENC     Z18, Z6, Z6
+	VAESENC     ·AreionRC4x2+128(SB), Z6, Z6  // rc2[2]
 	VAESENC     Z1, Z2, Z2
 	VAESENC     Z5, Z6, Z6
 	VAESENCLAST Z3, Z0, Z0
@@ -110,7 +114,7 @@ TEXT ·Areion256SoEMPermutex4Interleaved(SB), NOSPLIT, $0-32
 	VMOVDQA64   Z1, Z2
 	VMOVDQA64   Z5, Z6
 	VAESENC     Z19, Z2, Z2     // rc[3]
-	VAESENC     Z19, Z6, Z6
+	VAESENC     ·AreionRC4x2+192(SB), Z6, Z6  // rc2[3]
 	VAESENC     Z0, Z2, Z2
 	VAESENC     Z4, Z6, Z6
 	VAESENCLAST Z3, Z1, Z1
@@ -122,7 +126,7 @@ TEXT ·Areion256SoEMPermutex4Interleaved(SB), NOSPLIT, $0-32
 	VMOVDQA64   Z0, Z2
 	VMOVDQA64   Z4, Z6
 	VAESENC     Z20, Z2, Z2     // rc[4]
-	VAESENC     Z20, Z6, Z6
+	VAESENC     ·AreionRC4x2+256(SB), Z6, Z6  // rc2[4]
 	VAESENC     Z1, Z2, Z2
 	VAESENC     Z5, Z6, Z6
 	VAESENCLAST Z3, Z0, Z0
@@ -134,7 +138,7 @@ TEXT ·Areion256SoEMPermutex4Interleaved(SB), NOSPLIT, $0-32
 	VMOVDQA64   Z1, Z2
 	VMOVDQA64   Z5, Z6
 	VAESENC     Z21, Z2, Z2     // rc[5]
-	VAESENC     Z21, Z6, Z6
+	VAESENC     ·AreionRC4x2+320(SB), Z6, Z6  // rc2[5]
 	VAESENC     Z0, Z2, Z2
 	VAESENC     Z4, Z6, Z6
 	VAESENCLAST Z3, Z1, Z1
@@ -146,7 +150,7 @@ TEXT ·Areion256SoEMPermutex4Interleaved(SB), NOSPLIT, $0-32
 	VMOVDQA64   Z0, Z2
 	VMOVDQA64   Z4, Z6
 	VAESENC     Z22, Z2, Z2     // rc[6]
-	VAESENC     Z22, Z6, Z6
+	VAESENC     ·AreionRC4x2+384(SB), Z6, Z6  // rc2[6]
 	VAESENC     Z1, Z2, Z2
 	VAESENC     Z5, Z6, Z6
 	VAESENCLAST Z3, Z0, Z0
@@ -158,7 +162,7 @@ TEXT ·Areion256SoEMPermutex4Interleaved(SB), NOSPLIT, $0-32
 	VMOVDQA64   Z1, Z2
 	VMOVDQA64   Z5, Z6
 	VAESENC     Z23, Z2, Z2     // rc[7]
-	VAESENC     Z23, Z6, Z6
+	VAESENC     ·AreionRC4x2+448(SB), Z6, Z6  // rc2[7]
 	VAESENC     Z0, Z2, Z2
 	VAESENC     Z4, Z6, Z6
 	VAESENCLAST Z3, Z1, Z1
@@ -170,7 +174,7 @@ TEXT ·Areion256SoEMPermutex4Interleaved(SB), NOSPLIT, $0-32
 	VMOVDQA64   Z0, Z2
 	VMOVDQA64   Z4, Z6
 	VAESENC     Z24, Z2, Z2     // rc[8]
-	VAESENC     Z24, Z6, Z6
+	VAESENC     ·AreionRC4x2+512(SB), Z6, Z6  // rc2[8]
 	VAESENC     Z1, Z2, Z2
 	VAESENC     Z5, Z6, Z6
 	VAESENCLAST Z3, Z0, Z0
@@ -182,7 +186,7 @@ TEXT ·Areion256SoEMPermutex4Interleaved(SB), NOSPLIT, $0-32
 	VMOVDQA64   Z1, Z2
 	VMOVDQA64   Z5, Z6
 	VAESENC     Z25, Z2, Z2     // rc[9]
-	VAESENC     Z25, Z6, Z6
+	VAESENC     ·AreionRC4x2+576(SB), Z6, Z6  // rc2[9]
 	VAESENC     Z0, Z2, Z2
 	VAESENC     Z4, Z6, Z6
 	VAESENCLAST Z3, Z1, Z1
@@ -190,7 +194,7 @@ TEXT ·Areion256SoEMPermutex4Interleaved(SB), NOSPLIT, $0-32
 	VMOVDQA64   Z2, Z0
 	VMOVDQA64   Z6, Z4
 
-	// SoEM output: state1' ⊕ state2', written back to (s1b0, s1b1).
+	// Output: P1(state1) ⊕ P2(state2), written back to (s1b0, s1b1).
 	VPXORD Z4, Z0, Z0           // s1_x0 = s1_x0' ⊕ s2_x0'
 	VPXORD Z5, Z1, Z1           // s1_x1 = s1_x1' ⊕ s2_x1'
 

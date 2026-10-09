@@ -5,30 +5,31 @@
 // Each function processes four independent Areion states in parallel
 // using `VAESENC` / `VAESENCLAST` on 512-bit ZMM registers. Per round
 // the work pattern matches the serial reference in
-// `github.com/jedisct1/go-aes/areion.go:areion256PermuteSoftware` /
-// `areion512PermuteSoftware` exactly; the only difference is each AES
+// `third/goaes/areion.go:areion256PermuteSoftwareRC` /
+// `areion512PermuteSoftwareRC` exactly; the only difference is each AES
 // operation runs on four lanes simultaneously via VAES instead of
 // per-lane AES-NI.
 //
-// Round constants live in `·AreionRC4x(SB)` (populated by
-// `areionasm_amd64.go`'s `init()`), pre-broadcast to four 128-bit
-// copies per ZMM register.
+// Every kernel takes the round-constant table to run under as its last
+// argument: `·AreionRC4x` (the P1 permutation) or `·AreionRC4x2` (the
+// P2 permutation of SoEM22), both populated by `areionasm_amd64.go`'s
+// `init()` and pre-broadcast to four 128-bit copies per ZMM register.
 //
 // The optimization fusing `RoundNoKey + XOR(rc)` into a single
 // `VAESENC RC, state, state` instruction (because `AESENC(s, k) =
 // MixColumns(ShiftRows(SubBytes(s))) XOR k` and `RoundNoKey + XOR(k)`
 // produces the same result) follows the upstream single-block
-// `areion256PermuteAsm` in `jedisct1/go-aes/areion_amd64.s`.
+// `areion256PermuteRCAsm` in `third/goaes/areion_amd64.s`.
 
 #include "textflag.h"
 
-// func Areion256Permutex4(x0, x1 *aes.Block4)
+// func areion256Permutex4RC(x0, x1 *aes.Block4, rc *[15 * 64]byte)
 //
-// Applies the 10-round Areion256 permutation to four lanes packed in
-// SoA layout: `*x0` holds the four lanes' first-half AES blocks
-// (Block4 = 64 bytes), `*x1` holds the second-half AES blocks. The
-// caller (Go side) is responsible for the AoS → SoA pack and the
-// matching unpack on return.
+// Applies the 10-round Areion256 permutation under the constant table
+// rc to four lanes packed in SoA layout: `*x0` holds the four lanes'
+// first-half AES blocks (Block4 = 64 bytes), `*x1` holds the
+// second-half AES blocks. The caller (Go side) is responsible for the
+// AoS → SoA pack and the matching unpack on return.
 //
 // Per round (10 rounds total, alternating x0/x1 roles):
 //   even r:  temp = x0
@@ -37,9 +38,10 @@
 //            x0   = FinalRoundNoKey(x0)             // VAESENCLAST 0, x0
 //            x1   = temp
 //   odd r:   symmetric with x0/x1 roles swapped
-TEXT ·Areion256Permutex4(SB), NOSPLIT, $0-16
+TEXT ·areion256Permutex4RC(SB), NOSPLIT, $0-24
 	MOVQ x0+0(FP), AX
 	MOVQ x1+8(FP), BX
+	MOVQ rc+16(FP), CX
 
 	// Load the two SoA Block4 buffers into Z0 (x0) and Z1 (x1).
 	VMOVDQU64 (AX), Z0
@@ -49,17 +51,17 @@ TEXT ·Areion256Permutex4(SB), NOSPLIT, $0-16
 	VPXORD Z3, Z3, Z3
 
 	// Pre-load all 10 round constants into Z16..Z25 (broadcast form already
-	// stored in areionRC4x, so a single VMOVDQU64 per RC is sufficient).
-	VMOVDQU64 ·AreionRC4x+0(SB), Z16   // rc[0]
-	VMOVDQU64 ·AreionRC4x+64(SB), Z17  // rc[1]
-	VMOVDQU64 ·AreionRC4x+128(SB), Z18 // rc[2]
-	VMOVDQU64 ·AreionRC4x+192(SB), Z19 // rc[3]
-	VMOVDQU64 ·AreionRC4x+256(SB), Z20 // rc[4]
-	VMOVDQU64 ·AreionRC4x+320(SB), Z21 // rc[5]
-	VMOVDQU64 ·AreionRC4x+384(SB), Z22 // rc[6]
-	VMOVDQU64 ·AreionRC4x+448(SB), Z23 // rc[7]
-	VMOVDQU64 ·AreionRC4x+512(SB), Z24 // rc[8]
-	VMOVDQU64 ·AreionRC4x+576(SB), Z25 // rc[9]
+	// stored in the table, so a single VMOVDQU64 per RC is sufficient).
+	VMOVDQU64 0(CX), Z16   // rc[0]
+	VMOVDQU64 64(CX), Z17  // rc[1]
+	VMOVDQU64 128(CX), Z18 // rc[2]
+	VMOVDQU64 192(CX), Z19 // rc[3]
+	VMOVDQU64 256(CX), Z20 // rc[4]
+	VMOVDQU64 320(CX), Z21 // rc[5]
+	VMOVDQU64 384(CX), Z22 // rc[6]
+	VMOVDQU64 448(CX), Z23 // rc[7]
+	VMOVDQU64 512(CX), Z24 // rc[8]
+	VMOVDQU64 576(CX), Z25 // rc[9]
 
 	// ----- Round 0 (even): temp=x0; ...; x0=FinalRoundNoKey(x0); x1=temp
 	VMOVDQA64 Z0, Z2          // temp = x0
@@ -138,7 +140,7 @@ TEXT ·Areion256Permutex4(SB), NOSPLIT, $0-16
 	VZEROUPPER
 	RET
 
-// func Areion512Permutex4(x0, x1, x2, x3 *aes.Block4)
+// func areion512Permutex4RC(x0, x1, x2, x3 *aes.Block4, rc *[15 * 64]byte)
 //
 // Applies the 15-round Areion512 permutation to four lanes packed in
 // SoA layout: each `*xN` holds the four lanes' N-th 16-byte AES block
@@ -157,11 +159,12 @@ TEXT ·Areion256Permutex4(SB), NOSPLIT, $0-16
 //
 // After 15 rounds: cyclic state rotation `(x0, x1, x2, x3) →
 // (x3, x0, x1, x2)`.
-TEXT ·Areion512Permutex4(SB), NOSPLIT, $0-32
+TEXT ·areion512Permutex4RC(SB), NOSPLIT, $0-40
 	MOVQ x0+0(FP), AX
 	MOVQ x1+8(FP), BX
 	MOVQ x2+16(FP), CX
 	MOVQ x3+24(FP), DX
+	MOVQ rc+32(FP), SI
 
 	VMOVDQU64 (AX), Z0  // x0
 	VMOVDQU64 (BX), Z1  // x1
@@ -171,21 +174,21 @@ TEXT ·Areion512Permutex4(SB), NOSPLIT, $0-32
 	VPXORD Z15, Z15, Z15  // Z15 = zero (RoundNoKey / FinalRoundNoKey)
 
 	// Pre-load all 15 round constants Z16..Z30.
-	VMOVDQU64 ·AreionRC4x+0(SB),   Z16  // rc[0]
-	VMOVDQU64 ·AreionRC4x+64(SB),  Z17  // rc[1]
-	VMOVDQU64 ·AreionRC4x+128(SB), Z18  // rc[2]
-	VMOVDQU64 ·AreionRC4x+192(SB), Z19  // rc[3]
-	VMOVDQU64 ·AreionRC4x+256(SB), Z20  // rc[4]
-	VMOVDQU64 ·AreionRC4x+320(SB), Z21  // rc[5]
-	VMOVDQU64 ·AreionRC4x+384(SB), Z22  // rc[6]
-	VMOVDQU64 ·AreionRC4x+448(SB), Z23  // rc[7]
-	VMOVDQU64 ·AreionRC4x+512(SB), Z24  // rc[8]
-	VMOVDQU64 ·AreionRC4x+576(SB), Z25  // rc[9]
-	VMOVDQU64 ·AreionRC4x+640(SB), Z26  // rc[10]
-	VMOVDQU64 ·AreionRC4x+704(SB), Z27  // rc[11]
-	VMOVDQU64 ·AreionRC4x+768(SB), Z28  // rc[12]
-	VMOVDQU64 ·AreionRC4x+832(SB), Z29  // rc[13]
-	VMOVDQU64 ·AreionRC4x+896(SB), Z30  // rc[14]
+	VMOVDQU64 0(SI),   Z16  // rc[0]
+	VMOVDQU64 64(SI),  Z17  // rc[1]
+	VMOVDQU64 128(SI), Z18  // rc[2]
+	VMOVDQU64 192(SI), Z19  // rc[3]
+	VMOVDQU64 256(SI), Z20  // rc[4]
+	VMOVDQU64 320(SI), Z21  // rc[5]
+	VMOVDQU64 384(SI), Z22  // rc[6]
+	VMOVDQU64 448(SI), Z23  // rc[7]
+	VMOVDQU64 512(SI), Z24  // rc[8]
+	VMOVDQU64 576(SI), Z25  // rc[9]
+	VMOVDQU64 640(SI), Z26  // rc[10]
+	VMOVDQU64 704(SI), Z27  // rc[11]
+	VMOVDQU64 768(SI), Z28  // rc[12]
+	VMOVDQU64 832(SI), Z29  // rc[13]
+	VMOVDQU64 896(SI), Z30  // rc[14]
 
 	// ===== Round 0 (i=0, i%4=0): a=x0,b=x1,c=x2,d=x3, rc=Z16
 	VMOVDQA64 Z0, Z4
@@ -381,15 +384,16 @@ TEXT ·Areion512Permutex4(SB), NOSPLIT, $0-32
 // round body the work pattern from the AVX-512 version is replicated
 // twice — once for lanes 0-1 and once for lanes 2-3.
 //
-// Round constants reuse the existing 64-byte AreionRC4x table: a
-// 32-byte VMOVDQU load from offset r*64 picks up the first two of the
-// four broadcast copies, which is exactly the 2-copy form a YMM
-// register wants.
+// Round constants come from the 64-byte-stride broadcast table passed
+// as the rc argument (AreionRC4x for P1, AreionRC4x2 for P2): a 32-byte
+// VMOVDQU load from offset r*64 picks up the first two of the four
+// broadcast copies, which is exactly the 2-copy form a YMM register
+// wants.
 //
 // Bit-exact parity invariant identical to the AVX-512 path; verified
 // via Test*Avx2*Parity in areion_test.go on every test run.
 
-// func Areion256Permutex4Avx2(x0, x1 *aes.Block4)
+// func areion256Permutex4Avx2RC(x0, x1 *aes.Block4, rc *[15 * 64]byte)
 //
 // State layout in YMM (AVX2 / VEX encoding restricts to Y0..Y15):
 //   Y0 = x0 lanes 0-1 (32 bytes)
@@ -399,7 +403,7 @@ TEXT ·Areion512Permutex4(SB), NOSPLIT, $0-32
 //   Y4, Y5 = temp pair (a-side and b-side respectively)
 //   Y6     = current round constant (loaded fresh per round)
 //   Y15    = zero (FinalRoundNoKey)
-//   CX     = AreionRC4x base pointer
+//   CX     = round-constant table base pointer (rc argument)
 //
 // Round constants are loaded on demand each round (one VMOVDQU into Y6
 // per round) rather than pre-loaded into Y16..Y25, because the upper
@@ -407,7 +411,7 @@ TEXT ·Areion512Permutex4(SB), NOSPLIT, $0-32
 // AVX2 instructions. Cost: +1 load per round = +10 instructions across
 // the function vs the AVX-512 variant; throughput impact negligible
 // because the loads pipeline freely with VAESENC issue.
-TEXT ·Areion256Permutex4Avx2(SB), NOSPLIT, $0-16
+TEXT ·areion256Permutex4Avx2RC(SB), NOSPLIT, $0-24
 	MOVQ x0+0(FP), AX
 	MOVQ x1+8(FP), BX
 
@@ -419,7 +423,7 @@ TEXT ·Areion256Permutex4Avx2(SB), NOSPLIT, $0-16
 
 	VPXOR Y15, Y15, Y15
 
-	LEAQ ·AreionRC4x(SB), CX
+	MOVQ rc+16(FP), CX
 
 	// ===== Round 0 (even): temp = x0; ...; x0 = FinalRoundNoKey(x0); x1 = temp
 	VMOVDQU (CX), Y6
@@ -561,7 +565,7 @@ TEXT ·Areion256Permutex4Avx2(SB), NOSPLIT, $0-16
 	VZEROUPPER
 	RET
 
-// func Areion512Permutex4Avx2(x0, x1, x2, x3 *aes.Block4)
+// func areion512Permutex4Avx2RC(x0, x1, x2, x3 *aes.Block4, rc *[15 * 64]byte)
 //
 // State layout in YMM (AVX2 / VEX encoding restricts to Y0..Y15):
 //   Y0  = x0 lanes 0-1
@@ -576,13 +580,13 @@ TEXT ·Areion256Permutex4Avx2(SB), NOSPLIT, $0-16
 //   Y10, Y11 = temp2 pair (c-side)
 //   Y12 = current round constant (loaded fresh per round)
 //   Y15 = zero (FinalRoundNoKey / RoundNoKey)
-//   CX  = AreionRC4x base pointer
+//   CX  = round-constant table base pointer (rc argument)
 //
 // Round body mirrors the AVX-512 path's areion512Round helper twice
 // (once per lane pair). The (a, b, c, d) state binding rotates by one
 // position per round modulo 4, identical to the serial Areion512
 // reference and the AVX-512 implementation.
-TEXT ·Areion512Permutex4Avx2(SB), NOSPLIT, $0-32
+TEXT ·areion512Permutex4Avx2RC(SB), NOSPLIT, $0-40
 	MOVQ x0+0(FP), AX
 	MOVQ x1+8(FP), BX
 	MOVQ x2+16(FP), DX
@@ -598,7 +602,7 @@ TEXT ·Areion512Permutex4Avx2(SB), NOSPLIT, $0-32
 	VMOVDQU 32(SI), Y7
 
 	VPXOR Y15, Y15, Y15
-	LEAQ ·AreionRC4x(SB), CX
+	MOVQ rc+32(FP), CX
 
 	// ===== Round 0 (i%4=0): a=Y0/Y1, b=Y2/Y3, c=Y4/Y5, d=Y6/Y7
 	VMOVDQU (CX), Y12

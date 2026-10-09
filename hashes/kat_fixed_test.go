@@ -17,7 +17,7 @@
 // against the canonical RFCs / NIST specs, refer to the upstream
 // library tests:
 //
-//   - github.com/jedisct1/go-aes — Areion paper vectors
+//   - third/goaes (vendored go-aes subset, SoEM22) — Areion paper vectors
 //   - golang.org/x/crypto/blake2b — RFC 7693 vectors
 //   - golang.org/x/crypto/blake2s — RFC 7693 vectors
 //   - github.com/zeebo/blake3 — official BLAKE3 reference vectors
@@ -72,8 +72,8 @@ type fixedKATVector struct {
 // seedFlavor=3 (high-entropy pseudo-random) stresses every state slot
 // of every width.
 var fixedKATVectors = []fixedKATVector{
-	{"areion256", 36, 3, "4ad4a7418c8bfc445c0ccfb20045e58b2ff7ef62f8ac170db67c9037fd06de41"},
-	{"areion512", 36, 3, "3c4ede253cc64c33f54734d69047741b6b9dde34dd31e7237bfd603f6b1a3833ba4e47c78759dd9dd49d86af64732559fd972104eea03f951034254162cca2e2"},
+	{"areion256", 36, 3, "1298daeac5af3c3dbe8dd5f0f8cc4db9bda6eb4d89470cb8fa0bc8931cb7ec07"},
+	{"areion512", 36, 3, "9d67f7066c4611f7563ad5f4fb740e8c7c7febb4356eee7984a646b4d2adcde60c9487948f74e245d00541ca71a97e811fb7ff2f4f265a0489f407d6369ad225"},
 	{"blake2b256", 36, 3, "fa255838d97272b1303d7dcff33268499ea0adf108f9b421891bef38b8b38211"},
 	{"blake2b512", 36, 3, "aff41328166cef8f4b1ef8f246cf9fd00c3094ffa0bfb2b78a7d8055fad14cbb53935f074e7f57f03c45660cc64ca4c37903f5c20085b3768738a25821a3164a"},
 	{"blake2s", 36, 3, "2086005154f33d8292797b7951fea69b2805d7de82a534e3f09ec7ad04a88e88"},

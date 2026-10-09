@@ -3,9 +3,11 @@
 // Plan9 AArch64 assembly — 4-way parallel Areion permute kernels
 // using ARM Crypto Extension (AES) instructions.
 //
-// Two entry points:
-//   func Areion256Permutex4(x0, x1 *aes.Block4)
-//   func Areion512Permutex4(x0, x1, x2, x3 *aes.Block4)
+// Two entry points, each taking the 16-byte-stride round-constant table
+// of the permutation to run (`·AreionRCTable` for P1, `·AreionRCTable2`
+// for the P2 permutation of SoEM22):
+//   func areion256Permutex4RC(x0, x1 *aes.Block4, rc *[15][16]byte)
+//   func areion512Permutex4RC(x0, x1, x2, x3 *aes.Block4, rc *[15][16]byte)
 //
 // Each `aes.Block4` is 64 bytes = 4 × 16-byte AES blocks. SoA layout:
 // for lane i (0..3), the i-th 16-byte block of every Block4 buffer
@@ -29,45 +31,8 @@
 #include "textflag.h"
 
 // ----------------------------------------------------------------------
-// Round-constant table — mirrors `Constants` in areionasm_amd64.go
-// (digits of pi, little-endian). 15 entries × 16 B.
-// ----------------------------------------------------------------------
-
-DATA areionRC<>+0x000(SB)/8, $0x13198a2e03707344
-DATA areionRC<>+0x008(SB)/8, $0x243f6a8885a308d3
-DATA areionRC<>+0x010(SB)/8, $0x082efa98ec4e6c89
-DATA areionRC<>+0x018(SB)/8, $0xa4093822299f31d0
-DATA areionRC<>+0x020(SB)/8, $0xbe5466cf34e90c6c
-DATA areionRC<>+0x028(SB)/8, $0x452821e638d01377
-DATA areionRC<>+0x030(SB)/8, $0x3f84d5b5b5470917
-DATA areionRC<>+0x038(SB)/8, $0xc0ac29b7c97c50dd
-DATA areionRC<>+0x040(SB)/8, $0xd1310ba698dfb5ac
-DATA areionRC<>+0x048(SB)/8, $0x9216d5d98979fb1b
-DATA areionRC<>+0x050(SB)/8, $0xb8e1afed6a267e96
-DATA areionRC<>+0x058(SB)/8, $0x2ffd72dbd01adfb7
-DATA areionRC<>+0x060(SB)/8, $0x24a19947b3916cf7
-DATA areionRC<>+0x068(SB)/8, $0xba7c9045f12c7f99
-DATA areionRC<>+0x070(SB)/8, $0x36920d871574e690
-DATA areionRC<>+0x078(SB)/8, $0x801f2e2858efc166
-DATA areionRC<>+0x080(SB)/8, $0x0d95748f728eb658
-DATA areionRC<>+0x088(SB)/8, $0xa458fea3f4933d7e
-DATA areionRC<>+0x090(SB)/8, $0x7b54a41dc25a59b5
-DATA areionRC<>+0x098(SB)/8, $0x718bcd5882154aee
-DATA areionRC<>+0x0a0(SB)/8, $0xc5d1b023286085f0
-DATA areionRC<>+0x0a8(SB)/8, $0x9c30d5392af26013
-DATA areionRC<>+0x0b0(SB)/8, $0x8e79dcb0603a180e
-DATA areionRC<>+0x0b8(SB)/8, $0xca417918b8db38ef
-DATA areionRC<>+0x0c0(SB)/8, $0xd71577c1bd314b27
-DATA areionRC<>+0x0c8(SB)/8, $0x6c9e0e8bb01e8a3e
-DATA areionRC<>+0x0d0(SB)/8, $0xe65525f3aa55ab94
-DATA areionRC<>+0x0d8(SB)/8, $0x78af2fda55605c60
-DATA areionRC<>+0x0e0(SB)/8, $0x55ca396a2aab10b6
-DATA areionRC<>+0x0e8(SB)/8, $0x5748986263e81440
-
-GLOBL areionRC<>(SB), RODATA|NOPTR, $240
-
-// ----------------------------------------------------------------------
-// Areion256Permutex4(x0, x1 *aes.Block4) — 10 rounds.
+// areion256Permutex4RC(x0, x1 *aes.Block4, rc *[15][16]byte) — 10 rounds
+// under the constant table rc.
 //
 // Layout:
 //   v0..v3   — state pos 0 across lanes 0..3   (was *x0)
@@ -77,16 +42,16 @@ GLOBL areionRC<>(SB), RODATA|NOPTR, $240
 //   v16..v25 — rc[0..9] pre-loaded
 // ----------------------------------------------------------------------
 
-TEXT ·Areion256Permutex4(SB), NOSPLIT, $0-16
+TEXT ·areion256Permutex4RC(SB), NOSPLIT, $0-24
 	MOVD	x0+0(FP), R0
 	MOVD	x1+8(FP), R1
+	MOVD	rc+16(FP), R2
 
 	VLD1	(R0), [V0.B16, V1.B16, V2.B16, V3.B16]
 	VLD1	(R1), [V4.B16, V5.B16, V6.B16, V7.B16]
 
 	VEOR	V15.B16, V15.B16, V15.B16
 
-	MOVD	$areionRC<>(SB), R2
 	// Pre-load rc[0..9] into v16..v25 via VLD1.P (post-incrementing).
 	VLD1.P	16(R2), [V16.B16]
 	VLD1.P	16(R2), [V17.B16]
@@ -484,7 +449,8 @@ TEXT ·Areion256Permutex4(SB), NOSPLIT, $0-16
 	RET
 
 // ----------------------------------------------------------------------
-// Areion512Permutex4(x0, x1, x2, x3 *aes.Block4) — 15 rounds + final rotation.
+// areion512Permutex4RC(x0, x1, x2, x3 *aes.Block4, rc *[15][16]byte) —
+// 15 rounds under the constant table rc + final rotation.
 //
 // Per-round structure (areion512Roundx4):
 //   temp1 = a; RoundNoKey(temp1); b ^= temp1
@@ -509,11 +475,12 @@ TEXT ·Areion256Permutex4(SB), NOSPLIT, $0-16
 // rc storage: scratch reg V24 reloaded each round via ADD/VLD1.
 // ----------------------------------------------------------------------
 
-TEXT ·Areion512Permutex4(SB), NOSPLIT, $0-32
+TEXT ·areion512Permutex4RC(SB), NOSPLIT, $0-40
 	MOVD	x0+0(FP),  R0
 	MOVD	x1+8(FP),  R1
 	MOVD	x2+16(FP), R2
 	MOVD	x3+24(FP), R3
+	MOVD	rc+32(FP), R4
 
 	VLD1	(R0), [V0.B16, V1.B16, V2.B16, V3.B16]
 	VLD1	(R1), [V4.B16, V5.B16, V6.B16, V7.B16]
@@ -522,7 +489,6 @@ TEXT ·Areion512Permutex4(SB), NOSPLIT, $0-32
 
 	VEOR	V25.B16, V25.B16, V25.B16
 
-	MOVD	$areionRC<>(SB), R4
 	// Use VLD1.P 16(R4) to walk through the 15 round constants
 	// sequentially, saving one ADD per round.
 

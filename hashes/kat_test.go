@@ -1,7 +1,7 @@
 // Pair-level Known-Answer Tests (KAT) for every PRF-grade hash
 // primitive in the registry. Each primitive's closure construction
 // is independently re-executed in this file using only the upstream
-// library imports (github.com/jedisct1/go-aes for Areion-SoEM;
+// library imports (third/goaes, the vendored go-aes subset, for Areion-SoEM;
 // golang.org/x/crypto/blake2b, blake2s; github.com/zeebo/blake3;
 // crypto/aes for the AES round on AES-CMAC; github.com/dchest/siphash;
 // golang.org/x/crypto/chacha20) — bypassing the closure's pool, template-
@@ -26,7 +26,7 @@ import (
 	"testing"
 
 	"github.com/dchest/siphash"
-	stdaes "github.com/jedisct1/go-aes"
+	stdaes "github.com/everanium/itb/third/goaes"
 	"github.com/zeebo/blake3"
 	"golang.org/x/crypto/blake2b"
 	"golang.org/x/crypto/blake2s"
@@ -157,7 +157,7 @@ var katBatchedLengths = []int{20, 36, 68}
 // -----------------------------------------------------------------------------
 
 // areion256RefClosure rebuilds the hashes.Areion256 closure body
-// using github.com/jedisct1/go-aes's exported AreionSoEM256 directly.
+// using third/goaes's exported AreionSoEM256 directly.
 // Construction: 64-byte SoEM key = fixedKey || seed_packed (4 LE
 // uint64); 32-byte state with state[0:8] = lenTag, state[8:32]
 // absorbs `data` in 24-byte chunks via state[8:8+r] ^= chunk;
@@ -238,7 +238,7 @@ func TestKAT_Areion256(t *testing.T) {
 // -----------------------------------------------------------------------------
 
 // areion512RefClosure rebuilds the hashes.Areion512 closure body
-// using github.com/jedisct1/go-aes's exported AreionSoEM512 directly.
+// using third/goaes's exported AreionSoEM512 directly.
 // Construction is structurally identical to AreionSoEM256 but scaled
 // to a 128-byte SoEM key (64-byte fixedKey || 64-byte seed_packed,
 // where seed_packed = 8 LE uint64) and a 64-byte state absorbing
