@@ -105,7 +105,7 @@ The accelerated execution engine spans hand-crafted assembly kernels across mult
 - **Mid Tier (AVX2 Baseline):** Intel Haswell through Comet Lake; AMD Zen 1–3. Features YMM vector cascades, AVX2 4-lane unrank, and Tier B/B′ pixel kernels. Hardware BMI2 `PEXT` / `PDEP` are constant-time on Haswell+ and Zen 3+.
 - **AArch64 Tier (ARMv8-A + Crypto + SVE2):** Server baseline (AWS Graviton 2+, Neoverse N1/V1/V2, Apple Silicon) leverages NEON vector cascades and ARM Crypto Extension `AESE`/`AESMC`. SVE2 BitPerm (`FEAT_SVE_BitPerm`) accelerates chunking on Graviton 4 / Neoverse V2.
 - **Portable Fallback Floor:** hosts without BMI2 route through the branchless portable Go fallbacks (`softPEXT48` / `softPDEP48`) and the Go rank-unrank path.
-- **AMD Zen 1 / Zen 2:** these CPUs carry BMI2 but microcode-emulate `PEXT` / `PDEP`, with a latency that grows with the mask popcount (three `PEXTQ`: ~23 / 65 / 126 / 183 ns at popcount 1 / 16 / 32 / 47 on an AWS c5a Zen 2 host). Every Interlocked Barrier mask has a fixed popcount (16 of 48 bits per lane), and on the same host three `PEXTQ` over 1024 random balanced mask triples measured 69.2 ns against 67.2 ns for one fixed triple. This is a single-host measurement, not a constant-time guarantee; these hosts run the hardware BMI2 kernels.
+- **AMD Zen 1 / Zen 2:** these CPUs carry BMI2 but microcode-emulate `PEXT` / `PDEP`, with a latency that grows with the mask popcount (three `PEXTQ`: ~23 / 65 / 126 / 183 ns at popcount 1 / 16 / 32 / 47 on an AWS c5a Zen 2 host). Every Rank Barrier mask has a fixed popcount (16 of 48 bits per lane), and on the same host three `PEXTQ` over 1024 random balanced mask triples measured 69.2 ns against 67.2 ns for one fixed triple. This is a single-host measurement, not a constant-time guarantee; these hosts run the hardware BMI2 kernels.
 - **Dispatch Testing Knobs:** Test harnesses force individual tiers using `ITB_FORCE_HASH_TIER`, `ITB_FORCE_INTERLOCK_TIER`, `ITB_FORCE_INTERLOCK_PRF_FILL_TIER`, `ITB_FORCE_CHAINHASH_X4`, and `ITB_FORCE_PIXEL_TIER`.
 
 ---
@@ -152,7 +152,7 @@ When processing pixel batches that cross container boundaries, Tier A and Tier B
 
 #### Pure-Go Portable Fallbacks
 On platforms lacking supported vector extensions (legacy hardware, WebAssembly, or builds passing `-tags noitbasm`), execution falls back to pure Go implementations:
-- **Interlocked Barrier:** Executes via `softPEXT48` and `softPDEP48` (branchless 48-iteration loops using bitwise AND, OR, and variable shifts without lookup tables or secret-dependent branching).
+- **Rank Barrier:** Executes via `softPEXT48` and `softPDEP48` (branchless 48-iteration loops using bitwise AND, OR, and variable shifts without lookup tables or secret-dependent branching).
 - **Hash Cascades:** Dispatches through scalar portable Go reference functions.
 - **Areion & AES Primitives:** Falls back to `aes.Round4HW` or software constant-time implementations.
 

@@ -60,9 +60,8 @@ func main() {
     // Eight independent CSPRNG-keyed Areion-SoEM-512 seeds (noise, lock,
     // data1..3, start1..3), each with every fast-path hook the primitive
     // offers; the second return value is the fixed key of the seed's
-    // arms. The 48-bit Interlocked
-    // Barrier overlay is always engaged for Triple Ouroboros and
-    // non-disableable by construction.
+    // arms. The 48-bit Interlocked Barrier overlay is always engaged for
+    // Triple Ouroboros and non-disableable by construction.
     ns, keyN, _ := hashes.NewSeed512(hashes.CipherAreion512, 2048)
     ls, keyL, _ := hashes.NewSeed512(hashes.CipherAreion512, 2048)
     d1, keyD1, _ := hashes.NewSeed512(hashes.CipherAreion512, 2048)

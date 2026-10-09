@@ -479,10 +479,10 @@ func Registry(f *Figures) []Expectation {
 		sweep("SCIENCE.md", `Landauer bound on irreversible enumeration cost \(~`+p2+` ≈ 10\^(\d+)\)`, w("landauer", pow2(landauerExp)), w("landauer_ten_exp", plain(tenExp))),
 		expect("PROOFS.md", `Landauer bound on irreversible enumeration cost \(~`+p2+` ≈ 10\^(\d+)\)`, w("landauer", pow2(landauerExp)), w("landauer_ten_exp", plain(tenExp))),
 		// ChainHash cascade depth: Pixel Barrier keyBits / width,
-		// Interlocked Barrier 1 + keyBits / width (ITB.md § 12).
+		// Rank Barrier 1 + keyBits / width (ITB.md § 12).
 		expect("SCIENCE.md", "^   - \\*\\*Pixel Barrier:\\*\\* depth `r = keyBits / width` \\("+num+" / "+num+" / "+num+" rounds at width "+num+" for 512 / 1024 / 2048-bit keys\\)",
 			w("depth_512_w128", depthAt(512, narrowestWidth)), w("depth_1024_w128", depthAt(1024, narrowestWidth)), w("depth_2048_w128", depthAt(2048, narrowestWidth)), w("narrowest_width", plain(narrowestWidth))),
-		expect("ITB.md", "Pixel Barrier operates directly over session components at depth `r = keyBits / width` \\("+num+" / "+num+" / "+num+" rounds at width 128 for 512 / 1024 / 2048-bit keys; "+num+" / "+num+" / "+num+" at width 256; "+num+" / "+num+" / "+num+" at width 512\\), without an intermediate key\\. The Interlocked Barrier operates at depth `r = 1 \\+ keyBits / width` \\("+num+" / "+num+" / "+num+" rounds at width 128; "+num+" / "+num+" / "+num+" at width 256; "+num+" / "+num+" / "+num+" at width 512\\)",
+		expect("ITB.md", "Pixel Barrier operates directly over session components at depth `r = keyBits / width` \\("+num+" / "+num+" / "+num+" rounds at width 128 for 512 / 1024 / 2048-bit keys; "+num+" / "+num+" / "+num+" at width 256; "+num+" / "+num+" / "+num+" at width 512\\), without an intermediate key\\. The (?:Interlocked|Rank) Barrier operates at depth `r = 1 \\+ keyBits / width` \\("+num+" / "+num+" / "+num+" rounds at width 128; "+num+" / "+num+" / "+num+" at width 256; "+num+" / "+num+" / "+num+" at width 512\\)",
 			depthWants()...),
 		expect("README.md", "a 2048-bit key folds into "+num+" rounds at 128-bit, "+num+" rounds at 256-bit, or "+num+" rounds at 512-bit",
 			w("depth_2048_w128", depthAt(2048, 128)), w("depth_2048_w256", depthAt(2048, 256)), w("depth_2048_w512", depthAt(2048, 512))),
