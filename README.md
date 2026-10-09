@@ -10,7 +10,7 @@
   <a href="https://pkg.go.dev/github.com/everanium/itb"><img src="https://pkg.go.dev/badge/github.com/everanium/itb.svg" alt="Go Reference"></a>
   <a href="https://golangci-lint.run"><img src="https://img.shields.io/badge/golangci--lint-passing-green" alt="golangci-lint"></a>
   <a href="https://github.com/everanium/itb"><img src="https://img.shields.io/badge/coverage-88%25-green" alt="Coverage"></a>
-  <a href="https://doi.org/10.5281/zenodo.19229395"><img src="https://zenodo.org/badge/DOI/10.5281/zenodo.19229395.svg" alt="DOI"></a>
+  <a href="https://doi.org/10.5281/zenodo.19229395"><img src="https://img.shields.io/badge/DOI-10.5281%2Fzenodo.19229395-blue.svg" alt="DOI"></a>
 </p>
 
 <h2 align="center">ITB Symmetric Cipher Construction with Ambiguity-Based Security</h2>
