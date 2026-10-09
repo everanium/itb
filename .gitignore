@@ -96,6 +96,7 @@ bindings/python/dist/
 
 # Fortran cache
 *.mod
+!go.mod
 
 # OS
 .DS_Store

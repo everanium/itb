@@ -35,9 +35,12 @@ echo "=== 1. version / catalog / list subcommands ==="
 "$BIN" version  | grep -q "itb3"
 "$BIN" catalog  | grep -q "Modes:"
 "$BIN" catalog  | grep -q "Profiles:"
+"$BIN" catalog  | grep -q "DRBG:"
 "$BIN" hashes   | grep -q "areion512"
 "$BIN" macs     | grep -q "kmac256"
 "$BIN" ciphers  | grep -q "blake3"
+"$BIN" drbgs    | grep -q "chacha20"
+"$BIN" drbgs    | grep -q "csprng"
 "$BIN" modes    | tr '\n' ' ' | grep -q "mac nomac aead noaead"
 "$BIN" profiles | grep -q "singlemsg-triple-mac-v1"
 
@@ -56,9 +59,27 @@ grep -q "^width: 256$"                 "$tmp/session.inspect"
 grep -q "^inner_hash: blake3$"         "$tmp/session.inspect"
 grep -q "^key_bits: 1024$"             "$tmp/session.inspect"
 grep -q "^mac_name: (none)$"           "$tmp/session.inspect"
+grep -q "^container_mode: per-region (1)$" "$tmp/session.inspect"
+grep -q "^drbg: (auto: "               "$tmp/session.inspect"
 grep -q "^wrapper: false$"          "$tmp/session.inspect"
 grep -q "^parallax: false$"         "$tmp/session.inspect"
 "$BIN" verify "$tmp/session.blob"
+
+echo "=== 2b. roundtrip: blob-mode 2 (VPN floor / per-container) ==="
+"$BIN" genblob nomac blake3 --blob-mode 2 -o "$tmp/mode2.blob"
+"$BIN" inspect "$tmp/mode2.blob" | grep -q "^container_mode: per-container (2)$"
+"$BIN" encrypt "$tmp/mode2.blob" -i "$tmp/plain.txt" -o "$tmp/mode2.cipher"
+"$BIN" decrypt "$tmp/mode2.blob" -i "$tmp/mode2.cipher" -o "$tmp/mode2.dec"
+cmp "$tmp/plain.txt" "$tmp/mode2.dec"
+"$BIN" verify "$tmp/mode2.blob"
+
+echo "=== 2c. roundtrip: drbg operator selection ==="
+"$BIN" genblob nomac siphash24 --drbg csprng -o "$tmp/drbg.blob"
+"$BIN" inspect "$tmp/drbg.blob" | grep -q "^drbg: csprng$"
+"$BIN" encrypt "$tmp/drbg.blob" -i "$tmp/plain.txt" -o "$tmp/drbg.cipher"
+"$BIN" decrypt "$tmp/drbg.blob" -i "$tmp/drbg.cipher" -o "$tmp/drbg.dec"
+cmp "$tmp/plain.txt" "$tmp/drbg.dec"
+"$BIN" verify "$tmp/drbg.blob"
 
 echo "=== 3. roundtrip: mac mode + genblob to stdout ==="
 "$BIN" genblob mac areion512 -k 1024 -m hmac-blake3 -o "$tmp/mac.blob"
@@ -154,6 +175,9 @@ expect_fail 1 "palette below minimum"    "$BIN" genblob nomac blake3 -p aescmac,
 expect_fail 1 "-s without -p"            "$BIN" genblob nomac blake3 -s 257
 expect_fail 1 "segment not coprime-504"  "$BIN" genblob nomac blake3 -p aescmac,chacha20,siphash24 -s 256
 expect_fail 1 "unknown mixed pseudonym"  "$BIN" genblob nomac mixed999
+expect_fail 1 "--blob-mode 0 out of range" "$BIN" genblob nomac blake3 --blob-mode 0
+expect_fail 1 "--blob-mode 3 out of range" "$BIN" genblob nomac blake3 --blob-mode 3
+expect_fail 1 "--drbg invalid"             "$BIN" genblob nomac blake3 --drbg invalid_drbg
 
 echo "=== 10. blob rejection: schema version / malformed / missing (exit 2) ==="
 printf '{"v":1,"p":"singlemsg-triple-mac-v1","ib":"e30=","wp":true,"ww":true}' > "$tmp/v1.blob"

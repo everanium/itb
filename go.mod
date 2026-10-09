@@ -19,6 +19,5 @@ require (
 )
 
 retract (
-	v0.1.0 // documentation fixes only; use v0.1.2 or later
-	v0.1.1 // wrapper SipHash-CTR keystream collision (~32 GB/key); fixed in v0.1.2, use v0.1.2 or later
+	[v0.1.0, v0.4.1] // superseded by v0.5.1
 )
