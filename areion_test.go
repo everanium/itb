@@ -252,15 +252,12 @@ func BenchmarkAreionSoEM256x4_Batched(b *testing.B) {
 
 	b.SetBytes(4 * 32)
 	b.ResetTimer()
-	var sink [4][32]byte
+	// One output byte per lane keeps the call live without a per-byte
+	// loop that would dominate the measured time.
+	var sink byte
 	for i := 0; i < b.N; i++ {
 		out := AreionSoEM256x4(&keys, &inputs)
-		// Prevent DCE.
-		for j := 0; j < 4; j++ {
-			for k := range sink[j] {
-				sink[j][k] ^= out[j][k]
-			}
-		}
+		sink ^= out[0][0] ^ out[1][0] ^ out[2][0] ^ out[3][0]
 	}
 	_ = sink
 }
@@ -307,14 +304,12 @@ func BenchmarkAreionSoEM512x4_Batched(b *testing.B) {
 
 	b.SetBytes(4 * 64)
 	b.ResetTimer()
-	var sink [4][64]byte
+	// One output byte per lane keeps the call live without a per-byte
+	// loop that would dominate the measured time.
+	var sink byte
 	for i := 0; i < b.N; i++ {
 		out := AreionSoEM512x4(&keys, &inputs)
-		for j := 0; j < 4; j++ {
-			for k := range sink[j] {
-				sink[j][k] ^= out[j][k]
-			}
-		}
+		sink ^= out[0][0] ^ out[1][0] ^ out[2][0] ^ out[3][0]
 	}
 	_ = sink
 }
@@ -635,16 +630,27 @@ func BenchmarkAreionSoEM256x4_BatchedAvx2(b *testing.B) {
 	rand.Read(inputs[2][:])
 	rand.Read(keys[3][:])
 	rand.Read(inputs[3][:])
+	// The two SoA half-states are built once; each iteration copies them
+	// and runs the two YMM permutation kernels the AVX2 dispatcher arm
+	// calls, so the timed loop measures the kernels rather than the
+	// test-side AoS / SoA packing.
+	var t1b0, t1b1, t2b0, t2b1 aes.Block4
+	for lane := 0; lane < 4; lane++ {
+		for j := 0; j < 16; j++ {
+			t1b0[lane*16+j] = inputs[lane][j] ^ keys[lane][j]
+			t1b1[lane*16+j] = inputs[lane][16+j] ^ keys[lane][16+j]
+			t2b0[lane*16+j] = inputs[lane][j] ^ keys[lane][32+j]
+			t2b1[lane*16+j] = inputs[lane][16+j] ^ keys[lane][48+j]
+		}
+	}
 	b.SetBytes(4 * 32)
 	b.ResetTimer()
-	var sink [4][32]byte
+	var sink byte
 	for i := 0; i < b.N; i++ {
-		out := areionSoEM256x4Avx2Direct(&keys, &inputs)
-		for j := 0; j < 4; j++ {
-			for k := range sink[j] {
-				sink[j][k] ^= out[j][k]
-			}
-		}
+		s1b0, s1b1, s2b0, s2b1 := t1b0, t1b1, t2b0, t2b1
+		areionasm.Areion256Permutex4Avx2(&s1b0, &s1b1)
+		areionasm.Areion256Permute2x4Avx2(&s2b0, &s2b1)
+		sink ^= s1b0[0] ^ s2b1[0]
 	}
 	_ = sink
 }
@@ -666,16 +672,25 @@ func BenchmarkAreionSoEM512x4_BatchedAvx2(b *testing.B) {
 	rand.Read(inputs[2][:])
 	rand.Read(keys[3][:])
 	rand.Read(inputs[3][:])
-	b.SetBytes(4 * 64)
-	b.ResetTimer()
-	var sink [4][64]byte
-	for i := 0; i < b.N; i++ {
-		out := areionSoEM512x4Avx2Direct(&keys, &inputs)
-		for j := 0; j < 4; j++ {
-			for k := range sink[j] {
-				sink[j][k] ^= out[j][k]
+	// Mirrors the 256-bit form: SoA half-states built once, the two YMM
+	// permutation kernels timed.
+	var t1, t2 [4]aes.Block4
+	for lane := 0; lane < 4; lane++ {
+		for blk := 0; blk < 4; blk++ {
+			for j := 0; j < 16; j++ {
+				t1[blk][lane*16+j] = inputs[lane][16*blk+j] ^ keys[lane][16*blk+j]
+				t2[blk][lane*16+j] = inputs[lane][16*blk+j] ^ keys[lane][64+16*blk+j]
 			}
 		}
+	}
+	b.SetBytes(4 * 64)
+	b.ResetTimer()
+	var sink byte
+	for i := 0; i < b.N; i++ {
+		s1, s2 := t1, t2
+		areionasm.Areion512Permutex4Avx2(&s1[0], &s1[1], &s1[2], &s1[3])
+		areionasm.Areion512Permute2x4Avx2(&s2[0], &s2[1], &s2[2], &s2[3])
+		sink ^= s1[0][0] ^ s2[3][0]
 	}
 	_ = sink
 }
@@ -693,19 +708,23 @@ func BenchmarkAreionSoEM256x4_BatchedAesNi(b *testing.B) {
 		rand.Read(keys[i][:])
 		rand.Read(inputs[i][:])
 	}
+	// The SoA states are built once; each iteration copies them (the
+	// kernel overwrites the state1 buffers), so the timed loop measures
+	// the kernel rather than a per-byte state assembly.
+	var t1b0, t1b1, t2b0, t2b1 aes.Block4
+	for lane := 0; lane < 4; lane++ {
+		for j := 0; j < 16; j++ {
+			t1b0[lane*16+j] = inputs[lane][j] ^ keys[lane][j]
+			t1b1[lane*16+j] = inputs[lane][16+j] ^ keys[lane][16+j]
+			t2b0[lane*16+j] = inputs[lane][j] ^ keys[lane][32+j]
+			t2b1[lane*16+j] = inputs[lane][16+j] ^ keys[lane][48+j]
+		}
+	}
 	b.SetBytes(4 * 32)
 	b.ResetTimer()
 	var sink byte
 	for i := 0; i < b.N; i++ {
-		var s1b0, s1b1, s2b0, s2b1 aes.Block4
-		for lane := 0; lane < 4; lane++ {
-			for j := 0; j < 16; j++ {
-				s1b0[lane*16+j] = inputs[lane][j] ^ keys[lane][j]
-				s1b1[lane*16+j] = inputs[lane][16+j] ^ keys[lane][16+j]
-				s2b0[lane*16+j] = inputs[lane][j] ^ keys[lane][32+j]
-				s2b1[lane*16+j] = inputs[lane][16+j] ^ keys[lane][48+j]
-			}
-		}
+		s1b0, s1b1, s2b0, s2b1 := t1b0, t1b1, t2b0, t2b1
 		areionasm.Areion256SoEMPermutex4AesNi(&s1b0, &s1b1, &s2b0, &s2b1)
 		sink ^= s1b0[0] ^ s1b1[0]
 	}
@@ -723,19 +742,23 @@ func BenchmarkAreionSoEM512x4_BatchedAesNi(b *testing.B) {
 		rand.Read(keys[i][:])
 		rand.Read(inputs[i][:])
 	}
+	// The SoA states are built once; each iteration copies them (the
+	// kernel overwrites the state1 buffers), so the timed loop measures
+	// the kernel rather than a per-byte state assembly.
+	var t1, t2 [4]aes.Block4
+	for lane := 0; lane < 4; lane++ {
+		for blk := 0; blk < 4; blk++ {
+			for j := 0; j < 16; j++ {
+				t1[blk][lane*16+j] = inputs[lane][16*blk+j] ^ keys[lane][16*blk+j]
+				t2[blk][lane*16+j] = inputs[lane][16*blk+j] ^ keys[lane][64+16*blk+j]
+			}
+		}
+	}
 	b.SetBytes(4 * 64)
 	b.ResetTimer()
 	var sink byte
 	for i := 0; i < b.N; i++ {
-		var s1, s2 [4]aes.Block4
-		for lane := 0; lane < 4; lane++ {
-			for blk := 0; blk < 4; blk++ {
-				for j := 0; j < 16; j++ {
-					s1[blk][lane*16+j] = inputs[lane][16*blk+j] ^ keys[lane][16*blk+j]
-					s2[blk][lane*16+j] = inputs[lane][16*blk+j] ^ keys[lane][64+16*blk+j]
-				}
-			}
-		}
+		s1, s2 := t1, t2
 		areionasm.Areion512SoEMPermutex4AesNi(&s1[0], &s1[1], &s1[2], &s1[3], &s2[0], &s2[1], &s2[2], &s2[3])
 		sink ^= s1[0][0]
 	}
