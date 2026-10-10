@@ -560,7 +560,7 @@ The following theorems are well-known properties included for completeness. They
 
 **Proof.**
 
-**Part A: No spatial patterns.** The MAC covers the entire capacity: `tag = MAC(payload ‖ streamID ‖ LE64(offset) ‖ flag)` where `payload = [COBS data][0x00][DRBG fill]`.
+**Part A: No spatial patterns.** The MAC covers the entire capacity: `tag = MAC(payload ‖ streamID ‖ LE64(offset) ‖ flag)` where `payload = [COBS data][0x00][DRBG fill]`. On every chunk of a stream after the first, the 32-byte prefix `prefix_i` the chunk travels behind follows `streamID` in the MAC input — `tag = MAC(payload ‖ streamID ‖ prefix_i ‖ LE64(offset) ‖ flag)` — so every bit of that prefix is authenticated, and `streamID` binds the chunk to its stream.
 
 Because the lane fragments of the interlock nonce `N_il` are prepended to the lane payloads prior to COBS framing, they reside within the authenticated lane buffers covered by the MAC tag; any active modification of `N_il` causes immediate MAC verification failure, eliminating unauthenticated context-commitment vulnerabilities. Flipping any data bit causes MAC failure. Only noise-bit flips produce "accept":
 - **COBS data bit** → payload changes → MAC(modified) ≠ tag → reject
@@ -579,7 +579,7 @@ Every data bit position produces "reject." Only noise bits produce "accept." The
 3. ONLY IF MAC passes: search for null terminator in decoded[:payloadLen]
 ```
 
-Any data-bit modification (including creating a false 0x00) fails MAC verification at step 2. Step 3 is never reached with tampered data. ∎
+Any data-bit modification (including creating a false 0x00) fails MAC verification at step 2. Step 3 is never reached with tampered data. The streaming decoders verify every chunk in the same order, with `prefix_i` in the MAC input of every chunk after the first (Part A). ∎
 
 ## Nonce Uniqueness
 

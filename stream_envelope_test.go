@@ -686,10 +686,11 @@ func TestStreamCfgEnvelopeParity_NoMACvsAEAD(t *testing.T) {
 							sz, aeadWire.Len(), plainWire.Len(), aeadWire.Len()-plainWire.Len())
 					}
 
-					// Per-chunk length parity. Both wires carry a
-					// streamIDPrefixLen prefix (streamID on AEAD, dummy
-					// prefix on No MAC) then a sequence of chunks whose
-					// header layout ParseChunkLenCfg can walk.
+					// Per-record length parity. Both wires are a sequence
+					// of records, each a streamIDPrefixLen prefix (the
+					// streamID or a chunk prefix on AEAD, a dummy on No
+					// MAC) followed by one chunk whose header layout
+					// ParseChunkLenCfg can walk.
 					aeadBytes := aeadWire.Bytes()
 					plainBytes := plainWire.Bytes()
 					if len(aeadBytes) < streamIDPrefixLen || len(plainBytes) < streamIDPrefixLen {
@@ -697,14 +698,14 @@ func TestStreamCfgEnvelopeParity_NoMACvsAEAD(t *testing.T) {
 						// sizes list; nothing to walk.
 						return
 					}
-					aOff := streamIDPrefixLen
-					pOff := streamIDPrefixLen
+					aOff := 0
+					pOff := 0
 					for aOff < len(aeadBytes) && pOff < len(plainBytes) {
-						aLen, err := ParseChunkLenCfg(cfg, aeadBytes[aOff:])
+						aLen, err := ParseChunkLenCfg(cfg, aeadBytes[aOff+streamIDPrefixLen:])
 						if err != nil {
 							t.Fatalf("ParseChunkLenCfg (aead) at %d: %v", aOff, err)
 						}
-						pLen, err := ParseChunkLenCfg(cfg, plainBytes[pOff:])
+						pLen, err := ParseChunkLenCfg(cfg, plainBytes[pOff+streamIDPrefixLen:])
 						if err != nil {
 							t.Fatalf("ParseChunkLenCfg (nomac) at %d: %v", pOff, err)
 						}
@@ -712,8 +713,8 @@ func TestStreamCfgEnvelopeParity_NoMACvsAEAD(t *testing.T) {
 							t.Fatalf("per-chunk length mismatch at aead=%d nomac=%d: aead=%d nomac=%d",
 								aOff, pOff, aLen, pLen)
 						}
-						aOff += aLen
-						pOff += pLen
+						aOff += streamIDPrefixLen + aLen
+						pOff += streamIDPrefixLen + pLen
 					}
 					if aOff != len(aeadBytes) || pOff != len(plainBytes) {
 						t.Fatalf("wire tail mismatch: aead consumed=%d/%d nomac consumed=%d/%d",

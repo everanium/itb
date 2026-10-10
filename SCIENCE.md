@@ -85,12 +85,14 @@ Plaintext is partitioned across three regions and framed with COBS (Consistent O
 Output wire format:
 ```
 Offset  Size     Content
-0       32       Stream prefix (CSPRNG; the streamID bound into the MAC on authenticated surfaces)
+0       32       Prefix (CSPRNG; on authenticated surfaces the streamID or prefix_i, bound into the MAC)
 32      N        Main nonce (crypto/rand, public; N = 16/32/64 bytes)
 32+N    2        Width (uint16 big-endian)
 34+N    2        Height (uint16 big-endian)
 36+N    W×H×8    Raw RGBWYOPA pixel container
 ```
+
+The layout is one chunk record. A Single Message wire is one record; a stream is a sequence of records, every chunk travelling behind its own 32-byte prefix, so every chunk has the same record shape as a Single Message wire. On authenticated surfaces the prefix of the first record is the streamID, bound into every chunk's MAC, and the prefix of every later record is a fresh CSPRNG value bound into that chunk's MAC beside the streamID; on No MAC surfaces every prefix is a CSPRNG dummy.
 
 **Dual-nonce mechanism:**
 Each encryption draws two nonces independently from `crypto/rand`:
@@ -251,7 +253,7 @@ No magic bytes, no checksums. The COBS null terminator is encrypted inside the c
 
 ### 2.13 MAC-Inside-Encrypt Composition
 
-For integrity protection, the MAC tag is computed over the entire decrypted capacity (COBS + null + fill) together with the stream prefix, stream offset and final flag, and encrypted inside the container, preserving oracle-free deniability. Because the lane fragments of the interlock nonce `N_il` are prepended to the lane payloads prior to COBS framing, they reside within the authenticated lane buffers covered by the MAC tag; any active modification of `N_il` causes immediate MAC verification failure, eliminating unauthenticated context-commitment vulnerabilities. Flipping any data bit causes MAC failure. Only noise-bit flips produce «accept» — uniform 12.5 % across all pixels, with no spatial pattern. After noise removal, DRBG fill bytes persist in data positions (Theorem 10).
+For integrity protection, the MAC tag is computed over the entire decrypted capacity (COBS + null + fill) together with the streamID, the chunk's own prefix on every chunk after the first, the stream offset and the final flag, and encrypted inside the container, preserving oracle-free deniability. Because the lane fragments of the interlock nonce `N_il` are prepended to the lane payloads prior to COBS framing, they reside within the authenticated lane buffers covered by the MAC tag; any active modification of `N_il` causes immediate MAC verification failure, eliminating unauthenticated context-commitment vulnerabilities. Flipping any data bit causes MAC failure. Only noise-bit flips produce «accept» — uniform 12.5 % across all pixels, with no spatial pattern. After noise removal, DRBG fill bytes persist in data positions (Theorem 10).
 
 If the attacker has insider knowledge that a MAC tag is present (MAC + Silent Drop), the encrypted tag serves as a local verification oracle. The brute-force cost is unchanged from Core ITB for both classical and Grover bounds — without the CCA reveal channel noiseSeed is not eliminated — with an additional `O(P)` per candidate for MAC verification. No external oracle is required: the attacker verifies locally by decrypting, computing MAC(payload), and comparing against the embedded tag. Composition derivation: [PROOFS.md § MAC-Inside-Encrypt Composition](PROOFS.md#mac-inside-encrypt-composition).
 
@@ -479,7 +481,7 @@ A reference implementation in Go (`github.com/everanium/itb`) supports three has
 - 256-bit primitives: effective max key 2048 bits.
 - 512-bit primitives: effective max key 2048 bits.
 
-Wire format: `prefix (32 bytes) ‖ main_nonce (N bytes) ‖ W (2 bytes) ‖ H (2 bytes) ‖ W × H × 8 raw RGBWYOPA` for a Single Message, with one chunk header of `N + 4` bytes (`N` = the configured nonce width in bytes; default `DefaultNonceBits = 512` bits, `N = 64`); the independently drawn interlock nonce travels split across the three interlocked lanes (§1.3, §1.4). The 48-bit Interlocked Barrier is mandatory and always-on; no compile-time or runtime flag disables it. Its Rank Barrier component executes 48-bit chunk permutation in constant time (~3 cycles per chunk) via BMI2 `PEXTQ` on encryption and `PDEPQ` + `ORQ` on decryption (with constant-time portable table and bitslicing fallbacks on architectures without BMI2). Its Pixel Barrier component performs per-pixel channel XOR masking, rotation, and noise insertion. The 8-seed constellation is required at every entry point.
+Wire format: `prefix (32 bytes) ‖ main_nonce (N bytes) ‖ W (2 bytes) ‖ H (2 bytes) ‖ W × H × 8 raw RGBWYOPA` for a Single Message, with one chunk header of `N + 4` bytes (`N` = the configured nonce width in bytes; default `DefaultNonceBits = 512` bits, `N = 64`), and every chunk of a stream as one record of the same shape (§1.3); the independently drawn interlock nonce travels split across the three interlocked lanes (§1.3, §1.4). The 48-bit Interlocked Barrier is mandatory and always-on; no compile-time or runtime flag disables it. Its Rank Barrier component executes 48-bit chunk permutation in constant time (~3 cycles per chunk) via BMI2 `PEXTQ` on encryption and `PDEPQ` + `ORQ` on decryption (with constant-time portable table and bitslicing fallbacks on architectures without BMI2). Its Pixel Barrier component performs per-pixel channel XOR masking, rotation, and noise insertion. The 8-seed constellation is required at every entry point.
 
 Key sizes range from 512 to 2048 bits (minimum 8 components per seed). Hash functions are user-supplied — either registered by name via `hashes.Register(spec hashes.Spec) error` for use through the Triple facade, or plugged directly as `HashFunc{N}` + `BatchHashFunc{N}` closures at the Low-Level `*Cfg` surface (see [ITB.md § 17 Custom Primitives](ITB.md#17-custom-primitives)). All pixel processing in the Pixel Barrier uses elementary operations (XOR, AND, shift, modulo) with no secret-dependent memory access — register-only operations for all dataSeed-derived values; all Rank Barrier and Pixel Barrier kernels execute in strictly constant time.
 

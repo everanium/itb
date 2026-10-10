@@ -91,8 +91,9 @@ func lowLevelDecryptStream(p *Pipeline, wire []byte) ([]byte, error) {
 // and a stream produced by [Pipeline.EncryptStream] decrypts through
 // the Low-Level entries, for Streaming AEAD and Streaming Non-AEAD at
 // every hash width, with payloads below, at, and across chunk
-// boundaries. Wire lengths must match exactly: one 32-byte prefix
-// followed by the same number of chunks of the same sizes.
+// boundaries. Wire lengths must match exactly: the same number of
+// chunk records — each a 32-byte prefix and one chunk — of the same
+// sizes.
 func TestStreamLowLevelTripleMutualDecrypt(t *testing.T) {
 	sizes := []int{1, streamParityChunk - 1, streamParityChunk, streamParityChunk + 1, 4 * streamParityChunk, 4*streamParityChunk + 777}
 	for _, row := range streamParityProfiles(t) {
@@ -133,17 +134,17 @@ func TestStreamLowLevelTripleMutualDecrypt(t *testing.T) {
 	}
 }
 
-// countChunks walks a stream wire behind its 32-byte prefix and counts
-// the chunks.
+// countChunks walks a stream wire record by record — every chunk
+// behind its own 32-byte prefix — and counts the chunks.
 func countChunks(t *testing.T, p *Pipeline, wire []byte) int {
 	t.Helper()
 	n := 0
-	for off := streamIDPrefixLen; off < len(wire); n++ {
-		l, err := itb.ParseChunkLenCfg(p.cfg, wire[off:])
+	for off := 0; off < len(wire); n++ {
+		l, err := itb.ParseChunkLenCfg(p.cfg, wire[off+streamIDPrefixLen:])
 		if err != nil {
 			t.Fatalf("chunk %d at %d: %v", n, off, err)
 		}
-		off += l
+		off += streamIDPrefixLen + l
 	}
 	return n
 }

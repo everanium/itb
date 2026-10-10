@@ -46,32 +46,32 @@ func TestDecryptStreamAuthenticatedRejectsTrailingBytes(t *testing.T) {
 
 	t.Run("128", func(t *testing.T) {
 		ns, ls, d1, d2, d3, s1, s2, s3 := seedFixtures128(t, 1024)
-		chunk, err := EncryptStreamAuthenticated3x128Cfg(nil, ns, ls, d1, d2, d3, s1, s2, s3, pt, mac, sid, 0, true)
+		chunk, err := EncryptStreamAuthenticated3x128Cfg(nil, ns, ls, d1, d2, d3, s1, s2, s3, pt, mac, sid, nil, 0, true)
 		if err != nil {
 			t.Fatal(err)
 		}
 		check(t, "128", chunk, func(c []byte) ([]byte, bool, error) {
-			return DecryptStreamAuthenticated3x128Cfg(nil, ns, ls, d1, d2, d3, s1, s2, s3, c, mac, sid, 0)
+			return DecryptStreamAuthenticated3x128Cfg(nil, ns, ls, d1, d2, d3, s1, s2, s3, c, mac, sid, nil, 0)
 		})
 	})
 	t.Run("256", func(t *testing.T) {
 		ns, ls, d1, d2, d3, s1, s2, s3 := seedFixtures256(t, 1024)
-		chunk, err := EncryptStreamAuthenticated3x256Cfg(nil, ns, ls, d1, d2, d3, s1, s2, s3, pt, mac, sid, 0, true)
+		chunk, err := EncryptStreamAuthenticated3x256Cfg(nil, ns, ls, d1, d2, d3, s1, s2, s3, pt, mac, sid, nil, 0, true)
 		if err != nil {
 			t.Fatal(err)
 		}
 		check(t, "256", chunk, func(c []byte) ([]byte, bool, error) {
-			return DecryptStreamAuthenticated3x256Cfg(nil, ns, ls, d1, d2, d3, s1, s2, s3, c, mac, sid, 0)
+			return DecryptStreamAuthenticated3x256Cfg(nil, ns, ls, d1, d2, d3, s1, s2, s3, c, mac, sid, nil, 0)
 		})
 	})
 	t.Run("512", func(t *testing.T) {
 		ns, ls, d1, d2, d3, s1, s2, s3 := seedFixtures512(t, 1024)
-		chunk, err := EncryptStreamAuthenticated3x512Cfg(nil, ns, ls, d1, d2, d3, s1, s2, s3, pt, mac, sid, 0, true)
+		chunk, err := EncryptStreamAuthenticated3x512Cfg(nil, ns, ls, d1, d2, d3, s1, s2, s3, pt, mac, sid, nil, 0, true)
 		if err != nil {
 			t.Fatal(err)
 		}
 		check(t, "512", chunk, func(c []byte) ([]byte, bool, error) {
-			return DecryptStreamAuthenticated3x512Cfg(nil, ns, ls, d1, d2, d3, s1, s2, s3, c, mac, sid, 0)
+			return DecryptStreamAuthenticated3x512Cfg(nil, ns, ls, d1, d2, d3, s1, s2, s3, c, mac, sid, nil, 0)
 		})
 	})
 }

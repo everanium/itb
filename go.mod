@@ -19,5 +19,5 @@ require (
 )
 
 retract (
-	[v0.1.0, v0.4.1] // superseded by v0.5.1
+	[v0.1.0, v0.5.1] // superseded by v0.5.5
 )

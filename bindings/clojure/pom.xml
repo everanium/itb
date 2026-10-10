@@ -6,7 +6,7 @@
 
   <groupId>io.github.everanium</groupId>
   <artifactId>libitb3-clojure</artifactId>
-  <version>0.5.1</version>
+  <version>0.5.5</version>
   <packaging>jar</packaging>
 
   <name>libitb3-clojure</name>
@@ -66,7 +66,7 @@
     <dependency>
       <groupId>io.github.everanium</groupId>
       <artifactId>libitb3-java</artifactId>
-      <version>0.5.1</version>
+      <version>0.5.5</version>
     </dependency>
   </dependencies>
 </project>

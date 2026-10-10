@@ -90,7 +90,7 @@ Every «closed under PRF» verdict above is **instance-formulation-bounded and s
 
 ### COA — ciphertext-only
 
-Under passive observation the wire is `[prefix(32)][main_nonce][W][H][container]`, the prefix being CSPRNG output. The container bytes are individually uniform: every 48-bit chunk is bit-permuted across lanes (Rank Barrier), COBS-framed per lane, and each 7-bit channel field is XOR-masked and rotated with a fresh DRBG noise bit inserted at a secret position (Pixel Barrier). Measured container-body byte-equal and zero rates sit at the 1/256 floor at the tested sample sizes; the only non-uniform bytes on the wire are the fixed cleartext dimension header (§4.0), which restates the container size the wire length already exposes. No plaintext, key, or boundary channel is present.
+Under passive observation the wire is `[prefix(32)][main_nonce][W][H][container]` per chunk record (one record for a Single Message, one per chunk for a stream), the prefix being CSPRNG output. The container bytes are individually uniform: every 48-bit chunk is bit-permuted across lanes (Rank Barrier), COBS-framed per lane, and each 7-bit channel field is XOR-masked and rotated with a fresh DRBG noise bit inserted at a secret position (Pixel Barrier). Measured container-body byte-equal and zero rates sit at the 1/256 floor at the tested sample sizes; the only non-uniform bytes on the wire are the fixed cleartext dimension header (§4.0), which restates the container size the wire length already exposes. No plaintext, key, or boundary channel is present.
 
 ### Crib KPA and Full KPA
 

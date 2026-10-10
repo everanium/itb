@@ -66,7 +66,7 @@ import (
 // Library version exposed via ITB_Version. Bumped per ABI-relevant
 // release. The value is informational; binding code may key feature
 // detection off it.
-const libitb3Version = "0.5.1"
+const libitb3Version = "0.5.5"
 
 func main() {} // required for buildmode=c-shared
 
@@ -308,8 +308,8 @@ func ITB_Channels() C.int { return C.int(capi.Channels()) }
 // 4). Header size = 20 for 16-byte nonce, 36 for 32-byte, 68 for
 // 64-byte. The interlock nonce is not a header field — it travels
 // split across the three interlocked lanes inside the container — so
-// it does not enter this figure, nor does the 32-byte stream prefix
-// every wire opens with. Streaming consumers use this to size the
+// it does not enter this figure, nor does the 32-byte prefix every
+// chunk travels behind. Streaming consumers use this to size the
 // per-chunk header they read, behind that prefix, before decoding.
 //
 // The parameter is explicit rather than implied by a process-global

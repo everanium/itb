@@ -294,3 +294,119 @@ func TestEncryptStream3xCfgRoundTripAllWidths(t *testing.T) {
 		}
 	}
 }
+
+// TestStreamNoMACChunkPrefixIgnored pins that the No MAC decoders read
+// the 32-byte prefix ahead of every chunk and discard it: a multi-chunk
+// transcript whose prefixes are all overwritten — with zeros, with
+// 0xFF, or with each other's bytes — decodes to the same plaintext on
+// both the User-Driven Loop and the IO-Driven decoder.
+func TestStreamNoMACChunkPrefixIgnored(t *testing.T) {
+	n, l, d1, d2, d3, s1, s2, s3 := mkTriple128(t)
+	pt := genTestPlaintext(t, 3*4096+77)
+	var wire bytes.Buffer
+	if err := EncryptStream3x128Cfg(nil, n, l, d1, d2, d3, s1, s2, s3, pt, 4096, func(rec []byte) error {
+		_, err := wire.Write(rec)
+		return err
+	}); err != nil {
+		t.Fatalf("EncryptStream3x128Cfg: %v", err)
+	}
+	full := wire.Bytes()
+	var starts []int
+	for off := 0; off < len(full); {
+		clen, err := ParseChunkLenCfg(nil, full[off+streamIDPrefixLen:])
+		if err != nil {
+			t.Fatalf("ParseChunkLen at %d: %v", off, err)
+		}
+		starts = append(starts, off)
+		off += streamIDPrefixLen + clen
+	}
+	if len(starts) != 4 {
+		t.Fatalf("setup: %d records, want 4", len(starts))
+	}
+	for _, fill := range []string{"zero", "ff", "rotated"} {
+		mod := bytes.Clone(full)
+		for i, at := range starts {
+			p := mod[at : at+streamIDPrefixLen]
+			switch fill {
+			case "zero":
+				clear(p)
+			case "ff":
+				for j := range p {
+					p[j] = 0xFF
+				}
+			case "rotated":
+				src := starts[(i+1)%len(starts)]
+				copy(p, full[src:src+streamIDPrefixLen])
+			}
+		}
+		var cb bytes.Buffer
+		if err := DecryptStream3x128Cfg(nil, n, l, d1, d2, d3, s1, s2, s3, mod, func(c []byte) error {
+			_, err := cb.Write(c)
+			return err
+		}); err != nil || !bytes.Equal(cb.Bytes(), pt) {
+			t.Fatalf("%s prefixes, User-Driven Loop decoder: err=%v match=%v", fill, err, bytes.Equal(cb.Bytes(), pt))
+		}
+		var iob bytes.Buffer
+		if err := DecryptStream3xCfg(nil, n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(mod), &iob); err != nil || !bytes.Equal(iob.Bytes(), pt) {
+			t.Fatalf("%s prefixes, IO-Driven decoder: err=%v match=%v", fill, err, bytes.Equal(iob.Bytes(), pt))
+		}
+	}
+}
+
+// TestStreamDecodeRecordBoundaries pins how the decoders treat the end
+// of a transcript relative to the record grid, on both arms and both
+// decoder shapes. A transcript that ends exactly on a record boundary
+// decodes; one that ends inside a prefix, or right after a prefix with
+// no chunk behind it, is rejected.
+func TestStreamDecodeRecordBoundaries(t *testing.T) {
+	n, l, d1, d2, d3, s1, s2, s3 := mkTriple128(t)
+	var key [32]byte
+	for i := range key {
+		key[i] = byte(i ^ 0x3C)
+	}
+	mac := macFuncForTest(key)
+	pt := genTestPlaintext(t, 2*4096+5)
+
+	var nomac, aead bytes.Buffer
+	if err := EncryptStream3xCfg(nil, n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(pt), &nomac, 4096); err != nil {
+		t.Fatalf("EncryptStream3xCfg: %v", err)
+	}
+	if err := EncryptStreamAuth3xCfg(nil, n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(pt), &aead, mac, 4096); err != nil {
+		t.Fatalf("EncryptStreamAuth3xCfg: %v", err)
+	}
+	decode := map[string]func(wire []byte) error{
+		"nomac/io": func(w []byte) error {
+			var sink bytes.Buffer
+			return DecryptStream3xCfg(nil, n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(w), &sink)
+		},
+		"nomac/loop": func(w []byte) error {
+			return DecryptStream3x128Cfg(nil, n, l, d1, d2, d3, s1, s2, s3, w, func([]byte) error { return nil })
+		},
+		"aead/io": func(w []byte) error {
+			var sink bytes.Buffer
+			return DecryptStreamAuth3xCfg(nil, n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(w), &sink, mac)
+		},
+		"aead/loop": func(w []byte) error {
+			return DecryptStreamAuth3x128Cfg(nil, n, l, d1, d2, d3, s1, s2, s3, w, mac, func([]byte) error { return nil })
+		},
+	}
+	for name, dec := range decode {
+		full := nomac.Bytes()
+		if name[:4] == "aead" {
+			full = aead.Bytes()
+		}
+		if err := dec(full); err != nil {
+			t.Fatalf("%s: exact transcript: %v", name, err)
+		}
+		dangling := append(bytes.Clone(full), full[:streamIDPrefixLen]...)
+		if err := dec(dangling); err == nil {
+			t.Fatalf("%s: accepted a prefix with no chunk behind it", name)
+		}
+		for _, cut := range []int{1, streamIDPrefixLen - 1} {
+			partial := append(bytes.Clone(full), full[:cut]...)
+			if err := dec(partial); err == nil {
+				t.Fatalf("%s: accepted a %d-byte partial prefix at the end", name, cut)
+			}
+		}
+	}
+}

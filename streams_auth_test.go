@@ -84,6 +84,31 @@ func streamPlaintextSizesExt(chunk int) []int {
 // constant for external-test slice arithmetic.
 const streamIDPrefixLenExt = 32
 
+// recordSpanExt is the [off, end) extent of one chunk record — the
+// 32-byte prefix and the chunk behind it — inside a stream wire.
+type recordSpanExt struct{ off, end int }
+
+// recordSpansExt walks a stream wire record by record: every chunk
+// travels behind its own 32-byte prefix, so each step reads the header
+// past the prefix and advances by the prefix plus the announced chunk.
+func recordSpansExt(t *testing.T, full []byte) []recordSpanExt {
+	t.Helper()
+	var spans []recordSpanExt
+	for off := 0; off < len(full); {
+		if len(full)-off < streamIDPrefixLenExt {
+			t.Fatalf("record at %d: %d bytes left, short of the %d-byte prefix", off, len(full)-off, streamIDPrefixLenExt)
+		}
+		clen, err := itb.ParseChunkLenCfg(nil, full[off+streamIDPrefixLenExt:])
+		if err != nil {
+			t.Fatalf("ParseChunkLen at %d: %v", off, err)
+		}
+		end := off + streamIDPrefixLenExt + clen
+		spans = append(spans, recordSpanExt{off, end})
+		off = end
+	}
+	return spans
+}
+
 // --- Triple Ouroboros Streaming AEAD (io.Reader / io.Writer) round-trip ---
 
 // TestEncryptStreamAuth3xRoundtripExt exercises the width-less
@@ -206,17 +231,8 @@ func TestEncryptStreamAuth3xTruncatedTailExt(t *testing.T) {
 		t.Fatalf("EncryptStreamAuth3x: %v", err)
 	}
 	full := ctBuf.Bytes()
-	off := streamIDPrefixLenExt
-	var lastOff int
-	for off < len(full) {
-		clen, err := itb.ParseChunkLenCfg(nil, full[off:])
-		if err != nil {
-			t.Fatalf("ParseChunkLen: %v", err)
-		}
-		lastOff = off
-		off += clen
-	}
-	truncated := full[:lastOff]
+	spans := recordSpansExt(t, full)
+	truncated := full[:spans[len(spans)-1].off]
 
 	var ptBuf bytes.Buffer
 	err := itb.DecryptStreamAuth3xCfg(nil, n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(truncated), &ptBuf, mac)
@@ -293,18 +309,9 @@ func TestDecryptStreamAuth3xAfterFinalExt(t *testing.T) {
 		t.Fatalf("EncryptStreamAuth3x: %v", err)
 	}
 	full := ctBuf.Bytes()
-	off := streamIDPrefixLenExt
-	var lastOff, lastEnd int
-	for off < len(full) {
-		clen, err := itb.ParseChunkLenCfg(nil, full[off:])
-		if err != nil {
-			t.Fatalf("ParseChunkLen at %d: %v", off, err)
-		}
-		lastOff = off
-		lastEnd = off + clen
-		off += clen
-	}
-	tail := append([]byte(nil), full[lastOff:lastEnd]...)
+	spans := recordSpansExt(t, full)
+	last := spans[len(spans)-1]
+	tail := append([]byte(nil), full[last.off:last.end]...)
 	transcript := append(append([]byte(nil), full...), tail...)
 
 	var ptBuf bytes.Buffer
@@ -451,17 +458,7 @@ func TestEncryptStreamAuth3xReorderDetectedExt(t *testing.T) {
 		t.Fatalf("EncryptStreamAuth3x: %v", err)
 	}
 	full := ctBuf.Bytes()
-	type span struct{ off, end int }
-	var spans []span
-	off := streamIDPrefixLenExt
-	for off < len(full) {
-		clen, err := itb.ParseChunkLenCfg(nil, full[off:])
-		if err != nil {
-			t.Fatalf("ParseChunkLen: %v", err)
-		}
-		spans = append(spans, span{off, off + clen})
-		off += clen
-	}
+	spans := recordSpansExt(t, full)
 	if len(spans) < 3 {
 		t.Fatalf("setup: expected >=3 chunks, got %d", len(spans))
 	}
@@ -480,9 +477,12 @@ func TestEncryptStreamAuth3xReorderDetectedExt(t *testing.T) {
 	}
 }
 
-// TestEncryptStreamAuth3xCrossStreamReplayExt confirms a chunk
-// replayed from a different Triple stream (different streamID prefix)
-// is rejected.
+// TestEncryptStreamAuth3xCrossStreamReplayExt confirms a chunk record
+// replayed from a different Triple stream is rejected: record 1 of
+// stream 2, its own prefix included, spliced into stream 1 at the same
+// position and therefore the same cumulative pixel offset fails the
+// MAC, because every chunk's MAC binds its stream's streamID beside
+// the chunk prefix. Both streams run under the same seeds and MAC key.
 func TestEncryptStreamAuth3xCrossStreamReplayExt(t *testing.T) {
 	n, l, d1, d2, d3, s1, s2, s3 := mkTriple128Ext(t)
 	mac := macForStreamTest(t)
@@ -498,30 +498,30 @@ func TestEncryptStreamAuth3xCrossStreamReplayExt(t *testing.T) {
 	}
 	c1Bytes := ct1.Bytes()
 	c2Bytes := ct2.Bytes()
-	off := streamIDPrefixLenExt
-	clen0, err := itb.ParseChunkLenCfg(nil, c1Bytes[off:])
-	if err != nil {
-		t.Fatalf("ParseChunkLen: %v", err)
+	spans1 := recordSpansExt(t, c1Bytes)
+	spans2 := recordSpansExt(t, c2Bytes)
+	if len(spans1) != 2 || len(spans2) != 2 {
+		t.Fatalf("setup: expected 2 records per stream, got %d and %d", len(spans1), len(spans2))
 	}
-	off2 := streamIDPrefixLenExt
-	clen0b, err := itb.ParseChunkLenCfg(nil, c2Bytes[off2:])
-	if err != nil {
-		t.Fatalf("ParseChunkLen: %v", err)
+	if spans1[0] != spans2[0] {
+		t.Fatalf("setup: record 0 extents differ (%v vs %v); the splice would not land at the same offset", spans1[0], spans2[0])
 	}
-	off2 += clen0b
-	clen1b, err := itb.ParseChunkLenCfg(nil, c2Bytes[off2:])
-	if err != nil {
-		t.Fatalf("ParseChunkLen: %v", err)
-	}
-	splicedTail := c2Bytes[off2 : off2+clen1b]
 
 	var spliced bytes.Buffer
-	spliced.Write(c1Bytes[:off+clen0])
-	spliced.Write(splicedTail)
+	spliced.Write(c1Bytes[spans1[0].off:spans1[0].end])
+	spliced.Write(c2Bytes[spans2[1].off:spans2[1].end])
 
 	var ptBuf bytes.Buffer
-	if err := itb.DecryptStreamAuth3xCfg(nil, n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(spliced.Bytes()), &ptBuf, mac); err == nil {
-		t.Fatalf("DecryptStreamAuth3x(cross-stream replay): want error, got nil")
+	if err := itb.DecryptStreamAuth3xCfg(nil, n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(spliced.Bytes()), &ptBuf, mac); !errors.Is(err, itb.ErrMACFailure) {
+		t.Fatalf("DecryptStreamAuth3x(cross-stream replay): want ErrMACFailure, got %v", err)
+	}
+
+	// Control: each stream on its own still decrypts.
+	for i, wire := range [][]byte{c1Bytes, c2Bytes} {
+		var back bytes.Buffer
+		if err := itb.DecryptStreamAuth3xCfg(nil, n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(wire), &back, mac); err != nil || !bytes.Equal(back.Bytes(), pt) {
+			t.Fatalf("stream %d control: err=%v match=%v", i+1, err, bytes.Equal(back.Bytes(), pt))
+		}
 	}
 }
 

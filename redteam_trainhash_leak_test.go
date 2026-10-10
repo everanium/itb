@@ -34,8 +34,8 @@ func thLeak_trainHash(data []byte, seed0, seed1 uint64) (lo, hi uint64) {
 	l := seed0 & 0xFF
 	h := seed1 & 0xFF
 	for _, b := range data {
-		l = ((l + uint64(b)) * 3 + 1) & 0xFF
-		h = ((h + uint64(b)) * 5 + 7) & 0xFF
+		l = ((l+uint64(b))*3 + 1) & 0xFF
+		h = ((h+uint64(b))*5 + 7) & 0xFF
 	}
 	return l, h
 }

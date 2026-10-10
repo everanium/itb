@@ -26,7 +26,8 @@ func ChunkSize(dataLen int) int {
 // ParseChunkLenCfg reads a chunk header and returns the total chunk
 // size in bytes. Consults cfg for the per-encryptor nonce-bits
 // override so a non-nil cfg with an explicit NonceBits is honoured at
-// the header parse site. The chunk wire format is:
+// the header parse site. The chunk format, behind the 32-byte prefix
+// the chunk travels behind on the wire, is:
 //
 //	[main nonce][2-byte width BE][2-byte height BE][W*H*8 container]
 //
@@ -36,16 +37,17 @@ func ChunkSize(dataLen int) int {
 // bytes for the announced container body.
 //
 // Streaming consumers use ParseChunkLenCfg to walk a concatenated
-// stream of ITB chunks on disk or over the wire one chunk at a time
-// without buffering the entire stream in memory: skip the 32-byte
-// stream prefix, read the fixed header, call ParseChunkLenCfg to learn
-// the chunk size, read that many bytes, repeat. A bare chunk is not a
-// Single Message wire — the Single Message entries
-// ([Decrypt3x128Cfg] / [DecryptAuthenticated3x128Cfg] and their
-// width siblings) expect the 32-byte prefix ahead of the header — so a
-// chunk walker hands its chunks to the streaming decoders
+// stream of ITB chunk records on disk or over the wire one record at a
+// time without buffering the entire stream in memory: every chunk
+// travels behind its own 32-byte prefix, so read the prefix, read the
+// fixed header, call ParseChunkLenCfg to learn the chunk size, read
+// that many bytes, repeat. The length ParseChunkLenCfg returns covers
+// the chunk alone, not the prefix ahead of it. A stream is walked
+// record by record through the streaming decoders
 // ([DecryptStream3xCfg] / [DecryptStreamAuth3xCfg] over an io.Reader,
-// or the per-width DecryptStream* entries over a byte slice).
+// or the per-width DecryptStream* entries over a byte slice), which
+// bind each Streaming AEAD record to its stream and position; a
+// one-record stream is a Single Message wire.
 func ParseChunkLenCfg(cfg *Config, data []byte) (int, error) {
 	if len(data) < headerSizeCfg(cfg) {
 		return 0, fmt.Errorf("data too short for header")
@@ -85,9 +87,10 @@ func ParseChunkLenCfg(cfg *Config, data []byte) (int, error) {
 // --- Triple Ouroboros streaming (8-seed) ---
 
 // EncryptStream3x128Cfg encrypts data in chunks using Triple Ouroboros
-// (128-bit variant). Emits a 32-byte CSPRNG dummy prefix ahead of the
-// chunk stream so the envelope shape matches the Streaming AEAD
-// variant bit-for-bit — a wire observer cannot distinguish the two.
+// (128-bit variant). Each chunk is emitted in one call together with a
+// fresh 32-byte CSPRNG dummy prefix ahead of it, so every emitted
+// record is [prefix(32)][main nonce][W][H][container] — the shape of a
+// Single Message wire and of every Streaming AEAD record.
 func EncryptStream3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed128, data []byte, chunkSize int, emit func(chunk []byte) error) error {
 	if err := checkEightSeeds128(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
 		return err
@@ -107,32 +110,28 @@ func EncryptStream3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed
 	if err := validateTagStubSizeCfg(cfg); err != nil {
 		return err
 	}
-	prefix, err := nomacStreamPrefix()
-	if err != nil {
-		return err
-	}
-	if err := emit(prefix); err != nil {
-		return err
-	}
 	for off := 0; off < len(data); off += chunkSize {
 		end := off + chunkSize
 		if end > len(data) {
 			end = len(data)
 		}
-		chunk, err := encrypt3x128Cfg(cfg, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:end], 0)
+		rec, err := encrypt3x128Cfg(cfg, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:end], streamIDPrefixLen)
 		if err != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
 		}
-		if err := emit(chunk); err != nil {
+		if err := fillNomacPrefix(rec[:streamIDPrefixLen]); err != nil {
+			return err
+		}
+		if err := emit(rec); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// DecryptStream3x128Cfg decrypts concatenated chunks produced by
-// [EncryptStream3x128Cfg]. Skips the 32-byte envelope prefix at the
-// front of data; empty data returns [ErrEmptyInput].
+// DecryptStream3x128Cfg decrypts concatenated prefix-plus-chunk
+// records produced by [EncryptStream3x128Cfg]. Skips the 32-byte
+// prefix ahead of every chunk; empty data returns [ErrEmptyInput].
 func DecryptStream3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed128, data []byte, emit func(chunk []byte) error) error {
 	if err := checkEightSeeds128(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
 		return err
@@ -143,19 +142,23 @@ func DecryptStream3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed
 	if len(data) < streamIDPrefixLen {
 		return fmt.Errorf("itb: stream too short for stream prefix")
 	}
-	for off := streamIDPrefixLen; off < len(data); {
-		chunkLen, err := ParseChunkLenCfg(cfg, data[off:])
+	for off := 0; off < len(data); {
+		if len(data)-off < streamIDPrefixLen {
+			return fmt.Errorf("itb: chunk at offset %d: data too short for chunk prefix", off)
+		}
+		body := data[off+streamIDPrefixLen:]
+		chunkLen, err := ParseChunkLenCfg(cfg, body)
 		if err != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
 		}
-		decrypted, err := decrypt3x128Cfg(cfg, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:off+chunkLen])
+		decrypted, err := decrypt3x128Cfg(cfg, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, body[:chunkLen])
 		if err != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
 		}
 		if err := emit(decrypted); err != nil {
 			return err
 		}
-		off += chunkLen
+		off += streamIDPrefixLen + chunkLen
 	}
 	return nil
 }
@@ -181,23 +184,19 @@ func EncryptStream3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed
 	if err := validateTagStubSizeCfg(cfg); err != nil {
 		return err
 	}
-	prefix, err := nomacStreamPrefix()
-	if err != nil {
-		return err
-	}
-	if err := emit(prefix); err != nil {
-		return err
-	}
 	for off := 0; off < len(data); off += chunkSize {
 		end := off + chunkSize
 		if end > len(data) {
 			end = len(data)
 		}
-		chunk, err := encrypt3x256Cfg(cfg, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:end], 0)
+		rec, err := encrypt3x256Cfg(cfg, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:end], streamIDPrefixLen)
 		if err != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
 		}
-		if err := emit(chunk); err != nil {
+		if err := fillNomacPrefix(rec[:streamIDPrefixLen]); err != nil {
+			return err
+		}
+		if err := emit(rec); err != nil {
 			return err
 		}
 	}
@@ -217,19 +216,23 @@ func DecryptStream3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed
 	if len(data) < streamIDPrefixLen {
 		return fmt.Errorf("itb: stream too short for stream prefix")
 	}
-	for off := streamIDPrefixLen; off < len(data); {
-		chunkLen, err := ParseChunkLenCfg(cfg, data[off:])
+	for off := 0; off < len(data); {
+		if len(data)-off < streamIDPrefixLen {
+			return fmt.Errorf("itb: chunk at offset %d: data too short for chunk prefix", off)
+		}
+		body := data[off+streamIDPrefixLen:]
+		chunkLen, err := ParseChunkLenCfg(cfg, body)
 		if err != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
 		}
-		decrypted, err := decrypt3x256Cfg(cfg, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:off+chunkLen])
+		decrypted, err := decrypt3x256Cfg(cfg, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, body[:chunkLen])
 		if err != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
 		}
 		if err := emit(decrypted); err != nil {
 			return err
 		}
-		off += chunkLen
+		off += streamIDPrefixLen + chunkLen
 	}
 	return nil
 }
@@ -255,23 +258,19 @@ func EncryptStream3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed
 	if err := validateTagStubSizeCfg(cfg); err != nil {
 		return err
 	}
-	prefix, err := nomacStreamPrefix()
-	if err != nil {
-		return err
-	}
-	if err := emit(prefix); err != nil {
-		return err
-	}
 	for off := 0; off < len(data); off += chunkSize {
 		end := off + chunkSize
 		if end > len(data) {
 			end = len(data)
 		}
-		chunk, err := encrypt3x512Cfg(cfg, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:end], 0)
+		rec, err := encrypt3x512Cfg(cfg, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:end], streamIDPrefixLen)
 		if err != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
 		}
-		if err := emit(chunk); err != nil {
+		if err := fillNomacPrefix(rec[:streamIDPrefixLen]); err != nil {
+			return err
+		}
+		if err := emit(rec); err != nil {
 			return err
 		}
 	}
@@ -291,19 +290,23 @@ func DecryptStream3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed
 	if len(data) < streamIDPrefixLen {
 		return fmt.Errorf("itb: stream too short for stream prefix")
 	}
-	for off := streamIDPrefixLen; off < len(data); {
-		chunkLen, err := ParseChunkLenCfg(cfg, data[off:])
+	for off := 0; off < len(data); {
+		if len(data)-off < streamIDPrefixLen {
+			return fmt.Errorf("itb: chunk at offset %d: data too short for chunk prefix", off)
+		}
+		body := data[off+streamIDPrefixLen:]
+		chunkLen, err := ParseChunkLenCfg(cfg, body)
 		if err != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
 		}
-		decrypted, err := decrypt3x512Cfg(cfg, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:off+chunkLen])
+		decrypted, err := decrypt3x512Cfg(cfg, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, body[:chunkLen])
 		if err != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
 		}
 		if err := emit(decrypted); err != nil {
 			return err
 		}
-		off += chunkLen
+		off += streamIDPrefixLen + chunkLen
 	}
 	return nil
 }

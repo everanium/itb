@@ -102,7 +102,7 @@ func Registry(f *Figures) []Expectation {
 		expect("SCIENCE.md", `cyclic rotation by a per-pixel amount in .\[0, 6\]. derived from .dataSeed_i. \(.rotation_i = dataHash_i mod 7., providing log₂\(7\) ≈ `+dec+` bits of entropy\)`,
 			w("log2_7", fixed(math.Log2(7), 3))),
 	)
-	add(wireOffsets("SCIENCE.md", f, `Stream prefix`)...)
+	add(wireOffsets("SCIENCE.md", f, `Prefix`)...)
 	add(
 		expect("SCIENCE.md", "For `P = "+num+"` \\(Mode 2 per-container floor at a 1024-bit key — joint floor `MinPixels = "+num+"`, square-rounded to `"+num+x+num+" = "+num+"` with `DefaultBarrierFill = "+num+"`\\): `7\\^"+num+" ≈ "+p2+"`. For `P = "+num+"` \\(Mode 1 per-region floor — `3"+x+num+" = "+num+"` total pixels, square-rounded to `"+num+x+num+" = "+num+"`\\): `7\\^"+num+" ≈ "+p2+"` observation-consistent candidate configurations \\(with `7\\^"+num+" ≈ "+p2+"`",
 			w("m2_P", plain(b.P)), w("minpixels_1024", plain(mp)), w("m2_side", plain(b.Side)), w("m2_side", plain(b.Side)), w("m2_P", plain(b.P)), w("barrier_fill", plain(f.BarrierFill)),
@@ -495,8 +495,8 @@ func Registry(f *Figures) []Expectation {
 		expect("ITB.md", `^At the default `+num+`-bit width, birthday collision on either slot requires ~`+p2+` messages`,
 			w("nonce_bits", plain(f.NonceBits)), w("birthday_default", pow2(f.NonceBits/2))),
 		expect("ITB.md", `^\*\*Decryption\.\*\* After the `+num+`-byte prefix`, w("prefix", plain(f.Prefix))),
-		expect("doc.go", `concatenated chunk stream one chunk at a time behind the `+num+`-byte$`, w("prefix", plain(f.Prefix))),
-		expect("doc.go", `^// `+num+`-byte prefix and continues with one or more chunks`, w("prefix", plain(f.Prefix))),
+		expect("doc.go", `^// behind its own `+num+`-byte prefix, so every record has the shape of a$`, w("prefix", plain(f.Prefix))),
+		expect("doc.go", `^// chunk records, each a `+num+`-byte prefix followed by one chunk laid out$`, w("prefix", plain(f.Prefix))),
 	)
 
 	// ----- repeated constants, swept per file -------------------------

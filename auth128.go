@@ -45,7 +45,7 @@ func EncryptAuthenticated3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, d
 	if err != nil {
 		return nil, err
 	}
-	out, err := encryptStreamAuthenticated3x128Cfg(cfg, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data, macFunc, streamID, 0, true, streamIDPrefixLen)
+	out, err := encryptStreamAuthenticated3x128Cfg(cfg, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data, macFunc, streamID, nil, 0, true, streamIDPrefixLen)
 	if err != nil {
 		return nil, err
 	}
@@ -86,7 +86,7 @@ func DecryptAuthenticated3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, d
 	}
 	var streamID [streamIDPrefixLen]byte
 	copy(streamID[:], fileData[:streamIDPrefixLen])
-	plain, finalFlag, err := DecryptStreamAuthenticated3x128Cfg(cfg, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, fileData[streamIDPrefixLen:], macFunc, streamID, 0)
+	plain, finalFlag, err := DecryptStreamAuthenticated3x128Cfg(cfg, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, fileData[streamIDPrefixLen:], macFunc, streamID, nil, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -101,21 +101,29 @@ func DecryptAuthenticated3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, d
 // Threads cfg through every
 // Cfg-aware accessor in the Triple Ouroboros Streaming AEAD pipeline.
 // The third region reserves tagSize + 1 bytes for the tag and the
-// flag byte; the MAC covers the three payloads ‖ streamID ‖ LE64
-// cumulative pixel offset ‖ flag. The chunk carries no prefix of its
-// own: the streamID travels once, ahead of the first chunk, and is
-// bound into every chunk's MAC.
-func EncryptStreamAuthenticated3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed128, data []byte, macFunc MACFunc, streamID [32]byte, cumulativePixelOffset uint64, finalFlag bool) ([]byte, error) {
-	return encryptStreamAuthenticated3x128Cfg(cfg, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data, macFunc, streamID, cumulativePixelOffset, finalFlag, 0)
+// flag byte. Every chunk travels behind a 32-byte prefix of its own:
+// chunk 0 behind the streamID, every later chunk behind a fresh
+// 32-byte CSPRNG value the caller draws and passes as chunkPrefix.
+// The MAC covers the three payloads ‖ streamID ‖ LE64 cumulative pixel
+// offset ‖ flag on chunk 0 (chunkPrefix nil or empty), and the three
+// payloads ‖ streamID ‖ chunkPrefix ‖ LE64 cumulative pixel offset ‖
+// flag on every later chunk (chunkPrefix exactly 32 bytes); any other
+// chunkPrefix length is rejected. The streamID ties the chunk to its
+// stream and chunkPrefix authenticates the prefix the chunk travels
+// behind. The returned chunk carries no prefix: the caller places the
+// streamID or chunkPrefix ahead of it on the wire.
+func EncryptStreamAuthenticated3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed128, data []byte, macFunc MACFunc, streamID [32]byte, chunkPrefix []byte, cumulativePixelOffset uint64, finalFlag bool) ([]byte, error) {
+	return encryptStreamAuthenticated3x128Cfg(cfg, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data, macFunc, streamID, chunkPrefix, cumulativePixelOffset, finalFlag, 0)
 }
 
 // encryptStreamAuthenticated3x128Cfg is the body of
 // [EncryptStreamAuthenticated3x128Cfg] with lead zero bytes reserved
-// ahead of the chunk in the returned buffer. The streaming encoders
-// pass 0; [EncryptAuthenticated3x128Cfg] passes [streamIDPrefixLen] and
-// writes the streamID into the reserved bytes, so the Single Message
-// wire is a single allocation.
-func encryptStreamAuthenticated3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed128, data []byte, macFunc MACFunc, streamID [32]byte, cumulativePixelOffset uint64, finalFlag bool, lead int) ([]byte, error) {
+// ahead of the chunk in the returned buffer. The exported per-chunk
+// entry passes 0; [EncryptAuthenticated3x128Cfg] and the streaming
+// encoders pass [streamIDPrefixLen] and write the chunk's prefix — the
+// streamID on chunk 0, chunkPrefix on every later chunk — into the
+// reserved bytes, so every chunk record is a single allocation.
+func encryptStreamAuthenticated3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed128, data []byte, macFunc MACFunc, streamID [32]byte, chunkPrefix []byte, cumulativePixelOffset uint64, finalFlag bool, lead int) ([]byte, error) {
 	if err := checkEightSeeds128(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
 		return nil, err
 	}
@@ -124,6 +132,9 @@ func encryptStreamAuthenticated3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSe
 	}
 	if macFunc == nil {
 		return nil, fmt.Errorf("itb: macFunc must not be nil")
+	}
+	if err := checkChunkPrefix(chunkPrefix); err != nil {
+		return nil, err
 	}
 	if len(data) > maxDataSize {
 		return nil, fmt.Errorf("itb: data too large: %d bytes (max %d)", len(data), maxDataSize)
@@ -161,11 +172,19 @@ func encryptStreamAuthenticated3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSe
 	third, thirdPixels2, _ := tripleThirdCaps(totalPixels)
 
 	// MAC over concatenated payloads || streamID || uint64_le(offset) || flag
+	// on chunk 0, with chunkPrefix between streamID and the offset on
+	// every later chunk.
 	flag := streamFlagByte(finalFlag)
 	var offsetLE [8]byte
 	binary.LittleEndian.PutUint64(offsetLE[:], cumulativePixelOffset)
-	tag := macTagCfg(cfg, macFunc,
-		payloads[0], payloads[1], payloads[2], streamID[:], offsetLE[:], []byte{flag})
+	var tag []byte
+	if len(chunkPrefix) == 0 {
+		tag = macTagCfg(cfg, macFunc,
+			payloads[0], payloads[1], payloads[2], streamID[:], offsetLE[:], []byte{flag})
+	} else {
+		tag = macTagCfg(cfg, macFunc,
+			payloads[0], payloads[1], payloads[2], streamID[:], chunkPrefix, offsetLE[:], []byte{flag})
+	}
 
 	// full2 = payload2 || tag || flag, assembled in place in the third
 	// payload buffer.
@@ -200,14 +219,20 @@ func encryptStreamAuthenticated3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSe
 
 // DecryptStreamAuthenticated3x128Cfg is the inverse of
 // [EncryptStreamAuthenticated3x128Cfg]. chunkData must be exactly one
-// chunk — the length its header announces; trailing bytes are rejected
-// before the MAC. nil cfg falls back to the compile-in defaults.
-func DecryptStreamAuthenticated3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed128, chunkData []byte, macFunc MACFunc, streamID [32]byte, cumulativePixelOffset uint64) ([]byte, bool, error) {
+// chunk — the length its header announces, without the prefix it
+// travels behind; trailing bytes are rejected before the MAC.
+// chunkPrefix is nil or empty for chunk 0 and the 32 bytes read
+// ahead of the chunk for every later chunk; any other length is
+// rejected. nil cfg falls back to the compile-in defaults.
+func DecryptStreamAuthenticated3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed128, chunkData []byte, macFunc MACFunc, streamID [32]byte, chunkPrefix []byte, cumulativePixelOffset uint64) ([]byte, bool, error) {
 	if err := checkEightSeeds128(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
 		return nil, false, err
 	}
 	if macFunc == nil {
 		return nil, false, fmt.Errorf("itb: macFunc must not be nil")
+	}
+	if err := checkChunkPrefix(chunkPrefix); err != nil {
+		return nil, false, err
 	}
 
 	tagSize := len(macFunc([]byte{}))
@@ -302,10 +327,18 @@ func DecryptStreamAuthenticated3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSe
 	flag := decoded[2][payloadLen2+tagSize]
 
 	// Verify MAC over concatenated payloads || streamID || uint64_le(offset) || flag
+	// on chunk 0, with chunkPrefix between streamID and the offset on
+	// every later chunk.
 	var offsetLE [8]byte
 	binary.LittleEndian.PutUint64(offsetLE[:], cumulativePixelOffset)
-	expected := macTagCfg(cfg, macFunc,
-		decoded[0], decoded[1], payload2, streamID[:], offsetLE[:], []byte{flag})
+	var expected []byte
+	if len(chunkPrefix) == 0 {
+		expected = macTagCfg(cfg, macFunc,
+			decoded[0], decoded[1], payload2, streamID[:], offsetLE[:], []byte{flag})
+	} else {
+		expected = macTagCfg(cfg, macFunc,
+			decoded[0], decoded[1], payload2, streamID[:], chunkPrefix, offsetLE[:], []byte{flag})
+	}
 
 	if !constantTimeEqual(tag, expected) {
 		return nil, false, ErrMACFailure

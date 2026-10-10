@@ -7,19 +7,6 @@ import (
 	"github.com/everanium/itb/internal/drbg"
 )
 
-// nomacStreamPrefix draws a fresh CSPRNG dummy stream anchor for the
-// No MAC streaming path. Length matches [streamIDPrefixLen] so a wire
-// observer cannot distinguish the No MAC envelope prefix from the
-// AEAD streamID prefix. The bytes are never re-consumed on either
-// side — the decoder just skips the same-length window.
-func nomacStreamPrefix() ([]byte, error) {
-	buf := make([]byte, streamIDPrefixLen)
-	if _, err := rand.Read(buf); err != nil {
-		return nil, fmt.Errorf("itb: crypto/rand: %w", err)
-	}
-	return buf, nil
-}
-
 // nomacTagStubSizeCfg returns the number of bytes the No MAC Encrypt3x
 // pipeline reserves at the tail of the third region's container capacity
 // so its on-wire envelope matches the paired authenticated envelope
@@ -126,11 +113,12 @@ func validateConfigCfg(cfg *Config) error {
 	return nil
 }
 
-// fillNomacPrefix draws the Single Message dummy prefix for the No MAC
-// arm straight into dst — the reserved lead bytes of the wire
-// [Encrypt3x128Cfg] / [Encrypt3x256Cfg] / [Encrypt3x512Cfg] return —
-// from the same CSPRNG source as [nomacStreamPrefix], so the Single
-// Message prefix and the streaming envelope prefix are drawn alike.
+// fillNomacPrefix draws the No MAC dummy prefix straight into dst —
+// the reserved lead bytes of the wire [Encrypt3x128Cfg] /
+// [Encrypt3x256Cfg] / [Encrypt3x512Cfg] return, and of every chunk
+// record the No MAC streaming encoders emit — from crypto/rand, the
+// same source as the streamID and chunk prefixes of the MAC arm, so a
+// wire observer cannot tell the No MAC prefix from the MAC arm's.
 // The bytes are never re-consumed; the decoder skips the same-length
 // window.
 func fillNomacPrefix(dst []byte) error {

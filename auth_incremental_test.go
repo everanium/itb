@@ -109,6 +109,12 @@ func TestMACIncrementalCrossPathStream(t *testing.T) {
 	}
 	pt := genTestPlaintext(t, 32768)
 	const offset = 0x0123456789AB
+	// nil exercises the chunk-0 trailer; a 32-byte chunk prefix
+	// exercises the later-chunk trailer with the extra part.
+	laterPrefix := make([]byte, 32)
+	if _, err := rand.Read(laterPrefix); err != nil {
+		t.Fatalf("crypto/rand: %v", err)
+	}
 
 	n, l, d1, d2, d3, s1, s2, s3 := mkTriple512(t)
 	for _, dir := range []struct {
@@ -118,25 +124,31 @@ func TestMACIncrementalCrossPathStream(t *testing.T) {
 		{"inc-enc/legacy-dec", cfgInc, cfgLegacy},
 		{"legacy-enc/inc-dec", cfgLegacy, cfgInc},
 	} {
-		for _, finalFlag := range []bool{false, true} {
-			t.Run(dir.name, func(t *testing.T) {
-				ct, err := EncryptStreamAuthenticated3x512Cfg(dir.enc, n, l, d1, d2, d3, s1, s2, s3,
-					pt, mac, streamID, offset, finalFlag)
-				if err != nil {
-					t.Fatalf("encrypt: %v", err)
-				}
-				out, gotFinal, err := DecryptStreamAuthenticated3x512Cfg(dir.dec, n, l, d1, d2, d3, s1, s2, s3,
-					ct, mac, streamID, offset)
-				if err != nil {
-					t.Fatalf("decrypt: %v", err)
-				}
-				if gotFinal != finalFlag {
-					t.Fatalf("final flag mismatch: got %v want %v", gotFinal, finalFlag)
-				}
-				if !bytes.Equal(pt, out) {
-					t.Fatal("cross-arm stream round-trip mismatch")
-				}
-			})
+		for _, cp := range []struct {
+			name   string
+			prefix []byte
+		}{{"chunk0", nil}, {"later", laterPrefix}} {
+			chunkPrefix := cp.prefix
+			for _, finalFlag := range []bool{false, true} {
+				t.Run(dir.name+"/"+cp.name, func(t *testing.T) {
+					ct, err := EncryptStreamAuthenticated3x512Cfg(dir.enc, n, l, d1, d2, d3, s1, s2, s3,
+						pt, mac, streamID, chunkPrefix, offset, finalFlag)
+					if err != nil {
+						t.Fatalf("encrypt: %v", err)
+					}
+					out, gotFinal, err := DecryptStreamAuthenticated3x512Cfg(dir.dec, n, l, d1, d2, d3, s1, s2, s3,
+						ct, mac, streamID, chunkPrefix, offset)
+					if err != nil {
+						t.Fatalf("decrypt: %v", err)
+					}
+					if gotFinal != finalFlag {
+						t.Fatalf("final flag mismatch: got %v want %v", gotFinal, finalFlag)
+					}
+					if !bytes.Equal(pt, out) {
+						t.Fatal("cross-arm stream round-trip mismatch")
+					}
+				})
+			}
 		}
 	}
 }

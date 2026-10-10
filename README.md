@@ -1154,13 +1154,15 @@ This is best read as **local key evolution** — each round derives a fresh effe
 
 ```
 Offset  Size     Content
-0       32       Prefix (crypto/rand; the streamID bound into the MAC on MAC Authenticated shapes)
+0       32       Prefix (crypto/rand; the streamID or prefix_i bound into the MAC on MAC Authenticated shapes)
 32      N        Main nonce (crypto/rand, public; N = 16/32/64 bytes for 128/256/512-bit nonce)
 32+N    2        Width (uint16 big-endian)
 34+N    2        Height (uint16 big-endian)
 36+N    W×H×8    Raw RGBWYOPA pixel data with embedded encrypted payload,
                  routed through the Interlocked Barrier
 ```
+
+The table lays out one chunk record. A Single Message wire is one record; a stream is a sequence of records, every chunk travelling behind its own 32-byte prefix, so every chunk has the same record shape as a Single Message wire. On the MAC Authenticated shapes the prefix of the first record is the streamID, bound into every chunk's MAC, and the prefix of every later record is a fresh crypto/rand value bound into that chunk's MAC beside the streamID: the MAC input is `payload ‖ streamID ‖ LE64(offset) ‖ flag` for the first chunk and `payload ‖ streamID ‖ prefix_i ‖ LE64(offset) ‖ flag` for every later chunk. On the No MAC shapes every prefix is a crypto/rand dummy the decoder discards.
 
 A second, independently drawn interlock nonce — symmetric in width with the main nonce — keys the Rank Barrier's per-chunk mask derivation. It is not a header field. It is split into three fragments, one per interlocked lane, and prepended to the lane bytes ahead of the COBS stage, so the fragments sit inside the Pixel Barrier's coverage and inside the MAC's input on the authenticated shapes. Both sides derive the split from the configured nonce size alone — `base, rem := N/3, N%3`, with remainder bytes going to the lowest-indexed lanes — so no length information travels on the wire.
 

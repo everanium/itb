@@ -566,11 +566,11 @@ func byteMatchCount(a, b []byte) int {
 // collapses, while 4-byte external-Barrier per-pixel buffer preserves
 // residual Components[0] dependence — the attack proceeds in two stages:
 //
-//   1. All 8 seeds' Components[1..7] set to 0 (attractor collapse absorbs
-//      those dimensions).
-//   2. Sequential brute of Components[0] per seed slot ∈ 0..255: pick the
-//      value maximising Full KPA byte-match under shipped Decrypt3x128Cfg.
-//      Repeat greedy passes until convergence.
+//  1. All 8 seeds' Components[1..7] set to 0 (attractor collapse absorbs
+//     those dimensions).
+//  2. Sequential brute of Components[0] per seed slot ∈ 0..255: pick the
+//     value maximising Full KPA byte-match under shipped Decrypt3x128Cfg.
+//     Repeat greedy passes until convergence.
 //
 // Under the shipped 8-seed isolation invariant (checkEightSeeds128 rejects
 // Components-identical pairs), Components[0] values must remain distinct

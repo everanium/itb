@@ -103,8 +103,8 @@ func buildEightFNV1aSeeds128FNV(t *testing.T, keyBits int) (ns, ls, d1, d2, d3, 
 // regionGeometryFNV describes the wire slicing of a Triple ciphertext.
 // Populated from the public wire header (attacker-visible bytes only).
 type regionGeometryFNV struct {
-	nonce         []byte
-	totalPixels   int
+	nonce          []byte
+	totalPixels    int
 	regionPixels   [3]int
 	regionBodies   [3][]byte
 	regionPixStart [3]int
@@ -117,8 +117,8 @@ func decodeWireFNV(ct []byte) regionGeometryFNV {
 	third3 := total - 2*third
 	body := sm.container
 	return regionGeometryFNV{
-		nonce:       sm.mainNonce,
-		totalPixels: total,
+		nonce:        sm.mainNonce,
+		totalPixels:  total,
 		regionPixels: [3]int{third, third, third3},
 		regionBodies: [3][]byte{
 			body[0 : third*Channels],
@@ -287,8 +287,8 @@ func TestRedTeamBrokenFNV1aCribKPA(t *testing.T) {
 	geom := decodeWireFNV(ct)
 
 	type regionReport struct {
-		Region                  int     `json:"region"`
-		RegionPixels            int     `json:"region_pixels"`
+		Region                 int     `json:"region"`
+		RegionPixels           int     `json:"region_pixels"`
 		PerPixelSetSizeMean    float64 `json:"per_pixel_set_size_mean"`
 		PerPixelSetSizeMin     int     `json:"per_pixel_set_size_min"`
 		PerPixelSetSizeMax     int     `json:"per_pixel_set_size_max"`
@@ -353,8 +353,8 @@ func TestRedTeamBrokenFNV1aCribKPA(t *testing.T) {
 			mean = float64(sum) / float64(len(perPixelSizes))
 		}
 		reports[si] = regionReport{
-			Region:                  si,
-			RegionPixels:            regionPixels,
+			Region:                 si,
+			RegionPixels:           regionPixels,
 			PerPixelSetSizeMean:    mean,
 			PerPixelSetSizeMin:     minS,
 			PerPixelSetSizeMax:     maxS,
@@ -368,10 +368,10 @@ func TestRedTeamBrokenFNV1aCribKPA(t *testing.T) {
 		t.Fatalf("FNV-1a pre-anchor intersection unexpectedly high — investigate")
 	}
 	emitJSONFNV(t, "f1_pre_anchor_structure", map[string]any{
-		"probe":                 "F1_pre_anchor_structure",
-		"plaintext_len":         len(plain),
+		"probe":                  "F1_pre_anchor_structure",
+		"plaintext_len":          len(plain),
 		"crib_pixels_per_region": cribPixelsPerRegion,
-		"note":                  "attacker-realistic — per-pixel achievable-set sizes are ≤56 with essentially zero cross-pixel intersection under any FNV-1a shift (pixel-independent K does not exist for non-affine ChainHash); discriminator moves to SAT Layer 2",
+		"note":                   "attacker-realistic — per-pixel achievable-set sizes are ≤56 with essentially zero cross-pixel intersection under any FNV-1a shift (pixel-independent K does not exist for non-affine ChainHash); discriminator moves to SAT Layer 2",
 		"per_region":             reports,
 	})
 }
@@ -415,8 +415,8 @@ func TestRedTeamBrokenFNV1aCribKPATrueAnchor(t *testing.T) {
 	geom := decodeWireFNV(ct)
 
 	type regionReport struct {
-		Region                    int     `json:"region"`
-		RegionPixels              int     `json:"region_pixels"`
+		Region                   int     `json:"region"`
+		RegionPixels             int     `json:"region_pixels"`
 		ChannelBudget            int     `json:"crib_channels_budget"`
 		FullChainAnchoringShifts int     `json:"full_true_anchor_shifts"`
 		MaxChannelMatches        int     `json:"max_channel_matches"`
@@ -470,8 +470,8 @@ func TestRedTeamBrokenFNV1aCribKPATrueAnchor(t *testing.T) {
 		}
 		avg := float64(sum) / float64(regionPixels)
 		reports[si] = regionReport{
-			Region:                    si,
-			RegionPixels:              regionPixels,
+			Region:                   si,
+			RegionPixels:             regionPixels,
 			ChannelBudget:            cribPixelsPerRegion * Channels,
 			FullChainAnchoringShifts: fullAnchoring,
 			MaxChannelMatches:        maxM,
@@ -489,10 +489,10 @@ func TestRedTeamBrokenFNV1aCribKPATrueAnchor(t *testing.T) {
 		}
 	}
 	emitJSONFNV(t, "f2_true_anchor", map[string]any{
-		"probe":                 "F2_true_anchor_lab_peek",
-		"plaintext_len":         len(plain),
+		"probe":                  "F2_true_anchor_lab_peek",
+		"plaintext_len":          len(plain),
 		"crib_pixels_per_region": cribPixelsPerRegion,
-		"note":                  "[lab-peek: true_seeds] definitive negative — recovered xor_mask56 from naive-crib alignment does not equal true dataHash even under true (np, r); match rate at chance floor",
+		"note":                   "[lab-peek: true_seeds] definitive negative — recovered xor_mask56 from naive-crib alignment does not equal true dataHash even under true (np, r); match rate at chance floor",
 		"per_region":             reports,
 	})
 }
@@ -612,8 +612,8 @@ func TestRedTeamBrokenFNV1aCribKPAStartPixelPeek(t *testing.T) {
 	geom := decodeWireFNV(ct)
 
 	type regionReport struct {
-		Region                int     `json:"region"`
-		RegionPixels          int     `json:"region_pixels"`
+		Region               int     `json:"region"`
+		RegionPixels         int     `json:"region_pixels"`
 		StartPixelDisclosed  int     `json:"startpixel_disclosed"`
 		ChannelMatchesAtSP   int     `json:"channel_matches_at_sp"`
 		AvgChannelMatchesAll float64 `json:"avg_channel_matches_all_shifts"`
@@ -656,8 +656,8 @@ func TestRedTeamBrokenFNV1aCribKPAStartPixelPeek(t *testing.T) {
 		}
 		avg := float64(allSum) / float64(regionPixels)
 		reports[si] = regionReport{
-			Region:                si,
-			RegionPixels:          regionPixels,
+			Region:               si,
+			RegionPixels:         regionPixels,
 			StartPixelDisclosed:  sp,
 			ChannelMatchesAtSP:   atSP,
 			AvgChannelMatchesAll: avg,
@@ -676,10 +676,10 @@ func TestRedTeamBrokenFNV1aCribKPAStartPixelPeek(t *testing.T) {
 		}
 	}
 	emitJSONFNV(t, "f4_startpixel_peek", map[string]any{
-		"probe":                 "F4_startpixel_peek",
-		"plaintext_len":         len(plain),
+		"probe":                  "F4_startpixel_peek",
+		"plaintext_len":          len(plain),
 		"crib_pixels_per_region": cribPixelsPerRegion,
-		"note":                  "[lab-peek: sp_i] — disclosing per-region startPixel does not restore the naive-crib SAT anchor; sp-column match count is at the same floor as any other shift",
+		"note":                   "[lab-peek: sp_i] — disclosing per-region startPixel does not restore the naive-crib SAT anchor; sp-column match count is at the same floor as any other shift",
 		"per_region":             reports,
 	})
 }
@@ -719,7 +719,7 @@ func TestRedTeamBrokenFNV1aCribKPADisplacement(t *testing.T) {
 	splitForTriple48LockedInto(nil, plain, buildLockBatchPRF48_128Cfg(nil, ls, parseSMWire(ct, NonceSize).mainNonce), regions[0], regions[1], regions[2])
 
 	type regionDisp struct {
-		Region            int     `json:"region"`
+		Region           int     `json:"region"`
 		Compared         int     `json:"compared"`
 		Matched          int     `json:"matched"`
 		Fraction         float64 `json:"fraction"`
@@ -744,7 +744,7 @@ func TestRedTeamBrokenFNV1aCribKPADisplacement(t *testing.T) {
 			frac = float64(matched) / float64(checked)
 		}
 		reps[si] = regionDisp{
-			Region:            si,
+			Region:           si,
 			Compared:         checked,
 			Matched:          matched,
 			Fraction:         frac,
@@ -757,7 +757,7 @@ func TestRedTeamBrokenFNV1aCribKPADisplacement(t *testing.T) {
 		"probe":              "F5_displacement_json_crib",
 		"plaintext_len":      len(plain),
 		"chance_at_alphabet": chanceAlphabet,
-		"per_region":          reps,
+		"per_region":         reps,
 	})
 }
 

@@ -41,7 +41,7 @@ import (
 // eitbGoVersion matches the shipped libitb3 ABI version reported by
 // [github.com/everanium/itb/cmd/cshared] so the Go native tool prints
 // the same "libitb3 X.Y.Z" line as every binding's eitb.
-const eitbGoVersion = "0.5.1"
+const eitbGoVersion = "0.5.5"
 
 const usage = `usage: eitb version
        eitb profiles

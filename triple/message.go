@@ -502,8 +502,8 @@ func hasNoCipherSurface(mode string) bool {
 	return mode == modeBlobOnly
 }
 
-// streamIDPrefixLen is the on-wire byte length of the per-message
-// streamID prefix emitted by the itb-root streaming encoders and
+// streamIDPrefixLen is the on-wire byte length of the prefix every
+// chunk travels behind, emitted by the itb-root streaming encoders and
 // Single Message entries and consumed by their decoders. Held here as
 // a local mirror of the
 // itb-root constant so the triple message surface stays

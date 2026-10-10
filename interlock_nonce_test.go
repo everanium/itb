@@ -193,11 +193,11 @@ func TestInterlockNonceRoundTripMatrix(t *testing.T) {
 					t.Fatalf("nonce %d size %d: auth round-trip err=%v match=%v", bits, size, err, bytes.Equal(ptA, data))
 				}
 
-				ctS, err := EncryptStreamAuthenticated3x128Cfg(cfg, ns, ls, d1, d2, d3, s1, s2, s3, data, simpleMACFunc, streamID, 0, true)
+				ctS, err := EncryptStreamAuthenticated3x128Cfg(cfg, ns, ls, d1, d2, d3, s1, s2, s3, data, simpleMACFunc, streamID, nil, 0, true)
 				if err != nil {
 					t.Fatalf("nonce %d size %d: %v", bits, size, err)
 				}
-				ptS, final, err := DecryptStreamAuthenticated3x128Cfg(cfg, ns, ls, d1, d2, d3, s1, s2, s3, ctS, simpleMACFunc, streamID, 0)
+				ptS, final, err := DecryptStreamAuthenticated3x128Cfg(cfg, ns, ls, d1, d2, d3, s1, s2, s3, ctS, simpleMACFunc, streamID, nil, 0)
 				if err != nil || !final || !bytes.Equal(ptS, data) {
 					t.Fatalf("nonce %d size %d: stream round-trip err=%v final=%v match=%v", bits, size, err, final, bytes.Equal(ptS, data))
 				}
@@ -223,11 +223,11 @@ func TestInterlockNonceRoundTripMatrix(t *testing.T) {
 					t.Fatalf("nonce %d size %d: auth round-trip err=%v match=%v", bits, size, err, bytes.Equal(ptA, data))
 				}
 
-				ctS, err := EncryptStreamAuthenticated3x256Cfg(cfg, ns, ls, d1, d2, d3, s1, s2, s3, data, simpleMACFunc, streamID, 0, true)
+				ctS, err := EncryptStreamAuthenticated3x256Cfg(cfg, ns, ls, d1, d2, d3, s1, s2, s3, data, simpleMACFunc, streamID, nil, 0, true)
 				if err != nil {
 					t.Fatalf("nonce %d size %d: %v", bits, size, err)
 				}
-				ptS, final, err := DecryptStreamAuthenticated3x256Cfg(cfg, ns, ls, d1, d2, d3, s1, s2, s3, ctS, simpleMACFunc, streamID, 0)
+				ptS, final, err := DecryptStreamAuthenticated3x256Cfg(cfg, ns, ls, d1, d2, d3, s1, s2, s3, ctS, simpleMACFunc, streamID, nil, 0)
 				if err != nil || !final || !bytes.Equal(ptS, data) {
 					t.Fatalf("nonce %d size %d: stream round-trip err=%v final=%v match=%v", bits, size, err, final, bytes.Equal(ptS, data))
 				}
@@ -253,11 +253,11 @@ func TestInterlockNonceRoundTripMatrix(t *testing.T) {
 					t.Fatalf("nonce %d size %d: auth round-trip err=%v match=%v", bits, size, err, bytes.Equal(ptA, data))
 				}
 
-				ctS, err := EncryptStreamAuthenticated3x512Cfg(cfg, ns, ls, d1, d2, d3, s1, s2, s3, data, simpleMACFunc, streamID, 0, true)
+				ctS, err := EncryptStreamAuthenticated3x512Cfg(cfg, ns, ls, d1, d2, d3, s1, s2, s3, data, simpleMACFunc, streamID, nil, 0, true)
 				if err != nil {
 					t.Fatalf("nonce %d size %d: %v", bits, size, err)
 				}
-				ptS, final, err := DecryptStreamAuthenticated3x512Cfg(cfg, ns, ls, d1, d2, d3, s1, s2, s3, ctS, simpleMACFunc, streamID, 0)
+				ptS, final, err := DecryptStreamAuthenticated3x512Cfg(cfg, ns, ls, d1, d2, d3, s1, s2, s3, ctS, simpleMACFunc, streamID, nil, 0)
 				if err != nil || !final || !bytes.Equal(ptS, data) {
 					t.Fatalf("nonce %d size %d: stream round-trip err=%v final=%v match=%v", bits, size, err, final, bytes.Equal(ptS, data))
 				}
@@ -278,11 +278,11 @@ func TestInterlockNonceEmptyFinalChunk(t *testing.T) {
 	for _, bits := range nonceWidths {
 		cfg := &Config{NonceBits: bits}
 		ns, ls, d1, d2, d3, s1, s2, s3 := makeEightSeeds128(512, sipHash128)
-		ct, err := EncryptStreamAuthenticated3x128Cfg(cfg, ns, ls, d1, d2, d3, s1, s2, s3, nil, simpleMACFunc, streamID, 0, true)
+		ct, err := EncryptStreamAuthenticated3x128Cfg(cfg, ns, ls, d1, d2, d3, s1, s2, s3, nil, simpleMACFunc, streamID, nil, 0, true)
 		if err != nil {
 			t.Fatalf("nonce %d: %v", bits, err)
 		}
-		pt, final, err := DecryptStreamAuthenticated3x128Cfg(cfg, ns, ls, d1, d2, d3, s1, s2, s3, ct, simpleMACFunc, streamID, 0)
+		pt, final, err := DecryptStreamAuthenticated3x128Cfg(cfg, ns, ls, d1, d2, d3, s1, s2, s3, ct, simpleMACFunc, streamID, nil, 0)
 		if err != nil {
 			t.Fatalf("nonce %d: %v", bits, err)
 		}

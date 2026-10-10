@@ -145,9 +145,10 @@ func TestSingleMessageParityCustomTagSizes(t *testing.T) {
 // Streaming AEAD stream (EncryptStreamAuth3xNCfg with a MAC of that
 // tag length): identical chunk counts and identical total wire byte
 // counts under a fixed nonce, for tag sizes beyond the shipped 32.
-// The No MAC 32-byte CSPRNG dummy prefix and the AEAD streamID prefix
-// are the same length by construction, so per-chunk parity carries
-// through to the full-stream envelope.
+// The No MAC 32-byte CSPRNG dummy prefix and the AEAD prefix (the
+// streamID or a chunk prefix) ahead of every chunk are the same length
+// by construction, so per-chunk parity carries through to the
+// full-stream envelope.
 func TestStreamingParityCustomTagSizes(t *testing.T) {
 	installTestNonce(t, nonceFixture(currentNonceSizeCfg(nil)))
 	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := seedFixtures512(t, 512)

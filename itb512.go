@@ -138,9 +138,10 @@ func containerSizeAuth3_512Cfg(cfg *Config, noiseSeed *Seed512, dataSeed1, dataS
 // The 32-byte prefix is a CSPRNG dummy of the same length as the
 // streamID that [EncryptAuthenticated3x512Cfg] binds into its MAC, so
 // the No MAC and MAC Authenticated Single Message wires share one
-// shape; [Decrypt3x512Cfg] skips it. The chunk that follows the prefix
-// is exactly what [EncryptStream3x512Cfg] emits per chunk, so a Single
-// Message wire and a one-chunk stream are byte-shape identical.
+// shape; [Decrypt3x512Cfg] skips it. [EncryptStream3x512Cfg] emits every
+// chunk as a record of exactly this shape — a fresh dummy prefix
+// followed by the chunk — so a Single Message wire and a one-chunk
+// stream are byte-shape identical.
 //
 // cfg threads per-encryptor overrides through every Cfg-aware
 // accessor in the pipeline; nil cfg falls back to [DefaultNonceBits] /
@@ -158,10 +159,10 @@ func Encrypt3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dat
 
 // encrypt3x512Cfg produces one No MAC chunk —
 // [main nonce][W][H][W×H×8 pixels] — with lead zero bytes reserved
-// ahead of it in the returned buffer. The streaming encoders call it
-// with lead 0 for every chunk; [Encrypt3x512Cfg] calls it with
-// [streamIDPrefixLen] and writes the Single Message prefix into the
-// reserved bytes.
+// ahead of it in the returned buffer. [Encrypt3x512Cfg] and the
+// streaming encoders call it with [streamIDPrefixLen] and write the
+// chunk's CSPRNG dummy prefix into the reserved bytes, so every chunk
+// record is a single allocation.
 func encrypt3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed512, data []byte, lead int) ([]byte, error) {
 	if err := checkEightSeeds512(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
 		return nil, err

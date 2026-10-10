@@ -9,16 +9,20 @@
 // chunkSize parameter; the decrypt-side helpers recover chunk extents
 // from the on-wire header per chunk.
 //
-// Behaviour parity with the binding-side stream helpers: streamID
-// 32-byte CSPRNG prefix on the auth path, cumulative pixel offset
-// bound into every per-chunk MAC input, finalFlag flipped on the
+// Every chunk travels behind its own 32-byte prefix and is written to
+// dst together with it in one call, so every record on the wire is
+// [prefix(32)][main nonce][W][H][container] — the shape of a Single
+// Message wire. Behaviour parity with the binding-side stream helpers:
+// the streamID ahead of chunk 0 and a fresh CSPRNG chunk prefix ahead
+// of every later chunk on the auth path, both bound into the chunk's
+// MAC input together with the cumulative pixel offset, a CSPRNG dummy
+// ahead of every chunk on the No MAC path, finalFlag flipped on the
 // terminating chunk, ErrStreamTruncated / ErrStreamAfterFinal surfaced
 // verbatim from the underlying single-chunk path.
 
 package itb
 
 import (
-	"crypto/rand"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -70,6 +74,46 @@ func validateChunkSize(chunkSize int) (int, error) {
 		return 0, fmt.Errorf("itb: chunk size %d exceeds maximum %d bytes", chunkSize, maxDataSize)
 	}
 	return chunkSize, nil
+}
+
+// readFirstPrefix reads the 32-byte prefix that opens the first chunk
+// record into prefix. Returns io.EOF when src is empty and an error
+// naming the stream prefix when src ends inside it.
+func readFirstPrefix(src io.Reader, prefix *[streamIDPrefixLen]byte) error {
+	n, err := io.ReadFull(src, prefix[:])
+	if err == io.EOF && n == 0 {
+		return io.EOF
+	}
+	if err == io.ErrUnexpectedEOF {
+		return fmt.Errorf("itb: stream too short for stream prefix")
+	}
+	return err
+}
+
+// readChunkPrefix reads the 32-byte prefix that opens every later
+// chunk record into prefix. Returns io.EOF when src is exhausted
+// before the first prefix byte — a clean end of stream on a record
+// boundary — and an error when the prefix is cut short.
+func readChunkPrefix(src io.Reader, prefix *[streamIDPrefixLen]byte) error {
+	n, err := io.ReadFull(src, prefix[:])
+	if err == io.EOF && n == 0 {
+		return io.EOF
+	}
+	if err == io.ErrUnexpectedEOF {
+		return fmt.Errorf("itb: short chunk prefix read: %d of %d bytes", n, streamIDPrefixLen)
+	}
+	return err
+}
+
+// readRecordChunkCfg reads the chunk behind a prefix that has already
+// been read. The stream may not end between a prefix and its chunk, so
+// a clean end of src here is an error rather than io.EOF.
+func readRecordChunkCfg(cfg *Config, src io.Reader) ([]byte, error) {
+	chunk, err := readChunkParseCfg(cfg, src)
+	if err == io.EOF {
+		return nil, fmt.Errorf("itb: stream ends after a chunk prefix")
+	}
+	return chunk, err
 }
 
 // readChunkParseCfg drains a header window from src, parses W / H to
@@ -133,19 +177,29 @@ func readChunkParseCfg(cfg *Config, src io.Reader) ([]byte, error) {
 
 // chunkEncryptTripleCfg is the per-chunk dispatch helper for the
 // width-less No MAC Triple Ouroboros Encrypt path when a Config
-// override is threaded per Pipeline. It reaches the prefix-free chunk
-// helpers, never the Single Message entries: the streamID-length
-// prefix travels once per stream, ahead of the first chunk.
+// override is threaded per Pipeline. It returns one chunk record —
+// a fresh 32-byte CSPRNG dummy prefix followed by the chunk, in one
+// buffer — the same bytes the No MAC Single Message entries produce.
 func chunkEncryptTripleCfg(cfg *Config, width int, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 any, data []byte) ([]byte, error) {
+	var rec []byte
+	var err error
 	switch width {
 	case 128:
-		return encrypt3x128Cfg(cfg, noiseSeed.(*Seed128), lockSeed.(*Seed128), dataSeed1.(*Seed128), dataSeed2.(*Seed128), dataSeed3.(*Seed128), startSeed1.(*Seed128), startSeed2.(*Seed128), startSeed3.(*Seed128), data, 0)
+		rec, err = encrypt3x128Cfg(cfg, noiseSeed.(*Seed128), lockSeed.(*Seed128), dataSeed1.(*Seed128), dataSeed2.(*Seed128), dataSeed3.(*Seed128), startSeed1.(*Seed128), startSeed2.(*Seed128), startSeed3.(*Seed128), data, streamIDPrefixLen)
 	case 256:
-		return encrypt3x256Cfg(cfg, noiseSeed.(*Seed256), lockSeed.(*Seed256), dataSeed1.(*Seed256), dataSeed2.(*Seed256), dataSeed3.(*Seed256), startSeed1.(*Seed256), startSeed2.(*Seed256), startSeed3.(*Seed256), data, 0)
+		rec, err = encrypt3x256Cfg(cfg, noiseSeed.(*Seed256), lockSeed.(*Seed256), dataSeed1.(*Seed256), dataSeed2.(*Seed256), dataSeed3.(*Seed256), startSeed1.(*Seed256), startSeed2.(*Seed256), startSeed3.(*Seed256), data, streamIDPrefixLen)
 	case 512:
-		return encrypt3x512Cfg(cfg, noiseSeed.(*Seed512), lockSeed.(*Seed512), dataSeed1.(*Seed512), dataSeed2.(*Seed512), dataSeed3.(*Seed512), startSeed1.(*Seed512), startSeed2.(*Seed512), startSeed3.(*Seed512), data, 0)
+		rec, err = encrypt3x512Cfg(cfg, noiseSeed.(*Seed512), lockSeed.(*Seed512), dataSeed1.(*Seed512), dataSeed2.(*Seed512), dataSeed3.(*Seed512), startSeed1.(*Seed512), startSeed2.(*Seed512), startSeed3.(*Seed512), data, streamIDPrefixLen)
+	default:
+		return nil, errSeedWidthMix
 	}
-	return nil, errSeedWidthMix
+	if err != nil {
+		return nil, err
+	}
+	if err := fillNomacPrefix(rec[:streamIDPrefixLen]); err != nil {
+		return nil, err
+	}
+	return rec, nil
 }
 
 // chunkDecryptTripleCfg is the per-chunk dispatch helper for the
@@ -166,30 +220,41 @@ func chunkDecryptTripleCfg(cfg *Config, width int, noiseSeed, lockSeed, dataSeed
 
 // streamAuthEncryptTripleCfg is the per-chunk dispatch helper for the
 // Triple Ouroboros Streaming AEAD encrypt path when a Config override
-// is threaded per Pipeline.
-func streamAuthEncryptTripleCfg(cfg *Config, width int, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 any, plaintext []byte, mac MACFunc, streamID [streamIDPrefixLen]byte, cumulative uint64, finalFlag bool) ([]byte, error) {
+// is threaded per Pipeline. It returns one chunk record — the prefix
+// the chunk travels behind (the streamID when chunkPrefix is empty,
+// chunkPrefix otherwise) followed by the chunk, in one buffer.
+func streamAuthEncryptTripleCfg(cfg *Config, width int, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 any, plaintext []byte, mac MACFunc, streamID [streamIDPrefixLen]byte, chunkPrefix []byte, cumulative uint64, finalFlag bool) ([]byte, error) {
+	var rec []byte
+	var err error
 	switch width {
 	case 128:
-		return EncryptStreamAuthenticated3x128Cfg(cfg, noiseSeed.(*Seed128), lockSeed.(*Seed128), dataSeed1.(*Seed128), dataSeed2.(*Seed128), dataSeed3.(*Seed128), startSeed1.(*Seed128), startSeed2.(*Seed128), startSeed3.(*Seed128), plaintext, mac, streamID, cumulative, finalFlag)
+		rec, err = encryptStreamAuthenticated3x128Cfg(cfg, noiseSeed.(*Seed128), lockSeed.(*Seed128), dataSeed1.(*Seed128), dataSeed2.(*Seed128), dataSeed3.(*Seed128), startSeed1.(*Seed128), startSeed2.(*Seed128), startSeed3.(*Seed128), plaintext, mac, streamID, chunkPrefix, cumulative, finalFlag, streamIDPrefixLen)
 	case 256:
-		return EncryptStreamAuthenticated3x256Cfg(cfg, noiseSeed.(*Seed256), lockSeed.(*Seed256), dataSeed1.(*Seed256), dataSeed2.(*Seed256), dataSeed3.(*Seed256), startSeed1.(*Seed256), startSeed2.(*Seed256), startSeed3.(*Seed256), plaintext, mac, streamID, cumulative, finalFlag)
+		rec, err = encryptStreamAuthenticated3x256Cfg(cfg, noiseSeed.(*Seed256), lockSeed.(*Seed256), dataSeed1.(*Seed256), dataSeed2.(*Seed256), dataSeed3.(*Seed256), startSeed1.(*Seed256), startSeed2.(*Seed256), startSeed3.(*Seed256), plaintext, mac, streamID, chunkPrefix, cumulative, finalFlag, streamIDPrefixLen)
 	case 512:
-		return EncryptStreamAuthenticated3x512Cfg(cfg, noiseSeed.(*Seed512), lockSeed.(*Seed512), dataSeed1.(*Seed512), dataSeed2.(*Seed512), dataSeed3.(*Seed512), startSeed1.(*Seed512), startSeed2.(*Seed512), startSeed3.(*Seed512), plaintext, mac, streamID, cumulative, finalFlag)
+		rec, err = encryptStreamAuthenticated3x512Cfg(cfg, noiseSeed.(*Seed512), lockSeed.(*Seed512), dataSeed1.(*Seed512), dataSeed2.(*Seed512), dataSeed3.(*Seed512), startSeed1.(*Seed512), startSeed2.(*Seed512), startSeed3.(*Seed512), plaintext, mac, streamID, chunkPrefix, cumulative, finalFlag, streamIDPrefixLen)
+	default:
+		return nil, errSeedWidthMix
 	}
-	return nil, errSeedWidthMix
+	if err != nil {
+		return nil, err
+	}
+	putChunkPrefix(rec, streamID, chunkPrefix)
+	return rec, nil
 }
 
 // streamAuthDecryptTripleCfg is the per-chunk dispatch helper for the
 // Triple Ouroboros Streaming AEAD decrypt path when a Config override
-// is threaded per Pipeline.
-func streamAuthDecryptTripleCfg(cfg *Config, width int, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 any, chunk []byte, mac MACFunc, streamID [streamIDPrefixLen]byte, cumulative uint64) ([]byte, bool, error) {
+// is threaded per Pipeline. chunk excludes the prefix; chunkPrefix is
+// empty for chunk 0 and the prefix read ahead of every later chunk.
+func streamAuthDecryptTripleCfg(cfg *Config, width int, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 any, chunk []byte, mac MACFunc, streamID [streamIDPrefixLen]byte, chunkPrefix []byte, cumulative uint64) ([]byte, bool, error) {
 	switch width {
 	case 128:
-		return DecryptStreamAuthenticated3x128Cfg(cfg, noiseSeed.(*Seed128), lockSeed.(*Seed128), dataSeed1.(*Seed128), dataSeed2.(*Seed128), dataSeed3.(*Seed128), startSeed1.(*Seed128), startSeed2.(*Seed128), startSeed3.(*Seed128), chunk, mac, streamID, cumulative)
+		return DecryptStreamAuthenticated3x128Cfg(cfg, noiseSeed.(*Seed128), lockSeed.(*Seed128), dataSeed1.(*Seed128), dataSeed2.(*Seed128), dataSeed3.(*Seed128), startSeed1.(*Seed128), startSeed2.(*Seed128), startSeed3.(*Seed128), chunk, mac, streamID, chunkPrefix, cumulative)
 	case 256:
-		return DecryptStreamAuthenticated3x256Cfg(cfg, noiseSeed.(*Seed256), lockSeed.(*Seed256), dataSeed1.(*Seed256), dataSeed2.(*Seed256), dataSeed3.(*Seed256), startSeed1.(*Seed256), startSeed2.(*Seed256), startSeed3.(*Seed256), chunk, mac, streamID, cumulative)
+		return DecryptStreamAuthenticated3x256Cfg(cfg, noiseSeed.(*Seed256), lockSeed.(*Seed256), dataSeed1.(*Seed256), dataSeed2.(*Seed256), dataSeed3.(*Seed256), startSeed1.(*Seed256), startSeed2.(*Seed256), startSeed3.(*Seed256), chunk, mac, streamID, chunkPrefix, cumulative)
 	case 512:
-		return DecryptStreamAuthenticated3x512Cfg(cfg, noiseSeed.(*Seed512), lockSeed.(*Seed512), dataSeed1.(*Seed512), dataSeed2.(*Seed512), dataSeed3.(*Seed512), startSeed1.(*Seed512), startSeed2.(*Seed512), startSeed3.(*Seed512), chunk, mac, streamID, cumulative)
+		return DecryptStreamAuthenticated3x512Cfg(cfg, noiseSeed.(*Seed512), lockSeed.(*Seed512), dataSeed1.(*Seed512), dataSeed2.(*Seed512), dataSeed3.(*Seed512), startSeed1.(*Seed512), startSeed2.(*Seed512), startSeed3.(*Seed512), chunk, mac, streamID, chunkPrefix, cumulative)
 	}
 	return nil, false, errSeedWidthMix
 }
@@ -197,11 +262,12 @@ func streamAuthDecryptTripleCfg(cfg *Config, width int, noiseSeed, lockSeed, dat
 // EncryptStream3xCfg is the width-less Triple Ouroboros No MAC stream
 // Encrypt entry point with a per-encryptor Config override.
 //
-// The streamID prefix and the first chunk body are emitted as a single
-// atomic dst.Write call. Batching closes a race where a concurrent
-// reader draining the destination between two separate writes could
-// consume-and-discard the prefix independently, leaving the receiving
-// side's wire 32 bytes short and unable to parse the opening header.
+// Every chunk and the 32-byte CSPRNG dummy prefix ahead of it are
+// built in one buffer and written as a single atomic dst.Write call.
+// One write per record closes a race where a concurrent reader
+// draining the destination between two separate writes could
+// consume-and-discard a prefix independently, leaving the receiving
+// side's wire 32 bytes short and unable to parse the next header.
 func EncryptStream3xCfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 any, src io.Reader, dst io.Writer, chunkSize int) error {
 	width, err := dispatchWidthTriple(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3)
 	if err != nil {
@@ -221,18 +287,14 @@ func EncryptStream3xCfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, 
 	bufPtr, buf := acquireStage(cs)
 	bufUsed := 0
 	defer func() { releaseStage(bufPtr, buf, bufUsed) }()
-	var prefix [streamIDPrefixLen]byte
-	if _, rerr := rand.Read(prefix[:]); rerr != nil {
-		return fmt.Errorf("itb: crypto/rand: %w", rerr)
-	}
-	prefixPending := true
+	first := true
 	for {
 		n, err := readUpTo(src, buf)
 		if n > bufUsed {
 			bufUsed = n
 		}
 		if err == io.EOF {
-			if prefixPending {
+			if first {
 				return ErrEmptyInput
 			}
 			return nil
@@ -240,23 +302,14 @@ func EncryptStream3xCfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, 
 		if err != nil {
 			return err
 		}
-		ct, encErr := chunkEncryptTripleCfg(cfg, width, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, buf[:n])
+		rec, encErr := chunkEncryptTripleCfg(cfg, width, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, buf[:n])
 		if encErr != nil {
 			return encErr
 		}
-		if prefixPending {
-			combined := make([]byte, streamIDPrefixLen+len(ct))
-			copy(combined, prefix[:])
-			copy(combined[streamIDPrefixLen:], ct)
-			if _, werr := dst.Write(combined); werr != nil {
-				return werr
-			}
-			prefixPending = false
-			continue
-		}
-		if _, werr := dst.Write(ct); werr != nil {
+		if _, werr := dst.Write(rec); werr != nil {
 			return werr
 		}
+		first = false
 	}
 }
 
@@ -267,22 +320,25 @@ func DecryptStream3xCfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, 
 	if err != nil {
 		return err
 	}
+	// Every record is a 32-byte dummy prefix, discarded, followed by
+	// one chunk. A clean end of src on a record boundary ends the
+	// stream; an empty stream is ErrEmptyInput.
 	var prefix [streamIDPrefixLen]byte
-	n, perr := io.ReadFull(src, prefix[:])
-	if perr == io.EOF && n == 0 {
-		return ErrEmptyInput
-	}
-	if perr == io.ErrUnexpectedEOF || (perr == io.EOF && n != streamIDPrefixLen) {
-		return fmt.Errorf("itb: stream too short for stream prefix")
-	}
-	if perr != nil {
-		return perr
-	}
-	for {
-		chunk, err := readChunkParseCfg(cfg, src)
-		if err == io.EOF {
+	for first := true; ; first = false {
+		read := readChunkPrefix
+		if first {
+			read = readFirstPrefix
+		}
+		if perr := read(src, &prefix); perr != nil {
+			if perr != io.EOF {
+				return perr
+			}
+			if first {
+				return ErrEmptyInput
+			}
 			return nil
 		}
+		chunk, err := readRecordChunkCfg(cfg, src)
 		if err != nil {
 			return err
 		}
@@ -299,13 +355,11 @@ func DecryptStream3xCfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, 
 // EncryptStreamAuth3xCfg is the width-less Triple Ouroboros Streaming
 // AEAD Encrypt entry point with a per-encryptor Config override.
 //
-// The streamID prefix and the first emitted chunk are combined into a
-// single atomic dst.Write call. Batching closes the same
-// concurrent-drain race documented on [EncryptStream3xCfg]: without it,
-// a reader draining the destination between the prefix write and the
-// first chunk body write can consume-and-discard the prefix
-// independently, and the receiving side sees a wire missing the
-// 32-byte opening.
+// Every chunk and the 32-byte prefix ahead of it — the streamID on
+// chunk 0, a fresh CSPRNG chunk prefix bound into the chunk's MAC on
+// every later chunk — are built in one buffer and written as a single
+// atomic dst.Write call, which closes the same concurrent-drain race
+// documented on [EncryptStream3xCfg].
 func EncryptStreamAuth3xCfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 any, src io.Reader, dst io.Writer, mac MACFunc, chunkSize int) error {
 	width, err := dispatchWidthTriple(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3)
 	if err != nil {
@@ -322,28 +376,26 @@ func EncryptStreamAuth3xCfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSee
 		return err
 	}
 
-	var streamID [streamIDPrefixLen]byte
-	if _, err := rand.Read(streamID[:]); err != nil {
-		return fmt.Errorf("itb: crypto/rand: %w", err)
+	streamID, err := generateStreamID()
+	if err != nil {
+		return err
 	}
-	prefixPending := true
+	first := true
 
-	// emitChunk writes one produced chunk to dst, prepending the
-	// streamID prefix on the first invocation so prefix and first
-	// chunk land in one atomic dst.Write.
-	emitChunk := func(chunk []byte) error {
-		if prefixPending {
-			combined := make([]byte, streamIDPrefixLen+len(chunk))
-			copy(combined, streamID[:])
-			copy(combined[streamIDPrefixLen:], chunk)
-			if _, werr := dst.Write(combined); werr != nil {
-				return werr
-			}
-			prefixPending = false
-			return nil
+	// encryptRecord produces one chunk record — prefix and chunk in
+	// one buffer — drawing the chunk prefix before the chunk is
+	// encrypted so the bytes bound into the MAC are the bytes written.
+	encryptRecord := func(plaintext []byte, cumulative uint64, finalFlag bool) ([]byte, error) {
+		chunkPrefix, perr := drawChunkPrefix(first)
+		if perr != nil {
+			return nil, perr
 		}
-		_, werr := dst.Write(chunk)
-		return werr
+		rec, encErr := streamAuthEncryptTripleCfg(cfg, width, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, plaintext, mac, streamID, chunkPrefix, cumulative, finalFlag)
+		if encErr != nil {
+			return nil, encErr
+		}
+		first = false
+		return rec, nil
 	}
 
 	// The read stage is chunk-budget sized (cs, independent of the
@@ -370,15 +422,15 @@ func EncryptStreamAuth3xCfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSee
 			return rerr
 		}
 		if pending != nil {
-			chunk, encErr := streamAuthEncryptTripleCfg(cfg, width, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, pending, mac, streamID, cumulative, false)
+			rec, encErr := encryptRecord(pending, cumulative, false)
 			if encErr != nil {
 				return encErr
 			}
-			pixels, pxErr := chunkPixelCountCfg(cfg, chunk)
+			pixels, pxErr := chunkPixelCountCfg(cfg, rec[streamIDPrefixLen:])
 			if pxErr != nil {
 				return pxErr
 			}
-			if werr := emitChunk(chunk); werr != nil {
+			if _, werr := dst.Write(rec); werr != nil {
 				return werr
 			}
 			cumulative += pixels
@@ -389,17 +441,19 @@ func EncryptStreamAuth3xCfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSee
 	}
 
 	if pending == nil {
-		chunk, encErr := streamAuthEncryptTripleCfg(cfg, width, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, nil, mac, streamID, 0, true)
+		rec, encErr := encryptRecord(nil, 0, true)
 		if encErr != nil {
 			return encErr
 		}
-		return emitChunk(chunk)
+		_, werr := dst.Write(rec)
+		return werr
 	}
-	chunk, encErr := streamAuthEncryptTripleCfg(cfg, width, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, pending, mac, streamID, cumulative, true)
+	rec, encErr := encryptRecord(pending, cumulative, true)
 	if encErr != nil {
 		return encErr
 	}
-	return emitChunk(chunk)
+	_, werr := dst.Write(rec)
+	return werr
 }
 
 // DecryptStreamAuth3xCfg is the width-less Triple Ouroboros Streaming
@@ -413,29 +467,40 @@ func DecryptStreamAuth3xCfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSee
 		return fmt.Errorf("itb: macFunc must not be nil")
 	}
 
+	// Every record is a 32-byte prefix followed by one chunk: the
+	// streamID ahead of chunk 0, a chunk prefix bound into the chunk's
+	// MAC ahead of every later chunk. A clean end of src on a record
+	// boundary ends the stream; truncation is caught by the final flag.
 	var streamID [streamIDPrefixLen]byte
-	n, perr := io.ReadFull(src, streamID[:])
-	if perr == io.EOF || perr == io.ErrUnexpectedEOF || n != streamIDPrefixLen {
-		return fmt.Errorf("itb: stream too short for stream prefix")
-	}
-	if perr != nil {
+	if perr := readFirstPrefix(src, &streamID); perr != nil {
+		if perr == io.EOF {
+			return fmt.Errorf("itb: stream too short for stream prefix")
+		}
 		return perr
 	}
 
 	var cumulative uint64
 	seenFinal := false
-	for {
-		chunk, cerr := readChunkParseCfg(cfg, src)
-		if cerr == io.EOF {
-			break
+	var prefix [streamIDPrefixLen]byte
+	for first := true; ; first = false {
+		var chunkPrefix []byte
+		if !first {
+			if perr := readChunkPrefix(src, &prefix); perr != nil {
+				if perr == io.EOF {
+					break
+				}
+				return perr
+			}
+			chunkPrefix = prefix[:]
 		}
+		chunk, cerr := readRecordChunkCfg(cfg, src)
 		if cerr != nil {
 			return cerr
 		}
 		if seenFinal {
 			return ErrStreamAfterFinal
 		}
-		plain, finalFlag, decErr := streamAuthDecryptTripleCfg(cfg, width, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, chunk, mac, streamID, cumulative)
+		plain, finalFlag, decErr := streamAuthDecryptTripleCfg(cfg, width, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, chunk, mac, streamID, chunkPrefix, cumulative)
 		if decErr != nil {
 			return decErr
 		}

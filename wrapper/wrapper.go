@@ -97,8 +97,8 @@ func generateNonce(name string) ([]byte, error) {
 //   1. Wrap / Unwrap — Single Message. The whole ITB ciphertext is treated as
 //      one opaque blob. Wire = nonce || keystream-XORed blob. Suitable for
 //      any Single Message Encrypt / EncryptAuth example output, plus the Streaming
-//      AEAD case where the entire wire output (32-byte streamID + every
-//      chunk) is sealed as one blob — the receiver unwraps to recover the
+//      AEAD case where the entire wire output (every byte of the ITB
+//      stream) is sealed as one blob — the receiver unwraps to recover the
 //      raw ITB stream then feeds it to ITB's stream decoder.
 //
 //      WrapInPlace / UnwrapInPlace are no-output-buffer-allocation variants that XOR the

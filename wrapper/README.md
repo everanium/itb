@@ -12,8 +12,8 @@ Companion code for the ITB Quick Start. The examples below layer a thin outer ci
 
 ITB provides **content-deniability** unconditionally — no plaintext bit can be extracted from the wire. The raw wire pattern itself, however, carries structural framing and headers parseable by an observer who knows the ITB specification:
 
-- Non-AEAD path: a 32-byte CSPRNG prefix plus structural dimension and layout framing headers.
-- AEAD path: a 32-byte streamID prefix plus per-chunk framing and deniable termination indicators.
+- Non-AEAD path: a 32-byte CSPRNG prefix ahead of every chunk plus structural dimension and layout framing headers.
+- AEAD path: a 32-byte prefix ahead of every chunk (the streamID ahead of the first) plus per-chunk framing and deniable termination indicators.
 
 A passive observer searching for ITB signatures could identify these wire structures. The format-deniability wrap hides that surface under a generic outer cipher — any PRF-grade ITB registry primitive. After wrapping, the wire is `nonce || keystream-XOR(bytestream)` — the same shape used by standard stream ciphers. An observer sees a leading nonce followed by pseudorandom-looking bytes; pattern-matching does not distinguish ITB from any other stream cipher payload.
 

@@ -7,21 +7,67 @@ import (
 )
 
 // streamIDPrefixLen is the on-wire length of the 32-byte prefix every
-// wire opens with: the CSPRNG-fresh streamID preceding chunk 0 of a
-// Streaming AEAD transcript or of a MAC Authenticated Single Message,
-// and the same-length CSPRNG dummy ahead of the No MAC shapes.
+// chunk travels behind: the CSPRNG-fresh streamID ahead of chunk 0 of
+// a Streaming AEAD transcript or of a MAC Authenticated Single
+// Message, a fresh CSPRNG chunk prefix ahead of every later Streaming
+// AEAD chunk, and a same-length CSPRNG dummy ahead of every No MAC
+// chunk. Every chunk record is therefore
+// [prefix(32)][main nonce][W][H][container], the shape of a Single
+// Message wire.
 const streamIDPrefixLen = 32
 
-// generateStreamID draws a CSPRNG-fresh 32-byte stream anchor that
-// the encoder helper writes once at stream start and reuses across
-// every chunk's MAC input; the MAC Authenticated Single Message
-// entries draw theirs here too and bind it into the one chunk's MAC.
+// generateStreamID draws a CSPRNG-fresh 32-byte value. The Streaming
+// AEAD encoders draw the streamID here once per stream — written ahead
+// of chunk 0 and bound into every chunk's MAC — and a fresh chunk
+// prefix for every later chunk, written ahead of that chunk and bound
+// into its MAC beside the streamID; the MAC Authenticated Single
+// Message entries draw their streamID here too and bind it into the
+// one chunk's MAC.
 func generateStreamID() ([streamIDPrefixLen]byte, error) {
 	var sid [streamIDPrefixLen]byte
 	if _, err := rand.Read(sid[:]); err != nil {
 		return sid, fmt.Errorf("itb: crypto/rand: %w", err)
 	}
 	return sid, nil
+}
+
+// checkChunkPrefix validates the chunkPrefix argument of the per-chunk
+// Streaming AEAD entries: nil or empty selects chunk 0, whose MAC
+// binds the streamID alone; exactly [streamIDPrefixLen] bytes selects
+// a later chunk, whose MAC binds the streamID and the prefix.
+func checkChunkPrefix(chunkPrefix []byte) error {
+	if len(chunkPrefix) != 0 && len(chunkPrefix) != streamIDPrefixLen {
+		return fmt.Errorf("itb: chunkPrefix is %d bytes, want 0 (chunk 0) or %d", len(chunkPrefix), streamIDPrefixLen)
+	}
+	return nil
+}
+
+// drawChunkPrefix returns the chunkPrefix argument for one Streaming
+// AEAD chunk: nil for chunk 0, which travels behind the streamID, and
+// a fresh CSPRNG value for every later chunk. The value is drawn
+// before the chunk is encrypted, so the bytes bound into the MAC and
+// the bytes written ahead of the chunk are the same.
+func drawChunkPrefix(first bool) ([]byte, error) {
+	if first {
+		return nil, nil
+	}
+	p, err := generateStreamID()
+	if err != nil {
+		return nil, err
+	}
+	return p[:], nil
+}
+
+// putChunkPrefix writes the prefix a Streaming AEAD chunk travels
+// behind into the [streamIDPrefixLen] lead bytes reserved ahead of it
+// in rec: the streamID for chunk 0 (chunkPrefix empty), chunkPrefix
+// for every later chunk.
+func putChunkPrefix(rec []byte, streamID [streamIDPrefixLen]byte, chunkPrefix []byte) {
+	if len(chunkPrefix) == 0 {
+		copy(rec[:streamIDPrefixLen], streamID[:])
+		return
+	}
+	copy(rec[:streamIDPrefixLen], chunkPrefix)
 }
 
 // chunkPixelCountCfg reads the W and H header values from a streaming
@@ -73,11 +119,15 @@ func streamFlagByte(finalFlag bool) byte {
 
 // EncryptStreamAuth3x128Cfg mirrors the wide-stream User-Driven Loop
 // encrypt shape for Triple Ouroboros (8-seed) at 128-bit hash width.
-// Generates a fresh 32-byte stream anchor, emits it as the first wire
-// chunk, then loops over data in chunkSize windows calling
-// [EncryptStreamAuthenticated3x128Cfg] per chunk with the running
-// cumulative pixel offset and finalFlag = true on the last chunk. nil
-// cfg falls back to the compile-in defaults.
+// Generates a fresh 32-byte streamID, then loops over data in
+// chunkSize windows producing one [EncryptStreamAuthenticated3x128Cfg]
+// chunk per window with the running cumulative pixel offset and
+// finalFlag = true on the last chunk. Each chunk is emitted in one
+// call together with the 32-byte prefix it travels behind — the
+// streamID on chunk 0, a fresh CSPRNG chunk prefix bound into the
+// chunk's MAC on every later chunk — so every emitted record is
+// [prefix(32)][main nonce][W][H][container], the shape of a Single
+// Message wire. nil cfg falls back to the compile-in defaults.
 func EncryptStreamAuth3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed128, data []byte, chunkSize int, macFunc MACFunc, emit func(chunk []byte) error) error {
 	if err := checkEightSeeds128(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
 		return err
@@ -102,9 +152,6 @@ func EncryptStreamAuth3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, data
 	if err != nil {
 		return err
 	}
-	if err := emit(streamID[:]); err != nil {
-		return err
-	}
 
 	var cumulative uint64
 	for off := 0; off < len(data); off += chunkSize {
@@ -113,15 +160,20 @@ func EncryptStreamAuth3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, data
 			end = len(data)
 		}
 		finalFlag := end == len(data)
-		chunk, chunkErr := EncryptStreamAuthenticated3x128Cfg(cfg, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:end], macFunc, streamID, cumulative, finalFlag)
+		chunkPrefix, chunkErr := drawChunkPrefix(off == 0)
+		if chunkErr != nil {
+			return chunkErr
+		}
+		rec, chunkErr := encryptStreamAuthenticated3x128Cfg(cfg, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:end], macFunc, streamID, chunkPrefix, cumulative, finalFlag, streamIDPrefixLen)
 		if chunkErr != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, chunkErr)
 		}
-		pixels, chunkErr := chunkPixelCountCfg(cfg, chunk)
+		putChunkPrefix(rec, streamID, chunkPrefix)
+		pixels, chunkErr := chunkPixelCountCfg(cfg, rec[streamIDPrefixLen:])
 		if chunkErr != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, chunkErr)
 		}
-		if err := emit(chunk); err != nil {
+		if err := emit(rec); err != nil {
 			return err
 		}
 		cumulative += pixels
@@ -129,7 +181,8 @@ func EncryptStreamAuth3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, data
 	return nil
 }
 
-// DecryptStreamAuth3x128Cfg is the inverse of [EncryptStreamAuth3x128Cfg].
+// DecryptStreamAuth3x128Cfg is the inverse of [EncryptStreamAuth3x128Cfg]:
+// data is the concatenation of the emitted prefix-plus-chunk records.
 func DecryptStreamAuth3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed128, data []byte, macFunc MACFunc, emit func(chunk []byte) error) error {
 	if err := checkEightSeeds128(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
 		return err
@@ -149,19 +202,28 @@ func DecryptStreamAuth3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, data
 
 	var cumulative uint64
 	seenFinal := false
-	for off := streamIDPrefixLen; off < len(data); {
-		chunkLen, err := ParseChunkLenCfg(cfg, data[off:])
+	for off := 0; off < len(data); {
+		if len(data)-off < streamIDPrefixLen {
+			return fmt.Errorf("itb: chunk at offset %d: data too short for chunk prefix", off)
+		}
+		var chunkPrefix []byte
+		if off > 0 {
+			chunkPrefix = data[off : off+streamIDPrefixLen]
+		}
+		body := data[off+streamIDPrefixLen:]
+		chunkLen, err := ParseChunkLenCfg(cfg, body)
 		if err != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
 		}
 		if seenFinal {
 			return ErrStreamAfterFinal
 		}
-		plain, finalFlag, err := DecryptStreamAuthenticated3x128Cfg(cfg, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:off+chunkLen], macFunc, streamID, cumulative)
+		chunk := body[:chunkLen]
+		plain, finalFlag, err := DecryptStreamAuthenticated3x128Cfg(cfg, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, chunk, macFunc, streamID, chunkPrefix, cumulative)
 		if err != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
 		}
-		pixels, err := chunkPixelCountCfg(cfg, data[off:off+chunkLen])
+		pixels, err := chunkPixelCountCfg(cfg, chunk)
 		if err != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
 		}
@@ -172,7 +234,7 @@ func DecryptStreamAuth3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, data
 		if finalFlag {
 			seenFinal = true
 		}
-		off += chunkLen
+		off += streamIDPrefixLen + chunkLen
 	}
 	if !seenFinal {
 		return ErrStreamTruncated
@@ -206,9 +268,6 @@ func EncryptStreamAuth3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, data
 	if err != nil {
 		return err
 	}
-	if err := emit(streamID[:]); err != nil {
-		return err
-	}
 
 	var cumulative uint64
 	for off := 0; off < len(data); off += chunkSize {
@@ -217,15 +276,20 @@ func EncryptStreamAuth3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, data
 			end = len(data)
 		}
 		finalFlag := end == len(data)
-		chunk, chunkErr := EncryptStreamAuthenticated3x256Cfg(cfg, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:end], macFunc, streamID, cumulative, finalFlag)
+		chunkPrefix, chunkErr := drawChunkPrefix(off == 0)
+		if chunkErr != nil {
+			return chunkErr
+		}
+		rec, chunkErr := encryptStreamAuthenticated3x256Cfg(cfg, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:end], macFunc, streamID, chunkPrefix, cumulative, finalFlag, streamIDPrefixLen)
 		if chunkErr != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, chunkErr)
 		}
-		pixels, chunkErr := chunkPixelCountCfg(cfg, chunk)
+		putChunkPrefix(rec, streamID, chunkPrefix)
+		pixels, chunkErr := chunkPixelCountCfg(cfg, rec[streamIDPrefixLen:])
 		if chunkErr != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, chunkErr)
 		}
-		if err := emit(chunk); err != nil {
+		if err := emit(rec); err != nil {
 			return err
 		}
 		cumulative += pixels
@@ -253,19 +317,28 @@ func DecryptStreamAuth3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, data
 
 	var cumulative uint64
 	seenFinal := false
-	for off := streamIDPrefixLen; off < len(data); {
-		chunkLen, err := ParseChunkLenCfg(cfg, data[off:])
+	for off := 0; off < len(data); {
+		if len(data)-off < streamIDPrefixLen {
+			return fmt.Errorf("itb: chunk at offset %d: data too short for chunk prefix", off)
+		}
+		var chunkPrefix []byte
+		if off > 0 {
+			chunkPrefix = data[off : off+streamIDPrefixLen]
+		}
+		body := data[off+streamIDPrefixLen:]
+		chunkLen, err := ParseChunkLenCfg(cfg, body)
 		if err != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
 		}
 		if seenFinal {
 			return ErrStreamAfterFinal
 		}
-		plain, finalFlag, err := DecryptStreamAuthenticated3x256Cfg(cfg, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:off+chunkLen], macFunc, streamID, cumulative)
+		chunk := body[:chunkLen]
+		plain, finalFlag, err := DecryptStreamAuthenticated3x256Cfg(cfg, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, chunk, macFunc, streamID, chunkPrefix, cumulative)
 		if err != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
 		}
-		pixels, err := chunkPixelCountCfg(cfg, data[off:off+chunkLen])
+		pixels, err := chunkPixelCountCfg(cfg, chunk)
 		if err != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
 		}
@@ -276,7 +349,7 @@ func DecryptStreamAuth3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, data
 		if finalFlag {
 			seenFinal = true
 		}
-		off += chunkLen
+		off += streamIDPrefixLen + chunkLen
 	}
 	if !seenFinal {
 		return ErrStreamTruncated
@@ -310,9 +383,6 @@ func EncryptStreamAuth3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, data
 	if err != nil {
 		return err
 	}
-	if err := emit(streamID[:]); err != nil {
-		return err
-	}
 
 	var cumulative uint64
 	for off := 0; off < len(data); off += chunkSize {
@@ -321,15 +391,20 @@ func EncryptStreamAuth3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, data
 			end = len(data)
 		}
 		finalFlag := end == len(data)
-		chunk, chunkErr := EncryptStreamAuthenticated3x512Cfg(cfg, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:end], macFunc, streamID, cumulative, finalFlag)
+		chunkPrefix, chunkErr := drawChunkPrefix(off == 0)
+		if chunkErr != nil {
+			return chunkErr
+		}
+		rec, chunkErr := encryptStreamAuthenticated3x512Cfg(cfg, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:end], macFunc, streamID, chunkPrefix, cumulative, finalFlag, streamIDPrefixLen)
 		if chunkErr != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, chunkErr)
 		}
-		pixels, chunkErr := chunkPixelCountCfg(cfg, chunk)
+		putChunkPrefix(rec, streamID, chunkPrefix)
+		pixels, chunkErr := chunkPixelCountCfg(cfg, rec[streamIDPrefixLen:])
 		if chunkErr != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, chunkErr)
 		}
-		if err := emit(chunk); err != nil {
+		if err := emit(rec); err != nil {
 			return err
 		}
 		cumulative += pixels
@@ -357,19 +432,28 @@ func DecryptStreamAuth3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, data
 
 	var cumulative uint64
 	seenFinal := false
-	for off := streamIDPrefixLen; off < len(data); {
-		chunkLen, err := ParseChunkLenCfg(cfg, data[off:])
+	for off := 0; off < len(data); {
+		if len(data)-off < streamIDPrefixLen {
+			return fmt.Errorf("itb: chunk at offset %d: data too short for chunk prefix", off)
+		}
+		var chunkPrefix []byte
+		if off > 0 {
+			chunkPrefix = data[off : off+streamIDPrefixLen]
+		}
+		body := data[off+streamIDPrefixLen:]
+		chunkLen, err := ParseChunkLenCfg(cfg, body)
 		if err != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
 		}
 		if seenFinal {
 			return ErrStreamAfterFinal
 		}
-		plain, finalFlag, err := DecryptStreamAuthenticated3x512Cfg(cfg, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data[off:off+chunkLen], macFunc, streamID, cumulative)
+		chunk := body[:chunkLen]
+		plain, finalFlag, err := DecryptStreamAuthenticated3x512Cfg(cfg, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, chunk, macFunc, streamID, chunkPrefix, cumulative)
 		if err != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
 		}
-		pixels, err := chunkPixelCountCfg(cfg, data[off:off+chunkLen])
+		pixels, err := chunkPixelCountCfg(cfg, chunk)
 		if err != nil {
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
 		}
@@ -380,7 +464,7 @@ func DecryptStreamAuth3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, data
 		if finalFlag {
 			seenFinal = true
 		}
-		off += chunkLen
+		off += streamIDPrefixLen + chunkLen
 	}
 	if !seenFinal {
 		return ErrStreamTruncated

@@ -64,8 +64,9 @@
 // bytes + 4 bytes for W and H) and validates that the supplied buffer
 // contains the entire announced chunk, reporting the chunk's total
 // length on the wire, letting external streaming consumers walk a
-// concatenated chunk stream one chunk at a time behind the 32-byte
-// stream prefix every wire opens with. The FFI shim reaches
+// concatenated chunk stream one record at a time: every chunk travels
+// behind its own 32-byte prefix, so every record has the shape of a
+// Single Message wire. The FFI shim reaches
 // ITB streaming through the Triple family (see the
 // [github.com/everanium/itb/triple] package); external tooling built
 // directly against libitb3 reads chunk header sizes via the C ABI
@@ -139,9 +140,9 @@
 //
 // # Wire format
 //
-// With the wrapper and parallax layers off, every wire opens with a
-// 32-byte prefix and continues with one or more chunks laid out as
-// main_nonce ‖ W ‖ H ‖ pixel_container. Two
+// With the wrapper and parallax layers off, every wire is one or more
+// chunk records, each a 32-byte prefix followed by one chunk laid out
+// as main_nonce ‖ W ‖ H ‖ pixel_container. Two
 // nonces are drawn independently from crypto/rand on each call (N =
 // 16 / 32 / 64 bytes for 128 / 256 / 512-bit nonce respectively): the
 // main nonce heads each chunk, while the interlock nonce is split into
@@ -149,14 +150,17 @@
 // inside the container. W and H are unsigned 16-bit big-endian
 // container dimensions; the pixel container carries the RGBWYOPA
 // payload routed through the Interlocked Barrier. The byte layout of
-// each chunk is identical across all three hash width variants. The
-// prefix is the CSPRNG streamID the MAC Authenticated paths bind into
-// every chunk's MAC, and a CSPRNG dummy of the same length on the No
-// MAC paths; a Single Message wire is the prefix followed by exactly
-// one chunk, so it is byte-shape identical to a one-chunk stream and
-// the Low-Level Single Message functions, the Low-Level streaming
-// functions and the high-level [github.com/everanium/itb/triple.Pipeline]
-// with the wrapper and parallax layers off all emit one shape. See
+// each chunk is identical across all three hash width variants. On the
+// MAC Authenticated paths the prefix of the first record is the CSPRNG
+// streamID, bound into every chunk's MAC, and the prefix of every later
+// record is a fresh CSPRNG value bound into that chunk's MAC beside the
+// streamID; on the No MAC paths every prefix is a CSPRNG dummy of the
+// same length. A Single Message wire is exactly one record, so every
+// chunk record has the same shape as a Single Message wire, a Single
+// Message wire is byte-shape identical to a one-chunk stream, and the
+// Low-Level Single Message functions, the Low-Level streaming functions
+// and the high-level [github.com/everanium/itb/triple.Pipeline] with
+// the wrapper and parallax layers off all emit one record shape. See
 // README.md for the offset-level table.
 //
 // # Concurrency

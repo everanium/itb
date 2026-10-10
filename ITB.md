@@ -339,7 +339,7 @@ Together, non-invertibility blocks inversion, and the barrier absorbs primitive 
 
 Decryption with an incorrect seed constellation produces uniform random bytes with no distinguishing signal:
 
-- **No magic bytes or file headers:** Wire containers consist solely of `[prefix(32)][main_nonce][W][H][container]`, the prefix being CSPRNG output.
+- **No magic bytes or file headers:** Wire containers consist solely of `[prefix(32)][main_nonce][W][H][container]` records — one for a Single Message, one per chunk for a stream, every chunk having the same record shape as a Single Message wire — each prefix being CSPRNG output.
 - **No plaintext length header:** Length metadata is encrypted inside the container across chunk boundaries.
 - **Encrypted null terminator:** COBS termination is hidden within the ciphertext.
 - **No padding:** Rotation and XOR masking provide confidentiality without padding markers.

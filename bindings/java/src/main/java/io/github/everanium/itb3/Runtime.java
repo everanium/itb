@@ -11,7 +11,7 @@ import java.nio.ByteOrder;
 public final class Runtime {
 
     /** The binding's own version. */
-    public static final String BINDING_VERSION = "0.5.1";
+    public static final String BINDING_VERSION = "0.5.5";
 
     private Runtime() {
     }
