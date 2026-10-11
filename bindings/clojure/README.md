@@ -93,7 +93,7 @@ any `key=value` pair through verbatim). The blob the receiver loads
 carries the resolved shape, so `load` takes no opts:
 
 ```clojure
-(let [opts {:chunk-size 65536 :wrapper? false}]
+(let [opts {:mode 2 :chunk-size 65536 :wrapper? false}]
   (with-open [sender (itb/init "singlemsg-triple-mac-v1" opts)]
     (with-open [receiver (itb/load (itb/save sender))]
       ...)))

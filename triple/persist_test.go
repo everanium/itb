@@ -1457,3 +1457,115 @@ func TestDRBGEveryArmRoundTrip(t *testing.T) {
 		rx.Close()
 	}
 }
+
+// TestInitOptsMode tests container floor sizing mode selection via triple.Opts.Mode at Init.
+func TestInitOptsMode(t *testing.T) {
+	// Mode 0 defers to default (mode 1)
+	pipe0, blob0, err := Init(ProfileSingleMsgTripleMACV1, Opts{Mode: 0})
+	if err != nil {
+		t.Fatalf("Init(Mode: 0): %v", err)
+	}
+	defer pipe0.Close()
+	if pipe0.cfg.Mode != 1 {
+		t.Fatalf("pipe0.cfg.Mode = %d, want 1", pipe0.cfg.Mode)
+	}
+	rec0, err := Inspect(blob0)
+	if err != nil {
+		t.Fatalf("Inspect blob0: %v", err)
+	}
+	if rec0.ContainerMode != 1 {
+		t.Fatalf("rec0.ContainerMode = %d, want 1", rec0.ContainerMode)
+	}
+
+	// Mode 1 explicit
+	pipe1, blob1, err := Init(ProfileSingleMsgTripleMACV1, Opts{Mode: 1})
+	if err != nil {
+		t.Fatalf("Init(Mode: 1): %v", err)
+	}
+	defer pipe1.Close()
+	if pipe1.cfg.Mode != 1 {
+		t.Fatalf("pipe1.cfg.Mode = %d, want 1", pipe1.cfg.Mode)
+	}
+	rec1, err := Inspect(blob1)
+	if err != nil {
+		t.Fatalf("Inspect blob1: %v", err)
+	}
+	if rec1.ContainerMode != 1 {
+		t.Fatalf("rec1.ContainerMode = %d, want 1", rec1.ContainerMode)
+	}
+
+	// Mode 2 explicit (per-container compact sizing)
+	pipe2, blob2, err := Init(ProfileSingleMsgTripleMACV1, Opts{Mode: 2})
+	if err != nil {
+		t.Fatalf("Init(Mode: 2): %v", err)
+	}
+	defer pipe2.Close()
+	if pipe2.cfg.Mode != 2 {
+		t.Fatalf("pipe2.cfg.Mode = %d, want 2", pipe2.cfg.Mode)
+	}
+	rec2, err := Inspect(blob2)
+	if err != nil {
+		t.Fatalf("Inspect blob2: %v", err)
+	}
+	if rec2.ContainerMode != 2 {
+		t.Fatalf("rec2.ContainerMode = %d, want 2", rec2.ContainerMode)
+	}
+
+	// Load mode 2 blob reproduces mode 2
+	pipe2Loaded, err := Load(blob2)
+	if err != nil {
+		t.Fatalf("Load(blob2): %v", err)
+	}
+	defer pipe2Loaded.Close()
+	if pipe2Loaded.cfg.Mode != 2 {
+		t.Fatalf("pipe2Loaded.cfg.Mode = %d, want 2", pipe2Loaded.cfg.Mode)
+	}
+
+	// Save preserves mode 2
+	savedBlob2 := pipe2Loaded.Save()
+	recSaved2, err := Inspect(savedBlob2)
+	if err != nil {
+		t.Fatalf("Inspect(savedBlob2): %v", err)
+	}
+	if recSaved2.ContainerMode != 2 {
+		t.Fatalf("recSaved2.ContainerMode = %d, want 2", recSaved2.ContainerMode)
+	}
+
+	// Message round-trip under Mode 2
+	msg := []byte("hello mode 2 compact container")
+	ciphertext2, err := pipe2.EncryptMessage(msg)
+	if err != nil {
+		t.Fatalf("pipe2.EncryptMessage: %v", err)
+	}
+	plaintext2, err := pipe2Loaded.DecryptMessage(ciphertext2)
+	if err != nil {
+		t.Fatalf("pipe2Loaded.DecryptMessage: %v", err)
+	}
+	if !bytes.Equal(plaintext2, msg) {
+		t.Fatalf("decrypted %q != original %q", plaintext2, msg)
+	}
+
+	// Rekey preserves mode 2
+	rekeyedBlob2, err := pipe2Loaded.Rekey(freshBytes(t, 32), freshBytes(t, 32))
+	if err != nil {
+		t.Fatalf("Rekey(pipe2Loaded): %v", err)
+	}
+	recRekeyed2, err := Inspect(rekeyedBlob2)
+	if err != nil {
+		t.Fatalf("Inspect(rekeyedBlob2): %v", err)
+	}
+	if recRekeyed2.ContainerMode != 2 {
+		t.Fatalf("recRekeyed2.ContainerMode = %d, want 2", recRekeyed2.ContainerMode)
+	}
+
+	// Out-of-range mode rejected fail-fast
+	for _, badMode := range []int{-1, 3, 99} {
+		_, _, err := Init(ProfileSingleMsgTripleMACV1, Opts{Mode: badMode})
+		if err == nil {
+			t.Fatalf("Init(Mode: %d) unexpectedly succeeded", badMode)
+		}
+		if !strings.Contains(err.Error(), "must be 0 or one of {1, 2}") {
+			t.Fatalf("Init(Mode: %d) error = %q, want message containing 'must be 0 or one of {1, 2}'", badMode, err.Error())
+		}
+	}
+}

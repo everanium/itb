@@ -70,8 +70,9 @@ func resolveTriple(id TripleHandleID) (h *TripleHandle, st Status) {
 //   - wm        — hex-encoded wrapper master (WrapMaster).
 //   - withParallax / withWrapper — "true" / "false" three-state
 //     override; absent = nil (profile default).
-//   - maxWorkers, nonceBits, barrierFill, chunkSize, keyBits,
+//   - mode, maxWorkers, nonceBits, barrierFill, chunkSize, keyBits,
 //     parallaxSegmentSize, tagStubSize — decimal integer overrides.
+//     mode sets container floor sizing mode (0 = default Mode 1 per-region, 1 = per-region, 2 = per-container);
 //     maxWorkers is clamped by [triple.Init] (n ≤ 0 → auto, n > 256
 //     → 256), never rejected. tagStubSize overrides the profile's No MAC stub reservation
 //     size (see [triple.Opts.TagStubSize]); accepted values are 0
@@ -138,6 +139,17 @@ func parseTripleOpts(query string) (triple.Opts, error) {
 				return opts, fmt.Errorf("opts maxWorkers: %w", ierr)
 			}
 			opts.MaxWorkers = n
+		case "mode":
+			n, ierr := strconv.Atoi(v)
+			if ierr != nil {
+				return opts, fmt.Errorf("opts mode: %w", ierr)
+			}
+			switch n {
+			case 0, 1, 2:
+			default:
+				return opts, fmt.Errorf("opts mode=%d must be 0 or one of {1, 2}", n)
+			}
+			opts.Mode = n
 		case "nonceBits":
 			n, ierr := strconv.Atoi(v)
 			if ierr != nil {

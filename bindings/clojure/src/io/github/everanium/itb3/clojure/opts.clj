@@ -11,6 +11,7 @@
 
   Recognised keys:
 
+    :mode                   long — container floor sizing mode: 1 (per-region, default) | 2 (per-container)
     :perm-master            byte array — parallax master override
     :wrap-master            byte array — wrapper master override
     :parallax?              boolean
@@ -54,6 +55,7 @@
   (let [o (Opts.)]
     (doseq [[k v] m]
       (case k
+        :mode (.withMode o (long v))
         :perm-master (.withPermMaster o ^bytes v)
         :wrap-master (.withWrapMaster o ^bytes v)
         :parallax? (.withParallax o (boolean v))

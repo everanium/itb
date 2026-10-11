@@ -42,9 +42,6 @@ Imports System.Diagnostics
 Imports System.Globalization
 Imports System.IO
 Imports System.Runtime.InteropServices
-Imports System.Text.Encodings.Web
-Imports System.Text.Json
-Imports System.Text.Json.Nodes
 Imports System.Threading
 Imports Everanium.Itb3.VisualBasic
 
@@ -814,32 +811,6 @@ Friend Module Program
                 If(String.IsNullOrEmpty(rec.Drbg), "", " drbg=" & rec.Drbg))
     End Sub
 
-    ''' <summary>Returns a copy of a wrap-layer session blob whose inner
-    ''' blob ("ib") carries the given container floor sizing mode
-    ''' (1 = per-region, 2 = per-container). The wrap layer's profile
-    ''' record carries its own "mode" (a string), so only the inner
-    ''' blob's integer field is set; no key is added, integers keep
-    ''' their literals, and strings are written without escaping the
-    ''' base64 alphabet.</summary>
-    Private Function SetInnerBlobMode(blob As Byte(), mode As Integer) As Byte()
-        Dim root As JsonObject = TryCast(JsonNode.Parse(blob), JsonObject)
-        If root Is Nothing Then
-            Throw New FormatException("session blob is not a JSON object")
-        End If
-        Dim ib As JsonObject = TryCast(root("ib"), JsonObject)
-        If ib Is Nothing OrElse Not ib.ContainsKey("mode") Then
-            Throw New FormatException("inner blob mode field not found")
-        End If
-        ib("mode") = JsonValue.Create(mode)
-        Using buf As New MemoryStream()
-            Using w As New Utf8JsonWriter(buf, New JsonWriterOptions With {
-                    .Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping})
-                root.WriteTo(w)
-            End Using
-            Return buf.ToArray()
-        End Using
-    End Function
-
     Private Function Dash(s As String) As String
         Return If(String.IsNullOrEmpty(s), "-", s)
     End Function
@@ -854,6 +825,7 @@ Friend Module Program
     Private Function BuildPipeline(cfg As Config, profile As String,
                                    ByRef pipe As Pipeline, ByRef blob As Byte()) As Boolean
         Dim opts As Opts = New Opts().
+            WithMode(cfg.BlobMode).
             WithInnerHash(cfg.Hash).
             WithMacName(cfg.Mac).
             WithParallax(cfg.Parallax).
@@ -890,26 +862,6 @@ Friend Module Program
             pipe.Dispose()
             Return False
         End Try
-
-        If cfg.BlobMode = 2 Then
-            ' The sizing mode is not an Opts knob: the Init blob is edited
-            ' and the pipeline reopened from it, so the retained blob (the
-            ' one blob-cycle reopens from) carries the edited mode.
-            pipe.Dispose()
-            pipe = Nothing
-            Try
-                blob = SetInnerBlobMode(blob, 2)
-            Catch ex As Exception
-                Console.Error.WriteLine("loop: rewrite blob mode: " & ex.Message)
-                Return False
-            End Try
-            Try
-                pipe = Pipeline.Load(blob)
-            Catch ex As Exception
-                Console.Error.WriteLine("loop: reload Mode 2 blob: " & Detail(ex))
-                Return False
-            End Try
-        End If
 
         LogPipelineInitialised(profile, blob)
         Return True

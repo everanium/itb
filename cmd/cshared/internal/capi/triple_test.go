@@ -907,3 +907,57 @@ func TestTripleDRBGRecipeCapi(t *testing.T) {
 		t.Fatalf("LastError %q does not name the token", LastError())
 	}
 }
+
+// TestTripleInitModeCapi covers the mode key in the opts query string.
+func TestTripleInitModeCapi(t *testing.T) {
+	blobBuf := make([]byte, 1<<15)
+
+	// mode=2 succeeds and inspect surfaces container_mode = 2
+	id, blobLen, st := TripleInit(triple.ProfileSingleMsgTripleMACV1, "mode=2", blobBuf)
+	if st != StatusOK {
+		t.Fatalf("TripleInit(mode=2): %v (%s)", st, LastError())
+	}
+	defer FreeTriple(id)
+
+	out := make([]byte, 4096)
+	n, st := TripleInspect(blobBuf[:blobLen], out)
+	if st != StatusOK {
+		t.Fatalf("TripleInspect: %v (%s)", st, LastError())
+	}
+	var probe struct {
+		ContainerMode int `json:"container_mode"`
+	}
+	if err := json.Unmarshal(out[:n], &probe); err != nil {
+		t.Fatalf("TripleInspect decode: %v", err)
+	}
+	if probe.ContainerMode != 2 {
+		t.Fatalf("container_mode = %d, want 2", probe.ContainerMode)
+	}
+
+	// Reopen via TripleLoad
+	rID, st := TripleLoad(blobBuf[:blobLen])
+	if st != StatusOK {
+		t.Fatalf("TripleLoad: %v (%s)", st, LastError())
+	}
+	defer FreeTriple(rID)
+
+	// Encrypt under id, decrypt under rID
+	plain := []byte("mode 2 capi round trip")
+	wire := make([]byte, 1<<16)
+	wn, st := TripleEncryptMessage(id, plain, wire)
+	if st != StatusOK {
+		t.Fatalf("TripleEncryptMessage: %v (%s)", st, LastError())
+	}
+	got := make([]byte, 1<<16)
+	gn, st := TripleDecryptMessage(rID, wire[:wn], got)
+	if st != StatusOK || !bytes.Equal(got[:gn], plain) {
+		t.Fatalf("TripleDecryptMessage: %v (%s)", st, LastError())
+	}
+
+	// Invalid modes return StatusBadInput
+	for _, bad := range []string{"mode=3", "mode=-1", "mode=abc"} {
+		if _, _, st := TripleInit(triple.ProfileSingleMsgTripleMACV1, bad, blobBuf); st != StatusBadInput {
+			t.Fatalf("TripleInit(%q): %v, want StatusBadInput (%s)", bad, st, LastError())
+		}
+	}
+}

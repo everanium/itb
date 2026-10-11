@@ -37,6 +37,9 @@ module Opts =
 
     let private boolStr (on: bool) : string = if on then "true" else "false"
 
+    /// Container floor sizing mode: 1 (per-region, default) | 2 (per-container).
+    let withMode (n: int64) (opts: Opts) : Opts = withRaw "mode" (string n) opts
+
     /// Hex-encodes the parallax master override (<c>pm</c>).
     let withPermMaster (master: byte[]) (opts: Opts) : Opts = withRaw "pm" (hex master) opts
 

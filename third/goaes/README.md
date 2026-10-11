@@ -2,7 +2,7 @@
 
 This directory is an in-module copy of a subset of
 [`github.com/jedisct1/go-aes`](https://github.com/jedisct1/go-aes) at
-**v0.1.1 (commit 8feea7e4)**, with one patch applied. The package name is
+**v0.1.1 (commit 8feea7e4)**, with two patches applied. The package name is
 `aes`, as upstream; the import path is `github.com/everanium/itb/third/goaes`.
 The copy is a package of this module rather than a `replace` directive
 because a `replace` in a library's `go.mod` is ignored by every consumer of
@@ -50,7 +50,8 @@ removed.
   `vaes_other.go`, `armcrypto_arm64.go` / `armcrypto_arm64.s`,
   `armcrypto_parallel_arm64.go` / `armcrypto_parallel_arm64.s`.
 - Upstream tests for the kept code: `aes_test.go`, `parallel_test.go`,
-  `areion_test.go` (with the patch's new tests).
+  `areion_test.go` (with the patch's new tests), and `areion_hw_test.go`
+  (the assembly-versus-software tests, split out by the portability patch).
 
 Left out: Deoxys, Haraka, Pholkos, Vistrutah, KIASU, ButterKnife, the AES
 PRF, the multi-round layer (`multirounds*`), `examples/`, `bench.sh`,
@@ -67,11 +68,29 @@ upstream when needed.
 
 ## Re-deriving the copy
 
-    v0.1.1 subset (files listed above, with the cut) + patches/soem22.patch
+    v0.1.1 subset (files listed above, with the cut)
+      + patches/soem22.patch
+      + patches/portable.patch
 
-`patches/soem22.patch` is the exact diff applied; `git apply` it on the
-subset base to reproduce this directory. The patch touches only
+Each patch is the exact diff applied; `git apply` them in this order on the
+subset base to reproduce this directory. `soem22.patch` touches only
 `areion*.go`, `areion_amd64.s`, `areion_arm64.s` and `areion_test.go`.
+
+`portable.patch` makes the package build and run correctly on every
+architecture, with no change to any output:
+
+- Upstream builds only on amd64 and arm64 unless `-tags purego` is given,
+  because `areion_hw.go` references assembly entry points that exist on
+  those two architectures alone. Its build constraint becomes
+  `(amd64 || arm64) && !purego`, and `areion_purego.go` becomes the build
+  everywhere else. The assembly-versus-software tests move to
+  `areion_hw_test.go` under the same constraint as `areion_hw.go`.
+- `AddRoundKey` and `XorBlock` / `XorBlock2` / `XorBlock4` dereferenced
+  byte-array blocks as `uint64` words, and the key expansion did the same
+  with `uint32` words. Byte arrays carry no alignment, and targets without
+  unaligned access must not see such a dereference. The XORs now load and
+  store through `encoding/binary`; the key expansion keeps native byte order
+  through `binary.NativeEndian`, so its layout is unchanged.
 
 ## Notes
 
@@ -79,6 +98,6 @@ subset base to reproduce this directory. The patch touches only
   package's own dispatch (`CPU.HasAESNI`, `CPU.HasARMCrypto`, `CPU.HasVAES`,
   …). ITB's own kernel dispatch does not read these; it uses
   `internal/cpuid`.
-- The upstream test file `areion_test.go` references the assembly entry
-  points directly and therefore does not build under `-tags purego`
-  (upstream behaves the same); the package itself builds under `purego`.
+- The tests build under `-tags purego` and on every architecture; the
+  assembly-versus-software tests in `areion_hw_test.go` build only where the
+  assembly exists.

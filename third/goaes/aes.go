@@ -1,6 +1,9 @@
 package aes
 
-import "unsafe"
+import (
+	"encoding/binary"
+	"unsafe"
+)
 
 // Block represents a 128-bit AES block (16 bytes)
 type Block [16]byte
@@ -168,10 +171,7 @@ func InvMixColumns(block *Block) {
 
 // AddRoundKey XORs the block with the round key.
 func AddRoundKey(block *Block, roundKey *Block) {
-	b := (*[2]uint64)(unsafe.Pointer(block))
-	k := (*[2]uint64)(unsafe.Pointer(roundKey))
-	b[0] ^= k[0]
-	b[1] ^= k[1]
+	xor16((*[16]byte)(block), (*[16]byte)(block), (*[16]byte)(roundKey))
 }
 
 // Round performs SubBytes, ShiftRows, MixColumns, AddRoundKey.
@@ -262,35 +262,29 @@ func InvFinalRoundNoKey(block *Block) {
 
 // XorBlock computes dst = a XOR b.
 func XorBlock(dst, a, b *Block) {
-	aPtr := (*[2]uint64)(unsafe.Pointer(a))
-	bPtr := (*[2]uint64)(unsafe.Pointer(b))
-	dstPtr := (*[2]uint64)(unsafe.Pointer(dst))
-	dstPtr[0] = aPtr[0] ^ bPtr[0]
-	dstPtr[1] = aPtr[1] ^ bPtr[1]
+	xor16((*[16]byte)(dst), (*[16]byte)(a), (*[16]byte)(b))
 }
 
 // XorBlock2 computes dst = a XOR b for Block2.
 func XorBlock2(dst, a, b *Block2) {
-	aPtr := (*[4]uint64)(unsafe.Pointer(a))
-	bPtr := (*[4]uint64)(unsafe.Pointer(b))
-	dstPtr := (*[4]uint64)(unsafe.Pointer(dst))
-	dstPtr[0] = aPtr[0] ^ bPtr[0]
-	dstPtr[1] = aPtr[1] ^ bPtr[1]
-	dstPtr[2] = aPtr[2] ^ bPtr[2]
-	dstPtr[3] = aPtr[3] ^ bPtr[3]
+	xor16((*[16]byte)(dst[0:16]), (*[16]byte)(a[0:16]), (*[16]byte)(b[0:16]))
+	xor16((*[16]byte)(dst[16:32]), (*[16]byte)(a[16:32]), (*[16]byte)(b[16:32]))
 }
 
 // XorBlock4 computes dst = a XOR b for Block4.
 func XorBlock4(dst, a, b *Block4) {
-	aPtr := (*[8]uint64)(unsafe.Pointer(a))
-	bPtr := (*[8]uint64)(unsafe.Pointer(b))
-	dstPtr := (*[8]uint64)(unsafe.Pointer(dst))
-	dstPtr[0] = aPtr[0] ^ bPtr[0]
-	dstPtr[1] = aPtr[1] ^ bPtr[1]
-	dstPtr[2] = aPtr[2] ^ bPtr[2]
-	dstPtr[3] = aPtr[3] ^ bPtr[3]
-	dstPtr[4] = aPtr[4] ^ bPtr[4]
-	dstPtr[5] = aPtr[5] ^ bPtr[5]
-	dstPtr[6] = aPtr[6] ^ bPtr[6]
-	dstPtr[7] = aPtr[7] ^ bPtr[7]
+	xor16((*[16]byte)(dst[0:16]), (*[16]byte)(a[0:16]), (*[16]byte)(b[0:16]))
+	xor16((*[16]byte)(dst[16:32]), (*[16]byte)(a[16:32]), (*[16]byte)(b[16:32]))
+	xor16((*[16]byte)(dst[32:48]), (*[16]byte)(a[32:48]), (*[16]byte)(b[32:48]))
+	xor16((*[16]byte)(dst[48:64]), (*[16]byte)(a[48:64]), (*[16]byte)(b[48:64]))
+}
+
+// xor16 sets dst = a ⊕ b for one 16-byte block. The 64-bit loads go through
+// encoding/binary, so the operands need no alignment: byte-array blocks carry
+// none, and targets without unaligned 64-bit access must not see a uint64
+// dereference of them.
+func xor16(dst, a, b *[16]byte) {
+	le := binary.LittleEndian
+	le.PutUint64(dst[0:8], le.Uint64(a[0:8])^le.Uint64(b[0:8]))
+	le.PutUint64(dst[8:16], le.Uint64(a[8:16])^le.Uint64(b[8:16]))
 }

@@ -71,23 +71,28 @@ let ``inspect carries the runtime globals, lookup does not`` () =
     // barrier fill margin, and inspect surfaces both.
     (use pipe = unwrap (Pipeline.init "streaming-aead-triple-mac-v1" Opts.empty)
      let prof = unwrap (Pipeline.inspect (unwrap (Pipeline.save pipe)))
+     Assert.Equal(System.Nullable 1, prof.ContainerMode)
      Assert.Equal(System.Nullable 512, prof.NonceBits)
      Assert.Equal(System.Nullable 1, prof.BarrierFill))
 
     // Per-Pipeline overrides travel through the blob into inspect.
-    let opts = Opts.empty |> Opts.withNonceBits 256L |> Opts.withBarrierFill 4L
+    let opts = Opts.empty |> Opts.withMode 2L |> Opts.withNonceBits 256L |> Opts.withBarrierFill 4L
     (use pipe = unwrap (Pipeline.init "streaming-aead-triple-mac-v1" opts)
      let prof = unwrap (Pipeline.inspect (unwrap (Pipeline.save pipe)))
+     Assert.Equal(System.Nullable 2, prof.ContainerMode)
      Assert.Equal(System.Nullable 256, prof.NonceBits)
      Assert.Equal(System.Nullable 4, prof.BarrierFill)
+     Assert.Contains("\"container_mode\":2", prof.ToJson())
      Assert.Contains("\"nonce_bits\":256", prof.ToJson())
      Assert.Contains("\"barrier_fill\":4", prof.ToJson()))
 
     // The registry entry is the recipe alone — neither field is part
     // of it, so both read as absent rather than as zero.
     let registry = unwrap (Pipeline.lookup "streaming-aead-triple-mac-v1")
+    Assert.False registry.ContainerMode.HasValue
     Assert.False registry.NonceBits.HasValue
     Assert.False registry.BarrierFill.HasValue
+    Assert.DoesNotContain("container_mode", registry.ToJson())
     Assert.DoesNotContain("nonce_bits", registry.ToJson())
     Assert.DoesNotContain("barrier_fill", registry.ToJson())
 

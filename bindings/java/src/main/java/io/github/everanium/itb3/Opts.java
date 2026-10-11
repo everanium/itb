@@ -20,6 +20,11 @@ public final class Opts {
 
     private final List<String> pairs = new ArrayList<>();
 
+    /** Overrides the container floor sizing mode: 1 (per-region, default) or 2 (per-container compact). */
+    public Opts withMode(long n) {
+        return withRaw("mode", Long.toString(n));
+    }
+
     /** Hex-encodes the parallax master override ({@code pm}). */
     public Opts withPermMaster(byte[] master) {
         return withRaw("pm", hex(master));

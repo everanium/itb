@@ -99,7 +99,7 @@ cap) as a plain `key => value` array. The resolved shape is written
 into the blob, so the receiver loads it with no opts of its own:
 
 ```php
-$opts = ['chunkSize' => 65536, 'withWrapper' => false];
+$opts = ['mode' => 2, 'chunkSize' => 65536, 'withWrapper' => false];
 $sender = Itb::create('singlemsg-triple-mac-v1', $opts);
 $receiver = Itb::load($sender->save());
 ```

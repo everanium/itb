@@ -95,7 +95,7 @@ palette, `MaxWorkers`); the blob the receiver loads carries the
 resolved shape, so `Load` takes no opts:
 
 ```vb
-Dim opts As Opts = New Opts().WithChunkSize(65536).WithWrapper(False)
+Dim opts As Opts = New Opts().WithMode(2).WithChunkSize(65536).WithWrapper(False)
 Using sender As Pipeline = Pipeline.Init("singlemsg-triple-mac-v1", opts)
     Using receiver As Pipeline = Pipeline.Load(sender.Save())
         ' ...

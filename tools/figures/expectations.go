@@ -281,8 +281,8 @@ func Registry(f *Figures) []Expectation {
 		expect("PROOFS.md", `^\| 16 KB \| `+num+` \| `+num+` bytes \|$`, w("s_16KiB", plain(s16k.Side-1)), w("residue_16KiB", plain(s16k.Residue))),
 		expect("PROOFS.md", `^\| 1 MB \| `+num+` \| `+num+` bytes \|$`, w("s_1MiB", plain(s1m.Side-1)), w("residue_1MiB", comma(s1m.Residue))),
 		expect("PROOFS.md", `^\| 64 MB \| `+num+` \| `+num+` bytes \|$`, w("s_64MiB", comma(s64m.Side-1)), w("residue_64MiB", comma(s64m.Residue))),
-		expect("PROOFS.md", `^- A = C\(48, 16\) = \*\*`+num+`\*\* \(log₂ ≈ `+dec+`\)`, w("A", comma(int(f.A.Int64()))), w("log2_A", fixed(f.Log2A, 2))),
-		expect("PROOFS.md", `^- B = C\(32, 16\) = \*\*`+num+`\*\* \(log₂ ≈ `+dec+`\)`, w("B", comma(int(f.B.Int64()))), w("log2_B", fixed(f.Log2B, 2))),
+		expect("PROOFS.md", `^- A = C\(48, 16\) = \*\*`+num+`\*\* \(log₂ ≈ `+dec+`\)`, w("A", commaBig(f.A)), w("log2_A", fixed(f.Log2A, 2))),
+		expect("PROOFS.md", `^- B = C\(32, 16\) = \*\*`+num+`\*\* \(log₂ ≈ `+dec+`\)`, w("B", commaBig(f.B)), w("log2_B", fixed(f.Log2B, 2))),
 		expect("PROOFS.md", `^\|Ω_chunk\| = A · B = `+num+`\s+≈\s+`+p2d+` \.$`, w("AB", commaBig(f.AB)), w("log2_AB", "2^"+log2AB)),
 		expect("PROOFS.md", `^gcd\(A, B\) = gcd\(C\(48, 16\), C\(32, 16\)\) = `+num+` = (.+) \.$`, w("gcd", plain(gcd)), w("gcd_factors", f.GCDFactors)),
 		expect("PROOFS.md", `cardinality .A · B / d = A · B / `+num+`.\..*\(1 − 1/`+num+`\)`, w("gcd", plain(gcd)), w("gcd", plain(gcd))),
@@ -402,11 +402,10 @@ func Registry(f *Figures) []Expectation {
 	}
 	add(
 		expect("README.md", "The on-wire header `\\[main_nonce\\]\\[W\\]\\[H\\]` following the "+num+"-byte prefix", w("prefix", plain(f.Prefix))),
-		expect("README.md", `^\| Storage overhead \| ~`+dec+`-`+dec+`× from ~10 KB to 64 MiB at 1024-bit keys \(~`+num+`-`+num+`× Mode 1 / ~`+dec+`-`+num+`× Mode 2 for 0\.5-2\.5 KB payloads; Mode 1 ciphertext floor ~`+dec+`KB at 1024-bit keys, ~`+dec+`KB at 512-bit; Mode 2 compact VPN floor ~`+dec+`KB at 1024-bit, ~`+dec+`KB at 512-bit\) \|$`,
+		expect("README.md", `^\| Storage overhead \| ~`+dec+`-`+dec+`× from ~10 KB to 64 MiB at 1024-bit keys \(~`+num+`-`+num+`× Mode 1 / ~`+dec+`-`+num+`× Mode 2 for 0\.5-2\.5 KB payloads\) \|$`,
 			w("expansion_min_10KB_64MiB", expansionMin), w("expansion_max_10KB_64MiB", fixed(f.ExpansionMax, 2)),
 			w("expansion_m1_2500B", ex(a.Wire, 2500, 0)), w("expansion_m1_500B", ex(a.Wire, 500, 0)),
-			w("expansion_m2_2500B", ex(b.Wire, 2500, 1)), w("expansion_m2_500B", ex(b.Wire, 500, 0)),
-			w("m1_wire_kb", kb(a.Wire)), w("m1_wire_kb_512", kb(m1[512].Wire)), w("m2_wire_kb", kb(b.Wire)), w("m2_wire_kb_512", kb(m2[512].Wire))),
+			w("expansion_m2_2500B", ex(b.Wire, 2500, 1)), w("expansion_m2_500B", ex(b.Wire, 500, 0))),
 		expect("README.md", `^\| Key space \| Up to `+p2+` \|$`, w("max_key_space", pow2(itb.MaxKeyBits))),
 		expect("README.md", `deterministic two-step divmod unranking prevents the gcd\(A, B\) = `+num+` anti-collapse trap`, w("gcd", comma(gcd))),
 		expect("README.md", `^    ChunkSize: 1 << 20,\s+// 1 MiB \(default `+num+` MiB per profile\)`, w("default_chunk_mib", plain(f.DefaultChunkSize>>20))),
@@ -421,7 +420,7 @@ func Registry(f *Figures) []Expectation {
 			w("m1_side_512", plain(m1[512].Side)), w("m1_side_512", plain(m1[512].Side)), w("m1_P_512", plain(m1[512].P))),
 		expect("FAQ.md", `same 512-byte plaintext / `+num+`×`+num+` container as Question 1`, w("m1_side_512", plain(m1[512].Side)), w("m1_side_512", plain(m1[512].Side))),
 		expect("FAQ.md", `where .B = C\(32, 16\) = `+num+`. and .A = C\(48, 16\) = `+num+`.\..*because .gcd\(A, B\) = `+num+`., evaluating both indices directly as .rank mod A. and .rank mod B. would restrict reachable pairs to a `+num+`× smaller subspace \(~`+dec+` bits lost\)`,
-			w("B", comma(int(f.B.Int64()))), w("A", comma(int(f.A.Int64()))), w("gcd", comma(gcd)), w("gcd", plain(gcd)), w("log2_gcd", fixed(f.Log2GCD, 2))),
+			w("B", commaBig(f.B)), w("A", commaBig(f.A)), w("gcd", comma(gcd)), w("gcd", plain(gcd)), w("log2_gcd", fixed(f.Log2GCD, 2))),
 		expect("FAQ.md", `mapping .2\^128. rank values into .`+p2d+`. mask triples`, w("log2_AB", "2^"+log2AB)),
 		expect("FAQ.md", `the attacker gets 48 constraints on .≈ `+p2d+`. candidate masks — approximately .`+p2+`. masks remain consistent`,
 			w("log2_AB", "2^"+log2AB), w("masks_per_crib", "2^"+fixed(math.Floor(f.Log2AB-48), 0))),
@@ -431,7 +430,7 @@ func Registry(f *Figures) []Expectation {
 
 	// ----- REDTEAM.md -------------------------------------------------
 	add(
-		expect("REDTEAM.md", `^\| Partition constants A = C\(48,16\), B = C\(32,16\) \| `+num+` · `+num+` \|$`, w("A", comma(int(f.A.Int64()))), w("B", comma(int(f.B.Int64())))),
+		expect("REDTEAM.md", `^\| Partition constants A = C\(48,16\), B = C\(32,16\) \| `+num+` · `+num+` \|$`, w("A", commaBig(f.A)), w("B", commaBig(f.B))),
 		expect("REDTEAM.md", `^\| gcd\(A, B\) anti-collapse trap \| \*\*`+num+`\*\* = (.+) \|$`, w("gcd", comma(gcd)), w("gcd_factors", f.GCDFactors)),
 		expect("REDTEAM.md", `^\| Per-chunk bias \| ≈ \*\*(2\^-\d+\.\d)\*\* \|$`, w("bias", "2^"+bias)),
 		expect("REDTEAM.md", `^\| Per-message accumulated bias \| ≈ \*\*(2\^-\d+\.\d)\*\* \|$`, w("accum_bias", "2^"+accum)),

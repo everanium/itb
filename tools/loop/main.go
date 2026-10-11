@@ -33,8 +33,8 @@
 // Triple profile in place of the shape-based pair; --key-bits /
 // --nonce-bits / --chunk-size / --barrier-fill sweep the corresponding
 // [github.com/everanium/itb/triple.Opts] knobs; --blob-mode selects the
-// container floor sizing mode (1 per-region, 2 per-container) on the
-// session blob before the pipeline is opened; --drbg names the DRBG
+// container floor sizing mode (1 per-region, 2 per-container) at
+// pipeline initialization; --drbg names the DRBG
 // fill primitive (empty = the profile's auto tier); --gomaxprocs pins CPU
 // parallelism; --payload-mode swaps the plaintext content policy
 // (rotating CSPRNG refills or degenerate byte patterns — pattern modes
@@ -69,7 +69,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -391,6 +390,7 @@ func run() int {
 	// parse, so at most one of the two branches below fires with the
 	// override in place.
 	opts := triple.Opts{
+		Mode:         cfg.blobMode,
 		InnerHash:    cfg.hash,
 		MacName:      cfg.mac,
 		WithParallax: &cfg.parallax,
@@ -422,21 +422,6 @@ func run() int {
 			fmt.Fprintf(os.Stderr, "loop: triple.Init(%s): %v\n", r.streamProfile, ierr)
 			return 1
 		}
-		if cfg.blobMode == 2 {
-			newBlob, err := editInnerBlobMode(blob, 2)
-			if err != nil {
-				pipe.Close()
-				fmt.Fprintf(os.Stderr, "loop: rewrite blob mode: %v\n", err)
-				return 1
-			}
-			pipe.Close()
-			pipe, err = triple.Load(newBlob)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "loop: reload Mode 2 blob: %v\n", err)
-				return 1
-			}
-			blob = newBlob
-		}
 		// Close via the runState pointer: blob-cycle swaps fresh
 		// pipelines in (closing the ones they replace), so the
 		// instance live at exit is whatever the pointer holds then.
@@ -454,21 +439,6 @@ func run() int {
 		if ierr != nil {
 			fmt.Fprintf(os.Stderr, "loop: triple.Init(%s): %v\n", r.msgProfile, ierr)
 			return 1
-		}
-		if cfg.blobMode == 2 {
-			newBlob, err := editInnerBlobMode(blob, 2)
-			if err != nil {
-				pipe.Close()
-				fmt.Fprintf(os.Stderr, "loop: rewrite blob mode: %v\n", err)
-				return 1
-			}
-			pipe.Close()
-			pipe, err = triple.Load(newBlob)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "loop: reload Mode 2 blob: %v\n", err)
-				return 1
-			}
-			blob = newBlob
 		}
 		defer func() {
 			r.pipeMu.Lock()
@@ -837,39 +807,4 @@ func onOff(b bool) string {
 // logf prints one prefixed status line to stdout.
 func logf(format string, args ...any) {
 	fmt.Printf("[loop] "+format+"\n", args...)
-}
-
-// editInnerBlobMode parses a wrap-layer session blob, sets the inner blob's
-// "mode" field to targetMode (1 = per-region, 2 = per-container), and returns
-// the re-encoded wrap-layer blob. The decoded copies carry the same key
-// material as blob; they are wiped on every exit so only the caller's
-// buffers outlive the call.
-func editInnerBlobMode(blob []byte, targetMode int) ([]byte, error) {
-	var wrap map[string]json.RawMessage
-	if err := json.Unmarshal(blob, &wrap); err != nil {
-		return nil, fmt.Errorf("unmarshal wrap blob: %w", err)
-	}
-	var inner map[string]json.RawMessage
-	defer func() {
-		for k := range inner {
-			clear(inner[k])
-		}
-		for k := range wrap {
-			clear(wrap[k])
-		}
-	}()
-	if err := json.Unmarshal(wrap["ib"], &inner); err != nil {
-		return nil, fmt.Errorf("unmarshal inner blob: %w", err)
-	}
-	inner["mode"] = json.RawMessage(fmt.Sprintf("%d", targetMode))
-	ib, err := json.Marshal(inner)
-	if err != nil {
-		return nil, fmt.Errorf("marshal inner blob: %w", err)
-	}
-	wrap["ib"] = ib
-	newBlob, err := json.Marshal(wrap)
-	if err != nil {
-		return nil, fmt.Errorf("marshal wrap blob: %w", err)
-	}
-	return newBlob, nil
 }

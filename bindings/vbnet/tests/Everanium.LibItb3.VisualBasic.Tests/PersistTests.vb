@@ -81,16 +81,19 @@ Public Class PersistTests
         ' barrier fill margin, and Inspect surfaces both.
         Using pipe As Pipeline = Pipeline.Init("streaming-aead-triple-mac-v1")
             Dim prof As Global.Everanium.Itb3.Profile = Pipeline.Inspect(pipe.Save())
+            Assert.Equal(1, prof.ContainerMode)
             Assert.Equal(512, prof.NonceBits)
             Assert.Equal(1, prof.BarrierFill)
         End Using
 
         ' Per-Pipeline overrides travel through the blob into Inspect.
-        Dim opts As Opts = New Opts().WithNonceBits(256).WithBarrierFill(4)
+        Dim opts As Opts = New Opts().WithMode(2).WithNonceBits(256).WithBarrierFill(4)
         Using pipe As Pipeline = Pipeline.Init("streaming-aead-triple-mac-v1", opts)
             Dim prof As Global.Everanium.Itb3.Profile = Pipeline.Inspect(pipe.Save())
+            Assert.Equal(2, prof.ContainerMode)
             Assert.Equal(256, prof.NonceBits)
             Assert.Equal(4, prof.BarrierFill)
+            Assert.Contains("""container_mode"":2", prof.ToJson())
             Assert.Contains("""nonce_bits"":256", prof.ToJson())
             Assert.Contains("""barrier_fill"":4", prof.ToJson())
         End Using
@@ -98,8 +101,10 @@ Public Class PersistTests
         ' The registry entry is the recipe alone — neither field is
         ' part of it, so both read as absent rather than as zero.
         Dim registry As Global.Everanium.Itb3.Profile = Pipeline.Lookup("streaming-aead-triple-mac-v1")
+        Assert.Null(registry.ContainerMode)
         Assert.Null(registry.NonceBits)
         Assert.Null(registry.BarrierFill)
+        Assert.DoesNotContain("container_mode", registry.ToJson())
         Assert.DoesNotContain("nonce_bits", registry.ToJson())
         Assert.DoesNotContain("barrier_fill", registry.ToJson())
     End Sub

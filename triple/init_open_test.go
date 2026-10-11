@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/everanium/itb"
+	"github.com/everanium/itb/parallax"
 )
 
 // allProfiles enumerates the shipped profile names in the same order
@@ -316,7 +317,11 @@ func TestPipelineInitRejectsBadKeyBits(t *testing.T) {
 // deferred inside the parallax builder — the upfront reject moves
 // the surface to the construction boundary.
 func TestPipelineInitRejectsBadChunkSize(t *testing.T) {
-	for _, cs := range []int{-1, 1 << 40, 5 << 40} {
+	for _, cs64 := range []int64{-1, parallax.MaxChunkSize + 1, 1 << 40, 5 << 40} {
+		cs := int(cs64)
+		if int64(cs) != cs64 {
+			continue // beyond the platform int width
+		}
 		_, _, err := Init(ProfileStreamingAEADTripleMACV1, Opts{ChunkSize: cs})
 		if err == nil {
 			t.Fatalf("Init accepted ChunkSize=%d, want rejection", cs)

@@ -54,7 +54,6 @@ package itb
 import (
 	"crypto/rand"
 	"encoding/binary"
-	"unsafe"
 
 	"github.com/everanium/itb/internal/areionasm"
 	"github.com/everanium/itb/third/goaes"
@@ -259,25 +258,13 @@ func AreionSoEM256x4(keys *[4][64]byte, inputs *[4][32]byte) [4][32]byte {
 	// measurable on slow-path 256-bit / 512-bit ITB nonce workloads
 	// where the closure dispatches 2-3 batched calls per ChainHash
 	// round.
-	keysU64 := (*[4][8]uint64)(unsafe.Pointer(keys))
-	inputsU64 := (*[4][4]uint64)(unsafe.Pointer(inputs))
-
 	var s1b0, s1b1, s2b0, s2b1 aes.Block4
 	for lane := 0; lane < 4; lane++ {
-		s1b0U64 := (*[2]uint64)(unsafe.Pointer(&s1b0[lane*16]))
-		s1b1U64 := (*[2]uint64)(unsafe.Pointer(&s1b1[lane*16]))
-		s2b0U64 := (*[2]uint64)(unsafe.Pointer(&s2b0[lane*16]))
-		s2b1U64 := (*[2]uint64)(unsafe.Pointer(&s2b1[lane*16]))
-
-		s1b0U64[0] = inputsU64[lane][0] ^ keysU64[lane][0]
-		s1b0U64[1] = inputsU64[lane][1] ^ keysU64[lane][1]
-		s1b1U64[0] = inputsU64[lane][2] ^ keysU64[lane][2]
-		s1b1U64[1] = inputsU64[lane][3] ^ keysU64[lane][3]
-
-		s2b0U64[0] = inputsU64[lane][0] ^ keysU64[lane][4]
-		s2b0U64[1] = inputsU64[lane][1] ^ keysU64[lane][5]
-		s2b1U64[0] = inputsU64[lane][2] ^ keysU64[lane][6]
-		s2b1U64[1] = inputsU64[lane][3] ^ keysU64[lane][7]
+		k, in, o := &keys[lane], &inputs[lane], lane*16
+		xorBlock16((*[16]byte)(s1b0[o:o+16]), (*[16]byte)(in[0:16]), (*[16]byte)(k[0:16]))
+		xorBlock16((*[16]byte)(s1b1[o:o+16]), (*[16]byte)(in[16:32]), (*[16]byte)(k[16:32]))
+		xorBlock16((*[16]byte)(s2b0[o:o+16]), (*[16]byte)(in[0:16]), (*[16]byte)(k[32:48]))
+		xorBlock16((*[16]byte)(s2b1[o:o+16]), (*[16]byte)(in[16:32]), (*[16]byte)(k[48:64]))
 	}
 
 	// The dispatcher delivers P1(state1) ⊕ P2(state2) into (s1b0, s1b1):
@@ -291,15 +278,9 @@ func AreionSoEM256x4(keys *[4][64]byte, inputs *[4][32]byte) [4][32]byte {
 	// whitening k1 ⊕ k2 in the same pass.
 	var out [4][32]byte
 	for lane := 0; lane < 4; lane++ {
-		s1b0U64 := (*[2]uint64)(unsafe.Pointer(&s1b0[lane*16]))
-		s1b1U64 := (*[2]uint64)(unsafe.Pointer(&s1b1[lane*16]))
-		outU64 := (*[4]uint64)(unsafe.Pointer(&out[lane]))
-		k := &keysU64[lane]
-
-		outU64[0] = s1b0U64[0] ^ k[0] ^ k[4]
-		outU64[1] = s1b0U64[1] ^ k[1] ^ k[5]
-		outU64[2] = s1b1U64[0] ^ k[2] ^ k[6]
-		outU64[3] = s1b1U64[1] ^ k[3] ^ k[7]
+		k, d, o := &keys[lane], &out[lane], lane*16
+		xor3Block16((*[16]byte)(d[0:16]), (*[16]byte)(s1b0[o:o+16]), (*[16]byte)(k[0:16]), (*[16]byte)(k[32:48]))
+		xor3Block16((*[16]byte)(d[16:32]), (*[16]byte)(s1b1[o:o+16]), (*[16]byte)(k[16:32]), (*[16]byte)(k[48:64]))
 	}
 	return out
 }
@@ -402,37 +383,17 @@ func AreionSoEM512x4(keys *[4][128]byte, inputs *[4][64]byte) [4][64]byte {
 	// counterpart, scaled to four Block4 buffers per state (b0..b3
 	// holding AES blocks 0..3 of every lane). Skips the AoS pack/
 	// unpack steps the AoS dispatcher would otherwise emit.
-	keysU64 := (*[4][16]uint64)(unsafe.Pointer(keys))
-	inputsU64 := (*[4][8]uint64)(unsafe.Pointer(inputs))
-
 	var s1b0, s1b1, s1b2, s1b3, s2b0, s2b1, s2b2, s2b3 aes.Block4
 	for lane := 0; lane < 4; lane++ {
-		s1b0U64 := (*[2]uint64)(unsafe.Pointer(&s1b0[lane*16]))
-		s1b1U64 := (*[2]uint64)(unsafe.Pointer(&s1b1[lane*16]))
-		s1b2U64 := (*[2]uint64)(unsafe.Pointer(&s1b2[lane*16]))
-		s1b3U64 := (*[2]uint64)(unsafe.Pointer(&s1b3[lane*16]))
-		s2b0U64 := (*[2]uint64)(unsafe.Pointer(&s2b0[lane*16]))
-		s2b1U64 := (*[2]uint64)(unsafe.Pointer(&s2b1[lane*16]))
-		s2b2U64 := (*[2]uint64)(unsafe.Pointer(&s2b2[lane*16]))
-		s2b3U64 := (*[2]uint64)(unsafe.Pointer(&s2b3[lane*16]))
-
-		s1b0U64[0] = inputsU64[lane][0] ^ keysU64[lane][0]
-		s1b0U64[1] = inputsU64[lane][1] ^ keysU64[lane][1]
-		s1b1U64[0] = inputsU64[lane][2] ^ keysU64[lane][2]
-		s1b1U64[1] = inputsU64[lane][3] ^ keysU64[lane][3]
-		s1b2U64[0] = inputsU64[lane][4] ^ keysU64[lane][4]
-		s1b2U64[1] = inputsU64[lane][5] ^ keysU64[lane][5]
-		s1b3U64[0] = inputsU64[lane][6] ^ keysU64[lane][6]
-		s1b3U64[1] = inputsU64[lane][7] ^ keysU64[lane][7]
-
-		s2b0U64[0] = inputsU64[lane][0] ^ keysU64[lane][8]
-		s2b0U64[1] = inputsU64[lane][1] ^ keysU64[lane][9]
-		s2b1U64[0] = inputsU64[lane][2] ^ keysU64[lane][10]
-		s2b1U64[1] = inputsU64[lane][3] ^ keysU64[lane][11]
-		s2b2U64[0] = inputsU64[lane][4] ^ keysU64[lane][12]
-		s2b2U64[1] = inputsU64[lane][5] ^ keysU64[lane][13]
-		s2b3U64[0] = inputsU64[lane][6] ^ keysU64[lane][14]
-		s2b3U64[1] = inputsU64[lane][7] ^ keysU64[lane][15]
+		k, in, o := &keys[lane], &inputs[lane], lane*16
+		xorBlock16((*[16]byte)(s1b0[o:o+16]), (*[16]byte)(in[0:16]), (*[16]byte)(k[0:16]))
+		xorBlock16((*[16]byte)(s1b1[o:o+16]), (*[16]byte)(in[16:32]), (*[16]byte)(k[16:32]))
+		xorBlock16((*[16]byte)(s1b2[o:o+16]), (*[16]byte)(in[32:48]), (*[16]byte)(k[32:48]))
+		xorBlock16((*[16]byte)(s1b3[o:o+16]), (*[16]byte)(in[48:64]), (*[16]byte)(k[48:64]))
+		xorBlock16((*[16]byte)(s2b0[o:o+16]), (*[16]byte)(in[0:16]), (*[16]byte)(k[64:80]))
+		xorBlock16((*[16]byte)(s2b1[o:o+16]), (*[16]byte)(in[16:32]), (*[16]byte)(k[80:96]))
+		xorBlock16((*[16]byte)(s2b2[o:o+16]), (*[16]byte)(in[32:48]), (*[16]byte)(k[96:112]))
+		xorBlock16((*[16]byte)(s2b3[o:o+16]), (*[16]byte)(in[48:64]), (*[16]byte)(k[112:128]))
 	}
 
 	// The dispatcher delivers P1(state1) ⊕ P2(state2), with the cyclic
@@ -447,21 +408,11 @@ func AreionSoEM512x4(keys *[4][128]byte, inputs *[4][64]byte) [4][64]byte {
 	// whitening k1 ⊕ k2 in the same pass.
 	var out [4][64]byte
 	for lane := 0; lane < 4; lane++ {
-		s1b0U64 := (*[2]uint64)(unsafe.Pointer(&s1b0[lane*16]))
-		s1b1U64 := (*[2]uint64)(unsafe.Pointer(&s1b1[lane*16]))
-		s1b2U64 := (*[2]uint64)(unsafe.Pointer(&s1b2[lane*16]))
-		s1b3U64 := (*[2]uint64)(unsafe.Pointer(&s1b3[lane*16]))
-		outU64 := (*[8]uint64)(unsafe.Pointer(&out[lane]))
-		k := &keysU64[lane]
-
-		outU64[0] = s1b0U64[0] ^ k[0] ^ k[8]
-		outU64[1] = s1b0U64[1] ^ k[1] ^ k[9]
-		outU64[2] = s1b1U64[0] ^ k[2] ^ k[10]
-		outU64[3] = s1b1U64[1] ^ k[3] ^ k[11]
-		outU64[4] = s1b2U64[0] ^ k[4] ^ k[12]
-		outU64[5] = s1b2U64[1] ^ k[5] ^ k[13]
-		outU64[6] = s1b3U64[0] ^ k[6] ^ k[14]
-		outU64[7] = s1b3U64[1] ^ k[7] ^ k[15]
+		k, d, o := &keys[lane], &out[lane], lane*16
+		xor3Block16((*[16]byte)(d[0:16]), (*[16]byte)(s1b0[o:o+16]), (*[16]byte)(k[0:16]), (*[16]byte)(k[64:80]))
+		xor3Block16((*[16]byte)(d[16:32]), (*[16]byte)(s1b1[o:o+16]), (*[16]byte)(k[16:32]), (*[16]byte)(k[80:96]))
+		xor3Block16((*[16]byte)(d[32:48]), (*[16]byte)(s1b2[o:o+16]), (*[16]byte)(k[32:48]), (*[16]byte)(k[96:112]))
+		xor3Block16((*[16]byte)(d[48:64]), (*[16]byte)(s1b3[o:o+16]), (*[16]byte)(k[48:64]), (*[16]byte)(k[112:128]))
 	}
 	return out
 }
@@ -901,4 +852,21 @@ func areionSoEM512BatchedFused(fixedKey *[64]byte, seeds *[4][8]uint64, data *[4
 		return out, false
 	}
 	return out, true
+}
+
+// xorBlock16 sets dst = a ⊕ b through byte-order-neutral 64-bit loads.
+// It makes no alignment assumption about its operands, so the portable
+// path is safe on targets without unaligned 64-bit access.
+func xorBlock16(dst, a, b *[16]byte) {
+	le := binary.LittleEndian
+	le.PutUint64(dst[0:8], le.Uint64(a[0:8])^le.Uint64(b[0:8]))
+	le.PutUint64(dst[8:16], le.Uint64(a[8:16])^le.Uint64(b[8:16]))
+}
+
+// xor3Block16 sets dst = a ⊕ b ⊕ c, with the alignment guarantees of
+// [xorBlock16].
+func xor3Block16(dst, a, b, c *[16]byte) {
+	le := binary.LittleEndian
+	le.PutUint64(dst[0:8], le.Uint64(a[0:8])^le.Uint64(b[0:8])^le.Uint64(c[0:8]))
+	le.PutUint64(dst[8:16], le.Uint64(a[8:16])^le.Uint64(b[8:16])^le.Uint64(c[8:16]))
 }

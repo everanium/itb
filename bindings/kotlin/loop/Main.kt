@@ -810,7 +810,10 @@ private class Built(val pipe: Pipeline, val blob: ByteArray)
  */
 private fun buildPipeline(cfg: Config, profile: String): Built? {
     var opts = Opts()
-        .innerHash(cfg.hash)
+    if (cfg.blobMode != 1L) {
+        opts.mode(cfg.blobMode)
+    }
+    opts.innerHash(cfg.hash)
         .macName(cfg.mac)
         .parallax(cfg.parallax)
         .wrapper(cfg.wrapper)
@@ -843,73 +846,8 @@ private fun buildPipeline(cfg: Config, profile: String): Built? {
         pipe.close()
         return null
     }
-    if (cfg.blobMode == 2L) {
-        // The sizing mode is not an Opts knob: the Init blob is edited
-        // and the pipeline reopened from it, so the retained blob (the
-        // one blob-cycle reopens from) carries the edited mode.
-        if (!editInnerBlobMode(blob, 2)) {
-            System.err.println("loop: rewrite blob mode: inner blob mode field not found")
-            pipe.close()
-            return null
-        }
-        pipe.close()
-        pipe = try {
-            Pipeline.load(blob)
-        } catch (e: Exception) {
-            System.err.println("loop: reload Mode 2 blob: ${detail(e)}")
-            return null
-        }
-    }
     logPipelineInitialised(profile, blob)
     return Built(pipe, blob)
-}
-
-/** Offset of the first occurrence of needle in hay at or after from,
- * or -1 when absent. */
-private fun findBytes(hay: ByteArray, from: Int, needle: ByteArray): Int {
-    var i = from
-    while (i + needle.size <= hay.size) {
-        var match = true
-        for (j in needle.indices) {
-            if (hay[i + j] != needle[j]) {
-                match = false
-                break
-            }
-        }
-        if (match) {
-            return i
-        }
-        i++
-    }
-    return -1
-}
-
-/** Sets the inner blob's "mode" field of a wrap-layer session blob to
- * targetMode (1 = per-region, 2 = per-container) in place. The wrap
- * layer's profile record carries its own "mode" (a string), so the
- * search starts at the inner blob ("ib"); both shipped modes are one
- * digit wide, so the blob length does not change and the key material
- * in blob is never copied. Returns false when the inner blob or its
- * mode field is not found. */
-private fun editInnerBlobMode(blob: ByteArray, targetMode: Int): Boolean {
-    val ibKey = "\"ib\":{".toByteArray(Charsets.US_ASCII)
-    val modeKey = "\"mode\":".toByteArray(Charsets.US_ASCII)
-    val ib = findBytes(blob, 0, ibKey)
-    if (ib < 0) {
-        return false
-    }
-    val mode = findBytes(blob, ib + ibKey.size, modeKey)
-    if (mode < 0) {
-        return false
-    }
-    val at = mode + modeKey.size
-    if (at + 1 >= blob.size || blob[at] < '1'.code.toByte() || blob[at] > '2'.code.toByte() ||
-        (blob[at + 1] >= '0'.code.toByte() && blob[at + 1] <= '9'.code.toByte())
-    ) {
-        return false
-    }
-    blob[at] = ('0'.code + targetMode).toByte()
-    return true
 }
 
 private fun dash(s: String): String = if (s.isEmpty()) "-" else s

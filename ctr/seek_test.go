@@ -97,22 +97,26 @@ func TestNewAtChaCha20CounterOverflow(t *testing.T) {
 	// Last valid block index = 2^32 − 1; last valid byteOffset in that block
 	// = block_index * 64 + 63 = (2^32 − 1) * 64 + 63 = 2^38 − 1.
 	// First overflowing byteOffset = 2^38 (block index = 2^32).
-	const lastValidByteOffset = (1 << 38) - 1
-	const firstOverflowByteOffset = 1 << 38
+	lastValidByteOffset := int64(1)<<38 - 1
+	lastAlignedByteOffset := (int64(1)<<32 - 1) * 64
+	firstOverflowByteOffset := int64(1) << 38
+	if int64(int(firstOverflowByteOffset)) != firstOverflowByteOffset {
+		t.Skip("platform int width cannot represent overflow boundary")
+	}
 
 	// The last valid seek must succeed — no bogus rejection at the boundary.
-	if _, err := NewAt(hashes.CipherChaCha20, key, nonce, lastValidByteOffset); err != nil {
+	if _, err := NewAt(hashes.CipherChaCha20, key, nonce, int(lastValidByteOffset)); err != nil {
 		t.Fatalf("NewAt(chacha20, byteOffset=2^38-1): expected success at the last valid block index, got error: %v", err)
 	}
 
 	// A block-aligned last valid position (2^32 − 1 whole blocks in) must also succeed.
-	if _, err := NewAt(hashes.CipherChaCha20, key, nonce, (1<<32-1)*64); err != nil {
+	if _, err := NewAt(hashes.CipherChaCha20, key, nonce, int(lastAlignedByteOffset)); err != nil {
 		t.Fatalf("NewAt(chacha20, byteOffset=(2^32-1)*64): expected success at block-aligned last valid counter, got error: %v", err)
 	}
 
 	// First overflowing seek must return an explicit error, not a silently
 	// wrapped keystream.
-	_, err = NewAt(hashes.CipherChaCha20, key, nonce, firstOverflowByteOffset)
+	_, err = NewAt(hashes.CipherChaCha20, key, nonce, int(firstOverflowByteOffset))
 	if err == nil {
 		t.Fatalf("NewAt(chacha20, byteOffset=2^38): expected counter-overflow error, got nil (silent uint32 wrap)")
 	}

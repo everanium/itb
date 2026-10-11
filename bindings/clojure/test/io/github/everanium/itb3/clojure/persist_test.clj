@@ -65,17 +65,20 @@
   ;; barrier fill margin, and inspect surfaces both.
   (with-open [pipe (itb/init "streaming-aead-triple-mac-v1")]
     (let [prof (itb/inspect (itb/save pipe))]
+      (is (= 1 (:container-mode prof)))
       (is (= 512 (:nonce-bits prof)))
       (is (= 1 (:barrier-fill prof)))))
   ;; Per-Pipeline overrides travel through the blob into inspect.
   (with-open [pipe (itb/init "streaming-aead-triple-mac-v1"
-                             {:nonce-bits 256 :barrier-fill 4})]
+                             {:mode 2 :nonce-bits 256 :barrier-fill 4})]
     (let [prof (itb/inspect (itb/save pipe))]
+      (is (= 2 (:container-mode prof)))
       (is (= 256 (:nonce-bits prof)))
       (is (= 4 (:barrier-fill prof)))))
   ;; The registry entry is the recipe alone — neither key is part of
   ;; it, so both read as absent rather than as zero.
   (let [registry (itb/lookup "streaming-aead-triple-mac-v1")]
+    (is (nil? (:container-mode registry)))
     (is (nil? (:nonce-bits registry)))
     (is (nil? (:barrier-fill registry)))))
 

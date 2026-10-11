@@ -89,7 +89,7 @@ palette, `maxWorkers`); the blob the receiver loads carries the
 resolved shape, so `load` takes no opts:
 
 ```java
-Opts opts = new Opts().withChunkSize(65536).withWrapper(false);
+Opts opts = new Opts().withMode(2).withChunkSize(65536).withWrapper(false);
 try (Pipeline sender = Pipeline.init("singlemsg-triple-mac-v1", opts);
         Pipeline receiver = Pipeline.load(sender.save())) {
     // ...

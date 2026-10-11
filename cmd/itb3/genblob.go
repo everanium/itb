@@ -9,12 +9,10 @@ package main
 
 import (
 	"crypto/rand"
-	"encoding/json"
 	"fmt"
 	"math/big"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -261,6 +259,7 @@ func runGenblob(modeArg string, hashArg string, opts genblobOpts, set genblobFla
 	}
 
 	pipe, blob, err := triple.Init(name, triple.Opts{
+		Mode:        opts.blobMode,
 		NonceBits:   opts.nonceBits,
 		BarrierFill: opts.barrierFill,
 		DRBG:        opts.drbg,
@@ -271,15 +270,6 @@ func runGenblob(modeArg string, hashArg string, opts genblobOpts, set genblobFla
 	defer pipe.Close()
 	defer func() { clear(blob) }()
 
-	if opts.blobMode == 2 {
-		blob2, rerr := rewriteBlobMode(blob, 2)
-		if rerr != nil {
-			return runtimeErr("genblob", "rewrite blob-mode: %v", rerr)
-		}
-		clear(blob)
-		blob = blob2
-	}
-
 	if opts.output != "" {
 		if err := os.WriteFile(filepath.Clean(opts.output), blob, 0600); err != nil {
 			return runtimeErr("genblob", "write %q: %v", opts.output, err)
@@ -287,36 +277,6 @@ func runGenblob(modeArg string, hashArg string, opts genblobOpts, set genblobFla
 		return nil
 	}
 	return writeOutputBytes("genblob", "", blob)
-}
-
-// rewriteBlobMode modifies the inner blob's mode field within a
-// wrap-layer session blob without disturbing any secret material.
-// The decoded copies carry the same key material as blob; they are
-// wiped on every exit so only the caller's buffers outlive the call.
-func rewriteBlobMode(blob []byte, targetMode int) ([]byte, error) {
-	var wrap map[string]json.RawMessage
-	if err := json.Unmarshal(blob, &wrap); err != nil {
-		return nil, err
-	}
-	var inner map[string]json.RawMessage
-	defer func() {
-		for k := range inner {
-			clear(inner[k])
-		}
-		for k := range wrap {
-			clear(wrap[k])
-		}
-	}()
-	if err := json.Unmarshal(wrap["ib"], &inner); err != nil {
-		return nil, err
-	}
-	inner["mode"] = json.RawMessage(strconv.Itoa(targetMode))
-	ib, err := json.Marshal(inner)
-	if err != nil {
-		return nil, err
-	}
-	wrap["ib"] = ib
-	return json.Marshal(wrap)
 }
 
 // registerGenblobProfile installs prof in the profile catalogue under

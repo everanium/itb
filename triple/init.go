@@ -58,8 +58,9 @@ func marshalWrap(prof Profile, inner, permMaster, wrapMaster []byte) ([]byte, er
 		rec.ParallaxPalette, rec.ParallaxSegmentSize = nil, 0
 	}
 	// Recipe is wire-only; runtime globals (NonceBits, BarrierFill)
-	// live in the inner Blob{N}.Globals snapshot and never appear in
-	// the wrap-layer recipe object. The invariant is enforced upstream
+	// live in the inner Blob{N}.Globals snapshot and the container
+	// floor mode in the inner blob's mode field; none of them appears
+	// in the wrap-layer recipe object. The invariant is enforced upstream
 	// (Register + Load fail-fast on non-zero values, resolveProfile
 	// does not carry Opts.NonceBits / Opts.BarrierFill into the stored
 	// Profile), but a caller that mutates a Profile literal directly
@@ -68,6 +69,7 @@ func marshalWrap(prof Profile, inner, permMaster, wrapMaster []byte) ([]byte, er
 	// wire shape regardless of the upstream Profile provenance.
 	rec.NonceBits = 0
 	rec.BarrierFill = 0
+	rec.ContainerMode = 0
 	wrap := blobWrapV2{
 		Version: blobWrapVersionV2,
 		Profile: rec,
@@ -179,15 +181,19 @@ func Init(profile string, opts Opts) (*Pipeline, []byte, error) {
 	// the Config envelope here and lives only on the Pipeline; it is
 	// not part of the exported blob.
 	cfg := &itb.Config{
+		Mode:        opts.Mode,
 		NonceBits:   opts.NonceBits,
 		BarrierFill: opts.BarrierFill,
 		MaxWorkers:  clampWorkers(opts.MaxWorkers),
 	}
 	// Backfill fields left at zero from the compile-in defaults so the
 	// Cfg-aware Blob export path (which requires a valid nonce /
-	// barrier width) always emits well-formed globals — the
+	// barrier width / container mode) always emits well-formed globals — the
 	// per-Pipeline override semantic is preserved: any field the caller
 	// left at zero simply picks up the compile-in default at Init time.
+	if cfg.Mode == 0 {
+		cfg.Mode = 1
+	}
 	if cfg.NonceBits == 0 {
 		cfg.NonceBits = itb.DefaultNonceBits
 	}

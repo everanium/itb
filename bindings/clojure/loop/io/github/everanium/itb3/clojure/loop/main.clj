@@ -544,47 +544,6 @@
                            (when (= 2 (:container-mode record)) " container-mode=2")
                            (when (seq (:drbg record)) (str " drbg=" (:drbg record))))))))
 
-(defn- find-bytes
-  "Offset of the first occurrence of needle in hay at or after from,
-  or -1 when absent."
-  ^long [^bytes hay ^long from ^bytes needle]
-  (let [hn (alength hay)
-        nn (alength needle)]
-    (loop [i from]
-      (cond
-        (> (+ i nn) hn) -1
-        (loop [j 0]
-          (cond
-            (= j nn) true
-            (= (aget hay (+ i j)) (aget needle j)) (recur (inc j))
-            :else false)) i
-        :else (recur (inc i))))))
-
-(defn- edit-inner-blob-mode!
-  "Sets the inner blob's \"mode\" field of a wrap-layer session blob to
-  target-mode (1 = per-region, 2 = per-container) in place. The wrap
-  layer's profile record carries its own \"mode\" (a string), so the
-  search starts at the inner blob (\"ib\"); both shipped modes are one
-  digit wide, so the blob length does not change and the key material
-  in blob is never copied. False when the inner blob or its mode field
-  is not found."
-  [^bytes blob ^long target-mode]
-  (let [ib-key (.getBytes "\"ib\":{" "US-ASCII")
-        mode-key (.getBytes "\"mode\":" "US-ASCII")
-        ib (find-bytes blob 0 ib-key)]
-    (if (neg? ib)
-      false
-      (let [mode (find-bytes blob (+ ib (alength ib-key)) mode-key)]
-        (if (neg? mode)
-          false
-          (let [at (+ mode (alength mode-key))]
-            (if (or (>= (inc at) (alength blob))
-                    (not (<= 0x31 (aget blob at) 0x32))
-                    (<= 0x30 (aget blob (inc at)) 0x39))
-              false
-              (do (aset-byte blob at (byte (+ 0x30 target-mode)))
-                  true))))))))
-
 (defn- build-pipeline
   "Constructs one Pipeline against profile with every flag-carried
   override in the opts string (zero values included — the shared
@@ -594,7 +553,8 @@
   reopens use the retained blob; save is never called again. Nil after
   printing the construction failure."
   [cfg ^String profile]
-  (let [base {:inner-hash (:hash cfg)
+  (let [base {:mode (:blob-mode cfg)
+              :inner-hash (:hash cfg)
               :mac-name (:mac cfg)
               :parallax? (:parallax cfg)
               :wrapper? (:wrapper cfg)
@@ -626,26 +586,8 @@
                      (.close ^java.lang.AutoCloseable pipe)
                      nil))]
         (when blob
-          (if (= 2 (long (:blob-mode cfg)))
-            ;; The sizing mode is not an Opts knob: the Init blob is
-            ;; edited and the pipeline reopened from it, so the retained
-            ;; blob (the one blob-cycle reopens from) carries the edited
-            ;; mode.
-            (if-not (edit-inner-blob-mode! blob 2)
-              (do (state/err-line "loop: rewrite blob mode: inner blob mode field not found")
-                  (.close ^java.lang.AutoCloseable pipe)
-                  nil)
-              (do (.close ^java.lang.AutoCloseable pipe)
-                  (when-let [reloaded (try
-                                        (itb/load blob)
-                                        (catch Exception e
-                                          (state/err-line (str "loop: reload Mode 2 blob: "
-                                                               (state/detail e)))
-                                          nil))]
-                    (log-pipeline-initialised profile blob)
-                    {:pipe reloaded :blob blob})))
-            (do (log-pipeline-initialised profile blob)
-                {:pipe pipe :blob blob})))))))
+          (log-pipeline-initialised profile blob)
+          {:pipe pipe :blob blob})))))
 
 ;; ----------------------------------------------------------------------
 ;; Run

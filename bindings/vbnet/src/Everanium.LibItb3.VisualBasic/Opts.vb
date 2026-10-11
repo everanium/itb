@@ -25,6 +25,12 @@ Public NotInheritable Class Opts
         End Get
     End Property
 
+    ''' <summary>Container floor sizing mode: 1 (per-region, default) | 2 (per-container).</summary>
+    Public Function WithMode(n As Long) As Opts
+        _inner.WithMode(n)
+        Return Me
+    End Function
+
     ''' <summary>Hex-encodes the parallax master override
     ''' (<c>pm</c>).</summary>
     Public Function WithPermMaster(master As Byte()) As Opts

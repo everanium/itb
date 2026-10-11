@@ -173,7 +173,10 @@ func (c *chaCha20Resettable) ResetCounter(byteOffset int) error {
 	// deniability whitener, not the confidentiality carrier) AND the
 	// escape (AES-128-CTR outer cipher uses a 128-bit big-endian
 	// counter and is practically unlimited for random nonces).
-	if blockOff > uint64(^uint32(0)) {
+	// Written as >= 2^32 rather than > 2^32-1: the Go s390x backend folds
+	// an unsigned compare of a right-shifted value against 0xFFFFFFFF to
+	// false, which would silently drop this guard on that target.
+	if blockOff >= 1<<32 {
 		return fmt.Errorf("ctr: chacha20 counter overflow — byteOffset %d requires block index %d ≥ 2^32 (~256 GiB per (key, nonce)); outer-layer format deniability weakens past this seek point, inner ITB confidentiality unaffected. Choose AES-128-CTR outer cipher for streams above this cap", byteOffset, blockOff)
 	}
 	fresh, err := chacha20.NewUnauthenticatedCipher(c.key, c.nonce)

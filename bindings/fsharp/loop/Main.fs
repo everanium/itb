@@ -46,9 +46,6 @@ open System.Diagnostics
 open System.Globalization
 open System.IO
 open System.Runtime.InteropServices
-open System.Text.Encodings.Web
-open System.Text.Json
-open System.Text.Json.Nodes
 open System.Threading
 open Everanium.Itb3.FSharp
 open Everanium.Itb3.FSharp.Loop
@@ -659,33 +656,6 @@ let private logPipelineInitialised (profile: string) (blob: byte[]) =
             + (if String.IsNullOrEmpty rec_.Drbg then "" else " drbg=" + rec_.Drbg)
         )
 
-/// Returns a copy of a wrap-layer session blob whose inner blob ("ib")
-/// carries the given container floor sizing mode (1 = per-region,
-/// 2 = per-container). The wrap layer's profile record carries its own
-/// "mode" (a string), so only the inner blob's integer field is set; no
-/// key is added, integers keep their literals, and strings are written
-/// without escaping the base64 alphabet.
-let private setInnerBlobMode (blob: byte[]) (mode: int) : Result<byte[], string> =
-    try
-        match JsonNode.Parse(blob: byte[]) with
-        | :? JsonObject as root ->
-            match root["ib"] with
-            | :? JsonObject as ib when ib.ContainsKey "mode" ->
-                ib["mode"] <- JsonValue.Create mode
-                use buf = new MemoryStream()
-
-                do
-                    use w =
-                        new Utf8JsonWriter(buf, JsonWriterOptions(Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping))
-
-                    root.WriteTo w
-
-                Ok(buf.ToArray())
-            | _ -> Error "inner blob mode field not found"
-        | _ -> Error "session blob is not a JSON object"
-    with e ->
-        Error e.Message
-
 /// Constructs one Pipeline against profile with every flag-carried
 /// override in the opts string (zero values included — the shared
 /// library treats zero as "profile default"), then obtains the Init blob
@@ -695,6 +665,7 @@ let private setInnerBlobMode (blob: byte[]) (mode: int) : Result<byte[], string>
 let private buildPipeline (cfg: Config) (profile: string) : (Pipeline * byte[]) option =
     let baseOpts =
         Opts.empty
+        |> Opts.withMode cfg.BlobMode
         |> Opts.withInnerHash cfg.Hash
         |> Opts.withMacName cfg.Mac
         |> Opts.withParallax cfg.Parallax
@@ -730,25 +701,6 @@ let private buildPipeline (cfg: Config) (profile: string) : (Pipeline * byte[]) 
                 Console.Error.WriteLine("loop: Save(" + profile + "): " + detail e)
                 pipe.Dispose()
                 None
-            | Ok blob when cfg.BlobMode = 2L ->
-                // The sizing mode is not an Opts knob: the Init blob is
-                // edited and the pipeline reopened from it, so the
-                // retained blob (the one blob-cycle reopens from) carries
-                // the edited mode.
-                pipe.Dispose()
-
-                match setInnerBlobMode blob 2 with
-                | Error m ->
-                    Console.Error.WriteLine("loop: rewrite blob mode: " + m)
-                    None
-                | Ok edited ->
-                    match Pipeline.load edited with
-                    | Error e ->
-                        Console.Error.WriteLine("loop: reload Mode 2 blob: " + detail e)
-                        None
-                    | Ok reloaded ->
-                        logPipelineInitialised profile edited
-                        Some(reloaded, edited)
             | Ok blob ->
                 logPipelineInitialised profile blob
                 Some(pipe, blob)

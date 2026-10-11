@@ -128,10 +128,11 @@
 // overrides coexist in the same process without cross-contamination.
 // When an [Opts] field is left at zero the corresponding compile-in
 // default applies (see [github.com/everanium/itb.DefaultNonceBits] /
-// [github.com/everanium/itb.DefaultBarrierFill]); the value in force
-// is snapshotted into the blob at [Init] and restored by [Load], so
-// the wire shape never depends on the receiver's defaults. The container
-// floor sizing mode (Mode 1 per-region vs Mode 2 per-container) is
+// [github.com/everanium/itb.DefaultBarrierFill], and Mode 1 per-region
+// for the container floor); the value in force is snapshotted into the
+// blob at [Init] and restored by [Load], so the wire shape never depends
+// on the receiver's defaults. The container floor sizing mode, selected
+// through [Opts.Mode] (Mode 1 per-region or Mode 2 per-container), is
 // likewise preserved across [Pipeline.Save] / [Pipeline.Rekey] and
 // surfaced by [Inspect] as [Profile.ContainerMode]. The worker
 // cap is the one runtime-mutable value: set at [Init] from

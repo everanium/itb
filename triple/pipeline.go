@@ -101,11 +101,19 @@ var (
 // The resolved shape — profile defaults with these overrides folded
 // in — is recorded in the blob [Init] returns, so the reopen path
 // ([Load] / [LoadF]) takes no Opts: every structural field is rebuilt
-// from the record, and the per-instance NonceBits / BarrierFill are
-// restored from the inner blob's Config snapshot. The one runtime
+// from the record, and the per-instance Mode / NonceBits / BarrierFill
+// are restored from the inner blob's Config snapshot. The one runtime
 // knob, the worker cap, is set after construction through
 // [Pipeline.MaxWorkers].
 type Opts struct {
+	// Mode overrides the container floor sizing mode: 0 selects the
+	// default, Mode 1 (per-region floor); 1 pins Mode 1; 2 selects Mode 2,
+	// the per-container joint floor (compact VPN tunnel mode).
+	// The resolved mode travels in the inner session blob snapshot and is
+	// reproduced on [Load]; [Inspect] surfaces it as [Profile.ContainerMode].
+	// Distinct from [Profile.Mode] (the message / stream shape).
+	Mode int
+
 	// PermMaster overrides the auto-generated parallax master. When
 	// non-nil, [Init] uses these bytes directly rather than drawing
 	// a fresh master from [parallax.GenerateMasterKey].

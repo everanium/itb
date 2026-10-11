@@ -94,6 +94,7 @@ no opts:
 ```fsharp
 let opts =
     Opts.empty
+    |> Opts.withMode 2L
     |> Opts.withChunkSize 65536L
     |> Opts.withWrapper false
 let result =

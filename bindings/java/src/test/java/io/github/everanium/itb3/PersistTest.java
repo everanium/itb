@@ -87,16 +87,19 @@ class PersistTest {
         // barrier fill margin, and inspect surfaces both.
         try (Pipeline p = Pipeline.init("streaming-aead-triple-mac-v1")) {
             Profile prof = Pipeline.inspect(p.save());
+            assertEquals(Integer.valueOf(1), prof.containerMode());
             assertEquals(Integer.valueOf(512), prof.nonceBits());
             assertEquals(Integer.valueOf(1), prof.barrierFill());
         }
 
         // Per-Pipeline overrides travel through the blob into inspect.
-        Opts opts = new Opts().withNonceBits(256).withBarrierFill(4);
+        Opts opts = new Opts().withMode(2).withNonceBits(256).withBarrierFill(4);
         try (Pipeline p = Pipeline.init("streaming-aead-triple-mac-v1", opts)) {
             Profile prof = Pipeline.inspect(p.save());
+            assertEquals(Integer.valueOf(2), prof.containerMode());
             assertEquals(Integer.valueOf(256), prof.nonceBits());
             assertEquals(Integer.valueOf(4), prof.barrierFill());
+            assertTrue(prof.toJson().contains("\"container_mode\":2"));
             assertTrue(prof.toJson().contains("\"nonce_bits\":256"));
             assertTrue(prof.toJson().contains("\"barrier_fill\":4"));
         }
@@ -104,8 +107,10 @@ class PersistTest {
         // The registry entry is the recipe alone — neither field is
         // part of it, so both read as absent rather than as zero.
         Profile registry = Pipeline.lookup("streaming-aead-triple-mac-v1");
+        assertNull(registry.containerMode());
         assertNull(registry.nonceBits());
         assertNull(registry.barrierFill());
+        assertFalse(registry.toJson().contains("container_mode"));
         assertFalse(registry.toJson().contains("nonce_bits"));
         assertFalse(registry.toJson().contains("barrier_fill"));
     }

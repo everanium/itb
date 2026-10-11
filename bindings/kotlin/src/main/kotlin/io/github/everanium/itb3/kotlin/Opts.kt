@@ -29,6 +29,9 @@ import io.github.everanium.itb3.Opts as JOpts
 class Opts {
     internal val impl = JOpts()
 
+    /** Overrides the container floor sizing mode: 1 (per-region, default) or 2 (per-container compact). */
+    fun mode(n: Long): Opts = apply { impl.withMode(n) }
+
     /** Hex-encodes the parallax master override (`pm`). */
     fun permMaster(master: ByteArray): Opts = apply { impl.withPermMaster(master) }
 

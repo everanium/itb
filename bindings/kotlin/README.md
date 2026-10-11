@@ -92,7 +92,7 @@ outer cipher, parallax on/off, wrapper on/off, MAC name, palette,
 shape, so `load` takes no opts:
 
 ```kotlin
-val cfg = opts { chunkSize(65536); wrapper(false) }
+val cfg = opts { mode(2); chunkSize(65536); wrapper(false) }
 Pipeline.init("singlemsg-triple-mac-v1", cfg).use { sender ->
     Pipeline.load(sender.save()).use { receiver ->
         // ...

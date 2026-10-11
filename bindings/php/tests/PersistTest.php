@@ -85,9 +85,11 @@ final class PersistTest extends TestCase
         $this->assertArrayHasKey('keybits', $record);
         $this->assertArrayHasKey('nonce_bits', $record);
         $this->assertArrayHasKey('barrier_fill', $record);
+        $this->assertSame(1, $record['container_mode']);
         $looked = Itb::lookup(self::PROFILE);
         $this->assertArrayNotHasKey('nonce_bits', $looked);
         $this->assertArrayNotHasKey('barrier_fill', $looked);
+        $this->assertArrayNotHasKey('container_mode', $looked);
         $recipe = $record;
         unset($recipe['nonce_bits'], $recipe['barrier_fill'], $recipe['container_mode']);
         $this->assertSame($looked, $recipe);
@@ -104,6 +106,14 @@ final class PersistTest extends TestCase
         } catch (ItbException $e) {
             $this->assertSame(Status::UNKNOWN_PROFILE, $e->getStatus());
         }
+    }
+
+    public function testInspectOptsMode(): void
+    {
+        $pipe = Itb::create(self::PROFILE, ['mode' => 2]);
+        $record = Itb::inspect($pipe->save());
+        $pipe->free();
+        $this->assertSame(2, $record['container_mode']);
     }
 
     public function testMaxWorkers(): void

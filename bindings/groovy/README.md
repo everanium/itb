@@ -99,7 +99,7 @@ palette, `maxWorkers`); the blob the receiver loads carries the
 resolved shape, so `load` takes no opts:
 
 ```groovy
-def opts = new Opts().withChunkSize(65536).withWrapper(false)
+def opts = new Opts().withMode(2).withChunkSize(65536).withWrapper(false)
 Pipeline.withPipeline('singlemsg-triple-mac-v1', opts) { sender ->
     Pipeline.withLoaded(sender.save()) { receiver ->
         // ...
@@ -151,7 +151,7 @@ named-argument map — byte-array values are hex-encoded, everything
 else is rendered with `toString()`:
 
 ```groovy
-def opts = Opts.of(chunkSize: 4096, withParallax: false)
+def opts = Opts.of(mode: 2, chunkSize: 4096, withParallax: false)
 ```
 
 ## Persisting sessions

@@ -631,30 +631,6 @@ function log_pipeline_initialised(string $profile, string $blob): void
     log_line($line);
 }
 
-/**
- * Returns a copy of a wrap-layer session blob whose inner blob's "mode"
- * field is set to $targetMode (1 = per-region, 2 = per-container);
- * throws \RuntimeException when the blob is not a JSON object or
- * carries no inner blob mode field. The wrap layer's profile record
- * carries its own "mode" (a string); the target is the inner blob's
- * ("ib") integer field. Objects decode as objects rather than arrays so
- * an empty object re-encodes as {}, and slashes in the base64 fields
- * stay unescaped.
- */
-function edit_inner_blob_mode(string $blob, int $targetMode): string
-{
-    $doc = \json_decode($blob, false);
-    if (!$doc instanceof \stdClass || !isset($doc->ib) || !$doc->ib instanceof \stdClass
-        || !\property_exists($doc->ib, 'mode')) {
-        throw new \RuntimeException('inner blob mode field not found');
-    }
-    $doc->ib->mode = $targetMode;
-    $out = \json_encode($doc, \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE);
-    if ($out === false) {
-        throw new \RuntimeException(\json_last_error_msg());
-    }
-    return $out;
-}
 
 /**
  * Folds a keystream primitive into $opts for any layer the named
@@ -721,6 +697,7 @@ function fill_keystream_layers(
 function build_pipeline(Config $cfg, string $profile): ?array
 {
     $opts = [
+        'mode' => $cfg->blobMode,
         'innerHash' => $cfg->hash,
         'macName' => $cfg->mac,
         'withParallax' => $cfg->parallax,
@@ -753,26 +730,6 @@ function build_pipeline(Config $cfg, string $profile): ?array
         err_line('Save(' . $profile . '): ' . status_detail($e));
         $pipe->free();
         return null;
-    }
-    if ($cfg->blobMode === 2) {
-        // The sizing mode is not an Opts knob: the Init blob is edited
-        // and the pipeline reopened from it, so the retained blob (the
-        // one blob-cycle reopens from) carries the edited mode.
-        try {
-            $edited = edit_inner_blob_mode($blob, 2);
-        } catch (\RuntimeException $e) {
-            err_line('rewrite blob mode: ' . $e->getMessage());
-            $pipe->free();
-            return null;
-        }
-        $pipe->free();
-        try {
-            $pipe = Itb::load($edited);
-        } catch (ItbException $e) {
-            err_line('reload Mode 2 blob: ' . status_detail($e));
-            return null;
-        }
-        $blob = $edited;
     }
     log_pipeline_initialised($profile, $blob);
     return [$pipe, $blob];

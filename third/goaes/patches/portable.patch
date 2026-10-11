@@ -1,0 +1,411 @@
+diff --git a/aes.go b/aes.go
+index 84d9250a..d9df5360 100644
+--- a/aes.go
++++ b/aes.go
+@@ -1,6 +1,9 @@
+ package aes
+ 
+-import "unsafe"
++import (
++	"encoding/binary"
++	"unsafe"
++)
+ 
+ // Block represents a 128-bit AES block (16 bytes)
+ type Block [16]byte
+@@ -168,10 +171,7 @@ func InvMixColumns(block *Block) {
+ 
+ // AddRoundKey XORs the block with the round key.
+ func AddRoundKey(block *Block, roundKey *Block) {
+-	b := (*[2]uint64)(unsafe.Pointer(block))
+-	k := (*[2]uint64)(unsafe.Pointer(roundKey))
+-	b[0] ^= k[0]
+-	b[1] ^= k[1]
++	xor16((*[16]byte)(block), (*[16]byte)(block), (*[16]byte)(roundKey))
+ }
+ 
+ // Round performs SubBytes, ShiftRows, MixColumns, AddRoundKey.
+@@ -262,35 +262,29 @@ func InvFinalRoundNoKey(block *Block) {
+ 
+ // XorBlock computes dst = a XOR b.
+ func XorBlock(dst, a, b *Block) {
+-	aPtr := (*[2]uint64)(unsafe.Pointer(a))
+-	bPtr := (*[2]uint64)(unsafe.Pointer(b))
+-	dstPtr := (*[2]uint64)(unsafe.Pointer(dst))
+-	dstPtr[0] = aPtr[0] ^ bPtr[0]
+-	dstPtr[1] = aPtr[1] ^ bPtr[1]
++	xor16((*[16]byte)(dst), (*[16]byte)(a), (*[16]byte)(b))
+ }
+ 
+ // XorBlock2 computes dst = a XOR b for Block2.
+ func XorBlock2(dst, a, b *Block2) {
+-	aPtr := (*[4]uint64)(unsafe.Pointer(a))
+-	bPtr := (*[4]uint64)(unsafe.Pointer(b))
+-	dstPtr := (*[4]uint64)(unsafe.Pointer(dst))
+-	dstPtr[0] = aPtr[0] ^ bPtr[0]
+-	dstPtr[1] = aPtr[1] ^ bPtr[1]
+-	dstPtr[2] = aPtr[2] ^ bPtr[2]
+-	dstPtr[3] = aPtr[3] ^ bPtr[3]
++	xor16((*[16]byte)(dst[0:16]), (*[16]byte)(a[0:16]), (*[16]byte)(b[0:16]))
++	xor16((*[16]byte)(dst[16:32]), (*[16]byte)(a[16:32]), (*[16]byte)(b[16:32]))
+ }
+ 
+ // XorBlock4 computes dst = a XOR b for Block4.
+ func XorBlock4(dst, a, b *Block4) {
+-	aPtr := (*[8]uint64)(unsafe.Pointer(a))
+-	bPtr := (*[8]uint64)(unsafe.Pointer(b))
+-	dstPtr := (*[8]uint64)(unsafe.Pointer(dst))
+-	dstPtr[0] = aPtr[0] ^ bPtr[0]
+-	dstPtr[1] = aPtr[1] ^ bPtr[1]
+-	dstPtr[2] = aPtr[2] ^ bPtr[2]
+-	dstPtr[3] = aPtr[3] ^ bPtr[3]
+-	dstPtr[4] = aPtr[4] ^ bPtr[4]
+-	dstPtr[5] = aPtr[5] ^ bPtr[5]
+-	dstPtr[6] = aPtr[6] ^ bPtr[6]
+-	dstPtr[7] = aPtr[7] ^ bPtr[7]
++	xor16((*[16]byte)(dst[0:16]), (*[16]byte)(a[0:16]), (*[16]byte)(b[0:16]))
++	xor16((*[16]byte)(dst[16:32]), (*[16]byte)(a[16:32]), (*[16]byte)(b[16:32]))
++	xor16((*[16]byte)(dst[32:48]), (*[16]byte)(a[32:48]), (*[16]byte)(b[32:48]))
++	xor16((*[16]byte)(dst[48:64]), (*[16]byte)(a[48:64]), (*[16]byte)(b[48:64]))
++}
++
++// xor16 sets dst = a ⊕ b for one 16-byte block. The 64-bit loads go through
++// encoding/binary, so the operands need no alignment: byte-array blocks carry
++// none, and targets without unaligned 64-bit access must not see a uint64
++// dereference of them.
++func xor16(dst, a, b *[16]byte) {
++	le := binary.LittleEndian
++	le.PutUint64(dst[0:8], le.Uint64(a[0:8])^le.Uint64(b[0:8]))
++	le.PutUint64(dst[8:16], le.Uint64(a[8:16])^le.Uint64(b[8:16]))
+ }
+diff --git a/areion_hw.go b/areion_hw.go
+index 1ca84f2b..1178739c 100644
+--- a/areion_hw.go
++++ b/areion_hw.go
+@@ -1,4 +1,4 @@
+-//go:build !purego
++//go:build (amd64 || arm64) && !purego
+ 
+ package aes
+ 
+diff --git a/areion_hw_test.go b/areion_hw_test.go
+new file mode 100644
+index 00000000..30e41dab
+--- /dev/null
++++ b/areion_hw_test.go
+@@ -0,0 +1,129 @@
++//go:build (amd64 || arm64) && !purego
++
++package aes
++
++import (
++	"bytes"
++	"testing"
++)
++
++// Test hardware vs software implementation consistency
++func TestAreion256HardwareSoftwareMatch(t *testing.T) {
++	if !CPU.HasAESNI && !CPU.HasARMCrypto {
++		t.Skip("No hardware AES support available")
++	}
++
++	var stateHW, stateSW Areion256
++	for i := range stateHW {
++		stateHW[i] = byte(i ^ 0xAA)
++	}
++	copy(stateSW[:], stateHW[:])
++
++	// Hardware
++	areion256PermuteAsm(&stateHW)
++
++	// Software
++	areion256PermuteSoftware(&stateSW)
++
++	if !bytes.Equal(stateHW[:], stateSW[:]) {
++		t.Errorf("Areion256 hardware/software mismatch\nHardware: %x\nSoftware: %x", stateHW[:], stateSW[:])
++	}
++}
++
++func TestAreion512HardwareSoftwareMatch(t *testing.T) {
++	if !CPU.HasAESNI && !CPU.HasARMCrypto {
++		t.Skip("No hardware AES support available")
++	}
++
++	var stateHW, stateSW Areion512
++	for i := range stateHW {
++		stateHW[i] = byte(i ^ 0x55)
++	}
++	copy(stateSW[:], stateHW[:])
++
++	// Hardware
++	areion512PermuteAsm(&stateHW)
++
++	// Software
++	areion512PermuteSoftware(&stateSW)
++
++	if !bytes.Equal(stateHW[:], stateSW[:]) {
++		t.Errorf("Areion512 hardware/software mismatch\nHardware: %x\nSoftware: %x", stateHW[:], stateSW[:])
++	}
++}
++
++func TestAreion256InverseHardwareSoftwareMatch(t *testing.T) {
++	if !CPU.HasAESNI && !CPU.HasARMCrypto {
++		t.Skip("No hardware AES support available")
++	}
++
++	var stateHW, stateSW Areion256
++	for i := range stateHW {
++		stateHW[i] = byte(i * 7)
++	}
++	copy(stateSW[:], stateHW[:])
++
++	// Hardware
++	areion256InversePermuteAsm(&stateHW)
++
++	// Software
++	areion256InversePermuteSoftware(&stateSW)
++
++	if !bytes.Equal(stateHW[:], stateSW[:]) {
++		t.Errorf("Areion256 inverse hardware/software mismatch\nHardware: %x\nSoftware: %x", stateHW[:], stateSW[:])
++	}
++}
++
++func TestAreion512InverseHardwareSoftwareMatch(t *testing.T) {
++	if !CPU.HasAESNI && !CPU.HasARMCrypto {
++		t.Skip("No hardware AES support available")
++	}
++
++	var stateHW, stateSW Areion512
++	for i := range stateHW {
++		stateHW[i] = byte(i * 11)
++	}
++	copy(stateSW[:], stateHW[:])
++
++	// Hardware
++	areion512InversePermuteAsm(&stateHW)
++
++	// Software
++	areion512InversePermuteSoftware(&stateSW)
++
++	if !bytes.Equal(stateHW[:], stateSW[:]) {
++		t.Errorf("Areion512 inverse hardware/software mismatch\nHardware: %x\nSoftware: %x", stateHW[:], stateSW[:])
++	}
++}
++
++// TestAreionPermute2HardwareSoftwareMatch checks the assembly path of the
++// second Areion permutation against the software path.
++func TestAreionPermute2HardwareSoftwareMatch(t *testing.T) {
++	if !CPU.HasAESNI && !CPU.HasARMCrypto {
++		t.Skip("No hardware AES support available")
++	}
++
++	for _, seed := range []byte{0x00, 0x5a, 0xa5, 0xff} {
++		var hw256, sw256 Areion256
++		for i := range hw256 {
++			hw256[i] = byte(i*5) ^ seed
++		}
++		copy(sw256[:], hw256[:])
++		areion256PermuteRCAsm(&hw256, &areionRoundConstants2)
++		areion256PermuteSoftwareRC(&sw256, &areionRoundConstants2)
++		if !bytes.Equal(hw256[:], sw256[:]) {
++			t.Errorf("Areion256 second permutation hardware/software mismatch (seed %#x)\nHardware: %x\nSoftware: %x", seed, hw256[:], sw256[:])
++		}
++
++		var hw512, sw512 Areion512
++		for i := range hw512 {
++			hw512[i] = byte(i*5) ^ seed
++		}
++		copy(sw512[:], hw512[:])
++		areion512PermuteRCAsm(&hw512, &areionRoundConstants2)
++		areion512PermuteSoftwareRC(&sw512, &areionRoundConstants2)
++		if !bytes.Equal(hw512[:], sw512[:]) {
++			t.Errorf("Areion512 second permutation hardware/software mismatch (seed %#x)\nHardware: %x\nSoftware: %x", seed, hw512[:], sw512[:])
++		}
++	}
++}
+diff --git a/areion_purego.go b/areion_purego.go
+index bb0669c7..a54d81c9 100644
+--- a/areion_purego.go
++++ b/areion_purego.go
+@@ -1,4 +1,4 @@
+-//go:build purego
++//go:build purego || (!amd64 && !arm64)
+ 
+ package aes
+ 
+diff --git a/areion_test.go b/areion_test.go
+index 0843fd7c..ce2e7eec 100644
+--- a/areion_test.go
++++ b/areion_test.go
+@@ -118,95 +118,6 @@ func TestAreion512Roundtrip(t *testing.T) {
+ 	}
+ }
+ 
+-// Test hardware vs software implementation consistency
+-func TestAreion256HardwareSoftwareMatch(t *testing.T) {
+-	if !CPU.HasAESNI && !CPU.HasARMCrypto {
+-		t.Skip("No hardware AES support available")
+-	}
+-
+-	var stateHW, stateSW Areion256
+-	for i := range stateHW {
+-		stateHW[i] = byte(i ^ 0xAA)
+-	}
+-	copy(stateSW[:], stateHW[:])
+-
+-	// Hardware
+-	areion256PermuteAsm(&stateHW)
+-
+-	// Software
+-	areion256PermuteSoftware(&stateSW)
+-
+-	if !bytes.Equal(stateHW[:], stateSW[:]) {
+-		t.Errorf("Areion256 hardware/software mismatch\nHardware: %x\nSoftware: %x", stateHW[:], stateSW[:])
+-	}
+-}
+-
+-func TestAreion512HardwareSoftwareMatch(t *testing.T) {
+-	if !CPU.HasAESNI && !CPU.HasARMCrypto {
+-		t.Skip("No hardware AES support available")
+-	}
+-
+-	var stateHW, stateSW Areion512
+-	for i := range stateHW {
+-		stateHW[i] = byte(i ^ 0x55)
+-	}
+-	copy(stateSW[:], stateHW[:])
+-
+-	// Hardware
+-	areion512PermuteAsm(&stateHW)
+-
+-	// Software
+-	areion512PermuteSoftware(&stateSW)
+-
+-	if !bytes.Equal(stateHW[:], stateSW[:]) {
+-		t.Errorf("Areion512 hardware/software mismatch\nHardware: %x\nSoftware: %x", stateHW[:], stateSW[:])
+-	}
+-}
+-
+-func TestAreion256InverseHardwareSoftwareMatch(t *testing.T) {
+-	if !CPU.HasAESNI && !CPU.HasARMCrypto {
+-		t.Skip("No hardware AES support available")
+-	}
+-
+-	var stateHW, stateSW Areion256
+-	for i := range stateHW {
+-		stateHW[i] = byte(i * 7)
+-	}
+-	copy(stateSW[:], stateHW[:])
+-
+-	// Hardware
+-	areion256InversePermuteAsm(&stateHW)
+-
+-	// Software
+-	areion256InversePermuteSoftware(&stateSW)
+-
+-	if !bytes.Equal(stateHW[:], stateSW[:]) {
+-		t.Errorf("Areion256 inverse hardware/software mismatch\nHardware: %x\nSoftware: %x", stateHW[:], stateSW[:])
+-	}
+-}
+-
+-func TestAreion512InverseHardwareSoftwareMatch(t *testing.T) {
+-	if !CPU.HasAESNI && !CPU.HasARMCrypto {
+-		t.Skip("No hardware AES support available")
+-	}
+-
+-	var stateHW, stateSW Areion512
+-	for i := range stateHW {
+-		stateHW[i] = byte(i * 11)
+-	}
+-	copy(stateSW[:], stateHW[:])
+-
+-	// Hardware
+-	areion512InversePermuteAsm(&stateHW)
+-
+-	// Software
+-	areion512InversePermuteSoftware(&stateSW)
+-
+-	if !bytes.Equal(stateHW[:], stateSW[:]) {
+-		t.Errorf("Areion512 inverse hardware/software mismatch\nHardware: %x\nSoftware: %x", stateHW[:], stateSW[:])
+-	}
+-}
+-
+ // Areion256-DM tests (test vectors from reference C implementation)
+ func TestAreion256DM(t *testing.T) {
+ 	// Test vector 1: all zeros
+@@ -664,35 +575,3 @@ func TestAreionPermute2KnownAnswer(t *testing.T) {
+ 		t.Errorf("Areion512 second permutation (seq) failed\nGot:      %x\nExpected: %x", state512[:], expected)
+ 	}
+ }
+-
+-// TestAreionPermute2HardwareSoftwareMatch checks the assembly path of the
+-// second Areion permutation against the software path.
+-func TestAreionPermute2HardwareSoftwareMatch(t *testing.T) {
+-	if !CPU.HasAESNI && !CPU.HasARMCrypto {
+-		t.Skip("No hardware AES support available")
+-	}
+-
+-	for _, seed := range []byte{0x00, 0x5a, 0xa5, 0xff} {
+-		var hw256, sw256 Areion256
+-		for i := range hw256 {
+-			hw256[i] = byte(i*5) ^ seed
+-		}
+-		copy(sw256[:], hw256[:])
+-		areion256PermuteRCAsm(&hw256, &areionRoundConstants2)
+-		areion256PermuteSoftwareRC(&sw256, &areionRoundConstants2)
+-		if !bytes.Equal(hw256[:], sw256[:]) {
+-			t.Errorf("Areion256 second permutation hardware/software mismatch (seed %#x)\nHardware: %x\nSoftware: %x", seed, hw256[:], sw256[:])
+-		}
+-
+-		var hw512, sw512 Areion512
+-		for i := range hw512 {
+-			hw512[i] = byte(i*5) ^ seed
+-		}
+-		copy(sw512[:], hw512[:])
+-		areion512PermuteRCAsm(&hw512, &areionRoundConstants2)
+-		areion512PermuteSoftwareRC(&sw512, &areionRoundConstants2)
+-		if !bytes.Equal(hw512[:], sw512[:]) {
+-			t.Errorf("Areion512 second permutation hardware/software mismatch (seed %#x)\nHardware: %x\nSoftware: %x", seed, hw512[:], sw512[:])
+-		}
+-	}
+-}
+diff --git a/keyschedule.go b/keyschedule.go
+index 3bddc0c0..b0b3dbcd 100644
+--- a/keyschedule.go
++++ b/keyschedule.go
+@@ -87,16 +87,18 @@ func expandKey(key []byte, roundKeys []Block, rounds int) {
+ 	// Use the roundKeys array directly as our word storage
+ 	// Each Block is 16 bytes = 4 uint32 words
+ 	// We'll interpret the contiguous memory as uint32 words
+-	wordsPtr := unsafe.Pointer(&roundKeys[0])
++	// Native byte order through encoding/binary keeps the layout of a direct
++	// uint32 access without requiring 4-byte alignment of roundKeys.
++	words := unsafe.Slice((*byte)(unsafe.Pointer(&roundKeys[0])), len(roundKeys)*16)
+ 
+ 	// Helper to get word at index i
+ 	getWord := func(i int) uint32 {
+-		return *(*uint32)(unsafe.Add(wordsPtr, uintptr(i)*4))
++		return binary.NativeEndian.Uint32(words[i*4:])
+ 	}
+ 
+ 	// Helper to set word at index i
+ 	setWord := func(i int, val uint32) {
+-		*(*uint32)(unsafe.Add(wordsPtr, uintptr(i)*4)) = val
++		binary.NativeEndian.PutUint32(words[i*4:], val)
+ 	}
+ 
+ 	// Copy the key into the first nk words (big-endian)
+@@ -120,12 +122,7 @@ func expandKey(key []byte, roundKeys []Block, rounds int) {
+ 	// Convert from native endian to big-endian in-place
+ 	// This ensures column-major order output
+ 	for i := 0; i < totalWords; i++ {
+-		w := getWord(i)
+-		ptr := (*[4]byte)(unsafe.Add(wordsPtr, uintptr(i)*4))
+-		ptr[0] = byte(w >> 24)
+-		ptr[1] = byte(w >> 16)
+-		ptr[2] = byte(w >> 8)
+-		ptr[3] = byte(w)
++		binary.BigEndian.PutUint32(words[i*4:], getWord(i))
+ 	}
+ }
+ 

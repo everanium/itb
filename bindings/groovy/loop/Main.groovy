@@ -842,6 +842,7 @@ final class Main {
      */
     private static Built buildPipeline(Config cfg, String profile) {
         Opts opts = new Opts()
+                .withMode(cfg.blobMode)
                 .withInnerHash(cfg.hash)
                 .withMacName(cfg.mac)
                 .withParallax(cfg.parallax)
@@ -877,75 +878,8 @@ final class Main {
             pipe.close()
             return null
         }
-        if (cfg.blobMode == 2L) {
-            // The sizing mode is not an Opts knob: the Init blob is
-            // edited and the pipeline reopened from it, so the retained
-            // blob (the one blob-cycle reopens from) carries the edited
-            // mode.
-            if (!editInnerBlobMode(blob, 2)) {
-                System.err.println('loop: rewrite blob mode: inner blob mode field not found')
-                pipe.close()
-                return null
-            }
-            pipe.close()
-            try {
-                pipe = Pipeline.load(blob)
-            } catch (RuntimeException e) {
-                System.err.println("loop: reload Mode 2 blob: ${Worker.detail(e)}")
-                return null
-            }
-        }
         logPipelineInitialised(profile, blob)
         return new Built(pipe, blob)
-    }
-
-    /** Offset of the first occurrence of needle in hay at or after
-     * from, or -1 when absent. */
-    private static int findBytes(byte[] hay, int from, byte[] needle) {
-        for (int i = from; i + needle.length <= hay.length; i++) {
-            boolean match = true
-            for (int j = 0; j < needle.length; j++) {
-                if (hay[i + j] != needle[j]) {
-                    match = false
-                    break
-                }
-            }
-            if (match) {
-                return i
-            }
-        }
-        return -1
-    }
-
-    /** Sets the inner blob's "mode" field of a wrap-layer session blob
-     * to targetMode (1 = per-region, 2 = per-container) in place. The
-     * wrap layer's profile record carries its own "mode" (a string), so
-     * the search starts at the inner blob ("ib"); both shipped modes are
-     * one digit wide, so the blob length does not change and the key
-     * material in blob is never copied. Returns false when the inner
-     * blob or its mode field is not found. */
-    private static boolean editInnerBlobMode(byte[] blob, int targetMode) {
-        byte[] ibKey = '"ib":{'.getBytes('US-ASCII')
-        byte[] modeKey = '"mode":'.getBytes('US-ASCII')
-        int ib = findBytes(blob, 0, ibKey)
-        if (ib < 0) {
-            return false
-        }
-        int mode = findBytes(blob, ib + ibKey.length, modeKey)
-        if (mode < 0) {
-            return false
-        }
-        int at = mode + modeKey.length
-        if (at + 1 >= blob.length) {
-            return false
-        }
-        int c = (int) blob[at]
-        int next = (int) blob[at + 1]
-        if (c < 0x31 || c > 0x32 || (next >= 0x30 && next <= 0x39)) {
-            return false
-        }
-        blob[at] = (byte) (0x30 + targetMode)
-        return true
     }
 
     private static String dash(String s) {

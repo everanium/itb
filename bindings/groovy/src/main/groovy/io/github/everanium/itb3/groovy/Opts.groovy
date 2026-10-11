@@ -35,6 +35,11 @@ class Opts {
         this
     }
 
+    /** Container floor sizing mode: 1 (per-region, default) | 2 (per-container). */
+    Opts withMode(long n) {
+        withRaw('mode', Long.toString(n))
+    }
+
     /** Hex-encodes the parallax master override ({@code pm}). */
     Opts withPermMaster(byte[] master) {
         withRaw('pm', hex(master))

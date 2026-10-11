@@ -85,16 +85,19 @@ class PersistTest {
         // barrier fill margin, and inspect surfaces both.
         Pipeline.init("streaming-aead-triple-mac-v1").use { pipe ->
             val prof = Pipeline.inspect(pipe.save())
+            assertEquals(1, prof.containerMode())
             assertEquals(512, prof.nonceBits())
             assertEquals(1, prof.barrierFill())
         }
 
         // Per-Pipeline overrides travel through the blob into inspect.
-        val opts = Opts().nonceBits(256).barrierFill(4)
+        val opts = Opts().mode(2).nonceBits(256).barrierFill(4)
         Pipeline.init("streaming-aead-triple-mac-v1", opts).use { pipe ->
             val prof = Pipeline.inspect(pipe.save())
+            assertEquals(2, prof.containerMode())
             assertEquals(256, prof.nonceBits())
             assertEquals(4, prof.barrierFill())
+            assertTrue("\"container_mode\":2" in prof.toJson())
             assertTrue("\"nonce_bits\":256" in prof.toJson())
             assertTrue("\"barrier_fill\":4" in prof.toJson())
         }
@@ -102,8 +105,10 @@ class PersistTest {
         // The registry entry is the recipe alone — neither field is
         // part of it, so both read as absent rather than as zero.
         val registry = Pipeline.lookup("streaming-aead-triple-mac-v1")
+        assertNull(registry.containerMode())
         assertNull(registry.nonceBits())
         assertNull(registry.barrierFill())
+        assertFalse("container_mode" in registry.toJson())
         assertFalse("nonce_bits" in registry.toJson())
         assertFalse("barrier_fill" in registry.toJson())
     }

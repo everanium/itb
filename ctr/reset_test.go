@@ -271,7 +271,8 @@ func TestChaCha20ResetCounterOverflow(t *testing.T) {
 	// blockOff <= 2^32 - 1, so anything past 64 * 2^32 must error.
 	// Boundary values mirror seek.go TestNewAtChaCha20CounterOverflow so
 	// the two entry points speak the same language at the same threshold.
-	const lastValidByteOffset = (1 << 38) - 1
+	lastValidByteOffset := int64(1)<<38 - 1
+	lastAlignedByteOffset := (int64(1)<<32 - 1) * 64
 	overflow := (int64(1) << 32) * 64
 	if int64(int(overflow)) != overflow {
 		t.Skip("platform int width cannot represent overflow boundary")
@@ -279,12 +280,12 @@ func TestChaCha20ResetCounterOverflow(t *testing.T) {
 
 	// Last valid intra-block seek within block index 2^32 − 1 must succeed —
 	// no bogus rejection at the boundary.
-	if err := ks.ResetCounter(lastValidByteOffset); err != nil {
+	if err := ks.ResetCounter(int(lastValidByteOffset)); err != nil {
 		t.Errorf("chacha20 ResetCounter(2^38-1): expected success at the last valid block index, got error: %v", err)
 	}
 
 	// Last valid block-aligned seek must succeed.
-	if err := ks.ResetCounter((1<<32 - 1) * 64); err != nil {
+	if err := ks.ResetCounter(int(lastAlignedByteOffset)); err != nil {
 		t.Errorf("chacha20 ResetCounter((2^32-1)*64): expected success at block-aligned last valid counter, got error: %v", err)
 	}
 
