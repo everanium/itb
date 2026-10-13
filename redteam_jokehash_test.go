@@ -426,7 +426,7 @@ func sipHash24Adapter(data []byte, seed0, seed1 uint64) (uint64, uint64) {
 // prime 0x100000001b3 (popcount 7). The redteam suite already carries
 // a full-128-bit FNV-1a variant (fnv1a128BrokenLab in
 // redteam_broken_test.go) that uses math/big for the mod-2^128
-// arithmetic; that version is faithful to the archived probe but
+// arithmetic; that version is faithful to the full-width multiply but
 // significantly slower than native uint64. This adapter is the
 // native-speed T-function control the HW distinguisher probe below
 // needs for a 2000-sample two-arm CPA without extending the test's

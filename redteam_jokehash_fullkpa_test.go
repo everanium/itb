@@ -24,7 +24,11 @@ package itb
 //      the ChainHash output VARIES per pixel and per chunk. The nullHash
 //      Stage 1 decomposition relied on the opposite: a constant per-pixel
 //      (noisePos, rotation, channelXOR) and a single message-wide 48-bit
-//      lock mask triple, each brute-forceable in a tiny space.
+//      lock mask triple, each brute-forceable in a tiny space. None of
+//      the three stays constant under jokeHash: the noise position is
+//      noiseFold3(lo + rotl(hi, 1)), which varies per pixel even though
+//      jokeHash returns hi = ^lo (M2). The rotation and the channel
+//      masks vary with the 64-bit dataHash.
 //
 // This test does not "recover" the key — it runs the concrete reduction
 // steps the nullHash attack used and measures that every one of them is
@@ -184,7 +188,14 @@ func TestRedTeamJokeHashFullKPA(t *testing.T) {
 	// ---------------------------------------------------------------
 	// M2. Non-collapse: per-pixel and per-nonce ChainHash output varies.
 	// The nullHash attack brute-forced 8 constant noisePos and 256
-	// constant dataSeed values; under jokeHash these vary per pixel.
+	// constant dataSeed values; under jokeHash the dataHash varies per
+	// pixel, and so does the noise position. The position is
+	// noiseFold3(lo + rotl(hi, 1)) of the noise seed's ChainHash
+	// (noisepos.go). jokeHash returns hi = ^lo at every round; a XOR of
+	// the two words would cancel that complement to a public constant,
+	// while the carries of the addition keep the position varying with
+	// lo. The rotation and the eight channel masks come from the 64-bit
+	// dataHash, which varies per pixel and per nonce.
 	// ---------------------------------------------------------------
 	{
 		const N = 1000
@@ -198,9 +209,9 @@ func TestRedTeamJokeHashFullKPA(t *testing.T) {
 		rotSeen := map[uint8]struct{}{}
 		for p := 0; p < N; p++ {
 			dh, _ := d1.blockHash128(dataBuf, p)
-			nh, _ := ns.blockHash128(noiseBuf, p)
+			nhLo, nhHi := ns.blockHash128(noiseBuf, p)
 			distinctData[dh] = struct{}{}
-			noisePosSeen[uint8(nh&7)] = struct{}{}
+			noisePosSeen[uint8(noisePosition(nhLo, nhHi))] = struct{}{}
 			rotSeen[uint8(dh%7)] = struct{}{}
 		}
 		// Cross-nonce: same pixel, a different (fresh) nonce -> different hash.
@@ -214,9 +225,13 @@ func TestRedTeamJokeHashFullKPA(t *testing.T) {
 
 		t.Logf("M2 non-collapse over N=%d pixels: distinct dataHash=%d (nullHash=1), noisePos spread=%d/8, rotation spread=%d/7",
 			N, len(distinctData), len(noisePosSeen), len(rotSeen))
+		t.Logf("M2 noise position under hi = ^lo: spread %d/8", len(noisePosSeen))
 		t.Logf("M2 cross-nonce (pixel 0): dataHash differs across nonces: %v", dhMain != dhAlt)
 		if len(distinctData) < N {
 			t.Errorf("M2 dataHash collapsed: %d distinct < %d pixels", len(distinctData), N)
+		}
+		if len(noisePosSeen) < 8 {
+			t.Errorf("M2 noise position collapsed: spread %d/8 over %d pixels", len(noisePosSeen), N)
 		}
 	}
 
@@ -316,7 +331,7 @@ func TestRedTeamJokeHashFullKPA(t *testing.T) {
 		// nullHash attack enumerated.
 		t.Logf("M4 barrier severance: attacker knows framed (KPA lever): %v; Pixel Barrier input lanes are seed-locked: %v", framedKnown, lanesSeedLocked)
 		t.Logf("M4 => Full KPA at plaintext does NOT yield known-plaintext at Pixel Barrier; lanes depend on the 256-bit lockSeed via per-chunk combinadic-unrank masks (non-T-function, non-GF(2)-linear)")
-		t.Logf("M4 => the FNV-1a-style T-function bit-plane recovery (which needs barrier-free known Pixel Barrier input, i.e. Single Ouroboros) has no foothold here")
+		t.Logf("M4 => the FNV-1a-style T-function bit-plane recovery (which needs barrier-free known Pixel Barrier input, i.e. a one-region, barrier-off encode) has no foothold here")
 
 		// Sanity: the true lanes decode back (pipeline correctness, lab-side).
 		back, derr := Decrypt3x128Cfg(cfg, ns, ls, d1, d2, d3, s1, s2, s3, ct)
@@ -333,7 +348,7 @@ func TestRedTeamJokeHashFullKPA(t *testing.T) {
 	// ---------------------------------------------------------------
 	t.Logf("CONCLUSION: every reduction step the nullHash Stage 1 attack used is closed under jokeHash:")
 	t.Logf("  - no 16-bit constant collapse (M1: 256-bit even key per role)")
-	t.Logf("  - no constant per-pixel schedule to brute (M2: per-pixel/per-nonce non-collapse)")
+	t.Logf("  - no constant per-pixel dataHash schedule to brute (M2: per-pixel/per-nonce non-collapse); the noise position IS a public constant under jokeHash (M2), which removes one 3-bit unknown per pixel and leaves the rotation and the eight channel masks")
 	t.Logf("  - no single message-wide lock mask to precompute (M3: per-chunk masks, 2^16 brute reproduces 0)")
 	t.Logf("  - no Pixel Barrier known-plaintext (M4: barrier locks lanes behind the 256-bit lockSeed)")
 	t.Logf("The joint unknown is ~5 x 256 = ~1280 bits with a combinadic-unrank barrier between the KPA lever and the exploitable T-function layer. No sub-2^256 decomposition was found; a full joint SAT/SMT model was assessed as beyond the analysis budget and likely intractable due to the non-T-function unrank. Result: attack does not converge (characterised null result; positive evidence for the barrier).")

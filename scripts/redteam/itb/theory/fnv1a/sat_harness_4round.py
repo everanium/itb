@@ -80,6 +80,7 @@ from itb_channel_mirror import (  # type: ignore
     rotate_bits_7,
     cobs_encode,
     cobs_decode,
+    load_noise_seed_components,
 )
 
 
@@ -317,23 +318,27 @@ def _build_cell_context(
 def _sanity_observations(
     ctx: CellContext,
     data_lo: List[int],
-    noise_lo: List[int],
+    noise_comps: List[int],
     rounds: int,
 ) -> int:
     """Return number of observations where the lab ground-truth reproduces
     the observed byte (via the concrete Python mirror). MUST equal
-    len(ctx.observations) — else the observation-building code is buggy."""
+    len(ctx.observations) — else the observation-building code is buggy.
+
+    `noise_comps` are the full noiseSeed components (both lanes): the
+    noise position folds both lanes of the noise hash. The fnvstress
+    cells are single-region encodes, so the noise counter equals p."""
     from itb_channel_mirror import (
         _derive_pixel_params, _derive_noise_pos,
-        extract_channel_xor, rotate_bits_7,
+        extract_channel_xor, rotate_bits_7, noise_hash_lohi,
     )
     ok = 0
     for o in ctx.observations:
         data_bytes_ = bytes.fromhex(o.data_bytes_hex)
         dh = fnv_chain_lo_concrete(data_lo, data_bytes_, rounds)
-        nh = fnv_chain_lo_concrete(noise_lo, data_bytes_, rounds)
+        nh_lo, nh_hi = noise_hash_lohi(noise_comps, o.p, ctx.nonce)
         rotation, _ = _derive_pixel_params(dh)
-        noise_pos = _derive_noise_pos(nh)
+        noise_pos = _derive_noise_pos(nh_lo, nh_hi)
         channel_xor = extract_channel_xor(dh, o.channel)
         # Re-encode plaintext bits the way the encoder does:
         data_bits = (o.plaintext_bits & 0x7F) ^ channel_xor
@@ -470,14 +475,14 @@ def _forward_check_one(
     recovered_data_lo: List[int],
     rounds: int,
 ) -> bool:
-    """Check: does the recovered data-seed, combined with SOME noise_pos
+    """Check: does the recovered dataSeed, combined with SOME noise_pos
     in 0..7 (brute-forced), reproduce this observation's observed_byte?
 
-    Attacker-realistic. A real attacker recovers only the data-seed
+    Attacker-realistic. A real attacker recovers only the dataSeed
     compound state via SAT; for each new pixel they enumerate all 8
     noise_pos values trivially (3 bits) and accept whichever one
     reproduces the observed byte. If ANY noise_pos makes the concrete
-    encoder match the ciphertext, the data-seed recovery succeeded for
+    encoder match the ciphertext, the dataSeed recovery succeeded for
     this channel — the specific noise_pos value is a per-pixel detail,
     not a seed-level secret. This is the same reduction as the Crib KPA
     (where K_noise_bits_0_2 was recovered separately from K_data).
@@ -605,7 +610,7 @@ def solve(
     cells: List[CellContext],
     rounds: int,
     data_lo_truth: List[int],
-    noise_lo_truth: List[int],
+    noise_seed_truth: List[int],
     timeout_sec: int,
     holdout_cells: Optional[List[CellContext]] = None,
     skip_sanity: bool = False,
@@ -628,7 +633,7 @@ def solve(
     if not skip_sanity:
         for c in cells:
             total_sanity_ok += _sanity_observations(
-                c, data_lo_truth, noise_lo_truth, rounds
+                c, data_lo_truth, noise_seed_truth, rounds
             )
         if total_sanity_ok != total_obs:
             raise RuntimeError(
@@ -804,7 +809,7 @@ def solve(
                     training_ok += 1
 
         # Holdout: observations from held-out cells (different nonce,
-        # same seeds). If recovered data-seed is functionally equivalent
+        # same seeds). If recovered dataSeed is functionally equivalent
         # to ground truth, every observation must be reproducible under
         # some noise_pos (brute-forced per pixel).
         if holdout_cells:
@@ -869,7 +874,7 @@ def _cc_worker(worker_args: dict) -> dict:
     holdout_max_cribs = worker_args["holdout_max_cribs"]
     rounds = worker_args["rounds"]
     data_lo_truth = worker_args["data_lo_truth"]
-    noise_lo_truth = worker_args["noise_lo_truth"]
+    noise_seed_truth = worker_args["noise_seed_truth"]
     per_cube_timeout_sec = worker_args["per_cube_timeout_sec"]
     solver_backend = worker_args.get("solver_backend", "bitwuzla")
 
@@ -889,7 +894,7 @@ def _cc_worker(worker_args: dict) -> dict:
             cells=training,
             rounds=rounds,
             data_lo_truth=data_lo_truth,
-            noise_lo_truth=noise_lo_truth,
+            noise_seed_truth=noise_seed_truth,
             timeout_sec=per_cube_timeout_sec,
             holdout_cells=holdout or None,
             solver_backend=solver_backend,
@@ -920,7 +925,7 @@ def _solve_with_anchor_np_pinned(
     cells: List[CellContext],
     rounds: int,
     data_lo_truth: List[int],
-    noise_lo_truth: List[int],
+    noise_seed_truth: List[int],
     timeout_sec: int,
     holdout_cells: Optional[List[CellContext]] = None,
     solver_backend: str = "bitwuzla",
@@ -947,7 +952,7 @@ def _solve_with_anchor_np_pinned(
         cells=cells,
         rounds=rounds,
         data_lo_truth=data_lo_truth,
-        noise_lo_truth=noise_lo_truth,
+        noise_seed_truth=noise_seed_truth,
         timeout_sec=timeout_sec,
         holdout_cells=holdout_cells,
         skip_sanity=True,
@@ -966,7 +971,7 @@ def _cube_and_conquer_solve(
     holdout_max_cribs: int,
     rounds: int,
     data_lo_truth: List[int],
-    noise_lo_truth: List[int],
+    noise_seed_truth: List[int],
     per_cube_timeout_sec: int,
     workers: int,
     memory_limit_mb: int,
@@ -997,7 +1002,7 @@ def _cube_and_conquer_solve(
             "holdout_max_cribs": holdout_max_cribs,
             "rounds": rounds,
             "data_lo_truth": data_lo_truth,
-            "noise_lo_truth": noise_lo_truth,
+            "noise_seed_truth": noise_seed_truth,
             "per_cube_timeout_sec": per_cube_timeout_sec,
             "memory_limit_mb": memory_limit_mb,
             "solver_backend": solver_backend,
@@ -1109,7 +1114,7 @@ def _bf_worker(worker_args: dict) -> dict:
     holdout_max_cribs = worker_args["holdout_max_cribs"]
     rounds = worker_args["rounds"]
     data_lo_truth = worker_args["data_lo_truth"]
-    noise_lo_truth = worker_args["noise_lo_truth"]
+    noise_seed_truth = worker_args["noise_seed_truth"]
     per_candidate_timeout_sec = worker_args["per_candidate_timeout_sec"]
     solver_backend = worker_args.get("solver_backend", "z3")
     _ = memory_limit_mb  # referenced above, silence linter if any
@@ -1133,7 +1138,7 @@ def _bf_worker(worker_args: dict) -> dict:
             cells=training,
             rounds=rounds,
             data_lo_truth=data_lo_truth,
-            noise_lo_truth=noise_lo_truth,
+            noise_seed_truth=noise_seed_truth,
             timeout_sec=per_candidate_timeout_sec,
             holdout_cells=holdout or None,
             skip_sanity=True,
@@ -1170,7 +1175,7 @@ def _brute_force_startpixel_pool(
     holdout_max_cribs: int,
     rounds: int,
     data_lo_truth: List[int],
-    noise_lo_truth: List[int],
+    noise_seed_truth: List[int],
     per_candidate_timeout_sec: int,
     workers: int,
     memory_limit_mb: int,
@@ -1216,7 +1221,7 @@ def _brute_force_startpixel_pool(
             "holdout_max_cribs": holdout_max_cribs,
             "rounds": rounds,
             "data_lo_truth": data_lo_truth,
-            "noise_lo_truth": noise_lo_truth,
+            "noise_seed_truth": noise_seed_truth,
             "per_candidate_timeout_sec": per_candidate_timeout_sec,
             "memory_limit_mb": memory_limit_mb,
             "solver_backend": solver_backend,
@@ -1384,7 +1389,7 @@ def main() -> int:
     summary = json.loads((fnvstress_dir / "summary.json").read_text())
     rounds = summary["rounds"]
     data_lo_truth = [int(h, 16) for h in summary["data_lo_lane_hex"]]
-    noise_lo_truth = [int(h, 16) for h in summary["noise_lo_lane_hex"]]
+    noise_seed_truth = load_noise_seed_components(summary, rounds)
 
     print(
         f"FNV-1a stress SAT harness — keyBits={summary['key_bits']} "
@@ -1460,7 +1465,7 @@ def main() -> int:
             holdout_max_cribs=args.holdout_cribs_per_cell,
             rounds=rounds,
             data_lo_truth=data_lo_truth,
-            noise_lo_truth=noise_lo_truth,
+            noise_seed_truth=noise_seed_truth,
             per_candidate_timeout_sec=bf_timeout,
             workers=workers,
             memory_limit_mb=args.memory_limit_mb_per_worker,
@@ -1558,7 +1563,7 @@ def main() -> int:
             holdout_max_cribs=args.holdout_cribs_per_cell,
             rounds=rounds,
             data_lo_truth=data_lo_truth,
-            noise_lo_truth=noise_lo_truth,
+            noise_seed_truth=noise_seed_truth,
             per_cube_timeout_sec=args.timeout_sec,
             workers=workers,
             memory_limit_mb=args.memory_limit_mb_per_worker,
@@ -1642,7 +1647,7 @@ def main() -> int:
         cells=cells,
         rounds=rounds,
         data_lo_truth=data_lo_truth,
-        noise_lo_truth=noise_lo_truth,
+        noise_seed_truth=noise_seed_truth,
         timeout_sec=args.timeout_sec,
         holdout_cells=holdout_cells or None,
         solver_backend=args.solver,

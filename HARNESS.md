@@ -8,8 +8,6 @@
 
 *(public sibling of [REDTEAM.md](REDTEAM.md) / [ITB.md](ITB.md) / [SCIENCE.md](SCIENCE.md) / [PROOFS.md](PROOFS.md). Three-axis empirical study of non-cryptographic hash primitives wrapped into ITB `ChainHash128` — bias-absorption (Axes A, A', B) and SAT KPA seed-recovery resistance (Axis C). Scope restricted to primitives whose Go reference and Python mirror each fit in ≤ ~500 LOC.)*
 
-*The archived harness record — covering the wider primitive shelf under Single Ouroboros — is preserved in [archive/HARNESS.md](archive/HARNESS.md).*
-
 ## 1. Scope
 
 The shelf measures four non-cryptographic hash primitives plugged into ITB `ChainHash128` to validate two architectural properties:
@@ -17,7 +15,7 @@ The shelf measures four non-cryptographic hash primitives plugged into ITB `Chai
 1. **Bias absorption** — whether ITB's encoding pipeline (rotation + noise barrier + COBS framing + DRBG fill from `internal/drbg` — CSPRNG-seeded noise from the operator-selected DRBG fill primitive, AES-256-CTR by default where hardware AES is present and ChaCha20 otherwise) neutralises a primitive's documented SMHasher weaknesses on the attacker-observable ciphertext surface (Axes A, A', B).
 2. **SAT-based seed-recovery resistance** — whether commodity-scale Bitwuzla / Z3 KPA can recover the per-primitive seed at minimum ITB deployment (`keyBits = 512`, ChainHash-4 lo-lane) within reasonable wall-clock (Axis C).
 
-The shelf complements the archived [Phase 2a extension](archive/REDTEAM.md#phase-2a-extension--hash-agnostic-bias-neutralization-audit-axis-1--axis-2) (four cryptographic primitives in the Hash matrix) by extending bias-absorption coverage to non-cryptographic hashes, and complements [archive/REDTEAM.md Phase 2g](archive/REDTEAM.md#phase-2g--multi-crib-kpa-against-fnv-1a--itb-sat-based) by characterising raw-chain SAT KPA cost on each primitive in isolation. (Cross-build implementation parity testing across pure-Go and C shared libraries resides in `scripts/parity/cross-build-parity.sh` and `tools/parity`; binding concurrency stress utilities reside in `tools/loop/`; full cryptanalytic attack probes reside in [REDTEAM.md](REDTEAM.md)).
+The shelf extends bias-absorption coverage to non-cryptographic hashes and characterises raw-chain SAT KPA cost on each primitive in isolation. (Cross-build implementation parity testing across pure-Go and C shared libraries resides in `scripts/parity/cross-build-parity.sh` and `tools/parity`; binding concurrency stress utilities reside in `tools/loop/`; full cryptanalytic attack probes reside in [REDTEAM.md](REDTEAM.md)).
 
 Primitive selection criteria:
 
@@ -130,7 +128,7 @@ Axis C asks whether commodity-scale Bitwuzla / Z3 KPA recovers a primitive's see
 
 The three groupings share one mechanism narrative:
 
-**(A) Invertible round maps fall at rounds = 1; only a carry-up T-function carries the break into deployment.** splitmix64, mx3, and fnv1a are all `inv = Y` ([§3.5](#35-sat-free-algebraic--differential-pre-screen)) — a single round is a bijection the solver inverts directly (splitmix64 ≈ 20 s Z3 / ≈ 215 s Bitwuzla; mx3 ≈ 2–5 s, hi-lane seed unconstrained, lo-lane seed functionally-equivalent to ground truth). At rounds ≥ 2 the feedforward masks the intermediate output; the seed then solves only through the whole composition, tractable only when the round map is a **carry-up T-function** (output bit t depends on input bits 0..t, plane-by-plane LSB → MSB). fnv1a's ×0x13B lo-lane has that structure and stays solvable at rounds = 4 in ≈ 146 s (Bitwuzla) / ≈ 0.16 s (structure-aware T-function solver). splitmix64 and mx3 lack it — mix64's right-shifts (`z ^ (z>>30 / >>27 / >>31)`) push high bits into low and destroy triangularity — so both resist at the 24 h budget at rounds = 2 despite equal invertibility. splitmix64 is the clean control (lo lane is literally splitmix64; hi lane is only a parallel second instance and the discard drops it), so its rounds ≥ 2 resistance is a property of splitmix64's own structure. fnv1a's SAT-tractability is therefore its carry-up triangular structure, not invertibility or round count. The ≈ 8 h figure cited for fnv1a elsewhere is the FULL Phase 2g ITB break (ChainHash + the ~90-bit per-pixel noise_pos barrier + 4 public-schema cribs), not this isolated chain inversion.
+**(A) Invertible round maps fall at rounds = 1; only a carry-up T-function carries the break into deployment.** splitmix64, mx3, and fnv1a are all `inv = Y` ([§3.5](#35-sat-free-algebraic--differential-pre-screen)) — a single round is a bijection the solver inverts directly (splitmix64 ≈ 20 s Z3 / ≈ 215 s Bitwuzla; mx3 ≈ 2–5 s, hi-lane seed unconstrained, lo-lane seed functionally-equivalent to ground truth). At rounds ≥ 2 the feedforward masks the intermediate output; the seed then solves only through the whole composition, tractable only when the round map is a **carry-up T-function** (output bit t depends on input bits 0..t, plane-by-plane LSB → MSB). fnv1a's ×0x13B lo-lane has that structure and stays solvable at rounds = 4 in ≈ 146 s (Bitwuzla) / ≈ 0.16 s (structure-aware T-function solver). splitmix64 and mx3 lack it — mix64's right-shifts (`z ^ (z>>30 / >>27 / >>31)`) push high bits into low and destroy triangularity — so both resist at the 24 h budget at rounds = 2 despite equal invertibility. splitmix64 is the clean control (lo lane is literally splitmix64; hi lane is only a parallel second instance and the discard drops it), so its rounds ≥ 2 resistance is a property of splitmix64's own structure. fnv1a's SAT-tractability is therefore its carry-up triangular structure, not invertibility or round count.
 
 **(B) The hi-lane discard walls a lane-mixing primitive with no round structure required.** murmur3 (MurmurHash3_x64_128) is the only primitive here with a genuine 128-bit internal state whose halves cross-mix in finalisation: the full-128 seed recovers in ≈ 2.1 s, but ITB observes only the lo lane — a 128 → 64 projection of the already-mixed state — and that projection alone times out, walling murmur3 at rounds = 1 before the feedforward contributes. For the lane-parallel primitives (every other row) the discard is **off**: the lo lane is computed independently of the hi lane, so dropping the hi lane removes no constraint. Real ITB stacks both barriers plus the per-pixel noise_pos / rotation and the always-on 48-bit Interlocked Barrier permutation on top.
 
@@ -138,7 +136,7 @@ The three groupings share one mechanism narrative:
 
 ### 3.5. SAT-free algebraic & differential pre-screen
 
-Axis C is hours-long and the wrong instrument for triaging a candidate primitive. This pre-screen is the cheap triage. Two Monte-Carlo / exact-algebra batteries — [`avalanche_screen.py`](scripts/redteam/itb/theory/_common/chainhashes/avalanche_screen.py) and [`differential_screen.py`](scripts/redteam/itb/theory/_common/chainhashes/differential_screen.py) — measure the **ChainHash lo-lane as a function of the seed at a fixed data buffer** (the inner primitive, not the full ITB envelope; the envelope's Pixel Barrier is primitive-independent and lives in [archive/REDTEAM.md Phase 2g](archive/REDTEAM.md#phase-2g--multi-crib-kpa-against-fnv-1a--itb-sat-based)). The upstream question a solver depends on: **does the inner primitive hand a SAT/SMT solver a structural hook to grab?** No hook → under the PRF assumption no efficient recovery exists; hook → candidate for the expensive Axis C confirmation.
+Axis C is hours-long and the wrong instrument for triaging a candidate primitive. This pre-screen is the cheap triage. Two Monte-Carlo / exact-algebra batteries — [`avalanche_screen.py`](scripts/redteam/itb/theory/_common/chainhashes/avalanche_screen.py) and [`differential_screen.py`](scripts/redteam/itb/theory/_common/chainhashes/differential_screen.py) — measure the **ChainHash lo-lane as a function of the seed at a fixed data buffer** (the inner primitive, not the full ITB envelope; the envelope's Pixel Barrier is primitive-independent and is measured in [REDTEAM.md § FNV-1a lo-lane SAT — architecturally foreclosed](REDTEAM.md#fnv-1a-lo-lane-sat--architecturally-foreclosed)). The upstream question a solver depends on: **does the inner primitive hand a SAT/SMT solver a structural hook to grab?** No hook → under the PRF assumption no efficient recovery exists; hook → candidate for the expensive Axis C confirmation.
 
 Coverage extends beyond the four shelf primitives to three additional non-cryptographic mixers spanning the failure modes: **murmur3** (MurmurHash3_x64_128) and **xxhash64** (XXH64) as one-way table mixers of different topologies (accumulator vs multiply-xorshift), and **splitmix64** as an explicitly **invertible** mixer. These three are pre-screen only — not wired into the Go harness and not taken through Axis A–C. Python mirrors parity-check bit-for-bit against `mmh3` / `xxhash` references and the canonical seed-0 vector sequence (splitmix64).
 
@@ -254,7 +252,7 @@ primitive-agnostic harness measures the **48-bit Rank Barrier core of the Interl
 directly — the mask-space cardinality and lane-independence the KPA closure
 argument rests on (Theorem 11, [Proof 11](PROOFS.md#proof-11-48-bit-rank-barrier-mask-space-interlocked-barrier)) — and the wire the Triple facade produces. Go tests
 (`harness_test.go` for the barrier kernels; `triple/harness_wire_test.go` for
-the facade wire, invoked with `go test -tags redteam`) with full-sample statistical loops gated behind
+the facade wire, invoked with `go test -tags redteam -count=1`) with full-sample statistical loops gated behind
 `ITB_HARNESS_FULL=1`; characterised in
 [REDTEAM.md Phase 4](REDTEAM.md#phase-4--construction-level-creative-probes-triple--interlocked-barrier).
 
@@ -699,4 +697,11 @@ go build -o aesitbnoise ./tools/aesitbnoise
 ./aesitbnoise -mode=fixed             | RNG_test stdin -tlmax 512GB -multithreaded
 ./aesitbnoise -mode=oneblock          | RNG_test stdin -tlmax 4GB   -multithreaded   # negative control
 ./aesitbnoise -mode=csprng            | RNG_test stdin -tlmax 128GB -multithreaded   # positive control
+```
+
+The MAC + Reveal noise-position attacks ([REDTEAM.md — CCA](REDTEAM.md#cca--noise-position-oracle)) with AES-ITB-128 on every seed run from the repository root:
+
+```bash
+ITB_REDTEAM_NOISEPOS_HASH=aesitb128 ITB_REDTEAM_NOISEPOS_TRIALS=10 \
+    go test -tags redteam -run 'TestRedTeamNoisePosCCA' -v -count=1 ./
 ```

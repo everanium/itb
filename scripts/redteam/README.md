@@ -7,8 +7,7 @@ per-primitive `itb/theory/<primitive>/harness_bias_audit.sh` bias
 audits, and the NIST STS sweep under
 `itb/theory/aesitb128/nist_sts/`.
 
-The tree splits into two compatibility bands, matching the split in the
-paper-facing documentation:
+The tree splits into two compatibility bands:
 
 - **Compatible with the shipped tree** — runnable against the shipped
   tree today; most are cited from [REDTEAM.md](../../REDTEAM.md) or
@@ -20,15 +19,13 @@ paper-facing documentation:
   validation surface, which characterises **individual hash
   primitives** and their `ChainHash128`-wrapped variants with the
   barrier layer out of scope for the measurement.
-- **Compatible with the archived tree only** — attacks that assumed the
-  retired construction: a single region under an opt-in overlay, a
-  3-seed layout, and a per-pixel configuration map recoverable without
-  a barrier in the path. The shipped tree has none of those — Triple is
-  the only construction, the 8-seed constellation is mandatory, and the
-  48-bit Interlocked Barrier is non-disableable — so these scripts
-  require an archived tree to run. Their historical results are preserved
-  in [archive/REDTEAM.md](../../archive/REDTEAM.md) and
-  [archive/HARNESS.md](../../archive/HARNESS.md). The scripts remain in
+- **Compatible with a non-shipped encoder layout only** — attacks that
+  model a single region with no barrier in the path, a 3-seed layout,
+  and a per-pixel configuration map recoverable without a barrier. The
+  shipped encoder produces none of those — Triple is the only
+  construction, the 8-seed constellation is mandatory, and the 48-bit
+  Interlocked Barrier is non-disableable — so these scripts run only
+  against corpora generated under that layout. The scripts remain in
   tree as templates for future Python probe sequences and as the
   attribution source `redteam_broken_test.go` cites when it ports
   logic.
@@ -55,7 +52,7 @@ model. Reproduction commands are cited from REDTEAM.md.
 |---|---|
 | `itb/nonce_reuse/` | Full KPA under forced nonce collision (`setBrokenTestNonce`) |
 | `itb/related_nonce/` | Lab-forced 1-bit nonce Δ, diffusion check across the compared pair |
-| `itb/related_seed/` | Lab-forced seed Δ against the archived Phase 2e axis-hit finding |
+| `itb/related_seed/` | Lab-forced one-bit seed Δ on each of the 8 seed axes, ciphertext-XOR χ² diffusion check |
 | `itb/cpa_broken/` | Fresh-nonce chosen-plaintext posture, below-spec primitive on all 8 seed roles |
 | `itb/near_identical_fresh/` | Cross-message near-identical distinguisher under fresh nonces |
 | `itb/fnv1a_sat/` | FNV-1a lo-lane Full KPA SAT re-verification; `sat_probe.py` drives Bitwuzla |
@@ -166,18 +163,20 @@ on the shipped Triple + always-on Interlocked Barrier container.
   comparison of the two reduced-round AES primitives on the shelf under
   one harness, one sample size and one seed stream.
 
-## Compatible with the archived tree only
+## Compatible with a non-shipped encoder layout only
 
-Cited from [archive/REDTEAM.md](../../archive/REDTEAM.md).
-Their historical results are preserved in
-[archive/REDTEAM.md](../../archive/REDTEAM.md) and
-[archive/HARNESS.md](../../archive/HARNESS.md). Kept in tree as templates
+These scripts run only against corpora generated under the one-region,
+barrier-off, 3-seed layout described above. Kept in tree as templates
 for future Python probe sequences and as attribution sources for the
 ported Go tests.
 
 ### Broken-primitive attack scripts
 
 - `itb/theory/crc128/{crib_crc128_kpa,crib_crc128_kpa_full,crib_crc128_decrypt,crib_crc128_decrypt_full,compound_key_crc128}.py`
+  — `crib_crc128_kpa_full.py` and `crib_crc128_decrypt_full.py` model a noise
+  position that splits into a seed-only 3-bit constant XOR a public term; the
+  shipped derivation does not split that way, so the two scripts run only
+  against corpora encoded under that model (see their module docstrings).
 - `itb/theory/fnv1a/{decrypt_full_fnv1a,fnv_chain_lo_concrete,itb_channel_mirror,sat_calibration_raw_fnv,sat_harness_4round,t_solver_fnv,tsolver_harness_4round,tsolver_z3_propagator}.py`
 - `itb/theory/_common/nonce_reuse_demask.py` — the Layer 1 / Layer 2
   per-pixel configuration demasker the decrypt scripts above build on.
@@ -205,7 +204,8 @@ Each mirror is bit-for-bit parity-checked against its Go reference (see
 `_parity_test.py` and `_parity_dump/`). This subdirectory serves both
 bands — it is the source of truth for the Python side of every
 primitive in scope. Do not delete individual mirrors even when the
-parent attack script is archived; the pre-screen and the live shelf
+parent attack script runs only against a non-shipped encoder layout;
+the pre-screen and the live shelf
 scripts both import from here.
 
 ## Where the empirical validation lives

@@ -584,6 +584,85 @@ func TestRedTeamQuadHashFullAttack(t *testing.T) {
 
 	cfg := &Config{NonceBits: 128, BarrierFill: 1}
 
+	// Attacker-side probe of the noise position under quadHash, on seeds
+	// and a nonce the attacker draws. The position is
+	// noiseFold3(lo + rotl(hi, 1)) of the noise seed's ChainHash at counter
+	// r·third + p for region r (noisepos.go). Each quadHash lane squares
+	// its state per byte and collapses toward an attractor set, so the
+	// question is how much of the position the seed still decides after
+	// the 20-byte per-pixel block: a counter whose position is the same
+	// across every seed is a position the attacker reads off the
+	// primitive alone, while a seed-dependent one is a 3-bit unknown the
+	// brute below has to carry. The probe runs on attacker material only,
+	// so its reading holds for the victim without touching the victim.
+	{
+		const probeSeeds, probeCounters = 64, 96
+		nonce := make([]byte, currentNonceSizeCfg(cfg))
+		if _, err := rand.Read(nonce); err != nil {
+			t.Fatal(err)
+		}
+		buf := make([]byte, 4+len(nonce))
+		copy(buf[4:], nonce)
+		seeds := make([]*Seed128, probeSeeds)
+		for i := range seeds {
+			s, err := NewSeed128(512, thLeak_quadHash)
+			if err != nil {
+				t.Fatal(err)
+			}
+			seeds[i] = s
+		}
+		seedFree, totalDistinct := 0, 0
+		overall := map[uint]struct{}{}
+		hiMoves := 0
+		for c := 0; c < probeCounters; c++ {
+			set := map[uint]struct{}{}
+			for _, s := range seeds {
+				lo, hi := s.blockHash128(buf, c)
+				np := noisePosition(lo, hi)
+				set[np] = struct{}{}
+				overall[np] = struct{}{}
+			}
+			if len(set) == 1 {
+				seedFree++
+			}
+			totalDistinct += len(set)
+			// hi-lane dependence: flip the odd-index components of every
+			// seed and count the (seed, counter) pairs where the position
+			// moves.
+			for _, s := range seeds {
+				alt, _ := SeedFromComponents128(thLeak_quadHash, append([]uint64(nil), s.Components...)...)
+				for i := 1; i < len(alt.Components); i += 2 {
+					alt.Components[i] ^= 0xFF
+				}
+				lo0, hi0 := s.blockHash128(buf, c)
+				lo1, hi1 := alt.blockHash128(buf, c)
+				if noisePosition(lo0, hi0) != noisePosition(lo1, hi1) {
+					hiMoves++
+				}
+			}
+		}
+		var seen []uint
+		for np := range overall {
+			seen = append(seen, np)
+		}
+		sort.Slice(seen, func(i, j int) bool { return seen[i] < seen[j] })
+		t.Logf("noise-position probe (attacker-side, %d seeds x %d counters): counters where every seed gives the same position = %d/%d; "+
+			"mean distinct positions per counter across seeds = %.2f/8; positions seen overall = %v (%d/8); "+
+			"flipping the hi-lane components moves the position in %d/%d (seed, counter) pairs",
+			probeSeeds, probeCounters, seedFree, probeCounters,
+			float64(totalDistinct)/float64(probeCounters), seen, len(overall), hiMoves, probeSeeds*probeCounters)
+		switch {
+		case seedFree == probeCounters:
+			t.Logf("noise-position probe => the position is seed-independent at every probed counter: a public function of counter and nonce")
+		case hiMoves == 0 && len(overall) < 8:
+			t.Logf("noise-position probe => the hi lane has collapsed into its attractor and no longer depends on the seed; "+
+				"the position is confined to a public subset of %d of the eight slots and the seed still decides which member, "+
+				"so the per-pixel noise unknown the brute below carries is about log2(%d) bits rather than 3", len(overall), len(overall))
+		default:
+			t.Logf("noise-position probe => the position still depends on the seed through both lanes; the per-pixel noise unknown stays 3 bits")
+		}
+	}
+
 	buildSeeds := func(comps0 [8]byte) ([8]*Seed128, error) {
 		var out [8]*Seed128
 		for i := 0; i < 8; i++ {

@@ -8,20 +8,21 @@ package itb
 // broken-primitive track with FNV-1a-specific SAT-anchoring probes.
 //
 // Claim under test (REDTEAM.md § "FNV-1a lo-lane SAT — architecturally
-// foreclosed"): the archived SAT harness that recovered a functional
-// FNV-1a lo-lane compound key in ≈ 8 h on Single Ouroboros with the
-// barrier disengaged cannot be formulated under the shipped architecture because the
-// 48-bit interlock destroys the fixed bit-to-lane anchor the SAT
-// depends on. This file quantifies that closure at the anchoring layer.
+// foreclosed"): the FNV-1a lo-lane compound-key SAT harness
+// (scripts/redteam/itb/theory/fnv1a/sat_harness_4round.py) cannot be
+// formulated under the shipped architecture because the 48-bit
+// interlock destroys the fixed bit-to-lane anchor the SAT depends on.
+// This file quantifies that closure at the anchoring layer.
 //
-// The archived SAT anchored on the mapping
+// The SAT anchors on the mapping
 //
 //	plaintext byte K → pixel (startPixel + K/7) mod totalPixels
 //	                   channel K % 7
 //	                   → dataHash(pixel).lo >> 3
 //
-// which held under Single Ouroboros. In the shipped construction, the plaintext is
-// first prepended with a 4-byte length, then split into three region
+// which holds only for a one-region, barrier-off encode (the
+// process128Cfg control in F3). In the shipped construction, the
+// plaintext is first prepended with a 4-byte length, then split into three region
 // streams by the 48-bit interlock (a per-chunk PRF-keyed 16-of-48
 // balanced partition, ≈ 2^70.20 mask space). Lane i's bytes are then
 // COBS-wrapped and encoded into region i's own container, at a
@@ -132,7 +133,7 @@ func decodeWireFNV(ct []byte) regionGeometryFNV {
 // recoverXorMask56FNV inverts the encode formula for one candidate
 // (noisePos, rotation) pair to recover the 56-bit compound
 // `dataHash.lo >> 3` value under the assumed crib alignment. Identical
-// math to the archived achievable-key routine in
+// math to the achievable-key routine in
 // scripts/redteam/itb/theory/fnv1a/itb_channel_mirror.py
 // (decode_channel_to_plaintext_bits), specialised to yield the full
 // 56-bit compound directly. Used by both anchor probes.
@@ -148,7 +149,7 @@ func recoverXorMask56FNV(pixelBytes [Channels]byte, np uint, r uint, cribBits [C
 }
 
 // naiveRegionCribBits returns the assumed 7-bit-per-channel crib payload
-// for region i at region-pixel p under the archived anchoring
+// for region i at region-pixel p under the naive anchoring
 // assumption "plaintext byte K lives at region K%3, region-pixel (K/3)/7,
 // channel (K/3)%7". Returns false when the assumed byte range falls
 // outside the raw plaintext (short crib).
@@ -213,13 +214,15 @@ func trueRotationFNV(dataSeed *Seed128, nonce []byte, streamIdx int) uint {
 	return uint(lo % 7)
 }
 
-// trueNoisePosFNV returns the ground-truth noise_pos = noiseHash.lo & 7
-// under the true noiseSeed at the given stream index. LAB PEEK.
-func trueNoisePosFNV(noiseSeed *Seed128, nonce []byte, streamIdx int) uint {
+// trueNoisePosFNV returns the ground-truth noise_pos, the fold of
+// noiseHash words 0 and 1 under the true noiseSeed at the given
+// noise-hash counter (the region's stream index plus its
+// noiseCounterBase). LAB PEEK.
+func trueNoisePosFNV(noiseSeed *Seed128, nonce []byte, noiseCounter int) uint {
 	buf := make([]byte, 4+len(nonce))
 	copy(buf[4:], nonce)
-	lo, _ := noiseSeed.blockHash128(buf, streamIdx)
-	return uint(lo & 7)
+	lo, hi := noiseSeed.blockHash128(buf, noiseCounter)
+	return noisePosition(lo, hi)
 }
 
 // jsonCribPlaintext is the shared structured-JSON plaintext used by
@@ -234,9 +237,10 @@ var jsonCribPlaintext = []byte(`[{"identifier_of_record_in_system":"0000000000",
 //
 // Reports the achievable per-pixel candidate xor_mask56 set size under
 // every (sp_i, np, r) tuple, using only attacker-visible bytes plus the
-// naive-crib alignment. Under CRC128 the archived pre-anchor filter
-// intersected these sets across crib pixels to collapse candidate
-// startPixels to the true one (pixel-independent K + linear ChainHash).
+// naive-crib alignment. Under CRC128 on a one-region, barrier-off
+// encode, the pre-anchor filter (crib_crc128_kpa.py) intersects these
+// sets across crib pixels to collapse candidate startPixels to the
+// true one (pixel-independent K + linear ChainHash).
 // Under FNV-1a the ChainHash is not affine, so no pixel-independent K
 // exists — the per-pixel achievable sets are functionally independent
 // 56-value slices of Z/2^56 with no cross-pixel intersection signal.
@@ -250,7 +254,7 @@ var jsonCribPlaintext = []byte(`[{"identifier_of_record_in_system":"0000000000",
 //     6 crib pixels, taken as the max over all startPixel candidates
 //     (expected ≈ 0 because the sets are functionally independent).
 //
-// Under Single Ouroboros without barrier the CRC128 intersection is
+// Under a one-region, barrier-off encode the CRC128 intersection is
 // exactly 1 at the true shift. Under any FNV-1a construction (with or
 // without barrier) the intersection is 0 at every shift because the
 // per-pixel achievable sets are independent 56-element slices of
@@ -382,7 +386,7 @@ func TestRedTeamBrokenFNV1aCribKPA(t *testing.T) {
 // TRUE recovered xor_mask56 (using true noiseSeed for np and true
 // dataSeed for r + xor_mask56) under the naive-crib alignment.
 //
-// Under Single Ouroboros without barrier: at the true startPixel, all
+// Under a one-region, barrier-off encode: at the true startPixel, all
 // cribPixels * Channels bytes match — this is the SAT anchor. Under
 // the shipped barrier: the crib bytes are wrong at nearly every position,
 // so the recovered xor_mask56 does NOT equal the true dataHash even
@@ -448,7 +452,7 @@ func TestRedTeamBrokenFNV1aCribKPATrueAnchor(t *testing.T) {
 				// per encoder convention, dataHash and noiseHash are
 				// keyed by stream index p, not the absolute container
 				// position (sp + p) mod regionPixels.
-				trueNP := trueNoisePosFNV(ns, geom.nonce, p)
+				trueNP := trueNoisePosFNV(ns, geom.nonce, noiseCounterBase(si, geom.regionPixels[0])+p)
 				trueR := trueRotationFNV(dataSeeds[si], geom.nonce, p)
 				trueXor := trueXorMask56FNV(dataSeeds[si], geom.nonce, p)
 				recovered := recoverXorMask56FNV(pix, trueNP, trueR, cribBits)
@@ -498,9 +502,9 @@ func TestRedTeamBrokenFNV1aCribKPATrueAnchor(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Probe F3 — control encode (Single Ouroboros, barrier off) via
+// Probe F3 — one-region, barrier-off control encode via
 // process128Cfg. Confirms the anchor logic is correct: under the
-// retired Single/barrier-off construction, the true (sp, np, r) at
+// one-region, barrier-off control encode, the true (sp, np, r) at
 // every crib pixel produces recovered xor_mask56 EQUAL to the true
 // dataHash prefix. Positive control that the negative barrier result
 // is contrasted against.
@@ -532,10 +536,10 @@ func TestRedTeamBrokenFNV1aCribKPAControl(t *testing.T) {
 
 	totalPixels := (len(plain)*8+DataBitsPerPixel-1)/DataBitsPerPixel + 8
 	ctrl := make([]byte, totalPixels*Channels)
-	process128Cfg(nil, noiseSeed, dataSeed, startSeed, nonce, ctrl, totalPixels, 1, plain, true, 1)
+	process128Cfg(nil, noiseSeed, dataSeed, startSeed, nonce, ctrl, totalPixels, 1, plain, true, 1, 0)
 
 	// [lab-peek: sp*] disclosed via deriveStartPixel — matches
-	// Concession 1 of the archived SAT harness.
+	// Concession 1 of sat_harness_4round.py.
 	sp := startSeed.deriveStartPixel(nonce, totalPixels)
 	t.Logf("[audit] control startPixel = %d (derived from startSeed.deriveStartPixel)", sp)
 
@@ -562,17 +566,17 @@ func TestRedTeamBrokenFNV1aCribKPAControl(t *testing.T) {
 			fullMatches++
 		}
 	}
-	t.Logf("CONTROL (Single, overlay-off): full-anchor pixels %d/%d — recovered xor_mask56 == true dataHash >> 3 at true (np, r)",
+	t.Logf("CONTROL (one-region, barrier-off): full-anchor pixels %d/%d — recovered xor_mask56 == true dataHash >> 3 at true (np, r)",
 		fullMatches, cribPixelsControl)
 	if fullMatches != cribPixelsControl {
 		t.Fatalf("CONTROL failed at true (sp, np, r): anchor logic is broken; barrier null cannot be trusted")
 	}
 	emitJSONFNV(t, "f3_control_positive", map[string]any{
-		"probe":                     "F3_control_single_overlay_off",
+		"probe":                     "F3_control_one_region_barrier_off",
 		"crib_pixels":               cribPixelsControl,
 		"full_anchor_pixels":        fullMatches,
 		"true_startpixel_disclosed": sp,
-		"note":                      "positive control — SAT anchor is recoverable under Single Ouroboros without barrier at true (sp, np, r)",
+		"note":                      "positive control — SAT anchor is recoverable under the one-region, barrier-off control encode at true (sp, np, r)",
 	})
 }
 
@@ -637,7 +641,7 @@ func TestRedTeamBrokenFNV1aCribKPAStartPixelPeek(t *testing.T) {
 				// SAT-anchoring premise assumes stream index p for
 				// crib pixel p (see F2 docstring for the encoder
 				// stream-vs-container distinction).
-				trueNP := trueNoisePosFNV(ns, geom.nonce, p)
+				trueNP := trueNoisePosFNV(ns, geom.nonce, noiseCounterBase(si, geom.regionPixels[0])+p)
 				trueR := trueRotationFNV(dataSeeds[si], geom.nonce, p)
 				trueXor := trueXorMask56FNV(dataSeeds[si], geom.nonce, p)
 				rec := recoverXorMask56FNV(pix, trueNP, trueR, cribBits)
@@ -800,7 +804,7 @@ func TestRedTeamBrokenFNV1aCribKPAEmitCorpus(t *testing.T) {
 	// on the barrier ciphertext it must return UNSAT.
 	totalCtrlPixels := (len(plain)*8+DataBitsPerPixel-1)/DataBitsPerPixel + 8
 	ctrl := make([]byte, totalCtrlPixels*Channels)
-	process128Cfg(nil, ns, d1, s1, nonce, ctrl, totalCtrlPixels, 1, plain, true, 1)
+	process128Cfg(nil, ns, d1, s1, nonce, ctrl, totalCtrlPixels, 1, plain, true, 1, 0)
 
 	// hexEncode local helper: keep the emitted JSON string-serialisable.
 	hexOf := func(b []byte) string {

@@ -2,7 +2,7 @@
 
 package itb
 
-// Phase 2b Mode B corpus generator for the KL floor probe driven by
+// Mode B corpus generator for the KL floor probe driven by
 // `scripts/redteam/itb/theory/_common/kl/kl_matrix.py`. Emits one massive ITB
 // ciphertext per invocation on the shipped Triple + always-on 48-bit
 // Interlocked Barrier wire, together with a `.pixel` KEY=VALUE sidecar
@@ -117,7 +117,7 @@ func klBlake3Hash128(key [32]byte) HashFunc128 {
 // ---------------------------------------------------------------------------
 
 // TestRedTeamGenerateTripleMassive — corpus-cell generator for the
-// Phase 2b Mode B KL floor probe. Drives one BLAKE3-keyed
+// Mode B KL floor probe. Drives one BLAKE3-keyed
 // `Encrypt3x128Cfg` call on a random plaintext of `ITB_REDTEAM_MASSIVE_SIZE`
 // bytes at `Config.BarrierFill = ITB_BARRIER_FILL`, writes the raw
 // ciphertext to `<outdir>/blake3.bin` and a KEY=VALUE `<outdir>/blake3.pixel`
@@ -130,7 +130,7 @@ func klBlake3Hash128(key [32]byte) HashFunc128 {
 func TestRedTeamGenerateTripleMassive(t *testing.T) {
 	hashName := os.Getenv("ITB_REDTEAM_MASSIVE")
 	if hashName == "" {
-		t.Skip("set ITB_REDTEAM_MASSIVE=blake3 to generate a Phase 2b Mode B " +
+		t.Skip("set ITB_REDTEAM_MASSIVE=blake3 to generate a Mode B " +
 			"KL corpus cell (not part of the default `go test` run)")
 	}
 	if hashName != "blake3" {
@@ -277,8 +277,8 @@ func TestRedTeamGenerateTripleMassive(t *testing.T) {
 		t.Fatalf("write %s: %v", plainPath, err)
 	}
 
-	// KEY=VALUE sidecar for the Python sub-scripts. Preserves the archived
-	// field shape (`total_pixels=N`, `barrier_fill=N`) and adds the
+	// KEY=VALUE sidecar for the Python sub-scripts. Carries the base
+	// field shape (`total_pixels=N`, `barrier_fill=N`) plus the
 	// dual-nonce fields (`main_nonce_hex`, `interlock_nonce_hex`) and the
 	// wire offsets (`prefix_size`, `header_size`).
 	pixLines := []string{
@@ -296,8 +296,8 @@ func TestRedTeamGenerateTripleMassive(t *testing.T) {
 		"start_pixel=" + strconv.Itoa(startPixel),
 		"main_nonce_hex=" + hex.EncodeToString(mainNonce),
 		"interlock_nonce_hex=" + hex.EncodeToString(interlockNonce),
-		// Retained for compatibility with any archived consumer that
-		// still reads `nonce_hex` — mirrors `main_nonce_hex`.
+		// Mirrors `main_nonce_hex` under the single-nonce field name
+		// for consumers that read `nonce_hex`.
 		"nonce_hex=" + hex.EncodeToString(mainNonce),
 	}
 	pixText := ""

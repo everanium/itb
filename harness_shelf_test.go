@@ -570,8 +570,8 @@ func runShelfCorpus(t *testing.T, p shelfParams) {
 		"prefix_size":         smPrefixLen,
 		"header_size":         headerSize,
 		"start_pixel":         startPixel,
-		// Retained for compatibility with any archived consumer that
-		// still reads `nonce_hex` — mirrors `main_nonce_hex`.
+		// Mirrors `main_nonce_hex` under the single-nonce field name
+		// for consumers that read `nonce_hex`.
 		"nonce_hex": hex.EncodeToString(mainNonce),
 	}
 	metaJSON, err := json.MarshalIndent(meta, "", "  ")

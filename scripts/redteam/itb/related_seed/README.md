@@ -1,10 +1,9 @@
 ## ITB Related-Seed Differential Verification
 
-Empirical re-verification of the archived Phase 2e finding
-(CRC128 42.5M, FNV-1a 56.7M axis-hit ciphertext-XOR χ² on Single
-Ouroboros with the overlay disengaged) against the shipped Triple
-Ouroboros + always-on 48-bit Interlocked Barrier + 8 mandatory
-seeds API. Primitives under test: **CRC128** and **FNV-1a** on all 8
+Related-seed differential diffusion of the shipped Triple Ouroboros +
+always-on 48-bit Interlocked Barrier + 8 mandatory seeds API, measured
+as the ciphertext-XOR byte-histogram χ² of a pair of encrypts that
+differ in one seed bit. Primitives under test: **CRC128** and **FNV-1a** on all 8
 seed roles (below-spec lab controls; each seed still gets an independent
 random key). Nonce collision forced via the test-only `setBrokenTestNonce`
 hook.
@@ -16,18 +15,17 @@ hook.
 - `aggregate.py` — reads the emitted JSON records and prints a 4-D
   structural summary (axis dominance ranking, Δ pattern sensitivity,
   plaintext kind sensitivity, primitive contrast, positive-control
-  drift vs the archived record). Consumes only files under
+  χ² against the no-Δ floor). Consumes only files under
   `~/scratch/redteam/related_seed/` — no test dependencies.
 
 ## Probes (implemented as Go tests in `redteam_related_seed_test.go`)
 
 Each Go test emits one JSON record to `~/scratch/redteam/related_seed/`.
 
-- `TestRedTeamRelatedSeedControl` — **positive control**: reproduces
-  the archived Phase 2e axis-hit (CRC128 42.5M / FNV-1a 56.7M) via
-  `process128Cfg` (Single Ouroboros, no interlock overlay, no 3-region
-  split). Confirms the ported χ² probe is sensitive at the archived
-  measurement angle and matches the archive numbers to within 0.3 %.
+- `TestRedTeamRelatedSeedControl` — **positive control**: a data-axis
+  bit_high Δ through `process128Cfg` (one region, no barrier, no
+  3-region split) gives CRC128 42.5M / FNV-1a 42.6M. Confirms the χ²
+  probe is sensitive where no barrier stands between the Δ and the wire.
 - `TestRedTeamRelatedSeedNoDeltaFloor` — **architectural floor**:
   two `Encrypt3x128Cfg` calls with IDENTICAL seeds under the same
   forced nonce. Measures the χ² floor produced by the barrier's
@@ -47,8 +45,7 @@ an attacker-realistic recovery path. A real attacker cannot force
 1-bit seed deltas because `Encrypt3x128Cfg` draws every seed
 independently through `NewSeed*`, and the shipped API rejects seed
 pointer collisions. The lab-forced Δ is a probe INPUT designed to
-measure whether the barrier absorbs perturbations at the archived
-measurement angle.
+measure whether the barrier absorbs perturbations.
 
 Every probe consumes attacker-visible inputs (ciphertext bytes only)
 for its decision path — the χ² statistic depends on nothing else. No
@@ -71,28 +68,23 @@ the lockSeed axis**:
   ChainHash round) is a null Δ under FNV-1a on this axis: the flip
   survives `deriveInterLockSeed` at bit 127 and is cancelled when the
   `[K ‖ components]` cascade XORs the flipped component back in at its
-  last round, so that cell sits at the no-Δ floor (56.3M), not above it.
-  On every other axis bit_high is a null Δ for both primitives (only
-  `hLo` is consumed there; neither lab primitive carries a high-word
-  change into the low word).
+  last round, so that cell sits at the no-Δ floor (42.2M), not above it.
+  On the dataSeed_i / startSeed_i axes bit_high is a null Δ for both
+  primitives (only `hLo` is consumed there; neither lab primitive
+  carries a high-word change into the low word); on the noiseSeed axis
+  the position mixes both words, so the same flip moves every noise
+  position and lands below the floor.
 - **Every other seed axis** (noiseSeed / dataSeed_i / startSeed_i):
-  χ² 19-56M range. **The no-Δ architectural floor** measured by
+  χ² 6-42M range. **The no-Δ architectural floor** measured by
   `TestRedTeamRelatedSeedNoDeltaFloor` under identical seeds is
-  CRC128 41.9M / FNV-1a 56.3M. The per-axis peak does NOT exceed the
+  CRC128 42.2M / FNV-1a 42.2M. The per-axis peak does NOT exceed the
   floor; Δ patterns that randomise the touched-region data bits
   (bit0 / bit_mid) drop χ² BELOW the floor by diluting the noiseMask
-  signal. No excess-over-floor signal on any non-lockSeed axis for
-  either primitive.
-- **Positive control**: the archived 42.5M / 56.7M axis-hit
-  reproduced via `process128Cfg` (Single Ouroboros, no overlay) within
-  0.3 %. The probe methodology matches the archived Phase 2e.
-
-The archived Phase 2e "6.1M neutralised cluster" description
-(architectural noisePos permutation signal, not primitive leak) has
-its shipped analog in the CRC128 41.9M / FNV-1a 56.3M no-Δ floor. The
-floor is primitive-conditional through noiseSeed's ChainHash shape
-influencing noisePos derivation; it is not a primitive-attributable Δ
-leak.
+  signal, and every noiseSeed cell sits below the floor because the Δ
+  moves the noise position of every pixel. No excess-over-floor signal
+  on any non-lockSeed axis for either primitive.
+- **Positive control**: CRC128 42.5M / FNV-1a 42.6M via
+  `process128Cfg` (one region, no barrier); the probe is sensitive.
 
 ## Reproduction
 

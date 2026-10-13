@@ -1,9 +1,25 @@
 #!/usr/bin/env python3
 """Crib KPA full K recovery (K_data + K_noise_bits_0_2).
 
-Recovers both the 64-bit compound key K_data and the 3 low bits of
-noiseSeed's compound key K_noise as a joint side effect of the
-56-hypothesis filter on a known-plaintext crib. Under CRC128 GF(2)-
+MODEL MISMATCH WITH THE SHIPPED ENCODER. The noise-position model this
+script implements combines the two noise-hash words by XOR, so that
+`fold3` splits the position into a seed-only 3-bit key and a public
+per-counter constant. The shipped encoder combines the words by integer
+addition — `noisePos = fold3(h_lo + rotl64(h_hi, 1) mod 2^64)`, see
+`_common/noise_position.py` — and the carries of that addition couple
+the seed-only and public parts: no seed-only 3-bit key exists, and the
+K_noise_bits_0_2 this script recovers does not predict shipped noise
+positions. Against shipped output the attacker-realistic route is a
+per-pixel 8-way noise-position enumeration with COBS-rejection, as in
+`theory/fnv1a/decrypt_full_fnv1a.py` and the Go-side
+`TestRedTeamBrokenCRC128CribKPA`. The script is kept as the record of
+the XOR-mix model and runs against corpora produced under that model
+only.
+
+Recovers both the 64-bit compound key K_data and the 3-bit noise
+compound key K_noise_bits_0_2 = fold3(K_noise_lo ⊕ K_noise_hi) of
+noiseSeed as a joint side effect of the 56-hypothesis filter on a
+known-plaintext crib. Under CRC128 GF(2)-
 linearity, this pair is sufficient for 100 % byte-level decryption of
 any future ciphertext under the same dataSeed/noiseSeed/startSeed
 triple — any nonce, any plaintext format (printable text, HTML, JSON,
@@ -11,22 +27,29 @@ binary, compressed, or encrypted streams).
 
 Algebraic insight:
 
-  noisePos(p, nonce) = noiseSeed.ChainHash(pixel||nonce).lo & 7
-                     = (K_noise ⊕ c_public(p, nonce)) & 7
-                     = (K_noise & 7) ⊕ (c_public(p, nonce) & 7)
-                     = K_noise_bits_0_2 ⊕ (c_public(p, nonce) & 7)
+  noisePos(c, nonce) = fold3(h_lo ⊕ h_hi),  (h_lo, h_hi) =
+                       noiseSeed.ChainHash128(LE32(c) || nonce)
+                     = fold3(K_noise_lo ⊕ c_lo(c) ⊕ K_noise_hi ⊕ c_hi(c))
+                     = fold3(K_noise_lo ⊕ K_noise_hi) ⊕ fold3(c_lo(c) ⊕ c_hi(c))
+                     = K_noise_bits_0_2 ⊕ noise_const3(c)
 
-Both noiseSeed and dataSeed wrap the same CRC128 primitive through the
-same 8-round ChainHash on the same 20-byte (pixel_u32le || nonce) input;
-the seed-independent compound `c_public` is therefore identical for both
-lanes and is the same `const_all[p]` array already computed by the base
-crib_crc128_kpa.py script.
+fold3 is the encoder's GF(2)-linear 64 → 3 bit fold (see
+`_common/noise_position.py`), and both CRC128 lanes are affine in their
+own seed half, so the noise position splits into a 3-bit seed-only key
+and a public per-counter constant `noise_const3(c)` computed from the
+zero-seed chain output of both lanes. The noise counter is
+c = noise_counter_base + p: the noise hash runs one counter across the
+container, so region i of a Triple container sits at base i·⌊total/3⌋;
+a single-region encode — the shape this script targets — has base 0
+(`--noise-counter-base`). The data hash keeps the per-region counter p,
+so `const_all[p]` (lo lane, zero seed) from the base crib_crc128_kpa.py
+script still serves K_data.
 
 During the 56-hypothesis filter that recovers K_data, the correct
 (noise_pos, rotation) pair per crib pixel reveals the observed noisePos
 for that pixel. Per pixel:
 
-  K_noise_bits_0_2_candidate = observed_noise_pos ⊕ (const_all[p] & 7)
+  K_noise_bits_0_2_candidate = observed_noise_pos ⊕ noise_const3(c)
 
 Consistency across all crib pixels confirms the 3-bit value and, as a
 bonus, disambiguates among the 256 K_data variants (the observable bits
@@ -87,6 +110,7 @@ from raw_mode_common import (
     parse_raw_ciphertext,
     recover_compound_key_cached,
 )
+from noise_position import noise_fold3, precompute_noise_const3
 
 
 OBSERVABLE_MASK = 0x07FFFFFFFFFFFFF8  # K_data bits 3..58
@@ -99,11 +123,14 @@ def recover_k_full(
     const_all: np.ndarray,
     known_prefix: bytes,
     start_pixel: int,
+    noise_const3: np.ndarray,
 ) -> List[Tuple[int, int, List[Tuple[int, int]]]]:
     """Enumerate all 256 × 8 = 2048 (K_data variant, K_noise_bits_0_2) pairs
     and return every one that decrypts every crib pixel EXACTLY — using the
     pair's derived rotation (from K_data) AND its derived noise_pos (from
-    K_noise_bits_0_2) per pixel, with no brute-force on any channel.
+    K_noise_bits_0_2 and the public `noise_const3[p]`, the per-pixel
+    noise constant at the pixel's noise counter) per pixel, with no
+    brute-force on any channel.
 
     Returns a list of surviving pairs as (K_data_full, K_noise_bits_0_2,
     per_pixel_noisepos_list). In the common case the list has one entry;
@@ -136,7 +163,7 @@ def recover_k_full(
                 const_p = int(const_all[p_idx])
                 h_lo = (K_trial ^ const_p) & MASK64
                 rotation = h_lo % 7
-                noise_pos = k_noise_bits_0_2 ^ (const_p & 7)
+                noise_pos = k_noise_bits_0_2 ^ int(noise_const3[p_idx])
                 expected = known_prefix[p_idx * 7: p_idx * 7 + 7]
                 cb = body[cp * 8: cp * 8 + 8]
 
@@ -183,7 +210,16 @@ def main() -> int:
     ap.add_argument("--probe-size", type=int, default=16000,
                     help="Bias-probe observation count (default path only).")
     ap.add_argument("--plateau-tolerance", type=float, default=0.005)
+    ap.add_argument("--noise-counter-base", type=int, default=0,
+                    help="Noise-hash counter of the target's stream step 0 "
+                         "(0 for a single-region encode; region i of a "
+                         "Triple container starts at i * (total_pixels // 3)).")
     args = ap.parse_args()
+
+    print("NOTE: this script models an XOR mix of the two noise-hash words; "
+          "the shipped encoder mixes them by integer addition, so the "
+          "recovered K_noise_bits_0_2 does not predict shipped noise "
+          "positions (see the module docstring).", file=sys.stderr)
 
     meta = json.loads((args.cell_dir / "cell.meta.json").read_text())
     total_pixels = int(meta["total_pixels"])
@@ -217,13 +253,17 @@ def main() -> int:
     print(f"Brute-force shifts: {args.brute_force_shifts}")
     print(f"Expected K_data:   0x{K_data_expected:016x}  [audit only]")
     if K_noise_expected:
-        print(f"Expected K_noise & 7: 0x{K_noise_expected & 7}  [audit only]")
+        print(f"Expected K_noise_bits_0_2: 0x{noise_fold3(K_noise_expected)}  [audit only]")
     print()
 
     t0 = time.time()
     print(f"Precomputing const(p) for {total_pixels} pixels ...")
     const_all = precompute_const_all(total_pixels, nonce)
     print(f"  done in {time.time() - t0:.1f}s")
+    noise_const3 = precompute_noise_const3(
+        len(known_prefix) // 7, nonce, hmod.chainhash_lohi,
+        hmod.N_SEED_COMPONENTS, counter_base=args.noise_counter_base,
+    )
 
     # Stage 1 — find K_data_observable + winning shift via existing filter.
     if args.brute_force_shifts:
@@ -277,6 +317,7 @@ def main() -> int:
     t0 = time.time()
     survivors = recover_k_full(
         K_observable, body, total_pixels, const_all, known_prefix, start_pixel,
+        noise_const3,
     )
     print(f"Stage 2 (full K recovery): {time.time() - t0:.2f}s")
 
@@ -315,8 +356,8 @@ def main() -> int:
         print(f"    Candidate {idx}: K_data=0x{K_data_full:016x}  "
               f"{'✓ matches GT' if match_data else f'✗ Hamming={popcount}/64'}")
     if K_noise_expected:
-        expected_bits_0_2 = K_noise_expected & 7
-        print(f"  Expected K_noise & 7:   0x{expected_bits_0_2}")
+        expected_bits_0_2 = noise_fold3(K_noise_expected)
+        print(f"  Expected K_noise_bits_0_2: 0x{expected_bits_0_2}")
         for idx, (_, K_noise_bits_0_2, _) in enumerate(survivors):
             match_noise = K_noise_bits_0_2 == expected_bits_0_2
             print(f"    Candidate {idx}: K_noise_bits_0_2=0x{K_noise_bits_0_2}  "
@@ -358,7 +399,7 @@ def main() -> int:
         "lab_audit": {
             "k_data_expected_hex": f"0x{K_data_expected:016x}",
             "any_candidate_matches_k_data": any_match_data,
-            "k_noise_bits_0_2_expected": (K_noise_expected & 7) if K_noise_expected else None,
+            "k_noise_bits_0_2_expected": noise_fold3(K_noise_expected) if K_noise_expected else None,
         },
     }
     sidecar_path = args.cell_dir / "recovered_k_full.json"

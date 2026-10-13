@@ -149,16 +149,15 @@ def print_pt_kind(per_pt: dict) -> None:
 
 
 def print_control_comparison(ctrl: dict, floors: dict[str, float]) -> None:
-    print("==== Positive control — archived reproduction via process128Cfg ====")
-    print("Confirms the probe methodology matches the archived related-seed archive numbers")
-    print("(archive/REDTEAM.md § related-seed row: CRC128 42.5M, FNV-1a 56.7M axis-hit on data-axis bit_high).")
+    print("==== Positive control — data-axis bit_high Δ via process128Cfg (one region, no barrier) ====")
+    print("Observed control χ² beside the no-Δ floor under Encrypt3x128Cfg.")
     print()
     for cell in ctrl.get("cells", []):
         prim = cell["primitive"]
-        pre = cell.get("archived_baseline", 0.0)
         obs = cell["chi2"]
-        drift = (obs - pre) / pre if pre else 0.0
-        print(f"  {prim:<6} axis=data Δ=bit_high  chi2_obs={fmt_chi2(obs)}  chi2_archived={fmt_chi2(pre)}  drift={drift*+100:+.2f} %")
+        floor = floors.get(prim)
+        floor_str = fmt_chi2(floor) if floor is not None else "      n/a"
+        print(f"  {prim:<6} axis=data Δ=bit_high  chi2_obs={fmt_chi2(obs)}  floor={floor_str}")
     print()
 
 

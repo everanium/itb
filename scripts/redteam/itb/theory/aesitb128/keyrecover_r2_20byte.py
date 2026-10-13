@@ -72,7 +72,8 @@ above every ChainHash call and is not what this harness measures.
 
 Shipped-observable mode (`--model realistic`): the same shape and cascade
 depths under the attacker model the pipeline actually presents — the lo lane
-`h[0]` only (the 8 bytes the encoder consumes; no full-state peel exists), the
+`h[0]` only (the 8 bytes the encoder consumes from a data seed; no full-state
+peel exists), the
 Λ-set confined to the `LE32(idx)` bytes, and the other 16 data bytes a random
 constant per set that the attacker sees but did not choose (a fresh nonce per
 message). With the hi lane hidden the κ-byte engine has no `Y`; the one public
@@ -84,8 +85,10 @@ that position) together with the g-survivor count — a distinguisher, never a
 recovery: no key-dependent quantity is peeled, and the residual recovery route
 is the 2⁶⁴ hi-lane enumeration. The lab engine is run on the same seeds in the
 same invocation as the positive control. The lo-lane oracle is itself an
-attacker-favourable upper bound on the wire (a known-plaintext attacker reads
-`h[0]` only through noisePos / rotation / xorMask across two seeds).
+attacker-favourable upper bound on a data seed's wire observable (a
+known-plaintext attacker reads a data seed's `h[0]` only through rotation /
+xorMask). The noise seed reaches the wire only through noisePos, a 3-bit fold
+of `h[0] ⊕ h[1]`, which this mode does not model.
 
 Reproduction:
 

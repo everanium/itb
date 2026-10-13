@@ -88,18 +88,48 @@ def compute_expected_K(meta: dict, nonce: bytes) -> int:
 
 
 def compute_expected_K_noise(meta: dict, nonce: bytes) -> int:
-    """Lab-only counterpart of compute_expected_K for the noiseSeed lane.
-    Returns the 64-bit compound key K_noise derived from `meta["noise_seed"]`.
+    """Lab-only counterpart of compute_expected_K for noiseSeed.
+    Returns the 64-bit word `K_noise_lo XOR K_noise_hi` derived from
+    `meta["noise_seed"]` — the XOR of the seed-only compound keys of the
+    two noise-hash lanes.
 
     noiseSeed uses the SAME CRC128 primitive and the SAME ChainHash structure
-    as dataSeed, just on a separate seed vector. The seed-independent
-    `c_public = h_zero` is therefore identical for both lanes; K_noise is
-    just `chainhash_lo(..., noise_seed) XOR c_public`. Audit / validation
-    only."""
+    as dataSeed, just on a separate seed vector. Each lane is affine, so
+    per lane K = `chainhash(..., noise_seed) XOR chainhash(..., zero seed)`
+    and is counter- and nonce-independent (only the input length matters).
+
+    `noise_fold3` of the returned value is the 3-bit noise compound key
+    of a model that combines the two noise-hash words by XOR. The shipped
+    encoder combines them by integer addition (`noise_position.noise_mix`),
+    whose carries couple the seed-only and public parts, so no seed-only
+    3-bit key exists for shipped output and this value does not predict a
+    shipped noise position. Consumed only by the audit printout of the
+    XOR-mix CRC128 scripts. Audit / validation only."""
     import struct
     true_ns = list(meta["noise_seed"])
     pixel_le = struct.pack("<I", 0)
     data = pixel_le + nonce
-    h_true = chainhash_lo(data, true_ns)
-    h_zero = chainhash_lo(data, [0] * N_SEED_COMPONENTS)
-    return h_true ^ h_zero
+    t_lo, t_hi = chainhash_lohi(data, true_ns)
+    z_lo, z_hi = chainhash_lohi(data, [0] * len(true_ns))
+    return (t_lo ^ z_lo ^ t_hi ^ z_hi) & MASK64
+
+
+def chainhash_lohi(data: bytes, seed_components: Sequence[int]) -> tuple[int, int]:
+    """Both 64-bit lanes `(lo, hi)` of `Seed128.ChainHash128(data)` under
+    the CRC128 primitive, at any key size (an even number of seed
+    components, two per round). The lo lane is the ECMA side keyed by the
+    even components, the hi lane the ISO side keyed by the odd components;
+    each lane is affine in its own seed half. The noise position consumes
+    both lanes (see `noise_position.py`)."""
+    n = len(seed_components)
+    assert n >= 2 and n % 2 == 0, (
+        f"CRC128 ChainHash expects an even number of seed components, got {n}"
+    )
+    h_lo = _crc64_keyed(_TABLE_ECMA, data, seed_components[0] & MASK64)
+    h_hi = _crc64_keyed(_TABLE_ISO, data, seed_components[1] & MASK64)
+    for i in range(2, n, 2):
+        k_lo = (seed_components[i] ^ h_lo) & MASK64
+        k_hi = (seed_components[i + 1] ^ h_hi) & MASK64
+        h_lo = _crc64_keyed(_TABLE_ECMA, data, k_lo)
+        h_hi = _crc64_keyed(_TABLE_ISO, data, k_hi)
+    return h_lo, h_hi

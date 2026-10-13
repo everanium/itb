@@ -40,6 +40,16 @@ package itb
 //     fragment therefore shifts the barrier lane by exactly lens[i]+1
 //     output bytes and nothing else.
 //
+//  5. The noise position of a pixel is noiseFold3(lo + rotl(hi, 1))
+//     over the noise seed's ChainHash at counter i·third + p for region
+//     i and walk index p (noisepos.go). The three regions therefore read
+//     three different counters of one keyed function at the same walk
+//     index, and nothing relates the three positions to each other
+//     without the noise key. The attack treats them as three independent
+//     3-bit unknowns per band. Solving for the noise key from pinned
+//     positions is not modelled here, so the figures below are a lower
+//     bound on what the crib buys under trainHash.
+//
 // The attack runs in three stages. Stage 1 pins the per-chunk ranks over
 // the crib by joining the three regions against one shared rank
 // hypothesis. Stage 2 recovers the cascade's effective key by
@@ -101,9 +111,12 @@ func tcLockBuf(groupIdx uint64) []byte {
 	return buf
 }
 
-// tcPixelBuf rebuilds the per-pixel hash block a region's noise and data
-// seeds consume at walk index p: [LE32(p) ‖ mainNonce]
+// tcPixelBuf rebuilds the per-pixel hash block a region's data seed
+// consumes at walk index p: [LE32(p) ‖ mainNonce]
 // (seed128.go:194-197 over the lane scratch of process_generic.go:22).
+// The noise seed consumes the same block shape at counter i·third + p for
+// region i; the attack never evaluates it, since the noise key is not
+// held and the noise position is enumerated instead.
 func tcPixelBuf(p int, mainNonce []byte) []byte {
 	buf := make([]byte, 4+len(mainNonce))
 	binary.LittleEndian.PutUint32(buf, uint32(p))
@@ -748,13 +761,12 @@ func (a *tcAttack) tcJoinBand(w int, anchors [2]int, spKnown bool) []tcBandSolut
 				k2 := [2]uint16{tab[0][rA].l[2], tab[1][rB].l[2]}
 				for _, i1 := range idx[0][k1] {
 					for _, i2 := range idx[1][k2] {
-						// The noiseSeed is one seed shared by all three
-						// regions and its per-pixel block is [LE32(p) ‖
-						// nonce] with no region tag, so the noise position
-						// at a given walk index is the same in all three.
-						if c0.np != cands[1][i1].np || c0.np != cands[2][i2].np {
-							continue
-						}
+						// The noise position of region r at walk index w
+						// is the noise seed's output at counter r·third +
+						// w: three different counters of one keyed
+						// function, unrelated to each other without the
+						// noise key. The three positions are joined on
+						// the shared rank alone.
 						s := tcBandSolution{
 							sp:  [3]int{c0.sp, cands[1][i1].sp, cands[2][i2].sp},
 							np:  [3]uint{c0.np, cands[1][i1].np, cands[2][i2].np},
@@ -1145,7 +1157,17 @@ func tcRunCribKPA(t *testing.T, corpus string, ptSize int, modelName string) {
 		pixBuf := func(w int) []byte { return tcPixelBuf(w, mainNonce) }
 		bestInner := -1
 		var bestPix [3][]tcPixCfg
-		for _, c3 := range a.tcResolveBand(3, bandChunks[3], br.ranks, model, zeroBits, 16) {
+		// The three regions' noise positions at band 3 are independent, so
+		// the joint space the crib chunks 7 and 8 have to cut is 56^3; the
+		// cap bounds the compute spent per branch and is reported so a
+		// run that hits it is visible as such.
+		const band3Cap = 256
+		c3s := a.tcResolveBand(3, bandChunks[3], br.ranks, model, zeroBits, band3Cap)
+		if bi < 6 {
+			t.Logf("Stage 3 branch %d/%d: band 3 configurations admitted by the crib chunks 7 and 8 across the three regions: %d (cap %d)",
+				bi+1, len(branches), len(c3s), band3Cap)
+		}
+		for _, c3 := range c3s {
 			for r := 0; r < 3; r++ {
 				for w := 3; w < len(a.pix[r]); w++ {
 					a.pix[r][w] = tcPixCfg{}
@@ -1281,10 +1303,14 @@ func tcRunCribKPA(t *testing.T, corpus string, ptSize int, modelName string) {
 			}
 			_ = prod
 
-			// Walk the rest of the container band by band. With the noise
-			// position shared across the three regions the per-band space
-			// is 8 x 7^3 x 32^3, and the chunks each band completes supply
-			// more constraint than that when the model holds.
+			// Walk the rest of the container band by band. With the
+			// dataSeeds fixed, the per-band space is the 8^3 noise-position
+			// triple — one independent 3-bit unknown per region, since the
+			// regions read three different noise counters at the same walk
+			// index. Each region's eight candidates are first cut by the
+			// high-bit requirements on the lane bits that region owns, and
+			// the survivors are then joined on whether the chunks the band
+			// completes decode under the model.
 			if prod == 0 || prod > 4096 {
 				continue
 			}
@@ -1306,23 +1332,46 @@ func tcRunCribKPA(t *testing.T, corpus string, ptSize int, modelName string) {
 						continue
 					}
 					var rot, xor [3]uint
+					var npAllow [3][]uint
 					for r := 0; r < 3; r++ {
 						al, cl, _, _ := tcLaneConsts(pixBuf(w))
 						dh := uint(tcCascade(sel[r][:], al, cl))
 						rot[r], xor[r] = dh%7, dh>>DataRotationBits
+						// Per-region prefilter on the lane bits this region
+						// owns: a noise position that puts a one where the
+						// model forces a zero is out before the join.
+						reqs := a.tcTopBitReqs(r, w, ks, br.ranks, zeroBits)
+						lin := (a.startPixel[r] + w) % a.widths[r]
+						for np := uint(0); np < 8; np++ {
+							win := tcReadPixel(a.regions[r], lin, np, rot[r], xor[r])
+							good := true
+							for _, rq := range reqs {
+								if win[rq[0]]&(1<<uint(rq[1])) != 0 {
+									good = false
+									break
+								}
+							}
+							if good {
+								npAllow[r] = append(npAllow[r], np)
+							}
+						}
 					}
 					hit := 0
 					var got [3]tcBandCfg
-					for np := uint(0); np < 8; np++ {
-						try := [3]tcBandCfg{
-							{np, rot[0], xor[0]},
-							{np, rot[1], xor[1]},
-							{np, rot[2], xor[2]},
-						}
-						commit(w, try)
-						if a.tcBandDecodes(w, ks, br.ranks, model) {
-							hit++
-							got = try
+					for _, np0 := range npAllow[0] {
+						for _, np1 := range npAllow[1] {
+							for _, np2 := range npAllow[2] {
+								try := [3]tcBandCfg{
+									{np0, rot[0], xor[0]},
+									{np1, rot[1], xor[1]},
+									{np2, rot[2], xor[2]},
+								}
+								commit(w, try)
+								if a.tcBandDecodes(w, ks, br.ranks, model) {
+									hit++
+									got = try
+								}
+							}
 						}
 					}
 					if hit != 1 {
@@ -1911,15 +1960,12 @@ func (a *tcAttack) tcResolveBand(w int, ks []int, ranks []int, model func(byte) 
 
 	var out [][3]tcBandCfg
 	var zero [3]uint
+	// The three regions' noise positions at this band come from three
+	// different noise counters and are not related to one another, so the
+	// joint loop runs over the full product of the per-region survivors.
 	for _, c0 := range allow[0] {
 		for _, c1 := range allow[1] {
-			if c1/7 != c0/7 {
-				continue // shared noise position across regions
-			}
 			for _, c2 := range allow[2] {
-				if c2/7 != c0/7 {
-					continue
-				}
 				cs := [3]int{c0, c1, c2}
 				okA := true
 				for i := range clean {

@@ -9,9 +9,8 @@ package itb
 //
 // Every probe drives the shipped core Triple entrypoint
 // Encrypt3x256Cfg / Decrypt3x256Cfg: 8 mandatory distinct seeds,
-// always-on 48-bit Interlocked Barrier, no Single Ouroboros fallback,
-// no overlay toggle. The barrier layer is the surface under test;
-// parallax and the outer-cipher wrapper are independent additional
+// always-on 48-bit Interlocked Barrier. The barrier layer is the
+// surface under test; parallax and the outer-cipher wrapper are independent additional
 // layers not exercised here.
 //
 // These are lab experiments. Verdicts are sample-bounded: a null
@@ -192,14 +191,15 @@ func TestRedteamPRF_Probe1_CribKPAFreshNonce(t *testing.T) {
 //
 // Nonce reuse is not reachable through the shipped API (the nonce is
 // drawn from crypto/rand on every call). Forced here via the
-// test-only nonce override to measure the one condition under which the
-// archived suite saw any signal. Two different plaintexts are
+// test-only nonce override to measure the nonce-collision condition
+// directly. Two different plaintexts are
 // encrypted under identical seeds AND an identical nonce; the
 // ciphertext-level byte-equal rate and Pearson correlation are
 // reported. The container's DRBG tail fill is drawn independently of
 // the nonce, so even under reuse the ciphertext-level correlation
 // stays near the independent-stream floor; a full demask of the
-// colliding pair additionally requires Full KPA (archived Phase 2d).
+// colliding pair additionally requires Full KPA (see
+// redteam_nonce_reuse_test.go).
 func TestRedteamPRF_Probe2_NonceReuseCorrelation(t *testing.T) {
 	const (
 		trials  = 200

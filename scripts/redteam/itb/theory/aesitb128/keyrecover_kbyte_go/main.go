@@ -1396,8 +1396,10 @@ func (cfg *config) runLabTrials(h func([]byte, uint64, uint64) (uint64, uint64),
 //
 // The lab engines above run on the full 128-bit h_r peeled through the public
 // P^-1 to the last-call seed pair Y — a grant the shipped pipeline never
-// makes: the encoder consumes lo(h_r) only (process_generic.go — noisePos,
-// rotation and the per-channel XOR mask all derive from h[0]), and the
+// makes: the encoder consumes lo(h_r) only from a data seed
+// (process_generic.go — rotation and the per-channel XOR mask derive from
+// h[0]; the noise seed reaches the wire only through noisePos, a 3-bit fold
+// of h[0] ^ h[1]), and the
 // Interlocked Barrier consumes its own single-call fill output through the
 // combinadic unrank, never on the wire. With the hi lane hidden the full-state
 // peel does not exist, so the kappa-byte engine has no Y to work on; the one
@@ -1419,9 +1421,9 @@ func (cfg *config) runLabTrials(h func([]byte, uint64, uint64) (uint64, uint64),
 // 2^64 hi-lane enumeration that integral_aesitb128.py extrapolates. The
 // verdict printed is therefore "no candidate (structural)", never "0/N".
 //
-// The lo-lane oracle is an attacker-favourable upper bound on the wire: a
-// known-plaintext attacker reads h[0] only through noisePos / rotation /
-// xorMask across two seeds, with per-pixel ambiguity, never exactly.
+// The lo-lane oracle is an attacker-favourable upper bound on a data seed's
+// wire observable: a known-plaintext attacker reads a data seed's h[0] only
+// through rotation / xorMask, with per-pixel ambiguity, never exactly.
 
 // isFlagSet reports whether a flag was given explicitly on the command line.
 func isFlagSet(name string) bool {

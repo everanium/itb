@@ -645,7 +645,7 @@ func TestRedTeamNearIdenticalFreshNonce(t *testing.T) {
 	run.Baseline.NoteFreshVsReuse = "Under nonce reuse the near-identical pair produces C1 XOR C2 whose byte-equal rate at 512 B sits at ~16x the 1/256 floor — a traffic-analysis residue. Under fresh nonces the same pair shape should collapse to floor because each Encrypt call redraws every per-chunk mask + noise position + rotation + startPixel from the fresh nonce, so no per-position correlation between the two pair wires survives."
 
 	// A compact fresh-nonce number at 512 B on the near-identical
-	// cells, matching the archival baseline size, for a directly
+	// cells, matching the nonce-reuse baseline size, for a directly
 	// comparable "fresh vs reuse" number in the aggregator.
 	summary := map[string]any{
 		"max_homogeneity_chi2":                          maxHomog,
@@ -657,7 +657,7 @@ func TestRedTeamNearIdenticalFreshNonce(t *testing.T) {
 		"max_near_identical_floor_ratio_delta":          maxFloorRatioNIDelta,
 		"max_independent_control_floor_ratio":           maxFloorRatioIndep,
 		"nonce_reuse_baseline_near_identical_floor_512": run.Baseline.NonceReuseFloorRatio,
-		"note": "Under fresh nonces the near-identical pair's cross-category homogeneity chi² is the load-bearing between-pair-shape distinguisher; in-band across the matrix implies the archived nonce-reuse near-identical-pair traffic-analysis residue collapses to the 1/256 floor.",
+		"note": "Under fresh nonces the near-identical pair's cross-category homogeneity chi² is the load-bearing between-pair-shape distinguisher; in-band across the matrix implies the nonce-reuse near-identical-pair traffic-analysis residue collapses to the 1/256 floor.",
 	}
 
 	emitJSONNIF(t, "near_identical_fresh_matrix", map[string]any{
@@ -669,6 +669,6 @@ func TestRedTeamNearIdenticalFreshNonce(t *testing.T) {
 	// Attach a compact 512-B near-identical-vs-reuse contrast line
 	// visible in `-v` output so a reader without the aggregator sees
 	// the load-bearing baseline delta at a glance.
-	fmt.Fprintf(os.Stderr, "[nif-baseline] fresh-nonce near-identical floor ratio range across matrix: near_id max=%.3fx, indep_ctrl max=%.3fx (nonce-reuse archival baseline near-identical at 512 B = %.3fx floor)\n",
+	fmt.Fprintf(os.Stderr, "[nif-baseline] fresh-nonce near-identical floor ratio range across matrix: near_id max=%.3fx, indep_ctrl max=%.3fx (nonce-reuse baseline near-identical at 512 B = %.3fx floor)\n",
 		maxFloorRatioNI, maxFloorRatioIndep, run.Baseline.NonceReuseFloorRatio)
 }

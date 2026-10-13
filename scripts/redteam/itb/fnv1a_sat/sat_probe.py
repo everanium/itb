@@ -7,11 +7,11 @@ Reads the JSON corpus emitted by `TestRedTeamBrokenFNV1aCribKPAEmitCorpus`
 under `~/scratch/redteam/fnv1a_sat/f6_corpus_bundle.json` (override the
 parent dir via `REDTEAM_FNV1A_SAT_OUTPUT_DIR`) and runs a Bitwuzla
 SAT instance encoding the naive-crib SAT anchoring premise on both the
-archived without-barrier control and the shipped Triple/barrier
+one-region, barrier-off control encode and the shipped Triple/barrier
 ciphertext.
 
 Adapted from `scripts/redteam/itb/theory/fnv1a/sat_harness_4round.py`
-(1666 lines encoding the full archived SAT). This compact form
+(1666 lines encoding the full lo-lane key-recovery SAT). This compact form
 isolates the CORE claim — does any (seed_lo, np, r) tuple
 make the naive-crib xor_mask56 recovered from the container bytes
 consistent with the FNV-1a chain output at the anchored stream index?
@@ -52,7 +52,7 @@ Attacker-realism scoping:
     attacker upper bound. Real attacker (with unknown noiseSeed +
     dataSeed_i + interlock masks) is definitionally weaker.
   - Control probe (sanity): grants true (np, r, sp) — same posture as
-    the archived Concession 1 harness — and expects SAT.
+    Concession 1 of `sat_harness_4round.py` — and expects SAT.
   - Ground-truth dataSeed_i values are read only in terminal-stage
     validation printouts (SAT model comparison), never in a decision
     path.
@@ -78,8 +78,8 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
-# Reuse the vetted symbolic FNV-1a lo-lane chain from the archived
-# arsenal. The concrete evaluator provides cross-check parity; the
+# Reuse the vetted symbolic FNV-1a lo-lane chain from the
+# `itb/theory/fnv1a/` arsenal. The concrete evaluator provides cross-check parity; the
 # symbolic form is re-implemented against Bitwuzla below (the
 # arsenal's symbolic implementation targets Z3).
 _ARSENAL = Path(__file__).resolve().parents[2] / "itb" / "theory" / "fnv1a"
@@ -89,6 +89,20 @@ if str(_ARSENAL) not in sys.path:
 from fnv_chain_lo_concrete import (  # type: ignore  # noqa: E402
     MASK64,
     fnv_chain_lo_concrete,
+)
+
+# The noise position folds BOTH lanes of noiseSeed's 128-bit chain
+# output; the full-lane FNV-1a chain mirror and the fold live in the
+# shared `_common` modules.
+_COMMON = Path(__file__).resolve().parents[2] / "itb" / "theory" / "_common"
+if str(_COMMON) not in sys.path:
+    sys.path.insert(0, str(_COMMON))
+
+from chainhashes.fnv1a import chainhash_lohi as fnv_chainhash_lohi  # type: ignore  # noqa: E402
+from noise_position import (  # type: ignore  # noqa: E402
+    noise_counter_base,
+    noise_counter_data,
+    noise_position,
 )
 
 # ITB pixel-encoding constants — mirror the Go itb.go values.
@@ -331,7 +345,7 @@ def sat_probe_control(
     total_pixels_ctrl = int(corpus["control_pixels"])
 
     # startPixel derived from startSeed1.deriveStartPixel (matches
-    # Concession 1 of the archived harness).
+    # Concession 1 of `sat_harness_4round.py`).
     dom = bytes([0x02]) + nonce
     seed_lo_lanes = [int(h, 16) for h in corpus["seed_components"]["start1"][::2]]
     hlo = fnv_chain_lo_concrete(seed_lo_lanes, dom, rounds)
@@ -352,11 +366,13 @@ def sat_probe_control(
             bits[ch] = (raw >> bit_off) & 0x7F
         return bits
 
-    # Lab-peek true (np, r) per pixel for the "true_npr" regime.
-    ns_lanes = [int(h, 16) for h in corpus["seed_components"]["noise"][::2]]
+    # Lab-peek true (np, r) per pixel for the "true_npr" regime. The
+    # noise position folds both noise-hash lanes; the single-region
+    # control encode runs the noise counter from base 0.
+    ns_comps = [int(h, 16) for h in corpus["seed_components"]["noise"][:2 * rounds]]
     d1_lanes = [int(h, 16) for h in corpus["seed_components"]["data1"][::2]]
     def true_np_at(p: int) -> int:
-        return fnv_chain_lo_concrete(ns_lanes, struct.pack("<I", p) + nonce, rounds) & 7
+        return noise_position(*fnv_chainhash_lohi(noise_counter_data(p, nonce), ns_comps))
     def true_r_at(p: int) -> int:
         return fnv_chain_lo_concrete(d1_lanes, struct.pack("<I", p) + nonce, rounds) % 7
 
@@ -468,12 +484,17 @@ def sat_probe_barrier(
         sp_list = list(range(0, region_pixels, step))[:cap]
 
     # Lab-peek per-region noiseSeed / dataSeed_i lanes for "true_npr".
-    ns_lanes = [int(h, 16) for h in corpus["seed_components"]["noise"][::2]]
+    # The noise position folds both noise-hash lanes at the region's
+    # noise counter (one counter across the container, region i offset
+    # by i * third); the data hash keeps the per-region counter p.
+    ns_comps = [int(h, 16) for h in corpus["seed_components"]["noise"][:2 * rounds]]
     seed_data_key = f"data{region_idx + 1}"
     di_lanes = [int(h, 16) for h in corpus["seed_components"][seed_data_key][::2]]
+    noise_base = noise_counter_base(region_idx, geom["region_pixels"][0])
 
     def true_np_at(p: int) -> int:
-        return fnv_chain_lo_concrete(ns_lanes, struct.pack("<I", p) + nonce, rounds) & 7
+        return noise_position(*fnv_chainhash_lohi(
+            noise_counter_data(noise_base + p, nonce), ns_comps))
 
     def true_r_at(p: int) -> int:
         return fnv_chain_lo_concrete(di_lanes, struct.pack("<I", p) + nonce, rounds) % 7
@@ -611,7 +632,7 @@ def main(argv=None) -> int:
     }
 
     if not args.barrier_only:
-        print("\n=== Control (archived, barrier off) ===")
+        print("\n=== Control (one-region, barrier off) ===")
         report["control"] = sat_probe_control(
             corpus, args.n_crib_pixels, args.timeout_sec, args.rounds, args.regime,
         )

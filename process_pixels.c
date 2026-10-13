@@ -1,6 +1,10 @@
 #include <stdint.h>
 #include <string.h>
 
+// noiseHashes carries the per-pixel noise position in its low 3 bits: the
+// Go side mixes and folds the noise hash (noisepos.go), and every kernel
+// below reads nh & 7 and ignores the remaining bits.
+
 #ifdef ITB_PARITY_TIER_OVERRIDE
 #include <stdlib.h>
 // Parity-only tier downgrade knob. Compiled in only when the parity

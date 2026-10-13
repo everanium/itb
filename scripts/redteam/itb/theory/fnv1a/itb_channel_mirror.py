@@ -19,7 +19,9 @@ re-derives noise_pos / rotation / channelXOR per pixel using the Go
 lab ground-truth seeds (laboratory-audit only - the SAT
 harness must NOT do this; it will solve for them), and verifies that
 the Python decoder reproduces the original plaintext bit-exact for
-every cell in the corpus.
+every cell in the corpus. noise_pos folds both lanes of the noiseSeed
+chain, so summary.json must carry the full `noise_seed_hex`
+components.
 
 Usage:
     python3 itb_channel_mirror.py parity
@@ -44,6 +46,13 @@ from fnv_chain_lo_concrete import (  # type: ignore
     MASK64,
     fnv_chain_lo_concrete,
 )
+
+_COMMON_DIR = _THIS_DIR.parent / "_common"
+if str(_COMMON_DIR) not in sys.path:
+    sys.path.insert(0, str(_COMMON_DIR))
+
+from chainhashes.fnv1a import chainhash_lohi as fnv_chainhash_lohi  # type: ignore  # noqa: E402
+from noise_position import noise_counter_data, noise_position  # type: ignore  # noqa: E402
 
 CHANNELS = 8
 DATA_BITS_PER_CHANNEL = 7
@@ -126,9 +135,37 @@ def _derive_pixel_params(data_hash_lo: int) -> Tuple[int, int]:
     return rotation, xor_mask
 
 
-def _derive_noise_pos(noise_hash_lo: int) -> int:
-    """`noise_pos = noise_hash_lo & 7` — matches `process_generic.go:23`."""
-    return noise_hash_lo & 7
+def _derive_noise_pos(noise_hash_lo: int, noise_hash_hi: int) -> int:
+    """`noise_pos = noiseFold3(noise_hash_lo + rotl64(noise_hash_hi, 1))`
+    (mod 2^64) — the mix and fold of both noise-hash lanes the encoder
+    applies (`noisepos.go`)."""
+    return noise_position(noise_hash_lo, noise_hash_hi)
+
+
+def load_noise_seed_components(summary: dict, rounds: int) -> List[int]:
+    """Full noiseSeed components (both lanes, two per round) from a lab
+    summary.json — LAB ONLY. The noise position folds both lanes of the
+    noise hash, and the FNV-1a hi lane depends on both seed lanes, so the
+    lo-lane components alone cannot reproduce it."""
+    if "noise_seed_hex" not in summary:
+        raise RuntimeError(
+            "summary.json lacks `noise_seed_hex` (full noiseSeed components); "
+            "the noise position folds both noise-hash lanes, so the lo-lane "
+            "components alone do not reproduce it"
+        )
+    comps = [int(h, 16) for h in summary["noise_seed_hex"]]
+    if len(comps) < 2 * rounds:
+        raise RuntimeError(
+            f"noise_seed_hex has {len(comps)} components, need {2 * rounds}"
+        )
+    return comps[:2 * rounds]
+
+
+def noise_hash_lohi(noise_comps: List[int], counter: int, nonce: bytes) -> Tuple[int, int]:
+    """Both lanes of noiseSeed's chain at noise counter `counter`
+    (`LE32(counter) || nonce`). A single-region encode runs the counter
+    from 0, so `counter` equals the stream step p."""
+    return fnv_chainhash_lohi(noise_counter_data(counter, nonce), noise_comps)
 
 
 def extract_channel_xor(data_hash_lo: int, channel_idx: int) -> int:
@@ -205,6 +242,7 @@ def decode_container_to_payload(
     ciphertext: bytes,
     data_hash_lo_per_pixel: List[int],
     noise_hash_lo_per_pixel: List[int],
+    noise_hash_hi_per_pixel: List[int],
     start_pixel: int,
     total_pixels: int,
     header_size: int,
@@ -219,8 +257,9 @@ def decode_container_to_payload(
     0x00 terminator, then running `cobs_decode` to obtain the original
     plaintext.
 
-    Per-pixel `dataHash.lo` / `noiseHash.lo` arrays come from the caller
-    so the function is hash-agnostic.
+    Per-pixel `dataHash.lo` and `noiseHash` lo / hi arrays come from the
+    caller so the function is hash-agnostic; the noise arrays are indexed
+    by stream step p and already evaluated at the pixel's noise counter.
 
     `prefix_size` + `header_size` strip the 32-byte wire prefix and the
     ITB header (main nonce + 2W + 2H).
@@ -241,8 +280,9 @@ def decode_container_to_payload(
         pixel_offset = linear_idx * CHANNELS
         data_hash_lo = data_hash_lo_per_pixel[p]
         noise_hash_lo = noise_hash_lo_per_pixel[p]
+        noise_hash_hi = noise_hash_hi_per_pixel[p]
         rotation, _ = _derive_pixel_params(data_hash_lo)
-        noise_pos = _derive_noise_pos(noise_hash_lo)
+        noise_pos = _derive_noise_pos(noise_hash_lo, noise_hash_hi)
 
         for ch in range(CHANNELS):
             if bit_index >= total_bits:
@@ -307,22 +347,22 @@ def parity_check_corpus(fnvstress_dir: Path) -> bool:
 
     This check runs in LAB MODE: it reads noise/data/start seed
     components from summary.json so it can compute the ground-truth
-    hLo per pixel. The SAT harness must NOT do this — it will
-    solve for hLo.
+    hLo (and the noise hash's two lanes) per pixel. The SAT harness
+    must NOT do this — it will solve for hLo.
     """
     summary = json.loads((fnvstress_dir / "summary.json").read_text())
     rounds = summary["rounds"]
     data_lo = [int(h, 16) for h in summary["data_lo_lane_hex"]]
-    noise_lo = [int(h, 16) for h in summary["noise_lo_lane_hex"]]
+    noise_comps = load_noise_seed_components(summary, rounds)
     # Also extract the startSeed lo-lane components. summary.json stores
     # the full 16-uint64 start_seed_hex; extract even-indexed for lo lane.
     full_start = [int(h, 16) for h in summary["start_seed_hex"]]
     start_lo = full_start[0::2]
 
-    if len(data_lo) != rounds or len(noise_lo) != rounds or len(start_lo) != rounds:
+    if len(data_lo) != rounds or len(start_lo) != rounds:
         raise RuntimeError(
             f"lo-lane component count mismatch vs rounds={rounds}: "
-            f"data={len(data_lo)} noise={len(noise_lo)} start={len(start_lo)}"
+            f"data={len(data_lo)} start={len(start_lo)}"
         )
 
     total_failures = 0
@@ -334,13 +374,16 @@ def parity_check_corpus(fnvstress_dir: Path) -> bool:
         nonce = bytes.fromhex(cell_nonce_hex)
         total_pixels = cell["total_pixels"]
 
-        # Precompute per-pixel hLo arrays.
+        # Precompute per-pixel hLo arrays (data) and lo / hi lane arrays
+        # (noise). Single-region cell: the noise counter equals p.
         data_hash_lo_per_pixel = [0] * total_pixels
         noise_hash_lo_per_pixel = [0] * total_pixels
+        noise_hash_hi_per_pixel = [0] * total_pixels
         for p in range(total_pixels):
             data_bytes_ = _build_pixel_data(p, nonce)
             data_hash_lo_per_pixel[p] = fnv_chain_lo_concrete(data_lo, data_bytes_, rounds)
-            noise_hash_lo_per_pixel[p] = fnv_chain_lo_concrete(noise_lo, data_bytes_, rounds)
+            noise_hash_lo_per_pixel[p], noise_hash_hi_per_pixel[p] = (
+                noise_hash_lohi(noise_comps, p, nonce))
 
         # startPixel derived from startSeed (same nonce).
         start_pixel = _derive_start_pixel(start_lo, nonce, total_pixels, rounds)
@@ -355,6 +398,7 @@ def parity_check_corpus(fnvstress_dir: Path) -> bool:
             ciphertext=ciphertext,
             data_hash_lo_per_pixel=data_hash_lo_per_pixel,
             noise_hash_lo_per_pixel=noise_hash_lo_per_pixel,
+            noise_hash_hi_per_pixel=noise_hash_hi_per_pixel,
             start_pixel=start_pixel,
             total_pixels=total_pixels,
             header_size=header_size,

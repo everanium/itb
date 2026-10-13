@@ -17,11 +17,14 @@ import (
 //   - dataSeed → data rotation (0-6) + per-bit XOR masks (56 bits).
 //   - startSeed → pixel start offset.
 //
-// Uses blockHash256 (256-bit hash) per pixel, taking the low 64-bit word
-// for noise/data configuration. Threads cfg through to [processChunk256]
+// Uses blockHash256 (256-bit hash) per pixel: the low 64-bit word of the
+// data hash supplies rotation and XOR masks, and words 0 and 1 of the
+// noise hash are mixed and folded to the noise position ([noisePosition]).
+// noiseBase is the region's noise-hash counter offset ([noiseCounterBase]).
+// Threads cfg through to [processChunk256]
 // so a non-nil cfg with an explicit NonceBits override is honoured at
 // the per-pixel buffer-allocation site.
-func process256Cfg(cfg *Config, noiseSeed, dataSeed, startSeed *Seed256, nonce []byte, container []byte, width, height int, data []byte, encode bool, maxW int) {
+func process256Cfg(cfg *Config, noiseSeed, dataSeed, startSeed *Seed256, nonce []byte, container []byte, width, height int, data []byte, encode bool, maxW int, noiseBase int) {
 	totalPixels := width * height
 	startPixel := startSeed.deriveStartPixel(nonce, totalPixels)
 	totalBits := len(data) * 8
@@ -46,7 +49,7 @@ func process256Cfg(cfg *Config, noiseSeed, dataSeed, startSeed *Seed256, nonce [
 	microBatch := chooseMicroBatch(len(data))
 
 	if numWorkers == 1 {
-		processChunk256(cfg, noiseSeed, dataSeed, nonce, container, data, startPixel, totalPixels, 0, dataPixels, totalBits, microBatch, encode)
+		processChunk256(cfg, noiseSeed, dataSeed, nonce, container, data, startPixel, totalPixels, 0, dataPixels, totalBits, microBatch, encode, noiseBase)
 		return
 	}
 
@@ -63,7 +66,7 @@ func process256Cfg(cfg *Config, noiseSeed, dataSeed, startSeed *Seed256, nonce [
 		wg.Add(1)
 		go func(startP, endP int) {
 			defer wg.Done()
-			processChunk256(cfg, noiseSeed, dataSeed, nonce, container, data, startPixel, totalPixels, startP, endP, totalBits, microBatch, encode)
+			processChunk256(cfg, noiseSeed, dataSeed, nonce, container, data, startPixel, totalPixels, startP, endP, totalBits, microBatch, encode, noiseBase)
 		}(startP, endP)
 	}
 	wg.Wait()
@@ -214,15 +217,15 @@ func encrypt3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dat
 	var wg sync.WaitGroup
 	wg.Add(3)
 	go func() {
-		process256Cfg(cfg, noiseSeed, dataSeed1, startSeed1, nonce, container[0:offset1], third, 1, payloads[0], true, perThird)
+		process256Cfg(cfg, noiseSeed, dataSeed1, startSeed1, nonce, container[0:offset1], third, 1, payloads[0], true, perThird, noiseCounterBase(0, third))
 		wg.Done()
 	}()
 	go func() {
-		process256Cfg(cfg, noiseSeed, dataSeed2, startSeed2, nonce, container[offset1:offset2], third, 1, payloads[1], true, perThird)
+		process256Cfg(cfg, noiseSeed, dataSeed2, startSeed2, nonce, container[offset1:offset2], third, 1, payloads[1], true, perThird, noiseCounterBase(1, third))
 		wg.Done()
 	}()
 	go func() {
-		process256Cfg(cfg, noiseSeed, dataSeed3, startSeed3, nonce, container[offset2:totalPixels*Channels], thirdPixels2, 1, payloads[2], true, perThird)
+		process256Cfg(cfg, noiseSeed, dataSeed3, startSeed3, nonce, container[offset2:totalPixels*Channels], thirdPixels2, 1, payloads[2], true, perThird, noiseCounterBase(2, third))
 		wg.Done()
 	}()
 	wg.Wait()
@@ -323,15 +326,15 @@ func decrypt3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dat
 	var wg sync.WaitGroup
 	wg.Add(3)
 	go func() {
-		process256Cfg(cfg, noiseSeed, dataSeed1, startSeed1, nonce, container[0:offset1], third, 1, decoded[0], false, perThird)
+		process256Cfg(cfg, noiseSeed, dataSeed1, startSeed1, nonce, container[0:offset1], third, 1, decoded[0], false, perThird, noiseCounterBase(0, third))
 		wg.Done()
 	}()
 	go func() {
-		process256Cfg(cfg, noiseSeed, dataSeed2, startSeed2, nonce, container[offset1:offset2], third, 1, decoded[1], false, perThird)
+		process256Cfg(cfg, noiseSeed, dataSeed2, startSeed2, nonce, container[offset1:offset2], third, 1, decoded[1], false, perThird, noiseCounterBase(1, third))
 		wg.Done()
 	}()
 	go func() {
-		process256Cfg(cfg, noiseSeed, dataSeed3, startSeed3, nonce, container[offset2:totalPixels*Channels], thirdPixels2, 1, decoded[2], false, perThird)
+		process256Cfg(cfg, noiseSeed, dataSeed3, startSeed3, nonce, container[offset2:totalPixels*Channels], thirdPixels2, 1, decoded[2], false, perThird, noiseCounterBase(2, third))
 		wg.Done()
 	}()
 	wg.Wait()

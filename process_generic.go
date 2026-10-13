@@ -10,7 +10,7 @@ package itb
 // identical to the serial path. Non-batched primitives (BatchHash nil)
 // route directly to the serial loop. The pure-Go counterpart of
 // the batched dispatch in process_cgo.go.
-func processChunk128(cfg *Config, noiseSeed, dataSeed *Seed128, nonce []byte, container []byte, data []byte, startPixel, totalPixels, startP, endP, totalBits, microBatch int, encode bool) {
+func processChunk128(cfg *Config, noiseSeed, dataSeed *Seed128, nonce []byte, container []byte, data []byte, startPixel, totalPixels, startP, endP, totalBits, microBatch int, encode bool, noiseBase int) {
 	_ = microBatch // adaptive CGO stride; unused on the non-cgo path (no C boundary to amortise)
 	bitIndex := startP * DataBitsPerPixel
 
@@ -35,7 +35,7 @@ func processChunk128(cfg *Config, noiseSeed, dataSeed *Seed128, nonce []byte, co
 
 			for ; p+8 <= endP && bitIndex < totalBits; p += 8 {
 				pixelIndices := [8]int{p, p + 1, p + 2, p + 3, p + 4, p + 5, p + 6, p + 7}
-				noiseHashes := noiseSeed.blockHash128x8(noiseBufs8, pixelIndices)
+				noiseHashes := noiseSeed.blockHash128x8(noiseBufs8, noiseIdx8(pixelIndices, noiseBase))
 				dataHashes := dataSeed.blockHash128x8(dataBufs8, pixelIndices)
 
 				for lane := 0; lane < 8 && bitIndex < totalBits; lane++ {
@@ -43,10 +43,10 @@ func processChunk128(cfg *Config, noiseSeed, dataSeed *Seed128, nonce []byte, co
 					linearIdx := (startPixel + pp) % totalPixels
 					pixelOffset := linearIdx * Channels
 
-					noiseHash := noiseHashes[lane][0]
+					noiseHash := noiseMix(noiseHashes[lane][0], noiseHashes[lane][1])
 					dataHash := dataHashes[lane][0]
 
-					noisePos := uint(noiseHash & 7)
+					noisePos := noiseFold3(noiseHash)
 					noiseMask := byte(1 << noisePos)
 
 					dataRotation := uint(dataHash % 7)
@@ -114,7 +114,7 @@ func processChunk128(cfg *Config, noiseSeed, dataSeed *Seed128, nonce []byte, co
 
 		for ; p+4 <= endP && bitIndex < totalBits; p += 4 {
 			pixelIndices := [4]int{p, p + 1, p + 2, p + 3}
-			noiseHashes := noiseSeed.blockHash128x4(noiseBufs, pixelIndices)
+			noiseHashes := noiseSeed.blockHash128x4(noiseBufs, noiseIdx4(pixelIndices, noiseBase))
 			dataHashes := dataSeed.blockHash128x4(dataBufs, pixelIndices)
 
 			for lane := 0; lane < 4 && bitIndex < totalBits; lane++ {
@@ -122,10 +122,10 @@ func processChunk128(cfg *Config, noiseSeed, dataSeed *Seed128, nonce []byte, co
 				linearIdx := (startPixel + pp) % totalPixels
 				pixelOffset := linearIdx * Channels
 
-				noiseHash := noiseHashes[lane][0]
+				noiseHash := noiseMix(noiseHashes[lane][0], noiseHashes[lane][1])
 				dataHash := dataHashes[lane][0]
 
-				noisePos := uint(noiseHash & 7)
+				noisePos := noiseFold3(noiseHash)
 				noiseMask := byte(1 << noisePos)
 
 				dataRotation := uint(dataHash % 7)
@@ -195,10 +195,11 @@ func processChunk128(cfg *Config, noiseSeed, dataSeed *Seed128, nonce []byte, co
 		linearIdx := (startPixel + p) % totalPixels
 		pixelOffset := linearIdx * Channels
 
-		noiseHash, _ := noiseSeed.blockHash128(noiseBuf, p)
+		noiseLo, noiseHi := noiseSeed.blockHash128(noiseBuf, noiseBase+p)
+		noiseHash := noiseMix(noiseLo, noiseHi)
 		dataHash, _ := dataSeed.blockHash128(dataBuf, p)
 
-		noisePos := uint(noiseHash & 7)
+		noisePos := noiseFold3(noiseHash)
 		noiseMask := byte(1 << noisePos)
 
 		dataRotation := uint(dataHash % 7)
@@ -271,7 +272,7 @@ func processChunk128(cfg *Config, noiseSeed, dataSeed *Seed128, nonce []byte, co
 // identical to the serial path. Non-batched primitives (BatchHash nil)
 // route directly to the serial loop. The pure-Go counterpart of
 // the batched dispatch in process_cgo.go.
-func processChunk256(cfg *Config, noiseSeed, dataSeed *Seed256, nonce []byte, container []byte, data []byte, startPixel, totalPixels, startP, endP, totalBits, microBatch int, encode bool) {
+func processChunk256(cfg *Config, noiseSeed, dataSeed *Seed256, nonce []byte, container []byte, data []byte, startPixel, totalPixels, startP, endP, totalBits, microBatch int, encode bool, noiseBase int) {
 	_ = microBatch // adaptive CGO stride; unused on the non-cgo path (no C boundary to amortise)
 	bitIndex := startP * DataBitsPerPixel
 
@@ -295,7 +296,7 @@ func processChunk256(cfg *Config, noiseSeed, dataSeed *Seed256, nonce []byte, co
 
 			for ; p+8 <= endP && bitIndex < totalBits; p += 8 {
 				pixelIndices := [8]int{p, p + 1, p + 2, p + 3, p + 4, p + 5, p + 6, p + 7}
-				noiseHashes := noiseSeed.blockHash256x8(noiseBufs8, pixelIndices)
+				noiseHashes := noiseSeed.blockHash256x8(noiseBufs8, noiseIdx8(pixelIndices, noiseBase))
 				dataHashes := dataSeed.blockHash256x8(dataBufs8, pixelIndices)
 
 				for lane := 0; lane < 8 && bitIndex < totalBits; lane++ {
@@ -303,10 +304,10 @@ func processChunk256(cfg *Config, noiseSeed, dataSeed *Seed256, nonce []byte, co
 					linearIdx := (startPixel + pp) % totalPixels
 					pixelOffset := linearIdx * Channels
 
-					noiseHash := noiseHashes[lane][0]
+					noiseHash := noiseMix(noiseHashes[lane][0], noiseHashes[lane][1])
 					dataHash := dataHashes[lane][0]
 
-					noisePos := uint(noiseHash & 7)
+					noisePos := noiseFold3(noiseHash)
 					noiseMask := byte(1 << noisePos)
 
 					dataRotation := uint(dataHash % 7)
@@ -374,7 +375,7 @@ func processChunk256(cfg *Config, noiseSeed, dataSeed *Seed256, nonce []byte, co
 
 		for ; p+4 <= endP && bitIndex < totalBits; p += 4 {
 			pixelIndices := [4]int{p, p + 1, p + 2, p + 3}
-			noiseHashes := noiseSeed.blockHash256x4(noiseBufs, pixelIndices)
+			noiseHashes := noiseSeed.blockHash256x4(noiseBufs, noiseIdx4(pixelIndices, noiseBase))
 			dataHashes := dataSeed.blockHash256x4(dataBufs, pixelIndices)
 
 			for lane := 0; lane < 4 && bitIndex < totalBits; lane++ {
@@ -382,10 +383,10 @@ func processChunk256(cfg *Config, noiseSeed, dataSeed *Seed256, nonce []byte, co
 				linearIdx := (startPixel + pp) % totalPixels
 				pixelOffset := linearIdx * Channels
 
-				noiseHash := noiseHashes[lane][0]
+				noiseHash := noiseMix(noiseHashes[lane][0], noiseHashes[lane][1])
 				dataHash := dataHashes[lane][0]
 
-				noisePos := uint(noiseHash & 7)
+				noisePos := noiseFold3(noiseHash)
 				noiseMask := byte(1 << noisePos)
 
 				dataRotation := uint(dataHash % 7)
@@ -455,12 +456,12 @@ func processChunk256(cfg *Config, noiseSeed, dataSeed *Seed256, nonce []byte, co
 		linearIdx := (startPixel + p) % totalPixels
 		pixelOffset := linearIdx * Channels
 
-		noiseH := noiseSeed.blockHash256(noiseBuf, p)
+		noiseH := noiseSeed.blockHash256(noiseBuf, noiseBase+p)
 		dataH := dataSeed.blockHash256(dataBuf, p)
-		noiseHash := noiseH[0]
+		noiseHash := noiseMix(noiseH[0], noiseH[1])
 		dataHash := dataH[0]
 
-		noisePos := uint(noiseHash & 7)
+		noisePos := noiseFold3(noiseHash)
 		noiseMask := byte(1 << noisePos)
 
 		dataRotation := uint(dataHash % 7)
@@ -531,7 +532,7 @@ func processChunk256(cfg *Config, noiseSeed, dataSeed *Seed256, nonce []byte, co
 // identical to processChunk256 with 8-uint64 hash outputs in place of
 // 4-uint64 ones. Pure Go counterpart of the 512-bit batched path in
 // process_cgo.go.
-func processChunk512(cfg *Config, noiseSeed, dataSeed *Seed512, nonce []byte, container []byte, data []byte, startPixel, totalPixels, startP, endP, totalBits, microBatch int, encode bool) {
+func processChunk512(cfg *Config, noiseSeed, dataSeed *Seed512, nonce []byte, container []byte, data []byte, startPixel, totalPixels, startP, endP, totalBits, microBatch int, encode bool, noiseBase int) {
 	_ = microBatch // adaptive CGO stride; unused on the non-cgo path (no C boundary to amortise)
 	bitIndex := startP * DataBitsPerPixel
 
@@ -555,7 +556,7 @@ func processChunk512(cfg *Config, noiseSeed, dataSeed *Seed512, nonce []byte, co
 
 			for ; p+8 <= endP && bitIndex < totalBits; p += 8 {
 				pixelIndices := [8]int{p, p + 1, p + 2, p + 3, p + 4, p + 5, p + 6, p + 7}
-				noiseHashes := noiseSeed.blockHash512x8(noiseBufs8, pixelIndices)
+				noiseHashes := noiseSeed.blockHash512x8(noiseBufs8, noiseIdx8(pixelIndices, noiseBase))
 				dataHashes := dataSeed.blockHash512x8(dataBufs8, pixelIndices)
 
 				for lane := 0; lane < 8 && bitIndex < totalBits; lane++ {
@@ -563,10 +564,10 @@ func processChunk512(cfg *Config, noiseSeed, dataSeed *Seed512, nonce []byte, co
 					linearIdx := (startPixel + pp) % totalPixels
 					pixelOffset := linearIdx * Channels
 
-					noiseHash := noiseHashes[lane][0]
+					noiseHash := noiseMix(noiseHashes[lane][0], noiseHashes[lane][1])
 					dataHash := dataHashes[lane][0]
 
-					noisePos := uint(noiseHash & 7)
+					noisePos := noiseFold3(noiseHash)
 					noiseMask := byte(1 << noisePos)
 
 					dataRotation := uint(dataHash % 7)
@@ -634,7 +635,7 @@ func processChunk512(cfg *Config, noiseSeed, dataSeed *Seed512, nonce []byte, co
 
 		for ; p+4 <= endP && bitIndex < totalBits; p += 4 {
 			pixelIndices := [4]int{p, p + 1, p + 2, p + 3}
-			noiseHashes := noiseSeed.blockHash512x4(noiseBufs, pixelIndices)
+			noiseHashes := noiseSeed.blockHash512x4(noiseBufs, noiseIdx4(pixelIndices, noiseBase))
 			dataHashes := dataSeed.blockHash512x4(dataBufs, pixelIndices)
 
 			for lane := 0; lane < 4 && bitIndex < totalBits; lane++ {
@@ -642,10 +643,10 @@ func processChunk512(cfg *Config, noiseSeed, dataSeed *Seed512, nonce []byte, co
 				linearIdx := (startPixel + pp) % totalPixels
 				pixelOffset := linearIdx * Channels
 
-				noiseHash := noiseHashes[lane][0]
+				noiseHash := noiseMix(noiseHashes[lane][0], noiseHashes[lane][1])
 				dataHash := dataHashes[lane][0]
 
-				noisePos := uint(noiseHash & 7)
+				noisePos := noiseFold3(noiseHash)
 				noiseMask := byte(1 << noisePos)
 
 				dataRotation := uint(dataHash % 7)
@@ -715,12 +716,12 @@ func processChunk512(cfg *Config, noiseSeed, dataSeed *Seed512, nonce []byte, co
 		linearIdx := (startPixel + p) % totalPixels
 		pixelOffset := linearIdx * Channels
 
-		noiseH := noiseSeed.blockHash512(noiseBuf, p)
+		noiseH := noiseSeed.blockHash512(noiseBuf, noiseBase+p)
 		dataH := dataSeed.blockHash512(dataBuf, p)
-		noiseHash := noiseH[0]
+		noiseHash := noiseMix(noiseH[0], noiseH[1])
 		dataHash := dataH[0]
 
-		noisePos := uint(noiseHash & 7)
+		noisePos := noiseFold3(noiseHash)
 		noiseMask := byte(1 << noisePos)
 
 		dataRotation := uint(dataHash % 7)

@@ -201,15 +201,15 @@ func encryptStreamAuthenticated3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSe
 	var wg sync.WaitGroup
 	wg.Add(3)
 	go func() {
-		process256Cfg(cfg, noiseSeed, dataSeed1, startSeed1, nonce, container[0:offset1], third, 1, payloads[0], true, perThird)
+		process256Cfg(cfg, noiseSeed, dataSeed1, startSeed1, nonce, container[0:offset1], third, 1, payloads[0], true, perThird, noiseCounterBase(0, third))
 		wg.Done()
 	}()
 	go func() {
-		process256Cfg(cfg, noiseSeed, dataSeed2, startSeed2, nonce, container[offset1:offset2], third, 1, payloads[1], true, perThird)
+		process256Cfg(cfg, noiseSeed, dataSeed2, startSeed2, nonce, container[offset1:offset2], third, 1, payloads[1], true, perThird, noiseCounterBase(1, third))
 		wg.Done()
 	}()
 	go func() {
-		process256Cfg(cfg, noiseSeed, dataSeed3, startSeed3, nonce, container[offset2:totalPixels*Channels], thirdPixels2, 1, full2, true, perThird)
+		process256Cfg(cfg, noiseSeed, dataSeed3, startSeed3, nonce, container[offset2:totalPixels*Channels], thirdPixels2, 1, full2, true, perThird, noiseCounterBase(2, third))
 		wg.Done()
 	}()
 	wg.Wait()
@@ -307,15 +307,15 @@ func DecryptStreamAuthenticated3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSe
 	var wg sync.WaitGroup
 	wg.Add(3)
 	go func() {
-		process256Cfg(cfg, noiseSeed, dataSeed1, startSeed1, nonce, container[0:offset1], third, 1, decoded[0], false, perThird)
+		process256Cfg(cfg, noiseSeed, dataSeed1, startSeed1, nonce, container[0:offset1], third, 1, decoded[0], false, perThird, noiseCounterBase(0, third))
 		wg.Done()
 	}()
 	go func() {
-		process256Cfg(cfg, noiseSeed, dataSeed2, startSeed2, nonce, container[offset1:offset2], third, 1, decoded[1], false, perThird)
+		process256Cfg(cfg, noiseSeed, dataSeed2, startSeed2, nonce, container[offset1:offset2], third, 1, decoded[1], false, perThird, noiseCounterBase(1, third))
 		wg.Done()
 	}()
 	go func() {
-		process256Cfg(cfg, noiseSeed, dataSeed3, startSeed3, nonce, container[offset2:totalPixels*Channels], thirdPixels2, 1, decoded[2], false, perThird)
+		process256Cfg(cfg, noiseSeed, dataSeed3, startSeed3, nonce, container[offset2:totalPixels*Channels], thirdPixels2, 1, decoded[2], false, perThird, noiseCounterBase(2, third))
 		wg.Done()
 	}()
 	wg.Wait()

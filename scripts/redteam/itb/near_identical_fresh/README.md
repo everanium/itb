@@ -66,8 +66,8 @@ accumulates:
 
 The JSON record emitted to
 `~/scratch/redteam/near_identical_fresh/near_identical_fresh_matrix.json`
-also includes the archival nonce-reuse
-Layer A near-identical baseline at 512 B (~16.13× the 1/256 floor)
+also includes the nonce-reuse
+Layer A near-identical baseline at 512 B (~17.995× the 1/256 floor)
 for a direct nonce-reuse vs fresh-nonce contrast.
 
 ## Attacker-realism scoping
@@ -111,10 +111,8 @@ via `REDTEAM_NEAR_IDENTICAL_FRESH_OUTPUT_DIR`.
 
 ## Cross-reference
 
-- The archival result on the same near-identical pair shape (Layer A
-  histogram under **forced nonce reuse**) is in
-  [`archive/REDTEAM.md § Phase 2d`](../../../../archive/REDTEAM.md)
-  and the corresponding shipped nonce-reuse Layer A verdict in
+- The nonce-reuse Layer A verdict on the same near-identical pair
+  shape (Layer A histogram under **forced nonce reuse**) is in
   [`REDTEAM.md § Nonce reuse (lab-only)`](../../../../REDTEAM.md) —
   byte-equal rate `0.019`–`0.063` (`4.9×`–`16×` floor) at 128–512 B on
   the near-identical pair shape.

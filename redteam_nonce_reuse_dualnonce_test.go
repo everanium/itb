@@ -6,10 +6,9 @@ package itb
 // which draws two independent nonces per message: the main nonce, which
 // the wire header carries (`[prefix 32][main_nonce (N)][W][H][container]`, chunk header
 // size `N+4`), and the interlock nonce, which travels split across the
-// three interlocked lanes. Companion to the historical
-// `redteam_nonce_reuse_test.go` probes, which were authored against the
-// archived single-nonce construction and cannot re-run against the
-// shipped one.
+// three interlocked lanes. Companion to the fixed-nonce probes in
+// `redteam_nonce_reuse_test.go`, which pin both nonces to one value
+// via `setBrokenTestNonce`.
 //
 // The three scenarios below map to the maintainer's methodology for
 // isolating the two independent nonces' contributions:
@@ -17,9 +16,9 @@ package itb
 //   Scenario A — Full nonce-reuse degeneracy. Both messages share the
 //     main nonce AND both messages share the interlock nonce; within
 //     each message the two nonces stay byte-distinct (matching the
-//     shipped `generateNoncePairCfg` invariant). This reproduces the
-//     archived single-nonce reuse event under the two-nonce
-//     construction.
+//     shipped `generateNoncePairCfg` invariant). This is the
+//     complete nonce-reuse event: every nonce-keyed derivation
+//     repeats across the compared pair.
 //
 //   Scenario B — Partial nonce-reuse (main-only). The main nonce is
 //     fixed across the compared pair; the interlock nonce is drawn
@@ -413,8 +412,8 @@ func runDualNRScenario(t *testing.T, scenario dualNRScenario, primName string, h
 			plainRng.Read(p1)
 			copy(p2, p1)
 			// Flip one bit at the middle byte per pair — the maximally
-			// adversarial pair shape for the archived near-identical
-			// Layer A residue.
+			// adversarial pair shape for the near-identical Layer A
+			// residue.
 			p2[plaintextLen/2] ^= byte(1 << (uint(i) % 8))
 		default:
 			t.Fatalf("unknown shape %q", shape)

@@ -69,3 +69,21 @@ def chainhash_lo(data: bytes, seed_components: Sequence[int]) -> int:
         k_hi = (seed_components[i + 1] ^ h_hi) & MASK64
         h_lo, h_hi = _fnv1a128(data, k_lo, k_hi)
     return h_lo
+
+
+def chainhash_lohi(data: bytes, seed_components: Sequence[int]) -> tuple[int, int]:
+    """Both 64-bit lanes `(lo, hi)` of `Seed128.ChainHash128(data)` under
+    the FNV-1a 128-bit primitive, at any key size (an even number of seed
+    components, two per round). The hi lane depends on both seed lanes:
+    the 128-bit multiply carries the lo half upward. The noise position
+    consumes both lanes (see `noise_position.py`)."""
+    n = len(seed_components)
+    assert n >= 2 and n % 2 == 0, (
+        f"FNV-1a 128 ChainHash expects an even number of seed components, got {n}"
+    )
+    h_lo, h_hi = _fnv1a128(data, seed_components[0], seed_components[1])
+    for i in range(2, n, 2):
+        k_lo = (seed_components[i] ^ h_lo) & MASK64
+        k_hi = (seed_components[i + 1] ^ h_hi) & MASK64
+        h_lo, h_hi = _fnv1a128(data, k_lo, k_hi)
+    return h_lo, h_hi

@@ -35,8 +35,8 @@ for downstream aggregation.
 - `TestRedTeamNonceReuseLayerBRandomPair` — Layer B random floor: same
   probe with random plaintext pair (no artificial quiet chunks).
 - `TestRedTeamNonceReuseLayerBMaskOraclePeek` — Layer B': upper bound
-  under startPixel-peek + mask-oracle-peek. Confirms the archived
-  demasker's Layer 1 anchors the content pixels IF the mask is revealed;
+  under startPixel-peek + mask-oracle-peek. Confirms the demasker's
+  Layer 1 anchors the content pixels IF the mask is revealed;
   the interlock-nonce fragment pixels stay ambiguous, their XOR being
   zero under the forced nonce collision.
 - `TestRedTeamNonceReuseLayerCFNVAlgebraic` — Layer C: attacker-realistic

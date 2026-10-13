@@ -41,7 +41,7 @@ package itb
 //   Under nullHash every ChainHash128 collapses to an 8-bit lo constant
 //   and an 8-bit hi constant, data- and nonce-independent. The wire then
 //   exposes only:
-//     - noiseSeed  -> noisePos = lo & 7            (3 bits)
+//     - noiseSeed  -> noisePos = fold3(lo + rotl(hi, 1)) (3 bits)
 //     - dataSeed_i -> (lo % 7, lo >> 3)            (the full 8-bit lo)
 //     - lockSeed   -> deriveInterLockSeed = (lo,hi) (16 bits)
 //   The three regions occupy disjoint container thirds and are decoded
@@ -116,13 +116,17 @@ func firstNull(b []byte) int {
 // noisePos (3 bits of noiseSeed), the 16-bit lock constant, the three
 // dataSeed lo bytes, and the three given startPixels. Distinct hi bytes
 // are stamped per slot so the shipped 8-seed-distinctness guard in
-// Decrypt3x128Cfg accepts the set; under nullHash the hi byte is unused
-// by every observable derivation, so it does not affect the decode.
+// Decrypt3x128Cfg accepts the set. Under nullHash the hi byte of the
+// data, lock-free and start slots is unused by every observable
+// derivation; the noise slot's hi byte enters noisePos through
+// noiseFold3(lo + rotl(hi, 1)), so it carries 0x44: its rotated value
+// 0x88 shares no bit with a lo constant below 8 and folds to zero, so
+// the slot's noisePos stays equal to its lo constant.
 // Reused verbatim by any later KPA stage that recovers the same
 // constants through a different search.
 func nullHashCandidateSeeds(noisePos byte, lockConst uint16, dataLo [3]byte, startPixel [3]byte) [8]*Seed128 {
 	return [8]*Seed128{
-		seedConst(noisePos, 1),
+		seedConst(noisePos, 0x44),
 		seedConst(byte(lockConst>>8), byte(lockConst&0xFF)),
 		seedConst(dataLo[0], 2),
 		seedConst(dataLo[1], 3),
@@ -350,7 +354,7 @@ func TestRedTeamNullHashAttack(t *testing.T) {
 		cobsGatePass  int
 	)
 	for noisePos := 0; noisePos < 8 && foundNoisePos < 0; noisePos++ {
-		// A noiseSeed lo constant with (lo & 7) == noisePos: lo = noisePos.
+		// A noiseSeed with lo = noisePos, hi = 0 has noisePosition(lo, hi) == noisePos.
 		noiseSeed := seedConst(byte(noisePos), 0)
 		// Per-region: admissible lockConst -> a witness dataLo. A region
 		// admits a whole SET of lock constants (its lane cannot pin all
@@ -368,7 +372,7 @@ func TestRedTeamNullHashAttack(t *testing.T) {
 				}
 				// Shipped decode over this region's container third.
 				process128Cfg(cfg, noiseSeed, dataSeed, startSeed, mainNonce,
-					regions[i], widths[i], 1, decoded, false, 1)
+					regions[i], widths[i], 1, decoded, false, 1, noiseCounterBase(i, widths[0]))
 				decodeCount++
 				fn := firstNull(decoded)
 				if fn == len(decoded) {
@@ -441,7 +445,7 @@ func TestRedTeamNullHashAttack(t *testing.T) {
 	t.Logf("  Phase A (2^16 splits):  %v", phaseA.Sub(start))
 	t.Logf("  Phase B (%d decodes):  %v", decodeCount, elapsed-phaseA.Sub(start))
 	t.Logf("candidates enumerated:   lockSeed=65536, decodes=%d, COBS-gate-pass=%d", decodeCount, cobsGatePass)
-	t.Logf("recovered noisePos:      %d (noiseSeed lo &7)", foundNoisePos)
+	t.Logf("recovered noisePos:      %d (noisePosition of noiseSeed lo, hi)", foundNoisePos)
 	t.Logf("recovered lockSeed:      0x%04x", foundLock)
 	t.Logf("recovered dataSeed lo:   d1=0x%02x d2=0x%02x d3=0x%02x", foundData[0], foundData[1], foundData[2])
 	t.Logf("recovered interlock nonce (off the lane fronts, fragment lens %v): %s",
@@ -473,7 +477,7 @@ func TestRedTeamNullHashAttack(t *testing.T) {
 	truthD2 := tv("K_dataSeed_2")
 	truthD3 := tv("K_dataSeed_3")
 
-	truthNoisePos := int((truthNoise >> 8) & 7)
+	truthNoisePos := int(noisePosition(uint64(truthNoise>>8), uint64(truthNoise&0xFF)))
 	t.Logf("--- labonly validation ---")
 	t.Logf("truth noisePos=%d  lock=0x%04x  d1lo=0x%02x d2lo=0x%02x d3lo=0x%02x",
 		truthNoisePos, truthLock, byte(truthD1>>8), byte(truthD2>>8), byte(truthD3>>8))
@@ -741,7 +745,7 @@ func TestRedTeamNullHashAttackCrib(t *testing.T) {
 					decoded[k] = 0
 				}
 				process128Cfg(cfg, noiseSeed, dataSeed, startSeed, mainNonce,
-					regions[i], widths[i], 1, decoded, false, 1)
+					regions[i], widths[i], 1, decoded, false, 1, noiseCounterBase(i, widths[0]))
 				decodeCount++
 				fn := firstNull(decoded)
 				if fn == len(decoded) {
@@ -857,7 +861,7 @@ func TestRedTeamNullHashAttackCrib(t *testing.T) {
 		}
 		return uint16(v)
 	}
-	truthNoisePos := int((tv("K_noiseSeed") >> 8) & 7)
+	truthNoisePos := int(noisePosition(uint64(tv("K_noiseSeed")>>8), uint64(tv("K_noiseSeed")&0xFF)))
 	truthLock := tv("K_lockSeed")
 	truthDLo := [3]byte{byte(tv("K_dataSeed_1") >> 8), byte(tv("K_dataSeed_2") >> 8), byte(tv("K_dataSeed_3") >> 8)}
 	t.Logf("--- labonly validation ---")
@@ -1062,7 +1066,7 @@ func TestRedTeamNullHashAttackNoKPA(t *testing.T) {
 								b[x] = 0
 							}
 							process128Cfg(cfg, noiseSeed, dataSeed, startSeed, mainNonce[k],
-								regions[k][i], w, 1, b, false, 1)
+								regions[k][i], w, 1, b, false, 1, noiseCounterBase(i, widths[0]))
 							fn := firstNull(b)
 							if fn == len(b) || !cobsStructurallyValid(b[:fn]) {
 								ok = false
@@ -1308,7 +1312,7 @@ func TestRedTeamNullHashAttackNoKPA(t *testing.T) {
 		}
 		return uint16(v)
 	}
-	truthNoisePos := int((tv("K_noiseSeed") >> 8) & 7)
+	truthNoisePos := int(noisePosition(uint64(tv("K_noiseSeed")>>8), uint64(tv("K_noiseSeed")&0xFF)))
 	truthLock := tv("K_lockSeed")
 	truthDLo := [3]byte{byte(tv("K_dataSeed_1") >> 8), byte(tv("K_dataSeed_2") >> 8), byte(tv("K_dataSeed_3") >> 8)}
 	truthSP := [3]int{meta.StartPixels.S1 % third, meta.StartPixels.S2 % third, meta.StartPixels.S3 % thirdPixels2}
@@ -1551,7 +1555,7 @@ func TestRedTeamNullHashAttackCribNoStartPixels(t *testing.T) {
 							decoded[k] = 0
 						}
 						process128Cfg(cfg, noiseSeed, dataSeed, startSeed, mainNonce,
-							regions[i], w, 1, decoded, false, 1)
+							regions[i], w, 1, decoded, false, 1, noiseCounterBase(i, widths[0]))
 						dc++
 						fn := firstNull(decoded)
 						if fn == len(decoded) || !cobsStructurallyValid(decoded[:fn]) {
@@ -1676,7 +1680,7 @@ func TestRedTeamNullHashAttackCribNoStartPixels(t *testing.T) {
 		}
 		return uint16(v)
 	}
-	truthNoisePos := int((tv("K_noiseSeed") >> 8) & 7)
+	truthNoisePos := int(noisePosition(uint64(tv("K_noiseSeed")>>8), uint64(tv("K_noiseSeed")&0xFF)))
 	truthLock := tv("K_lockSeed")
 	truthDLo := [3]byte{byte(tv("K_dataSeed_1") >> 8), byte(tv("K_dataSeed_2") >> 8), byte(tv("K_dataSeed_3") >> 8)}
 	truthSP := [3]int{meta.StartPixels.S1 % third, meta.StartPixels.S2 % third, meta.StartPixels.S3 % thirdPixels2}

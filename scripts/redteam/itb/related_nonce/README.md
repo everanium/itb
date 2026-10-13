@@ -50,10 +50,10 @@ each of the 8 shipped seed roles:
 
 | Seed role  | Derivation           | Nonce buf layout             | Output consumed as |
 |------------|----------------------|------------------------------|--------------------|
-| noiseSeed  | `blockHash*(buf, p)` | `pixIdx (4 LE) \|\| nonce`   | per-pixel `noisePos = h.lo & 7` |
+| noiseSeed  | `blockHash*(buf, base_i + p)` | `noiseCounter (4 LE) \|\| nonce` (not restarted per region) | per-pixel `noisePos = noiseFold3(h[0] + rotl64(h[1], 1))` |
 | dataSeed_i | `blockHash*(buf, p)` | `pixIdx (4 LE) \|\| nonce`   | per-pixel `dataRotation` + `channelXOR` per region |
 | startSeed_i| `ChainHash*(buf)`    | `0x02 \|\| nonce`            | `startPixel = h.lo % totalPixels` per region |
-| lockSeed   | `deriveInterLockSeed`| `0x04 \|\| nonce`            | full-width Interlocked Barrier per-chunk overlay key |
+| lockSeed   | `deriveInterLockSeed`| `0x04 \|\| nonce`            | full-width Rank Barrier per-chunk mask key |
 
 Every one of the 8 seeds consumes the nonce. A 1-bit nonce Δ perturbs
 ALL 8 seed-derived outputs simultaneously — fundamentally different
@@ -64,7 +64,7 @@ eight nonce consumers, not a bottleneck; **nonce Δ SUPERSETS lockSeed
 ## Attacker-realism scoping
 
 The lab-forced nonce Δ is a probe INPUT designed to measure whether the
-barrier absorbs perturbations at the archived measurement angle. Every
+barrier absorbs a nonce perturbation at the ciphertext-XOR χ² angle. Every
 probe consumes attacker-visible inputs (ciphertext bytes only) for its
 decision path — the χ² statistic depends on nothing else. No seed
 components are read in any decision path. Ground-truth Δ hex is recorded
@@ -76,17 +76,17 @@ decision path.
 The barrier's related-nonce diffusion property is **full
 absorption**:
 
-- **CRC128 matrix (24 cells)**: χ² 242.4 – 283.3, mean 257.1. Every
+- **CRC128 matrix (24 cells)**: χ² 236.1 – 295.4, mean 259.4. Every
   cell inside the df=255 uniform band (theoretical mean 255, one-sided
-  3σ top ≈ 323). Δ_over_no-Δ-floor: -41.9M (four orders of magnitude
+  3σ top ≈ 323). Δ_over_no-Δ-floor: -42.2M (five orders of magnitude
   below floor).
-- **FNV-1a matrix (24 cells)**: χ² 217.2 – 263.4, mean 247.8. Every
-  cell inside the df=255 uniform band. Δ_over_no-Δ-floor: -56.3M.
-- **No-Δ floor reference (Rank 2 methodology)**: CRC128 41.90M,
-  FNV-1a 56.28M — matches Rank 2's floor within 0.1 %.
-- **Rank 2 lockSeed axis contrast**: CRC128 lockSeed-axis peak was 635,
-  FNV-1a 550. Rank 3 nonce Δ is TIGHTER than the Rank 2 lockSeed axis
-  (max 283 vs 635 CRC128, max 263 vs 550 FNV-1a) — consistent with the
+- **FNV-1a matrix (24 cells)**: χ² 221.2 – 307.5, mean 257.2. Every
+  cell inside the df=255 uniform band. Δ_over_no-Δ-floor: -42.2M.
+- **No-Δ floor reference (Rank 2 methodology)**: CRC128 42.11M,
+  FNV-1a 42.23M — matches the related-seed floor within 1 %.
+- **Rank 2 lockSeed axis contrast**: CRC128 lockSeed-axis peak was 825.6,
+  FNV-1a 459.6. Rank 3 nonce Δ is TIGHTER than the Rank 2 lockSeed axis
+  (max 295 vs 826 CRC128, max 308 vs 460 FNV-1a) — consistent with the
   "SUPERSET" prediction that the additional 7 seed-derivation
   perturbations further randomise touched-pixel bytes on top of the
   lockSeed-routed interlock re-derivation.

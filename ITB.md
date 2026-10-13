@@ -28,7 +28,7 @@ The barrier relies on strict separation between two independent sources of rando
 
 The DRBG does not know about the PRF, and the PRF does not know about the DRBG. Their only interaction occurs at embedding, after which an observer sees only the composite result.
 
-**Hash output bandwidth.** Each per-pixel ChainHash call produces 128, 256, or 512 bits depending on the primitive, but the encoder consumes only the low 64 bits. Of these, ~62 bits are actively used (3 for noise position, 56 for channel XOR, and ~3 for rotation); the remainder is discarded.
+**Hash output bandwidth.** Each per-pixel ChainHash call produces 128, 256, or 512 bits depending on the primitive, but the encoder consumes only the low 64 bits of the `dataSeed_i` call and a 3-bit fold of the first two 64-bit words of the `noiseSeed` call (`noiseFold3(h[0] + rotl64(h[1], 1))`). Of the data word, ~59 bits are actively used (56 for channel XOR and ~3 for rotation); the remainder is discarded.
 
 A single `uint64` register fits the per-pixel requirement directly. This narrowing provides architectural defense-in-depth: any structural weakness or non-uniformity residing in the high bits of an underlying primitive is discarded on the encryption path (see [REDTEAM.md § Broken-primitive stress](REDTEAM.md#broken-primitive-stress--crc128-and-fnv-1a)). For PRF-grade primitives, truncation preserves PRF security under standard assumptions (see [SCIENCE.md § 1.2.2](SCIENCE.md#122-pixel-barrier-per-pixel-channel-xor-rotation-and-noise-injection)).
 

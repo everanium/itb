@@ -12,7 +12,7 @@ either. Reports:
 
   - F1 pre-anchor intersection per region.
   - F2 true-anchor upper bound (channel matches under lab-peek seeds).
-  - F3 positive control (Single/barrier-off) anchor recovery.
+  - F3 positive control (one-region, barrier-off) anchor recovery.
   - F4 startPixel-peek Layer 3 (channel matches at true sp vs floor).
   - F5 displacement fraction on the JSON crib.
   - Bitwuzla SAT run outcomes per region per startPixel.
@@ -96,7 +96,7 @@ def main(argv=None) -> int:
             rows))
         print("Note:", f2.get("note", ""))
 
-    print("\n=== F3 positive control (archived, barrier off) ===")
+    print("\n=== F3 positive control (one-region, barrier off) ===")
     f3 = load(args.dir / "f3_control_positive.json")
     if f3:
         print(f"crib_pixels: {f3['crib_pixels']}")
@@ -135,7 +135,7 @@ def main(argv=None) -> int:
               f"regime: {sat['regime']}  timeout: {sat['timeout_sec']}s")
         if "control" in sat:
             c = sat["control"]
-            print(f"\nControl (archived, barrier off, sp disclosed):")
+            print(f"\nControl (one-region, barrier off, sp disclosed):")
             print(f"  result: {c['result']}  wall: {c['wall_sec']:.2f}s")
             if c.get("audit"):
                 a = c["audit"]

@@ -123,8 +123,8 @@ def main() -> int:
     meta = json.loads((args.cell_dir / "cell.meta.json").read_text())
     total_pixels = int(meta["total_pixels"])
     # corpora key the main nonce (noise / data / start ChainHash input) as
-    # `main_nonce_hex` and fall back to the legacy single-nonce `nonce_hex`
-    # field for archived corpus artefacts.
+    # `main_nonce_hex` and fall back to the single-nonce `nonce_hex`
+    # field when `main_nonce_hex` is absent.
     nonce_hex = meta.get("main_nonce_hex") or meta["nonce_hex"]
     nonce = bytes.fromhex(nonce_hex)
     prefix_size = prefix_size_from_meta(meta)
@@ -234,7 +234,8 @@ def main() -> int:
     # ciphertext and nothing else — so on any corpus produced from the
     # current tree this block does not run and the two `pred_*` columns
     # stay null. That is the expected state, not a corpus that failed to
-    # generate: the file comes from the archived harness shape. The
+    # generate: the file belongs to a corpus layout the shipped
+    # generators do not produce. The
     # warning exists so a null column is read as "not measured here"
     # rather than "measured and found nothing".
     truth_path = args.cell_dir / "config.truth.json"

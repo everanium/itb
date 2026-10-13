@@ -88,7 +88,7 @@ The attacker with known plaintext d can compute a valid m for EVERY candidate po
 
 **Proof.** The 8 seeds are generated independently from crypto/rand and enforced pairwise-distinct at the API surface by byte-level `Components` comparison in addition to pointer identity, so byte-identical seed material reaching the API through blob import or the Low-Level constructors is rejected on the same gate. By construction:
 
-1. **noiseSeed → noisePos**: `noiseHash = ChainHash(counter||nonce, noiseSeed) & 7`
+1. **noiseSeed → noisePos**: `noisePos = noiseFold3(h[0] + rotl64(h[1], 1))`, `h = ChainHash(counter||nonce, noiseSeed)` — the two output words are combined by addition modulo 2^64 (non-linear over GF(2) through its carries), word 1 rotated by one bit so that no bit meets the bit of the same index, and `noiseFold3` folds the 64-bit sum to 3 bits; the noise counter is not restarted per region: region i ∈ {1,2,3} hashes counters `(i−1)·⌊P/3⌋ + p` at its stream step p, so the three regions use disjoint counter ranges
 2. **lockSeed → per-chunk Rank Barrier mask triple (Interlocked Barrier)**: `rank` evaluated over `[0x03 ‖ LE64(groupIdx) ‖ 4×0x00]` under `lockComps = [K, session components...]` with Round 1 primer round on `K = deriveInterLockSeed(lockSeed, nonce)` under domain tag `0x04`; two-step unrank per [Proof 11](#proof-11-48-bit-rank-barrier-mask-space-interlocked-barrier).
 3. **dataSeed_i → per-region rotation, XOR** (i ∈ {1,2,3}): `dataHash_i = ChainHash(counter||nonce, dataSeed_i)`
 4. **startSeed_i → per-region startPixel** (i ∈ {1,2,3}): `startPixel_i = ChainHash(0x02||nonce, startSeed_i) % totalPixels_i`

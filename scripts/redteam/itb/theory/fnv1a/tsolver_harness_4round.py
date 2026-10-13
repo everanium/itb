@@ -24,7 +24,8 @@ solve with the two-layer hybrid:
 WHY A SCAFFOLD RIGHT NOW
 ------------------------
 The per-pixel (noise_pos, rotation) pair is needed to decode channelXOR.
-noise_pos = noiseHash & 7 comes from the SEPARATE (unknown) noiseSeed chain,
+noise_pos = noiseFold3(noiseHash.lo + rotl64(noiseHash.hi, 1)) comes from the
+SEPARATE (unknown) noiseSeed chain,
 and rotation = dataHash % 7 from the (unknown) dataSeed chain, so for an
 attacker both are unknown and per-pixel ambiguous (8 x 7 = 56 combinations,
 with no per-pixel filter — the rotation == dataHash%7 self-consistency is
@@ -64,6 +65,9 @@ from itb_channel_mirror import (  # type: ignore
     DATA_BITS_PER_CHANNEL,
     DATA_ROTATION_BITS,
     rotate_bits_7,
+    _derive_noise_pos,
+    load_noise_seed_components,
+    noise_hash_lohi,
 )
 import sat_harness_4round as bw  # reuse _build_cell_context / ChannelObservation
 from t_solver_fnv import solve_via_tsolver_masked  # type: ignore
@@ -139,7 +143,7 @@ def main() -> int:
     # --- DEV SCAFFOLD: ground-truth seeds for (noise_pos, rotation) ---------
     # Attacker-realism violation; replace with a noise_pos search.
     data_lo = [int(h, 16) for h in summary["data_lo_lane_hex"]]
-    noise_lo = [int(h, 16) for h in summary["noise_lo_lane_hex"]]
+    noise_comps = load_noise_seed_components(summary, rounds)
 
     # Group channel observations by encoded-stream pixel index p.
     by_pixel: Dict[int, List] = defaultdict(list)
@@ -153,8 +157,8 @@ def main() -> int:
         data = bw._pixel_data_bytes(p, nonce)
         if args.noise_source == "gt":
             data_hash = fnv_chain_lo_concrete(data_lo, data, rounds)
-            noise_hash = fnv_chain_lo_concrete(noise_lo, data, rounds)
-            noise_pos = noise_hash & 7
+            # Single-region cell: the noise counter equals p.
+            noise_pos = _derive_noise_pos(*noise_hash_lohi(noise_comps, p, nonce))
             rotation = data_hash % 7
         else:  # pragma: no cover (search not yet implemented)
             raise NotImplementedError("noise_pos search not implemented yet")

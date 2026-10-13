@@ -1,16 +1,39 @@
 #!/usr/bin/env python3
 """Crib KPA full-plaintext decrypt via (K_data + K_noise_bits_0_2).
 
+MODEL MISMATCH WITH THE SHIPPED ENCODER. The noise-position model this
+script implements combines the two noise-hash words by XOR, so that the
+3-bit key K_noise_bits_0_2 plus a public per-counter constant gives the
+exact noise position of every pixel. The shipped encoder combines the
+words by integer addition — `noisePos = fold3(h_lo + rotl64(h_hi, 1)
+mod 2^64)`, see `_common/noise_position.py` — and the carries of that
+addition couple the seed-only and public parts: no seed-only 3-bit key
+exists, and the per-pixel positions computed here are not the shipped
+ones, so the 100 % decrypt below does not apply to shipped output.
+Against shipped output the attacker-realistic route is a per-pixel
+8-way noise-position enumeration with COBS-rejection, as in
+`theory/fnv1a/decrypt_full_fnv1a.py`. The script is kept as the record
+of the XOR-mix model and runs against corpora produced under that
+model only.
+
 Second stage of the Crib KPA attack chain. Consumes the output of
 `crib_crc128_kpa_full.py` (K_data 64-bit + K_noise_bits_0_2 3-bit)
 recovered from a first ciphertext under some dataSeed / noiseSeed /
 startSeed triple, and decrypts a SECOND ciphertext encrypted under the
 same seeds (any nonce, any plaintext format) to **100 % byte accuracy**.
 
-The script uses the 3-bit `K_noise_bits_0_2` to compute the EXACT
+The script uses the 3-bit noise compound key
+`K_noise_bits_0_2 = fold3(K_noise_lo ⊕ K_noise_hi)` to compute the EXACT
 noise_pos per pixel:
 
-    noise_pos(p, nonce) = K_noise_bits_0_2 ⊕ (c_public(p, nonce) & 7)
+    noise_pos(c, nonce) = K_noise_bits_0_2 ⊕ fold3(c_lo(c) ⊕ c_hi(c))
+
+where fold3 is the encoder's GF(2)-linear 64 → 3 bit fold, (c_lo, c_hi)
+the zero-seed CRC128 chain output of both lanes at the noise counter
+c = noise_counter_base + p (the public per-pixel noise constant, see
+`_common/noise_position.py`). A single-region encode — the shape this
+script targets — has base 0 (`--noise-counter-base`); region i of a
+Triple container sits at base i·⌊total/3⌋.
 
 No 8-way brute force on noise_pos, no printable-ASCII heuristic. Every
 pixel decrypted with the exact rotation (from K_data % 7) and exact
@@ -65,6 +88,7 @@ from crib_crc128_kpa import (
     decrypt_pixel,
 )
 from attack_common import cobs_encode as _cobs_encode
+from noise_position import precompute_noise_const3
 
 
 def cobs_decode(buf: bytes) -> Optional[tuple[bytes, int]]:
@@ -110,6 +134,7 @@ def find_start_pixel(
     total_pixels: int,
     const_all: np.ndarray,
     crib: bytes,
+    noise_const3: np.ndarray,
 ) -> Optional[int]:
     """Find the startPixel in target ciphertext by anchoring to the crib
     prefix, decrypting each candidate shift with EXACT (rotation, noise_pos)
@@ -123,7 +148,7 @@ def find_start_pixel(
             const_p = int(const_all[p_idx])
             h_lo = (k_data ^ const_p) & MASK64
             rotation = h_lo % 7
-            noise_pos = k_noise_bits_0_2 ^ (const_p & 7)
+            noise_pos = k_noise_bits_0_2 ^ int(noise_const3[p_idx])
             expected = crib[p_idx * 7: p_idx * 7 + 7]
             cb = body[cp * 8: cp * 8 + 8]
             got = decrypt_pixel(k_data, cb, p_idx, const_all, noise_pos, rotation)
@@ -143,6 +168,7 @@ def decrypt_full(
     const_all: np.ndarray,
     start_pixel: int,
     data_pixels: int,
+    noise_const3: np.ndarray,
 ) -> bytes:
     """Decrypt `data_pixels` pixels starting at `start_pixel` with EXACT
     rotation (from K_data) and EXACT noise_pos (from K_noise_bits_0_2).
@@ -154,7 +180,7 @@ def decrypt_full(
         const_p = int(const_all[p_idx])
         h_lo = (k_data ^ const_p) & MASK64
         rotation = h_lo % 7
-        noise_pos = k_noise_bits_0_2 ^ (const_p & 7)
+        noise_pos = k_noise_bits_0_2 ^ int(noise_const3[p_idx])
         cb = body[cp * 8: cp * 8 + 8]
         chunk = decrypt_pixel(k_data, cb, p_idx, const_all, noise_pos, rotation)
         out.extend(chunk)
@@ -193,7 +219,16 @@ def main() -> int:
                          "(optional; attacker doesn't have this; used only "
                          "for the terminal-stage byte/pixel accuracy report "
                          "and NOT for any candidate-selection decision).")
+    ap.add_argument("--noise-counter-base", type=int, default=0,
+                    help="Noise-hash counter of the target's stream step 0 "
+                         "(0 for a single-region encode; region i of a "
+                         "Triple container starts at i * (total_pixels // 3)).")
     args = ap.parse_args()
+
+    print("NOTE: this script models an XOR mix of the two noise-hash words; "
+          "the shipped encoder mixes them by integer addition, so the "
+          "per-pixel noise positions computed here are not the shipped ones "
+          "(see the module docstring).", file=sys.stderr)
 
     # Resolve candidate list from --candidates-json OR (--k-data + --k-noise-bits-0-2).
     candidates: list[tuple[int, int]] = []
@@ -222,7 +257,7 @@ def main() -> int:
             return 2
         candidates.append((int(args.k_data, 16), args.k_noise_bits_0_2))
 
-    _load_hash_module("crc128")
+    hmod = _load_hash_module("crc128")
 
     meta = json.loads((args.cell_dir / "cell.meta.json").read_text())
     nonce_hex = meta.get("main_nonce_hex") or meta["nonce_hex"]
@@ -254,6 +289,10 @@ def main() -> int:
     t0 = time.time()
     print(f"Precomputing const(p) for {total_pixels} pixels ...")
     const_all = precompute_const_all(total_pixels, nonce)
+    noise_const3 = precompute_noise_const3(
+        total_pixels, nonce, hmod.chainhash_lohi, hmod.N_SEED_COMPONENTS,
+        counter_base=args.noise_counter_base,
+    )
     print(f"  done in {time.time() - t0:.1f}s")
 
     # Per-candidate: anchor via short HTML crib → full decrypt → COBS decode.
@@ -279,7 +318,7 @@ def main() -> int:
         # Stage 1 — anchor startPixel via short crib.
         t0 = time.time()
         start_pixel = find_start_pixel(
-            k_data, k_nb, body, total_pixels, const_all, crib,
+            k_data, k_nb, body, total_pixels, const_all, crib, noise_const3,
         )
         elapsed = time.time() - t0
         if start_pixel is None:
@@ -292,7 +331,7 @@ def main() -> int:
         t0 = time.time()
         decrypted = decrypt_full(
             k_data, k_nb, body, total_pixels, const_all,
-            start_pixel, data_pixels,
+            start_pixel, data_pixels, noise_const3,
         )
         print(f"  full decrypt: {len(decrypted)} bytes ({time.time() - t0:.2f}s)")
 

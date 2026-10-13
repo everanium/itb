@@ -2,11 +2,11 @@
 
 Empirical re-verification of the shipped (Triple Ouroboros + always-on
 48-bit Interlocked Barrier + 8-seed constellation) construction against
-the FNV-1a lo-lane Full KPA SAT attack from the archived Phase 2g. That
-Phase 2g attack recovered a functional dataSeed lo-lane compound key in
-≈ 8 h single-core Bitwuzla against **Single Ouroboros with the barrier
-disengaged**, yielding 83–85 % byte-level plaintext recovery on JSON /
-HTML holdouts.
+the FNV-1a lo-lane Full KPA SAT attack
+(`scripts/redteam/itb/theory/fnv1a/sat_harness_4round.py`). That attack
+targets the dataSeed lo-lane compound key and depends on the crib
+anchoring at a fixed bit-to-lane position, which holds only for the
+**one-region, barrier-off control encode** the F3 probe below runs.
 
 **Threat model — fresh nonces per message.** This track is orthogonal
 to the nonce-reuse re-verification (see
@@ -27,7 +27,7 @@ no per-chain observation channel exists.
 - `sat_probe.py` — Bitwuzla SAT harness. Encodes the naive-crib
   anchoring premise as a per-pixel disjunction over the 56 (np, r)
   tuples chained through the symbolic FNV-1a lo-lane; runs against
-  both the Single Ouroboros / barrier-off control and the shipped
+  both the one-region, barrier-off control encode and the shipped
   Triple / barrier ciphertext (per region, over a fast-scan sample of
   candidate startPixels). See the module docstring for encoding
   detail and the maximum-peek attacker regime.
@@ -42,8 +42,8 @@ for downstream aggregation.
 
 - `TestRedTeamBrokenFNV1aCribKPA` — F1: attacker-realistic
   per-pixel achievable-set structure. Under FNV-1a's non-affine
-  ChainHash no pixel-independent K exists, so the archived CRC128
-  compound-K intersection filter yields zero cross-pixel
+  ChainHash no pixel-independent K exists, so the CRC128
+  compound-K intersection filter (`crib_crc128_kpa.py`) yields zero cross-pixel
   intersection at every candidate shift.
 - `TestRedTeamBrokenFNV1aCribKPATrueAnchor` — F2: lab-peek true
   anchor. Grants attacker true (np, r) per pixel via noiseSeed +
@@ -51,7 +51,7 @@ for downstream aggregation.
   true dataHash prefix under the naive-crib alignment. Under barrier:
   match rate at chance floor for every candidate shift.
 - `TestRedTeamBrokenFNV1aCribKPAControl` — F3: positive control.
-  Single Ouroboros without barrier via `process128Cfg`, sp disclosed
+  One-region, barrier-off control encode via `process128Cfg`, sp disclosed
   — the naive-crib SAT anchor recovers the true xor_mask56 at every
   crib pixel. Confirms the anchor logic is sensitive.
 - `TestRedTeamBrokenFNV1aCribKPAStartPixelPeek` — F4: Layer 3
@@ -91,9 +91,9 @@ Ground-truth seed values appear elsewhere only in terminal-stage
 
 ## Bitwuzla SAT probe scope
 
-`sat_probe.py` is a compact adaptation of the archived
+`sat_probe.py` is a compact adaptation of
 `scripts/redteam/itb/theory/fnv1a/sat_harness_4round.py`. The full
-Single Ouroboros harness ran ≈ 8 h on 4 cribs + disclosed startPixel.
+harness runs on 4 cribs + disclosed startPixel.
 The probe here targets an **isolated single-chain "strongest attacker"
 upper bound**: the attacker is granted true (np, r) per pixel (5 of 8
 chains inverted for free) and only the single dataSeed_i lo lane stays

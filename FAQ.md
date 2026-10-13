@@ -44,10 +44,10 @@ Under pure ciphertext-only attack the low byte of `lockSeed` remains unresolved,
 ### Reproduction
 
 ```
-go test -tags redteam -run TestRedTeamNullHashAttack ./ -v -count=1
+go test -tags redteam -run TestRedTeamNullHashAttack -v -count=1 ./
 ```
 
-Default output directory is `$HOME/scratch/redteam/nullhash/` per the shared red-team probe layout; override via `REDTEAM_NULLHASH_OUTPUT_DIR`. Per-stage entry points: `TestRedTeamNullHashAttack` (Full KPA), `TestRedTeamNullHashAttackCrib` (Crib + startPixels given), `TestRedTeamNullHashAttackCribNoStartPixels` (Crib + startPixels brute), `TestRedTeamNullHashAttackNoKPA` (ciphertext-only, 2 wires). Each attack test regenerates its own expose files at start, so ordering under `go test -tags redteam ./` is irrelevant.
+Default output directory is `$HOME/scratch/redteam/nullhash/` per the shared red-team probe layout; override via `REDTEAM_NULLHASH_OUTPUT_DIR`. Per-stage entry points: `TestRedTeamNullHashAttack` (Full KPA), `TestRedTeamNullHashAttackCrib` (Crib + startPixels given), `TestRedTeamNullHashAttackCribNoStartPixels` (Crib + startPixels brute), `TestRedTeamNullHashAttackNoKPA` (ciphertext-only, 2 wires). Each attack test regenerates its own expose files at start, so ordering under `go test -tags redteam -count=1 ./` is irrelevant.
 
 ### Conclusion
 
@@ -83,11 +83,11 @@ Attack code: `redteam_quadhash_leak_test.go`, `TestRedTeamQuadHashLeak7of8` and 
 
 | Threat model | Wall-clock | Recovery |
 |---|---|---|
-| Full KPA + startPixels (via synthetic-seed cascade collapse — no lab peek needed) | ~660 ms, 3984 Decrypt trials | **512 / 512 bytes bit-exact** |
+| Full KPA + startPixels (via synthetic-seed cascade collapse — no lab peek needed) | ~660 ms, 3984 Decrypt trials | **512 / 512 bytes bit-exact in 6 of 9 runs**; the rest stall at 22–45 % |
 | Step 1 leak measurement (7-of-8 unmask, under lab lockSeed peek for debug) | ~10 ms | 74 / 75 pixels unique |
 | Step 2 mask triple recovery (2¹⁶ lockSeed enumeration, no lockSeed peek) | ~3.5 s | **75 / 75 match at synthetic `Components 0` candidates** — Interlock cascade broken |
 
-**Sequential brute converges in 2 greedy passes.** Baseline (`Components[0] = 1..8`, `Components[1..7] = 0`, distinct-to-satisfy-8-seed-isolation): 0 / 512 byte match. Pass 1 (per-slot 256-brute maximising byte-match): 17 / 512 (3.32%). Pass 2: **512 / 512 bit-exact recovery**. Recovered synthetic `Components[0]` per seed: `[3, 2, 7, 4, 0, 5, 12, 1]`, `Components[1..7] = 0` for all 8 slots. Shipped `Decrypt3x128Cfg` with the recovered synthetic constellation reproduces plaintext byte-identical.
+**Sequential brute converges in 2 greedy passes on most runs.** Baseline (`Components[0] = 1..8`, `Components[1..7] = 0`, distinct-to-satisfy-8-seed-isolation): 0 / 512 byte match. Pass 1 (per-slot 256-brute maximising byte-match): 17 / 512 (3.32%). Pass 2: **512 / 512 bit-exact recovery**. On 3 of 9 runs the greedy search stalls at 22–45 % with a wrong synthetic constellation. Under quadHash the noise position of each counter takes one of three public slots, the seed deciding which. Recovered synthetic `Components[0]` per seed: `[3, 2, 7, 4, 0, 5, 12, 1]`, `Components[1..7] = 0` for all 8 slots. Shipped `Decrypt3x128Cfg` with the recovered synthetic constellation reproduces plaintext byte-identical.
 
 ### Mechanism — attractor collapse ≠ linear collapse
 
@@ -98,8 +98,8 @@ The **buffer-length asymmetry** between Rank Barrier (13 bytes → full attracto
 ### Reproduction
 
 ```
-go test -tags redteam -run TestRedTeamQuadHashLeak7of8 ./ -v -count=1
-go test -tags redteam -run TestRedTeamQuadHashFullAttack ./ -v -count=1
+go test -tags redteam -run TestRedTeamQuadHashLeak7of8 -v -count=1 ./
+go test -tags redteam -run TestRedTeamQuadHashFullAttack -v -count=1 ./
 ```
 
 Default output directory is `$HOME/scratch/redteam/quadhash_leak/`. The two tests run independently — `Leak7of8` characterises Interlock cascade collapse via 2¹⁶ candidate matching; `FullAttack` demonstrates end-to-end plaintext recovery via sequential `Components[0]` brute across 8 seed slots.
@@ -136,9 +136,9 @@ The asymmetric fill design — primer round over `deriveInterLockSeed` output, t
 
 Two consequences. The per-chunk rank space is **2¹⁶, not the construction's 2⁷⁰·²⁰**, and the unrank maps those reachable ranks injectively onto distinct mask triples, so the preimage ambiguity a primitive filling the space would impose does not apply — measured median 8, maximum 256. And the **interlock nonce is not on the critical path**: the attack steps over its lane fragment by the public length `nonceSplit` derives, never recovering it, because the nonce's whole influence is the 16-bit derived pair the meet-in-the-middle already absorbs.
 
-**The Pixel Barrier is what holds.** The value that stays out of reach is the per-region effective `dataSeed` key — four bytes under `trainHash`. The crib yields two fully readable pixels per region, pinning 16 bits against 32; the rest narrows only under a plaintext model, and the mechanism there is per-pixel ambiguity rather than any hardness in the noise bit. Eight noise positions by seven rotations give **56 internally consistent readings of every pixel**, and picking the right one needs something to check against: under Full KPA that is the plaintext, and the noise bit costs nothing; under Crib KPA it costs nothing up to the crib's edge and everything past it, where the only verifier left is the model. That is why the walk halts with several configurations still admissible rather than running out of candidates.
+**The Pixel Barrier is what holds.** The value that stays out of reach is the per-region effective `dataSeed` key — four bytes under `trainHash`. The crib yields two fully readable pixels per region, pinning 16 bits against 32; the rest narrows only under a plaintext model, and the mechanism there is per-pixel ambiguity rather than any hardness in the noise bit. Eight noise positions by seven rotations give **56 internally consistent readings of every pixel**, and picking the right one needs something to check against: under Full KPA that is the plaintext, and the noise bit costs nothing; under Crib KPA it costs nothing up to the crib's edge and everything past it, where the only verifier left is the model. That is why the walk halts at the first band past the crib with several joint configurations of the three regions still admissible rather than running out of candidates.
 
-`noiseSeed` is not a second wall beside `dataSeed`: its whole per-pixel output is `noisePos`, three bits, against the 59 `dataSeed` supplies to the same pixel. An attacker never targets it — the walk needs the position, and one of eight is enumerated rather than derived; deriving it would mean inverting a PRF through a three-bit-per-pixel channel observable only once the data bits are already known.
+`noiseSeed` is not a second wall beside `dataSeed`: its whole per-pixel output is `noisePos`, three bits, against the 59 `dataSeed` supplies to the same pixel. The walk enumerates the position — one of eight per region and band, three independent unknowns across the regions because the noise counter is not restarted per region — rather than deriving it; deriving it would mean inverting the primitive through a three-bit-per-pixel channel observable only once the data bits are already known.
 
 The leak that makes lane bytes observable at all (channels 1..7 receive `channelXOR = 0`, since the 5-bit xorMask fits entirely in channel 0's shift-slot) follows from the same arithmetic: 8 bits supplied where `DataConfigBits` consumes 59. That and the rank-space collapse are both the primitive **starving** the barriers, not an attacker defeating them.
 
@@ -156,7 +156,7 @@ Attack code: `redteam_trainhash_leak_test.go`, `TestRedTeamTrainHashLeak7of8` (G
 ### Reproduction
 
 ```
-go test -tags redteam -run TestRedTeamTrainHashLeak7of8 ./ -v -count=1
+go test -tags redteam -run TestRedTeamTrainHashLeak7of8 -v -count=1 ./
 ```
 
 Output goes to `$HOME/scratch/redteam/trainhash_leak/`; the test emits a fresh victim (`ct.bin` + `kpa.bin` + `cell.meta.json`) and runs both steps in sequence.
@@ -164,12 +164,12 @@ Output goes to `$HOME/scratch/redteam/trainhash_leak/`; the test emits a fresh v
 The Crib KPA experiment is separate. Its six entry points differ only in plaintext distribution, message length and model — the attack is identical across them:
 
 ```
-go test -tags redteam -run TestRedTeamTrainHashCribKPAAscii       ./ -v -count=1
-go test -tags redteam -run TestRedTeamTrainHashCribKPABinary      ./ -v -count=1
-go test -tags redteam -run TestRedTeamTrainHashCribKPAJson512Plain ./ -v -count=1
-go test -tags redteam -run TestRedTeamTrainHashCribKPAJson512Class ./ -v -count=1
-go test -tags redteam -run TestRedTeamTrainHashCribKPAJson4kPlain  ./ -v -count=1
-go test -tags redteam -run TestRedTeamTrainHashCribKPAJson4kClass  ./ -v -count=1
+go test -tags redteam -run TestRedTeamTrainHashCribKPAAscii -v -count=1 ./
+go test -tags redteam -run TestRedTeamTrainHashCribKPABinary -v -count=1 ./
+go test -tags redteam -run TestRedTeamTrainHashCribKPAJson512Plain -v -count=1 ./
+go test -tags redteam -run TestRedTeamTrainHashCribKPAJson512Class -v -count=1 ./
+go test -tags redteam -run TestRedTeamTrainHashCribKPAJson4kPlain -v -count=1 ./
+go test -tags redteam -run TestRedTeamTrainHashCribKPAJson4kClass -v -count=1 ./
 ```
 
 `Ascii` is uniform printable characters over a 69-character alphabet; `Binary` is uniform random bytes with no model; the `Json512` and `Json4k` pairs hold corpus and length fixed and vary only the model. Output goes to `$HOME/scratch/redteam/trainhash_cribkpa_<corpus>/`.
@@ -178,11 +178,11 @@ Stages 1 and 2 behave identically across all six; only the Stage 3 walk differs.
 
 ### Conclusion
 
-How much plaintext comes out past the crib is a property of the model, not of the ciphertext, and three measurements separate the variables. With **no model** — uniform random binary — nothing is recovered: the walk does not advance past the crib at all, and the few correct bytes beyond its edge are the crib bleeding into the chunk it partially covers. With a **byte-wise printable model**, corpus structure alone changes nothing: structured JSON yields a lower median than uniform printable ASCII, because repeated keys and syntax are invisible to a model that scores one byte at a time against a chunk-independent test. What moves the number is the model's **resolving power** — narrowing the licensed alphabet from 95 characters to 75, `+0.34` bits per byte, shifts the median recovery about sevenfold on the same corpus, with the best single run reaching just over four fifths of the unknown region.
+How much plaintext comes out past the crib is a property of the model, not of the ciphertext, and three measurements separate the variables. With **no model** — uniform random binary — nothing is recovered: the walk does not advance past the crib at all, and the few correct bytes beyond its edge are the crib bleeding into the chunk it partially covers. With a **byte-wise printable model** the walk advances no band past the crib on any corpus (512 B and 4 KiB, uniform printable and structured JSON): recovery sits at 0.2–6.3 % of the 512-byte messages and 0.15–1.5 % of the 4 KiB ones, and the correct bytes beyond the crib's edge are the crib bleeding into the chunk it partially covers. Narrowing the licensed alphabet from 95 characters to 75 does not move it. The walk is greedy — a beam over the per-region position ambiguity is not implemented — so these figures are a lower bound on what the crib buys.
 
-A recovery percentage quoted without its plaintext model and its message length carries no information. The distribution is heavy-tailed rather than a plateau — roughly `4%` to `82%` across runs on one corpus and model, according to whether the per-region schedule classes collapse to a single candidate — and it falls by nearly an order of magnitude at eight times the plaintext size, because what comes out is approximately a fixed-length prefix rather than a share of the message.
+A recovery percentage quoted without its plaintext model and its message length carries no information. The distribution is narrow — 0.2 % to 6.3 % across runs on the 512-byte corpora and 0.15 % to 1.5 % on the 4 KiB ones — and it falls with the plaintext size, because what comes out is approximately a fixed-length prefix rather than a share of the message.
 
-**Mechanical reach is not information gained**, which cuts against the highest figure: the structured corpus is fully determined by its own format, so the run reaching four fifths recovered content anyone holding that format could write out without the ciphertext at all. A real document sits between the two corpora — an alphabet as narrow as the structured one, content as unpredictable as the uniform one — and where that lands has not been measured.
+**Mechanical reach is not information gained**: the structured corpus is fully determined by its own format, so whatever the walk reads past the crib there is content anyone holding that format could write out without the ciphertext at all. A real document sits between the two corpora — an alphabet as narrow as the structured one, content as unpredictable as the uniform one — and where that lands has not been measured.
 
 **The solver question stays open and differs sharply by threat model.** `trainHash`'s combined criterion failures — narrow 8-bit lane output, 2¹⁶ rank-space collapse, T-function class — create a theoretically SAT-attackable surface. Under a 48-byte Crib KPA the Rank Barrier's share of it is closed by direct measurement rather than by a solver, and what remains is the Pixel Barrier: no dedicated SAT / algebraic solver has been run against `trainHash`'s per-region `dataSeed` classes, so whether they break under one is **untested**, not proven closed. Under pure ciphertext-only attack nothing here has been measured at all — the meet-in-the-middle depends on the crib for its anchor, so without one the Rank Barrier is not shown to fall either, and a solver would face both barriers jointly. That is a strictly larger open question which does not inherit the Crib KPA result. Every shipped primitive breaks at least one criterion of this combination (a lo lane populated across all 59 `DataConfigBits` closes 7-of-8, a live 128-bit `(lo, hi)` pair closes 2¹⁶, AES-family / ARX cascades close the T-function bit-plane path), so the untested question does not shift the shipped-security envelope — but it is genuinely open about the primitive, not closed.
 
@@ -217,7 +217,7 @@ observation on wire  →?→  reach jokeHash output  →?→  invert to seed
 
 **Where hash outputs live in the pipeline.** In the shipped construction, hash outputs are consumed opaquely inside the encoder and never surface on the wire in cleartext:
 
-- `noiseSeed.ChainHash(pixel, N_m)` → `& 7` → `noisePos` → used only as an insertion position, then folded into a container byte
+- `noiseSeed.ChainHash(counter, N_m)` (counter not restarted per region) → `noiseFold3(h[0] + rotl64(h[1], 1))` → `noisePos` → used only as an insertion position, then merged into a container byte
 - `dataSeed_i.ChainHash(pixel, N_m)` → `hLo` low bits → rotation + `channelXOR` → applied to data bits → lane compression / rotation / XOR / noise-bit merge → wire byte
 - `lockSeed`: Stage 1 intermediate key `K = deriveInterLockSeed(N_il)` under tag `0x04`; Stage 2 hot-loop cascade over `[0x03 ‖ LE64(groupIdx) ‖ 4×0x00]` under `lockComps = [K, session components...]` with Round 1 primer on `K` and session feedforward → 128-bit `rank` → combinadic unrank → mask triple → applied via BMI2 `PEXTQ` inside `chunk48lock` → 3 lane fragments → Pixel Barrier encoding
 
@@ -322,18 +322,18 @@ All four paths closed simultaneously. The attack does not converge because every
 **Reproduction:**
 
 ```
-go test -tags redteam -run TestRedTeamJokeHashFullKPA ./ -v -count=1
+go test -tags redteam -run TestRedTeamJokeHashFullKPA -v -count=1 ./
 ```
 
 ---
 
 ## Question 4 — CRC128 is GF(2)-linear: does compound-key linear algebra break ITB?
 
-**Reader's setup.** «CRC128 admits full total inversion in polynomial time — one Gaussian elimination on a GF(2) system. The public script `scripts/redteam/itb/theory/crc128/compound_key_crc128.py` recovers a compound key `K` without any Crib KPA on Single Ouroboros. Why does that path not carry into the shipped construction?»
+**Reader's setup.** «CRC128 admits full total inversion in polynomial time — one Gaussian elimination on a GF(2) system. The public script `scripts/redteam/itb/theory/crc128/compound_key_crc128.py` recovers a compound key `K` without any Crib KPA on a one-region, barrier-off encode. Why does that path not carry into the shipped construction?»
 
 ### Current analytical picture
 
-Analytically, three shipped-construction factors — **Triple Ouroboros**, the **always-on Interlocked Barrier**, and **dual-nonce separation** — each appear to invalidate one of the assumptions the compound-key linear-algebra recovery relies on, so the attack path that works cleanly against Single Ouroboros does not seem to carry over. Beyond that, the hypothetical transfer of the recovered `K` from the Pixel Barrier to the Rank Barrier runs into five orthogonal architectural reasons at the algebra layer, before any observation gap is even considered. The sections below trace each reasoning arrow; countering any of them would supersede the corresponding step in the analysis.
+Analytically, three shipped-construction factors — **Triple Ouroboros**, the **always-on Interlocked Barrier**, and **dual-nonce separation** — each appear to invalidate one of the assumptions the compound-key linear-algebra recovery relies on, so the attack path that works cleanly against a one-region, barrier-off encode does not seem to carry over. Beyond that, the hypothetical transfer of the recovered `K` from the Pixel Barrier to the Rank Barrier runs into five orthogonal architectural reasons at the algebra layer, before any observation gap is even considered. The sections below trace each reasoning arrow; countering any of them would supersede the corresponding step in the analysis.
 
 ### CRC128 is indeed total inversion — on paper
 
@@ -345,13 +345,13 @@ seed = M_L^{-1} · (h XOR const(0))
 
 by one Gaussian elimination on an `n × n` GF(2) system in `O(n^3)`. This is not a PRF in any cryptographic sense — it is an integrity-check function reused as a stress control precisely because it is the algebra-friendliest possible primitive.
 
-Under **Single Ouroboros**, this translates into the compound-key attack:
+On a **one-region, barrier-off encode** (the `process128Cfg` control shape), this translates into the compound-key attack:
 
 ```
 hLo(p) = K XOR const(data(p))
 ```
 
-where `K` is a pixel-independent 64-bit compound key and `const(data(p))` is public-computable from the public pixel index and public nonce (ChainHash with `seed = 0`). Linear algebra recovers `K` from observations without plaintext, restores `channelXOR` at any pixel of future messages under the same `(dataSeed, nonce)`, and reads out the encoded data — because ITB reads only 64 bits from the 128-bit CRC128 output and 56 of them are exposed via `xorMask = hLo >> 3`. The script demonstrates this against Single Ouroboros with no Interlocked Barrier and no Triple wrapping. It is real, and it works in that regime.
+where `K` is a pixel-independent 64-bit compound key and `const(data(p))` is public-computable from the public pixel index and public nonce (ChainHash with `seed = 0`). Linear algebra recovers `K` from observations without plaintext, restores `channelXOR` at any pixel of future messages under the same `(dataSeed, nonce)`, and reads out the encoded data — because ITB reads only 64 bits from the 128-bit CRC128 output and 56 of them are exposed via `xorMask = hLo >> 3`. The script demonstrates this against a one-region, barrier-off encode — no Interlocked Barrier and no three-region split. It is real, and it works in that regime.
 
 ### Why the shipped construction closes the path
 
@@ -359,7 +359,7 @@ Three architectural factors compose:
 
 **1. Triple Ouroboros — three regions with independent `startPixel`s.**
 
-Compound-key recovery assumes the pixel-to-observation-position mapping is known (or brute-forceable via period shift). Under Triple, the attacker sees a container with interleaved 3-region payload where the region boundaries are not visible on wire. The attacker does not know which observation belongs to which region without joint enumeration of three independent `startPixel` candidates — three independent compound-key recovery instances with unknown routing between them.
+Compound-key recovery assumes the pixel-to-observation-position mapping is known (or brute-forceable via period shift). Under Triple, the container holds three contiguous regions whose boundaries follow from the public `W × H` (`third = W·H / 3`), each with its own hidden `startPixel_i`. The attacker does not know which stream step a given pixel carries without joint enumeration of three independent `startPixel` candidates — three independent compound-key recovery instances with unknown routing between them.
 
 **2. Interlocked Barrier's Rank Barrier — per-chunk PRF-keyed permutation.**
 
@@ -367,7 +367,7 @@ Even if the routing were solved hypothetically, the data in each region is no lo
 
 **3. Dual-nonce separation.**
 
-Compound-key recovery is pinned to a specific `(dataSeed, main_nonce)` pair. Fresh `main_nonce` → fresh `K` per message. `main_nonce` reuse is possible only through a test-only override, not the shipped API. Even under a lab-forced Scenario B (main-only collision), `K` is identical on the colliding pair, but the barrier's lane assignment depends on `interlock nonce`, which is fresh → the attacker gets same `K`, same `channelXOR`, but different lane assignments → channel bytes now map to unknown 48-bit chunk positions.
+Under CRC128 the compound key `K` is a function of the seed alone — the nonce enters only the public term `const(data(p))` — so a fresh `main_nonce` changes the per-pixel public terms but not `K`. What a fresh nonce renews is the Rank Barrier's keying: the interlock nonce re-derives the per-chunk mask triple on every message. `main_nonce` reuse is possible only through a test-only override, not the shipped API. Even under a lab-forced Scenario B (main-only collision), `K` is identical on the colliding pair, but the barrier's lane assignment depends on `interlock nonce`, which is fresh → the attacker gets same `K`, same `channelXOR`, but different lane assignments → channel bytes now map to unknown 48-bit chunk positions.
 
 Honest phrasing of the verdict: the CRC128 linear-algebra path is closed not because «without KPA it is impossible at all» — that would be an over-claim — but because Triple splits the observation space into three unknown-offset streams, the Rank Barrier injects an unknown PRF-keyed permutation between the recoverable `channelXOR` and plaintext bytes, and dual-nonce guarantees fresh barrier keying even under a single-slot collision.
 
@@ -463,6 +463,15 @@ Exactly this aspect makes the barrier «structurally unmeasurable at attacker-re
 
 ---
 
+### Reproduction
+
+```bash
+go test -tags redteam -run TestRedTeamBrokenCRC128CribKPA -v -count=1 ./
+ITB_REDTEAM_NOISEPOS_HASH=crc128 go test -tags redteam -run 'TestRedTeamNoisePosCCA' -v -count=1 ./
+```
+
+The second command runs the MAC + Reveal noise-position attacks ([REDTEAM.md — CCA](REDTEAM.md#cca--noise-position-oracle)) with CRC128 on every seed.
+
 ## Question 5 — FNV-1a has the T-function property. Doesn't that break the barrier?
 
 **Reader's setup.** «FNV-1a's round is `h = (h XOR byte) * FNV_PRIME`. Multiplication modulo `2^64` is not GF(2)-linear (carry chain), but it has the T-function property (Klimov & Shamir 2002) — output bit `t` depends only on input bits `0..t`, invertible plane-by-plane in `O(n^2)`. A standalone SAT solver targeting an unshielded single-region pipeline without the Rank Barrier can recover `dataSeed` lo-lane at `keyBits = 512` on 4 cribs plus disclosed `startPixel`. Does that attack path scale against the shipped construction?»
@@ -539,6 +548,15 @@ FNV-1a's T-function property assists direct hash inversion, but:
 Under the maximum-peek regime ([REDTEAM.md § FNV-1a lo-lane SAT](REDTEAM.md#fnv-1a-lo-lane-sat--architecturally-foreclosed)), Bitwuzla does not recover the true `dataSeed_i` lo lane (5 of 8 chains granted, `sp_i` disclosed): the instance is structurally under-determined. The T-function shortcut exists on paper, but the ITB architecture leaves no point of application.
 
 ---
+
+### Reproduction
+
+```bash
+go test -tags redteam -run TestRedTeamBrokenFNV1a -v -count=1 ./
+ITB_REDTEAM_NOISEPOS_HASH=fnv1a go test -tags redteam -run 'TestRedTeamNoisePosCCA' -v -count=1 ./
+```
+
+The second command runs the MAC + Reveal noise-position attacks ([REDTEAM.md — CCA](REDTEAM.md#cca--noise-position-oracle)) with FNV-1a on every seed.
 
 ## Closing Note — Why Standard Decomposition Attacks Do Not Apply
 
