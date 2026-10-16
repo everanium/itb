@@ -17,7 +17,7 @@
 // against the canonical RFCs / NIST specs, refer to the upstream
 // library tests:
 //
-//   - third/goaes (vendored go-aes subset, SoEM22) — Areion paper vectors
+//   - github.com/everanium/areion — Areion paper vectors and SoEM22 known answers
 //   - golang.org/x/crypto/blake2b — RFC 7693 vectors
 //   - golang.org/x/crypto/blake2s — RFC 7693 vectors
 //   - github.com/zeebo/blake3 — official BLAKE3 reference vectors

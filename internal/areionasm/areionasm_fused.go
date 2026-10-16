@@ -2,9 +2,10 @@ package areionasm
 
 import (
 	"encoding/binary"
+	"runtime"
 	"unsafe"
 
-	"github.com/everanium/itb/third/goaes"
+	"github.com/everanium/areion"
 )
 
 // The fused ChainHash cascade of Areion-SoEM-256 / 512 and its pure-Go
@@ -21,7 +22,7 @@ import (
 // (areion_fusedchain{256,512}_<shape>x{8,4,1}_<tier>_*.s, emitted by
 // scripts/kernels/areion/gen_fused_kernels.py) evaluate the whole cascade
 // per lane in one call; [ScalarFusedChain256] / [ScalarFusedChain512]
-// evaluate it in Go over aes.AreionSoEM256 / aes.AreionSoEM512 and are
+// evaluate it in Go over areion.SoEM256 / areion.SoEM512 and are
 // the parity oracle of every kernel and the fallback of every
 // dispatcher on hosts or tiers without a kernel.
 //
@@ -57,8 +58,8 @@ var AreionRCTable = [15][16]byte{
 // digits of pi that follow those of AreionRCTable, in the same
 // little-endian format, with entry 7 in the shifted form of entry 7 of
 // AreionRCTable (its pi word with the leading zero nibble dropped and a
-// zero nibble appended) — equal to the vendored third/goaes
-// areionRoundConstants2. A permutation under different round constants
+// zero nibble appended) — equal to github.com/everanium/areion
+// roundConstantsP2. A permutation under different round constants
 // is modelled as independent of P1. The amd64 kernels read them through
 // AreionRC4x2; the arm64 kernels read this table directly.
 var AreionRCTable2 = [15][16]byte{
@@ -99,10 +100,10 @@ func soem256Absorb(key *[64]byte, data []byte) [4]uint64 {
 	binary.LittleEndian.PutUint64(state[:8], uint64(len(data)))
 	if len(data) <= chunkSize {
 		copy(state[8:8+len(data)], data)
-		state = aes.AreionSoEM256(key, &state)
+		state = areion.SoEM256(key, &state)
 	} else {
 		copy(state[8:8+chunkSize], data[0:chunkSize])
-		state = aes.AreionSoEM256(key, &state)
+		state = areion.SoEM256(key, &state)
 		off := chunkSize
 		for off < len(data) {
 			end := off + chunkSize
@@ -110,7 +111,7 @@ func soem256Absorb(key *[64]byte, data []byte) [4]uint64 {
 				end = len(data)
 			}
 			absorbXOR(state[8:8+(end-off)], data[off:end])
-			state = aes.AreionSoEM256(key, &state)
+			state = areion.SoEM256(key, &state)
 			off = end
 		}
 	}
@@ -118,6 +119,8 @@ func soem256Absorb(key *[64]byte, data []byte) [4]uint64 {
 	for i := range out {
 		out[i] = binary.LittleEndian.Uint64(state[8*i:])
 	}
+	clear(state[:])
+	runtime.KeepAlive(&state)
 	return out
 }
 
@@ -129,10 +132,10 @@ func soem512Absorb(key *[128]byte, data []byte) [8]uint64 {
 	binary.LittleEndian.PutUint64(state[:8], uint64(len(data)))
 	if len(data) <= chunkSize {
 		copy(state[8:8+len(data)], data)
-		state = aes.AreionSoEM512(key, &state)
+		state = areion.SoEM512(key, &state)
 	} else {
 		copy(state[8:8+chunkSize], data[0:chunkSize])
-		state = aes.AreionSoEM512(key, &state)
+		state = areion.SoEM512(key, &state)
 		off := chunkSize
 		for off < len(data) {
 			end := off + chunkSize
@@ -140,7 +143,7 @@ func soem512Absorb(key *[128]byte, data []byte) [8]uint64 {
 				end = len(data)
 			}
 			absorbXOR(state[8:8+(end-off)], data[off:end])
-			state = aes.AreionSoEM512(key, &state)
+			state = areion.SoEM512(key, &state)
 			off = end
 		}
 	}
@@ -148,6 +151,8 @@ func soem512Absorb(key *[128]byte, data []byte) [8]uint64 {
 	for i := range out {
 		out[i] = binary.LittleEndian.Uint64(state[8*i:])
 	}
+	clear(state[:])
+	runtime.KeepAlive(&state)
 	return out
 }
 
@@ -166,6 +171,8 @@ func ScalarFusedChain256(fixedKey *[32]byte, components []uint64, data []byte) [
 		}
 		h = soem256Absorb(&key, data)
 	}
+	clear(key[:])
+	runtime.KeepAlive(&key)
 	return h
 }
 
@@ -181,6 +188,8 @@ func ScalarFusedChain512(fixedKey *[64]byte, components []uint64, data []byte) [
 		}
 		h = soem512Absorb(&key, data)
 	}
+	clear(key[:])
+	runtime.KeepAlive(&key)
 	return h
 }
 

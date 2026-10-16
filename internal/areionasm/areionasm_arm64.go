@@ -71,7 +71,7 @@ func Areion256Permute2x4(x0, x1 *aes.Block4) { areion256Permutex4RC(x0, x1, &Are
 // four independent states packed in SoA layout: each `*xN` holds the
 // four lanes' N-th 16-byte AES block (Block4 = 64 bytes). Includes the
 // final cyclic state rotation `(x0,x1,x2,x3) → (x3,x0,x1,x2)`
-// documented in the Areion paper / `areion512PermuteSoftware`.
+// documented in the Areion paper / `areion512PermuteSoftwareRC`.
 // Implemented in `areion_arm64.s`.
 func Areion512Permutex4(x0, x1, x2, x3 *aes.Block4) {
 	areion512Permutex4RC(x0, x1, x2, x3, &AreionRCTable)

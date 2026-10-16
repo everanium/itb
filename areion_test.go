@@ -5,6 +5,7 @@ import (
 	"runtime"
 	"testing"
 
+	"github.com/everanium/areion"
 	"github.com/everanium/itb/internal/areionasm"
 	"github.com/everanium/itb/internal/cpuid"
 	"github.com/everanium/itb/third/goaes"
@@ -12,7 +13,7 @@ import (
 
 // TestAreionSoEM256x4Parity verifies that for arbitrary inputs, the
 // 4-way batched AreionSoEM256x4 produces bit-exact identical output to
-// four serial aes.AreionSoEM256 calls. This is the load-bearing
+// four serial areion.SoEM256 calls. This is the load-bearing
 // invariant for any future ITB integration: divergence by even one bit
 // would invalidate PRF security claims under the batched dispatch path.
 func TestAreionSoEM256x4Parity(t *testing.T) {
@@ -33,7 +34,7 @@ func TestAreionSoEM256x4Parity(t *testing.T) {
 		batched := AreionSoEM256x4(&keys, &inputs)
 
 		for i := 0; i < 4; i++ {
-			serial := aes.AreionSoEM256(&keys[i], &inputs[i])
+			serial := areion.SoEM256(&keys[i], &inputs[i])
 			if batched[i] != serial {
 				t.Fatalf("trial %d lane %d: batched != serial\n"+
 					"batched: %x\nserial:  %x", trial, i, batched[i], serial)
@@ -63,7 +64,7 @@ func TestAreionSoEM512x4Parity(t *testing.T) {
 		batched := AreionSoEM512x4(&keys, &inputs)
 
 		for i := 0; i < 4; i++ {
-			serial := aes.AreionSoEM512(&keys[i], &inputs[i])
+			serial := areion.SoEM512(&keys[i], &inputs[i])
 			if batched[i] != serial {
 				t.Fatalf("trial %d lane %d: batched != serial\n"+
 					"batched: %x\nserial:  %x", trial, i, batched[i], serial)
@@ -106,7 +107,7 @@ func TestAreionSoEM256x4EdgeCases(t *testing.T) {
 			batched := AreionSoEM256x4(&keys, &inputs)
 
 			for i := 0; i < 4; i++ {
-				serial := aes.AreionSoEM256(&keys[i], &inputs[i])
+				serial := areion.SoEM256(&keys[i], &inputs[i])
 				if batched[i] != serial {
 					t.Fatalf("case %q lane %d: batched != serial\n"+
 						"batched: %x\nserial:  %x",
@@ -148,7 +149,7 @@ func TestAreionSoEM512x4EdgeCases(t *testing.T) {
 			batched := AreionSoEM512x4(&keys, &inputs)
 
 			for i := 0; i < 4; i++ {
-				serial := aes.AreionSoEM512(&keys[i], &inputs[i])
+				serial := areion.SoEM512(&keys[i], &inputs[i])
 				if batched[i] != serial {
 					t.Fatalf("case %q lane %d: batched != serial\n"+
 						"batched: %x\nserial:  %x",
@@ -205,7 +206,7 @@ func TestAreionSoEM256x4LaneIndependence(t *testing.T) {
 // ─── Benchmarks: serial 4× vs batched throughput ───────────────────────
 
 // BenchmarkAreionSoEM256_Serial4x measures the cost of four sequential
-// aes.AreionSoEM256 calls per iteration. This is the baseline against
+// areion.SoEM256 calls per iteration. This is the baseline against
 // which AreionSoEM256x4 is compared.
 func BenchmarkAreionSoEM256_Serial4x(b *testing.B) {
 	var keys [4][64]byte
@@ -224,7 +225,7 @@ func BenchmarkAreionSoEM256_Serial4x(b *testing.B) {
 	var sink [32]byte
 	for i := 0; i < b.N; i++ {
 		for j := 0; j < 4; j++ {
-			out := aes.AreionSoEM256(&keys[j], &inputs[j])
+			out := areion.SoEM256(&keys[j], &inputs[j])
 			// Prevent dead-code elimination.
 			for k := range sink {
 				sink[k] ^= out[k]
@@ -280,7 +281,7 @@ func BenchmarkAreionSoEM512_Serial4x(b *testing.B) {
 	var sink [64]byte
 	for i := 0; i < b.N; i++ {
 		for j := 0; j < 4; j++ {
-			out := aes.AreionSoEM512(&keys[j], &inputs[j])
+			out := areion.SoEM512(&keys[j], &inputs[j])
 			for k := range sink {
 				sink[k] ^= out[k]
 			}
@@ -442,7 +443,7 @@ func soem512Via(perm func(*[4][64]byte, bool), keys *[4][128]byte, inputs *[4][6
 
 // checkSoEM256Tier runs trials random (key, input) tuples through the
 // SoEM composition over perm and compares every lane with the serial
-// aes.AreionSoEM256 reference.
+// areion.SoEM256 reference.
 func checkSoEM256Tier(t *testing.T, name string, perm func(*[4][32]byte, bool)) {
 	const trials = 256
 	for trial := 0; trial < trials; trial++ {
@@ -458,7 +459,7 @@ func checkSoEM256Tier(t *testing.T, name string, perm func(*[4][32]byte, bool)) 
 		}
 		batched := soem256Via(perm, &keys, &inputs)
 		for i := 0; i < 4; i++ {
-			serial := aes.AreionSoEM256(&keys[i], &inputs[i])
+			serial := areion.SoEM256(&keys[i], &inputs[i])
 			if batched[i] != serial {
 				t.Fatalf("trial %d lane %d: %s batched != serial\n"+
 					"batched: %x\nserial:  %x", trial, i, name, batched[i], serial)
@@ -483,7 +484,7 @@ func checkSoEM512Tier(t *testing.T, name string, perm func(*[4][64]byte, bool)) 
 		}
 		batched := soem512Via(perm, &keys, &inputs)
 		for i := 0; i < 4; i++ {
-			serial := aes.AreionSoEM512(&keys[i], &inputs[i])
+			serial := areion.SoEM512(&keys[i], &inputs[i])
 			if batched[i] != serial {
 				t.Fatalf("trial %d lane %d: %s batched != serial\n"+
 					"batched: %x\nserial:  %x", trial, i, name, batched[i], serial)
@@ -494,7 +495,7 @@ func checkSoEM512Tier(t *testing.T, name string, perm func(*[4][64]byte, bool)) 
 
 // TestAreionSoEM256x4Avx2ParityDirect verifies that the AVX2+VAES
 // assembly variants (P1 and P2) compose to bit-exact identical output
-// to the serial aes.AreionSoEM256 reference, independent of which path
+// to the serial areion.SoEM256 reference, independent of which path
 // runtime dispatch would select. Skipped on non-amd64 builds.
 func TestAreionSoEM256x4Avx2ParityDirect(t *testing.T) {
 	if runtime.GOARCH != "amd64" {
@@ -553,7 +554,7 @@ func TestAreionSoEM256x4AesNiParityDirect(t *testing.T) {
 				got[j] = s1b0[lane*16+j] ^ keys[lane][j] ^ keys[lane][32+j]
 				got[16+j] = s1b1[lane*16+j] ^ keys[lane][16+j] ^ keys[lane][48+j]
 			}
-			if want := aes.AreionSoEM256(&keys[lane], &inputs[lane]); got != want {
+			if want := areion.SoEM256(&keys[lane], &inputs[lane]); got != want {
 				t.Fatalf("trial %d lane %d: AES-NI fused SoEM-256 != serial\ngot:  %x\nwant: %x", trial, lane, got, want)
 			}
 		}
@@ -593,7 +594,7 @@ func TestAreionSoEM512x4AesNiParityDirect(t *testing.T) {
 					got[16*b+j] = s1[b][lane*16+j] ^ keys[lane][16*b+j] ^ keys[lane][64+16*b+j]
 				}
 			}
-			if want := aes.AreionSoEM512(&keys[lane], &inputs[lane]); got != want {
+			if want := areion.SoEM512(&keys[lane], &inputs[lane]); got != want {
 				t.Fatalf("trial %d lane %d: AES-NI fused SoEM-512 != serial\ngot:  %x\nwant: %x", trial, lane, got, want)
 			}
 		}
@@ -770,10 +771,10 @@ func BenchmarkAreionSoEM512x4_BatchedAesNi(b *testing.B) {
 // TestAreionSoEM256x4PureGoParityDirect verifies that the portable Go
 // fallback permutation (`areion256Permutex4Default`, under both constant
 // tables) composes to bit-exact identical output to four serial
-// aes.AreionSoEM256 calls. This guards against:
+// areion.SoEM256 calls. This guards against:
 //
-//  1. Drift between the vendored third/goaes reference and the fallback —
-//     if the reference's AreionSoEM256 / AreionSoEM512 changes in a way
+//  1. Drift between the github.com/everanium/areion reference and the fallback —
+//     if the reference's SoEM256 / SoEM512 changes in a way
 //     the fallback no longer mirrors, this test fails immediately.
 //  2. Dispatch fall-through breakage in areion_amd64.go — if a future
 //     refactor accidentally stops routing the Default branch, the
@@ -1166,10 +1167,10 @@ func TestAreionSoEMNoKeyShiftSymmetry(t *testing.T) {
 			if f512[lane] == g512[lane] || f512[lane] == gd512[lane] {
 				t.Fatalf("trial %d lane %d: SoEM-512 key-shift symmetry present (batched)", trial, lane)
 			}
-			if r := aes.AreionSoEM256(&k256[lane], &m256[lane]); r == aes.AreionSoEM256(&k256[lane], &s256[lane]) || r == aes.AreionSoEM256(&k256[lane], &sd256[lane]) {
+			if r := areion.SoEM256(&k256[lane], &m256[lane]); r == areion.SoEM256(&k256[lane], &s256[lane]) || r == areion.SoEM256(&k256[lane], &sd256[lane]) {
 				t.Fatalf("trial %d lane %d: SoEM-256 key-shift symmetry present (serial)", trial, lane)
 			}
-			if r := aes.AreionSoEM512(&k512[lane], &m512[lane]); r == aes.AreionSoEM512(&k512[lane], &s512[lane]) || r == aes.AreionSoEM512(&k512[lane], &sd512[lane]) {
+			if r := areion.SoEM512(&k512[lane], &m512[lane]); r == areion.SoEM512(&k512[lane], &s512[lane]) || r == areion.SoEM512(&k512[lane], &sd512[lane]) {
 				t.Fatalf("trial %d lane %d: SoEM-512 key-shift symmetry present (serial)", trial, lane)
 			}
 		}
@@ -1300,7 +1301,7 @@ func TestAreionSoEMAffinity(t *testing.T) {
 		for i := range d {
 			d[i] = a[i] ^ b[i] ^ c[i]
 		}
-		fa, fb, fc, fd := aes.AreionSoEM256(&k256, &a), aes.AreionSoEM256(&k256, &b), aes.AreionSoEM256(&k256, &c), aes.AreionSoEM256(&k256, &d)
+		fa, fb, fc, fd := areion.SoEM256(&k256, &a), areion.SoEM256(&k256, &b), areion.SoEM256(&k256, &c), areion.SoEM256(&k256, &d)
 		zero := true
 		for i := range fa {
 			if fa[i]^fb[i]^fc[i]^fd[i] != 0 {
@@ -1318,7 +1319,7 @@ func TestAreionSoEMAffinity(t *testing.T) {
 		for i := range d5 {
 			d5[i] = a5[i] ^ b5[i] ^ c5[i]
 		}
-		ga, gb, gc, gd := aes.AreionSoEM512(&k512, &a5), aes.AreionSoEM512(&k512, &b5), aes.AreionSoEM512(&k512, &c5), aes.AreionSoEM512(&k512, &d5)
+		ga, gb, gc, gd := areion.SoEM512(&k512, &a5), areion.SoEM512(&k512, &b5), areion.SoEM512(&k512, &c5), areion.SoEM512(&k512, &d5)
 		zero = true
 		for i := range ga {
 			if ga[i]^gb[i]^gc[i]^gd[i] != 0 {
@@ -1433,7 +1434,7 @@ func TestAreionSoEMKeySlots(t *testing.T) {
 	rand.Read(m[:])
 	k1b = k1
 	k1b[3] ^= 0x80
-	fa, fb := aes.AreionSoEM256(&k1, &m), aes.AreionSoEM256(&k1b, &m)
+	fa, fb := areion.SoEM256(&k1, &m), areion.SoEM256(&k1b, &m)
 	constant := true
 	for i := range fa {
 		if fa[i]^fb[i] != k1[i]^k1b[i] {

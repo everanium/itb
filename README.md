@@ -1104,7 +1104,7 @@ Name-keyed dispatch is used by the FFI layer and by any code that selects the pr
 
 Per-primitive technical notes:
 
-**The Areion-SoEM primitives (`areion256` / `areion512`) compute SoEM22 — `P1(m ⊕ k1) ⊕ P2(m ⊕ k2) ⊕ k1 ⊕ k2`, two Areion permutations under distinct round-constant tables — from a patched in-module copy of go-aes, [`third/goaes`](third/goaes/README.md), because the upstream `AreionSoEM256` / `AreionSoEM512` evaluate one permutation in both branches and the ~170 / ~341-bit figure quoted there is not reachable in that construction (<https://github.com/jedisct1/go-aes/issues/1>).**
+**The Areion-SoEM primitives (`areion256` / `areion512`) compute SoEM22 — `P1(m ⊕ k1) ⊕ P2(m ⊕ k2) ⊕ k1 ⊕ k2`, two Areion permutations under distinct round-constant tables — via [`github.com/everanium/areion`](https://github.com/everanium/areion) (`SoEM256` / `SoEM512`), because single-permutation `AreionSoEM` instantiations evaluate one permutation in both branches and the ~170 / ~341-bit SoEM22 bound is not reachable there (<https://github.com/jedisct1/go-aes/issues/1>).**
 
 See [hashes/CONSTRUCTIONS.md](hashes/CONSTRUCTIONS.md) for per-primitive construction descriptions (how each registry name wraps its underlying RFC / NIST primitive, where the wrappers diverge from the canonical specification, and why).
 

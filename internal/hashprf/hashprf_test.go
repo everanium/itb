@@ -7,8 +7,7 @@ import (
 	"encoding/hex"
 	"testing"
 
-	aes "github.com/everanium/itb/third/goaes"
-
+	"github.com/everanium/areion"
 	"github.com/everanium/itb/hashes"
 )
 
@@ -334,9 +333,9 @@ func soemState512(in []byte) [64]byte {
 // with zero whitening, so P2(m) = F(m) ^ P1(m).
 func permute2x256(x [32]byte) [32]byte {
 	var zeroKey [64]byte
-	f := aes.AreionSoEM256(&zeroKey, &x)
-	p1 := aes.Areion256(x)
-	p1.Permute()
+	f := areion.SoEM256(&zeroKey, &x)
+	p1 := x
+	areion.Permute256(&p1)
 	for i := range f {
 		f[i] ^= p1[i]
 	}
@@ -346,9 +345,9 @@ func permute2x256(x [32]byte) [32]byte {
 // permute2x512 is the 512-bit counterpart of permute2x256.
 func permute2x512(x [64]byte) [64]byte {
 	var zeroKey [128]byte
-	f := aes.AreionSoEM512(&zeroKey, &x)
-	p1 := aes.Areion512(x)
-	p1.Permute()
+	f := areion.SoEM512(&zeroKey, &x)
+	p1 := x
+	areion.Permute512(&p1)
 	for i := range f {
 		f[i] ^= p1[i]
 	}
@@ -361,11 +360,11 @@ func permute2x512(x [64]byte) [64]byte {
 // k1 = m ^ P1^-1(out ^ P2(m)).
 func recoverK1x256(m [32]byte, out []byte) []byte {
 	b := permute2x256(m)
-	var a aes.Areion256
+	var a [32]byte
 	for i := range a {
 		a[i] = out[i] ^ b[i]
 	}
-	a.InversePermute()
+	areion.InversePermute256(&a)
 	k := make([]byte, 32)
 	for i := range k {
 		k[i] = a[i] ^ m[i]
@@ -376,11 +375,11 @@ func recoverK1x256(m [32]byte, out []byte) []byte {
 // recoverK1x512 is the SoEM-512 counterpart of recoverK1x256.
 func recoverK1x512(m [64]byte, out []byte) []byte {
 	b := permute2x512(m)
-	var a aes.Areion512
+	var a [64]byte
 	for i := range a {
 		a[i] = out[i] ^ b[i]
 	}
-	a.InversePermute()
+	areion.InversePermute512(&a)
 	k := make([]byte, 64)
 	for i := range k {
 		k[i] = a[i] ^ m[i]
@@ -419,7 +418,7 @@ func TestAreionOneBlockKeyRecovery(t *testing.T) {
 		// removed.
 		var k10 [64]byte
 		copy(k10[:32], key)
-		unwhitened := aes.AreionSoEM256(&k10, &m)
+		unwhitened := areion.SoEM256(&k10, &m)
 		for i := range key {
 			unwhitened[i] ^= key[i]
 		}
@@ -487,7 +486,7 @@ func TestAreionOneBlockKeyRecovery(t *testing.T) {
 
 		var k10 [128]byte
 		copy(k10[:64], key)
-		unwhitened := aes.AreionSoEM512(&k10, &m)
+		unwhitened := areion.SoEM512(&k10, &m)
 		for i := range key {
 			unwhitened[i] ^= key[i]
 		}

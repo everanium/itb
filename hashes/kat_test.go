@@ -1,7 +1,7 @@
 // Pair-level Known-Answer Tests (KAT) for every PRF-grade hash
 // primitive in the registry. Each primitive's closure construction
 // is independently re-executed in this file using only the upstream
-// library imports (third/goaes, the vendored go-aes subset, for Areion-SoEM;
+// library imports (github.com/everanium/areion for Areion-SoEM;
 // golang.org/x/crypto/blake2b, blake2s; github.com/zeebo/blake3;
 // crypto/aes for the AES round on AES-CMAC; github.com/dchest/siphash;
 // golang.org/x/crypto/chacha20) — bypassing the closure's pool, template-
@@ -26,7 +26,7 @@ import (
 	"testing"
 
 	"github.com/dchest/siphash"
-	stdaes "github.com/everanium/itb/third/goaes"
+	"github.com/everanium/areion"
 	"github.com/zeebo/blake3"
 	"golang.org/x/crypto/blake2b"
 	"golang.org/x/crypto/blake2s"
@@ -157,11 +157,11 @@ var katBatchedLengths = []int{20, 36, 68}
 // -----------------------------------------------------------------------------
 
 // areion256RefClosure rebuilds the hashes.Areion256 closure body
-// using third/goaes's exported AreionSoEM256 directly.
+// using github.com/everanium/areion's exported SoEM256 directly.
 // Construction: 64-byte SoEM key = fixedKey || seed_packed (4 LE
 // uint64); 32-byte state with state[0:8] = lenTag, state[8:32]
 // absorbs `data` in 24-byte chunks via state[8:8+r] ^= chunk;
-// state = AreionSoEM256(key, state) between rounds.
+// state = areion.SoEM256(key, state) between rounds.
 func areion256RefClosure(fixedKey [32]byte, data []byte, seed [4]uint64) [4]uint64 {
 	var key [64]byte
 	copy(key[:32], fixedKey[:])
@@ -173,10 +173,10 @@ func areion256RefClosure(fixedKey [32]byte, data []byte, seed [4]uint64) [4]uint
 	const chunkSize = 24
 	if len(data) <= chunkSize {
 		copy(state[8:8+len(data)], data)
-		state = stdaes.AreionSoEM256(&key, &state)
+		state = areion.SoEM256(&key, &state)
 	} else {
 		copy(state[8:8+chunkSize], data[0:chunkSize])
-		state = stdaes.AreionSoEM256(&key, &state)
+		state = areion.SoEM256(&key, &state)
 		off := chunkSize
 		for off < len(data) {
 			end := off + chunkSize
@@ -186,7 +186,7 @@ func areion256RefClosure(fixedKey [32]byte, data []byte, seed [4]uint64) [4]uint
 			for i := 0; i < end-off; i++ {
 				state[8+i] ^= data[off+i]
 			}
-			state = stdaes.AreionSoEM256(&key, &state)
+			state = areion.SoEM256(&key, &state)
 			off = end
 		}
 	}
@@ -238,8 +238,8 @@ func TestKAT_Areion256(t *testing.T) {
 // -----------------------------------------------------------------------------
 
 // areion512RefClosure rebuilds the hashes.Areion512 closure body
-// using third/goaes's exported AreionSoEM512 directly.
-// Construction is structurally identical to AreionSoEM256 but scaled
+// using github.com/everanium/areion's exported SoEM512 directly.
+// Construction is structurally identical to SoEM256 but scaled
 // to a 128-byte SoEM key (64-byte fixedKey || 64-byte seed_packed,
 // where seed_packed = 8 LE uint64) and a 64-byte state absorbing
 // 56-byte chunks per round.
@@ -254,10 +254,10 @@ func areion512RefClosure(fixedKey [64]byte, data []byte, seed [8]uint64) [8]uint
 	const chunkSize = 56
 	if len(data) <= chunkSize {
 		copy(state[8:8+len(data)], data)
-		state = stdaes.AreionSoEM512(&key, &state)
+		state = areion.SoEM512(&key, &state)
 	} else {
 		copy(state[8:8+chunkSize], data[0:chunkSize])
-		state = stdaes.AreionSoEM512(&key, &state)
+		state = areion.SoEM512(&key, &state)
 		off := chunkSize
 		for off < len(data) {
 			end := off + chunkSize
@@ -267,7 +267,7 @@ func areion512RefClosure(fixedKey [64]byte, data []byte, seed [8]uint64) [8]uint
 			for i := 0; i < end-off; i++ {
 				state[8+i] ^= data[off+i]
 			}
-			state = stdaes.AreionSoEM512(&key, &state)
+			state = areion.SoEM512(&key, &state)
 			off = end
 		}
 	}

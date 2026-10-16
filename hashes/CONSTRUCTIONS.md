@@ -12,7 +12,7 @@ Audience: external auditors, paper reviewers, downstream integrators reading the
 
 For RFC / NIST primitive math conformance, refer to the upstream library tests:
 
-- `third/goaes` (an in-module subset of `github.com/jedisct1/go-aes` v0.1.1 carrying the SoEM22 patch; see its README) — Areion paper vectors and the SoEM22 known answers.
+- `github.com/everanium/areion` — Areion paper vectors and the SoEM22 known answers.
 - `golang.org/x/crypto/blake2b` — RFC 7693 vectors.
 - `golang.org/x/crypto/blake2s` — RFC 7693 vectors.
 - `github.com/zeebo/blake3` — official BLAKE3 reference vectors.
@@ -31,8 +31,8 @@ Listed in canonical primitive order. Below-spec lab helpers (CRC128, FNV-1a, MD5
 | # | Registry name | Native width | Underlying primitive | Construction shape |
 |---|---|---|---|---|
 | 1 | `aesitb128` | 128 | AES-ITB-128 (ITB-native reduced-round AES chain, `aesitb.go` + `internal/aesitbasm`) | CBC-MAC-style chain absorption over public AES rounds (one per block + two finalising rounds), keyed through the initial state; NUMS round constants (π words); intentionally Non-PRF, inner-role only (Rank Barrier + Pixel Barrier) |
-| 2 | `areion256` | 256 | AreionSoEM-256 (`third/goaes` building blocks; SoEM22, two Areion permutations) | CBC-MAC with SoEM-256 as keyed round function |
-| 3 | `areion512` | 512 | AreionSoEM-512 (`third/goaes` building blocks; SoEM22, two Areion permutations) | CBC-MAC with SoEM-512 as keyed round function |
+| 2 | `areion256` | 256 | AreionSoEM-256 (`github.com/everanium/areion`; SoEM22, two Areion permutations) | CBC-MAC with SoEM-256 as keyed round function |
+| 3 | `areion512` | 512 | AreionSoEM-512 (`github.com/everanium/areion`; SoEM22, two Areion permutations) | CBC-MAC with SoEM-512 as keyed round function |
 | 4 | `blake2b256` | 256 | BLAKE2b-256 unkeyed (`x/crypto/blake2b`) | Prepend-key MAC with seed XOR into data prefix |
 | 5 | `blake2b512` | 512 | BLAKE2b-512 unkeyed (`x/crypto/blake2b`) | Prepend-key MAC, scaled to 64-byte key + 512-bit output |
 | 6 | `blake2s` | 256 | BLAKE2s-256 unkeyed (`x/crypto/blake2s`) | Prepend-key MAC with seed XOR into data prefix |
@@ -87,9 +87,9 @@ Empirical validation of the cascade dissolving every standalone break at `r ≥ 
 
     F(k1, k2, m) = P1(m ⊕ k1) ⊕ P2(m ⊕ k2) ⊕ k1 ⊕ k2
 
-where `P1` is Areion-256 under its published round constants and `P2` is Areion-256 under a second round-constant table (the next words of the hexadecimal digits of π, with word 7 in the same shifted form as word 7 of the published table: leading zero nibble dropped, zero nibble appended), modelled as a permutation independent of `P1` (an assumption about this instantiation, not a proven property); built atop the `third/goaes` round building blocks.
+where `P1` is Areion-256 under its published round constants and `P2` is Areion-256 under a second round-constant table (the next words of the hexadecimal digits of π, with word 7 in the same shifted form as word 7 of the published table: leading zero nibble dropped, zero nibble appended), modelled as a permutation independent of `P1` (an assumption about this instantiation, not a proven property); evaluated via [`github.com/everanium/areion`](https://github.com/everanium/areion) (`areion.SoEM256`) on the scalar path and via the 4-lane AES round building blocks of `third/goaes` on the portable batched path.
 
-**ITB uses a patched in-module copy of go-aes (`third/goaes`), because the upstream `AreionSoEM256` / `AreionSoEM512` evaluate one Areion permutation in both branches, which leaves `F(m) = F(m ⊕ k1 ⊕ k2 ⊕ d)` for every `m` and caps the PRF at the birthday bound; the ~170 / ~341-bit figure quoted upstream is the SoEM22 bound and is not reachable there (<https://github.com/jedisct1/go-aes/issues/1>).**
+**ITB uses [`github.com/everanium/areion`](https://github.com/everanium/areion) (`SoEM256` / `SoEM512`), because single-permutation `AreionSoEM256` / `AreionSoEM512` instantiations evaluate one Areion permutation in both branches, which leaves `F(m) = F(m ⊕ k1 ⊕ k2 ⊕ d)` for every `m` and caps the PRF at the birthday bound; the ~170 / ~341-bit figure is the SoEM22 bound and is not reachable there (<https://github.com/jedisct1/go-aes/issues/1>).**
 
 **Construction.** CBC-MAC with the SoEM-256 keyed function (a PRF, not a permutation) as the round function. Defined in `itb/areion.go::MakeAreionSoEM256HashWithKey` (re-exported via `hashes/areion256.go`).
 
@@ -99,7 +99,7 @@ where `P1` is Areion-256 under its published round constants and `P2` is Areion-
 2. Initialise 32-byte state: `state[0..8) = uint64_le(L)`, `state[8..32) = 0`.
 3. For each 24-byte chunk of data:
    - `state[8..min(32, 8+chunk_len)) ^= chunk`,
-   - `state ← AreionSoEM256(subkey, state)`.
+   - `state ← areion.SoEM256(subkey, state)`.
    The chain runs at least once even for empty data, so the length-tagged state always passes through SoEM before output.
 4. Output: `state[0..32)` re-marshalled as 4 × uint64 LE.
 
@@ -128,7 +128,7 @@ The security argument does not regress relative to a sponge framing. CBC-MAC ove
 
 1. Build 128-byte subkey: `subkey[0..64) = fixedKey`, `subkey[64..128) = seed (8 × uint64 LE)`.
 2. Initialise 64-byte state: `state[0..8) = uint64_le(L)`, `state[8..64) = 0`.
-3. For each 56-byte chunk of data: XOR into `state[8..64)`, then `state ← AreionSoEM512(subkey, state)`.
+3. For each 56-byte chunk of data: XOR into `state[8..64)`, then `state ← areion.SoEM512(subkey, state)`.
 4. ITB's three nonce-bit configurations (buf 20 / 36 / 68): 1 / 1 / 2 rounds.
 5. Output: `state[0..64)` re-marshalled as 8 × uint64 LE.
 

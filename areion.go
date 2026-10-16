@@ -11,8 +11,8 @@
 //
 // Bit-exact parity invariant. For every i in {0,1,2,3}:
 //
-//	AreionSoEM256x4(keys, inputs)[i] == aes.AreionSoEM256(&keys[i], &inputs[i])
-//	AreionSoEM512x4(keys, inputs)[i] == aes.AreionSoEM512(&keys[i], &inputs[i])
+//	AreionSoEM256x4(keys, inputs)[i] == areion.SoEM256(&keys[i], &inputs[i])
+//	AreionSoEM512x4(keys, inputs)[i] == areion.SoEM512(&keys[i], &inputs[i])
 //
 // This is enforced empirically by `TestAreionSoEM{256,512}x4Parity` in
 // areion_test.go on every test run and is mandatory for ITB security
@@ -34,11 +34,11 @@
 // the second half. CLM19 Theorem 1 proves SoEM22 a PRF up to about
 // 2^(2n/3) queries in the random-permutation model (n = 256 / 512 the
 // state width), with both subkeys secret and independently random. The
-// serial reference is `third/goaes/areion.go` (`AreionSoEM256` /
-// `AreionSoEM512`). The 4-way batched composition here applies each
+// serial reference is `github.com/everanium/areion` (`areion.SoEM256` /
+// `areion.SoEM512`). The 4-way batched composition here applies each
 // permutation to four independent states in parallel using the
-// `Block4`/`Round4HW`/`FinalRound4HW`/`XorBlock4` primitives of the
-// same package.
+// `Block4`/`Round4HW`/`FinalRound4HW`/`XorBlock4` primitives of
+// `third/goaes`.
 //
 // Layout. Each batched permutation reshapes the four Areion states from
 // the natural array-of-structures layout (one contiguous 32- or 64-byte
@@ -56,13 +56,14 @@ import (
 	"encoding/binary"
 	"runtime"
 
+	"github.com/everanium/areion"
 	"github.com/everanium/itb/internal/areionasm"
 	"github.com/everanium/itb/third/goaes"
 )
 
 // Areion round constants of P1 (digits of pi, little-endian) — must
-// match `third/goaes/areion.go:areionRoundConstants`. Areion256 uses
-// entries 0..9; Areion512 uses entries 0..14. The vendored constants are
+// match `github.com/everanium/areion` (`roundConstantsP1`). Areion256 uses
+// entries 0..9; Areion512 uses entries 0..14. The upstream constants are
 // package-private so the values are duplicated here verbatim. Any drift
 // breaks the parity invariant; the parity test catches divergence on
 // every run.
@@ -85,7 +86,7 @@ var areionRC = [15][16]byte{
 }
 
 // Areion round constants of P2, the second permutation of SoEM22 — must
-// match `third/goaes/areion.go:areionRoundConstants2`: the fifteen
+// match `github.com/everanium/areion` (`roundConstantsP2`): the fifteen
 // 128-bit words of the hexadecimal digits of pi that follow those of
 // areionRC, in the same little-endian format. Entry 7 takes the shifted
 // form that entry 7 of areionRC takes: its pi word (word 22, counting
@@ -189,7 +190,7 @@ func unpack256x4SoA(b0, b1 *aes.Block4, states *[4][32]byte) {
 // call overhead that dominates this implementation's wall-clock cost.
 //
 // Mirrors the serial round structure in
-// `third/goaes/areion.go:areion256PermuteSoftwareRC` bit-for-bit; the
+// `github.com/everanium/areion` (`areion256PermuteSoftwareRC`) bit-for-bit; the
 // only difference is each operation runs on four lanes via `Round4HW`
 // (with zero key, equivalent to `RoundNoKey4`) / `FinalRound4HW` /
 // `XorBlock4` instead of per-block primitives.
@@ -244,13 +245,13 @@ func areion256Permutex4Default(states *[4][32]byte, rcs *[15][16]byte) {
 // AreionSoEM256x4 evaluates the Areion-SoEM-256 PRF on four independent
 // (key, input) tuples in parallel.
 //
-//	output[i] = aes.AreionSoEM256(&keys[i], &inputs[i])  for i in {0,1,2,3}
+//	output[i] = areion.SoEM256(&keys[i], &inputs[i])  for i in {0,1,2,3}
 //
 // Each `keys[i]` is 64 bytes (two 32-byte SoEM subkeys k1‖k2). Each
 // `inputs[i]` is 32 bytes. The result is four independent 32-byte PRF
 // outputs.
 //
-// The function is equivalent to four serial `aes.AreionSoEM256` calls —
+// The function is equivalent to four serial `areion.SoEM256` calls —
 // output is bit-exact identical (verified in
 // `TestAreionSoEM256x4Parity`). Throughput is higher wherever an Areion
 // assembly tier is active (VAES ZMM / YMM, AES-NI XMM, the ARM Crypto
@@ -333,7 +334,7 @@ func unpack512x4SoA(b0, b1, b2, b3 *aes.Block4, states *[4][64]byte) {
 }
 
 // areion512Roundx4 mirrors the serial `areion512Round` closure from
-// `third/goaes/areion.go:areion512PermuteSoftwareRC`. The
+// `github.com/everanium/areion` (`areion512PermuteSoftwareRC`). The
 // inner work pattern is:
 //
 //	temp1 = a; RoundNoKey(temp1); b = temp1 ⊕ b
@@ -373,7 +374,7 @@ func areion512Roundx4(a, b, c, d *aes.Block4, rc *[16]byte) {
 // reference.
 //
 // Mirrors the serial round + final rotation structure of
-// `third/goaes/areion.go:areion512PermuteSoftwareRC` bit-for-bit; same
+// `github.com/everanium/areion` (`areion512PermuteSoftwareRC`) bit-for-bit; same
 // per-round pattern as the serial reference, four lanes wide.
 func areion512Permutex4Default(states *[4][64]byte, rcs *[15][16]byte) {
 	var x0, x1, x2, x3 aes.Block4
@@ -417,7 +418,7 @@ func areion512Permutex4Default(states *[4][64]byte, rcs *[15][16]byte) {
 // AreionSoEM512x4 evaluates the Areion-SoEM-512 PRF on four independent
 // (key, input) tuples in parallel.
 //
-//	output[i] = aes.AreionSoEM512(&keys[i], &inputs[i])  for i in {0,1,2,3}
+//	output[i] = areion.SoEM512(&keys[i], &inputs[i])  for i in {0,1,2,3}
 //
 // Each `keys[i]` is 128 bytes (two 64-byte SoEM subkeys k1‖k2). Each
 // `inputs[i]` is 64 bytes. The result is four independent 64-byte PRF
@@ -538,7 +539,7 @@ func MakeAreionSoEM256HashWithKey(fixedKey [32]byte) (HashFunc256, BatchHashFunc
 	// 8-byte length tag in bytes [0..8) (disambiguates inputs of
 	// different lengths) and absorbs the remainder of `data` in
 	// 24-byte chunks into bytes [8..32) per round, encrypting the
-	// state through AreionSoEM256 between rounds. The chain runs
+	// state through areion.SoEM256 between rounds. The chain runs
 	// at least once even for empty data so the length-tagged state
 	// is always encrypted before being returned. Every byte of
 	// `data` reaches the digest regardless of length, so the
@@ -563,21 +564,21 @@ func MakeAreionSoEM256HashWithKey(fixedKey [32]byte) (HashFunc256, BatchHashFunc
 		binary.LittleEndian.PutUint64(state[:8], uint64(len(data)))
 
 		if len(data) <= chunkSize {
-			// Fast path: single AreionSoEM256 round. state[8:32] is
+			// Fast path: single areion.SoEM256 round. state[8:32] is
 			// freshly zero from the `var state [32]byte` declaration,
 			// so absorb-XOR is equivalent to a bulk copy — Go's
 			// `copy` builtin lowers to memmove / SIMD MOVDQU which
 			// is significantly faster than the byte/uint64 XOR
 			// path for short data.
 			copy(state[8:8+len(data)], data)
-			state = aes.AreionSoEM256(&key, &state)
+			state = areion.SoEM256(&key, &state)
 		} else {
 			// Slow path: CBC-MAC chain for inputs > 24 bytes. The
 			// first round still benefits from copy-instead-of-XOR
 			// (state[8:32] is zero); subsequent rounds must use the
 			// real XOR because state holds the previous AES output.
 			copy(state[8:8+chunkSize], data[0:chunkSize])
-			state = aes.AreionSoEM256(&key, &state)
+			state = areion.SoEM256(&key, &state)
 			off := chunkSize
 			for off < len(data) {
 				end := off + chunkSize
@@ -585,7 +586,7 @@ func MakeAreionSoEM256HashWithKey(fixedKey [32]byte) (HashFunc256, BatchHashFunc
 					end = len(data)
 				}
 				absorbXOR(state[8:8+(end-off)], data[off:end])
-				state = aes.AreionSoEM256(&key, &state)
+				state = areion.SoEM256(&key, &state)
 				off = end
 			}
 		}
@@ -737,10 +738,10 @@ func MakeAreionSoEM512HashWithKey(fixedKey [64]byte) (HashFunc512, BatchHashFunc
 			// Fast path: state[8:64] is zero — bulk copy beats
 			// absorb-XOR for the first round.
 			copy(state[8:8+len(data)], data)
-			state = aes.AreionSoEM512(&key, &state)
+			state = areion.SoEM512(&key, &state)
 		} else {
 			copy(state[8:8+chunkSize], data[0:chunkSize])
-			state = aes.AreionSoEM512(&key, &state)
+			state = areion.SoEM512(&key, &state)
 			off := chunkSize
 			for off < len(data) {
 				end := off + chunkSize
@@ -748,7 +749,7 @@ func MakeAreionSoEM512HashWithKey(fixedKey [64]byte) (HashFunc512, BatchHashFunc
 					end = len(data)
 				}
 				absorbXOR(state[8:8+(end-off)], data[off:end])
-				state = aes.AreionSoEM512(&key, &state)
+				state = areion.SoEM512(&key, &state)
 				off = end
 			}
 		}

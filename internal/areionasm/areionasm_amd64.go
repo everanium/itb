@@ -62,8 +62,8 @@ var AreionRC4x [15 * 64]byte
 var AreionRC4x2 [15 * 64]byte
 
 // Constants is the canonical 15-entry round constant table of P1 —
-// digits of pi in little-endian byte order, equal to the vendored
-// third/goaes areionRoundConstants and to AreionRCTable. Areion256 uses
+// digits of pi in little-endian byte order, equal to
+// github.com/everanium/areion roundConstantsP1 and to AreionRCTable. Areion256 uses
 // entries 0..9; Areion512 uses entries 0..14.
 var Constants = [15][16]byte{
 	{0x44, 0x73, 0x70, 0x03, 0x2e, 0x8a, 0x19, 0x13, 0xd3, 0x08, 0xa3, 0x85, 0x88, 0x6a, 0x3f, 0x24},
@@ -129,7 +129,7 @@ func Areion256Permute2x4(x0, x1 *aes.Block4) { areion256Permutex4RC(x0, x1, &Are
 // four independent states packed in SoA layout: each `*xN` holds the
 // four lanes' N-th 16-byte AES block (Block4 = 64 bytes). Includes the
 // final cyclic state rotation `(x0,x1,x2,x3) → (x3,x0,x1,x2)`
-// documented in the Areion paper / `areion512PermuteSoftware`.
+// documented in the Areion paper / `areion512PermuteSoftwareRC`.
 // Implemented in `areion_amd64.s`.
 func Areion512Permutex4(x0, x1, x2, x3 *aes.Block4) {
 	areion512Permutex4RC(x0, x1, x2, x3, &AreionRC4x)

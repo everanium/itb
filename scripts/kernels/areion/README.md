@@ -98,7 +98,7 @@ returned.
 Every kernel implements the cascade documented in
 `internal/areionasm/areionasm_fused.go` and is pinned to the pure-Go
 reference there (`ScalarFusedChain256` / `ScalarFusedChain512`, built on
-`aes.AreionSoEM256` / `aes.AreionSoEM512`) by the in-package parity tests
+`areion.SoEM256` / `areion.SoEM512`) by the in-package parity tests
 (`go test ./internal/areionasm/`, every tier by direct call plus
 `ITB_FORCE_HASH_TIER` / `ITB_FORCE_INTERLOCK_PRF_FILL_TIER` probes), by
 the `hashes` package's known-answer vectors of the cascade

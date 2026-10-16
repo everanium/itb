@@ -6,13 +6,12 @@ import (
 	"crypto/rand"
 	"testing"
 
-	"github.com/everanium/itb/third/goaes"
-
+	"github.com/everanium/areion"
 	"github.com/everanium/itb/internal/areionasm"
 )
 
 // TestAreionArm64BatchedGate checks both arms of the arm64 batched
-// permutation gate against serial go-aes calls: the ARM Crypto
+// permutation gate against serial areion calls: the ARM Crypto
 // Extension kernel when [areionasm.HasARMAESBatched] is set, and the
 // portable Go permutation when it is clear — the path a host without
 // the extension, or ITB_FORCE_HASH_TIER=scalar, takes.
@@ -41,11 +40,11 @@ func TestAreionArm64BatchedGate(t *testing.T) {
 			got256 := AreionSoEM256x4(&k256, &in256)
 			got512 := AreionSoEM512x4(&k512, &in512)
 			for lane := 0; lane < 4; lane++ {
-				if want := aes.AreionSoEM256(&k256[lane], &in256[lane]); got256[lane] != want {
-					t.Fatalf("gate=%v lane %d: AreionSoEM256x4 differs from serial go-aes", gate, lane)
+				if want := areion.SoEM256(&k256[lane], &in256[lane]); got256[lane] != want {
+					t.Fatalf("gate=%v lane %d: AreionSoEM256x4 differs from serial areion", gate, lane)
 				}
-				if want := aes.AreionSoEM512(&k512[lane], &in512[lane]); got512[lane] != want {
-					t.Fatalf("gate=%v lane %d: AreionSoEM512x4 differs from serial go-aes", gate, lane)
+				if want := areion.SoEM512(&k512[lane], &in512[lane]); got512[lane] != want {
+					t.Fatalf("gate=%v lane %d: AreionSoEM512x4 differs from serial areion", gate, lane)
 				}
 			}
 		}

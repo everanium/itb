@@ -5,8 +5,8 @@
 // Each function processes four independent Areion states in parallel
 // using `VAESENC` / `VAESENCLAST` on 512-bit ZMM registers. Per round
 // the work pattern matches the serial reference in
-// `third/goaes/areion.go:areion256PermuteSoftwareRC` /
-// `areion512PermuteSoftwareRC` exactly; the only difference is each AES
+// `github.com/everanium/areion` (`areion256PermuteSoftwareRC` /
+// `areion512PermuteSoftwareRC`) exactly; the only difference is each AES
 // operation runs on four lanes simultaneously via VAES instead of
 // per-lane AES-NI.
 //
@@ -18,8 +18,8 @@
 // The optimization fusing `RoundNoKey + XOR(rc)` into a single
 // `VAESENC RC, state, state` instruction (because `AESENC(s, k) =
 // MixColumns(ShiftRows(SubBytes(s))) XOR k` and `RoundNoKey + XOR(k)`
-// produces the same result) follows the upstream single-block
-// `areion256PermuteRCAsm` in `third/goaes/areion_amd64.s`.
+// produces the same result) follows the single-block
+// `areion256PermuteRCAsm` in `github.com/everanium/areion`.
 
 #include "textflag.h"
 
