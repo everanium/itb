@@ -553,6 +553,7 @@ func TestBatchClosureLaneOracle(t *testing.T) {
 			var refBuf [13]byte
 			refBuf[0] = 0x03
 			binary.LittleEndian.PutUint64(refBuf[1:9], groupIdx)
+			binary.LittleEndian.PutUint32(refBuf[9:13], testNonceFold(nonce))
 			lo, hi := oracleCascade128(ns.Hash, oracleLockComps128(ns, nonce), refBuf[:])
 			wantM0, wantM1, wantM2 := rankToMaskTriple48(lo, hi)
 			if masks[0][0] != wantM0 || masks[0][1] != wantM1 || masks[0][2] != wantM2 {
@@ -574,6 +575,7 @@ func TestBatchClosureLaneOracle(t *testing.T) {
 			var refBuf [13]byte
 			refBuf[0] = 0x03
 			binary.LittleEndian.PutUint64(refBuf[1:9], groupIdx)
+			binary.LittleEndian.PutUint32(refBuf[9:13], testNonceFold(nonce))
 			out := oracleCascade256(ns.Hash, oracleLockComps256(ns, nonce), refBuf[:])
 			for j := 0; j < 2; j++ {
 				wantM0, wantM1, wantM2 := rankToMaskTriple48(out[2*j], out[2*j+1])
@@ -597,6 +599,7 @@ func TestBatchClosureLaneOracle(t *testing.T) {
 			var refBuf [13]byte
 			refBuf[0] = 0x03
 			binary.LittleEndian.PutUint64(refBuf[1:9], groupIdx)
+			binary.LittleEndian.PutUint32(refBuf[9:13], testNonceFold(nonce))
 			out := oracleCascade512(ns.Hash, oracleLockComps512(ns, nonce), refBuf[:])
 			for j := 0; j < 4; j++ {
 				wantM0, wantM1, wantM2 := rankToMaskTriple48(out[2*j], out[2*j+1])
@@ -669,7 +672,7 @@ func TestSplitTriple48LockedBatchShortFinalGroup(t *testing.T) {
 //
 //	buf[0]    = 0x03   (Triple lock domain tag)
 //	buf[1:9]  = uint64-LE(globalChunkIdx)
-//	buf[9:13] = reserved
+//	buf[9:13] = interlock-nonce fold (testNonceFold of the nonce)
 
 // lockPRF48 is the per-chunk PRF closure type consumed by
 // splitTriple48Locked / interleaveTriple48Locked.
@@ -737,10 +740,12 @@ func oracleLockComps512(lockSeed *Seed512, nonce []byte) []uint64 {
 // keying material AND the Hash function.
 func buildLockPRF48_128(lockSeed *Seed128, nonce []byte) lockPRF48 {
 	lockComps := oracleLockComps128(lockSeed, nonce)
+	fold := testNonceFold(nonce)
 	h := lockSeed.Hash
 	return func(buf []byte, globalChunkIdx uint64) (m0, m1, m2 uint64) {
 		buf[0] = 0x03
 		binary.LittleEndian.PutUint64(buf[1:9], globalChunkIdx)
+		binary.LittleEndian.PutUint32(buf[9:13], fold)
 		lo, hi := oracleCascade128(h, lockComps, buf)
 		return rankToMaskTriple48(lo, hi)
 	}
@@ -749,10 +754,12 @@ func buildLockPRF48_128(lockSeed *Seed128, nonce []byte) lockPRF48 {
 // buildLockPRF48_256 — 256-bit counterpart of [buildLockPRF48_128].
 func buildLockPRF48_256(lockSeed *Seed256, nonce []byte) lockPRF48 {
 	lockComps := oracleLockComps256(lockSeed, nonce)
+	fold := testNonceFold(nonce)
 	h := lockSeed.Hash
 	return func(buf []byte, globalChunkIdx uint64) (m0, m1, m2 uint64) {
 		buf[0] = 0x03
 		binary.LittleEndian.PutUint64(buf[1:9], globalChunkIdx)
+		binary.LittleEndian.PutUint32(buf[9:13], fold)
 		out := oracleCascade256(h, lockComps, buf)
 		return rankToMaskTriple48(out[0], out[1])
 	}
@@ -761,10 +768,12 @@ func buildLockPRF48_256(lockSeed *Seed256, nonce []byte) lockPRF48 {
 // buildLockPRF48_512 — 512-bit counterpart of [buildLockPRF48_128].
 func buildLockPRF48_512(lockSeed *Seed512, nonce []byte) lockPRF48 {
 	lockComps := oracleLockComps512(lockSeed, nonce)
+	fold := testNonceFold(nonce)
 	h := lockSeed.Hash
 	return func(buf []byte, globalChunkIdx uint64) (m0, m1, m2 uint64) {
 		buf[0] = 0x03
 		binary.LittleEndian.PutUint64(buf[1:9], globalChunkIdx)
+		binary.LittleEndian.PutUint32(buf[9:13], fold)
 		out := oracleCascade512(h, lockComps, buf)
 		return rankToMaskTriple48(out[0], out[1])
 	}
@@ -918,7 +927,7 @@ func TestInterlockPRFFillSeqEnvVarToggle(t *testing.T) {
 	// checks only that buildLockBatchPRF48_128 consults InterlockFillX16()
 	// and gates fillRanksSuper on the env-var, so a no-op stands in for
 	// the kernel dispatch.
-	seed.SetInterlockBatch16(func(components []uint64, groupIdxBase uint64, out *[16][2]uint64) {})
+	seed.SetInterlockBatch16(func(components []uint64, groupIdxBase uint64, v uint32, out *[16][2]uint64) {})
 
 	nonce := bytes.Repeat([]byte{0xAA}, 16)
 	clearFillKnobs(t)
@@ -1236,8 +1245,8 @@ func x16LockSeedCases(t *testing.T) []struct {
 			t.Fatal(err)
 		}
 		seed.BatchHash = bh
-		seed.SetInterlockBatch16(func(components []uint64, groupIdxBase uint64, out *[16][2]uint64) {
-			aesitbasm.FusedChain13x16(&key, components, groupIdxBase, out)
+		seed.SetInterlockBatch16(func(components []uint64, groupIdxBase uint64, v uint32, out *[16][2]uint64) {
+			aesitbasm.FusedChain13x16(&key, components, groupIdxBase, v, out)
 		})
 		bp := buildLockBatchPRF48_128(seed, nonce)
 		if bp.fillRanksSuper == nil {
@@ -1646,5 +1655,38 @@ func TestInterlock48LockedLaneGolden(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestWipeInterlockWorker48 pins that the worker wipe zeroes the rank
+// staging, the batched fill scratch and both mask arrays.
+func TestWipeInterlockWorker48(t *testing.T) {
+	ws := new(interlockWorkerScratch48)
+	var masks [superChunks48][3]uint64
+	var masks16 [superGroups48][3]uint64
+	for i := range ws.prf {
+		ws.prf[i] = uint64(i) + 1
+	}
+	ws.buf[0] = 0x03
+	ws.scratch.out16[3][1] = 7
+	ws.scratch.out32x512[7][7] = 9
+	ws.scratch.data[0] = ws.scratch.bufs[0][:]
+	for i := range masks {
+		masks[i] = [3]uint64{1, 2, 3}
+	}
+	for i := range masks16 {
+		masks16[i] = [3]uint64{4, 5, 6}
+	}
+	wipeInterlockWorker48(ws, &masks, &masks16)
+	s := &ws.scratch
+	if ws.buf != ([13]byte{}) || ws.prf != ([2 * 8 * lockBatchFactor48Max]uint64{}) ||
+		s.bufs != ([4][13]byte{}) || s.data[0] != nil || s.data[1] != nil || s.data[2] != nil || s.data[3] != nil ||
+		s.out16 != ([16][2]uint64{}) || s.out16x256 != ([8][4]uint64{}) ||
+		s.out16x512 != ([4][8]uint64{}) || s.out32x256 != ([16][4]uint64{}) ||
+		s.out32x512 != ([8][8]uint64{}) {
+		t.Fatal("worker scratch not zero after wipe")
+	}
+	if masks != ([superChunks48][3]uint64{}) || masks16 != ([superGroups48][3]uint64{}) {
+		t.Fatal("mask arrays not zero after wipe")
 	}
 }

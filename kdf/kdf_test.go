@@ -339,3 +339,35 @@ func TestErrOutLenTooLarge(t *testing.T) {
 		t.Error("over-large outLen returned nil error")
 	}
 }
+
+// TestCounterModeZeroesPRFBlocks pins that the SP 800-108 counter loop
+// zeroes every PRF output block once it has been copied into the
+// derived key, and that the derived key itself is unaffected.
+func TestCounterModeZeroesPRFBlocks(t *testing.T) {
+	var blocks [][]byte
+	prf := func(in []byte) []byte {
+		b := make([]byte, 16)
+		for i := range b {
+			b[i] = in[3] ^ byte(0xC0+i)
+		}
+		blocks = append(blocks, b)
+		return b
+	}
+	out := sp800108CounterMode(prf, 16, []byte("label"), 40)
+	if len(blocks) != 3 {
+		t.Fatalf("prf called %d times, want 3", len(blocks))
+	}
+	for j, b := range blocks {
+		for i, v := range b {
+			if v != 0 {
+				t.Fatalf("block %d byte %d = %#x after derivation, want 0", j, i, v)
+			}
+		}
+	}
+	for i, v := range out {
+		want := byte(i/16+1) ^ byte(0xC0+i%16)
+		if v != want {
+			t.Fatalf("out[%d] = %#x, want %#x", i, v, want)
+		}
+	}
+}

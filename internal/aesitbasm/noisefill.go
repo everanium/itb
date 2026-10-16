@@ -17,8 +17,9 @@ import (
 //	block(i) = HashGeneric(K, N, lo(i), hi(i))
 //
 // i.e. [ChainAbsorb] over the 32-byte nonce — three padded
-// 16-byte blocks (two nonce blocks and one full PKCS#7 pad block), five
-// AES rounds in all. Every input except the counter is a per-call
+// 16-byte blocks (two nonce blocks and one full PKCS#7 pad block)
+// absorbed under RC[0], RC[1], RC[2] and finalised under RC[3], RC[4],
+// five AES rounds in all. Every input except the counter is a per-call
 // constant, so the whole call folds into one pre-whitening block and a
 // five-entry round-key table ([NoiseSchedule]); per block the kernels
 // run one XOR, five AESENC and one 16-byte store. The fold is exact
@@ -69,7 +70,7 @@ var noiseIncTab = [33][2]uint64{
 //	C     = key XOR nonce[0:16]
 //	RK[0] = RC[0] XOR nonce[16:32]
 //	RK[1] = RC[1] XOR PAD16
-//	RK[2] = RC[2];  RK[3] = RC[0];  RK[4] = RC[1]
+//	RK[2] = RC[2];  RK[3] = RC[3];  RK[4] = RC[4]
 func NewNoiseSchedule(key *[16]byte, nonce *[32]byte) NoiseSchedule {
 	var s NoiseSchedule
 	for i := 0; i < 16; i++ {
@@ -78,8 +79,8 @@ func NewNoiseSchedule(key *[16]byte, nonce *[32]byte) NoiseSchedule {
 		s.RK[1][i] = RC[1][i] ^ noisePad16[i]
 	}
 	s.RK[2] = RC[2]
-	s.RK[3] = RC[0]
-	s.RK[4] = RC[1]
+	s.RK[3] = RC[3]
+	s.RK[4] = RC[4]
 	return s
 }
 

@@ -3,10 +3,10 @@
 // VAES YMM (two lanes per register) fused ChainHash cascade kernel for AES-ITB-128 at the
 // 20-byte shape, 4 lanes (2 PKCS#7 blocks, 4 AES rounds per
 // cascade round).
-// The padded data blocks are staged once — in registers, with any
-// block the register file cannot hold written to the frame as a
-// 32-byte store that the round loop reads back at the same width —
-// and every cascade round runs from that staging; see aesitbasm_fused.go for the
+// The padded data blocks are staged once in registers, block 0 with
+// the key folded in and every later block with the round constant of
+// the preceding absorb round folded in so it serves as that round's
+// key, and every cascade round runs from registers; see aesitbasm_fused.go for the
 // construction and the in-package parity tests for the bit-exact pin
 // against the pure-Go cascade.
 
@@ -24,47 +24,50 @@ TEXT ·aesITB128FusedChain20x4VaesAvx2Asm(SB), NOSPLIT, $0-40
 	MOVQ 16(DX), R10
 	MOVQ 24(DX), R11
 
-	VMOVDQU ·pad4Tail(SB), X13
-	VPINSRD $0, 0(R8), X13, X2
+	VMOVDQU ·pad4Tail(SB), X5
+	VPINSRD $0, 0(R8), X5, X2
 	VPINSRD $1, 4(R8), X2, X2
 	VPINSRQ $1, 8(R8), X2, X2
-	VPINSRD $0, 0(R9), X13, X4
+	VPINSRD $0, 0(R9), X5, X4
 	VPINSRD $1, 4(R9), X4, X4
 	VPINSRQ $1, 8(R9), X4, X4
 	VINSERTI128 $1, X4, Y2, Y2
-	VPINSRD $0, 0(R10), X13, X5
-	VPINSRD $1, 4(R10), X5, X5
-	VPINSRQ $1, 8(R10), X5, X5
-	VPINSRD $0, 0(R11), X13, X4
+	VPINSRD $0, 0(R10), X5, X6
+	VPINSRD $1, 4(R10), X6, X6
+	VPINSRQ $1, 8(R10), X6, X6
+	VPINSRD $0, 0(R11), X5, X4
 	VPINSRD $1, 4(R11), X4, X4
 	VPINSRQ $1, 8(R11), X4, X4
-	VINSERTI128 $1, X4, Y5, Y5
-	VPINSRD $0, 16(R8), X13, X6
-	VPINSRD $0, 16(R9), X13, X4
 	VINSERTI128 $1, X4, Y6, Y6
-	VPINSRD $0, 16(R10), X13, X7
-	VPINSRD $0, 16(R11), X13, X4
+	VPINSRD $0, 16(R8), X5, X7
+	VPINSRD $0, 16(R9), X5, X4
 	VINSERTI128 $1, X4, Y7, Y7
+	VPINSRD $0, 16(R10), X5, X8
+	VPINSRD $0, 16(R11), X5, X4
+	VINSERTI128 $1, X4, Y8, Y8
 
-	VBROADCASTI128 ·RC+0(SB), Y3
-	VBROADCASTI128 ·RC+16(SB), Y4
-	VBROADCASTI128 0(AX), Y13
+	VBROADCASTI128 0(AX), Y14
+	VPXOR Y14, Y2, Y2
+	VPXOR Y14, Y6, Y6
+	VBROADCASTI128 ·RC+0(SB), Y14
+	VPXOR Y14, Y7, Y7
+	VPXOR Y14, Y8, Y8
+	VBROADCASTI128 ·RC+16(SB), Y3
+	VBROADCASTI128 ·RC+32(SB), Y4
+	VBROADCASTI128 ·RC+48(SB), Y5
 	VPXOR Y0, Y0, Y0
 	VPXOR Y1, Y1, Y1
 
 loop:
 	VBROADCASTI128 0(BX), Y14
-	VPXOR Y13, Y14, Y14
 	VPXOR Y14, Y0, Y0
 	VPXOR Y14, Y1, Y1
 	VPXOR Y2, Y0, Y0
-	VPXOR Y5, Y1, Y1
-	VAESENC Y3, Y0, Y0; VAESENC Y3, Y1, Y1
-	VPXOR Y6, Y0, Y0
-	VPXOR Y7, Y1, Y1
-	VAESENC Y4, Y0, Y0; VAESENC Y4, Y1, Y1
+	VPXOR Y6, Y1, Y1
+	VAESENC Y7, Y0, Y0; VAESENC Y8, Y1, Y1
 	VAESENC Y3, Y0, Y0; VAESENC Y3, Y1, Y1
 	VAESENC Y4, Y0, Y0; VAESENC Y4, Y1, Y1
+	VAESENC Y5, Y0, Y0; VAESENC Y5, Y1, Y1
 	ADDQ $16, BX
 	DECQ CX
 	JNZ loop

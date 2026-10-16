@@ -81,11 +81,12 @@ func refCascade512(single itb.HashFunc512, comps []uint64, data []byte) [8]uint6
 }
 
 // fillBlockAt is the 13-byte Interlocked Barrier fill block of group
-// base+i: [0x03 | LE64(groupIdx) | 4×0x00].
-func fillBlockAt(base uint64, i int) []byte {
+// base+i under the interlock-nonce fold v: [0x03 | LE64(groupIdx) | LE32(v)].
+func fillBlockAt(base uint64, v uint32, i int) []byte {
 	blk := make([]byte, 13)
 	blk[0] = 0x03
 	binary.LittleEndian.PutUint64(blk[1:9], base+uint64(i))
+	binary.LittleEndian.PutUint32(blk[9:13], v)
 	return blk
 }
 
@@ -118,7 +119,7 @@ func auditEntry128(t *testing.T, spec Spec) {
 	refFill := func(in *kernelaudit.Inputs) [][2]uint64 {
 		out := make([][2]uint64, 16)
 		for i := range out {
-			out[i] = refCascade128(single, in.Comps, fillBlockAt(in.Base, i))
+			out[i] = refCascade128(single, in.Comps, fillBlockAt(in.Base, in.Fold, i))
 		}
 		return out
 	}
@@ -196,7 +197,7 @@ func auditEntry128(t *testing.T, spec Spec) {
 				cfg := kernelaudit.Config{Label: fmt.Sprintf("%s fill16x128 groups=%d", spec.Name, g), Words: 2 * g, Lanes: 16, Base: true}
 				reportAudit(t, kernelaudit.DifferentialRef(cfg, func(in *kernelaudit.Inputs) [][2]uint64 {
 					var out [16][2]uint64
-					fill(in.Comps, in.Base, &out)
+					fill(in.Comps, in.Base, in.Fold, &out)
 					return out[:]
 				}, refFill))
 			}
@@ -224,7 +225,7 @@ func auditEntry256(t *testing.T, spec Spec) {
 		return func(in *kernelaudit.Inputs) [][4]uint64 {
 			out := make([][4]uint64, lanes)
 			for i := range out {
-				out[i] = refCascade256(single, in.Comps, fillBlockAt(in.Base, i))
+				out[i] = refCascade256(single, in.Comps, fillBlockAt(in.Base, in.Fold, i))
 			}
 			return out
 		}
@@ -325,7 +326,7 @@ func auditEntry256(t *testing.T, spec Spec) {
 				cfg := kernelaudit.Config{Label: fmt.Sprintf("%s fill16x256 groups=%d", spec.Name, g), Words: 4 * g, Lanes: 8, Base: true}
 				reportAudit(t, kernelaudit.DifferentialRef(cfg, func(in *kernelaudit.Inputs) [][4]uint64 {
 					var out [8][4]uint64
-					fill(in.Comps, in.Base, &out)
+					fill(in.Comps, in.Base, in.Fold, &out)
 					return out[:]
 				}, refFillN(8)))
 			}
@@ -343,7 +344,7 @@ func auditEntry256(t *testing.T, spec Spec) {
 				cfg := kernelaudit.Config{Label: fmt.Sprintf("%s fill32x256 groups=%d", spec.Name, g), Words: 4 * g, Lanes: 16, Base: true}
 				reportAudit(t, kernelaudit.DifferentialRef(cfg, func(in *kernelaudit.Inputs) [][4]uint64 {
 					var out [16][4]uint64
-					fill(in.Comps, in.Base, &out)
+					fill(in.Comps, in.Base, in.Fold, &out)
 					return out[:]
 				}, refFillN(16)))
 			}
@@ -371,7 +372,7 @@ func auditEntry512(t *testing.T, spec Spec) {
 		return func(in *kernelaudit.Inputs) [][8]uint64 {
 			out := make([][8]uint64, lanes)
 			for i := range out {
-				out[i] = refCascade512(single, in.Comps, fillBlockAt(in.Base, i))
+				out[i] = refCascade512(single, in.Comps, fillBlockAt(in.Base, in.Fold, i))
 			}
 			return out
 		}
@@ -472,7 +473,7 @@ func auditEntry512(t *testing.T, spec Spec) {
 				cfg := kernelaudit.Config{Label: fmt.Sprintf("%s fill16x512 groups=%d", spec.Name, g), Words: 8 * g, Lanes: 4, Base: true}
 				reportAudit(t, kernelaudit.DifferentialRef(cfg, func(in *kernelaudit.Inputs) [][8]uint64 {
 					var out [4][8]uint64
-					fill(in.Comps, in.Base, &out)
+					fill(in.Comps, in.Base, in.Fold, &out)
 					return out[:]
 				}, refFillN(4)))
 			}
@@ -490,7 +491,7 @@ func auditEntry512(t *testing.T, spec Spec) {
 				cfg := kernelaudit.Config{Label: fmt.Sprintf("%s fill32x512 groups=%d", spec.Name, g), Words: 8 * g, Lanes: 8, Base: true}
 				reportAudit(t, kernelaudit.DifferentialRef(cfg, func(in *kernelaudit.Inputs) [][8]uint64 {
 					var out [8][8]uint64
-					fill(in.Comps, in.Base, &out)
+					fill(in.Comps, in.Base, in.Fold, &out)
 					return out[:]
 				}, refFillN(8)))
 			}

@@ -42,3 +42,14 @@ func TestFusedDispatcherTiersArm64(t *testing.T) {
 		checkZeroAlloc(t, "scalar")
 	})
 }
+
+// TestFusedKernelsLeaveNoSecretInFrameArm64 runs the NEON four-lane and
+// the general-purpose-register single-lane kernels under the
+// stack-residue probe: no key dword and no seed-injected dword may be
+// left in the stack once a kernel has returned.
+func TestFusedKernelsLeaveNoSecretInFrameArm64(t *testing.T) {
+	if FusedHasNEON {
+		checkBlake2sResidue(t, "neon", neon256x4, nil, nil)
+	}
+	checkBlake2sResidue(t, "gpr", nil, kernels256x1, nil)
+}

@@ -151,16 +151,18 @@ func Fused256Chain68x1(fixedKey *[32]byte, components []uint64, data *byte, out 
 }
 
 // Fused256Fill13x8 is the batch-16 Interlocked Barrier fill hook on the
-// NEON tier: two four-lane kernel calls over Go-synthesised fill blocks.
-func Fused256Fill13x8(fixedKey *[32]byte, components []uint64, groupIdxBase uint64, out *[8][4]uint64) {
+// NEON tier: two four-lane kernel calls over Go-synthesised fill blocks
+// [0x03 | LE64(groupIdxBase+i) | LE32(v)], v the per-message
+// interlock-nonce fold.
+func Fused256Fill13x8(fixedKey *[32]byte, components []uint64, groupIdxBase uint64, v uint32, out *[8][4]uint64) {
 	if !HasNEONX16 || !validComponents256(components) {
-		scalarFill256X8(fixedKey, components, groupIdxBase, out)
+		scalarFill256X8(fixedKey, components, groupIdxBase, v, out)
 		return
 	}
 	c, ng := &components[0], len(components)/4
 	var blocks [4][13]byte
 	for h := 0; h < 2; h++ {
-		ptrs := fillPtrs4(&blocks, groupIdxBase+uint64(4*h))
+		ptrs := fillPtrs4(&blocks, groupIdxBase+uint64(4*h), v)
 		chacha20FusedChain13x4NeonAsm(fixedKey, c, ng, &ptrs, out8x256Half(out, h))
 	}
 }

@@ -74,11 +74,11 @@ func Fused512Chain68x1(fixedKey *[64]byte, components []uint64, data *byte, out 
 	*out = ScalarFusedChain512(fixedKey, components, lanePtr(data, 68))
 }
 
-func Fused256Fill13x8(fixedKey *[32]byte, components []uint64, groupIdxBase uint64, out *[8][4]uint64) {
-	scalarFill256X8(fixedKey, components, groupIdxBase, out)
+func Fused256Fill13x8(fixedKey *[32]byte, components []uint64, groupIdxBase uint64, v uint32, out *[8][4]uint64) {
+	scalarFill256X8(fixedKey, components, groupIdxBase, v, out)
 }
-func Fused512Fill13x4(fixedKey *[64]byte, components []uint64, groupIdxBase uint64, out *[4][8]uint64) {
-	scalarFill512X4(fixedKey, components, groupIdxBase, out)
+func Fused512Fill13x4(fixedKey *[64]byte, components []uint64, groupIdxBase uint64, v uint32, out *[4][8]uint64) {
+	scalarFill512X4(fixedKey, components, groupIdxBase, v, out)
 }
 
 // Eight-lane per-pixel arms: absent on this build.
@@ -108,6 +108,6 @@ func Fused512Chain36x8(fixedKey *[64]byte, components []uint64, dataPtrs *[8]*by
 func Fused512Chain68x8(fixedKey *[64]byte, components []uint64, dataPtrs *[8]*byte, out *[8][8]uint64) {
 	scalarFused512X8(fixedKey, components, dataPtrs, 68, out)
 }
-func Fused512Fill13x8(fixedKey *[64]byte, components []uint64, groupIdxBase uint64, out *[8][8]uint64) {
-	scalarFill512X8(fixedKey, components, groupIdxBase, out)
+func Fused512Fill13x8(fixedKey *[64]byte, components []uint64, groupIdxBase uint64, v uint32, out *[8][8]uint64) {
+	scalarFill512X8(fixedKey, components, groupIdxBase, v, out)
 }

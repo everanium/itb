@@ -919,4 +919,13 @@ loop:
 	MOVL DI, 20(R9)
 	MOVL BP, 24(R9)
 	MOVL R8, 28(R9)
+	MOVL $0, 0(SP)
+	MOVL $0, 4(SP)
+	MOVL $0, 8(SP)
+	MOVL $0, 12(SP)
+	MOVL $0, 16(SP)
+	MOVL $0, 20(SP)
+	MOVL $0, 24(SP)
+	MOVL $0, 28(SP)
+	MOVL $0, 64(SP)
 	RET

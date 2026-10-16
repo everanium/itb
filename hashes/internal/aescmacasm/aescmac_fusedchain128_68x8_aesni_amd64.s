@@ -3,9 +3,10 @@
 // Legacy-SSE AES-NI XMM (eight state chains) fused ChainHash cascade kernel for AES-CMAC at the
 // 68-byte shape, 8 lanes (5 zero-padded blocks, 5 AES-128
 // permutations per cascade round).
-// The data blocks are staged once into the frame with K0 (and, for
-// block 0, the length tag) folded in, and every cascade round runs
-// from those 16-byte slots; see aescmacasm_fused.go for the
+// The data blocks are staged once into the frame (block 0 with the
+// length tag folded in) and every cascade round runs from those
+// 16-byte slots; each lane is carried as state ^ K0 with K10 ^ K0 as
+// the last-round key, so the frame holds public block bytes only; see aescmacasm_fused.go for the
 // construction and the in-package parity tests for the bit-exact pin
 // against the pure-Go cascade.
 
@@ -20,11 +21,9 @@ TEXT ·aesCMAC128FusedChain68x8AesNiAsm(SB), NOSPLIT, $640-40
 	MOVQ out+32(FP), DI
 
 	PXOR X13, X13
-	MOVOU 0(AX), X14
 	MOVQ $68, R12
 	MOVQ R12, X15
 	PUNPCKLQDQ X15, X15
-	PXOR X14, X15
 	// Lanes 0..3
 	MOVQ 0(DX), R8
 	MOVQ 8(DX), R9
@@ -55,56 +54,40 @@ TEXT ·aesCMAC128FusedChain68x8AesNiAsm(SB), NOSPLIT, $640-40
 	PXOR X15, X4
 	MOVOU X4, 48(SP)
 	MOVOU 16(R8), X4
-	PXOR X14, X4
 	MOVOU X4, 128(SP)
 	MOVOU 16(R9), X4
-	PXOR X14, X4
 	MOVOU X4, 144(SP)
 	MOVOU 16(R10), X4
-	PXOR X14, X4
 	MOVOU X4, 160(SP)
 	MOVOU 16(R11), X4
-	PXOR X14, X4
 	MOVOU X4, 176(SP)
 	MOVOU 32(R8), X4
-	PXOR X14, X4
 	MOVOU X4, 256(SP)
 	MOVOU 32(R9), X4
-	PXOR X14, X4
 	MOVOU X4, 272(SP)
 	MOVOU 32(R10), X4
-	PXOR X14, X4
 	MOVOU X4, 288(SP)
 	MOVOU 32(R11), X4
-	PXOR X14, X4
 	MOVOU X4, 304(SP)
 	MOVOU 48(R8), X4
-	PXOR X14, X4
 	MOVOU X4, 384(SP)
 	MOVOU 48(R9), X4
-	PXOR X14, X4
 	MOVOU X4, 400(SP)
 	MOVOU 48(R10), X4
-	PXOR X14, X4
 	MOVOU X4, 416(SP)
 	MOVOU 48(R11), X4
-	PXOR X14, X4
 	MOVOU X4, 432(SP)
 	MOVOU X13, X4
 	PINSRD $0, 64(R8), X4
-	PXOR X14, X4
 	MOVOU X4, 512(SP)
 	MOVOU X13, X4
 	PINSRD $0, 64(R9), X4
-	PXOR X14, X4
 	MOVOU X4, 528(SP)
 	MOVOU X13, X4
 	PINSRD $0, 64(R10), X4
-	PXOR X14, X4
 	MOVOU X4, 544(SP)
 	MOVOU X13, X4
 	PINSRD $0, 64(R11), X4
-	PXOR X14, X4
 	MOVOU X4, 560(SP)
 	// Lanes 4..7
 	MOVQ 32(DX), R8
@@ -136,56 +119,40 @@ TEXT ·aesCMAC128FusedChain68x8AesNiAsm(SB), NOSPLIT, $640-40
 	PXOR X15, X4
 	MOVOU X4, 112(SP)
 	MOVOU 16(R8), X4
-	PXOR X14, X4
 	MOVOU X4, 192(SP)
 	MOVOU 16(R9), X4
-	PXOR X14, X4
 	MOVOU X4, 208(SP)
 	MOVOU 16(R10), X4
-	PXOR X14, X4
 	MOVOU X4, 224(SP)
 	MOVOU 16(R11), X4
-	PXOR X14, X4
 	MOVOU X4, 240(SP)
 	MOVOU 32(R8), X4
-	PXOR X14, X4
 	MOVOU X4, 320(SP)
 	MOVOU 32(R9), X4
-	PXOR X14, X4
 	MOVOU X4, 336(SP)
 	MOVOU 32(R10), X4
-	PXOR X14, X4
 	MOVOU X4, 352(SP)
 	MOVOU 32(R11), X4
-	PXOR X14, X4
 	MOVOU X4, 368(SP)
 	MOVOU 48(R8), X4
-	PXOR X14, X4
 	MOVOU X4, 448(SP)
 	MOVOU 48(R9), X4
-	PXOR X14, X4
 	MOVOU X4, 464(SP)
 	MOVOU 48(R10), X4
-	PXOR X14, X4
 	MOVOU X4, 480(SP)
 	MOVOU 48(R11), X4
-	PXOR X14, X4
 	MOVOU X4, 496(SP)
 	MOVOU X13, X4
 	PINSRD $0, 64(R8), X4
-	PXOR X14, X4
 	MOVOU X4, 576(SP)
 	MOVOU X13, X4
 	PINSRD $0, 64(R9), X4
-	PXOR X14, X4
 	MOVOU X4, 592(SP)
 	MOVOU X13, X4
 	PINSRD $0, 64(R10), X4
-	PXOR X14, X4
 	MOVOU X4, 608(SP)
 	MOVOU X13, X4
 	PINSRD $0, 64(R11), X4
-	PXOR X14, X4
 	MOVOU X4, 624(SP)
 
 	MOVOU 64(AX), X9
@@ -195,14 +162,16 @@ TEXT ·aesCMAC128FusedChain68x8AesNiAsm(SB), NOSPLIT, $640-40
 	MOVOU 128(AX), X13
 	MOVOU 144(AX), X14
 	MOVOU 160(AX), X15
-	PXOR X0, X0
-	PXOR X1, X1
-	PXOR X2, X2
-	PXOR X3, X3
-	PXOR X4, X4
-	PXOR X5, X5
-	PXOR X6, X6
-	PXOR X7, X7
+	MOVOU 0(AX), X8
+	PXOR X8, X15
+	MOVOU 0(AX), X0
+	MOVOU 0(AX), X1
+	MOVOU 0(AX), X2
+	MOVOU 0(AX), X3
+	MOVOU 0(AX), X4
+	MOVOU 0(AX), X5
+	MOVOU 0(AX), X6
+	MOVOU 0(AX), X7
 
 loop:
 	MOVOU 0(BX), X8
@@ -363,6 +332,15 @@ loop:
 	DECQ CX
 	JNZ loop
 
+	MOVOU 0(AX), X8
+	PXOR X8, X0
+	PXOR X8, X1
+	PXOR X8, X2
+	PXOR X8, X3
+	PXOR X8, X4
+	PXOR X8, X5
+	PXOR X8, X6
+	PXOR X8, X7
 	MOVOU X0, 0(DI)
 	MOVOU X1, 16(DI)
 	MOVOU X2, 32(DI)

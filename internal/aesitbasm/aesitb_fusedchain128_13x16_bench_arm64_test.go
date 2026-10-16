@@ -19,8 +19,8 @@ func BenchmarkTierX16(b *testing.B) {
 		ok   bool
 		k    fusedX16Fn
 	}{
-		{"neon", HasARMAESX16, func(key *[16]byte, comps []uint64, groupIdxBase uint64, out *[16][2]uint64) {
-			aesITB128FusedChain13x16NeonAsm(key, &comps[0], len(comps)/2, groupIdxBase, out)
+		{"neon", HasARMAESX16, func(key *[16]byte, comps []uint64, groupIdxBase uint64, v uint32, out *[16][2]uint64) {
+			aesITB128FusedChain13x16NeonAsm(key, &comps[0], len(comps)/2, groupIdxBase, out, v)
 		}},
 		{"scalar", true, scalarFusedX16},
 	}
@@ -37,7 +37,7 @@ func BenchmarkTierX16(b *testing.B) {
 				b.ReportAllocs()
 				b.ResetTimer()
 				for i := 0; i < b.N; i++ {
-					tier.k(&key, comps, uint64(i*16), &out)
+					tier.k(&key, comps, uint64(i*16), 0x9E3779B9, &out)
 				}
 			})
 		}

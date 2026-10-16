@@ -635,3 +635,104 @@ func TestBuildHMACChainAbsorb_KeyChangePropagates(t *testing.T) {
 		t.Fatal("HMAC256 alias: distinct HMAC keys produced identical closures — key not participating")
 	}
 }
+
+// recordingBlock wraps a cipher.Block and keeps the last buffer handed
+// to Encrypt, which for the CBC-MAC builders is the pooled scratch.
+type recordingBlock struct {
+	inner interface {
+		BlockSize() int
+		Encrypt(dst, src []byte)
+		Decrypt(dst, src []byte)
+	}
+	last []byte
+}
+
+func (r *recordingBlock) BlockSize() int          { return r.inner.BlockSize() }
+func (r *recordingBlock) Decrypt(dst, src []byte) { r.inner.Decrypt(dst, src) }
+func (r *recordingBlock) Encrypt(dst, src []byte) {
+	r.inner.Encrypt(dst, src)
+	r.last = dst
+}
+
+func requireAllZero(t *testing.T, what string, b []byte) {
+	t.Helper()
+	if len(b) == 0 {
+		t.Fatalf("%s: no scratch buffer was observed", what)
+	}
+	for i, v := range b {
+		if v != 0 {
+			t.Fatalf("%s: scratch byte %d = %#x after the call, want 0", what, i, v)
+		}
+	}
+}
+
+// TestBuildersScratchZeroedAfterCall pins that every builder closure
+// zeroes its pooled scratch (which carries the fixed key, the seed or
+// the keyed state derived from them) before returning it to the pool.
+// The hook primitives retain the slice they are handed, which aliases
+// the pooled buffer.
+func TestBuildersScratchZeroedAfterCall(t *testing.T) {
+	key := make([]byte, 16)
+	for i := range key {
+		key[i] = byte(0xA0 + i)
+	}
+	data := []byte("0123456789abcdefghij")
+	seed := [8]uint64{0x1111, 0x2222, 0x3333, 0x4444, 0x5555, 0x6666, 0x7777, 0x8888}
+
+	newRec := func() *recordingBlock {
+		b, err := aes.NewCipher(key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return &recordingBlock{inner: b}
+	}
+	r := newRec()
+	BuildCBCMACChainAbsorb128(r)(data, seed[0], seed[1])
+	requireAllZero(t, "CBCMAC128", r.last)
+	r = newRec()
+	BuildCBCMACChainAbsorb256(r)(data, [4]uint64(seed[:4]))
+	requireAllZero(t, "CBCMAC256", r.last)
+	r = newRec()
+	BuildCBCMACChainAbsorb512(r)(data, seed)
+	requireAllZero(t, "CBCMAC512", r.last)
+
+	var lastState []byte
+	permute := func(st []byte) {
+		for i := range st {
+			st[i] = st[i]*31 + byte(i) + 1
+		}
+		lastState = st
+	}
+	fixedKey := make([]byte, 32)
+	for i := range fixedKey {
+		fixedKey[i] = byte(0x50 + i)
+	}
+	lastState = nil
+	BuildSpongeChainAbsorb128(permute, 32, 32, fixedKey)(data, seed[0], seed[1])
+	requireAllZero(t, "Sponge128", lastState)
+	lastState = nil
+	BuildSpongeChainAbsorb256(permute, 32, 32, fixedKey)(data, [4]uint64(seed[:4]))
+	requireAllZero(t, "Sponge256", lastState)
+	lastState = nil
+	BuildSpongeChainAbsorb512(permute, 32, 32, fixedKey)(data, seed)
+	requireAllZero(t, "Sponge512", lastState)
+
+	var lastBuf []byte
+	h256 := func(b []byte) [32]byte {
+		lastBuf = b
+		return sha256.Sum256(b)
+	}
+	h512 := func(b []byte) [64]byte {
+		lastBuf = b
+		return sha512.Sum512(b)
+	}
+	lastBuf = nil
+	BuildARXChainAbsorb128(h256, fixedKey)(data, seed[0], seed[1])
+	requireAllZero(t, "ARX128", lastBuf)
+	lastBuf = nil
+	BuildARXChainAbsorb256(h256, fixedKey)(data, [4]uint64(seed[:4]))
+	requireAllZero(t, "ARX256", lastBuf)
+	lastBuf = nil
+	BuildARXChainAbsorb512(h512, fixedKey)(data, seed)
+	requireAllZero(t, "ARX512", lastBuf)
+}

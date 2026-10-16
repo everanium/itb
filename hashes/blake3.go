@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"hash"
+	"runtime"
 	"sync"
 
 	"github.com/zeebo/blake3"
@@ -71,11 +72,18 @@ func BLAKE3WithKey(key [32]byte) itb.HashFunc256 {
 			binary.LittleEndian.PutUint64(mixed[off:], binary.LittleEndian.Uint64(mixed[off:])^seed[i])
 		}
 		h.Write(mixed)
+		// The hasher has copied the seed-mixed payload into its own
+		// block buffer; zero the pooled copy before it is returned.
+		clear(mixed)
 		*mixedPtr = mixed
 		pool.Put(mixedPtr)
 
 		var buf [32]byte
 		h.Sum(buf[:0])
+		// The cloned hasher holds the BLAKE3 key and the seed-mixed
+		// payload; overwrite it once the digest has been read out.
+		*h = blake3.Hasher{}
+		runtime.KeepAlive(h)
 		return [4]uint64{
 			binary.LittleEndian.Uint64(buf[0:]),
 			binary.LittleEndian.Uint64(buf[8:]),
@@ -228,8 +236,8 @@ func blake3InterlockFillBatch16(key []byte) (itb.InterlockFillFunc16x256, error)
 	}
 	var k [32]byte
 	copy(k[:], key)
-	return func(components []uint64, groupIdxBase uint64, out *[8][4]uint64) {
-		blake3asm.Fused256Fill13x8(&k, components, groupIdxBase, out)
+	return func(components []uint64, groupIdxBase uint64, v uint32, out *[8][4]uint64) {
+		blake3asm.Fused256Fill13x8(&k, components, groupIdxBase, v, out)
 	}, nil
 }
 

@@ -51,3 +51,19 @@ func TestFusedKernelParityNeon(t *testing.T) {
 		t.Run("x1/"+shapeName(n), func(t *testing.T) { runFusedX1Parity(t, "neon-x1", n, x1[n]) })
 	}
 }
+
+// TestFusedKernelsLeaveNoSecretInFrameArm64 runs the NEON x1, x4 and
+// batch-16 AES-ITB-128 kernels under the stack-residue probe after the
+// probe's negative control: no key, no component pair, no key-folded
+// block and no lane output may be left in the stack once a kernel has
+// returned.
+func TestFusedKernelsLeaveNoSecretInFrameArm64(t *testing.T) {
+	checkResidueProbeSeesKeyFold(t)
+	if !cpuid.ARMAES {
+		t.Skip("requires the ARM crypto extension")
+	}
+	x16 := func(key *[16]byte, comps []uint64, base uint64, v uint32, out *[16][2]uint64) {
+		aesITB128FusedChain13x16NeonAsm(key, &comps[0], len(comps)/2, base, out, v)
+	}
+	checkAESITBResidue(t, "neon", neonFusedX4(), neonFusedX1(), nil, x16)
+}

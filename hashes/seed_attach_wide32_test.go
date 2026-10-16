@@ -56,11 +56,13 @@ func goFill32Factory256(mk func(key ...[]byte) (itb.HashFunc256, itb.BatchHashFu
 		if decline {
 			return nil, nil
 		}
-		return func(components []uint64, base uint64, out *[16][4]uint64) {
+		return func(components []uint64, base uint64, v uint32, out *[16][4]uint64) {
 			for i := range out {
 				var block [13]byte
 				block[0] = 0x03
 				binary.LittleEndian.PutUint64(block[1:9], base+uint64(i))
+				binary.LittleEndian.PutUint32(block[9:13], 0x9E3779B9)
+				binary.LittleEndian.PutUint32(block[9:13], v)
 				out[i] = cascade256(single, components, block[:])
 				if corrupt {
 					out[i][2] ^= 1
@@ -102,11 +104,13 @@ func goFill32Factory512(mk func(key ...[]byte) (itb.HashFunc512, itb.BatchHashFu
 		if decline {
 			return nil, nil
 		}
-		return func(components []uint64, base uint64, out *[8][8]uint64) {
+		return func(components []uint64, base uint64, v uint32, out *[8][8]uint64) {
 			for i := range out {
 				var block [13]byte
 				block[0] = 0x03
 				binary.LittleEndian.PutUint64(block[1:9], base+uint64(i))
+				binary.LittleEndian.PutUint32(block[9:13], 0x9E3779B9)
+				binary.LittleEndian.PutUint32(block[9:13], v)
 				out[i] = cascade512(single, components, block[:])
 				if corrupt {
 					out[i][2] ^= 1
@@ -201,11 +205,12 @@ func TestWide32AttachHelpersRegistry(t *testing.T) {
 			}
 			if fill := s.InterlockFillX32(); fill != nil {
 				var out [16][4]uint64
-				fill(comps, base, &out)
+				fill(comps, base, 0x9E3779B9, &out)
 				for i := range out {
 					var block [13]byte
 					block[0] = 0x03
 					binary.LittleEndian.PutUint64(block[1:9], base+uint64(i))
+					binary.LittleEndian.PutUint32(block[9:13], 0x9E3779B9)
 					if out[i] != cascade256(single, comps, block[:]) {
 						t.Fatalf("%s: batch-32 hook group %d diverges", spec.Name, i)
 					}
@@ -254,11 +259,12 @@ func TestWide32AttachHelpersRegistry(t *testing.T) {
 			}
 			if fill := s.InterlockFillX32(); fill != nil {
 				var out [8][8]uint64
-				fill(comps, base, &out)
+				fill(comps, base, 0x9E3779B9, &out)
 				for i := range out {
 					var block [13]byte
 					block[0] = 0x03
 					binary.LittleEndian.PutUint64(block[1:9], base+uint64(i))
+					binary.LittleEndian.PutUint32(block[9:13], 0x9E3779B9)
 					if out[i] != cascade512(single, comps, block[:]) {
 						t.Fatalf("%s: batch-32 hook group %d diverges", spec.Name, i)
 					}
@@ -341,11 +347,12 @@ func TestWide32AttachCustomFactories(t *testing.T) {
 			}
 		}
 		var fill [16][4]uint64
-		s.InterlockFillX32()(s.Components, 0x1234, &fill)
+		s.InterlockFillX32()(s.Components, 0x1234, 0x9E3779B9, &fill)
 		for i := range fill {
 			var block [13]byte
 			block[0] = 0x03
 			binary.LittleEndian.PutUint64(block[1:9], 0x1234+uint64(i))
+			binary.LittleEndian.PutUint32(block[9:13], 0x9E3779B9)
 			if fill[i] != plain.ChainHash256(block[:]) {
 				t.Fatalf("group %d: batch-32 hook diverges from ChainHash256", i)
 			}
@@ -461,11 +468,12 @@ func TestWide32AttachCustomFactories(t *testing.T) {
 			}
 		}
 		var fill [8][8]uint64
-		s.InterlockFillX32()(s.Components, 0x1234, &fill)
+		s.InterlockFillX32()(s.Components, 0x1234, 0x9E3779B9, &fill)
 		for i := range fill {
 			var block [13]byte
 			block[0] = 0x03
 			binary.LittleEndian.PutUint64(block[1:9], 0x1234+uint64(i))
+			binary.LittleEndian.PutUint32(block[9:13], 0x9E3779B9)
 			if fill[i] != plain.ChainHash512(block[:]) {
 				t.Fatalf("group %d: batch-32 hook diverges from ChainHash512", i)
 			}

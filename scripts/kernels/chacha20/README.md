@@ -30,7 +30,7 @@ kernels of both amd64 tiers:
 per-pixel kernels at the nonce-buf shapes, and the Interlocked Barrier
 fill kernel `chacha20_fusedchain256_13x8_{avx512,avx2}_amd64.s` (the
 batch-16 hook), with the eight 13-byte fill blocks synthesised
-in-register from `groupIdxBase`. The neon tier runs the fill hook as
+in-register from `groupIdxBase` and the per-message interlock-nonce fold. The neon tier runs the fill hook as
 two four-lane kernel calls over Go-synthesised blocks. The
 single-lane entry points of every tier run
 `chacha20_fusedchain256_<shape>x1_gpr_{amd64,arm64}.s`, the
@@ -75,14 +75,14 @@ fill kernel exists: sixteen lanes would be the ZMM form of the same
 plan, and the cell is waived — the batch-16 hook is the widest fill
 rung of width 256. The avx2 tier has 16 registers at either width: `X0..X14` (`Y0..Y14` at the eight-lane YMM width) hold
 `v[0..14]`, `X15` is the rotate temp, `v[15]` lives in a frame slot with
-`v[12]` spilled around the two quarter rounds that touch `v[15]`, and
-the key words, the slot words and the replicated constants are memory
-operands; every four-lane frame fits the NOSPLIT budget. The eight-lane
-kernels of the avx2 tier are the same plan on YMM registers — eight
-dword lanes per register, one per pixel, the frame slots and memory
-operands 32 bytes wide — so they carry the one spill of the four-lane
-plan and no other; the shape-68 kernel (960-byte frame) carries the
-stack check. The NEON tier holds the
+`v[12]` spilled around the two quarter rounds that touch `v[15]`, the
+key words are rebuilt at the top of every cascade round straight into
+the b and c rows `X4..X11` (dead between rounds), and the slot words and
+the replicated constants are memory operands; every frame fits the
+NOSPLIT budget. The eight-lane kernels of the avx2 tier are the same
+plan on YMM registers — eight dword lanes per register, one per pixel,
+the frame slots and memory operands 32 bytes wide — so they carry the
+one spill of the four-lane plan and no other. The NEON tier holds the
 four dword lanes of every state word in one register — one pass — with
 the key words in eight more registers, one alternate register for the
 shift-insert rotates and one byte mask for the rotate by 8.
@@ -95,6 +95,23 @@ or 1-byte load for a shorter tail — at staging time, so the first slot
 word of a lane is one 4-byte load behind the caller's 4-byte
 pixel-index store. Outputs are written as 4-byte stores per word per
 lane. Every wide kernel ends with `VZEROUPPER` before `RET`.
+
+## Frame hygiene
+
+The key words `K ⊕ component ⊕ h` of every cascade round exist only in
+registers: the avx512 and NEON tiers hold them in eight registers of
+their own, the avx2 and gpr arm64 tiers build them straight into the b
+and c rows of the block state, and the gpr amd64 tier builds them into
+the b-row registers and its `v[11]` state slot, each output word freeing
+its register as the temp of the next key word. The frame otherwise holds
+the staged slot words (public) and the state words a plan spills (the
+avx2 `v[15]` / `v[12]` slots, the gpr amd64 `v[11]` slot); those state
+slots are overwritten with zeros before the kernel returns. The NEON
+kernels extract the output lane by lane straight from the state
+registers. The in-package `TestFusedKernelsLeaveNoSecretInFrame*` tests
+run every kernel under a stack-residue probe and require that no
+fixed-key dword, no key word and no output dword is left in the stack
+once the kernel has returned.
 
 ## Correctness invariant
 

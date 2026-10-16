@@ -10,7 +10,7 @@ import (
 
 type x8fn256 func(*[32]byte, []uint64, *[8]*byte, *[8][4]uint64)
 type x8fn512 func(*[64]byte, []uint64, *[8]*byte, *[8][8]uint64)
-type fill8fn512 func(*[64]byte, []uint64, uint64, *[8][8]uint64)
+type fill8fn512 func(*[64]byte, []uint64, uint64, uint32, *[8][8]uint64)
 
 func laneData8(n int) ([8][]byte, [8]*byte) {
 	var bufs [8][]byte
@@ -58,18 +58,36 @@ func checkX8_512(t *testing.T, label string, n int, f x8fn512) {
 }
 
 // checkFill512X8 pins the width-512 batch-32 fill hook to the reference
-// at group index bases that carry through every byte of the index.
+// at group index bases that carry through every byte of the index and at
+// every fold of fillFoldSet, then to the cascade over the explicit
+// 13-byte block, and requires every lane to move when one bit of the
+// fold flips.
 func checkFill512X8(t *testing.T, label string, f fill8fn512) {
 	t.Helper()
 	for _, g := range groupCounts {
 		for _, base := range fillBases {
-			key := randomKey512()
-			comps := randomWords(8 * g)
-			var got, want [8][8]uint64
-			f(key, comps, base, &got)
-			scalarFill512X8(key, comps, base, &want)
-			if got != want {
-				t.Fatalf("%s groups=%d base=%#x: got %x want %x", label, g, base, got, want)
+			for _, v := range fillFoldSet() {
+				key := randomKey512()
+				comps := randomWords(8 * g)
+				var got, want [8][8]uint64
+				f(key, comps, base, v, &got)
+				scalarFill512X8(key, comps, base, v, &want)
+				if got != want {
+					t.Fatalf("%s groups=%d base=%#x v=%#x: got %x want %x", label, g, base, v, got, want)
+				}
+				for i := range got {
+					if want := ScalarFusedChain512(key, comps, explicitFillBlock(base+uint64(i), v)); got[i] != want {
+						t.Fatalf("%s groups=%d base=%#x v=%#x lane %d: got %x, explicit block gives %x", label, g, base, v, i, got[i], want)
+					}
+				}
+				var flipped [8][8]uint64
+				bit := uint32(1) << (uint(base) & 31)
+				f(key, comps, base, v^bit, &flipped)
+				for i := range got {
+					if flipped[i] == got[i] {
+						t.Fatalf("%s groups=%d base=%#x v=%#x lane %d: flipping fold bit %#x leaves the lane unchanged", label, g, base, v, i, bit)
+					}
+				}
 			}
 		}
 	}
@@ -122,11 +140,12 @@ func TestFusedWideReference(t *testing.T) {
 		}
 	}
 	const base = uint64(0x00FFFFFFFFFFFFF8)
+	v := randomFold()
 	var f8 [8][8]uint64
-	scalarFill512X8(key512, c512, base, &f8)
+	scalarFill512X8(key512, c512, base, v, &f8)
 	for h := 0; h < 2; h++ {
 		var f4 [4][8]uint64
-		scalarFill512X4(key512, c512, base+uint64(4*h), &f4)
+		scalarFill512X4(key512, c512, base+uint64(4*h), v, &f4)
 		if *out8x512Half(&f8, h) != f4 {
 			t.Fatalf("fill512 half %d: eight-group reference diverges from the four-group reference", h)
 		}
@@ -154,7 +173,7 @@ func checkWideZeroAlloc(t *testing.T, label string) {
 	for n, f := range dispatchers512x8() {
 		check(shapeName(n)+"-512x8", func() { f(k512, c512, &ptrs, &o512) })
 	}
-	check("Fused512Fill13x8", func() { Fused512Fill13x8(k512, c512, 0x00FFFFFFFFFFFFF8, &f8) })
+	check("Fused512Fill13x8", func() { Fused512Fill13x8(k512, c512, 0x00FFFFFFFFFFFFF8, 0x80000001, &f8) })
 }
 
 // TestFusedWideDispatchersZeroAlloc runs the allocation guard under the

@@ -71,6 +71,9 @@ func BLAKE2b512WithKey(b2key [64]byte) itb.HashFunc512 {
 			binary.LittleEndian.PutUint64(buf[off:], binary.LittleEndian.Uint64(buf[off:])^seed[i])
 		}
 		digest := blake2b.Sum512(buf)
+		// The buffer carries the fixed key and the seed-mixed payload;
+		// zero it before it goes back to the pool.
+		clear(buf)
 		*bufPtr = buf
 		pool.Put(bufPtr)
 		return [8]uint64{
@@ -226,8 +229,8 @@ func blake2b512InterlockFillBatch16(key []byte) (itb.InterlockFillFunc16x512, er
 	}
 	var k [64]byte
 	copy(k[:], key)
-	return func(components []uint64, groupIdxBase uint64, out *[4][8]uint64) {
-		blake2basm.Fused512Fill13x4(&k, components, groupIdxBase, out)
+	return func(components []uint64, groupIdxBase uint64, v uint32, out *[4][8]uint64) {
+		blake2basm.Fused512Fill13x4(&k, components, groupIdxBase, v, out)
 	}, nil
 }
 
@@ -281,7 +284,7 @@ func blake2b512InterlockFillBatch32(key []byte) (itb.InterlockFillFunc32x512, er
 	}
 	var k [64]byte
 	copy(k[:], key)
-	return func(components []uint64, groupIdxBase uint64, out *[8][8]uint64) {
-		blake2basm.Fused512Fill13x8(&k, components, groupIdxBase, out)
+	return func(components []uint64, groupIdxBase uint64, v uint32, out *[8][8]uint64) {
+		blake2basm.Fused512Fill13x8(&k, components, groupIdxBase, v, out)
 	}, nil
 }

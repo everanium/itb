@@ -269,15 +269,15 @@ func Fused512Chain68x1(fixedKey *[64]byte, components []uint64, data *byte, out 
 // Fused256Fill13x8 is the batch-16 Interlocked Barrier fill hook of
 // width 256 on the NEON tier: two four-lane kernel calls over
 // Go-synthesised fill blocks.
-func Fused256Fill13x8(fixedKey *[32]byte, components []uint64, groupIdxBase uint64, out *[8][4]uint64) {
+func Fused256Fill13x8(fixedKey *[32]byte, components []uint64, groupIdxBase uint64, v uint32, out *[8][4]uint64) {
 	if !HasNEONX16 || !validComponents256(components) {
-		scalarFill256X8(fixedKey, components, groupIdxBase, out)
+		scalarFill256X8(fixedKey, components, groupIdxBase, v, out)
 		return
 	}
 	c, ng := &components[0], len(components)/4
 	var blocks [4][13]byte
 	for h := 0; h < 2; h++ {
-		ptrs := fillPtrs4(&blocks, groupIdxBase+uint64(4*h))
+		ptrs := fillPtrs4(&blocks, groupIdxBase+uint64(4*h), v)
 		blake2b256FusedChain13x4NeonAsm(fixedKey, c, ng, &ptrs, (*[4][4]uint64)(out[4*h:4*h+4]))
 	}
 }
@@ -285,13 +285,13 @@ func Fused256Fill13x8(fixedKey *[32]byte, components []uint64, groupIdxBase uint
 // Fused512Fill13x4 is the batch-16 Interlocked Barrier fill hook of
 // width 512 on the NEON tier: one four-lane kernel call over
 // Go-synthesised fill blocks.
-func Fused512Fill13x4(fixedKey *[64]byte, components []uint64, groupIdxBase uint64, out *[4][8]uint64) {
+func Fused512Fill13x4(fixedKey *[64]byte, components []uint64, groupIdxBase uint64, v uint32, out *[4][8]uint64) {
 	if !HasNEONX16 || !validComponents512(components) {
-		scalarFill512X4(fixedKey, components, groupIdxBase, out)
+		scalarFill512X4(fixedKey, components, groupIdxBase, v, out)
 		return
 	}
 	var blocks [4][13]byte
-	ptrs := fillPtrs4(&blocks, groupIdxBase)
+	ptrs := fillPtrs4(&blocks, groupIdxBase, v)
 	blake2b512FusedChain13x4NeonAsm(fixedKey, &components[0], len(components)/8, &ptrs, out)
 }
 
@@ -366,15 +366,15 @@ func Fused512Chain68x8(fixedKey *[64]byte, components []uint64, dataPtrs *[8]*by
 // Fused512Fill13x8 is the batch-32 Interlocked Barrier fill hook of
 // width 512 on the NEON tier: two four-lane kernel calls over
 // Go-synthesised fill blocks.
-func Fused512Fill13x8(fixedKey *[64]byte, components []uint64, groupIdxBase uint64, out *[8][8]uint64) {
+func Fused512Fill13x8(fixedKey *[64]byte, components []uint64, groupIdxBase uint64, v uint32, out *[8][8]uint64) {
 	if !HasNEONX16 || !validComponents512(components) {
-		scalarFill512X8(fixedKey, components, groupIdxBase, out)
+		scalarFill512X8(fixedKey, components, groupIdxBase, v, out)
 		return
 	}
 	c, ng := &components[0], len(components)/8
 	var blocks [4][13]byte
 	for h := 0; h < 2; h++ {
-		ptrs := fillPtrs4(&blocks, groupIdxBase+uint64(4*h))
+		ptrs := fillPtrs4(&blocks, groupIdxBase+uint64(4*h), v)
 		blake2b512FusedChain13x4NeonAsm(fixedKey, c, ng, &ptrs, out8x512Half(out, h))
 	}
 }

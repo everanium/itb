@@ -39,6 +39,6 @@ func FusedChain36x1(components []uint64, data *byte, out *[2]uint64) {
 func FusedChain68x1(components []uint64, data *byte, out *[2]uint64) {
 	scalarFusedSingle(components, data, 68, out)
 }
-func FusedChain13x16(components []uint64, groupIdxBase uint64, out *[16][2]uint64) {
-	scalarFusedX16(components, groupIdxBase, out)
+func FusedChain13x16(components []uint64, groupIdxBase uint64, v uint32, out *[16][2]uint64) {
+	scalarFusedX16(components, groupIdxBase, v, out)
 }

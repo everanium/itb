@@ -3,8 +3,10 @@
 // VEX-encoded AES-NI XMM fused ChainHash cascade kernel for AES-ITB-128 at the
 // 20-byte shape, 4 lanes (2 PKCS#7 blocks, 4 AES rounds per
 // cascade round).
-// The padded data blocks are staged once into the frame and every
-// cascade round runs from those 16-byte slots; see aesitbasm_fused.go for the
+// The padded data blocks are staged once into the frame, every block
+// past block 0 with the round constant of the preceding absorb round
+// folded in so it serves as that round's key, and every cascade round
+// runs from those 16-byte slots; see aesitbasm_fused.go for the
 // construction and the in-package parity tests for the bit-exact pin
 // against the pure-Go cascade.
 
@@ -39,23 +41,23 @@ TEXT ·aesITB128FusedChain20x4VexAsm(SB), NOSPLIT, $128-40
 	VPINSRD $1, 4(R11), X4, X4
 	VPINSRQ $1, 8(R11), X4, X4
 	VMOVDQU X4, 48(SP)
+	VMOVDQU ·RC+0(SB), X5
 	VPINSRD $0, 16(R8), X13, X4
+	VPXOR X5, X4, X4
 	VMOVDQU X4, 64(SP)
 	VPINSRD $0, 16(R9), X13, X4
+	VPXOR X5, X4, X4
 	VMOVDQU X4, 80(SP)
 	VPINSRD $0, 16(R10), X13, X4
+	VPXOR X5, X4, X4
 	VMOVDQU X4, 96(SP)
 	VPINSRD $0, 16(R11), X13, X4
+	VPXOR X5, X4, X4
 	VMOVDQU X4, 112(SP)
 
-	VMOVDQU ·RC+0(SB), X5
-	VMOVDQU ·RC+16(SB), X6
-	VMOVDQU ·RC+32(SB), X7
-	VMOVDQU ·RC+48(SB), X8
-	VMOVDQU ·RC+64(SB), X9
-	VMOVDQU ·RC+80(SB), X10
-	VMOVDQU ·RC+96(SB), X11
-	VMOVDQU ·RC+112(SB), X12
+	VMOVDQU ·RC+16(SB), X5
+	VMOVDQU ·RC+32(SB), X6
+	VMOVDQU ·RC+48(SB), X7
 	VMOVDQU 0(AX), X13
 	VPXOR X0, X0, X0
 	VPXOR X1, X1, X1
@@ -73,14 +75,10 @@ loop:
 	VPXOR 16(SP), X1, X1
 	VPXOR 32(SP), X2, X2
 	VPXOR 48(SP), X3, X3
-	VAESENC X5, X0, X0; VAESENC X5, X1, X1; VAESENC X5, X2, X2; VAESENC X5, X3, X3
-	VPXOR 64(SP), X0, X0
-	VPXOR 80(SP), X1, X1
-	VPXOR 96(SP), X2, X2
-	VPXOR 112(SP), X3, X3
-	VAESENC X6, X0, X0; VAESENC X6, X1, X1; VAESENC X6, X2, X2; VAESENC X6, X3, X3
+	VAESENC 64(SP), X0, X0; VAESENC 80(SP), X1, X1; VAESENC 96(SP), X2, X2; VAESENC 112(SP), X3, X3
 	VAESENC X5, X0, X0; VAESENC X5, X1, X1; VAESENC X5, X2, X2; VAESENC X5, X3, X3
 	VAESENC X6, X0, X0; VAESENC X6, X1, X1; VAESENC X6, X2, X2; VAESENC X6, X3, X3
+	VAESENC X7, X0, X0; VAESENC X7, X1, X1; VAESENC X7, X2, X2; VAESENC X7, X3, X3
 	ADDQ $16, BX
 	DECQ CX
 	JNZ loop

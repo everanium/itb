@@ -15,8 +15,8 @@ func TestFusedChain13x16NeonParity(t *testing.T) {
 	if !cpuid.ARMAES {
 		t.Skip("ARM crypto extension not available")
 	}
-	checkFusedX16Parity(t, "neon", func(key *[16]byte, comps []uint64, groupIdxBase uint64, out *[16][2]uint64) {
-		aesITB128FusedChain13x16NeonAsm(key, &comps[0], len(comps)/2, groupIdxBase, out)
+	checkFusedX16Parity(t, "neon", func(key *[16]byte, comps []uint64, groupIdxBase uint64, v uint32, out *[16][2]uint64) {
+		aesITB128FusedChain13x16NeonAsm(key, &comps[0], len(comps)/2, groupIdxBase, out, v)
 	})
 }
 

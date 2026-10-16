@@ -3,8 +3,10 @@
 // Legacy-SSE AES-NI XMM (eight state chains) fused ChainHash cascade kernel for AES-ITB-128 at the
 // 20-byte shape, 8 lanes (2 PKCS#7 blocks, 4 AES rounds per
 // cascade round).
-// The padded data blocks are staged once into the frame and every
-// cascade round runs from those 16-byte slots; see aesitbasm_fused.go for the
+// The padded data blocks are staged once into the frame, every block
+// past block 0 with the round constant of the preceding absorb round
+// folded in so it serves as that round's key, and every cascade round
+// runs from those 16-byte slots; see aesitbasm_fused.go for the
 // construction and the in-package parity tests for the bit-exact pin
 // against the pure-Go cascade.
 
@@ -44,17 +46,22 @@ TEXT ·aesITB128FusedChain20x8AesNiAsm(SB), NOSPLIT, $256-40
 	PINSRD $1, 4(R11), X4
 	PINSRQ $1, 8(R11), X4
 	MOVOU X4, 48(SP)
+	MOVOU ·RC+0(SB), X8
 	MOVOU X13, X4
 	PINSRD $0, 16(R8), X4
+	PXOR X8, X4
 	MOVOU X4, 128(SP)
 	MOVOU X13, X4
 	PINSRD $0, 16(R9), X4
+	PXOR X8, X4
 	MOVOU X4, 144(SP)
 	MOVOU X13, X4
 	PINSRD $0, 16(R10), X4
+	PXOR X8, X4
 	MOVOU X4, 160(SP)
 	MOVOU X13, X4
 	PINSRD $0, 16(R11), X4
+	PXOR X8, X4
 	MOVOU X4, 176(SP)
 	// Lanes 4..7
 	MOVQ 32(DX), R8
@@ -81,21 +88,27 @@ TEXT ·aesITB128FusedChain20x8AesNiAsm(SB), NOSPLIT, $256-40
 	PINSRD $1, 4(R11), X4
 	PINSRQ $1, 8(R11), X4
 	MOVOU X4, 112(SP)
+	MOVOU ·RC+0(SB), X8
 	MOVOU X13, X4
 	PINSRD $0, 16(R8), X4
+	PXOR X8, X4
 	MOVOU X4, 192(SP)
 	MOVOU X13, X4
 	PINSRD $0, 16(R9), X4
+	PXOR X8, X4
 	MOVOU X4, 208(SP)
 	MOVOU X13, X4
 	PINSRD $0, 16(R10), X4
+	PXOR X8, X4
 	MOVOU X4, 224(SP)
 	MOVOU X13, X4
 	PINSRD $0, 16(R11), X4
+	PXOR X8, X4
 	MOVOU X4, 240(SP)
 
-	MOVOU ·RC+0(SB), X8
-	MOVOU ·RC+16(SB), X9
+	MOVOU ·RC+16(SB), X8
+	MOVOU ·RC+32(SB), X9
+	MOVOU ·RC+48(SB), X10
 	MOVOU 0(AX), X13
 	PXOR X0, X0
 	PXOR X1, X1
@@ -133,26 +146,25 @@ loop:
 	PXOR X15, X6
 	MOVOU 112(SP), X15
 	PXOR X15, X7
-	AESENC X8, X0; AESENC X8, X1; AESENC X8, X2; AESENC X8, X3; AESENC X8, X4; AESENC X8, X5; AESENC X8, X6; AESENC X8, X7
 	MOVOU 128(SP), X15
-	PXOR X15, X0
+	AESENC X15, X0
 	MOVOU 144(SP), X15
-	PXOR X15, X1
+	AESENC X15, X1
 	MOVOU 160(SP), X15
-	PXOR X15, X2
+	AESENC X15, X2
 	MOVOU 176(SP), X15
-	PXOR X15, X3
+	AESENC X15, X3
 	MOVOU 192(SP), X15
-	PXOR X15, X4
+	AESENC X15, X4
 	MOVOU 208(SP), X15
-	PXOR X15, X5
+	AESENC X15, X5
 	MOVOU 224(SP), X15
-	PXOR X15, X6
+	AESENC X15, X6
 	MOVOU 240(SP), X15
-	PXOR X15, X7
-	AESENC X9, X0; AESENC X9, X1; AESENC X9, X2; AESENC X9, X3; AESENC X9, X4; AESENC X9, X5; AESENC X9, X6; AESENC X9, X7
+	AESENC X15, X7
 	AESENC X8, X0; AESENC X8, X1; AESENC X8, X2; AESENC X8, X3; AESENC X8, X4; AESENC X8, X5; AESENC X8, X6; AESENC X8, X7
 	AESENC X9, X0; AESENC X9, X1; AESENC X9, X2; AESENC X9, X3; AESENC X9, X4; AESENC X9, X5; AESENC X9, X6; AESENC X9, X7
+	AESENC X10, X0; AESENC X10, X1; AESENC X10, X2; AESENC X10, X3; AESENC X10, X4; AESENC X10, X5; AESENC X10, X6; AESENC X10, X7
 	ADDQ $16, BX
 	DECQ CX
 	JNZ loop

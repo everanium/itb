@@ -46,8 +46,8 @@ func Fused256Chain68x1(fixedKey *[32]byte, components []uint64, data *byte, out 
 	*out = ScalarFusedChain256(fixedKey, components, lanePtr(data, 68))
 }
 
-func Fused256Fill13x8(fixedKey *[32]byte, components []uint64, groupIdxBase uint64, out *[8][4]uint64) {
-	scalarFill256X8(fixedKey, components, groupIdxBase, out)
+func Fused256Fill13x8(fixedKey *[32]byte, components []uint64, groupIdxBase uint64, v uint32, out *[8][4]uint64) {
+	scalarFill256X8(fixedKey, components, groupIdxBase, v, out)
 }
 
 // Eight-lane per-pixel arms: absent on this build.

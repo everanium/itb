@@ -105,13 +105,13 @@ func aesCMAC128FusedChain68x1NeonAsm(roundKeys *[176]byte, comps *uint64, nPairs
 // FusedChain13x16 runs the cascade on the 16 lanes of the Interlocked
 // Barrier fill (see the amd64 dispatcher); the NEON kernel is gated on
 // the batch-16 flag HasARMAESX16.
-func FusedChain13x16(s *Schedule, components []uint64, groupIdxBase uint64, out *[16][2]uint64) {
+func FusedChain13x16(s *Schedule, components []uint64, groupIdxBase uint64, v uint32, out *[16][2]uint64) {
 	if HasARMAESX16 && validComponents(components) {
-		aesCMAC128FusedChain13x16NeonAsm(&s.roundKeys, &components[0], len(components)/2, groupIdxBase, out)
+		aesCMAC128FusedChain13x16NeonAsm(&s.roundKeys, &components[0], len(components)/2, groupIdxBase, out, v)
 		return
 	}
-	scalarFusedX16(s, components, groupIdxBase, out)
+	scalarFusedX16(s, components, groupIdxBase, v, out)
 }
 
 //go:noescape
-func aesCMAC128FusedChain13x16NeonAsm(roundKeys *[176]byte, comps *uint64, nPairs int, groupIdxBase uint64, out *[16][2]uint64)
+func aesCMAC128FusedChain13x16NeonAsm(roundKeys *[176]byte, comps *uint64, nPairs int, groupIdxBase uint64, out *[16][2]uint64, v uint32)

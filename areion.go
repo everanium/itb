@@ -54,6 +54,7 @@ package itb
 import (
 	"crypto/rand"
 	"encoding/binary"
+	"runtime"
 
 	"github.com/everanium/itb/internal/areionasm"
 	"github.com/everanium/itb/third/goaes"
@@ -86,7 +87,10 @@ var areionRC = [15][16]byte{
 // Areion round constants of P2, the second permutation of SoEM22 — must
 // match `third/goaes/areion.go:areionRoundConstants2`: the fifteen
 // 128-bit words of the hexadecimal digits of pi that follow those of
-// areionRC, in the same little-endian format.
+// areionRC, in the same little-endian format. Entry 7 takes the shifted
+// form that entry 7 of areionRC takes: its pi word (word 22, counting
+// from 0) with the leading zero nibble dropped and a zero nibble
+// appended.
 var areionRC2 = [15][16]byte{
 	{0x93, 0xe9, 0x72, 0x7c, 0xaf, 0x86, 0x54, 0xa1, 0xce, 0xe8, 0x41, 0x11, 0x34, 0x5c, 0xcc, 0xb4},
 	{0xf6, 0x31, 0x18, 0x74, 0x5d, 0xc5, 0xa9, 0x2b, 0x2a, 0xbc, 0x6f, 0x63, 0x11, 0x14, 0xee, 0xb3},
@@ -95,7 +99,7 @@ var areionRC2 = [15][16]byte{
 	{0x91, 0xa9, 0x21, 0xfb, 0xcc, 0x09, 0xd8, 0x61, 0x93, 0x21, 0x28, 0x66, 0x1b, 0xe8, 0xbf, 0xc4},
 	{0xb1, 0x75, 0x85, 0xe9, 0x5d, 0x5d, 0x84, 0xef, 0x32, 0x80, 0xec, 0x5d, 0x60, 0xac, 0x7c, 0x48},
 	{0xc5, 0xac, 0x96, 0xd3, 0x81, 0x3e, 0x89, 0x23, 0x88, 0x1b, 0x65, 0xeb, 0x02, 0x23, 0x26, 0xdc},
-	{0x04, 0x20, 0x84, 0xa4, 0x82, 0x44, 0x0b, 0x2e, 0x39, 0x42, 0xf4, 0x83, 0xf3, 0x6f, 0x6d, 0x0f},
+	{0x40, 0x00, 0x42, 0x48, 0x2a, 0x48, 0xb4, 0xe0, 0x92, 0x23, 0x44, 0x3f, 0x38, 0xff, 0xd6, 0xf6},
 	{0x9a, 0x6c, 0xe9, 0xf6, 0x42, 0x68, 0xc6, 0x21, 0x5e, 0x9b, 0x1f, 0x9e, 0x4a, 0xf0, 0xc8, 0x69},
 	{0x68, 0x2f, 0x54, 0xd8, 0xd2, 0xa0, 0x51, 0x6a, 0xf0, 0x88, 0xd3, 0xab, 0x61, 0x9c, 0x0c, 0x67},
 	{0xe4, 0x3b, 0x7a, 0x13, 0x6c, 0x0b, 0xef, 0x6e, 0xa3, 0x33, 0x51, 0xab, 0x28, 0xa7, 0x0f, 0x96},
@@ -190,11 +194,12 @@ func unpack256x4SoA(b0, b1 *aes.Block4, states *[4][32]byte) {
 // (with zero key, equivalent to `RoundNoKey4`) / `FinalRound4HW` /
 // `XorBlock4` instead of per-block primitives.
 func areion256Permutex4Default(states *[4][32]byte, rcs *[15][16]byte) {
-	x0, x1 := pack256x4SoA(states)
+	var x0, x1 aes.Block4
+	pack256x4SoAInto(states, &x0, &x1)
 
+	var temp aes.Block4
 	for r := 0; r < 10; r++ {
 		rc := rcBlock4(&rcs[r])
-		var temp aes.Block4
 
 		if r%2 == 0 {
 			// temp = x0
@@ -225,6 +230,15 @@ func areion256Permutex4Default(states *[4][32]byte, rcs *[15][16]byte) {
 	}
 
 	unpack256x4SoA(&x0, &x1, states)
+
+	// The local SoA copies hold the permutation state of a whitened
+	// input; zero them once the result is back in states.
+	secureWipe(x0[:])
+	secureWipe(x1[:])
+	secureWipe(temp[:])
+	runtime.KeepAlive(&x0)
+	runtime.KeepAlive(&x1)
+	runtime.KeepAlive(&temp)
 }
 
 // AreionSoEM256x4 evaluates the Areion-SoEM-256 PRF on four independent
@@ -282,6 +296,17 @@ func AreionSoEM256x4(keys *[4][64]byte, inputs *[4][32]byte) [4][32]byte {
 		xor3Block16((*[16]byte)(d[0:16]), (*[16]byte)(s1b0[o:o+16]), (*[16]byte)(k[0:16]), (*[16]byte)(k[32:48]))
 		xor3Block16((*[16]byte)(d[16:32]), (*[16]byte)(s1b1[o:o+16]), (*[16]byte)(k[16:32]), (*[16]byte)(k[48:64]))
 	}
+
+	// The SoA states carry key-whitened inputs and permutation outputs
+	// from which the subkeys follow; zero them once the output is built.
+	secureWipe(s1b0[:])
+	secureWipe(s1b1[:])
+	secureWipe(s2b0[:])
+	secureWipe(s2b1[:])
+	runtime.KeepAlive(&s1b0)
+	runtime.KeepAlive(&s1b1)
+	runtime.KeepAlive(&s2b0)
+	runtime.KeepAlive(&s2b1)
 	return out
 }
 
@@ -333,6 +358,12 @@ func areion512Roundx4(a, b, c, d *aes.Block4, rc *[16]byte) {
 	finalRoundNoKey4Fast(c)
 	aes.XorBlock4(c, c, &rcB4)
 	roundNoKey4Fast(c)
+
+	// temp1 / temp2 hold round states of a whitened input; zero them.
+	secureWipe(temp1[:])
+	secureWipe(temp2[:])
+	runtime.KeepAlive(&temp1)
+	runtime.KeepAlive(&temp2)
 }
 
 // areion512Permutex4Default is the portable Go implementation of the
@@ -345,7 +376,8 @@ func areion512Roundx4(a, b, c, d *aes.Block4, rc *[16]byte) {
 // `third/goaes/areion.go:areion512PermuteSoftwareRC` bit-for-bit; same
 // per-round pattern as the serial reference, four lanes wide.
 func areion512Permutex4Default(states *[4][64]byte, rcs *[15][16]byte) {
-	x0, x1, x2, x3 := pack512x4SoA(states)
+	var x0, x1, x2, x3 aes.Block4
+	pack512x4SoAInto(states, &x0, &x1, &x2, &x3)
 
 	// Main 12 rounds (3 outer iterations of 4 sub-rounds each).
 	for i := 0; i < 12; i += 4 {
@@ -367,6 +399,19 @@ func areion512Permutex4Default(states *[4][64]byte, rcs *[15][16]byte) {
 	x1 = temp
 
 	unpack512x4SoA(&x0, &x1, &x2, &x3, states)
+
+	// The local SoA copies hold the permutation state of a whitened
+	// input; zero them once the result is back in states.
+	secureWipe(x0[:])
+	secureWipe(x1[:])
+	secureWipe(x2[:])
+	secureWipe(x3[:])
+	secureWipe(temp[:])
+	runtime.KeepAlive(&x0)
+	runtime.KeepAlive(&x1)
+	runtime.KeepAlive(&x2)
+	runtime.KeepAlive(&x3)
+	runtime.KeepAlive(&temp)
 }
 
 // AreionSoEM512x4 evaluates the Areion-SoEM-512 PRF on four independent
@@ -414,6 +459,25 @@ func AreionSoEM512x4(keys *[4][128]byte, inputs *[4][64]byte) [4][64]byte {
 		xor3Block16((*[16]byte)(d[32:48]), (*[16]byte)(s1b2[o:o+16]), (*[16]byte)(k[32:48]), (*[16]byte)(k[96:112]))
 		xor3Block16((*[16]byte)(d[48:64]), (*[16]byte)(s1b3[o:o+16]), (*[16]byte)(k[48:64]), (*[16]byte)(k[112:128]))
 	}
+
+	// The SoA states carry key-whitened inputs and permutation outputs
+	// from which the subkeys follow; zero them once the output is built.
+	secureWipe(s1b0[:])
+	secureWipe(s1b1[:])
+	secureWipe(s1b2[:])
+	secureWipe(s1b3[:])
+	secureWipe(s2b0[:])
+	secureWipe(s2b1[:])
+	secureWipe(s2b2[:])
+	secureWipe(s2b3[:])
+	runtime.KeepAlive(&s1b0)
+	runtime.KeepAlive(&s1b1)
+	runtime.KeepAlive(&s1b2)
+	runtime.KeepAlive(&s1b3)
+	runtime.KeepAlive(&s2b0)
+	runtime.KeepAlive(&s2b1)
+	runtime.KeepAlive(&s2b2)
+	runtime.KeepAlive(&s2b3)
 	return out
 }
 
@@ -525,6 +589,9 @@ func MakeAreionSoEM256HashWithKey(fixedKey [32]byte) (HashFunc256, BatchHashFunc
 				off = end
 			}
 		}
+		// key is the full SoEM key fixedKey ‖ seed; zero it on the stack.
+		secureWipe(key[:])
+		runtime.KeepAlive(&key)
 
 		return [4]uint64{
 			binary.LittleEndian.Uint64(state[0:]),
@@ -609,6 +676,9 @@ func MakeAreionSoEM256HashWithKey(fixedKey [32]byte) (HashFunc256, BatchHashFunc
 				off = end
 			}
 		}
+		// keys holds the four SoEM keys fixedKey ‖ seed; zero them.
+		clear(keys[:])
+		runtime.KeepAlive(&keys)
 
 		var out [4][4]uint64
 		for lane := 0; lane < 4; lane++ {
@@ -682,6 +752,9 @@ func MakeAreionSoEM512HashWithKey(fixedKey [64]byte) (HashFunc512, BatchHashFunc
 				off = end
 			}
 		}
+		// key is the full SoEM key fixedKey ‖ seed; zero it on the stack.
+		secureWipe(key[:])
+		runtime.KeepAlive(&key)
 
 		var out [8]uint64
 		for i := range out {
@@ -753,6 +826,9 @@ func MakeAreionSoEM512HashWithKey(fixedKey [64]byte) (HashFunc512, BatchHashFunc
 				off = end
 			}
 		}
+		// keys holds the four SoEM keys fixedKey ‖ seed; zero them.
+		clear(keys[:])
+		runtime.KeepAlive(&keys)
 
 		var out [4][8]uint64
 		for lane := 0; lane < 4; lane++ {
@@ -869,4 +945,26 @@ func xor3Block16(dst, a, b, c *[16]byte) {
 	le := binary.LittleEndian
 	le.PutUint64(dst[0:8], le.Uint64(a[0:8])^le.Uint64(b[0:8])^le.Uint64(c[0:8]))
 	le.PutUint64(dst[8:16], le.Uint64(a[8:16])^le.Uint64(b[8:16])^le.Uint64(c[8:16]))
+}
+
+// pack256x4SoAInto is [pack256x4SoA] writing into caller-owned blocks, so
+// the packed state never passes through a by-value result or a compiler
+// temporary that the caller cannot zero.
+func pack256x4SoAInto(states *[4][32]byte, b0, b1 *aes.Block4) {
+	for i := 0; i < 4; i++ {
+		copy(b0[i*16:(i+1)*16], states[i][0:16])
+		copy(b1[i*16:(i+1)*16], states[i][16:32])
+	}
+}
+
+// pack512x4SoAInto is [pack512x4SoA] writing into caller-owned blocks, so
+// the packed state never passes through a by-value result or a compiler
+// temporary that the caller cannot zero.
+func pack512x4SoAInto(states *[4][64]byte, b0, b1, b2, b3 *aes.Block4) {
+	for i := 0; i < 4; i++ {
+		copy(b0[i*16:(i+1)*16], states[i][0:16])
+		copy(b1[i*16:(i+1)*16], states[i][16:32])
+		copy(b2[i*16:(i+1)*16], states[i][32:48])
+		copy(b3[i*16:(i+1)*16], states[i][48:64])
+	}
 }

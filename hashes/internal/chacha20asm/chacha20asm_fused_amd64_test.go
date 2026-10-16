@@ -175,9 +175,32 @@ func BenchmarkFill(b *testing.B) {
 			b.Run(fmt.Sprintf("%s/fill256x8/groups%d", tier.name, g), func(b *testing.B) {
 				b.SetBytes(8 * 13)
 				for i := 0; i < b.N; i++ {
-					Fused256Fill13x8(key256, c256, uint64(i)*8, &o8)
+					Fused256Fill13x8(key256, c256, uint64(i)*8, 0xA5C33C5A, &o8)
 				}
 			})
 		}
 	}
+}
+
+// TestFusedKernelsLeaveNoSecretInFrame runs the four- and eight-lane
+// kernels and the fill kernel of every tier the host can execute, and the
+// single-lane kernels, under the stack-residue probe: no fixed-key dword, no
+// key word and no output dword may be left in the stack once a kernel has
+// returned.
+func TestFusedKernelsLeaveNoSecretInFrame(t *testing.T) {
+	for _, tier := range amd64CascadeTiers() {
+		if !tier.ok {
+			continue
+		}
+		checkChachaResidue(t, tier.name, kernels256x4[tier.name], nil, kernels256x8[tier.name])
+		if f, ok := fill256x8Kernels[tier.name]; ok {
+			key, comps := randomKey256(), randomWords(4)
+			base := uint64(0x0123456789ABCDEF)
+			v := uint32(0xA5C33C5A)
+			var out [8][4]uint64
+			res := stackResidue(func() { f(key, comps, base, v, &out) })
+			assertNoSecretResidue(t, tier.name+" fill x8", res, nil, chachaSecrets(key[:], comps, out[:]))
+		}
+	}
+	checkChachaResidue(t, "gpr", nil, kernels256x1, nil)
 }

@@ -22,12 +22,14 @@ package itb
 //     follows from the configured nonce width alone, and COBS places the
 //     first barrier byte at a fixed output offset regardless of what the
 //     fragment contains ([laneStreamWithUnknownFragment]).
-//  3. Enumerate the derived interlock key rather than the nonce
-//     ([mirrorLockBatchPRF48_128]). At 128-bit hash width the nonce's
-//     entire influence on the Rank Barrier is the pair
-//     [Seed128.deriveInterLockSeed] returns, so under a primitive whose
-//     output is one byte per lane that influence is 16 bits wide however
-//     long the nonce is.
+//  3. Enumerate the derived interlock key and the fill-block fold rather
+//     than the nonce ([mirrorLockBatchPRF48_128]). At 128-bit hash width
+//     the nonce's entire influence on the Rank Barrier is the pair
+//     [Seed128.deriveInterLockSeed] returns plus the 4-byte
+//     interlock-nonce fold carried in bytes 9..12 of every fill block
+//     ([interlockNonceFold]); under a primitive whose output is one byte
+//     per lane the pair is 16 bits wide however long the nonce is, and
+//     the fold's image in each lane is one more byte.
 //
 // Nothing here reads victim material. Every routine takes either
 // attacker-chosen constants or values the caller has already established
@@ -309,15 +311,16 @@ func laneLeakPixelMatches(region []byte, width, startPixel int, stream []byte) i
 }
 
 // mirrorLockBatchPRF48_128 rebuilds the batched 128-bit Rank Barrier PRF
-// around a caller-supplied derived interlock key instead of deriving that
-// key from a nonce.
+// around a caller-supplied derived interlock key and fill-block fold
+// instead of deriving both from a nonce.
 //
-// It mirrors [buildLockBatchPRF48_128] (interlock48_cascade.go:57-77)
-// with one substitution: the shipped builder opens with
-// `lockLo, lockHi := lockSeed.deriveInterLockSeed(nonce)` and prepends the
-// pair to the component slice, while this form takes the pair directly.
-// Everything downstream — the 13-byte group block `[0x03 ‖ LE64(groupIdx)
-// ‖ 4×0x00]`, the cascade call, the mask fill — is the shipped code path.
+// It mirrors [buildLockBatchPRF48_128] with one substitution: the shipped
+// builder opens with `lockLo, lockHi := lockSeed.deriveInterLockSeed(nonce)`
+// and `fold := interlockNonceFold(nonce)`, prepending the pair to the
+// component slice and writing the fold into every block, while this form
+// takes the pair and the fold directly. Everything downstream — the
+// 13-byte group block `[0x03 ‖ LE64(groupIdx) ‖ fold]`, the cascade call,
+// the mask fill — is the shipped code path.
 //
 // The optional batched arms the shipped builder attaches when the
 // lockSeed carries BatchHash / InterlockFillX16 hooks are left off. The
@@ -326,10 +329,10 @@ func laneLeakPixelMatches(region []byte, width, startPixel int, stream []byte) i
 // [assertMirrorLockBatchParity128] checks that on attacker-chosen
 // material rather than taking it on trust.
 //
-// This exists so a harness can enumerate the 16-bit derived key an 8-bit
-// primitive produces instead of enumerating a 128-bit nonce it does not
-// hold.
-func mirrorLockBatchPRF48_128(lockSeed *Seed128, keyLo, keyHi uint64) lockBatchPRF48 {
+// This exists so a harness can enumerate the 16-bit derived key and the
+// fold's lane image an 8-bit primitive produces instead of enumerating a
+// 128-bit nonce it does not hold.
+func mirrorLockBatchPRF48_128(lockSeed *Seed128, keyLo, keyHi uint64, fold [4]byte) lockBatchPRF48 {
 	lockComps := make([]uint64, 2+len(lockSeed.Components))
 	lockComps[0], lockComps[1] = keyLo, keyHi
 	copy(lockComps[2:], lockSeed.Components)
@@ -338,6 +341,7 @@ func mirrorLockBatchPRF48_128(lockSeed *Seed128, keyLo, keyHi uint64) lockBatchP
 		fill: func(buf []byte, groupIdx uint64, masks *[lockBatchFactor48Max][3]uint64) {
 			buf[0] = 0x03
 			binary.LittleEndian.PutUint64(buf[1:9], groupIdx)
+			copy(buf[9:13], fold[:])
 			lo, hi := lockSeed.chainHash128With(lockComps, buf)
 			var prf [8]uint64
 			prf[0], prf[1] = lo, hi
@@ -346,14 +350,15 @@ func mirrorLockBatchPRF48_128(lockSeed *Seed128, keyLo, keyHi uint64) lockBatchP
 		fillRanks: func(buf []byte, groupIdx uint64, prf []uint64) {
 			buf[0] = 0x03
 			binary.LittleEndian.PutUint64(buf[1:9], groupIdx)
+			copy(buf[9:13], fold[:])
 			prf[0], prf[1] = lockSeed.chainHash128With(lockComps, buf)
 		},
 	}
 }
 
 // assertMirrorLockBatchParity128 verifies that [mirrorLockBatchPRF48_128]
-// fed the key a nonce derives reproduces the lanes the shipped builder
-// produces for that nonce. Attacker-chosen seed, attacker-chosen nonce,
+// fed the key and the fold a nonce derives reproduces the lanes the
+// shipped builder produces for that nonce. Attacker-chosen seed, attacker-chosen nonce,
 // attacker-chosen probe plaintext: no victim material, and a drift
 // between the mirror and the shipped builder surfaces here rather than as
 // an enumeration that mysteriously fails to converge.
@@ -379,7 +384,7 @@ func assertMirrorLockBatchParity128(t *testing.T, cfg *Config, h HashFunc128, ke
 	}
 	keyLo, keyHi := s.deriveInterLockSeed(nonce)
 	want := run(buildLockBatchPRF48_128Cfg(cfg, s, nonce))
-	got := run(mirrorLockBatchPRF48_128(s, keyLo, keyHi))
+	got := run(mirrorLockBatchPRF48_128(s, keyLo, keyHi, interlockNonceFold(nonce)))
 	for i := 0; i < 3; i++ {
 		if !bytes.Equal(want[i], got[i]) {
 			t.Fatalf("mirror parity: lane %d differs from the shipped builder", i)

@@ -2,6 +2,7 @@ package macs
 
 import (
 	"fmt"
+	"runtime"
 
 	"golang.org/x/crypto/sha3"
 
@@ -47,7 +48,11 @@ func KMAC256WithCustomization(key, customization []byte) (itb.MACFunc, error) {
 	const rate = 136 // KMAC256 underlying cSHAKE256 rate in bytes (1088 bits)
 	const outputBits = 256
 
-	prefix := bytepad(encodeString(key), rate)
+	encKey := encodeString(key)
+	prefix := bytepad(encKey, rate)
+	// encKey is a plain copy of the key; prefix carries it until it is
+	// absorbed below.
+	clear(encKey)
 	suffix := rightEncode(uint64(outputBits))
 
 	custom := append([]byte(nil), customization...)
@@ -65,11 +70,15 @@ func KMAC256WithCustomization(key, customization []byte) (itb.MACFunc, error) {
 		tmpl := keccakasm.NewCShake256()
 		tmpl.Write(header)
 		tmpl.Write(prefix)
+		clear(prefix)
 		return func(data []byte) []byte {
 			h := tmpl.Clone()
 			h.Write(data)
 			h.Write(suffix)
 			out := h.Sum256()
+			// The clone carries the keyed sponge state; zero it.
+			*h = keccakasm.CShake256{}
+			runtime.KeepAlive(h)
 			return append([]byte(nil), out[:]...)
 		}, nil
 	}
@@ -80,7 +89,9 @@ func KMAC256WithCustomization(key, customization []byte) (itb.MACFunc, error) {
 	// per NIST SP 800-185, the cSHAKE256 padding bookkeeping happens
 	// inside the constructor.
 	template := sha3.NewCShake256([]byte("KMAC"), custom)
-	if _, err := template.Write(prefix); err != nil {
+	_, err := template.Write(prefix)
+	clear(prefix)
+	if err != nil {
 		return nil, fmt.Errorf("macs: cshake256.Write(prefix): %w", err)
 	}
 
@@ -112,7 +123,11 @@ func KMAC256IncrementalWithCustomization(key, customization []byte) (itb.MACIncr
 	const rate = 136
 	const outputBits = 256
 
-	prefix := bytepad(encodeString(key), rate)
+	encKey := encodeString(key)
+	prefix := bytepad(encKey, rate)
+	// encKey is a plain copy of the key; prefix carries it until it is
+	// absorbed below.
+	clear(encKey)
 	suffix := rightEncode(uint64(outputBits))
 	custom := append([]byte(nil), customization...)
 
@@ -122,6 +137,7 @@ func KMAC256IncrementalWithCustomization(key, customization []byte) (itb.MACIncr
 		tmpl := keccakasm.NewCShake256()
 		tmpl.Write(header)
 		tmpl.Write(prefix)
+		clear(prefix)
 		return func(chunks ...[]byte) []byte {
 			h := tmpl.Clone()
 			for _, c := range chunks {
@@ -129,12 +145,17 @@ func KMAC256IncrementalWithCustomization(key, customization []byte) (itb.MACIncr
 			}
 			h.Write(suffix)
 			out := h.Sum256()
+			// The clone carries the keyed sponge state; zero it.
+			*h = keccakasm.CShake256{}
+			runtime.KeepAlive(h)
 			return append([]byte(nil), out[:]...)
 		}, nil
 	}
 
 	template := sha3.NewCShake256([]byte("KMAC"), custom)
-	if _, err := template.Write(prefix); err != nil {
+	_, err := template.Write(prefix)
+	clear(prefix)
+	if err != nil {
 		return nil, fmt.Errorf("macs: cshake256.Write(prefix): %w", err)
 	}
 	return func(chunks ...[]byte) []byte {

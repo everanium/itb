@@ -3,11 +3,9 @@
 // this package — the shipping implementation lives in the itb root
 // package (aesitb.go), which wires the nonce-free generic hash
 // (HashGeneric here) into the ChainHash dispatch and the
-// per-architecture SIMD kernels of internal/aesitbasm. The session-keyed
-// shapes ([SessionInit], [Session.HashPixel]) are reference-only and have
-// no shipped counterpart. The reference exists to cross-check the
-// shipping implementation via KAT vectors and the root prod-vs-reference
-// parity tests.
+// per-architecture SIMD kernels of internal/aesitbasm. The reference
+// exists to cross-check the shipping implementation via KAT vectors and
+// the root prod-vs-reference parity tests.
 //
 // ITB uses this package only as the "aesitb128" DRBG noise-fill arm,
 // [FillNoise], its blocks defined by [HashGeneric] so the same vectors

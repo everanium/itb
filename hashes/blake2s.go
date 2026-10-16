@@ -64,6 +64,9 @@ func BLAKE2sWithKey(b2key [32]byte) itb.HashFunc256 {
 			binary.LittleEndian.PutUint64(buf[off:], binary.LittleEndian.Uint64(buf[off:])^seed[i])
 		}
 		digest := blake2s.Sum256(buf)
+		// The buffer carries the fixed key and the seed-mixed payload;
+		// zero it before it goes back to the pool.
+		clear(buf)
 		*bufPtr = buf
 		pool.Put(bufPtr)
 		return [4]uint64{
@@ -215,8 +218,8 @@ func blake2sInterlockFillBatch16(key []byte) (itb.InterlockFillFunc16x256, error
 	}
 	var k [32]byte
 	copy(k[:], key)
-	return func(components []uint64, groupIdxBase uint64, out *[8][4]uint64) {
-		blake2sasm.Fused256Fill13x8(&k, components, groupIdxBase, out)
+	return func(components []uint64, groupIdxBase uint64, v uint32, out *[8][4]uint64) {
+		blake2sasm.Fused256Fill13x8(&k, components, groupIdxBase, v, out)
 	}, nil
 }
 

@@ -86,20 +86,21 @@ type BatchFusedChainHashFunc256x8 func(components []uint64, data *[8][]byte) (ou
 // [InterlockFillFunc16]. One call fills the 8 consecutive groups
 // (16 chunks) starting at groupIdxBase: lane offset i (0..7) produces
 // groupIdx = groupIdxBase + i on the fill block
-// [0x03 | LE64(groupIdx) | 4×0x00] and runs the whole ChainHash256
+// [0x03 | LE64(groupIdx) | LE32(v)] — v the per-message interlock-nonce
+// fold of [InterlockFillFunc16] — and runs the whole ChainHash256
 // cascade over components; out receives the 8 × 256-bit outputs at
 // [0..7]. The result must be bit-exact with eight sequential
 // single-lane cascades over the same components and blocks. A
 // performance hook only: the cascade fill is the wire with or without
 // it (see [Seed256.SetInterlockBatch16]).
-type InterlockFillFunc16x256 func(components []uint64, groupIdxBase uint64, out *[8][4]uint64)
+type InterlockFillFunc16x256 func(components []uint64, groupIdxBase uint64, v uint32, out *[8][4]uint64)
 
 // InterlockFillFunc32x256 is the batch-32 Interlocked Barrier fill
 // kernel interface at width 256 — the wider counterpart of
 // [InterlockFillFunc16x256]. One call fills the 16 consecutive groups
 // (32 chunks) starting at groupIdxBase: lane offset i (0..15) produces
 // groupIdx = groupIdxBase + i on the fill block
-// [0x03 | LE64(groupIdx) | 4×0x00] and runs the whole ChainHash256
+// [0x03 | LE64(groupIdx) | LE32(v)] and runs the whole ChainHash256
 // cascade over components; out receives the 16 × 256-bit outputs at
 // [0..15]. The result must be bit-exact with sixteen sequential
 // single-lane cascades over the same components and blocks. A
@@ -107,7 +108,7 @@ type InterlockFillFunc16x256 func(components []uint64, groupIdxBase uint64, out 
 // it (see [Seed256.SetInterlockBatch32]). The fill ladder tries this
 // hook first, then the batch-16 hook, then the four-lane and
 // single-lane arms.
-type InterlockFillFunc32x256 func(components []uint64, groupIdxBase uint64, out *[16][4]uint64)
+type InterlockFillFunc32x256 func(components []uint64, groupIdxBase uint64, v uint32, out *[16][4]uint64)
 
 // Seed256 holds a dynamically-sized symmetric key with a pluggable 256-bit hash function.
 //
@@ -187,6 +188,8 @@ func NewSeed256(bits int, hashFunc HashFunc256) (*Seed256, error) {
 	for i := 0; i < n; i++ {
 		s.Components[i] = binary.LittleEndian.Uint64(buf[i*8:])
 	}
+	// buf is a byte copy of the fresh components; zero it.
+	secureWipe(buf)
 	return s, nil
 }
 

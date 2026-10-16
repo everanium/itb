@@ -1461,4 +1461,13 @@ loop:
 	MOVQ BX, 8(R9)
 	MOVQ CX, 16(R9)
 	MOVQ DX, 24(R9)
+	MOVQ $0, 0(SP)
+	MOVQ $0, 8(SP)
+	MOVQ $0, 16(SP)
+	MOVQ $0, 24(SP)
+	MOVQ $0, 32(SP)
+	MOVQ $0, 40(SP)
+	MOVQ $0, 48(SP)
+	MOVQ $0, 56(SP)
+	MOVQ $0, 128(SP)
 	RET

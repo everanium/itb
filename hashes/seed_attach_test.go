@@ -2,6 +2,7 @@ package hashes
 
 import (
 	"fmt"
+	"math/rand"
 	"testing"
 
 	"github.com/everanium/itb"
@@ -102,23 +103,38 @@ func TestAttachHooksWireIndependent(t *testing.T) {
 			}
 			assertChainHashAgree(t, "hooked vs arms-only", hooked, plain)
 			if fill := hooked.InterlockFillX16(); fill != nil {
-				var out [16][2]uint64
+				var out, flipped [16][2]uint64
 				lockComps := append([]uint64{0x1122334455667788, 0x99AABBCCDDEEFF00}, comps...)
+				rng := rand.New(rand.NewSource(int64(len(comps))))
 				for _, base := range []uint64{0, 15, 0xFFFFFFFFFFFFFFF0} {
-					fill(lockComps, base, &out)
-					for i := 0; i < 16; i++ {
-						buf := make([]byte, 13)
-						buf[0] = 0x03
-						g := base + uint64(i)
-						for j := 0; j < 8; j++ {
-							buf[1+j] = byte(g >> (8 * j))
+					for _, v := range []uint32{0, 0xFFFFFFFF, rng.Uint32()} {
+						fill(lockComps, base, v, &out)
+						for i := 0; i < 16; i++ {
+							buf := make([]byte, 13)
+							buf[0] = 0x03
+							g := base + uint64(i)
+							for j := 0; j < 8; j++ {
+								buf[1+j] = byte(g >> (8 * j))
+							}
+							for j := 0; j < 4; j++ {
+								buf[9+j] = byte(v >> (8 * j))
+							}
+							lo, hi := plain.Hash(buf, lockComps[0], lockComps[1])
+							for k := 2; k < len(lockComps); k += 2 {
+								lo, hi = plain.Hash(buf, lockComps[k]^lo, lockComps[k+1]^hi)
+							}
+							if out[i] != [2]uint64{lo, hi} {
+								t.Fatalf("batch-16 hook lane %d base %#x fold %#x diverges from the sequential cascade", i, base, v)
+							}
 						}
-						lo, hi := plain.Hash(buf, lockComps[0], lockComps[1])
-						for k := 2; k < len(lockComps); k += 2 {
-							lo, hi = plain.Hash(buf, lockComps[k]^lo, lockComps[k+1]^hi)
-						}
-						if out[i] != [2]uint64{lo, hi} {
-							t.Fatalf("batch-16 hook lane %d base %#x diverges from the sequential cascade", i, base)
+						// Every lane moves with the fold: a kernel that left
+						// bytes 9..12 at zero would agree with the loop only
+						// at v = 0.
+						fill(lockComps, base, v^(1<<(uint(base)&31)), &flipped)
+						for i := 0; i < 16; i++ {
+							if flipped[i] == out[i] {
+								t.Fatalf("batch-16 hook lane %d base %#x: flipping one fold bit leaves the lane unchanged", i, base)
+							}
 						}
 					}
 				}

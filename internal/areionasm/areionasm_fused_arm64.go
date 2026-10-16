@@ -152,24 +152,25 @@ func Fused512Chain68x1(fixedKey *[64]byte, components []uint64, data *byte, out 
 
 // Fused256Fill13x8 runs the width-256 batch-16 fill through the
 // eight-lane NEON kernel (four lanes per pass, two passes, fill blocks
-// synthesised in the frame).
-func Fused256Fill13x8(fixedKey *[32]byte, components []uint64, groupIdxBase uint64, out *[8][4]uint64) {
+// [0x03 | LE64(groupIdxBase+i) | LE32(v)] synthesised in the frame
+// from groupIdxBase and the per-message interlock-nonce fold v).
+func Fused256Fill13x8(fixedKey *[32]byte, components []uint64, groupIdxBase uint64, v uint32, out *[8][4]uint64) {
 	if !HasARMAESX16 || !validComponents256(components) {
-		scalarFill256X8(fixedKey, components, groupIdxBase, out)
+		scalarFill256X8(fixedKey, components, groupIdxBase, v, out)
 		return
 	}
-	areion256FusedChain13x8NeonAsm(fixedKey, &components[0], len(components)/4, groupIdxBase, out)
+	areion256FusedChain13x8NeonAsm(fixedKey, &components[0], len(components)/4, groupIdxBase, out, v)
 }
 
 // Fused512Fill13x4 runs the width-512 batch-16 fill as one four-lane
-// NEON kernel call over Go-synthesised fill blocks.
-func Fused512Fill13x4(fixedKey *[64]byte, components []uint64, groupIdxBase uint64, out *[4][8]uint64) {
+// NEON kernel call over Go-synthesised fill blocks carrying the fold v.
+func Fused512Fill13x4(fixedKey *[64]byte, components []uint64, groupIdxBase uint64, v uint32, out *[4][8]uint64) {
 	if !HasARMAESX16 || !validComponents512(components) {
-		scalarFill512X4(fixedKey, components, groupIdxBase, out)
+		scalarFill512X4(fixedKey, components, groupIdxBase, v, out)
 		return
 	}
 	var blocks [4][13]byte
-	ptrs := fillPtrs4(&blocks, groupIdxBase)
+	ptrs := fillPtrs4(&blocks, groupIdxBase, v)
 	areion512FusedChain13x4NeonAsm(fixedKey, &components[0], len(components)/8, &ptrs, out)
 }
 
@@ -267,19 +268,20 @@ func Fused512Chain68x8(fixedKey *[64]byte, components []uint64, dataPtrs *[8]*by
 
 // Fused512Fill13x8 runs the width-512 batch-32 fill through the
 // eight-lane NEON kernel (two lanes per pass, four passes, fill blocks
-// synthesised in the frame).
-func Fused512Fill13x8(fixedKey *[64]byte, components []uint64, groupIdxBase uint64, out *[8][8]uint64) {
+// [0x03 | LE64(groupIdxBase+i) | LE32(v)] synthesised in the frame
+// from groupIdxBase and the per-message interlock-nonce fold v).
+func Fused512Fill13x8(fixedKey *[64]byte, components []uint64, groupIdxBase uint64, v uint32, out *[8][8]uint64) {
 	if !HasARMAESX16 || !validComponents512(components) {
-		scalarFill512X8(fixedKey, components, groupIdxBase, out)
+		scalarFill512X8(fixedKey, components, groupIdxBase, v, out)
 		return
 	}
-	areion512FusedChain13x8NeonAsm(fixedKey, &components[0], len(components)/8, groupIdxBase, out)
+	areion512FusedChain13x8NeonAsm(fixedKey, &components[0], len(components)/8, groupIdxBase, out, v)
 }
 
 // Eight-lane fill kernels (areion_fusedchain{256,512}_13x8_neon_arm64.s).
 //
 //go:noescape
-func areion256FusedChain13x8NeonAsm(fixedKey *[32]byte, comps *uint64, nGroups int, groupIdxBase uint64, out *[8][4]uint64)
+func areion256FusedChain13x8NeonAsm(fixedKey *[32]byte, comps *uint64, nGroups int, groupIdxBase uint64, out *[8][4]uint64, v uint32)
 
 //go:noescape
-func areion512FusedChain13x8NeonAsm(fixedKey *[64]byte, comps *uint64, nGroups int, groupIdxBase uint64, out *[8][8]uint64)
+func areion512FusedChain13x8NeonAsm(fixedKey *[64]byte, comps *uint64, nGroups int, groupIdxBase uint64, out *[8][8]uint64, v uint32)

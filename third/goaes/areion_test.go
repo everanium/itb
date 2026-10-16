@@ -270,7 +270,7 @@ func TestAreionSoEM256(t *testing.T) {
 	var key [64]byte
 	var input [32]byte
 	out := AreionSoEM256(&key, &input)
-	expected, _ := hex.DecodeString("e135afb2be0dee2857cc14aa4de7f022acd1e6489d8c1e53a20c99c4bf48f392")
+	expected, _ := hex.DecodeString("bc4b0a2d16987c40a216a53b568387a35b37830bd4ff779ca360255a41687f3c")
 	if !bytes.Equal(out[:], expected) {
 		t.Errorf("AreionSoEM256(zeros) failed\nGot:      %x\nExpected: %x", out[:], expected)
 	}
@@ -283,7 +283,7 @@ func TestAreionSoEM256(t *testing.T) {
 		input[i] = byte(i + 64)
 	}
 	out = AreionSoEM256(&key, &input)
-	expected, _ = hex.DecodeString("7d988f8b9974656d7573b291fe378d7a6c5f9a9c0d71f4510953a27cc23a6baf")
+	expected, _ = hex.DecodeString("308aee3b62aae1b45265caedfec59750809019a0e0212e763720078b0959e2a8")
 	if !bytes.Equal(out[:], expected) {
 		t.Errorf("AreionSoEM256(seq) failed\nGot:      %x\nExpected: %x", out[:], expected)
 	}
@@ -294,7 +294,7 @@ func TestAreionSoEM512(t *testing.T) {
 	var key [128]byte
 	var input [64]byte
 	out := AreionSoEM512(&key, &input)
-	expected, _ := hex.DecodeString("4ac61c79b8575a64a2a037a267e37375951aa9f1dc09ce4df0686488e48a0712d1d684bc003d906940e5a2d5c1eae993409b10d864da8886404c73f63890e07a")
+	expected, _ := hex.DecodeString("581f0632baade730452d4690acca763c952a3df2741f2cb64074985a248e93b3fe0b9de5d02abf8f6fd43c21c56cf314a7f5f5fba3b532bbb28e1e455122a7c0")
 	if !bytes.Equal(out[:], expected) {
 		t.Errorf("AreionSoEM512(zeros) failed\nGot:      %x\nExpected: %x", out[:], expected)
 	}
@@ -307,7 +307,7 @@ func TestAreionSoEM512(t *testing.T) {
 		input[i] = byte(i + 128)
 	}
 	out = AreionSoEM512(&key, &input)
-	expected, _ = hex.DecodeString("6970032eb5721f8d819a49a2ee8ca7a0416977cf58666de3848c6449315c6a05ee6c30d2de89bee708db8f9f2a045dbd71e8f5291f4912ca033364402989a6be")
+	expected, _ = hex.DecodeString("271fa05a95f4539759121ffeef462a7f21fd9ef9ae6e8e779c2ec80a5ed18a84bb0f5f9b8ca4bfd82cea7f000c16c71991c32aa31c1657f40890b12a51d2bcf1")
 	if !bytes.Equal(out[:], expected) {
 		t.Errorf("AreionSoEM512(seq) failed\nGot:      %x\nExpected: %x", out[:], expected)
 	}
@@ -547,7 +547,7 @@ func TestAreionSoEMNoKeyShiftSymmetry(t *testing.T) {
 func TestAreionPermute2KnownAnswer(t *testing.T) {
 	var state256 Areion256
 	areion256Permute2(&state256)
-	expected, _ := hex.DecodeString("c9270896dbbf80b79db9975ca9f5ca83e5dfd3af48ac201800e5be74f767be2a")
+	expected, _ := hex.DecodeString("9459ad09732a12df686326cdb291bd021239b6ec01df49d7018902ea09473284")
 	if !bytes.Equal(state256[:], expected) {
 		t.Errorf("Areion256 second permutation (zeros) failed\nGot:      %x\nExpected: %x", state256[:], expected)
 	}
@@ -555,14 +555,14 @@ func TestAreionPermute2KnownAnswer(t *testing.T) {
 		state256[i] = byte(i)
 	}
 	areion256Permute2(&state256)
-	expected, _ = hex.DecodeString("2a105b2728271062195d5711cbfc592cafbe71252fb872fcdfd5b91b668be331")
+	expected, _ = hex.DecodeString("b59b22ce1537d50db949a4222621e9171525fcd650cae441a7c66162675e65e6")
 	if !bytes.Equal(state256[:], expected) {
 		t.Errorf("Areion256 second permutation (seq) failed\nGot:      %x\nExpected: %x", state256[:], expected)
 	}
 
 	var state512 Areion512
 	areion512Permute2(&state512)
-	expected, _ = hex.DecodeString("f86bac361148ca71fb964680acdfe5dcedd597156b35a419cf8eb80d931b05f53223d4ac16f37d7492212fde03f81294ed8d974cd94c47751945be2edab7a952")
+	expected, _ = hex.DecodeString("eab2b67d13b277251c1b37b267f6e095ede50316c32346e27f9244df531f91541dfecdf5c6e45292bd10b12a077e08130ae3726f1e23fd48eb87d39db305eee8")
 	if !bytes.Equal(state512[:], expected) {
 		t.Errorf("Areion512 second permutation (zeros) failed\nGot:      %x\nExpected: %x", state512[:], expected)
 	}
@@ -570,7 +570,7 @@ func TestAreionPermute2KnownAnswer(t *testing.T) {
 		state512[i] = byte(i)
 	}
 	areion512Permute2(&state512)
-	expected, _ = hex.DecodeString("d2581b6f5b464de84bb66ce14f1310f38de46e1781633cd4fcbcc6c49e26fcf4e90764efc7e9fddf4083c1aafa5017c45dd2d429de57bbbf6df5e82934458645")
+	expected, _ = hex.DecodeString("bad430e7c4a11e8cfec7cc58a45915da0e88f49615200c41a45fea75e1725fb9f59818f3a300cb89abd6ed7e50ba5cc5b8c78e5240faeff2aed7233682bc296d")
 	if !bytes.Equal(state512[:], expected) {
 		t.Errorf("Areion512 second permutation (seq) failed\nGot:      %x\nExpected: %x", state512[:], expected)
 	}

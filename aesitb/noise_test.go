@@ -19,24 +19,24 @@ type noiseVector struct {
 }
 
 var noiseVectors = []noiseVector{
-	{0, 0, "de74b114824defae82c8d9694ad4f638"},
-	{1, 0, "876d291560d51e8cce40d233802d918f"},
-	{2, 0, "aab81714c99c08718698880c914877e6"},
-	{255, 0, "1ea0eafd6c3d3f0677d789fea3d4820a"},
-	{256, 0, "4da8d030b0cc28c4529147f2140b7722"},
-	{1<<32 - 1, 0, "39c0ab1f42637c163ee33182c73ae33d"},
-	{1 << 32, 0, "9d06b1d6a4de79bf3d2db456c2443180"},
-	{^uint64(0), 0, "f30deb030867dcd367d261bdc32b4010"},
-	{0, 1, "6921ae55824a12a86a1b6b8978b99471"},
-	{^uint64(0), ^uint64(0), "6acf3f5bf598c36a788db4713c3efd43"},
+	{0, 0, "04a712ed4fb89ef505280c67c3da3c4c"},
+	{1, 0, "f54f4d640b61bf55d1b36034cd183462"},
+	{2, 0, "fcf7bae0c0b04bf06723b3b6e1f0c587"},
+	{255, 0, "7958b60279a6ae873686dfb82858fa85"},
+	{256, 0, "e147227fc7f8f4f30b344dea692c3359"},
+	{1<<32 - 1, 0, "3c3cb305228cb0e05d671ce79aff9bad"},
+	{1 << 32, 0, "ada84cd96fc1fd2ca3c1b831cf39aa7a"},
+	{^uint64(0), 0, "f6aab7411f5153191ed9ffac35b132d9"},
+	{0, 1, "57d809a12b99a77af64c85713b278226"},
+	{^uint64(0), ^uint64(0), "ec5d695d5f45414c81081084801edcf5"},
 }
 
 // Stream digests of the filler under refKey / refNonce(32) from block 0.
 const (
-	noiseFirst64     = "de74b114824defae82c8d9694ad4f638876d291560d51e8cce40d233802d918faab81714c99c08718698880c914877e6c1a2102f68af57d0d0d74c66f6f0a70a"
-	noiseSHA256of64  = "963b4af83d8286d9362416dd591863e6db00535ee61c983e05cfb37b3c2b30a0"
-	noiseSHA256of4K  = "afbd239ef4d6ba732d70612facf263df9609c0ba8ed6c05be120e62c155d2a83" // first 4103 bytes
-	noiseSHA256of64K = "841159c3a446cf9a5332290cb687b9fa98fabbeb3916281e39cfa67c7e6678d8"
+	noiseFirst64     = "04a712ed4fb89ef505280c67c3da3c4cf54f4d640b61bf55d1b36034cd183462fcf7bae0c0b04bf06723b3b6e1f0c58790bae52b8836700b12adc295b3648f02"
+	noiseSHA256of64  = "71d6e7322e19020148109ed6c638fc88bffb973ad976be3a2abad5599b886eac"
+	noiseSHA256of4K  = "508816bf187fdd45b0350dbe1dc51e050805dfc90cc20bc894c9038eb68c5ba8" // first 4103 bytes
+	noiseSHA256of64K = "3478b173ae833dfa37e466afe2a248d63ae456d8d6cf8a372b0976666d288eb2"
 )
 
 func refNonce32() *[32]byte {

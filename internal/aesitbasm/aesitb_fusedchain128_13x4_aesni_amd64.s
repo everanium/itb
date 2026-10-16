@@ -3,8 +3,10 @@
 // Legacy-SSE AES-NI XMM fused ChainHash cascade kernel for AES-ITB-128 at the
 // 13-byte shape, 4 lanes (1 PKCS#7 block, 3 AES rounds per
 // cascade round).
-// The padded data blocks are staged once into the frame and every
-// cascade round runs from those 16-byte slots; see aesitbasm_fused.go for the
+// The padded data blocks are staged once into the frame, every block
+// past block 0 with the round constant of the preceding absorb round
+// folded in so it serves as that round's key, and every cascade round
+// runs from those 16-byte slots; see aesitbasm_fused.go for the
 // construction and the in-package parity tests for the bit-exact pin
 // against the pure-Go cascade.
 
@@ -47,11 +49,6 @@ TEXT ·aesITB128FusedChain13x4AesNiAsm(SB), NOSPLIT, $64-40
 	MOVOU ·RC+0(SB), X5
 	MOVOU ·RC+16(SB), X6
 	MOVOU ·RC+32(SB), X7
-	MOVOU ·RC+48(SB), X8
-	MOVOU ·RC+64(SB), X9
-	MOVOU ·RC+80(SB), X10
-	MOVOU ·RC+96(SB), X11
-	MOVOU ·RC+112(SB), X12
 	MOVOU 0(AX), X13
 	PXOR X0, X0
 	PXOR X1, X1
@@ -74,8 +71,8 @@ loop:
 	MOVOU 48(SP), X4
 	PXOR X4, X3
 	AESENC X5, X0; AESENC X5, X1; AESENC X5, X2; AESENC X5, X3
-	AESENC X5, X0; AESENC X5, X1; AESENC X5, X2; AESENC X5, X3
 	AESENC X6, X0; AESENC X6, X1; AESENC X6, X2; AESENC X6, X3
+	AESENC X7, X0; AESENC X7, X1; AESENC X7, X2; AESENC X7, X3
 	ADDQ $16, BX
 	DECQ CX
 	JNZ loop

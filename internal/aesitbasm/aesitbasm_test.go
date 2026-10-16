@@ -181,8 +181,9 @@ func roundHWChainAbsorb(key *[16]byte, data []byte, seed0, seed1 uint64) (uint64
 		state[i] ^= pad
 	}
 	aes.RoundHW((*aes.Block)(&state), (*aes.Block)(&RC[blk&7]))
-	aes.RoundHW((*aes.Block)(&state), (*aes.Block)(&RC[0]))
-	aes.RoundHW((*aes.Block)(&state), (*aes.Block)(&RC[1]))
+	blk++
+	aes.RoundHW((*aes.Block)(&state), (*aes.Block)(&RC[blk&7]))
+	aes.RoundHW((*aes.Block)(&state), (*aes.Block)(&RC[(blk+1)&7]))
 	return binary.LittleEndian.Uint64(state[:8]), binary.LittleEndian.Uint64(state[8:])
 }
 

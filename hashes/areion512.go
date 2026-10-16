@@ -102,8 +102,8 @@ func areion512InterlockFillBatch16(key []byte) (itb.InterlockFillFunc16x512, err
 	}
 	var k [64]byte
 	copy(k[:], key)
-	return func(components []uint64, groupIdxBase uint64, out *[4][8]uint64) {
-		areionasm.Fused512Fill13x4(&k, components, groupIdxBase, out)
+	return func(components []uint64, groupIdxBase uint64, v uint32, out *[4][8]uint64) {
+		areionasm.Fused512Fill13x4(&k, components, groupIdxBase, v, out)
 	}, nil
 }
 
@@ -157,7 +157,7 @@ func areion512InterlockFillBatch32(key []byte) (itb.InterlockFillFunc32x512, err
 	}
 	var k [64]byte
 	copy(k[:], key)
-	return func(components []uint64, groupIdxBase uint64, out *[8][8]uint64) {
-		areionasm.Fused512Fill13x8(&k, components, groupIdxBase, out)
+	return func(components []uint64, groupIdxBase uint64, v uint32, out *[8][8]uint64) {
+		areionasm.Fused512Fill13x8(&k, components, groupIdxBase, v, out)
 	}, nil
 }

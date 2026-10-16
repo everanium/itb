@@ -2,32 +2,7 @@ package aesitb
 
 import (
 	"encoding/binary"
-	"errors"
-	"fmt"
 )
-
-// Domain tags of the ITB per-pixel derivation domains. Sessions are keyed
-// by tag byte, as in the reference construction: the tag is XORed into
-// byte 0 of the key-initialised state before the nonce is absorbed.
-const (
-	DomainStartPixel byte = 0x02
-	DomainChunkLock  byte = 0x03
-	DomainLockSeed   byte = 0x04
-	DomainBlockHash  byte = 0x00
-)
-
-// domains lists every shipped domain tag in reference order.
-var domains = [4]byte{DomainStartPixel, DomainChunkLock, DomainLockSeed, DomainBlockHash}
-
-// nonceLengths lists the accepted nonce sizes in bytes.
-var nonceLengths = [3]int{16, 32, 64}
-
-// MaxIdx is the exclusive upper bound of the per-pixel index (48 bits).
-const MaxIdx uint64 = 1 << 48
-
-// ErrNonceLen is returned by NewSession / SessionInit for a nonce whose
-// length is not 16, 32 or 64 bytes.
-var ErrNonceLen = errors.New("aesitb: nonce length must be 16, 32, or 64 bytes")
 
 // sbox is the FIPS-197 § 5.1.1 substitution table.
 var sbox = [256]byte{
@@ -96,111 +71,35 @@ func aesRound(s, rk *[16]byte) {
 	addRoundKey(s, rk)
 }
 
-// rc holds the eight pairwise-distinct round constants, each a big-endian
-// packing of FIPS 180-4 initial-hash-value words (fractional bits of the
-// square roots of small primes):
+// rc holds the eight pairwise-distinct round constants: rc[i] is the
+// (i+1)-th 128-bit word of the hexadecimal fractional expansion of π
+// (fractional hex digits 32·i + 1 … 32·i + 32; π = 3.243F6A88…), loaded
+// big-endian — the word's most significant byte is AES state byte 0, its
+// least significant byte state byte 15, in the column-major order
+// s[4·col + row].
 //
-//   - rc[0..1]: SHA-256 IV (== BLAKE3 IV), p ∈ {2, 3, 5, 7, 11, 13, 17, 19}, 32-bit words
-//   - rc[2..5]: SHA-512 IV, same primes, 64-bit words
-//   - rc[6..7]: SHA-384 IV first four words, p ∈ {23, 29, 31, 37}, 64-bit words
-//
-// Schedule: session init absorbs nonce chunk c under rc[absorbRC[c]] and
-// closes with rc[1] then rc[7]; HashPixel applies rc[2] then rc[3];
-// HashGeneric cycles rc[0..7] over its blocks and finalises with rc[0]
-// then rc[1].
+// Schedule: HashGeneric runs rc[i mod 8] over its blocks i = 0 … b−1 and
+// finalises with rc[b mod 8] then rc[(b+1) mod 8].
 var rc = [8][16]byte{
-	{0x6A, 0x09, 0xE6, 0x67, 0xBB, 0x67, 0xAE, 0x85, 0x3C, 0x6E, 0xF3, 0x72, 0xA5, 0x4F, 0xF5, 0x3A},
-	{0x51, 0x0E, 0x52, 0x7F, 0x9B, 0x05, 0x68, 0x8C, 0x1F, 0x83, 0xD9, 0xAB, 0x5B, 0xE0, 0xCD, 0x19},
-	{0x6A, 0x09, 0xE6, 0x67, 0xF3, 0xBC, 0xC9, 0x08, 0xBB, 0x67, 0xAE, 0x85, 0x84, 0xCA, 0xA7, 0x3B},
-	{0x3C, 0x6E, 0xF3, 0x72, 0xFE, 0x94, 0xF8, 0x2B, 0xA5, 0x4F, 0xF5, 0x3A, 0x5F, 0x1D, 0x36, 0xF1},
-	{0x51, 0x0E, 0x52, 0x7F, 0xAD, 0xE6, 0x82, 0xD1, 0x9B, 0x05, 0x68, 0x8C, 0x2B, 0x3E, 0x6C, 0x1F},
-	{0x1F, 0x83, 0xD9, 0xAB, 0xFB, 0x41, 0xBD, 0x6B, 0x5B, 0xE0, 0xCD, 0x19, 0x13, 0x7E, 0x21, 0x79},
-	{0xCB, 0xBB, 0x9D, 0x5D, 0xC1, 0x05, 0x9E, 0xD8, 0x62, 0x9A, 0x29, 0x2A, 0x36, 0x7C, 0xD5, 0x07},
-	{0x91, 0x59, 0x01, 0x5A, 0x30, 0x70, 0xDD, 0x17, 0x15, 0x2F, 0xEC, 0xD8, 0xF7, 0x0E, 0x59, 0x39},
+	{0x24, 0x3F, 0x6A, 0x88, 0x85, 0xA3, 0x08, 0xD3, 0x13, 0x19, 0x8A, 0x2E, 0x03, 0x70, 0x73, 0x44},
+	{0xA4, 0x09, 0x38, 0x22, 0x29, 0x9F, 0x31, 0xD0, 0x08, 0x2E, 0xFA, 0x98, 0xEC, 0x4E, 0x6C, 0x89},
+	{0x45, 0x28, 0x21, 0xE6, 0x38, 0xD0, 0x13, 0x77, 0xBE, 0x54, 0x66, 0xCF, 0x34, 0xE9, 0x0C, 0x6C},
+	{0xC0, 0xAC, 0x29, 0xB7, 0xC9, 0x7C, 0x50, 0xDD, 0x3F, 0x84, 0xD5, 0xB5, 0xB5, 0x47, 0x09, 0x17},
+	{0x92, 0x16, 0xD5, 0xD9, 0x89, 0x79, 0xFB, 0x1B, 0xD1, 0x31, 0x0B, 0xA6, 0x98, 0xDF, 0xB5, 0xAC},
+	{0x2F, 0xFD, 0x72, 0xDB, 0xD0, 0x1A, 0xDF, 0xB7, 0xB8, 0xE1, 0xAF, 0xED, 0x6A, 0x26, 0x7E, 0x96},
+	{0xBA, 0x7C, 0x90, 0x45, 0xF1, 0x2C, 0x7F, 0x99, 0x24, 0xA1, 0x99, 0x47, 0xB3, 0x91, 0x6C, 0xF7},
+	{0x08, 0x01, 0xF2, 0xE2, 0x85, 0x8E, 0xFC, 0x16, 0x63, 0x69, 0x20, 0xD8, 0x71, 0x57, 0x4E, 0x69},
 }
 
-// absorbRC maps nonce chunk index (0..3) to the rc index applied after
-// that chunk is absorbed during session init.
-var absorbRC = [4]int{0, 4, 5, 6}
-
-func validNonce(nonce []byte) bool {
-	for _, n := range nonceLengths {
-		if len(nonce) == n {
-			return true
-		}
-	}
-	return false
-}
-
-// SessionInit returns the pre-permuted state for (key, nonce, tag):
-//
-//	state = key XOR (tag || 0^15)
-//	for each 16-byte nonce chunk c: state = AESRound(state XOR chunk_c, rc[absorbRC[c]])
-//	state = AESRound(AESRound(state, rc[1]), rc[7])
-func SessionInit(key [16]byte, nonce []byte, tag byte) ([16]byte, error) {
-	if !validNonce(nonce) {
-		return [16]byte{}, fmt.Errorf("%w: got %d bytes", ErrNonceLen, len(nonce))
-	}
-	state := key
-	state[0] ^= tag
-	for c := 0; c < len(nonce)/16; c++ {
-		for i := 0; i < 16; i++ {
-			state[i] ^= nonce[16*c+i]
-		}
-		aesRound(&state, &rc[absorbRC[c]])
-	}
-	aesRound(&state, &rc[1])
-	aesRound(&state, &rc[7])
-	return state, nil
-}
-
-// Session holds the pre-computed per-domain states for one (key, nonce).
-type Session struct {
-	states map[byte][16]byte
-}
-
-// NewSession pre-computes the state of every shipped domain tag
-// (DomainStartPixel, DomainChunkLock, DomainLockSeed, DomainBlockHash).
-func NewSession(key [16]byte, nonce []byte) (*Session, error) {
-	if !validNonce(nonce) {
-		return nil, fmt.Errorf("%w: got %d bytes", ErrNonceLen, len(nonce))
-	}
-	s := &Session{states: make(map[byte][16]byte, len(domains))}
-	for _, tag := range domains {
-		st, err := SessionInit(key, nonce, tag)
-		if err != nil {
-			return nil, err
-		}
-		s.states[tag] = st
-	}
-	return s, nil
-}
-
-// HashPixel returns AESRound(AESRound(state_tag XOR (LE64(idx) || 0^8), rc[2]), rc[3]).
-// idx must be below MaxIdx and tag must be a shipped domain tag; violations panic.
-func (s *Session) HashPixel(tag byte, idx uint64) [16]byte {
-	state, ok := s.states[tag]
-	if !ok {
-		panic(fmt.Sprintf("aesitb: unknown domain tag %#x", tag))
-	}
-	if idx >= MaxIdx {
-		panic(fmt.Sprintf("aesitb: idx %d exceeds 48-bit range", idx))
-	}
-	var idxBlock [16]byte
-	binary.LittleEndian.PutUint64(idxBlock[:8], idx)
-	addRoundKey(&state, &idxBlock)
-	aesRound(&state, &rc[2])
-	aesRound(&state, &rc[3])
-	return state
-}
-
-// HashGeneric is the nonce-free chain absorption fallback, CBC-MAC-style
-// over public AES rounds and keyed through the initial state:
+// HashGeneric is the nonce-free chain absorption, CBC-MAC-style over
+// public AES rounds and keyed through the initial state:
 //
 //	state  = key XOR (LE64(seed0) || LE64(seed1))
 //	padded = data || PKCS#7 padding to a 16-byte multiple (always ≥ 1 byte)
-//	state  = AESRound(state XOR block_i, rc[i mod 8])   for each block i
-//	out    = AESRound(AESRound(state, rc[0]), rc[1])
+//	state  = AESRound(state XOR block_i, rc[i mod 8])   for each block i < b
+//	out    = AESRound(AESRound(state, rc[b mod 8]), rc[(b+1) mod 8])
+//
+// where b is the number of padded blocks.
 func HashGeneric(key [16]byte, data []byte, seed0, seed1 uint64) [16]byte {
 	var seedBlock [16]byte
 	binary.LittleEndian.PutUint64(seedBlock[:8], seed0)
@@ -214,13 +113,14 @@ func HashGeneric(key [16]byte, data []byte, seed0, seed1 uint64) [16]byte {
 	for i := 0; i < padLen; i++ {
 		padded = append(padded, byte(padLen))
 	}
-	for i := 0; i < len(padded)/16; i++ {
+	b := len(padded) / 16
+	for i := 0; i < b; i++ {
 		var block [16]byte
 		copy(block[:], padded[16*i:16*i+16])
 		addRoundKey(&state, &block)
 		aesRound(&state, &rc[i%8])
 	}
-	aesRound(&state, &rc[0])
-	aesRound(&state, &rc[1])
+	aesRound(&state, &rc[b%8])
+	aesRound(&state, &rc[(b+1)%8])
 	return state
 }

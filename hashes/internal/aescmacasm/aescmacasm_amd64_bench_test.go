@@ -10,18 +10,20 @@ import (
 
 // benchKernelX16 times one batch-16 fill kernel directly at the given
 // cascade length. Components stay stable across calls (the production
-// pattern: the prepended lock components are built once per container);
-// the group base advances by 16 per call. Input: 16 lanes × 13 bytes =
+// pattern: the prepended lock components are built once per container)
+// and so does the interlock-nonce fold (one value per message); the
+// group base advances by 16 per call. Input: 16 lanes × 13 bytes =
 // 208 bytes per iteration.
 func benchKernelX16(b *testing.B, pairs int, kernel fusedX16Fn) {
 	s := NewSchedule(ascendingKey())
 	comps := fusedX16Components(0x0102030405060708, 0x090a0b0c0d0e0f00, pairs)
+	const v = uint32(0xA5C33C5A)
 	var out [16][2]uint64
 	b.SetBytes(16 * 13)
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		kernel(s, comps, uint64(i*16), &out)
+		kernel(s, comps, uint64(i*16), v, &out)
 	}
 }
 

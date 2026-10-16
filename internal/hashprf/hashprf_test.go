@@ -129,8 +129,8 @@ func TestPRFRegression(t *testing.T) {
 		name string
 		want string
 	}{
-		{hashes.CipherAreion256, "66616f2edad58b8280e135a6a27439fae10f06202e38723a12d41830f270a219"},
-		{hashes.CipherAreion512, "2ecb37bbf1403fbb00102d56e3940e0a4df95b61a3ee82c8b7cfcc741e9721073d3bcf685d68b5eff72ac35007738888f14fd74d1fc83c132e2661ffccce278b"},
+		{hashes.CipherAreion256, "5f9cde0b712070eb09b3d9ac3dbc8df17b23d3de2873e8c1d1f3e8ca4deac5c1"},
+		{hashes.CipherAreion512, "55f77bc43481092d91dc31787d65334ae537c5bd88607959c180adf14014ff97060c8ed54e314af9a6289cdc4567a2781444dd8071c39bd11b38bafd3888e55e"},
 		{hashes.CipherBLAKE2b256, "7a172a3e6d568847321a0f43318e77f8fa0566fd38230a0f39232d729a7d2fda"},
 		{hashes.CipherBLAKE2b512, "3a8f333fff6613bfc0b0d0490f9529eee4642b91e7df425e4da1bc4f290ba38b36ee17e8f6130916985d38ee0a46ae4a45c03c9018252b770b011552c48c786d"},
 		{hashes.CipherBLAKE2s, "45d3b20804c1380a77049cb9c89829e23d7e32a5a98bc15a9aea274fcdf19c97"},
@@ -566,6 +566,26 @@ func TestAreionSubkeyDerivation(t *testing.T) {
 	for i := range s512 {
 		if want := binary.LittleEndian.Uint64(sum[i*8:]); s512[i] != want {
 			t.Errorf("areion512 seed word %d = %#x, want %#x", i, s512[i], want)
+		}
+	}
+}
+
+// TestNonPRFRejected pins the exclusion of the Non-PRF registry entry from
+// every keyed-PRF constructor: AES-ITB-128 is one-pair invertible
+// standalone, so a keystream, KDF or MAC key derived through it would be
+// recoverable from one output block. KeySize, New and NewBatch must all
+// refuse it.
+func TestNonPRFRejected(t *testing.T) {
+	name := hashes.CipherAESITB128
+	if _, err := KeySize(name); err == nil {
+		t.Errorf("KeySize(%q): expected error", name)
+	}
+	for _, n := range []int{16, 32, 64} {
+		if _, _, err := New(name, make([]byte, n)); err == nil {
+			t.Errorf("New(%q, %d-byte key): expected error", name, n)
+		}
+		if _, _, _, err := NewBatch(name, make([]byte, n)); err == nil {
+			t.Errorf("NewBatch(%q, %d-byte key): expected error", name, n)
 		}
 	}
 }

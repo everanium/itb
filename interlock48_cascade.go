@@ -37,12 +37,41 @@ import (
 // ITB_FORCE_CHAINHASH_SEQ chooses the arm inside each rung the same way.
 //
 // The fill closures share one fill block per group,
-// [0x03 | LE64(groupIdx) | 4×0x00] (13 bytes): fill / fillRanks
+// [0x03 | LE64(groupIdx) | v] (13 bytes), where v is the 4-byte
+// interlock-nonce fold of [interlockNonceFold]: fill / fillRanks
 // evaluate the single-lane cascade ([Seed128.chainHash128With] and the
 // wider counterparts), fillRanksX4 the four-lane cascade
 // ([Seed128.batchChainHash128With] and counterparts) and
 // fillRanksSuper the batch-16 hook, so a group takes the same value
-// whichever closure the worker split hands it to.
+// whichever closure the worker split hands it to. v is folded once per
+// builder call, next to lockComps, and captured as its little-endian
+// word (a value capture — taking the address of a captured array would
+// heap-allocate it per message); the closures write that word into
+// every block they build and hand it to the batched hooks.
+
+// interlockNonceFold returns the 4-byte fold of the interlock nonce
+// carried in bytes 9..12 of every Rank Barrier fill block: the bytewise
+// XOR of the consecutive 4-byte slices of nonce (4 / 8 / 16 slices at
+// the 128 / 256 / 512-bit nonce widths), so every fragment of the nonce
+// reaches the fold. One value per message, defined as bytes so that
+// every architecture — including big-endian hosts on the pure-Go
+// paths — builds the identical block; the kernels that take the fold
+// as a word receive binary.LittleEndian.Uint32 of these bytes
+// ([interlockNonceFoldWord]).
+func interlockNonceFold(nonce []byte) [4]byte {
+	var v [4]byte
+	for i, b := range nonce {
+		v[i&3] ^= b
+	}
+	return v
+}
+
+// interlockNonceFoldWord is the little-endian word image of
+// [interlockNonceFold] — the form the batch-16 / batch-32 fill hooks
+// take (see [InterlockFillFunc16]).
+func interlockNonceFoldWord(v [4]byte) uint32 {
+	return binary.LittleEndian.Uint32(v[:])
+}
 
 // buildLockBatchPRF48_128 is the batched 128-bit-width builder. One
 // cascade per group yields 1 mask triple from the (lo, hi) output pair
@@ -59,11 +88,13 @@ func buildLockBatchPRF48_128(lockSeed *Seed128, nonce []byte) lockBatchPRF48 {
 	lockComps := make([]uint64, 2+len(lockSeed.Components))
 	lockComps[0], lockComps[1] = lockLo, lockHi
 	copy(lockComps[2:], lockSeed.Components)
+	foldWord := interlockNonceFoldWord(interlockNonceFold(nonce))
 	bp := lockBatchPRF48{
 		factor: lockBatchFactor48_128,
 		fill: func(buf []byte, groupIdx uint64, masks *[lockBatchFactor48Max][3]uint64) {
 			buf[0] = 0x03
 			binary.LittleEndian.PutUint64(buf[1:9], groupIdx)
+			binary.LittleEndian.PutUint32(buf[9:13], foldWord)
 			lo, hi := lockSeed.chainHash128With(lockComps, buf)
 			var prf [8]uint64
 			prf[0], prf[1] = lo, hi
@@ -72,6 +103,7 @@ func buildLockBatchPRF48_128(lockSeed *Seed128, nonce []byte) lockBatchPRF48 {
 		fillRanks: func(buf []byte, groupIdx uint64, prf []uint64) {
 			buf[0] = 0x03
 			binary.LittleEndian.PutUint64(buf[1:9], groupIdx)
+			binary.LittleEndian.PutUint32(buf[9:13], foldWord)
 			prf[0], prf[1] = lockSeed.chainHash128With(lockComps, buf)
 		},
 	}
@@ -80,6 +112,7 @@ func buildLockBatchPRF48_128(lockSeed *Seed128, nonce []byte) lockBatchPRF48 {
 			for i := range s.bufs {
 				s.bufs[i][0] = 0x03
 				binary.LittleEndian.PutUint64(s.bufs[i][1:9], groupIdx+uint64(i))
+				binary.LittleEndian.PutUint32(s.bufs[i][9:13], foldWord)
 				s.data[i] = s.bufs[i][:]
 			}
 			out := lockSeed.batchChainHash128With(lockComps, &s.data)
@@ -91,7 +124,7 @@ func buildLockBatchPRF48_128(lockSeed *Seed128, nonce []byte) lockBatchPRF48 {
 	}
 	if bh16 := lockSeed.InterlockFillX16(); bh16 != nil && !forcetier.InterlockPRFFillSeq() && !forcetier.InterlockPRFFillX1() && !forcetier.InterlockPRFFillX4() {
 		bp.fillRanksSuper = func(s *lockFillScratch48, groupIdxBase uint64, prf []uint64) {
-			bh16(lockComps, groupIdxBase, &s.out16)
+			bh16(lockComps, groupIdxBase, foldWord, &s.out16)
 			for i := 0; i < 16; i++ {
 				prf[2*i] = s.out16[i][0]
 				prf[2*i+1] = s.out16[i][1]
@@ -111,11 +144,13 @@ func buildLockBatchPRF48_256(lockSeed *Seed256, nonce []byte) lockBatchPRF48 {
 	lockComps := make([]uint64, 4+len(lockSeed.Components))
 	copy(lockComps[:4], lockKey[:])
 	copy(lockComps[4:], lockSeed.Components)
+	foldWord := interlockNonceFoldWord(interlockNonceFold(nonce))
 	bp := lockBatchPRF48{
 		factor: lockBatchFactor48_256,
 		fill: func(buf []byte, groupIdx uint64, masks *[lockBatchFactor48Max][3]uint64) {
 			buf[0] = 0x03
 			binary.LittleEndian.PutUint64(buf[1:9], groupIdx)
+			binary.LittleEndian.PutUint32(buf[9:13], foldWord)
 			out := lockSeed.chainHash256With(lockComps, buf)
 			var prf [8]uint64
 			copy(prf[:4], out[:])
@@ -124,6 +159,7 @@ func buildLockBatchPRF48_256(lockSeed *Seed256, nonce []byte) lockBatchPRF48 {
 		fillRanks: func(buf []byte, groupIdx uint64, prf []uint64) {
 			buf[0] = 0x03
 			binary.LittleEndian.PutUint64(buf[1:9], groupIdx)
+			binary.LittleEndian.PutUint32(buf[9:13], foldWord)
 			out := lockSeed.chainHash256With(lockComps, buf)
 			copy(prf[:4], out[:])
 		},
@@ -133,6 +169,7 @@ func buildLockBatchPRF48_256(lockSeed *Seed256, nonce []byte) lockBatchPRF48 {
 			for i := range s.bufs {
 				s.bufs[i][0] = 0x03
 				binary.LittleEndian.PutUint64(s.bufs[i][1:9], groupIdx+uint64(i))
+				binary.LittleEndian.PutUint32(s.bufs[i][9:13], foldWord)
 				s.data[i] = s.bufs[i][:]
 			}
 			out := lockSeed.batchChainHash256With(lockComps, &s.data)
@@ -143,7 +180,7 @@ func buildLockBatchPRF48_256(lockSeed *Seed256, nonce []byte) lockBatchPRF48 {
 	}
 	if bh16 := lockSeed.InterlockFillX16(); bh16 != nil && !forcetier.InterlockPRFFillSeq() && !forcetier.InterlockPRFFillX1() && !forcetier.InterlockPRFFillX4() {
 		bp.fillRanksSuper = func(s *lockFillScratch48, groupIdxBase uint64, prf []uint64) {
-			bh16(lockComps, groupIdxBase, &s.out16x256)
+			bh16(lockComps, groupIdxBase, foldWord, &s.out16x256)
 			for i := 0; i < 8; i++ {
 				copy(prf[4*i:4*i+4], s.out16x256[i][:])
 			}
@@ -151,7 +188,7 @@ func buildLockBatchPRF48_256(lockSeed *Seed256, nonce []byte) lockBatchPRF48 {
 	}
 	if bh32 := lockSeed.InterlockFillX32(); bh32 != nil && !forcetier.InterlockPRFFillSeq() && !forcetier.InterlockPRFFillX1() && !forcetier.InterlockPRFFillX4() && !forcetier.InterlockPRFFillX16() {
 		bp.fillRanksSuper32 = func(s *lockFillScratch48, groupIdxBase uint64, prf []uint64) {
-			bh32(lockComps, groupIdxBase, &s.out32x256)
+			bh32(lockComps, groupIdxBase, foldWord, &s.out32x256)
 			for i := 0; i < 16; i++ {
 				copy(prf[4*i:4*i+4], s.out32x256[i][:])
 			}
@@ -171,17 +208,20 @@ func buildLockBatchPRF48_512(lockSeed *Seed512, nonce []byte) lockBatchPRF48 {
 	lockComps := make([]uint64, 8+len(lockSeed.Components))
 	copy(lockComps[:8], lockKey[:])
 	copy(lockComps[8:], lockSeed.Components)
+	foldWord := interlockNonceFoldWord(interlockNonceFold(nonce))
 	bp := lockBatchPRF48{
 		factor: lockBatchFactor48_512,
 		fill: func(buf []byte, groupIdx uint64, masks *[lockBatchFactor48Max][3]uint64) {
 			buf[0] = 0x03
 			binary.LittleEndian.PutUint64(buf[1:9], groupIdx)
+			binary.LittleEndian.PutUint32(buf[9:13], foldWord)
 			out := lockSeed.chainHash512With(lockComps, buf)
 			fillLockMasksTriple48(&out, lockBatchFactor48_512, masks)
 		},
 		fillRanks: func(buf []byte, groupIdx uint64, prf []uint64) {
 			buf[0] = 0x03
 			binary.LittleEndian.PutUint64(buf[1:9], groupIdx)
+			binary.LittleEndian.PutUint32(buf[9:13], foldWord)
 			out := lockSeed.chainHash512With(lockComps, buf)
 			copy(prf[:8], out[:])
 		},
@@ -191,6 +231,7 @@ func buildLockBatchPRF48_512(lockSeed *Seed512, nonce []byte) lockBatchPRF48 {
 			for i := range s.bufs {
 				s.bufs[i][0] = 0x03
 				binary.LittleEndian.PutUint64(s.bufs[i][1:9], groupIdx+uint64(i))
+				binary.LittleEndian.PutUint32(s.bufs[i][9:13], foldWord)
 				s.data[i] = s.bufs[i][:]
 			}
 			out := lockSeed.batchChainHash512With(lockComps, &s.data)
@@ -201,7 +242,7 @@ func buildLockBatchPRF48_512(lockSeed *Seed512, nonce []byte) lockBatchPRF48 {
 	}
 	if bh16 := lockSeed.InterlockFillX16(); bh16 != nil && !forcetier.InterlockPRFFillSeq() && !forcetier.InterlockPRFFillX1() && !forcetier.InterlockPRFFillX4() {
 		bp.fillRanksSuper = func(s *lockFillScratch48, groupIdxBase uint64, prf []uint64) {
-			bh16(lockComps, groupIdxBase, &s.out16x512)
+			bh16(lockComps, groupIdxBase, foldWord, &s.out16x512)
 			for i := 0; i < 4; i++ {
 				copy(prf[8*i:8*i+8], s.out16x512[i][:])
 			}
@@ -209,7 +250,7 @@ func buildLockBatchPRF48_512(lockSeed *Seed512, nonce []byte) lockBatchPRF48 {
 	}
 	if bh32 := lockSeed.InterlockFillX32(); bh32 != nil && !forcetier.InterlockPRFFillSeq() && !forcetier.InterlockPRFFillX1() && !forcetier.InterlockPRFFillX4() && !forcetier.InterlockPRFFillX16() {
 		bp.fillRanksSuper32 = func(s *lockFillScratch48, groupIdxBase uint64, prf []uint64) {
-			bh32(lockComps, groupIdxBase, &s.out32x512)
+			bh32(lockComps, groupIdxBase, foldWord, &s.out32x512)
 			for i := 0; i < 8; i++ {
 				copy(prf[8*i:8*i+8], s.out32x512[i][:])
 			}

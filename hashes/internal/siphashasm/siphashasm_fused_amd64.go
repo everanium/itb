@@ -177,32 +177,33 @@ func FusedChain68x1(components []uint64, data *byte, out *[2]uint64) {
 
 // FusedChain13x16 runs the cascade on the 16 lanes of the Interlocked
 // Barrier fill: lane i carries the 13-byte fill block
-// [0x03 | LE64(groupIdxBase+i) | 4×0x00] and every lane runs the whole
-// cascade over components. The dispatch follows the batch-16 tier flags
+// [0x03 | LE64(groupIdxBase+i) | LE32(v)] (v the per-message
+// interlock-nonce fold) and every lane runs the whole cascade over
+// components. The dispatch follows the batch-16 tier flags
 // (HasAVX512X16 / HasAVX2X16) rather than the fused x4 flags, so
 // ITB_FORCE_INTERLOCK_PRF_FILL_TIER selects the arm. Both kernels
-// synthesise the blocks in-register: the ZMM kernel covers the sixteen
-// lanes in one call, the AVX2 eight-lane YMM kernel runs twice (lanes
-// 0..7 at groupIdxBase, lanes 8..15 at groupIdxBase + 8); without a SIMD
-// fill tier the GPR arm runs sixteen single-lane calls over Go-synthesised
-// blocks.
-func FusedChain13x16(components []uint64, groupIdxBase uint64, out *[16][2]uint64) {
+// synthesise the blocks in-register from groupIdxBase and v: the ZMM
+// kernel covers the sixteen lanes in one call, the AVX2 eight-lane YMM
+// kernel runs twice (lanes 0..7 at groupIdxBase, lanes 8..15 at
+// groupIdxBase + 8); without a SIMD fill tier the GPR arm runs sixteen
+// single-lane calls over Go-synthesised blocks.
+func FusedChain13x16(components []uint64, groupIdxBase uint64, v uint32, out *[16][2]uint64) {
 	if !validComponents(components) {
-		scalarFusedX16(components, groupIdxBase, out)
+		scalarFusedX16(components, groupIdxBase, v, out)
 		return
 	}
 	switch {
 	case HasAVX512X16:
-		sipHash24FusedChain13x16Avx512Asm(&components[0], len(components)/2, groupIdxBase, out)
+		sipHash24FusedChain13x16Avx512Asm(&components[0], len(components)/2, groupIdxBase, out, v)
 	case HasAVX2X16:
-		sipHash24FusedChain13x8Avx2Asm(&components[0], len(components)/2, groupIdxBase, x16Half(out, 0))
-		sipHash24FusedChain13x8Avx2Asm(&components[0], len(components)/2, groupIdxBase+8, x16Half(out, 1))
+		sipHash24FusedChain13x8Avx2Asm(&components[0], len(components)/2, groupIdxBase, x16Half(out, 0), v)
+		sipHash24FusedChain13x8Avx2Asm(&components[0], len(components)/2, groupIdxBase+8, x16Half(out, 1), v)
 	default:
 		if !HasGPRX16 {
-			scalarFusedX16(components, groupIdxBase, out)
+			scalarFusedX16(components, groupIdxBase, v, out)
 			return
 		}
-		blocks := fillBlocks16(groupIdxBase)
+		blocks := fillBlocks16(groupIdxBase, v)
 		c, np := &components[0], len(components)/2
 		for i := range blocks {
 			sipHash24FusedChain13x1GprAsm(c, np, &blocks[i][0], &out[i])
@@ -255,7 +256,7 @@ func sipHash24FusedChain68x1GprAsm(comps *uint64, nPairs int, data *byte, out *[
 // (siphash_fusedchain128_13x8_avx2_amd64.s).
 //
 //go:noescape
-func sipHash24FusedChain13x16Avx512Asm(comps *uint64, nPairs int, groupIdxBase uint64, out *[16][2]uint64)
+func sipHash24FusedChain13x16Avx512Asm(comps *uint64, nPairs int, groupIdxBase uint64, out *[16][2]uint64, v uint32)
 
 //go:noescape
-func sipHash24FusedChain13x8Avx2Asm(comps *uint64, nPairs int, groupIdxBase uint64, out *[8][2]uint64)
+func sipHash24FusedChain13x8Avx2Asm(comps *uint64, nPairs int, groupIdxBase uint64, out *[8][2]uint64, v uint32)

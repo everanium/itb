@@ -1,20 +1,16 @@
 package aesitb
 
 import (
+	"bytes"
 	"encoding/binary"
 	"encoding/hex"
 	"math/big"
 	"testing"
 )
 
-// KAT vectors: key = 00 11 22 .. FF; nonce = 0x10, 0x11, ... (n bytes);
-// generic data = 0x00, 0x01, ... (n bytes).
-
-type pixelVector struct {
-	tag  byte
-	idx  uint64
-	want string
-}
+// KAT vectors: key = 00 11 22 .. FF; generic data = 0x00, 0x01, ...
+// (n bytes); the noise-fill tests take their nonce from refNonce
+// (0x10, 0x11, ...).
 
 type genericVector struct {
 	dataLen      int
@@ -32,89 +28,26 @@ func refNonce(n int) []byte {
 	return out
 }
 
-// nonce length 16
-var pixelVectors16 = []pixelVector{
-	{DomainStartPixel, 0, "4372ef414898be0c117aed6d516a9d45"},
-	{DomainStartPixel, 1, "c531ac84d80815371f68f163cf771ec6"},
-	{DomainStartPixel, 42, "af0499dbfe2e7f7b8dc5cef12a38b46c"},
-	{DomainStartPixel, 4294967295, "a3523cc769e3dd8070c851a23b6e7314"},
-	{DomainStartPixel, 140737488355328, "4f74e94b9444c1af428f4b3ecb86eb33"},
-	{DomainChunkLock, 0, "563505ffcade04964a58d887b01d9f10"},
-	{DomainChunkLock, 1, "061d2d871206773dc9c6c504e57bac23"},
-	{DomainChunkLock, 42, "89d7e7c2c6d2108e84115f49dda24dc2"},
-	{DomainLockSeed, 0, "95819815e875361dab5cb4978cfcd08d"},
-	{DomainLockSeed, 1, "af9c8532e67b24012ccea11059936a37"},
-	{DomainBlockHash, 0, "43de4432e18df941ec594e83b5dea048"},
-	{DomainBlockHash, 1, "ec049e47325e97fcd80526b7e5be9078"},
-}
-
-// nonce length 32
-var pixelVectors32 = []pixelVector{
-	{DomainStartPixel, 0, "34f41ab9c2180bc9a7a9f01cd89be06a"},
-	{DomainStartPixel, 1, "aeb9576e67bdff980457adbf050dab21"},
-	{DomainStartPixel, 42, "a937d9e716cc6c7afd4744463925bf35"},
-	{DomainStartPixel, 4294967295, "32a73fe3f8d4bccdbe73480f66e8ba2c"},
-	{DomainStartPixel, 140737488355328, "01638d1b5a80b8e262fd61d9d297e66c"},
-	{DomainChunkLock, 0, "d07d2854a7ca859c1bee84c1ab628fef"},
-	{DomainChunkLock, 1, "5bb5e017c6ab265ea820f97299b76808"},
-	{DomainChunkLock, 42, "0b9dc86fd8b504622bbee4f1cb22afcf"},
-	{DomainLockSeed, 0, "131e6bd510e0b4aa6c8ecf6369117930"},
-	{DomainLockSeed, 1, "fb6a1f491fefa5b40a2403056c177a33"},
-	{DomainBlockHash, 0, "f953779a273548656cb0a9be5d621b60"},
-	{DomainBlockHash, 1, "5505216021334269ee2db63c7baff08b"},
-}
-
-// nonce length 64
-var pixelVectors64 = []pixelVector{
-	{DomainStartPixel, 0, "8facbe1721eeaaf077ed3c3d88e6d8e7"},
-	{DomainStartPixel, 1, "a63527a76ea17b6e4ba94401cd69122d"},
-	{DomainStartPixel, 42, "ea1301cdb37c07cf81eccbcb0612a29d"},
-	{DomainStartPixel, 4294967295, "c7be181c8c56d402a40e72ae0ab622b8"},
-	{DomainStartPixel, 140737488355328, "ec1002c8dd12b5133d33a87707e5546b"},
-	{DomainChunkLock, 0, "4a6682219e4b3a50c7f023795ad795a3"},
-	{DomainChunkLock, 1, "920aee954d9854eded8e77535fd196a0"},
-	{DomainChunkLock, 42, "f23adec575a01c9d0bbfa0b55b206355"},
-	{DomainLockSeed, 0, "4ef0f604fe7793f805339c4a16993092"},
-	{DomainLockSeed, 1, "a90e081d901921249b8abbd4c3f68a28"},
-	{DomainBlockHash, 0, "4eca5c9b0c9bb246799689faa102c0af"},
-	{DomainBlockHash, 1, "94a7312cf760a4ab54e1d3d7093b513e"},
-}
-
 var genericVectors = []genericVector{
-	{0, 0x0, 0x0, "d03e268799c14203bdb3e663165d6b23"},
-	{1, 0x0, 0x0, "f2a4e404c80c84451e35cadcc7f22bb9"},
-	{15, 0x0, 0x0, "95be57f5a239f3ab144382b7cd8695de"},
-	{16, 0x0, 0x0, "3171e8f8165c8ff5203ac9aa371c719a"},
-	{17, 0x0, 0x0, "48d3f6fcc2985cf31a074ea2c78b1d09"},
-	{31, 0x0, 0x0, "064e72d014e7a41c4fc3b7d1b938f625"},
-	{32, 0x0, 0x0, "e08f48e9037d3bc81d03dc0adc1b9d3b"},
-	{33, 0x0, 0x0, "7370df93d8fd5e118d33484f582e1750"},
-	{63, 0x0, 0x0, "c17822cc92d1a5fb712a1ea655de82ad"},
-	{64, 0x0, 0x0, "81615890aab0306bf4b32bbe2d7ca1af"},
-	{0, 0x1, 0x0, "787e6d0bae570d2ec58796bcbf68c172"},
-	{0, 0x0, 0x1, "e9d430852929ab3d88c240ddc40f823c"},
-	{5, 0x123456789abcdef, 0xfedcba9876543210, "7486079419f3f0767b579065d6cc3d93"},
-	{16, 0xffffffffffffffff, 0xffffffffffffffff, "2eae20695db216506bd63f96fda12ca0"},
-	{33, 0x7, 0x9, "dccfc56b263e1a2fc13052534f15092e"},
-	{64, 0x8000000000000000, 0x1, "a7a8e09b329611b7aec6a97b0e75cd25"},
-}
-
-func TestSessionKAT(t *testing.T) {
-	for _, tc := range []struct {
-		nlen int
-		vecs []pixelVector
-	}{{16, pixelVectors16}, {32, pixelVectors32}, {64, pixelVectors64}} {
-		sess, err := NewSession(refKey, refNonce(tc.nlen))
-		if err != nil {
-			t.Fatalf("nonce %d: %v", tc.nlen, err)
-		}
-		for _, v := range tc.vecs {
-			got := sess.HashPixel(v.tag, v.idx)
-			if g := hex.EncodeToString(got[:]); g != v.want {
-				t.Errorf("nonce=%d tag=%#x idx=%d: got %s want %s", tc.nlen, v.tag, v.idx, g, v.want)
-			}
-		}
-	}
+	{0, 0x0, 0x0, "b184dc9639cb19463a318b5bdbef60b3"},
+	{1, 0x0, 0x0, "98aa26e22213e0995747f26166741da1"},
+	{15, 0x0, 0x0, "67ff582c8131e477e50a0d5ad8159ffa"},
+	{16, 0x0, 0x0, "b525d15864f5da4095cac4878e734e65"},
+	{17, 0x0, 0x0, "b83d1718c4886682779773e766da4740"},
+	{31, 0x0, 0x0, "b4bb6ec276da61c523e83bdb6c71d283"},
+	{32, 0x0, 0x0, "6bce525c8ccab6ef9397b24764613f7b"},
+	{33, 0x0, 0x0, "12bf744bf5dc16db8fe26756e0bdfdc9"},
+	{63, 0x0, 0x0, "b60baf0921ce4914e43c7d22742bc285"},
+	{64, 0x0, 0x0, "1f43035d6a9e6d218803d2e171b9d4e1"},
+	{0, 0x1, 0x0, "877c1a9b664408e3a0f05d6e0bc743d3"},
+	{0, 0x0, 0x1, "3e3957b58667430747216ab9e87dd55a"},
+	{5, 0x123456789abcdef, 0xfedcba9876543210, "4769146529998d0c4d2861b4bc1efdfe"},
+	{16, 0xffffffffffffffff, 0xffffffffffffffff, "b0e1cbcf08246eb0a7f190fe1ad780dd"},
+	{33, 0x7, 0x9, "57e01a09debb3f6a814a92505188b8d0"},
+	{64, 0x8000000000000000, 0x1, "98876054889177dd47c546cd01811630"},
+	{80, 0x0, 0x0, "bb2af2751c71a52fd0fc49c95ef350c0"},
+	{96, 0x0, 0x0, "37d5acf4a140659dba5d810f10b62d0a"},
+	{128, 0x123456789abcdef, 0xfedcba987654321, "71f22c5f6678b8026faabb5aa7bb6ee5"},
 }
 
 func TestGenericKAT(t *testing.T) {
@@ -130,56 +63,45 @@ func TestGenericKAT(t *testing.T) {
 	}
 }
 
-func TestNonceLength(t *testing.T) {
-	for _, n := range []int{0, 1, 15, 17, 31, 33, 63, 65} {
-		if s, err := NewSession(refKey, make([]byte, n)); err == nil || s != nil {
-			t.Errorf("nonce len %d accepted", n)
-		}
-		if _, err := SessionInit(refKey, make([]byte, n), DomainBlockHash); err == nil {
-			t.Errorf("SessionInit accepted nonce len %d", n)
-		}
-	}
-}
-
-func TestIdxAndTagBounds(t *testing.T) {
-	sess, _ := NewSession(refKey, refNonce(16))
-	_ = sess.HashPixel(DomainBlockHash, MaxIdx-1)
-	mustPanic := func(name string, f func()) {
-		defer func() {
-			if recover() == nil {
-				t.Errorf("%s: expected panic", name)
-			}
-		}()
-		f()
-	}
-	mustPanic("idx", func() { sess.HashPixel(DomainBlockHash, MaxIdx) })
-	mustPanic("tag", func() { sess.HashPixel(0x05, 0) })
-}
-
-// TestRoundConstantsNUMS re-derives every RC row from the fractional bits
-// of sqrt(p) (the FIPS 180-4 initial-hash-value construction) and compares
-// byte-for-byte, so the table cannot drift from its stated provenance.
+// TestRoundConstantsNUMS re-derives every rc row from π itself — the
+// fractional hexadecimal expansion computed with Machin's formula
+// π = 16·atan(1/5) − 4·atan(1/239) in fixed-point big-integer
+// arithmetic — and compares byte-for-byte under the stated loading
+// convention (word i = fractional hex digits 32·i + 1 … 32·i + 32, most
+// significant byte first = AES state byte 0), so the table cannot drift
+// from its stated provenance.
 func TestRoundConstantsNUMS(t *testing.T) {
-	frac := func(p int64, bits uint) uint64 {
-		// floor(frac(sqrt(p)) * 2^bits) == isqrt(p << 2*bits) mod 2^bits
-		n := new(big.Int).Lsh(big.NewInt(p), 2*bits)
-		n.Sqrt(n)
-		mask := new(big.Int).Lsh(big.NewInt(1), bits)
-		mask.Sub(mask, big.NewInt(1))
-		return n.And(n, mask).Uint64()
+	const fracBits = 8 * 128 // eight 128-bit words
+	const guard = 64
+	one := new(big.Int).Lsh(big.NewInt(1), fracBits+guard)
+	arctanInv := func(x int64) *big.Int {
+		sum := new(big.Int)
+		term := new(big.Int).Quo(one, big.NewInt(x))
+		x2 := big.NewInt(x * x)
+		tmp := new(big.Int)
+		for n, sign := int64(1), 1; term.Sign() != 0; n, sign = n+2, -sign {
+			tmp.Quo(term, big.NewInt(n))
+			if sign > 0 {
+				sum.Add(sum, tmp)
+			} else {
+				sum.Sub(sum, tmp)
+			}
+			term.Quo(term, x2)
+		}
+		return sum
 	}
-	primes8 := []int64{2, 3, 5, 7, 11, 13, 17, 19}
-	primes4 := []int64{23, 29, 31, 37}
+	pi := new(big.Int).Mul(big.NewInt(16), arctanInv(5))
+	pi.Sub(pi, new(big.Int).Mul(big.NewInt(4), arctanInv(239)))
+	frac := new(big.Int).Sub(pi, new(big.Int).Mul(big.NewInt(3), one))
+	frac.Rsh(frac, guard)
+	digits := frac.FillBytes(make([]byte, fracBits/8))
+	if got := hex.EncodeToString(digits[:4]); got != "243f6a88" {
+		t.Fatalf("pi fraction starts %s, want 243f6a88", got)
+	}
 
 	var want [8][16]byte
-	for i, p := range primes8 {
-		binary.BigEndian.PutUint32(want[i/4][4*(i%4):], uint32(frac(p, 32)))
-	}
-	for i, p := range primes8 {
-		binary.BigEndian.PutUint64(want[2+i/2][8*(i%2):], frac(p, 64))
-	}
-	for i, p := range primes4 {
-		binary.BigEndian.PutUint64(want[6+i/2][8*(i%2):], frac(p, 64))
+	for i := range want {
+		copy(want[i][:], digits[16*i:16*i+16])
 	}
 	for i := range want {
 		if rc[i] != want[i] {
@@ -249,4 +171,75 @@ func mustHex(s string) []byte {
 		panic(err)
 	}
 	return b
+}
+
+// invAESRound inverts aesRound (AddRoundKey, InvMixColumns, InvShiftRows,
+// InvSubBytes), test-only.
+func invAESRound(s, rk *[16]byte) {
+	addRoundKey(s, rk)
+	for col := 0; col < 4; col++ {
+		a0, a1, a2, a3 := s[4*col], s[4*col+1], s[4*col+2], s[4*col+3]
+		mul := func(b, m byte) byte {
+			var p byte
+			for ; m != 0; m >>= 1 {
+				if m&1 != 0 {
+					p ^= b
+				}
+				b = xtime(b)
+			}
+			return p
+		}
+		s[4*col+0] = mul(a0, 14) ^ mul(a1, 11) ^ mul(a2, 13) ^ mul(a3, 9)
+		s[4*col+1] = mul(a0, 9) ^ mul(a1, 14) ^ mul(a2, 11) ^ mul(a3, 13)
+		s[4*col+2] = mul(a0, 13) ^ mul(a1, 9) ^ mul(a2, 14) ^ mul(a3, 11)
+		s[4*col+3] = mul(a0, 11) ^ mul(a1, 13) ^ mul(a2, 9) ^ mul(a3, 14)
+	}
+	s[5], s[9], s[13], s[1] = s[1], s[5], s[9], s[13]
+	s[10], s[14], s[2], s[6] = s[2], s[6], s[10], s[14]
+	s[15], s[3], s[7], s[11] = s[3], s[7], s[11], s[15]
+	var inv [256]byte
+	for i, v := range sbox {
+		inv[v] = byte(i)
+	}
+	for i := range s {
+		s[i] = inv[s[i]]
+	}
+}
+
+// TestGenericOneBlockInversion is the key-recovery negative control the
+// Non-PRF classification rests on: the seed enters once, by XOR, ahead of
+// a public permutation, so one known (data, full 16-byte output) pair
+// inverts — walking the finalising rounds rc[(b+1) mod 8], rc[b mod 8]
+// and the absorbed blocks backwards — to key XOR (LE64(seed0) ||
+// LE64(seed1)). The inversion is exact at every shipped shape and at
+// lengths that wrap the constant cycle, which also pins the documented
+// schedule from the other side.
+func TestGenericOneBlockInversion(t *testing.T) {
+	for _, n := range []int{0, 13, 20, 36, 68, 80, 96, 128} {
+		data := make([]byte, n)
+		for i := range data {
+			data[i] = byte(7*i + n)
+		}
+		seed0, seed1 := uint64(0x0123456789abcdef)^uint64(n), uint64(0xfedcba9876543210)
+		state := HashGeneric(refKey, data, seed0, seed1)
+
+		padLen := 16 - n%16
+		padded := append(append([]byte(nil), data...), bytes.Repeat([]byte{byte(padLen)}, padLen)...)
+		b := len(padded) / 16
+		invAESRound(&state, &rc[(b+1)%8])
+		invAESRound(&state, &rc[b%8])
+		for i := b - 1; i >= 0; i-- {
+			invAESRound(&state, &rc[i%8])
+			var blk [16]byte
+			copy(blk[:], padded[16*i:])
+			addRoundKey(&state, &blk)
+		}
+		var want [16]byte
+		binary.LittleEndian.PutUint64(want[:8], seed0)
+		binary.LittleEndian.PutUint64(want[8:], seed1)
+		addRoundKey(&want, &refKey)
+		if state != want {
+			t.Errorf("n=%d: inversion gives %x, want key^seed %x", n, state, want)
+		}
+	}
 }

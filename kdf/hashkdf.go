@@ -46,6 +46,8 @@ func deriveAreion512(master []byte, label string, outLen int) ([]byte, error) {
 		return nil, err
 	}
 	prf, prfLen, err := hashprf.New(hashes.CipherAreion512, key64)
+	// The PRF keeps its own copy of the stretched key; zero this one.
+	clear(key64)
 	if err != nil {
 		return nil, fmt.Errorf("kdf: %w", err)
 	}

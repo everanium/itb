@@ -319,51 +319,53 @@ func Fused512Chain68x1(fixedKey *[64]byte, components []uint64, data *byte, out 
 }
 
 // Fused256Fill13x8 is the batch-16 Interlocked Barrier fill hook of
-// width 256: lane i (0..7) runs the cascade over the fill block of group
-// groupIdxBase+i. The AVX-512 tier synthesises the blocks in-register
-// and runs the eight-lane ZMM kernel; the AVX2 tier runs two four-lane
-// kernel calls over Go-synthesised blocks. The dispatch follows the
-// batch-16 flags so ITB_FORCE_INTERLOCK_PRF_FILL_TIER selects the arm.
-func Fused256Fill13x8(fixedKey *[32]byte, components []uint64, groupIdxBase uint64, out *[8][4]uint64) {
+// width 256: lane i (0..7) runs the cascade over the fill block
+// [0x03 | LE64(groupIdxBase+i) | LE32(v)], v being the per-message
+// interlock-nonce fold. The AVX-512 tier synthesises the blocks
+// in-register from groupIdxBase and v and runs the eight-lane ZMM
+// kernel; the AVX2 tier runs two four-lane kernel calls over
+// Go-synthesised blocks. The dispatch follows the batch-16 flags so
+// ITB_FORCE_INTERLOCK_PRF_FILL_TIER selects the arm.
+func Fused256Fill13x8(fixedKey *[32]byte, components []uint64, groupIdxBase uint64, v uint32, out *[8][4]uint64) {
 	if !validComponents256(components) {
-		scalarFill256X8(fixedKey, components, groupIdxBase, out)
+		scalarFill256X8(fixedKey, components, groupIdxBase, v, out)
 		return
 	}
 	c, ng := &components[0], len(components)/4
 	switch {
 	case HasAVX512X16:
-		blake2b256FusedChain13x8Avx512Asm(fixedKey, c, ng, groupIdxBase, out)
+		blake2b256FusedChain13x8Avx512Asm(fixedKey, c, ng, groupIdxBase, out, v)
 	case HasAVX2X16:
 		var blocks [4][13]byte
 		for h := 0; h < 2; h++ {
-			ptrs := fillPtrs4(&blocks, groupIdxBase+uint64(4*h))
+			ptrs := fillPtrs4(&blocks, groupIdxBase+uint64(4*h), v)
 			blake2b256FusedChain13x4Avx2Asm(fixedKey, c, ng, &ptrs, (*[4][4]uint64)(out[4*h:4*h+4]))
 		}
 	default:
 		if !HasGPRX16 {
-			scalarFill256X8(fixedKey, components, groupIdxBase, out)
+			scalarFill256X8(fixedKey, components, groupIdxBase, v, out)
 			return
 		}
 		var block [13]byte
 		for i := range out {
-			fillBlock(&block, groupIdxBase+uint64(i))
+			fillBlock(&block, groupIdxBase+uint64(i), v)
 			blake2b256FusedChain13x1GprAsm(fixedKey, c, ng, &block[0], &out[i])
 		}
 	}
 }
 
 // Fused512Fill13x4 is the batch-16 Interlocked Barrier fill hook of
-// width 512: lane i (0..3) runs the cascade over the fill block of group
-// groupIdxBase+i, one four-lane kernel call over Go-synthesised blocks
-// on every tier.
-func Fused512Fill13x4(fixedKey *[64]byte, components []uint64, groupIdxBase uint64, out *[4][8]uint64) {
+// width 512: lane i (0..3) runs the cascade over the fill block
+// [0x03 | LE64(groupIdxBase+i) | LE32(v)], one four-lane kernel call
+// over Go-synthesised blocks on every tier.
+func Fused512Fill13x4(fixedKey *[64]byte, components []uint64, groupIdxBase uint64, v uint32, out *[4][8]uint64) {
 	if !validComponents512(components) {
-		scalarFill512X4(fixedKey, components, groupIdxBase, out)
+		scalarFill512X4(fixedKey, components, groupIdxBase, v, out)
 		return
 	}
 	c, ng := &components[0], len(components)/8
 	var blocks [4][13]byte
-	ptrs := fillPtrs4(&blocks, groupIdxBase)
+	ptrs := fillPtrs4(&blocks, groupIdxBase, v)
 	switch {
 	case HasAVX512X16:
 		blake2b512FusedChain13x4Avx512Asm(fixedKey, c, ng, &ptrs, out)
@@ -371,7 +373,7 @@ func Fused512Fill13x4(fixedKey *[64]byte, components []uint64, groupIdxBase uint
 		blake2b512FusedChain13x4Avx2Asm(fixedKey, c, ng, &ptrs, out)
 	default:
 		if !HasGPRX16 {
-			scalarFill512X4(fixedKey, components, groupIdxBase, out)
+			scalarFill512X4(fixedKey, components, groupIdxBase, v, out)
 			return
 		}
 		for i := range out {
@@ -448,7 +450,7 @@ func blake2b512FusedChain68x4Avx2Asm(fixedKey *[64]byte, comps *uint64, nGroups 
 
 //
 //go:noescape
-func blake2b256FusedChain13x8Avx512Asm(fixedKey *[32]byte, comps *uint64, nGroups int, groupIdxBase uint64, out *[8][4]uint64)
+func blake2b256FusedChain13x8Avx512Asm(fixedKey *[32]byte, comps *uint64, nGroups int, groupIdxBase uint64, out *[8][4]uint64, v uint32)
 
 // FusedHasAVX512X8 arms the eight-lane ZMM per-pixel kernels
 // (Fused{256,512}Chain{20,36,68}x8: the four-lane EVEX plan on ZMM
@@ -551,33 +553,35 @@ func Fused512Chain68x8(fixedKey *[64]byte, components []uint64, dataPtrs *[8]*by
 }
 
 // Fused512Fill13x8 is the batch-32 Interlocked Barrier fill hook of
-// width 512: lane i (0..7) runs the cascade over the fill block of group
-// groupIdxBase+i. The AVX-512 tier synthesises the blocks in-register
-// and runs the eight-lane ZMM kernel; the AVX2 tier runs two four-lane
-// kernel calls over Go-synthesised blocks.
-func Fused512Fill13x8(fixedKey *[64]byte, components []uint64, groupIdxBase uint64, out *[8][8]uint64) {
+// width 512: lane i (0..7) runs the cascade over the fill block
+// [0x03 | LE64(groupIdxBase+i) | LE32(v)], v being the per-message
+// interlock-nonce fold. The AVX-512 tier synthesises the blocks
+// in-register from groupIdxBase and v and runs the eight-lane ZMM
+// kernel; the AVX2 tier runs two four-lane kernel calls over
+// Go-synthesised blocks.
+func Fused512Fill13x8(fixedKey *[64]byte, components []uint64, groupIdxBase uint64, v uint32, out *[8][8]uint64) {
 	if !validComponents512(components) {
-		scalarFill512X8(fixedKey, components, groupIdxBase, out)
+		scalarFill512X8(fixedKey, components, groupIdxBase, v, out)
 		return
 	}
 	c, ng := &components[0], len(components)/8
 	switch {
 	case HasAVX512X16:
-		blake2b512FusedChain13x8Avx512Asm(fixedKey, c, ng, groupIdxBase, out)
+		blake2b512FusedChain13x8Avx512Asm(fixedKey, c, ng, groupIdxBase, out, v)
 	case HasAVX2X16:
 		var blocks [4][13]byte
 		for h := 0; h < 2; h++ {
-			ptrs := fillPtrs4(&blocks, groupIdxBase+uint64(4*h))
+			ptrs := fillPtrs4(&blocks, groupIdxBase+uint64(4*h), v)
 			blake2b512FusedChain13x4Avx2Asm(fixedKey, c, ng, &ptrs, out8x512Half(out, h))
 		}
 	default:
 		if !HasGPRX16 {
-			scalarFill512X8(fixedKey, components, groupIdxBase, out)
+			scalarFill512X8(fixedKey, components, groupIdxBase, v, out)
 			return
 		}
 		var block [13]byte
 		for i := range out {
-			fillBlock(&block, groupIdxBase+uint64(i))
+			fillBlock(&block, groupIdxBase+uint64(i), v)
 			blake2b512FusedChain13x1GprAsm(fixedKey, c, ng, &block[0], &out[i])
 		}
 	}
@@ -604,7 +608,7 @@ func blake2b512FusedChain36x8Avx512Asm(fixedKey *[64]byte, comps *uint64, nGroup
 func blake2b512FusedChain68x8Avx512Asm(fixedKey *[64]byte, comps *uint64, nGroups int, dataPtrs *[8]*byte, out *[8][8]uint64)
 
 //go:noescape
-func blake2b512FusedChain13x8Avx512Asm(fixedKey *[64]byte, comps *uint64, nGroups int, groupIdxBase uint64, out *[8][8]uint64)
+func blake2b512FusedChain13x8Avx512Asm(fixedKey *[64]byte, comps *uint64, nGroups int, groupIdxBase uint64, out *[8][8]uint64, v uint32)
 
 // Single-lane kernels (blake2b_fusedchain{256,512}_<shape>x1_gpr_amd64.s).
 //

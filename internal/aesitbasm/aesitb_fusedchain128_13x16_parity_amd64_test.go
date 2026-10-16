@@ -8,11 +8,11 @@ import (
 	"github.com/everanium/itb/internal/cpuid"
 )
 
-type fusedAsmX16 func(*[16]byte, *uint64, int, uint64, *[16][2]uint64)
+type fusedAsmX16 func(*[16]byte, *uint64, int, uint64, *[16][2]uint64, uint32)
 
 func wrapX16(f fusedAsmX16) fusedX16Fn {
-	return func(key *[16]byte, comps []uint64, groupIdxBase uint64, out *[16][2]uint64) {
-		f(key, &comps[0], len(comps)/2, groupIdxBase, out)
+	return func(key *[16]byte, comps []uint64, groupIdxBase uint64, v uint32, out *[16][2]uint64) {
+		f(key, &comps[0], len(comps)/2, groupIdxBase, out, v)
 	}
 }
 
@@ -101,20 +101,22 @@ func TestFusedChain13x16CrossTier(t *testing.T) {
 		for _, tc := range fusedX16FixedCases {
 			comps := fusedX16Components(tc.seed0, tc.seed1, pairs)
 			for _, base := range tc.bases {
-				var results []result
-				for _, tier := range amd64FusedX16Tiers() {
-					if !tier.ok() {
-						continue
+				for _, v := range tc.folds {
+					var results []result
+					for _, tier := range amd64FusedX16Tiers() {
+						if !tier.ok() {
+							continue
+						}
+						HasVAESAVX512X16, HasVAESAVX2X16, HasAVXAESNIX16, HasAESNIX16 = tier.zmm, tier.ymm, tier.vex, tier.aesni
+						key := tc.key
+						var out [16][2]uint64
+						FusedChain13x16(&key, comps, base, v, &out)
+						results = append(results, result{tier.name, out})
 					}
-					HasVAESAVX512X16, HasVAESAVX2X16, HasAVXAESNIX16, HasAESNIX16 = tier.zmm, tier.ymm, tier.vex, tier.aesni
-					key := tc.key
-					var out [16][2]uint64
-					FusedChain13x16(&key, comps, base, &out)
-					results = append(results, result{tier.name, out})
-				}
-				for _, r := range results[1:] {
-					if r.out != results[0].out {
-						t.Errorf("%s pairs=%d base=%#x: %s differs from %s", tc.name, pairs, base, r.tier, results[0].tier)
+					for _, r := range results[1:] {
+						if r.out != results[0].out {
+							t.Errorf("%s pairs=%d base=%#x v=%#x: %s differs from %s", tc.name, pairs, base, v, r.tier, results[0].tier)
+						}
 					}
 				}
 			}

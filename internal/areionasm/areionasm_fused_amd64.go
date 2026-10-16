@@ -280,50 +280,51 @@ func Fused512Chain68x1(fixedKey *[64]byte, components []uint64, data *byte, out 
 }
 
 // Fused256Fill13x8 is the batch-16 Interlocked Barrier fill hook of
-// width 256: lane i (0..7) runs the cascade over the fill block of group
-// groupIdxBase+i. The ZMM tier synthesises the blocks in-register and
-// runs two interleaved four-lane groups; the YMM and XMM tiers run two
-// four-lane kernel calls over Go-synthesised blocks. The dispatch
-// follows the batch-16 flags so ITB_FORCE_INTERLOCK_PRF_FILL_TIER selects
-// the arm.
-func Fused256Fill13x8(fixedKey *[32]byte, components []uint64, groupIdxBase uint64, out *[8][4]uint64) {
+// width 256: lane i (0..7) runs the cascade over the fill block
+// [0x03 | LE64(groupIdxBase+i) | LE32(v)] of group groupIdxBase+i, v
+// being the per-message interlock-nonce fold. The ZMM tier synthesises
+// the blocks in-register and runs two interleaved four-lane groups; the
+// YMM and XMM tiers run two four-lane kernel calls over Go-synthesised
+// blocks. The dispatch follows the batch-16 flags so
+// ITB_FORCE_INTERLOCK_PRF_FILL_TIER selects the arm.
+func Fused256Fill13x8(fixedKey *[32]byte, components []uint64, groupIdxBase uint64, v uint32, out *[8][4]uint64) {
 	if !validComponents256(components) {
-		scalarFill256X8(fixedKey, components, groupIdxBase, out)
+		scalarFill256X8(fixedKey, components, groupIdxBase, v, out)
 		return
 	}
 	c, ng := &components[0], len(components)/4
 	switch {
 	case HasVAESAVX512X16:
-		areion256FusedChain13x8Avx512Asm(fixedKey, c, ng, groupIdxBase, out)
+		areion256FusedChain13x8Avx512Asm(fixedKey, c, ng, groupIdxBase, out, v)
 	case HasVAESAVX2X16:
 		var blocks [4][13]byte
 		for h := 0; h < 2; h++ {
-			ptrs := fillPtrs4(&blocks, groupIdxBase+uint64(4*h))
+			ptrs := fillPtrs4(&blocks, groupIdxBase+uint64(4*h), v)
 			areion256FusedChain13x4VaesAvx2Asm(fixedKey, c, ng, &ptrs, (*[4][4]uint64)(out[4*h:4*h+4]))
 		}
 	case HasAESNIX16:
 		var blocks [4][13]byte
 		for h := 0; h < 2; h++ {
-			ptrs := fillPtrs4(&blocks, groupIdxBase+uint64(4*h))
+			ptrs := fillPtrs4(&blocks, groupIdxBase+uint64(4*h), v)
 			areion256FusedChain13x4AesNiAsm(fixedKey, c, ng, &ptrs, (*[4][4]uint64)(out[4*h:4*h+4]))
 		}
 	default:
-		scalarFill256X8(fixedKey, components, groupIdxBase, out)
+		scalarFill256X8(fixedKey, components, groupIdxBase, v, out)
 	}
 }
 
 // Fused512Fill13x4 is the batch-16 Interlocked Barrier fill hook of
-// width 512: lane i (0..3) runs the cascade over the fill block of group
-// groupIdxBase+i, one four-lane kernel call over Go-synthesised blocks
-// on every tier.
-func Fused512Fill13x4(fixedKey *[64]byte, components []uint64, groupIdxBase uint64, out *[4][8]uint64) {
+// width 512: lane i (0..3) runs the cascade over the fill block
+// [0x03 | LE64(groupIdxBase+i) | LE32(v)] of group groupIdxBase+i, one
+// four-lane kernel call over Go-synthesised blocks on every tier.
+func Fused512Fill13x4(fixedKey *[64]byte, components []uint64, groupIdxBase uint64, v uint32, out *[4][8]uint64) {
 	if !validComponents512(components) {
-		scalarFill512X4(fixedKey, components, groupIdxBase, out)
+		scalarFill512X4(fixedKey, components, groupIdxBase, v, out)
 		return
 	}
 	c, ng := &components[0], len(components)/8
 	var blocks [4][13]byte
-	ptrs := fillPtrs4(&blocks, groupIdxBase)
+	ptrs := fillPtrs4(&blocks, groupIdxBase, v)
 	switch {
 	case HasVAESAVX512X16:
 		areion512FusedChain13x4Avx512Asm(fixedKey, c, ng, &ptrs, out)
@@ -332,7 +333,7 @@ func Fused512Fill13x4(fixedKey *[64]byte, components []uint64, groupIdxBase uint
 	case HasAESNIX16:
 		areion512FusedChain13x4AesNiAsm(fixedKey, c, ng, &ptrs, out)
 	default:
-		scalarFill512X4(fixedKey, components, groupIdxBase, out)
+		scalarFill512X4(fixedKey, components, groupIdxBase, v, out)
 	}
 }
 
@@ -467,7 +468,7 @@ func areion512FusedChain68x1AesNiAsm(fixedKey *[64]byte, comps *uint64, nGroups 
 
 //
 //go:noescape
-func areion256FusedChain13x8Avx512Asm(fixedKey *[32]byte, comps *uint64, nGroups int, groupIdxBase uint64, out *[8][4]uint64)
+func areion256FusedChain13x8Avx512Asm(fixedKey *[32]byte, comps *uint64, nGroups int, groupIdxBase uint64, out *[8][4]uint64, v uint32)
 
 // FusedHasVAESAVX512X8 arms the eight-lane ZMM per-pixel kernels
 // (Fused{256,512}Chain{20,36,68}x8: two four-lane groups with
@@ -571,33 +572,35 @@ func Fused512Chain68x8(fixedKey *[64]byte, components []uint64, dataPtrs *[8]*by
 }
 
 // Fused512Fill13x8 is the batch-32 Interlocked Barrier fill hook of
-// width 512: lane i (0..7) runs the cascade over the fill block of group
-// groupIdxBase+i. The ZMM tier synthesises the blocks in-register and
-// runs two interleaved four-lane groups; the YMM and XMM tiers run two
-// four-lane kernel calls over Go-synthesised blocks.
-func Fused512Fill13x8(fixedKey *[64]byte, components []uint64, groupIdxBase uint64, out *[8][8]uint64) {
+// width 512: lane i (0..7) runs the cascade over the fill block
+// [0x03 | LE64(groupIdxBase+i) | LE32(v)] of group groupIdxBase+i, v
+// being the per-message interlock-nonce fold. The ZMM tier synthesises
+// the blocks in-register and runs two interleaved four-lane groups; the
+// YMM and XMM tiers run two four-lane kernel calls over Go-synthesised
+// blocks.
+func Fused512Fill13x8(fixedKey *[64]byte, components []uint64, groupIdxBase uint64, v uint32, out *[8][8]uint64) {
 	if !validComponents512(components) {
-		scalarFill512X8(fixedKey, components, groupIdxBase, out)
+		scalarFill512X8(fixedKey, components, groupIdxBase, v, out)
 		return
 	}
 	c, ng := &components[0], len(components)/8
 	switch {
 	case HasVAESAVX512X16:
-		areion512FusedChain13x8Avx512Asm(fixedKey, c, ng, groupIdxBase, out)
+		areion512FusedChain13x8Avx512Asm(fixedKey, c, ng, groupIdxBase, out, v)
 	case HasVAESAVX2X16:
 		var blocks [4][13]byte
 		for h := 0; h < 2; h++ {
-			ptrs := fillPtrs4(&blocks, groupIdxBase+uint64(4*h))
+			ptrs := fillPtrs4(&blocks, groupIdxBase+uint64(4*h), v)
 			areion512FusedChain13x4VaesAvx2Asm(fixedKey, c, ng, &ptrs, out8x512Half(out, h))
 		}
 	case HasAESNIX16:
 		var blocks [4][13]byte
 		for h := 0; h < 2; h++ {
-			ptrs := fillPtrs4(&blocks, groupIdxBase+uint64(4*h))
+			ptrs := fillPtrs4(&blocks, groupIdxBase+uint64(4*h), v)
 			areion512FusedChain13x4AesNiAsm(fixedKey, c, ng, &ptrs, out8x512Half(out, h))
 		}
 	default:
-		scalarFill512X8(fixedKey, components, groupIdxBase, out)
+		scalarFill512X8(fixedKey, components, groupIdxBase, v, out)
 	}
 }
 
@@ -622,4 +625,4 @@ func areion512FusedChain36x8Avx512Asm(fixedKey *[64]byte, comps *uint64, nGroups
 func areion512FusedChain68x8Avx512Asm(fixedKey *[64]byte, comps *uint64, nGroups int, dataPtrs *[8]*byte, out *[8][8]uint64)
 
 //go:noescape
-func areion512FusedChain13x8Avx512Asm(fixedKey *[64]byte, comps *uint64, nGroups int, groupIdxBase uint64, out *[8][8]uint64)
+func areion512FusedChain13x8Avx512Asm(fixedKey *[64]byte, comps *uint64, nGroups int, groupIdxBase uint64, out *[8][8]uint64, v uint32)

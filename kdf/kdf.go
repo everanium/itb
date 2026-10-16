@@ -86,7 +86,12 @@ func deriveAESCMAC(master []byte, label string, outLen int) ([]byte, error) {
 	prf := func(in []byte) []byte {
 		return mac.sum(in)
 	}
-	return sp800108CounterMode(prf, aes.BlockSize, []byte(label), outLen), nil
+	out := sp800108CounterMode(prf, aes.BlockSize, []byte(label), outLen)
+	// The CMAC subkeys are derived from the master; zero them once the
+	// derivation is done.
+	clear(mac.k1)
+	clear(mac.k2)
+	return out, nil
 }
 
 // deriveSipHash24 implements SP 800-108 Counter Mode with PRF =
@@ -129,6 +134,9 @@ func deriveChaCha20(master []byte, label string, outLen int) ([]byte, error) {
 	out := make([]byte, outLen)
 	// XORing the keystream into a zero buffer extracts the raw keystream.
 	c.XORKeyStream(out, out)
+	// The cipher state carries the derived key words and the unused
+	// keystream tail; zero it.
+	*c = chacha20.Cipher{}
 	return out, nil
 }
 
@@ -174,6 +182,8 @@ func sp800108CounterMode(prf func([]byte) []byte, prfLen int, label []byte, outL
 		binary.BigEndian.PutUint32(in[:4], i)
 		block := prf(in)
 		n := copy(out[written:], block[:prfLen])
+		// Every prf returns a fresh block; zero it once it is copied out.
+		clear(block)
 		written += n
 	}
 	return out

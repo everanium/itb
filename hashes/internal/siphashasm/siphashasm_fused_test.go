@@ -161,7 +161,7 @@ func checkDispatchersZeroAlloc(t *testing.T, label string) {
 		check("FusedChain"+shapeName(n)+"x8", func() { x8[n](comps, &ptrs8, &out8) })
 	}
 	var out16 [16][2]uint64
-	check("FusedChain13x16", func() { FusedChain13x16(comps, 0x00FFFFFFFFFFFFF8, &out16) })
+	check("FusedChain13x16", func() { FusedChain13x16(comps, 0x00FFFFFFFFFFFFF8, 0xA5C33C5A, &out16) })
 }
 
 // TestFusedDispatchersZeroAlloc runs the allocation check under the

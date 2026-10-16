@@ -275,20 +275,21 @@ func validComponents256(components []uint64) bool {
 }
 
 // fillBlock writes the 13-byte Interlocked Barrier fill block of one
-// group: [0x03 | LE64(groupIdx) | 4×0x00].
-func fillBlock(dst *[13]byte, groupIdx uint64) {
+// group: [0x03 | LE64(groupIdx) | LE32(v)], v being the per-message
+// interlock-nonce fold the caller supplies.
+func fillBlock(dst *[13]byte, groupIdx uint64, v uint32) {
 	dst[0] = 0x03
 	binary.LittleEndian.PutUint64(dst[1:9], groupIdx)
-	dst[9], dst[10], dst[11], dst[12] = 0, 0, 0, 0
+	binary.LittleEndian.PutUint32(dst[9:13], v)
 }
 
-// fillPtrs4 fills four consecutive blocks starting at groupIdxBase and
-// returns their lane pointers, for the arms that run the fill as
-// four-lane kernel calls over Go-synthesised blocks; the blocks stay on
-// the caller's stack because the kernels are called directly.
-func fillPtrs4(blocks *[4][13]byte, groupIdxBase uint64) [4]*byte {
+// fillPtrs4 fills four consecutive blocks starting at groupIdxBase under
+// the fold v and returns their lane pointers, for the arms that run the
+// fill as four-lane kernel calls over Go-synthesised blocks; the blocks
+// stay on the caller's stack because the kernels are called directly.
+func fillPtrs4(blocks *[4][13]byte, groupIdxBase uint64, v uint32) [4]*byte {
 	for i := range blocks {
-		fillBlock(&blocks[i], groupIdxBase+uint64(i))
+		fillBlock(&blocks[i], groupIdxBase+uint64(i), v)
 	}
 	return [4]*byte{&blocks[0][0], &blocks[1][0], &blocks[2][0], &blocks[3][0]}
 }
@@ -306,11 +307,12 @@ func scalarFused256X8(fixedKey *[32]byte, components []uint64, dataPtrs *[8]*byt
 }
 
 // scalarFill256X8 is the pure-Go reference of the batch-16 fill hook:
-// lane i runs the cascade over the fill block of group groupIdxBase+i.
-func scalarFill256X8(fixedKey *[32]byte, components []uint64, groupIdxBase uint64, out *[8][4]uint64) {
+// lane i runs the cascade over the fill block
+// [0x03 | LE64(groupIdxBase+i) | LE32(v)] of group groupIdxBase+i.
+func scalarFill256X8(fixedKey *[32]byte, components []uint64, groupIdxBase uint64, v uint32, out *[8][4]uint64) {
 	var blk [13]byte
 	for i := range out {
-		fillBlock(&blk, groupIdxBase+uint64(i))
+		fillBlock(&blk, groupIdxBase+uint64(i), v)
 		out[i] = ScalarFusedChain256(fixedKey, components, blk[:])
 	}
 }

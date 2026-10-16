@@ -39,13 +39,24 @@ four-lane kernel and to the pure-Go cascade by the in-package parity
 tests, and disarmed by `ITB_FORCE_CHAINHASH_X4=1`.
 
 Every cascade round of every lane is one full AES-128 permutation per
-zero-padded data block. The blocks are staged once with the first round
-key folded in (block 0 also carries the length tag), so the loop body
-runs nine `AESENC` under K1..K9 and one `AESENCLAST` under K10 per
-block; the module docstring of the generator lists the round-key
-residency of every tier, including the memory-operand keys of the
-batch-16 XMM / YMM tiers where the register file cannot hold states,
-eleven keys and blocks at once.
+zero-padded data block, so the loop body runs nine `AESENC` under
+K1..K9 and one `AESENCLAST` per block. The blocks are staged once (block
+0 with the length tag folded in). The ZMM and NEON tiers hold them in
+registers with the first round key folded in. The XMM and YMM tiers
+stage the bare blocks in the frame and carry every lane as
+`state ⊕ K0`: the lane starts at K0, the last round of every permutation
+runs under `K10 ⊕ K0` (`AESENCLAST(s, K10) ⊕ K0 = AESENCLAST(s, K10 ⊕ K0)`),
+and the lane output is the carried value XOR K0; the batch-16 YMM
+kernel folds K0 into the per-round component pair in a register instead
+and broadcasts the round keys it cannot keep resident from the schedule
+every round. No round key and no key-derived value is stored to memory a
+kernel owns: the frame holds public block bytes only; the in-package
+`TestFusedKernelsLeaveNoKeyInFrame` test runs every amd64 kernel under a
+stack-residue probe and requires that no round key and no K0-folded
+block is left in the stack once the kernel has returned. The module
+docstring of the generator lists the round-key residency of every tier, including the round keys the
+eight-state XMM tiers read from the schedule as memory operands where
+the register file cannot hold states, eleven keys and blocks at once.
 
 ## Batch-16 Interlocked Barrier fill kernels — `gen_fused_kernels.py`
 
@@ -53,8 +64,9 @@ The same generator emits the 16-lane fused cascade kernels at the 13-byte
 shape that fill the Interlocked Barrier PRF for 16 consecutive groups per
 call: `aescmac_fusedchain128_13x16_<tier>_amd64.s` (tiers aesni / vex /
 vaesavx2 / avx512) and `aescmac_fusedchain128_13x16_neon_arm64.s`. The
-kernels receive `groupIdxBase` in a register and synthesise the 16
-per-lane fill blocks in-register, so the batch-16 path pays no per-lane
+kernels receive `groupIdxBase` and the per-message interlock-nonce fold in
+registers and synthesise the 16 per-lane fill blocks in-register, so the
+batch-16 path pays no per-lane
 pointer gather and no store ahead of the call; every lane then runs the
 whole ChainHash cascade over the caller's component slice (the prepended
 lock components of the cascade fill).

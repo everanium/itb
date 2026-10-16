@@ -35,8 +35,8 @@
 	BLAKE2S_G(Y2, Y7, Y8, Y13, s12, s13); \
 	BLAKE2S_G(Y3, Y4, Y9, Y14, s14, s15)
 
-// func blake2sFusedChain13x8Avx512Asm(fixedKey *[32]byte, comps *uint64, nGroups int, groupIdxBase uint64, out *[8][4]uint64)
-TEXT ·blake2sFusedChain13x8Avx512Asm(SB), NOSPLIT, $256-40
+// func blake2sFusedChain13x8Avx512Asm(fixedKey *[32]byte, comps *uint64, nGroups int, groupIdxBase uint64, out *[8][4]uint64, v uint32)
+TEXT ·blake2sFusedChain13x8Avx512Asm(SB), NOSPLIT, $256-44
 	MOVQ fixedKey+0(FP), AX
 	MOVQ comps+8(FP), BX
 	MOVQ nGroups+16(FP), CX
@@ -53,11 +53,18 @@ TEXT ·blake2sFusedChain13x8Avx512Asm(SB), NOSPLIT, $256-40
 	VPSRLQ $24, Z0, Z1
 	VPMOVQD Z1, Y1
 	VMOVDQU32 Y1, 32(SP)
+	MOVL v+40(FP), R12
+	SHLL $8, R12
+	VPBROADCASTD R12, Y2
 	VPSRLQ $56, Z0, Z1
 	VPMOVQD Z1, Y1
+	VPORD Y2, Y1, Y1
 	VMOVDQU32 Y1, 64(SP)
+	MOVL v+40(FP), R12
+	SHRL $24, R12
+	VPBROADCASTD R12, Y1
+	VMOVDQU32 Y1, 96(SP)
 	VPXORD Y2, Y2, Y2
-	VMOVDQU32 Y2, 96(SP)
 	VMOVDQU32 Y2, 128(SP)
 	VMOVDQU32 Y2, 160(SP)
 	VMOVDQU32 Y2, 192(SP)

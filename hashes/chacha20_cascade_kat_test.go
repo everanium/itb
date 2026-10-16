@@ -42,12 +42,12 @@ var chacha20CascadeKATs = []chacha20CascadeKAT{
 }
 
 // chacha20FillKATs are the folds of the batch-16 fill output over the lock
-// components at group index base 0x00FFFFFFFFFFFFF8, keyed by group
+// components at group index base 0x00FFFFFFFFFFFFF8 under katFillFold, keyed by group
 // count.
 var chacha20FillKATs = map[int]string{
-	2: "9083f4869136ac26",
-	4: "bfa0cf39b42dd459",
-	8: "b5acd88a41f23425",
+	2: "dccc99e71430685c",
+	4: "44e0b942c3c01766",
+	8: "79eff25c2536ea80",
 }
 
 func chacha20KATKey() []byte {
@@ -125,11 +125,11 @@ func TestChaCha20CascadeKAT(t *testing.T) {
 			}
 			if kat.n == 13 {
 				var out [8][4]uint64
-				hooked.InterlockFillX16()(lock, 0x00FFFFFFFFFFFFF8, &out)
+				hooked.InterlockFillX16()(lock, 0x00FFFFFFFFFFFFF8, katFillFold, &out)
 				var acc uint64
 				for i := range out {
 					acc = foldWords(acc, out[i][:])
-					if want := seqCascade256(plain.Hash, lock, fillBlockKAT(0x00FFFFFFFFFFFFF8+uint64(i))); out[i] != want {
+					if want := seqCascade256(plain.Hash, lock, fillBlockKAT(0x00FFFFFFFFFFFFF8+uint64(i), katFillFold)); out[i] != want {
 						t.Errorf("batch-16 fill lane %d diverges from the sequential cascade", i)
 					}
 				}
@@ -178,7 +178,7 @@ func TestChaCha20HooksZeroAlloc(t *testing.T) {
 	}
 	fill := s.InterlockFillX16()
 	var out [8][4]uint64
-	check("chacha20 InterlockFillX16", func() { fill(lock, 0x00FFFFFFFFFFFFF8, &out) })
+	check("chacha20 InterlockFillX16", func() { fill(lock, 0x00FFFFFFFFFFFFF8, katFillFold, &out) })
 }
 
 // TestChaCha20WideHooksZeroAlloc asserts that the eight-lane per-pixel

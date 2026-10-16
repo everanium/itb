@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"fmt"
+	"runtime"
 
 	"github.com/everanium/itb"
 	"github.com/everanium/itb/hashes/internal/chacha20asm"
@@ -62,7 +63,11 @@ func ChaCha20WithKey(fixedKey [32]byte) itb.HashFunc256 {
 			v := binary.LittleEndian.Uint64(key[off:])
 			binary.LittleEndian.PutUint64(key[off:], v^seed[i])
 		}
-		return chacha20asm.HChaCha20Chain(&key, data)
+		out := chacha20asm.HChaCha20Chain(&key, data)
+		// Zero the per-call key on the stack once the chain has run.
+		clear(key[:])
+		runtime.KeepAlive(&key)
+		return out
 	}
 }
 
@@ -188,8 +193,8 @@ func chacha20InterlockFillBatch16(key []byte) (itb.InterlockFillFunc16x256, erro
 	}
 	var k [32]byte
 	copy(k[:], key)
-	return func(components []uint64, groupIdxBase uint64, out *[8][4]uint64) {
-		chacha20asm.Fused256Fill13x8(&k, components, groupIdxBase, out)
+	return func(components []uint64, groupIdxBase uint64, v uint32, out *[8][4]uint64) {
+		chacha20asm.Fused256Fill13x8(&k, components, groupIdxBase, v, out)
 	}, nil
 }
 

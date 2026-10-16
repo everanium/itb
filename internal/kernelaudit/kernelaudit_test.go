@@ -14,6 +14,7 @@ type modelEval struct {
 	dropWord     int  // this component word is not absorbed (-1: none)
 	dropKeyByte  int  // this key byte is not absorbed (-1: none)
 	dropBaseHigh bool // the group index base is absorbed at 32 bits
+	dropFold     bool // the interlock-nonce fold is not absorbed
 	leakLane     bool // lane 0 also absorbs lane 1's bytes
 	stuckLane    int  // this lane returns a constant (-1: none)
 }
@@ -53,6 +54,10 @@ func (m modelEval) eval(in *Inputs) [][2]uint64 {
 		}
 		binary.LittleEndian.PutUint64(w[:], base)
 		h.Write(w[:])
+		if len(data) == 0 && !m.dropFold {
+			binary.LittleEndian.PutUint32(w[:4], in.Fold)
+			h.Write(w[:4])
+		}
 		sum := h.Sum(nil)
 		if l == m.stuckLane {
 			sum = make([]byte, 32)
@@ -90,6 +95,7 @@ func TestDifferentialCatchesDefects(t *testing.T) {
 		{"component word dropped", pixelCfg, func() modelEval { m := sound(); m.dropWord = 5; return m }(), "component bit ignored"},
 		{"key byte dropped", pixelCfg, func() modelEval { m := sound(); m.dropKeyByte = 15; return m }(), "key bit ignored"},
 		{"base narrowed", fillCfg, func() modelEval { m := sound(); m.dropBaseHigh = true; return m }(), "base bit ignored"},
+		{"fold dropped", fillCfg, func() modelEval { m := sound(); m.dropFold = true; return m }(), "fold bit ignored"},
 		{"lane leak", pixelCfg, func() modelEval { m := sound(); m.leakLane = true; return m }(), "lane isolation"},
 		{"stuck lane", pixelCfg, func() modelEval { m := sound(); m.stuckLane = 2; return m }(), "data bit ignored"},
 	}

@@ -22,7 +22,7 @@ package itb
 //                                              buf = 0x02 || nonce)
 //     * lockSeed   → per-chunk  Interlocked Barrier bit-permutation key
 //                                              (via deriveInterLockSeed's
-//                                              buf = 0x02 || nonce)
+//                                              buf = 0x04 || nonce)
 //
 //   A 1-bit nonce Δ therefore perturbs ALL 8 seed-derived outputs
 //   simultaneously — fundamentally different from Rank 2's single-seed

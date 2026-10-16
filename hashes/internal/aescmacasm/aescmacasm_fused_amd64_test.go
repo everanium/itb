@@ -3,6 +3,8 @@
 package aescmacasm
 
 import (
+	"crypto/rand"
+	"encoding/binary"
 	"fmt"
 	"testing"
 
@@ -170,5 +172,71 @@ func BenchmarkFusedTier(b *testing.B) {
 				})
 			}
 		}
+	}
+}
+
+// TestFusedKernelsLeaveNoKeyInFrame runs every fused kernel the host can
+// execute — x1, x4, x8 and batch-16 — under the stack-residue probe and
+// requires that no round key, no K10 ^ K0 and no K0-folded block is left
+// in the stack once the kernel has returned.
+func TestFusedKernelsLeaveNoKeyInFrame(t *testing.T) {
+	var key [16]byte
+	rand.Read(key[:])
+	s := NewSchedule(key)
+	comps := randomComponents(2)
+	run := func(name string, n int, lanes [][]byte, call func()) {
+		res := stackResidue(call)
+		assertNoSecretResidue(t, name, res, secretWords(cmacSecrets(s, n, lanes)), nil)
+	}
+	for _, tier := range amd64FusedTiers() {
+		if !tier.ok {
+			continue
+		}
+		for _, n := range shapes {
+			if k, ok := tier.x4[n]; ok {
+				bufs, ptrs := makeLaneData(n)
+				for i := range bufs {
+					rand.Read(bufs[i])
+				}
+				var out [4][2]uint64
+				run(fmt.Sprintf("%s x4 n=%d", tier.name, n), n, bufs[:], func() { k(s, comps, &ptrs, &out) })
+			}
+			if k, ok := tier.x1[n]; ok {
+				bufs, ptrs := makeLaneData(n)
+				rand.Read(bufs[0])
+				var out [2]uint64
+				run(fmt.Sprintf("%s x1 n=%d", tier.name, n), n, bufs[:1], func() { k(s, comps, ptrs[0], &out) })
+			}
+		}
+	}
+	for _, tier := range amd64X8Tiers() {
+		if !tier.ok {
+			continue
+		}
+		for n, k := range tier.x8 {
+			bufs, ptrs := makeLaneData8(n)
+			for i := range bufs {
+				rand.Read(bufs[i])
+			}
+			var out [8][2]uint64
+			run(fmt.Sprintf("%s x8 n=%d", tier.name, n), n, bufs[:], func() { k(s, comps, &ptrs, &out) })
+		}
+	}
+	for _, tier := range amd64FusedX16Tiers() {
+		if tier.k == nil || !tier.ok() {
+			continue
+		}
+		base := uint64(0x0123456789ABCDEF)
+		v := uint32(0xA5C33C5A)
+		lanes := make([][]byte, 16)
+		for i := range lanes {
+			lanes[i] = make([]byte, 13)
+			lanes[i][0] = 0x03
+			binary.LittleEndian.PutUint64(lanes[i][1:], base+uint64(i))
+			binary.LittleEndian.PutUint32(lanes[i][9:], v)
+		}
+		var out [16][2]uint64
+		k := tier.k
+		run(fmt.Sprintf("%s x16", tier.name), 13, lanes, func() { k(s, comps, base, v, &out) })
 	}
 }

@@ -30,7 +30,7 @@ kernels of both amd64 tiers:
 per-pixel kernels at the nonce-buf shapes, and the Interlocked Barrier
 fill kernel `blake3_fusedchain256_13x8_{avx512,avx2}_amd64.s` (the
 batch-16 hook), with the eight 13-byte fill blocks synthesised
-in-register from `groupIdxBase`. The neon tier runs the fill hook as
+in-register from `groupIdxBase` and the per-message interlock-nonce fold. The neon tier runs the fill hook as
 two four-lane kernel calls over Go-synthesised blocks. The
 single-lane entry points of every tier run
 `blake3_fusedchain256_<shape>x1_gpr_{amd64,arm64}.s`, the
@@ -93,6 +93,20 @@ Every message dword is read at its natural width (a 4-byte load, or the
 lane are two 4-byte loads behind the caller's 4-byte pixel-index store.
 Outputs are written as 4-byte stores per word per lane. Every wide kernel
 ends with `VZEROUPPER` before `RET`.
+
+## Frame hygiene
+
+A kernel stores to its frame only what its register plan cannot hold.
+The key is the chaining value and goes from the key pointer straight
+into the state registers on every tier. The staged data words are
+public. The message slots of the seed-injected words (avx2, neon and
+both gpr tiers) and the state words a plan spills (the avx2 `v[15]` /
+`v[12]` slots, the gpr amd64 `v[11]` slot) are secret-derived, and every
+one of those slots is overwritten with zeros, at the slot's own width,
+after the last read and before the kernel returns. The in-package
+`TestFusedKernelsLeaveNoSecretInFrame*` tests run every kernel under a
+stack-residue probe and require that no key dword and no seed-injected
+dword is left in the stack once the kernel has returned.
 
 ## Correctness invariant
 

@@ -87,12 +87,15 @@ type BatchFusedChainHashFunc128x8 func(components []uint64, data *[8][]byte) (ou
 // attached (by the hashes package's constructors), evaluates that cascade for
 // 16 consecutive groups in one kernel call: groupIdxBase is the first
 // group index and lane offset i (0..15) produces groupIdx =
-// groupIdxBase + i on the fill block [0x03 | LE64(groupIdx) | 4×0x00];
-// out receives the 16 × 128-bit rank pairs at [0..15]. The result must
-// be bit-exact with sixteen sequential single-lane cascades over the
-// same components and blocks. A performance hook only: the cascade
-// fill is the wire with or without it.
-type InterlockFillFunc16 func(components []uint64, groupIdxBase uint64, out *[16][2]uint64)
+// groupIdxBase + i on the fill block [0x03 | LE64(groupIdx) | LE32(v)],
+// where v is the interlock-nonce fold the fill builder derives once per
+// message (the bytewise XOR of the interlock nonce's 4-byte slices, read
+// as a little-endian word) and hands to every call; out receives the
+// 16 × 128-bit rank pairs at [0..15]. The result must be bit-exact with
+// sixteen sequential single-lane cascades over the same components and
+// blocks. A performance hook only: the cascade fill is the wire with or
+// without it.
+type InterlockFillFunc16 func(components []uint64, groupIdxBase uint64, v uint32, out *[16][2]uint64)
 
 // Seed128 holds a dynamically-sized symmetric key with a pluggable 128-bit hash function.
 //
@@ -176,6 +179,8 @@ func NewSeed128(bits int, hashFunc HashFunc128) (*Seed128, error) {
 	for i := 0; i < n; i++ {
 		s.Components[i] = binary.LittleEndian.Uint64(buf[i*8:])
 	}
+	// buf is a byte copy of the fresh components; zero it.
+	secureWipe(buf)
 	return s, nil
 }
 

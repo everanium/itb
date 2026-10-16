@@ -3,6 +3,8 @@
 package itb
 
 import (
+	"runtime"
+
 	"github.com/everanium/itb/third/goaes"
 
 	"github.com/everanium/itb/internal/areionasm"
@@ -45,7 +47,10 @@ func areion256Permutex4SoA(b0, b1 *aes.Block4, second bool) {
 	var states [4][32]byte
 	unpack256x4SoA(b0, b1, &states)
 	areion256Permutex4Default(&states, rcs)
-	*b0, *b1 = pack256x4SoA(&states)
+	pack256x4SoAInto(&states, b0, b1)
+	// states holds the permutation output of a whitened input; zero it.
+	clear(states[:])
+	runtime.KeepAlive(&states)
 }
 
 // areion512Permutex4SoA runs the Areion512 permutation (P1, or P2 when
@@ -75,7 +80,10 @@ func areion512Permutex4SoA(b0, b1, b2, b3 *aes.Block4, second bool) {
 	var states [4][64]byte
 	unpack512x4SoA(b0, b1, b2, b3, &states)
 	areion512Permutex4Default(&states, rcs)
-	*b0, *b1, *b2, *b3 = pack512x4SoA(&states)
+	pack512x4SoAInto(&states, b0, b1, b2, b3)
+	// states holds the permutation output of a whitened input; zero it.
+	clear(states[:])
+	runtime.KeepAlive(&states)
 }
 
 // areionSoEM256Permutex4SoA — P1 on state1, P2 on state2, XOR fold.

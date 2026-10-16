@@ -1,8 +1,10 @@
 //go:build amd64 && !purego && !noitbasm
 
 // AVX2 YMM (eight lanes) batch-16 Interlocked Barrier fill kernel for BLAKE3 at the
-// 13-byte shape, 8 lanes (1 compression per cascade round). The data
-// words are staged once per call and the seed-injected words rebuilt
+// 13-byte shape, 8 lanes (1 compression per cascade round). The fill
+// blocks [0x03 | LE64(groupIdxBase+i) | LE32(v)] are synthesised
+// in-register once per call from groupIdxBase and the per-message
+// interlock-nonce fold v, and the seed-injected words rebuilt
 // each round; see blake3asm_fused.go for the construction and the
 // in-package parity tests for the bit-exact pin against the pure-Go
 // cascade.
@@ -48,16 +50,23 @@
 	GA(Y2, Y7, Y8,  Y13, M(s12), M(s13), Y15); \
 	GA(Y3, Y4, Y9,  Y14, M(s14), M(s15), Y15)
 
-// func blake3FusedChain13x8Avx2Asm(fixedKey *[32]byte, comps *uint64, nGroups int, groupIdxBase uint64, out *[8][4]uint64)
-TEXT ·blake3FusedChain13x8Avx2Asm(SB), $832-40
+// func blake3FusedChain13x8Avx2Asm(fixedKey *[32]byte, comps *uint64, nGroups int, groupIdxBase uint64, out *[8][4]uint64, v uint32)
+TEXT ·blake3FusedChain13x8Avx2Asm(SB), $832-44
 	MOVQ fixedKey+0(FP), AX
 	MOVQ comps+8(FP), BX
 	MOVQ nGroups+16(FP), CX
 	MOVQ out+32(FP), DX
 
+	// Fill blocks [0x03 | LE64(groupIdxBase+i) | LE32(v)] as data dwords:
+	// D0 = (idx << 8) | 0x03, D1 = idx >> 24, D2 = (idx >> 56) | (v << 8), D3 = v >> 24
 	VPBROADCASTQ groupIdxBase+24(FP), Y0
 	VPADDQ laneIdx<>+0(SB), Y0, Y1
 	VPADDQ laneIdx<>+32(SB), Y0, Y2
+	MOVL v+40(FP), R12
+	VMOVD R12, X5
+	VPBROADCASTD X5, Y5
+	VPSLLD $8, Y5, Y6
+	VPSRLD $24, Y5, Y5
 	VPSLLQ $8, Y1, Y3
 	VPSLLQ $8, Y2, Y4
 	VPOR fillc<>+0(SB), Y3, Y3
@@ -83,9 +92,10 @@ TEXT ·blake3FusedChain13x8Avx2Asm(SB), $832-40
 	VPSHUFD $0x08, Y4, Y4
 	VPERMQ $0x08, Y4, Y4
 	VINSERTI128 $1, X4, Y3, Y3
+	VPOR Y6, Y3, Y3
 	VMOVDQU Y3, 640(SP)
+	VMOVDQU Y5, 672(SP)
 	VPXOR Y3, Y3, Y3
-	VMOVDQU Y3, 672(SP)
 	VMOVDQU Y3, 704(SP)
 	VMOVDQU Y3, 736(SP)
 	VMOVDQU Y3, 768(SP)
@@ -269,6 +279,17 @@ loop:
 	VPEXTRD $1, X8, 188(DX)
 	VPEXTRD $2, X8, 220(DX)
 	VPEXTRD $3, X8, 252(DX)
+	VPXOR Y15, Y15, Y15
+	VMOVDQU Y15, 0(SP)
+	VMOVDQU Y15, 32(SP)
+	VMOVDQU Y15, 64(SP)
+	VMOVDQU Y15, 96(SP)
+	VMOVDQU Y15, 128(SP)
+	VMOVDQU Y15, 160(SP)
+	VMOVDQU Y15, 192(SP)
+	VMOVDQU Y15, 224(SP)
+	VMOVDQU Y15, 512(SP)
+	VMOVDQU Y15, 544(SP)
 	VZEROUPPER
 	RET
 

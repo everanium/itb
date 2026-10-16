@@ -3,7 +3,10 @@ package aesitbasm
 import (
 	"crypto/rand"
 	"encoding/binary"
+	"fmt"
+	"runtime/debug"
 	"testing"
+	"unsafe"
 )
 
 var pairCounts = []int{1, 2, 4, 8}
@@ -130,5 +133,260 @@ func TestFusedRejectsShortComponents(t *testing.T) {
 	}
 	if out != want {
 		t.Fatal("odd component count did not route to the scalar cascade")
+	}
+}
+
+// Stack-residue probe. A kernel's frame lives below its caller's stack
+// pointer and Go does not clear it on return, so whatever the kernel
+// stored there stays readable until the goroutine reuses that depth.
+// stackResidue runs fn at a known depth below a probing frame and
+// returns the 8-byte words fn and the kernel it calls left in a window
+// that spans every kernel frame of the package.
+const (
+	// residueGap separates the probing frame from the window: it exceeds
+	// the probing frame itself, so filling the window never touches a
+	// live local of the probe.
+	residueGap = 1 << 10
+	// residuePad is the frame of residueDeep; it pushes fn and the
+	// kernel below the top of the window.
+	residuePad = 2 << 10
+	// residueWindow is the span inspected below residueGap.
+	residueWindow = 16 << 10
+	// residueSentinel marks window words nothing wrote.
+	residueSentinel = 0x5A5A5A5A5A5A5A5A
+)
+
+// stackResidue calls fn on a fresh goroutine and returns the window
+// words below the probing frame once fn has returned. The goroutine
+// stack is grown past the window first and the collector is held off
+// for the duration, so the stack is neither grown nor shrunk (and so
+// never moved) between the sentinel fill, the call and the read-back.
+func stackResidue(fn func()) []uint64 {
+	defer debug.SetGCPercent(debug.SetGCPercent(-1))
+	res := make([]uint64, residueWindow/8)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		residueGrow(0)
+		residueProbe(fn, res)
+	}()
+	<-done
+	return res
+}
+
+// residueGrow forces the goroutine stack well past the probe's depth.
+//
+//go:noinline
+func residueGrow(i int) byte {
+	var pad [4 * residueWindow]byte
+	pad[i] = 1
+	return pad[(i+1)%len(pad)]
+}
+
+// residueProbe fills the window with the sentinel, calls fn through
+// residueDeep and copies the window back into res. It calls nothing
+// between the fill and the read-back except fn's chain, and the window
+// lies below its own stack pointer.
+//
+//go:noinline
+func residueProbe(fn func(), res []uint64) {
+	var anchor uint64
+	top := unsafe.Add(unsafe.Pointer(&anchor), -residueGap)
+	for i := range res {
+		*(*uint64)(unsafe.Add(top, -8*(i+1))) = residueSentinel
+	}
+	residueDeep(fn, 0)
+	for i := range res {
+		res[i] = *(*uint64)(unsafe.Add(top, -8*(i+1)))
+	}
+}
+
+// residueDeep calls fn below a residuePad-byte frame, so fn's frame and
+// the kernel's frame below it fall inside the window.
+//
+//go:noinline
+func residueDeep(fn func(), i int) byte {
+	var pad [residuePad]byte
+	pad[i] = 1
+	fn()
+	return pad[(i+7)%len(pad)]
+}
+
+// assertNoSecretResidue fails if any window word, or any aligned
+// 4-byte half of one, equals a secret (secrets64 / secrets32), and fails
+// if the probe saw no write at all (a window that missed the kernel
+// frame would otherwise pass vacuously).
+func assertNoSecretResidue(t *testing.T, name string, res []uint64, secrets64 map[uint64]string, secrets32 map[uint32]string) {
+	t.Helper()
+	written := 0
+	for i, w := range res {
+		if w != residueSentinel {
+			written++
+		}
+		if what, ok := secrets64[w]; ok {
+			t.Errorf("%s: %s left in the stack %d bytes below the window top", name, what, 8*(i+1))
+		}
+		for h, d := range [2]uint32{uint32(w), uint32(w >> 32)} {
+			if what, ok := secrets32[d]; ok {
+				t.Errorf("%s: %s left in the stack %d bytes below the window top", name, what, 8*(i+1)-4*h)
+			}
+		}
+	}
+	if written == 0 {
+		t.Fatalf("%s: no word of the window was written; the probe missed the kernel frame", name)
+	}
+}
+
+// residueHits counts the window words that equal a secret word.
+func residueHits(res []uint64, secrets map[uint64]string) int {
+	hits := 0
+	for _, w := range res {
+		if _, ok := secrets[w]; ok {
+			hits++
+		}
+	}
+	return hits
+}
+
+// paddedBlocks returns the PKCS#7-padded 16-byte blocks of data, the
+// blocks ChainAbsorb absorbs.
+func paddedBlocks(data []byte) [][16]byte {
+	n := len(data)
+	full := n &^ 15
+	var out [][16]byte
+	for off := 0; off < full; off += 16 {
+		var b [16]byte
+		copy(b[:], data[off:])
+		out = append(out, b)
+	}
+	var b [16]byte
+	copy(b[:], data[full:])
+	for i := n - full; i < 16; i++ {
+		b[i] = byte(16 - (n - full))
+	}
+	return append(out, b)
+}
+
+// aesitbSecrets lists the secret 64-bit words a one-pair AES-ITB-128
+// cascade could leave in a kernel frame, for the given lane inputs and
+// lane outputs: the key, the component pair, the initial state
+// key ⊕ pair, every padded block with the key folded in (block_b ⊕ key,
+// block_b ⊕ RC[b-1] ⊕ key, block_0 ⊕ key ⊕ pair) and every lane output.
+// The public values a frame may hold — block_b ⊕ RC[b-1] and the
+// synthesised fill blocks — are not secrets.
+func aesitbSecrets(key *[16]byte, comps []uint64, lanes [][]byte, outs [][2]uint64) map[uint64]string {
+	m := make(map[uint64]string)
+	k := [2]uint64{binary.LittleEndian.Uint64(key[0:]), binary.LittleEndian.Uint64(key[8:])}
+	add := func(v [2]uint64, what string) {
+		m[v[0]] = what + " low word"
+		m[v[1]] = what + " high word"
+	}
+	add(k, "key")
+	add([2]uint64{comps[0], comps[1]}, "component pair")
+	add([2]uint64{k[0] ^ comps[0], k[1] ^ comps[1]}, "key ^ pair")
+	for l, data := range lanes {
+		for b, blk := range paddedBlocks(data) {
+			v := [2]uint64{binary.LittleEndian.Uint64(blk[0:]) ^ k[0], binary.LittleEndian.Uint64(blk[8:]) ^ k[1]}
+			add(v, fmt.Sprintf("lane %d block %d ^ key", l, b))
+			if b == 0 {
+				add([2]uint64{v[0] ^ comps[0], v[1] ^ comps[1]}, fmt.Sprintf("lane %d block 0 ^ key ^ pair", l))
+			} else {
+				rc := RC[(b-1)&7]
+				add([2]uint64{v[0] ^ binary.LittleEndian.Uint64(rc[0:]), v[1] ^ binary.LittleEndian.Uint64(rc[8:])},
+					fmt.Sprintf("lane %d block %d ^ RC ^ key", l, b))
+			}
+		}
+	}
+	for l, o := range outs {
+		add(o, fmt.Sprintf("lane %d output", l))
+	}
+	return m
+}
+
+// residueSink keeps leakyKeyFoldFrame's frame copy observable.
+var residueSink byte
+
+// leakyKeyFoldFrame is the negative control of the stack-residue probe:
+// it stores block_0 ⊕ key of data into its own stack frame, the exact
+// leak the fused kernels must not commit, so a probe that cannot see it
+// would pass the kernels vacuously.
+//
+//go:noinline
+func leakyKeyFoldFrame(key *[16]byte, data []byte, i int) {
+	var frame [64]byte
+	blk := paddedBlocks(data)[0]
+	for j := 0; j < 16; j++ {
+		frame[16+j] = blk[j] ^ key[j]
+	}
+	residueSink = frame[(i+16)%len(frame)]
+}
+
+// checkResidueProbeSeesKeyFold runs the negative control: the probe must
+// find block_0 ⊕ key in the stack after leakyKeyFoldFrame returns.
+func checkResidueProbeSeesKeyFold(t *testing.T) {
+	t.Helper()
+	var key [16]byte
+	rand.Read(key[:])
+	data := make([]byte, 20)
+	rand.Read(data)
+	res := stackResidue(func() { leakyKeyFoldFrame(&key, data, 0) })
+	if residueHits(res, aesitbSecrets(&key, []uint64{0, 0}, [][]byte{data}, nil)) == 0 {
+		t.Fatal("negative control: the stack-residue probe did not see block_0 ^ key stored by leakyKeyFoldFrame")
+	}
+}
+
+// fillBlocks returns the 13-byte fill blocks of lanes base .. base+n-1
+// under the interlock-nonce fold v.
+func fillBlocks(base uint64, v uint32, n int) [][]byte {
+	lanes := make([][]byte, n)
+	for i := range lanes {
+		lanes[i] = make([]byte, 13)
+		lanes[i][0] = 0x03
+		binary.LittleEndian.PutUint64(lanes[i][1:], base+uint64(i))
+		binary.LittleEndian.PutUint32(lanes[i][9:], v)
+	}
+	return lanes
+}
+
+// checkAESITBResidue runs every given kernel at one component pair under
+// the stack-residue probe and requires that no key, component pair or
+// key-folded block and no lane output is left in the stack once the
+// kernel has returned.
+func checkAESITBResidue(t *testing.T, label string, x4 map[int]fusedX4Fn, x1 map[int]fusedX1Fn, x8 map[int]fusedX8Fn, x16 fusedX16Fn) {
+	t.Helper()
+	var key [16]byte
+	rand.Read(key[:])
+	comps := randomComponents(1)
+	for _, n := range shapes {
+		bufs, ptrs := makeLaneData(n)
+		for i := range bufs {
+			rand.Read(bufs[i])
+		}
+		if f, ok := x4[n]; ok {
+			var out [4][2]uint64
+			res := stackResidue(func() { f(&key, comps, &ptrs, &out) })
+			assertNoSecretResidue(t, fmt.Sprintf("%s x4 n=%d", label, n), res, aesitbSecrets(&key, comps, bufs[:], out[:]), nil)
+		}
+		if f, ok := x1[n]; ok {
+			var out [2]uint64
+			res := stackResidue(func() { f(&key, comps, ptrs[0], &out) })
+			assertNoSecretResidue(t, fmt.Sprintf("%s x1 n=%d", label, n), res, aesitbSecrets(&key, comps, bufs[:1], [][2]uint64{out}), nil)
+		}
+		if f, ok := x8[n]; ok {
+			bufs8, ptrs8 := makeLaneData8(n)
+			for i := range bufs8 {
+				rand.Read(bufs8[i])
+			}
+			var out [8][2]uint64
+			res := stackResidue(func() { f(&key, comps, &ptrs8, &out) })
+			assertNoSecretResidue(t, fmt.Sprintf("%s x8 n=%d", label, n), res, aesitbSecrets(&key, comps, bufs8[:], out[:]), nil)
+		}
+	}
+	if x16 != nil {
+		base := uint64(0x0123456789ABCDEF)
+		v := uint32(0xA5C33C5A)
+		var out [16][2]uint64
+		res := stackResidue(func() { x16(&key, comps, base, v, &out) })
+		assertNoSecretResidue(t, label+" x16", res, aesitbSecrets(&key, comps, fillBlocks(base, v, 16), out[:]), nil)
 	}
 }

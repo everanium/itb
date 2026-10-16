@@ -31,6 +31,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"hash"
+	"runtime"
 
 	"golang.org/x/crypto/blake2b"
 	"golang.org/x/crypto/blake2s"
@@ -156,6 +157,9 @@ func areionSeed256(key []byte) [4]uint64 {
 	for i := range seed {
 		seed[i] = binary.LittleEndian.Uint64(sum[i*8:])
 	}
+	// sum is the derived subkey; zero the stack copy.
+	clear(sum[:])
+	runtime.KeepAlive(&sum)
 	return seed
 }
 
@@ -173,6 +177,9 @@ func areionSeed512(key []byte) [8]uint64 {
 	for i := range seed {
 		seed[i] = binary.LittleEndian.Uint64(sum[i*8:])
 	}
+	// sum is the derived subkey; zero the stack copy.
+	clear(sum[:])
+	runtime.KeepAlive(&sum)
 	return seed
 }
 
@@ -184,6 +191,8 @@ func newAreion256PRF(key []byte) func(dst, in []byte) {
 	var k [32]byte
 	copy(k[:], key)
 	hf, _ := hashes.Areion256PairWithKey(k)
+	clear(k[:])
+	runtime.KeepAlive(&k)
 	seed := areionSeed256(key)
 	return func(dst, in []byte) {
 		out := hf(in, seed)
@@ -201,6 +210,8 @@ func newAreion512PRF(key []byte) func(dst, in []byte) {
 	var k [64]byte
 	copy(k[:], key)
 	hf, _ := hashes.Areion512PairWithKey(k)
+	clear(k[:])
+	runtime.KeepAlive(&k)
 	seed := areionSeed512(key)
 	return func(dst, in []byte) {
 		out := hf(in, seed)
@@ -233,6 +244,8 @@ func newBlake2bPRF(key []byte, size int) func(dst, in []byte) {
 		h.Write(in)
 		out := h.Sum(scratch[:0])
 		copy(dst[:size], out[:size])
+		// scratch outlives the call; do not leave the PRF block in it.
+		clear(scratch[:])
 	}
 }
 
@@ -249,6 +262,8 @@ func newBlake2sPRF(key []byte) func(dst, in []byte) {
 		h.Write(in)
 		out := h.Sum(scratch[:0])
 		copy(dst[:32], out[:32])
+		// scratch outlives the call; do not leave the PRF block in it.
+		clear(scratch[:])
 	}
 }
 
@@ -276,6 +291,8 @@ func newBlake3PRF(key []byte) func(dst, in []byte) {
 		h.Write(in)
 		h.Sum(buf[:0])
 		copy(dst[:32], buf[:])
+		// buf outlives the call; do not leave the PRF block in it.
+		clear(buf[:])
 	}
 }
 
@@ -332,6 +349,8 @@ func newAreion256BatchPRF(key []byte) func(dst, in *[4][]byte) {
 	var k [32]byte
 	copy(k[:], key)
 	_, bhf := hashes.Areion256PairWithKey(k)
+	clear(k[:])
+	runtime.KeepAlive(&k)
 	if bhf == nil {
 		return nil
 	}
@@ -340,6 +359,8 @@ func newAreion256BatchPRF(key []byte) func(dst, in *[4][]byte) {
 	for lane := range seeds {
 		seeds[lane] = s
 	}
+	clear(s[:])
+	runtime.KeepAlive(&s)
 	return func(dst, in *[4][]byte) {
 		out := bhf(in, seeds)
 		for lane := 0; lane < 4; lane++ {
@@ -358,6 +379,8 @@ func newAreion512BatchPRF(key []byte) func(dst, in *[4][]byte) {
 	var k [64]byte
 	copy(k[:], key)
 	_, bhf := hashes.Areion512PairWithKey(k)
+	clear(k[:])
+	runtime.KeepAlive(&k)
 	if bhf == nil {
 		return nil
 	}
@@ -366,6 +389,8 @@ func newAreion512BatchPRF(key []byte) func(dst, in *[4][]byte) {
 	for lane := range seeds {
 		seeds[lane] = s
 	}
+	clear(s[:])
+	runtime.KeepAlive(&s)
 	return func(dst, in *[4][]byte) {
 		out := bhf(in, seeds)
 		for lane := 0; lane < 4; lane++ {

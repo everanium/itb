@@ -39,7 +39,7 @@ permutation — and the eight-lane Interlocked Barrier fill kernels
 `areion_fusedchain256_13x8_avx512_amd64.s` (the batch-16 hook of width
 256), `areion_fusedchain512_13x8_avx512_amd64.s` (the batch-32 hook of
 width 512) and `areion_fusedchain{256,512}_13x8_neon_arm64.s`, with the
-eight 13-byte fill blocks synthesised from `groupIdxBase` (in-register on
+eight 13-byte fill blocks synthesised from `groupIdxBase` and the per-message interlock-nonce fold (in-register on
 ZMM, into the frame on NEON). The YMM / XMM tiers run every fill hook as
 four-lane kernel calls over Go-synthesised blocks, and the width-512
 batch-16 hook runs that way on every tier; their eight-lane per-pixel
@@ -78,6 +78,20 @@ behind the caller's 4-byte pixel-index store; every other message byte is
 read at its natural width. Outputs are written as 16-byte stores — one per
 state block per lane — on every tier, the width the Go side reads them
 back with. Every wide kernel ends with `VZEROUPPER` before `RET`.
+
+## Frame hygiene
+
+The frame holds the staged message blocks (public) and, on the tiers
+whose register file cannot hold them, the seed-derived SoEM subkey
+`k2 = component ⊕ h` (the YMM width-512 kernels, the XMM four-lane
+kernels at width 256 and the XMM kernels at width 512) or the whitening
+`k1 ⊕ k2` (the eight-lane NEON fill kernels). Those slots are
+overwritten with zeros, at the width they were written with, after the
+last read and before the kernel returns. The in-package
+`TestFusedKernelsLeaveNoSecretInFrame*` tests run every kernel under a
+stack-residue probe and require that no fixed-key word, no `k2` word
+and no `k1 ⊕ k2` word is left in the stack once the kernel has
+returned.
 
 ## Correctness invariant
 

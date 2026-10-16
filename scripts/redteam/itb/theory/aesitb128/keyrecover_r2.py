@@ -17,14 +17,14 @@ generic key-recovery bound is 2^64 data/time (n = 128), not measured here.
 Engine 2 — Square key recovery on the peeled r = 2 observable. The
 surviving r = 2 distinguisher (distinguisher_chainhash.py: the peeled
 output is 16 / 16 balanced) is converted into recovery. After the peel,
-    y = k2 XOR R_RC1(R_RC0(R_RC0(K1 XOR pad(data))))
+    y = k2 XOR R_RC2(R_RC1(R_RC0(K1 XOR pad(data))))
 with k2 = seed block 2 and K1 = fixedKey XOR seed block 1 both unknown —
 three full AES rounds between two whitening keys. Over a Λ-set (data
 byte 0 active) the state S2 entering the last round has, in every column,
 four bytes that are GF(2^8)-affine in ONE variable (the column's single
 active input byte after two rounds): S2[4c+j] = M[j][i]·v XOR d_j, so for
 bytes j, j' of one column M[j'][i]·S2_j XOR M[j][i]·S2_j' is constant
-over the set. With w = MC^-1(y) and κ = MC^-1(k2 XOR RC1), each S2 byte is
+over the set. With w = MC^-1(y) and κ = MC^-1(k2 XOR RC2), each S2 byte is
 SB^-1(w[p] XOR κ[p]); guessing the two κ bytes of a pair (2^16) and
 testing the constancy relation singles them out. Twelve pairs give all 16
 κ bytes -> k2 -> P^-1 of one text gives seed block 1. Cost ~2^25, seconds.
@@ -53,7 +53,8 @@ DATA_LEN = 15
 M = [[2, 3, 1, 1], [1, 2, 3, 1], [1, 1, 2, 3], [3, 1, 1, 2]]
 GMUL = np.array([[_gmul(a, b) for b in range(256)] for a in range(256)], dtype=np.uint8)
 ISB = prim._ISB_T
-RC1 = np.frombuffer(prim.RC[1], dtype=np.uint8)
+# Last-round constant of the one-block lab shape (RC2; prim.final_rc).
+RC_LAST = np.frombuffer(prim.final_rc(prim.nblocks(DATA_LEN))[1], dtype=np.uint8)
 
 
 def square_recover_r2(query_full, verify_query):
@@ -91,7 +92,7 @@ def square_recover_r2(query_full, verify_query):
     if any(cs is None or len(cs) != 1 for cs in cands):
         return None, 0
     kappa = np.array([next(iter(cs)) for cs in cands], dtype=np.uint8)
-    k2 = prim._mix_batch(kappa[None, :])[0] ^ RC1         # seed block 2
+    k2 = prim._mix_batch(kappa[None, :])[0] ^ RC_LAST     # seed block 2
     s3 = (Y[0] ^ k2).tobytes()                           # h_1 of text 0
     s1_lo, s1_hi = prim.invert_generic(prim.FIXED_KEY, texts[0], s3)
     comps = [s1_lo, s1_hi,

@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/everanium/itb"
@@ -79,20 +80,27 @@ func goFused128Factory(mk func(key ...[]byte) (itb.HashFunc128, itb.BatchHashFun
 }
 
 // goFill16Factory returns an InterlockFillBatch16 factory evaluating
-// sixteen sequential cascades over the fill blocks in Go.
-func goFill16Factory(mk func(key ...[]byte) (itb.HashFunc128, itb.BatchHashFunc128, []byte, error)) func(key []byte) (itb.InterlockFillFunc16, error) {
+// sixteen sequential cascades over the fill blocks
+// [0x03 | LE64(groupIdxBase+i) | LE32(v)] in Go; dropFold leaves bytes
+// 9..12 at zero, the defect the Register-time smoke must refuse.
+func goFill16Factory(mk func(key ...[]byte) (itb.HashFunc128, itb.BatchHashFunc128, []byte, error), dropFold bool) func(key []byte) (itb.InterlockFillFunc16, error) {
 	return func(key []byte) (itb.InterlockFillFunc16, error) {
 		single, _, _, err := mk(key)
 		if err != nil {
 			return nil, err
 		}
-		return func(components []uint64, groupIdxBase uint64, out *[16][2]uint64) {
+		return func(components []uint64, groupIdxBase uint64, v uint32, out *[16][2]uint64) {
 			for i := 0; i < 16; i++ {
 				var buf [13]byte
 				buf[0] = 0x03
 				g := groupIdxBase + uint64(i)
 				for j := 0; j < 8; j++ {
 					buf[1+j] = byte(g >> (8 * j))
+				}
+				if !dropFold {
+					for j := 0; j < 4; j++ {
+						buf[9+j] = byte(v >> (8 * j))
+					}
 				}
 				lo, hi := single(buf[:], components[0], components[1])
 				for k := 2; k < len(components); k += 2 {
@@ -161,8 +169,14 @@ func TestRegisterCustomAttachNoOp(t *testing.T) {
 func TestRegisterCustomFusedCrossConstructor(t *testing.T) {
 	mk := makeCustom128PairFactory()
 	name := customFactoryName + "fxc128"
-	if err := Register(Spec{Name: name, Width: W128, Make128Pair: mk, FusedChainHash128: goFused128Factory(mk), InterlockFillBatch16: goFill16Factory(mk)}); err != nil {
+	if err := Register(Spec{Name: name, Width: W128, Make128Pair: mk, FusedChainHash128: goFused128Factory(mk), InterlockFillBatch16: goFill16Factory(mk, false)}); err != nil {
 		t.Fatalf("Register: %v", err)
+	}
+	// A batch-16 factory that leaves the interlock-nonce fold out of its
+	// blocks diverges from the sequential loop and is refused at
+	// Register time.
+	if err := Register(Spec{Name: customFactoryName + "nf128", Width: W128, Make128Pair: mk, InterlockFillBatch16: goFill16Factory(mk, true)}); err == nil || !strings.Contains(err.Error(), "diverges") {
+		t.Fatalf("Register of a fold-dropping batch-16 factory: err=%v", err)
 	}
 	cfg := &itb.Config{NonceBits: itb.DefaultNonceBits, BarrierFill: itb.DefaultBarrierFill}
 	plain := make([]byte, 4_000)

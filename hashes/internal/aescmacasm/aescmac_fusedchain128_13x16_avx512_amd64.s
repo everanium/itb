@@ -17,7 +17,9 @@
 //   Z0–Z3      states, group j = lanes (4j, 4j+1, 4j+2, 4j+3)
 //   Z4–Z13     K1..K10 broadcasts
 //   Z14        component pair, broadcast per cascade round
-//   Z15        block template: absorb13Block ^ K0 ^ length tag (prologue only)
+//   Z15        block template: absorb13Block ^ K0 ^ [13 | 13 ^ (v << 8)]
+//              (the length tag with the interlock-nonce fold in its
+//              second qword; prologue only)
 //   Z16–Z19    fill blocks, group j = lanes (4j .. 4j+3)
 //   Z20–Z22    groupIdxBase broadcast and synthesis scratch (prologue only)
 //
@@ -29,21 +31,28 @@
 
 #include "textflag.h"
 
-// func aesCMAC128FusedChain13x16Avx512Asm(roundKeys *[176]byte, comps *uint64, nPairs int, groupIdxBase uint64, out *[16][2]uint64)
-TEXT ·aesCMAC128FusedChain13x16Avx512Asm(SB), NOSPLIT, $0-40
+// func aesCMAC128FusedChain13x16Avx512Asm(roundKeys *[176]byte, comps *uint64, nPairs int, groupIdxBase uint64, out *[16][2]uint64, v uint32)
+TEXT ·aesCMAC128FusedChain13x16Avx512Asm(SB), NOSPLIT, $0-44
 	MOVQ roundKeys+0(FP), AX
 	MOVQ comps+8(FP), BX
 	MOVQ nPairs+16(FP), CX
 	MOVQ out+32(FP), DI
 
-	// Broadcast groupIdxBase to Z20 (all 8 qwords); template Z15 = absorb13Block ^ K0 ^ (13 || 13)
+	// Broadcast groupIdxBase to Z20 (all 8 qwords); template Z15 = absorb13Block ^ K0 ^
+	// [13 | 13 ^ (v << 8)], the length tag with the interlock-nonce fold v in bytes 9..12
+	// of each second qword
 	VPBROADCASTQ groupIdxBase+24(FP), Z20
 	VBROADCASTI32X4 ·absorb13Block(SB), Z15
 	VBROADCASTI32X4 0(AX), Z21
 	VPXORD Z21, Z15, Z15
 	MOVQ $13, R12
-	VPBROADCASTQ R12, Z21
-	VPXORD Z21, Z15, Z15
+	MOVL v+40(FP), R9
+	SHLQ $8, R9
+	ORQ R12, R9
+	VMOVQ R12, X10
+	VPINSRQ $1, R9, X10, X10
+	VSHUFI64X2 $0, Z10, Z10, Z10
+	VPXORD Z10, Z15, Z15
 
 	// ========== Group 0: lanes 0–3 ==========
 	VPADDQ ·laneIdxZ+0(SB), Z20, Z21

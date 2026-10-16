@@ -30,7 +30,7 @@ Listed in canonical primitive order. Below-spec lab helpers (CRC128, FNV-1a, MD5
 
 | # | Registry name | Native width | Underlying primitive | Construction shape |
 |---|---|---|---|---|
-| 1 | `aesitb128` | 128 | AES-ITB-128 (ITB-native reduced-round AES chain, `aesitb.go` + `internal/aesitbasm`) | CBC-MAC-style chain absorption over public AES rounds (one per block + two finalising rounds), keyed through the initial state; NUMS round constants (SHA-2 IVs); intentionally Non-PRF, inner-role only (Rank Barrier + Pixel Barrier) |
+| 1 | `aesitb128` | 128 | AES-ITB-128 (ITB-native reduced-round AES chain, `aesitb.go` + `internal/aesitbasm`) | CBC-MAC-style chain absorption over public AES rounds (one per block + two finalising rounds), keyed through the initial state; NUMS round constants (π words); intentionally Non-PRF, inner-role only (Rank Barrier + Pixel Barrier) |
 | 2 | `areion256` | 256 | AreionSoEM-256 (`third/goaes` building blocks; SoEM22, two Areion permutations) | CBC-MAC with SoEM-256 as keyed round function |
 | 3 | `areion512` | 512 | AreionSoEM-512 (`third/goaes` building blocks; SoEM22, two Areion permutations) | CBC-MAC with SoEM-512 as keyed round function |
 | 4 | `blake2b256` | 256 | BLAKE2b-256 unkeyed (`x/crypto/blake2b`) | Prepend-key MAC with seed XOR into data prefix |
@@ -45,7 +45,7 @@ Listed in canonical primitive order. Below-spec lab helpers (CRC128, FNV-1a, MD5
 
 ### AES-ITB-128 (registry: `aesitb128`)
 
-**Underlying primitive.** AES-ITB-128 — an ITB-native reduced-round AES chain over a 128-bit state. One AES round per absorbed 16-byte block plus two finalising rounds; eight public round constants are Nothing-Up-My-Sleeve big-endian packings of FIPS 180-4 initial-hash-value words (BLAKE3 / SHA-256 IV, SHA-512 IV, SHA-384 IV — fractional bits of square roots of small primes). Defined in [`aesitb.go`](../aesitb.go) with the batched cascade kernels in [`internal/aesitbasm`](../internal/aesitbasm).
+**Underlying primitive.** AES-ITB-128 — an ITB-native reduced-round AES chain over a 128-bit state. One AES round per absorbed 16-byte block plus two finalising rounds; eight public round constants are Nothing-Up-My-Sleeve values — the first eight 128-bit words of the hexadecimal fractional expansion of π, read big-endian (`RC[0] = 243f6a88…`). Defined in [`aesitb.go`](../aesitb.go) with the batched cascade kernels in [`internal/aesitbasm`](../internal/aesitbasm).
 
 **Construction.** CBC-MAC-style chain absorption over public AES rounds, keyed through the initial state. The 16-byte fixed key and the per-call seed enter once, XORed together into the initial state; every AES round that follows is public (its round key is a public round constant), so there is no secret per-round key, no rate / capacity split, no feed-forward within a call and no length strengthening (the injective PKCS#7 padding alone separates input lengths). Defined in [`aesitb.go`](../aesitb.go)`::MakeAESITB128Hash` (re-exported via `hashes/aesitb.go::AESITB128Pair`).
 
@@ -54,10 +54,10 @@ Listed in canonical primitive order. Below-spec lab helpers (CRC128, FNV-1a, MD5
 1. Initialise 16-byte state from the seed pair: `state[0..8) = uint64_le(seed0)`, `state[8..16) = uint64_le(seed1)`. XOR the 16-byte fixed key into `state`.
 2. Apply injective PKCS#7 padding to `data` up to a multiple of 16 bytes (always appending 1 to 16 bytes of value `16 - (len(data) % 16)`).
 3. For each 16-byte block `i` of padded data: `state = AESRound(state ⊕ block[i], RC[i mod 8])` where `RC[i]` is the round-constant slot for absorb index `i`.
-4. Two finalising rounds over fixed SHA-256 IV constants `RC[0]` and `RC[1]`: `state = AESRound(state, RC[0])`; `state = AESRound(state, RC[1])`.
+4. Two finalising rounds that continue the constant cycle past the last absorbed block: with `b` padded blocks, `state = AESRound(state, RC[b mod 8])`; `state = AESRound(state, RC[(b + 1) mod 8])`.
 5. Output: `(uint64_le(state[0..8)), uint64_le(state[8..16)))`.
 
-At ITB's three shipped per-pixel buffer widths (20 / 36 / 68 bytes = 20 / 36 / 68-byte shapes), padded lengths are 32 / 48 / 80 bytes (2 / 3 / 5 absorb blocks), so the total primitive round count works out to `T = 4 / 5 / 7` respectively (absorb rounds + 2 finalising).
+At ITB's three shipped per-pixel buffer widths (20 / 36 / 68 bytes = 20 / 36 / 68-byte shapes), padded lengths are 32 / 48 / 80 bytes (2 / 3 / 5 absorb blocks), so the total primitive round count works out to `T = 4 / 5 / 7` respectively (absorb rounds + 2 finalising). Up to six padded blocks (data length ≤ 95 bytes) every round of a call runs under a distinct round constant; every input the shipped construction feeds the primitive — the 13-byte Rank Barrier chunk block, the 20 / 36 / 68-byte per-pixel buffers, the tag-plus-nonce inputs of the per-message derivations and the 32-byte nonce of the `aesitb128` noise fill — lies within that bound.
 
 **Why this is deliberately Non-PRF.** `aesitb128` carries `Class = ClassNPRF` in [`registry.go`](registry.go), the shipped **inner-role-only** tier — the primitive is used at two inner surfaces, each with its own two-stage defence (Rank Barrier: divmod-then-combinadic-unrank of `(lo, hi)` plus ChainHash cascade fill; Pixel Barrier: ChainHash cascade fill plus `lo`-lane-only consumption), but never as a standalone user-visible PRF. HARNESS.md § 3.10 records the standalone breaks measured on the raw primitive:
 
@@ -87,7 +87,7 @@ Empirical validation of the cascade dissolving every standalone break at `r ≥ 
 
     F(k1, k2, m) = P1(m ⊕ k1) ⊕ P2(m ⊕ k2) ⊕ k1 ⊕ k2
 
-where `P1` is Areion-256 under its published round constants and `P2` is Areion-256 under a second round-constant table (the next words of the hexadecimal digits of π), modelled as a permutation independent of `P1` (an assumption about this instantiation, not a proven property); built atop the `third/goaes` round building blocks.
+where `P1` is Areion-256 under its published round constants and `P2` is Areion-256 under a second round-constant table (the next words of the hexadecimal digits of π, with word 7 in the same shifted form as word 7 of the published table: leading zero nibble dropped, zero nibble appended), modelled as a permutation independent of `P1` (an assumption about this instantiation, not a proven property); built atop the `third/goaes` round building blocks.
 
 **ITB uses a patched in-module copy of go-aes (`third/goaes`), because the upstream `AreionSoEM256` / `AreionSoEM512` evaluate one Areion permutation in both branches, which leaves `F(m) = F(m ⊕ k1 ⊕ k2 ⊕ d)` for every `m` and caps the PRF at the birthday bound; the ~170 / ~341-bit figure quoted upstream is the SoEM22 bound and is not reachable there (<https://github.com/jedisct1/go-aes/issues/1>).**
 

@@ -3,8 +3,10 @@
 // Legacy-SSE AES-NI XMM fused ChainHash cascade kernel for AES-ITB-128 at the
 // 68-byte shape, 4 lanes (5 PKCS#7 blocks, 7 AES rounds per
 // cascade round).
-// The padded data blocks are staged once into the frame and every
-// cascade round runs from those 16-byte slots; see aesitbasm_fused.go for the
+// The padded data blocks are staged once into the frame, every block
+// past block 0 with the round constant of the preceding absorb round
+// folded in so it serves as that round's key, and every cascade round
+// runs from those 16-byte slots; see aesitbasm_fused.go for the
 // construction and the in-package parity tests for the bit-exact pin
 // against the pure-Go cascade.
 
@@ -43,51 +45,66 @@ TEXT ·aesITB128FusedChain68x4AesNiAsm(SB), NOSPLIT, $320-40
 	PINSRD $1, 4(R11), X4
 	PINSRQ $1, 8(R11), X4
 	MOVOU X4, 48(SP)
+	MOVOU ·RC+0(SB), X5
 	MOVOU 16(R8), X4
+	PXOR X5, X4
 	MOVOU X4, 64(SP)
 	MOVOU 16(R9), X4
+	PXOR X5, X4
 	MOVOU X4, 80(SP)
 	MOVOU 16(R10), X4
+	PXOR X5, X4
 	MOVOU X4, 96(SP)
 	MOVOU 16(R11), X4
+	PXOR X5, X4
 	MOVOU X4, 112(SP)
+	MOVOU ·RC+16(SB), X5
 	MOVOU 32(R8), X4
+	PXOR X5, X4
 	MOVOU X4, 128(SP)
 	MOVOU 32(R9), X4
+	PXOR X5, X4
 	MOVOU X4, 144(SP)
 	MOVOU 32(R10), X4
+	PXOR X5, X4
 	MOVOU X4, 160(SP)
 	MOVOU 32(R11), X4
+	PXOR X5, X4
 	MOVOU X4, 176(SP)
+	MOVOU ·RC+32(SB), X5
 	MOVOU 48(R8), X4
+	PXOR X5, X4
 	MOVOU X4, 192(SP)
 	MOVOU 48(R9), X4
+	PXOR X5, X4
 	MOVOU X4, 208(SP)
 	MOVOU 48(R10), X4
+	PXOR X5, X4
 	MOVOU X4, 224(SP)
 	MOVOU 48(R11), X4
+	PXOR X5, X4
 	MOVOU X4, 240(SP)
+	MOVOU ·RC+48(SB), X5
 	MOVOU X13, X4
 	PINSRD $0, 64(R8), X4
+	PXOR X5, X4
 	MOVOU X4, 256(SP)
 	MOVOU X13, X4
 	PINSRD $0, 64(R9), X4
+	PXOR X5, X4
 	MOVOU X4, 272(SP)
 	MOVOU X13, X4
 	PINSRD $0, 64(R10), X4
+	PXOR X5, X4
 	MOVOU X4, 288(SP)
 	MOVOU X13, X4
 	PINSRD $0, 64(R11), X4
+	PXOR X5, X4
 	MOVOU X4, 304(SP)
 
-	MOVOU ·RC+0(SB), X5
-	MOVOU ·RC+16(SB), X6
-	MOVOU ·RC+32(SB), X7
-	MOVOU ·RC+48(SB), X8
-	MOVOU ·RC+64(SB), X9
-	MOVOU ·RC+80(SB), X10
-	MOVOU ·RC+96(SB), X11
-	MOVOU ·RC+112(SB), X12
+	MOVOU ·RC+64(SB), X5
+	MOVOU ·RC+80(SB), X6
+	MOVOU ·RC+96(SB), X7
 	MOVOU 0(AX), X13
 	PXOR X0, X0
 	PXOR X1, X1
@@ -109,45 +126,29 @@ loop:
 	PXOR X4, X2
 	MOVOU 48(SP), X4
 	PXOR X4, X3
+	MOVOU 64(SP), X8
+	MOVOU 80(SP), X9
+	MOVOU 96(SP), X10
+	MOVOU 112(SP), X11
+	AESENC X8, X0; AESENC X9, X1; AESENC X10, X2; AESENC X11, X3
+	MOVOU 128(SP), X8
+	MOVOU 144(SP), X9
+	MOVOU 160(SP), X10
+	MOVOU 176(SP), X11
+	AESENC X8, X0; AESENC X9, X1; AESENC X10, X2; AESENC X11, X3
+	MOVOU 192(SP), X8
+	MOVOU 208(SP), X9
+	MOVOU 224(SP), X10
+	MOVOU 240(SP), X11
+	AESENC X8, X0; AESENC X9, X1; AESENC X10, X2; AESENC X11, X3
+	MOVOU 256(SP), X8
+	MOVOU 272(SP), X9
+	MOVOU 288(SP), X10
+	MOVOU 304(SP), X11
+	AESENC X8, X0; AESENC X9, X1; AESENC X10, X2; AESENC X11, X3
 	AESENC X5, X0; AESENC X5, X1; AESENC X5, X2; AESENC X5, X3
-	MOVOU 64(SP), X4
-	PXOR X4, X0
-	MOVOU 80(SP), X4
-	PXOR X4, X1
-	MOVOU 96(SP), X4
-	PXOR X4, X2
-	MOVOU 112(SP), X4
-	PXOR X4, X3
 	AESENC X6, X0; AESENC X6, X1; AESENC X6, X2; AESENC X6, X3
-	MOVOU 128(SP), X4
-	PXOR X4, X0
-	MOVOU 144(SP), X4
-	PXOR X4, X1
-	MOVOU 160(SP), X4
-	PXOR X4, X2
-	MOVOU 176(SP), X4
-	PXOR X4, X3
 	AESENC X7, X0; AESENC X7, X1; AESENC X7, X2; AESENC X7, X3
-	MOVOU 192(SP), X4
-	PXOR X4, X0
-	MOVOU 208(SP), X4
-	PXOR X4, X1
-	MOVOU 224(SP), X4
-	PXOR X4, X2
-	MOVOU 240(SP), X4
-	PXOR X4, X3
-	AESENC X8, X0; AESENC X8, X1; AESENC X8, X2; AESENC X8, X3
-	MOVOU 256(SP), X4
-	PXOR X4, X0
-	MOVOU 272(SP), X4
-	PXOR X4, X1
-	MOVOU 288(SP), X4
-	PXOR X4, X2
-	MOVOU 304(SP), X4
-	PXOR X4, X3
-	AESENC X9, X0; AESENC X9, X1; AESENC X9, X2; AESENC X9, X3
-	AESENC X5, X0; AESENC X5, X1; AESENC X5, X2; AESENC X5, X3
-	AESENC X6, X0; AESENC X6, X1; AESENC X6, X2; AESENC X6, X3
 	ADDQ $16, BX
 	DECQ CX
 	JNZ loop

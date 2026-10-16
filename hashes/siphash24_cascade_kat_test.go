@@ -43,11 +43,11 @@ var siphash24CascadeKATs = []siphash24CascadeKAT{
 }
 
 // siphash24FillKATs are the folds of the batch-16 fill output over the
-// lock components of pairs+1 at group index base 0x00FFFFFFFFFFFFF8.
+// lock components of pairs+1 at group index base 0x00FFFFFFFFFFFFF8 under katFillFold.
 var siphash24FillKATs = map[int][2]string{
-	4:  {"23f82c2d39694b7d", "f574f09a34fdca10"},
-	8:  {"589aebad799fafd2", "4c4a6d30e39e9062"},
-	16: {"cbae0e9465bde47f", "d792835886fdf26c"},
+	4:  {"c90d1da3a0c80e41", "9334a57588f2ec0a"},
+	8:  {"46c0d5b76d7d0642", "2e9d2e329fdb4a55"},
+	16: {"691f441bd4ca41b1", "82000ee370ed402e"},
 }
 
 func siphash24KATComponents(pairs int) []uint64 {
@@ -127,7 +127,7 @@ func TestSipHash24CascadeKAT(t *testing.T) {
 			}
 		}
 		var out [16][2]uint64
-		hooked.InterlockFillX16()(lockComps, 0x00FFFFFFFFFFFFF8, &out)
+		hooked.InterlockFillX16()(lockComps, 0x00FFFFFFFFFFFFF8, katFillFold, &out)
 		var accLo, accHi uint64
 		for i := range out {
 			accLo = accLo*0x100000001B3 ^ out[i][0]
@@ -190,5 +190,5 @@ func TestSipHash24HooksZeroAlloc(t *testing.T) {
 	}
 	fill := s.InterlockFillX16()
 	var out [16][2]uint64
-	check("InterlockFillX16", func() { fill(lockComps, 0x00FFFFFFFFFFFFF8, &out) })
+	check("InterlockFillX16", func() { fill(lockComps, 0x00FFFFFFFFFFFFF8, katFillFold, &out) })
 }

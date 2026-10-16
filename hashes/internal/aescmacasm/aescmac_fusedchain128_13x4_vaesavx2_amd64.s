@@ -4,8 +4,10 @@
 // 13-byte shape, 4 lanes (1 zero-padded block, 1 AES-128
 // permutation per cascade round).
 // The data blocks are staged once into the frame as 32-byte lane-pair
-// slots with K0 (and, for block 0, the length tag) folded in, and
-// every cascade round runs from those slots; see aescmacasm_fused.go for the
+// slots (block 0 with the length tag folded in) and every cascade
+// round runs from those slots; each lane is carried as state ^ K0
+// with K10 ^ K0 as the last-round key, so the frame holds public
+// block bytes only; see aescmacasm_fused.go for the
 // construction and the in-package parity tests for the bit-exact pin
 // against the pure-Go cascade.
 
@@ -24,11 +26,9 @@ TEXT ·aesCMAC128FusedChain13x4VaesAvx2Asm(SB), NOSPLIT, $64-40
 	MOVQ 24(DX), R11
 
 	VPXOR X13, X13, X13
-	VBROADCASTI128 0(AX), Y14
 	MOVQ $13, R12
 	VMOVQ R12, X15
 	VPBROADCASTQ X15, Y15
-	VPXOR Y14, Y15, Y15
 	VPINSRQ $0, 0(R8), X13, X2
 	VPINSRD $2, 8(R8), X2, X2
 	VPINSRB $12, 12(R8), X2, X2
@@ -58,8 +58,10 @@ TEXT ·aesCMAC128FusedChain13x4VaesAvx2Asm(SB), NOSPLIT, $64-40
 	VBROADCASTI128 128(AX), Y10
 	VBROADCASTI128 144(AX), Y11
 	VBROADCASTI128 160(AX), Y12
-	VPXOR Y0, Y0, Y0
-	VPXOR Y1, Y1, Y1
+	VBROADCASTI128 0(AX), Y14
+	VPXOR Y14, Y12, Y12
+	VMOVDQU Y14, Y0
+	VMOVDQU Y14, Y1
 
 loop:
 	VBROADCASTI128 0(BX), Y13
@@ -81,6 +83,8 @@ loop:
 	DECQ CX
 	JNZ loop
 
+	VPXOR Y14, Y0, Y0
+	VPXOR Y14, Y1, Y1
 	VMOVDQU X0, 0(DI)
 	VEXTRACTI128 $1, Y0, 16(DI)
 	VMOVDQU X1, 32(DI)

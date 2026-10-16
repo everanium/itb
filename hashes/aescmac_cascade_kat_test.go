@@ -43,11 +43,11 @@ var aescmacCascadeKATs = []aescmacCascadeKAT{
 }
 
 // aescmacFillKATs are the folds of the batch-16 fill output over the
-// lock components of pairs+1 at group index base 0x00FFFFFFFFFFFFF8.
+// lock components of pairs+1 at group index base 0x00FFFFFFFFFFFFF8 under katFillFold.
 var aescmacFillKATs = map[int][2]string{
-	4:  {"72ca37c972f7aa49", "5d30564bb43474f9"},
-	8:  {"62b97bf70891e080", "954e0d391e843fc7"},
-	16: {"5b815f2f5874cb78", "a06407cfa666bfe3"},
+	4:  {"2ae97db3dc6aeaeb", "53330afa11e44100"},
+	8:  {"cfcedd997e016285", "a8952175381bb798"},
+	16: {"38e1f6f8bca9f641", "61576120d597005e"},
 }
 
 func aescmacKATKey() []byte {
@@ -146,7 +146,7 @@ func TestAESCMACCascadeKAT(t *testing.T) {
 			}
 		}
 		var out [16][2]uint64
-		hooked.InterlockFillX16()(lockComps, 0x00FFFFFFFFFFFFF8, &out)
+		hooked.InterlockFillX16()(lockComps, 0x00FFFFFFFFFFFFF8, katFillFold, &out)
 		var accLo, accHi uint64
 		for i := range out {
 			accLo = accLo*0x100000001B3 ^ out[i][0]

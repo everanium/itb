@@ -24,7 +24,7 @@ so a per-byte 2⁸ κ-byte engine applies instead.
 Engine (`square_classic`, mirroring the sibling `keyrecover_r2.py` layout
 against the shipped `chainhashes.aesitb128` mirror):
 
-    W = MC⁻¹(y ⊕ RC_LAST),   RC_LAST = RC[1]   (the shipped 2-round finaliser)
+    W = MC⁻¹(y ⊕ RC_LAST),   RC_LAST = RC[3]   (last finaliser constant at 20 B)
     for each state byte position p, each κ-byte guess g:
         XOR_v SB⁻¹(W_v[p] ⊕ g) = 0 iff g == κ[p] = MC⁻¹(k₂)[p]
 
@@ -78,7 +78,7 @@ peel exists), the
 constant per set that the attacker sees but did not choose (a fresh nonce per
 message). With the hi lane hidden the κ-byte engine has no `Y`; the one public
 step left is the last finaliser round on the two visible state columns
-(`RC[1]` known, InvMixColumns per column). The mode reports, per set, the raw
+(`RC[3]` known, InvMixColumns per column). The mode reports, per set, the raw
 lo-lane balance and the column-peeled balance (g = 0 surviving the per-position
 test `⊕ SB⁻¹(w[p] ⊕ g) = 0`, i.e. the state entering the last round balanced at
 that position) together with the g-survivor count — a distinguisher, never a
@@ -111,7 +111,8 @@ from chainhashes.aes2r import _gmul  # noqa: E402
 TR_DEFAULT = 5
 TR = TR_DEFAULT  # overridable via --trials on the CLI
 DATA_LEN = 20                     # shipped per-pixel shape: LE32(idx) ‖ 128-bit nonce
-RC_LAST = np.frombuffer(prim.RC[1], dtype=np.uint8)   # shipped 2-round finaliser: RC[0], RC[1]
+# Two blocks at 20 B: absorb RC[0], RC[1]; finalise RC[2], RC[3] (prim.final_rc).
+RC_LAST = np.frombuffer(prim.final_rc(prim.nblocks(DATA_LEN))[1], dtype=np.uint8)
 
 # MixColumns coefficient matrix (FIPS-197 § 5.1.3): out[j] = XOR_i M[j][i] · in[i].
 M = [[2, 3, 1, 1], [1, 2, 3, 1], [1, 1, 2, 3], [3, 1, 1, 2]]
@@ -260,10 +261,10 @@ def lam_set_idx(active: int):
 def lo_lane_screen(query_lo, texts):
     """Raw lo-lane balance and the column-peeled balance over one Λ-set.
 
-    Peel: w = InvMixColumns(lo ⊕ RC[1][0:8]) on state columns 0, 1 — the two
+    Peel: w = InvMixColumns(lo ⊕ RC_LAST[0:8]) on state columns 0, 1 — the two
     columns the lo lane exposes — giving 8 bytes of SR(SB(X')), X' the state
     entering the last finaliser round. Per position the survivor set of
-    g ∈ 2⁸ under ⊕_texts SB⁻¹(w[p] ⊕ g) = 0 is returned; RC[1] is public, so
+    g ∈ 2⁸ under ⊕_texts SB⁻¹(w[p] ⊕ g) = 0 is returned; RC_LAST is public, so
     the true post-whitening is g = 0 and "0 ∈ survivors" reads as "X' balanced
     at p". Returns (raw_balanced, peeled_balanced, survivors_per_position)."""
     lo = np.stack([np.frombuffer(query_lo(t), dtype=np.uint8) for t in texts])   # (256, 8)
@@ -324,7 +325,7 @@ def run_realistic(rounds_list=(1, 2, 3, 4), n_sets=3):
     print()
     print("Reading:")
     print("  * r = 1 (raw primitive, T = 4): the column peel exposes a balanced state — the 4-round Square")
-    print("    distinguisher survives on the lo lane; no key is peeled (RC[1] public, seed at the front)")
+    print("    distinguisher survives on the lo lane; no key is peeled (RC[3] public, seed at the front)")
     print("  * r >= 2: raw and peeled lo lane at the floor — the value entering the last call is")
     print("    pad(data) ⊕ seed_r ⊕ h_{r-1}(data), not a Λ-set; the discard-off recovery at r = 2 does not")
     print("    transfer: its peel needs the hi lane. Shipped depths r = 4 / 8 / 16 sit above r = 2.")
@@ -335,7 +336,7 @@ def main():
     print("=" * 96)
     print("Discard-off KEY RECOVERY through ChainHash<AES-ITB-128>, shipped 20-byte pixel shape (T = 4)")
     print("=" * 96)
-    print(f"  shipped fin_rounds = 2 → RC_LAST = RC[1]; per-call rounds at L = 20 B: T = 4")
+    print(f"  shipped fin_rounds = 2 → RC_LAST = RC[3]; per-call rounds at L = 20 B: T = 4")
     print(f"  attacker model: Full KPA, discard OFF (full 128-bit output); Λ-sets in LE32(idx) bytes 0 / 1 / 2")
     print(f"  in the shipped pipeline only h[0] reaches the encoder — the lo-lane observable at r = 2 is at")
     print(f"  the floor / 2^64 (keyrecover_r2.py). This lift is a lab grant.")

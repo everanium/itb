@@ -91,9 +91,7 @@ func TestFusedKernelParityAmd64(t *testing.T) {
 			}
 			if tier.zmm {
 				t.Run("fill256x8", func(t *testing.T) {
-					checkFill256(t, "avx512-x8", func(k *[32]byte, c []uint64, base uint64, o *[8][4]uint64) {
-						areion256FusedChain13x8Avx512Asm(k, &c[0], len(c)/4, base, o)
-					})
+					checkFill256(t, "avx512-x8", fill256x8Kernel)
 				})
 			}
 		})
@@ -224,15 +222,31 @@ func BenchmarkFill(b *testing.B) {
 			b.Run(fmt.Sprintf("%s/fill256x8/groups%d", tier.name, g), func(b *testing.B) {
 				b.SetBytes(8 * 13)
 				for i := 0; i < b.N; i++ {
-					Fused256Fill13x8(key256, c256, uint64(i)*8, &o8)
+					Fused256Fill13x8(key256, c256, uint64(i)*8, 0x80000001, &o8)
 				}
 			})
 			b.Run(fmt.Sprintf("%s/fill512x4/groups%d", tier.name, g), func(b *testing.B) {
 				b.SetBytes(4 * 13)
 				for i := 0; i < b.N; i++ {
-					Fused512Fill13x4(key512, c512, uint64(i)*4, &o4)
+					Fused512Fill13x4(key512, c512, uint64(i)*4, 0x80000001, &o4)
 				}
 			})
 		}
+	}
+}
+
+// TestFusedKernelsLeaveNoSecretInFrame runs the four-lane kernels of
+// every tier the host can execute and the single-lane kernels under the
+// stack-residue probe: no fixed-key word, no k2 word and no K1 ^ k2 word
+// may be left in the stack once a kernel has returned.
+func TestFusedKernelsLeaveNoSecretInFrame(t *testing.T) {
+	for _, tier := range amd64FusedTiers() {
+		if !tier.ok {
+			continue
+		}
+		checkAreionResidue(t, tier.name, kernels256x4[tier.name], kernels512x4[tier.name], nil, nil)
+	}
+	if cpuid.AESNI {
+		checkAreionResidue(t, "aesni", nil, nil, kernels256x1, kernels512x1)
 	}
 }

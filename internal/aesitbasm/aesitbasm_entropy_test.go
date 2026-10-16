@@ -9,7 +9,8 @@ import (
 
 // The input-entropy differential audit (internal/kernelaudit) of the
 // fused cascade: every bit of every lane buffer, component word, key
-// byte and group index base must reach the output, lane for lane, and
+// byte, group index base and interlock-nonce fold must reach the output,
+// lane for lane, and
 // the kernel must agree with the pure-Go cascade (ScalarFusedChain /
 // scalarFusedX16) at the baseline and after every flip. The helpers
 // drive the single-, four-, eight- and sixteen-lane evaluators through
@@ -37,7 +38,7 @@ func refFill(in *kernelaudit.Inputs) [][2]uint64 {
 	var key [16]byte
 	copy(key[:], in.Key)
 	var out [16][2]uint64
-	scalarFusedX16(&key, in.Comps, in.Base, &out)
+	scalarFusedX16(&key, in.Comps, in.Base, in.Fold, &out)
 	return out[:]
 }
 
@@ -106,7 +107,7 @@ func auditX16(t *testing.T, label string, f fusedX16Fn) {
 			var key [16]byte
 			copy(key[:], in.Key)
 			var out [16][2]uint64
-			f(&key, in.Comps, in.Base, &out)
+			f(&key, in.Comps, in.Base, in.Fold, &out)
 			return out[:]
 		}, refFill))
 	}

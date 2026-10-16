@@ -7,10 +7,12 @@
 // for the construction; the kernel is pinned to the pure-Go reference
 // (scalarFusedX16, through the dispatcher) by the in-package parity tests.
 //
-// The fill block [0x03 | LE64(groupIdxBase+i) | 4×0x00] of lane i is
-// synthesised in-register as its two message words m0 = (idx << 8) | 0x03
-// and m1 = (idx >> 56) | (13 << 56) (idx = groupIdxBase + i, lane offsets
-// from ·laneIdx16) and staged into the frame; the eight lanes run as four
+// The fill block [0x03 | LE64(groupIdxBase+i) | LE32(v)] of lane i (v the
+// per-message interlock-nonce fold) is synthesised in-register as its two
+// message words m0 = (idx << 8) | 0x03 and
+// m1 = (idx >> 56) | (v << 8) | (13 << 56) (idx = groupIdxBase + i, lane
+// offsets from ·laneIdx16; the fold is ORed into the tag constant once)
+// and staged into the frame; the eight lanes run as four
 // two-lane pairs whose instruction streams are interleaved. V0..V15 hold
 // the four states (V16..V23 the rotate alternates of v1 / v3), V24..V27
 // the lo and V28..V31 the hi carries; the six constants stay in R19..R24
@@ -21,8 +23,8 @@
 
 #include "textflag.h"
 
-// func sipHash24FusedChain13x8NeonAsm(comps *uint64, nPairs int, groupIdxBase uint64, out *[8][2]uint64)
-TEXT ·sipHash24FusedChain13x8NeonAsm(SB), NOSPLIT, $128-32
+// func sipHash24FusedChain13x8NeonAsm(comps *uint64, nPairs int, groupIdxBase uint64, out *[8][2]uint64, v uint32)
+TEXT ·sipHash24FusedChain13x8NeonAsm(SB), NOSPLIT, $128-36
 	MOVD comps+0(FP), R6
 	MOVD nPairs+8(FP), R7
 	MOVD groupIdxBase+16(FP), R5
@@ -37,13 +39,16 @@ TEXT ·sipHash24FusedChain13x8NeonAsm(SB), NOSPLIT, $128-32
 	MOVD $0xee, R23
 	MOVD $0xdd, R24
 
-	// Synthesise the words: m0 = (idx << 8) | 0x03, m1 = (idx >> 56) | (13 << 56), idx = groupIdxBase + lane
+	// Synthesise the words: m0 = (idx << 8) | 0x03, m1 = (idx >> 56) | (v << 8) | (13 << 56), idx = groupIdxBase + lane;
+	// the interlock-nonce fold v << 8 is ORed into the tag constant once (V22)
 	MOVD $·laneIdx16(SB), R12
 	VLD1 (R12), [V16.D2, V17.D2, V18.D2, V19.D2]
 	VDUP R5, V20.D2
 	MOVD $3, R12
 	VDUP R12, V21.D2
 	MOVD $0xd00000000000000, R12
+	MOVWU v+32(FP), R13
+	ORR R13<<8, R12, R12
 	VDUP R12, V22.D2
 	VADD V20.D2, V16.D2, V16.D2; VADD V20.D2, V17.D2, V17.D2; VADD V20.D2, V18.D2, V18.D2; VADD V20.D2, V19.D2, V19.D2
 	VSHL $8, V16.D2, V24.D2; VSHL $8, V17.D2, V25.D2; VSHL $8, V18.D2, V26.D2; VSHL $8, V19.D2, V27.D2

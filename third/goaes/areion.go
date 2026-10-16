@@ -1,5 +1,7 @@
 package aes
 
+import "runtime"
+
 // Areion256 represents a 256-bit (32-byte) state for the Areion256 permutation.
 // Areion256 is a wide-block cryptographic permutation built from AES round
 // functions, designed for hash functions and authenticated encryption. The state
@@ -53,7 +55,9 @@ var areionRoundConstants = [15][16]byte{
 
 // Round constants of the second Areion permutation, used by the SoEM branch
 // keyed with k2: the 15 128-bit words of the hexadecimal digits of pi that
-// follow those of areionRoundConstants, in the same little-endian format. A
+// follow those of areionRoundConstants, in the same little-endian format, with
+// word 7 in the shifted form of word 7 of areionRoundConstants (its pi word
+// with the leading zero nibble dropped and a zero nibble appended). A
 // permutation with different round constants is modelled as independent of
 // the first.
 var areionRoundConstants2 = [15][16]byte{
@@ -71,8 +75,8 @@ var areionRoundConstants2 = [15][16]byte{
 	{0xb1, 0x75, 0x85, 0xe9, 0x5d, 0x5d, 0x84, 0xef, 0x32, 0x80, 0xec, 0x5d, 0x60, 0xac, 0x7c, 0x48},
 	// 0xdc262302eb651b8823893e81d396acc5
 	{0xc5, 0xac, 0x96, 0xd3, 0x81, 0x3e, 0x89, 0x23, 0x88, 0x1b, 0x65, 0xeb, 0x02, 0x23, 0x26, 0xdc},
-	// 0x0f6d6ff383f442392e0b4482a4842004
-	{0x04, 0x20, 0x84, 0xa4, 0x82, 0x44, 0x0b, 0x2e, 0x39, 0x42, 0xf4, 0x83, 0xf3, 0x6f, 0x6d, 0x0f},
+	// 0xf6d6ff383f442392e0b4482a48420040
+	{0x40, 0x00, 0x42, 0x48, 0x2a, 0x48, 0xb4, 0xe0, 0x92, 0x23, 0x44, 0x3f, 0x38, 0xff, 0xd6, 0xf6},
 	// 0x69c8f04a9e1f9b5e21c66842f6e96c9a
 	{0x9a, 0x6c, 0xe9, 0xf6, 0x42, 0x68, 0xc6, 0x21, 0x5e, 0x9b, 0x1f, 0x9e, 0x4a, 0xf0, 0xc8, 0x69},
 	// 0x670c9c61abd388f06a51a0d2d8542f68
@@ -133,11 +137,11 @@ func areion256PermuteSoftwareRC(state *Areion256, rcs *[15][16]byte) {
 	x0 := (*[16]byte)(state[0:16])
 	x1 := (*[16]byte)(state[16:32])
 
+	var temp [16]byte
 	for r := 0; r < 10; r++ {
 		rc := rcs[r]
 
 		if r%2 == 0 {
-			var temp [16]byte
 			copy(temp[:], x0[:])
 			RoundNoKey((*Block)(&temp))
 			XorBlock((*Block)(&temp), (*Block)(&temp), (*Block)(&rc))
@@ -146,7 +150,6 @@ func areion256PermuteSoftwareRC(state *Areion256, rcs *[15][16]byte) {
 			FinalRoundNoKey((*Block)(x0))
 			copy(x1[:], temp[:])
 		} else {
-			var temp [16]byte
 			copy(temp[:], x1[:])
 			RoundNoKey((*Block)(&temp))
 			XorBlock((*Block)(&temp), (*Block)(&temp), (*Block)(&rc))
@@ -156,6 +159,10 @@ func areion256PermuteSoftwareRC(state *Areion256, rcs *[15][16]byte) {
 			copy(x0[:], temp[:])
 		}
 	}
+	// temp holds a round state; zero it so a keyed input does not
+	// leave intermediate state on the stack.
+	clear(temp[:])
+	runtime.KeepAlive(&temp)
 }
 
 // Software implementation of Areion256 inverse permutation
@@ -211,6 +218,13 @@ func areion512PermuteSoftwareRC(state *Areion512, rcs *[15][16]byte) {
 		FinalRoundNoKey((*Block)(c))
 		XorBlock((*Block)(c), (*Block)(c), (*Block)(rc))
 		RoundNoKey((*Block)(c))
+
+		// temp1 / temp2 hold round states; zero them so a keyed input
+		// does not leave intermediate state on the stack.
+		clear(temp1[:])
+		clear(temp2[:])
+		runtime.KeepAlive(&temp1)
+		runtime.KeepAlive(&temp2)
 	}
 
 	// Main 12 rounds
@@ -233,6 +247,8 @@ func areion512PermuteSoftwareRC(state *Areion512, rcs *[15][16]byte) {
 	copy(x3[:], x2[:])
 	copy(x2[:], x1[:])
 	copy(x1[:], temp[:])
+	clear(temp[:])
+	runtime.KeepAlive(&temp)
 }
 
 // Software implementation of Areion512 inverse permutation
@@ -359,7 +375,14 @@ func AreionSoEM256(key *[64]byte, input *[32]byte) [32]byte {
 	for i := range state1 {
 		state1[i] ^= state2[i] ^ key[i] ^ key[32+i]
 	}
-	return [32]byte(state1)
+	out := [32]byte(state1)
+	// state1 / state2 carry the key-whitened inputs and their
+	// permutation outputs; zero them on the stack.
+	clear(state1[:])
+	clear(state2[:])
+	runtime.KeepAlive(&state1)
+	runtime.KeepAlive(&state2)
+	return out
 }
 
 // AreionSoEM512 computes a PRF using Sum of Even-Mansour with two Areion512
@@ -383,7 +406,14 @@ func AreionSoEM512(key *[128]byte, input *[64]byte) [64]byte {
 	for i := range state1 {
 		state1[i] ^= state2[i] ^ key[i] ^ key[64+i]
 	}
-	return [64]byte(state1)
+	out := [64]byte(state1)
+	// state1 / state2 carry the key-whitened inputs and their
+	// permutation outputs; zero them on the stack.
+	clear(state1[:])
+	clear(state2[:])
+	runtime.KeepAlive(&state1)
+	runtime.KeepAlive(&state2)
+	return out
 }
 
 // Areion256DM computes the Areion256-DM short fixed-input hash of a 32-byte input.

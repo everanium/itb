@@ -9,23 +9,33 @@
 // groupIdxBase per lane, avoiding the per-lane pointer gather overhead of
 // the x4 path. The synthesised block is round-invariant per lane; every
 // cascade round XORs key XOR (c0 || c1) and the block into the state and
-// runs the three AES rounds (absorb, finaliser RC[0], finaliser RC[1]).
+// runs the three AES rounds (absorb RC[0], finalisers RC[1] and RC[2]).
 //
 // Batch layout: two batches of 8 lanes; each batch runs the whole cascade
 // before the next starts. The 16 blocks are staged once into the frame
-// (16 bytes per lane) in the prologue. Per batch: X0–X7 states, X9–X10
-// RC[0] / RC[1], X13 key, X14 key XOR pair (per round), X15 scratch.
+// (16 bytes per lane) in the prologue from the absorb13Block template in
+// X12, into which the interlock-nonce fold (v << 8, second qword) is
+// XORed once before the lanes are built. Per batch: X0–X7 states,
+// X9–X11 RC[0] / RC[1] / RC[2], X13 key, X14 key XOR pair (per round),
+// X15 scratch.
 
 #include "textflag.h"
 
-// func aesITB128FusedChain13x16AesNiAsm(key *[16]byte, comps *uint64, nPairs int, groupIdxBase uint64, out *[16][2]uint64)
-TEXT ·aesITB128FusedChain13x16AesNiAsm(SB), NOSPLIT, $256-40
+// func aesITB128FusedChain13x16AesNiAsm(key *[16]byte, comps *uint64, nPairs int, groupIdxBase uint64, out *[16][2]uint64, v uint32)
+TEXT ·aesITB128FusedChain13x16AesNiAsm(SB), NOSPLIT, $256-44
 	MOVQ key+0(FP), AX
 	MOVQ out+32(FP), DI
 	MOVQ groupIdxBase+24(FP), R8
 
-	// Stage the 16 fill blocks into the frame at 16*lane(SP)
+	// Template X12 = absorb13Block with the interlock-nonce fold (v << 8) in its second qword
 	MOVOU ·absorb13Block(SB), X12
+	MOVL v+40(FP), R9
+	SHLQ $8, R9
+	MOVQ R9, X15
+	PSLLDQ $8, X15
+	PXOR X15, X12
+
+	// Stage the 16 fill blocks into the frame at 16*lane(SP)
 
 	// Lane 0: idx = base
 	MOVQ R8, R9
@@ -205,6 +215,7 @@ TEXT ·aesITB128FusedChain13x16AesNiAsm(SB), NOSPLIT, $256-40
 	// Load round constants and key
 	MOVOU ·RC+0(SB), X9
 	MOVOU ·RC+16(SB), X10
+	MOVOU ·RC+32(SB), X11
 	MOVOU 0(AX), X13
 
 	// ========== BATCH 1: lanes 0–7 ==========
@@ -247,8 +258,8 @@ loop0:
 	MOVOU 112(SP), X15
 	PXOR X15, X7
 	AESENC X9, X0; AESENC X9, X1; AESENC X9, X2; AESENC X9, X3; AESENC X9, X4; AESENC X9, X5; AESENC X9, X6; AESENC X9, X7
-	AESENC X9, X0; AESENC X9, X1; AESENC X9, X2; AESENC X9, X3; AESENC X9, X4; AESENC X9, X5; AESENC X9, X6; AESENC X9, X7
 	AESENC X10, X0; AESENC X10, X1; AESENC X10, X2; AESENC X10, X3; AESENC X10, X4; AESENC X10, X5; AESENC X10, X6; AESENC X10, X7
+	AESENC X11, X0; AESENC X11, X1; AESENC X11, X2; AESENC X11, X3; AESENC X11, X4; AESENC X11, X5; AESENC X11, X6; AESENC X11, X7
 	ADDQ $16, BX
 	DECQ CX
 	JNZ loop0
@@ -303,8 +314,8 @@ loop1:
 	MOVOU 240(SP), X15
 	PXOR X15, X7
 	AESENC X9, X0; AESENC X9, X1; AESENC X9, X2; AESENC X9, X3; AESENC X9, X4; AESENC X9, X5; AESENC X9, X6; AESENC X9, X7
-	AESENC X9, X0; AESENC X9, X1; AESENC X9, X2; AESENC X9, X3; AESENC X9, X4; AESENC X9, X5; AESENC X9, X6; AESENC X9, X7
 	AESENC X10, X0; AESENC X10, X1; AESENC X10, X2; AESENC X10, X3; AESENC X10, X4; AESENC X10, X5; AESENC X10, X6; AESENC X10, X7
+	AESENC X11, X0; AESENC X11, X1; AESENC X11, X2; AESENC X11, X3; AESENC X11, X4; AESENC X11, X5; AESENC X11, X6; AESENC X11, X7
 	ADDQ $16, BX
 	DECQ CX
 	JNZ loop1

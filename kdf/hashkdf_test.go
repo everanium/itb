@@ -25,8 +25,8 @@ func TestHashDeriveRegressionVectors(t *testing.T) {
 		name string
 		want string
 	}{
-		{"areion256", "5ead9aa81d2cfde28b95eae0929ac5bdc8044233c28c05769a3837e49bc2a0c26a24f380ffe480e16fceb3b7a86dd320"},
-		{"areion512", "bb5bcf32abe2370b61ad17f506ee7e2322f3b099387dfc035632b9c9f437a1953a4ef9d358f682caf228eb19ffa08f3a"},
+		{"areion256", "532b24f778a23d35e9bd6528e683488784c6f41c8923136ed5fdeb4a98c1ec9c0865e19e28b93d7d84e5659671df4957"},
+		{"areion512", "0614ee107929601089c977015fb27574db2d741f1256025e489f477b2445904756ef5ad2d33418df739c2bebcff8ae6e"},
 		{"blake2b256", "379fa446ad8255588fe2cb1069b23d981223ef121fd786fcb144bcb4003a37f493b33691e2ef76427142ba0d3327230d"},
 		{"blake2b512", "2c627dac356879a482b472f393c5612eeccde18114eeea79cb9e83e7fb731c2f6261a42181ab44896beda9b2a6905937"},
 		{"blake2s", "c9f97f55a6e1e617f020be1cde08e9bbce9dd4ae8234f27135745c9ad4b261391c5238d53612a548b0496bf8e15b7796"},
@@ -66,7 +66,7 @@ func TestHashStretchAreion512Regression(t *testing.T) {
 	if !bytes.Equal(a, b) {
 		t.Error("areion512 key stretch is not deterministic")
 	}
-	const want = "98ea4cc1330fb4d8651dfe3f4c93ee744a596a6e3fb23f472148f4f78225d1f50aa8734c8a475091afa3743bb624c6a0bc971f5e77fdbbfe746d0ed49de4ac32"
+	const want = "13642916eed3989a26d1ac931a226406292c21c4807b80a7fc36089b19c392c80c384ac7f5852af251814b41d76016446b0c05f508fd42f8aa961c92b85274c5"
 	if got := hex.EncodeToString(a); got != want {
 		t.Errorf("stretchAreion512Key(master32) = %s, want %s", got, want)
 	}

@@ -2,6 +2,7 @@ package itb
 
 import (
 	"encoding/binary"
+	"runtime"
 	"sync"
 
 	"github.com/everanium/itb/internal/interlock"
@@ -334,7 +335,9 @@ func tripleLaneLen(L int) int {
 //
 //	buf[0]    = 0x03   (Triple lock domain tag)
 //	buf[1:9]  = uint64-LE(groupIdx)
-//	buf[9:13] = reserved
+//	buf[9:13] = v      (interlock-nonce fold, one value per message —
+//	                    the bytewise XOR of the nonce's 4-byte slices,
+//	                    see interlockNonceFold in interlock48_cascade.go)
 
 // lockBatchFactor48_* describe how many chunks a single batched Hash call
 // masks at each native hash width. Each chunk consumes two 64-bit lanes,
@@ -420,9 +423,9 @@ type lockBatchPRF48 struct {
 // receives the batch-32 kernel's 32 rank pairs.
 // Declared once per worker goroutine; the BatchHash / batch-16 hook
 // indirections make the buffers escape, so worker-scoped reuse keeps
-// both batched fills allocation-free per invocation. The bufs' reserved
-// bytes [9:13] stay zero for the struct's lifetime, matching the scalar
-// fill buf layout.
+// both batched fills allocation-free per invocation. The bufs follow the
+// scalar fill buf layout; the closures rewrite all 13 bytes, including
+// the interlock-nonce fold at [9:13], on every call.
 type lockFillScratch48 struct {
 	bufs      [4][13]byte
 	data      [4][]byte
@@ -847,6 +850,7 @@ func splitTriple48LockedBatchInto(src framedSrc48, p0, p1, p2 []byte, bp lockBat
 					binary.LittleEndian.PutUint16(p2[2*k:], l2)
 				}
 			}
+			wipeInterlockWorker48(ws, &masks, &masks16)
 		}(gStart, gEnd)
 	}
 	wg.Wait()
@@ -1003,6 +1007,7 @@ func interleaveTriple48LockedBatch(p0, p1, p2 []byte, bp lockBatchPRF48, cfg *Co
 					writeChunk48(result, 6*k, x)
 				}
 			}
+			wipeInterlockWorker48(ws, &masks, &masks16)
 		}(gStart, gEnd)
 	}
 	wg.Wait()
@@ -1098,4 +1103,15 @@ func padLanesToEqualEven(p0, p1, p2 []byte) ([]byte, []byte, []byte) {
 		return out
 	}
 	return pad(p0), pad(p1), pad(p2)
+}
+
+// wipeInterlockWorker48 zeroes the per-worker rank staging and mask
+// arrays of the split / interleave workers once their group range is
+// done. Both are derived from the lockSeed and the interlock nonce.
+func wipeInterlockWorker48(ws *interlockWorkerScratch48, masks *[superChunks48][3]uint64, masks16 *[superGroups48][3]uint64) {
+	*ws = interlockWorkerScratch48{}
+	clear(masks[:])
+	clear(masks16[:])
+	runtime.KeepAlive(masks)
+	runtime.KeepAlive(masks16)
 }

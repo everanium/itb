@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"math/big"
 	"os"
 	"strconv"
 	"testing"
@@ -52,22 +53,25 @@ func aesitbParityData(n int) []byte {
 }
 
 var aesitbGenericVectors = []aesitbGenericVector{
-	{0, 0x0, 0x0, "d03e268799c14203bdb3e663165d6b23"},
-	{1, 0x0, 0x0, "f2a4e404c80c84451e35cadcc7f22bb9"},
-	{15, 0x0, 0x0, "95be57f5a239f3ab144382b7cd8695de"},
-	{16, 0x0, 0x0, "3171e8f8165c8ff5203ac9aa371c719a"},
-	{17, 0x0, 0x0, "48d3f6fcc2985cf31a074ea2c78b1d09"},
-	{31, 0x0, 0x0, "064e72d014e7a41c4fc3b7d1b938f625"},
-	{32, 0x0, 0x0, "e08f48e9037d3bc81d03dc0adc1b9d3b"},
-	{33, 0x0, 0x0, "7370df93d8fd5e118d33484f582e1750"},
-	{63, 0x0, 0x0, "c17822cc92d1a5fb712a1ea655de82ad"},
-	{64, 0x0, 0x0, "81615890aab0306bf4b32bbe2d7ca1af"},
-	{0, 0x1, 0x0, "787e6d0bae570d2ec58796bcbf68c172"},
-	{0, 0x0, 0x1, "e9d430852929ab3d88c240ddc40f823c"},
-	{5, 0x123456789abcdef, 0xfedcba9876543210, "7486079419f3f0767b579065d6cc3d93"},
-	{16, 0xffffffffffffffff, 0xffffffffffffffff, "2eae20695db216506bd63f96fda12ca0"},
-	{33, 0x7, 0x9, "dccfc56b263e1a2fc13052534f15092e"},
-	{64, 0x8000000000000000, 0x1, "a7a8e09b329611b7aec6a97b0e75cd25"},
+	{0, 0x0, 0x0, "b184dc9639cb19463a318b5bdbef60b3"},
+	{1, 0x0, 0x0, "98aa26e22213e0995747f26166741da1"},
+	{15, 0x0, 0x0, "67ff582c8131e477e50a0d5ad8159ffa"},
+	{16, 0x0, 0x0, "b525d15864f5da4095cac4878e734e65"},
+	{17, 0x0, 0x0, "b83d1718c4886682779773e766da4740"},
+	{31, 0x0, 0x0, "b4bb6ec276da61c523e83bdb6c71d283"},
+	{32, 0x0, 0x0, "6bce525c8ccab6ef9397b24764613f7b"},
+	{33, 0x0, 0x0, "12bf744bf5dc16db8fe26756e0bdfdc9"},
+	{63, 0x0, 0x0, "b60baf0921ce4914e43c7d22742bc285"},
+	{64, 0x0, 0x0, "1f43035d6a9e6d218803d2e171b9d4e1"},
+	{0, 0x1, 0x0, "877c1a9b664408e3a0f05d6e0bc743d3"},
+	{0, 0x0, 0x1, "3e3957b58667430747216ab9e87dd55a"},
+	{5, 0x123456789abcdef, 0xfedcba9876543210, "4769146529998d0c4d2861b4bc1efdfe"},
+	{16, 0xffffffffffffffff, 0xffffffffffffffff, "b0e1cbcf08246eb0a7f190fe1ad780dd"},
+	{33, 0x7, 0x9, "57e01a09debb3f6a814a92505188b8d0"},
+	{64, 0x8000000000000000, 0x1, "98876054889177dd47c546cd01811630"},
+	{80, 0x0, 0x0, "bb2af2751c71a52fd0fc49c95ef350c0"},
+	{96, 0x0, 0x0, "37d5acf4a140659dba5d810f10b62d0a"},
+	{128, 0x123456789abcdef, 0xfedcba987654321, "71f22c5f6678b8026faabb5aa7bb6ee5"},
 }
 
 // aesitbWords16 lays a HashFunc128 (lo, hi) pair out as the 16-byte
@@ -280,19 +284,49 @@ func TestAESITBCrossTierRoundTrip(t *testing.T) {
 }
 
 // TestAESITBRoundConstantsAgree pins the kernel package's round-constant
-// table to the recorded rows the reference package re-derives from sqrt(p).
+// table to π itself: the fractional hexadecimal expansion is rebuilt with
+// Machin's formula π = 16·atan(1/5) − 4·atan(1/239) in fixed-point
+// big-integer arithmetic and RC[i] must equal fractional hex digits
+// 32·i + 1 … 32·i + 32, most significant byte first (= AES state byte
+// 0). The root table is pinned to the same rows through the
+// production-vs-reference vectors above, which reach every RC index.
 func TestAESITBRoundConstantsAgree(t *testing.T) {
+	const fracBits, guard = 8 * 128, 64
+	one := new(big.Int).Lsh(big.NewInt(1), fracBits+guard)
+	arctanInv := func(x int64) *big.Int {
+		sum, tmp := new(big.Int), new(big.Int)
+		term := new(big.Int).Quo(one, big.NewInt(x))
+		x2 := big.NewInt(x * x)
+		for n, sign := int64(1), 1; term.Sign() != 0; n, sign = n+2, -sign {
+			tmp.Quo(term, big.NewInt(n))
+			if sign > 0 {
+				sum.Add(sum, tmp)
+			} else {
+				sum.Sub(sum, tmp)
+			}
+			term.Quo(term, x2)
+		}
+		return sum
+	}
+	pi := new(big.Int).Mul(big.NewInt(16), arctanInv(5))
+	pi.Sub(pi, new(big.Int).Mul(big.NewInt(4), arctanInv(239)))
+	frac := new(big.Int).Sub(pi, new(big.Int).Mul(big.NewInt(3), one))
+	digits := frac.Rsh(frac, guard).FillBytes(make([]byte, fracBits/8))
+
 	want := [8]string{
-		"6a09e667bb67ae853c6ef372a54ff53a",
-		"510e527f9b05688c1f83d9ab5be0cd19",
-		"6a09e667f3bcc908bb67ae8584caa73b",
-		"3c6ef372fe94f82ba54ff53a5f1d36f1",
-		"510e527fade682d19b05688c2b3e6c1f",
-		"1f83d9abfb41bd6b5be0cd19137e2179",
-		"cbbb9d5dc1059ed8629a292a367cd507",
-		"9159015a3070dd17152fecd8f70e5939",
+		"243f6a8885a308d313198a2e03707344",
+		"a4093822299f31d0082efa98ec4e6c89",
+		"452821e638d01377be5466cf34e90c6c",
+		"c0ac29b7c97c50dd3f84d5b5b5470917",
+		"9216d5d98979fb1bd1310ba698dfb5ac",
+		"2ffd72dbd01adfb7b8e1afed6a267e96",
+		"ba7c9045f12c7f9924a19947b3916cf7",
+		"0801f2e2858efc16636920d871574e69",
 	}
 	for i := range want {
+		if derived := hexOf(digits[16*i : 16*i+16]); derived != want[i] {
+			t.Errorf("pi word %d = %s, recorded %s", i, derived, want[i])
+		}
 		if got := hexOf(aesitbasm.RC[i][:]); got != want[i] {
 			t.Errorf("aesitbasm.RC[%d] = %s, want %s", i, got, want[i])
 		}

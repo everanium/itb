@@ -15,7 +15,8 @@
 //     siphashasm_fused_x8.go;
 //   - the batch-16 fused cascade of the Interlocked Barrier fill
 //     ([FusedChain13x16]): sixteen lanes at the 13-byte shape with the
-//     fill blocks synthesised from a group index base — one ZMM kernel
+//     fill blocks synthesised from a group index base and the per-message
+//     interlock-nonce fold — one ZMM kernel
 //     on the AVX-512 tier (siphash_fusedchain128_13x16_avx512_amd64.s),
 //     two calls of an eight-lane kernel on the AVX2 and NEON tiers
 //     (siphash_fusedchain128_13x8_{avx2_amd64,neon_arm64}.s).

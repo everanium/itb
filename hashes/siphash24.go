@@ -181,8 +181,8 @@ func sipHash24InterlockFillBatch16(key []byte) (itb.InterlockFillFunc16, error) 
 	if len(key) != 0 {
 		return nil, fmt.Errorf("hashes: %q interlock fill batch-16 takes no key (keyed by seed components), got %d bytes", CipherSipHash24, len(key))
 	}
-	return func(components []uint64, groupIdxBase uint64, out *[16][2]uint64) {
-		siphashasm.FusedChain13x16(components, groupIdxBase, out)
+	return func(components []uint64, groupIdxBase uint64, v uint32, out *[16][2]uint64) {
+		siphashasm.FusedChain13x16(components, groupIdxBase, v, out)
 	}, nil
 }
 

@@ -116,8 +116,8 @@ func areion256InterlockFillBatch16(key []byte) (itb.InterlockFillFunc16x256, err
 	}
 	var k [32]byte
 	copy(k[:], key)
-	return func(components []uint64, groupIdxBase uint64, out *[8][4]uint64) {
-		areionasm.Fused256Fill13x8(&k, components, groupIdxBase, out)
+	return func(components []uint64, groupIdxBase uint64, v uint32, out *[8][4]uint64) {
+		areionasm.Fused256Fill13x8(&k, components, groupIdxBase, v, out)
 	}, nil
 }
 

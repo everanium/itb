@@ -30,7 +30,7 @@ kernels of both amd64 tiers:
 per-pixel kernels at the nonce-buf shapes, and the Interlocked Barrier
 fill kernel `blake2s_fusedchain256_13x8_{avx512,avx2}_amd64.s` (the
 batch-16 hook), with the eight 13-byte fill blocks synthesised
-in-register from `groupIdxBase`. The neon tier runs the fill hook as
+in-register from `groupIdxBase` and the per-message interlock-nonce fold. The neon tier runs the fill hook as
 two four-lane kernel calls over Go-synthesised blocks. The
 single-lane entry points of every tier run
 `blake2s_fusedchain256_<shape>x1_gpr_{amd64,arm64}.s`, the
@@ -78,8 +78,9 @@ the avx2 tier are the same plan on YMM registers — eight dword lanes per
 register, one per pixel, the frame slots and memory operands 32 bytes
 wide — so they carry the one spill of the four-lane plan and no other;
 every eight-lane frame carries the stack check. The NEON tier holds the four dword
-lanes of every state word in one register — one pass — with the words
-loaded pairwise from the frame, one alternate register for the
+lanes of every state word in one register — one pass — with the key
+words resident in eight registers and the other words loaded pairwise
+from the frame, one alternate register for the
 shift-insert rotates and one byte mask for the rotate by 8.
 
 ## Store-to-load forwarding discipline (amd64)
@@ -89,6 +90,23 @@ Every message dword is read at its natural width (a 4-byte load, or the
 lane are two 4-byte loads behind the caller's 4-byte pixel-index store.
 Outputs are written as 4-byte stores per word per lane. Every wide kernel
 ends with `VZEROUPPER` before `RET`.
+
+## Frame hygiene
+
+A kernel stores to its frame only what its register plan cannot hold.
+The staged data words are public. The message slots of the key words and
+the seed-injected words (avx2 and gpr amd64; the seed-injected words
+also on neon and gpr arm64), the state words a plan spills (the avx2
+`v[15]` / `v[12]` slots, the gpr amd64 `v[11]` slot) and the saved
+chaining value of the two-block cells (the 36- and 68-byte shapes, every
+tier) are secret-derived, and every one of those slots is overwritten with zeros, at the slot's own width, after the last read
+and before the kernel returns. The neon kernels hold the key words in
+registers loaded once per call straight from the key pointer (`VLD1R`),
+and the gpr arm64 kernels read them through the key pointer in every G,
+so neither ever stores a key word. The in-package
+`TestFusedKernelsLeaveNoSecretInFrame*` tests run every kernel under a
+stack-residue probe and require that no key dword and no seed-injected
+dword is left in the stack once the kernel has returned.
 
 ## Correctness invariant
 

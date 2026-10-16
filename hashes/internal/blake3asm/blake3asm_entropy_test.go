@@ -9,7 +9,8 @@ import (
 
 // The input-entropy differential audit (internal/kernelaudit) of the
 // fused cascade: every bit of every lane buffer, component word, key
-// byte and group index base must reach the output, lane for lane, and
+// byte, group index base and interlock-nonce fold must reach the output,
+// lane for lane, and
 // the kernel must agree with the pure-Go cascade (ScalarFusedChain256
 // and the scalar fill reference) at the baseline and after every flip.
 // The helpers drive the single-, four- and eight-lane evaluators and
@@ -45,10 +46,11 @@ func ref256(in *kernelaudit.Inputs) [][4]uint64 {
 	return out
 }
 
-// refFill256x8 evaluates the pure-Go fill cascade.
+// refFill256x8 evaluates the pure-Go fill cascade under the drawn group
+// index base and interlock-nonce fold.
 func refFill256x8(in *kernelaudit.Inputs) [][4]uint64 {
 	var out [8][4]uint64
-	scalarFill256X8(auditKey256(in), in.Comps, in.Base, &out)
+	scalarFill256X8(auditKey256(in), in.Comps, in.Base, in.Fold, &out)
 	return out[:]
 }
 
@@ -96,13 +98,13 @@ func audit256X8(t *testing.T, label string, n int, f x8fn256) {
 	}
 }
 
-func audit256Fill8(t *testing.T, label string, f func(*[32]byte, []uint64, uint64, *[8][4]uint64)) {
+func audit256Fill8(t *testing.T, label string, f fill8fn256) {
 	t.Helper()
 	for _, g := range auditGroupCounts {
 		cfg := kernelaudit.Config{Label: fmt.Sprintf("%s fill256x8 groups=%d", label, g), KeyBytes: 32, Words: 4 * g, Lanes: 8, Base: true}
 		reportAudit(t, kernelaudit.DifferentialRef(cfg, func(in *kernelaudit.Inputs) [][4]uint64 {
 			var out [8][4]uint64
-			f(auditKey256(in), in.Comps, in.Base, &out)
+			f(auditKey256(in), in.Comps, in.Base, in.Fold, &out)
 			return out[:]
 		}, refFill256x8))
 	}

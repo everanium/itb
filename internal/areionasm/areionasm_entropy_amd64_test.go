@@ -12,8 +12,8 @@ import (
 // call, independent of the dispatch flags, and of the dispatchers under
 // every dispatch state the host can execute.
 
-func fill256x8Kernel(k *[32]byte, c []uint64, base uint64, o *[8][4]uint64) {
-	areion256FusedChain13x8Avx512Asm(k, &c[0], len(c)/4, base, o)
+func fill256x8Kernel(k *[32]byte, c []uint64, base uint64, v uint32, o *[8][4]uint64) {
+	areion256FusedChain13x8Avx512Asm(k, &c[0], len(c)/4, base, o, v)
 }
 
 // TestInputEntropyKernelsAmd64 audits every kernel the host can execute:

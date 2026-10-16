@@ -21,7 +21,7 @@ func benchKernelX16(b *testing.B, pairs int, kernel fusedX16Fn) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		kernel(&key, comps, uint64(i*16), &out)
+		kernel(&key, comps, uint64(i*16), 0x9E3779B9, &out)
 	}
 }
 

@@ -9,14 +9,18 @@
 // Unique to the batch-16 kernel: groupIdx is synthesized in-register from
 // groupIdxBase per lane, avoiding the per-lane pointer gather overhead of
 // the x4 path. The synthesised block is round-invariant per lane and
-// carries K0 and the length tag; every cascade round XORs the pair and
-// the block into the state and runs the ten AES rounds under K1..K10.
-// Block layout per lane: [0x03 | LE64(groupIdxBase+i) | 7×0x00] (domain
-// tag, 8-byte index, zero padding), XORed with K0 and the length tag.
+// carries the interlock-nonce fold v at bytes 9..12, K0 and the length
+// tag; every cascade round XORs the pair and the block into the state
+// and runs the ten AES rounds under K1..K10.
+// Block layout per lane: [0x03 | LE64(groupIdxBase+i) | LE32(v) | 3×0x00]
+// (domain tag, 8-byte index, interlock-nonce fold, zero padding), XORed
+// with K0 and the length tag; the fold is ORed into the length-tag GPR
+// of the second qword once per call.
 //
 // Batch layout: two batches of 8 lanes, each register-resident — V0..V7
 // states, V8..V15 blocks, V16..V24 K1..K9, V25 K10, V26 pair load, V27
-// K0 ^ length tag. Each batch runs the whole cascade before the next
+// K0 ^ [13 | 13 ^ (v << 8)] (the length tag with the fold in its second
+// qword). Each batch runs the whole cascade before the next
 // starts. Issue order inside a round is round-major: every step (the
 // pair fold, each AESE + AESMC round, the final K10 XOR) runs across all
 // 8 lanes before the next step starts, so the 8 independent chains keep
@@ -25,8 +29,8 @@
 
 #include "textflag.h"
 
-// func aesCMAC128FusedChain13x16NeonAsm(roundKeys *[176]byte, comps *uint64, nPairs int, groupIdxBase uint64, out *[16][2]uint64)
-TEXT ·aesCMAC128FusedChain13x16NeonAsm(SB), NOSPLIT, $0-40
+// func aesCMAC128FusedChain13x16NeonAsm(roundKeys *[176]byte, comps *uint64, nPairs int, groupIdxBase uint64, out *[16][2]uint64, v uint32)
+TEXT ·aesCMAC128FusedChain13x16NeonAsm(SB), NOSPLIT, $0-44
 	MOVD roundKeys+0(FP), R0
 	MOVD comps+8(FP), R1
 	MOVD nPairs+16(FP), R2
@@ -40,17 +44,20 @@ TEXT ·aesCMAC128FusedChain13x16NeonAsm(SB), NOSPLIT, $0-40
 	VLD1.P 16(R5), [V24.B16]
 	VLD1 (R5), [V25.B16]
 
-	// V27 = K0 ^ (13 || 13)
+	// V27 = K0 ^ [13 | 13 ^ (v << 8)]: the length tag with the interlock-nonce
+	// fold v in bytes 9..12 of the second qword
 	VLD1 (R0), [V27.B16]
 	MOVD $13, R7
+	MOVWU v+40(FP), R12
+	ORR R12<<8, R7, R12
 	VMOV R7, V26.D[0]
-	VMOV R7, V26.D[1]
+	VMOV R12, V26.D[1]
 	VEOR V26.B16, V27.B16, V27.B16
 
 	// ========== BATCH 1: lanes 0–7 ==========
 	// Step 1 — synthesise the 8 fill blocks in V8..V15:
-	// [0x03 | LE64(groupIdxBase+i) | 7×0x00] as D[0] = (idx << 8) | 0x03,
-	// D[1] = idx >> 56, then XOR K0 and the length tag.
+	// [0x03 | LE64(groupIdxBase+i) | LE32(v) | 3×0x00] as D[0] = (idx << 8) | 0x03,
+	// D[1] = idx >> 56, then XOR V27 (K0, the length tag and the fold).
 	MOVD R3, R6
 	LSL $8, R6, R8
 	ORR $3, R8, R8
@@ -307,8 +314,8 @@ loop0:
 
 	// ========== BATCH 2: lanes 8–15 ==========
 	// Step 1 — synthesise the 8 fill blocks in V8..V15:
-	// [0x03 | LE64(groupIdxBase+i) | 7×0x00] as D[0] = (idx << 8) | 0x03,
-	// D[1] = idx >> 56, then XOR K0 and the length tag.
+	// [0x03 | LE64(groupIdxBase+i) | LE32(v) | 3×0x00] as D[0] = (idx << 8) | 0x03,
+	// D[1] = idx >> 56, then XOR V27 (K0, the length tag and the fold).
 	ADD $8, R3, R6
 	LSL $8, R6, R8
 	ORR $3, R8, R8

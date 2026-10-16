@@ -55,8 +55,10 @@ var AreionRCTable = [15][16]byte{
 // AreionRCTable2 holds the round constants of the second Areion
 // permutation P2 of SoEM22: the fifteen 128-bit words of the hexadecimal
 // digits of pi that follow those of AreionRCTable, in the same
-// little-endian format (equal to the vendored third/goaes
-// areionRoundConstants2). A permutation under different round constants
+// little-endian format, with entry 7 in the shifted form of entry 7 of
+// AreionRCTable (its pi word with the leading zero nibble dropped and a
+// zero nibble appended) — equal to the vendored third/goaes
+// areionRoundConstants2. A permutation under different round constants
 // is modelled as independent of P1. The amd64 kernels read them through
 // AreionRC4x2; the arm64 kernels read this table directly.
 var AreionRCTable2 = [15][16]byte{
@@ -67,7 +69,7 @@ var AreionRCTable2 = [15][16]byte{
 	{0x91, 0xa9, 0x21, 0xfb, 0xcc, 0x09, 0xd8, 0x61, 0x93, 0x21, 0x28, 0x66, 0x1b, 0xe8, 0xbf, 0xc4},
 	{0xb1, 0x75, 0x85, 0xe9, 0x5d, 0x5d, 0x84, 0xef, 0x32, 0x80, 0xec, 0x5d, 0x60, 0xac, 0x7c, 0x48},
 	{0xc5, 0xac, 0x96, 0xd3, 0x81, 0x3e, 0x89, 0x23, 0x88, 0x1b, 0x65, 0xeb, 0x02, 0x23, 0x26, 0xdc},
-	{0x04, 0x20, 0x84, 0xa4, 0x82, 0x44, 0x0b, 0x2e, 0x39, 0x42, 0xf4, 0x83, 0xf3, 0x6f, 0x6d, 0x0f},
+	{0x40, 0x00, 0x42, 0x48, 0x2a, 0x48, 0xb4, 0xe0, 0x92, 0x23, 0x44, 0x3f, 0x38, 0xff, 0xd6, 0xf6},
 	{0x9a, 0x6c, 0xe9, 0xf6, 0x42, 0x68, 0xc6, 0x21, 0x5e, 0x9b, 0x1f, 0x9e, 0x4a, 0xf0, 0xc8, 0x69},
 	{0x68, 0x2f, 0x54, 0xd8, 0xd2, 0xa0, 0x51, 0x6a, 0xf0, 0x88, 0xd3, 0xab, 0x61, 0x9c, 0x0c, 0x67},
 	{0xe4, 0x3b, 0x7a, 0x13, 0x6c, 0x0b, 0xef, 0x6e, 0xa3, 0x33, 0x51, 0xab, 0x28, 0xa7, 0x0f, 0x96},
@@ -193,20 +195,22 @@ func validComponents512(components []uint64) bool {
 }
 
 // fillBlock writes the 13-byte Interlocked Barrier fill block
-// [0x03 | LE64(groupIdx) | 4×0x00] of one group.
-func fillBlock(dst *[13]byte, groupIdx uint64) {
+// [0x03 | LE64(groupIdx) | LE32(v)] of one group, v being the
+// per-message interlock-nonce fold the caller supplies.
+func fillBlock(dst *[13]byte, groupIdx uint64, v uint32) {
 	dst[0] = 0x03
 	binary.LittleEndian.PutUint64(dst[1:9], groupIdx)
-	dst[9], dst[10], dst[11], dst[12] = 0, 0, 0, 0
+	binary.LittleEndian.PutUint32(dst[9:13], v)
 }
 
-// fillPtrs4 fills four consecutive blocks starting at groupIdxBase and
-// returns their lane pointers, for the batch-16 arms that run the fill
-// as four-lane kernel calls over Go-synthesised blocks; the blocks stay
-// on the caller's stack because the kernels are called directly.
-func fillPtrs4(blocks *[4][13]byte, groupIdxBase uint64) [4]*byte {
+// fillPtrs4 fills four consecutive blocks starting at groupIdxBase,
+// every one carrying the fold v, and returns their lane pointers, for
+// the batch-16 arms that run the fill as four-lane kernel calls over
+// Go-synthesised blocks; the blocks stay on the caller's stack because
+// the kernels are called directly.
+func fillPtrs4(blocks *[4][13]byte, groupIdxBase uint64, v uint32) [4]*byte {
 	for i := range blocks {
-		fillBlock(&blocks[i], groupIdxBase+uint64(i))
+		fillBlock(&blocks[i], groupIdxBase+uint64(i), v)
 	}
 	return [4]*byte{&blocks[0][0], &blocks[1][0], &blocks[2][0], &blocks[3][0]}
 }
@@ -224,20 +228,20 @@ func scalarFused512X4(fixedKey *[64]byte, components []uint64, dataPtrs *[4]*byt
 }
 
 // scalarFill256X8 / scalarFill512X4 are the pure-Go references of the
-// batch-16 fill hooks: lane i runs the cascade over the fill block of
-// group groupIdxBase+i.
-func scalarFill256X8(fixedKey *[32]byte, components []uint64, groupIdxBase uint64, out *[8][4]uint64) {
+// batch-16 fill hooks: lane i runs the cascade over the fill block
+// [0x03 | LE64(groupIdxBase+i) | LE32(v)] of group groupIdxBase+i.
+func scalarFill256X8(fixedKey *[32]byte, components []uint64, groupIdxBase uint64, v uint32, out *[8][4]uint64) {
 	var blk [13]byte
 	for i := range out {
-		fillBlock(&blk, groupIdxBase+uint64(i))
+		fillBlock(&blk, groupIdxBase+uint64(i), v)
 		out[i] = ScalarFusedChain256(fixedKey, components, blk[:])
 	}
 }
 
-func scalarFill512X4(fixedKey *[64]byte, components []uint64, groupIdxBase uint64, out *[4][8]uint64) {
+func scalarFill512X4(fixedKey *[64]byte, components []uint64, groupIdxBase uint64, v uint32, out *[4][8]uint64) {
 	var blk [13]byte
 	for i := range out {
-		fillBlock(&blk, groupIdxBase+uint64(i))
+		fillBlock(&blk, groupIdxBase+uint64(i), v)
 		out[i] = ScalarFusedChain512(fixedKey, components, blk[:])
 	}
 }
@@ -264,12 +268,12 @@ func scalarFused512X8(fixedKey *[64]byte, components []uint64, dataPtrs *[8]*byt
 }
 
 // scalarFill512X8 is the pure-Go reference of the width-512 batch-32
-// fill hook: lane i (0..7) runs the cascade over the fill block of
-// group groupIdxBase+i.
-func scalarFill512X8(fixedKey *[64]byte, components []uint64, groupIdxBase uint64, out *[8][8]uint64) {
+// fill hook: lane i (0..7) runs the cascade over the fill block
+// [0x03 | LE64(groupIdxBase+i) | LE32(v)] of group groupIdxBase+i.
+func scalarFill512X8(fixedKey *[64]byte, components []uint64, groupIdxBase uint64, v uint32, out *[8][8]uint64) {
 	var blk [13]byte
 	for i := range out {
-		fillBlock(&blk, groupIdxBase+uint64(i))
+		fillBlock(&blk, groupIdxBase+uint64(i), v)
 		out[i] = ScalarFusedChain512(fixedKey, components, blk[:])
 	}
 }

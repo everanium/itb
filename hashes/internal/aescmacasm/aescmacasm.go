@@ -68,10 +68,11 @@ func NewSchedule(key [16]byte) *Schedule {
 	return &Schedule{roundKeys: ExpandKeyAES128(key), block: block}
 }
 
-// absorb13Block is the 13-byte fill block of group index 0 zero-padded
+// absorb13Block is the template of the 13-byte fill block zero-padded
 // to 16 bytes: the domain tag 0x03 at byte 0, the LE64 group index at
-// bytes 1..8 (zero here) and zero bytes at 9..15. The batch-16 kernels
-// XOR the in-register group index into it to form every lane's block.
+// bytes 1..8 (zero here), the LE32 interlock-nonce fold at bytes 9..12
+// (zero here) and zero padding at 13..15. The batch-16 kernels XOR the
+// in-register group index and fold into it to form every lane's block.
 var absorb13Block = [16]byte{0x03}
 
 // laneIdxZ holds per-group lane offsets for ZMM batch-16 groupIdx

@@ -58,8 +58,9 @@ generator lists the register plan of every tier.
 The same generator emits `siphash_fusedchain128_13x16_avx512_amd64.s`,
 the 16-lane fused cascade kernel at the 13-byte shape that fills the
 Interlocked Barrier PRF for 16 consecutive groups per call: the kernel
-receives `groupIdxBase` and synthesises the two message words of every
-lane in-register (`(idx << 8) | 0x03` and `(idx >> 56) | (13 << 56)`),
+receives `groupIdxBase` and the per-message interlock-nonce fold `v` and
+synthesises the two message words of every lane in-register
+(`(idx << 8) | 0x03` and `(idx >> 56) | (v << 8) | (13 << 56)`),
 runs the cascade on two eight-lane groups with interleaved instruction
 streams, and interleaves the `(lo, hi)` pairs through `·interleaveIdx16`
 into four 64-byte stores in lane order. The AVX2 and NEON tiers carry

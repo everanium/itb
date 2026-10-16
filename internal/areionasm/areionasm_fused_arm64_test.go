@@ -51,3 +51,22 @@ func TestFusedDispatcherTiersArm64(t *testing.T) {
 	checkDispatchers(t, "scalar")
 	checkZeroAlloc(t, "scalar")
 }
+
+// TestFusedKernelsLeaveNoSecretInFrameArm64 runs the four- and
+// single-lane NEON kernels and the eight-lane NEON fill kernels under the
+// stack-residue probe: no fixed-key word, no k2 word and no K1 ^ k2 word
+// may be left in the stack once a kernel has returned.
+func TestFusedKernelsLeaveNoSecretInFrameArm64(t *testing.T) {
+	if !FusedHasARMAES {
+		t.Skip("ARM crypto extension not available")
+	}
+	checkAreionResidue(t, "neon", neon256x4, neon512x4, neon256x1, neon512x1)
+	key256, key512 := randomKey256(), randomKey512()
+	c256, c512 := randomWords(4), randomWords(8)
+	var o256 [8][4]uint64
+	res := stackResidue(func() { neonFill256x8(key256, c256, 0x0123456789ABCDEF, 0x80000001, &o256) })
+	assertNoSecretResidue(t, "neon fill 256x8", res, areionSecrets(key256[:], c256), nil)
+	var o512 [8][8]uint64
+	res = stackResidue(func() { neonFill512x8(key512, c512, 0x0123456789ABCDEF, 0x80000001, &o512) })
+	assertNoSecretResidue(t, "neon fill 512x8", res, areionSecrets(key512[:], c512), nil)
+}

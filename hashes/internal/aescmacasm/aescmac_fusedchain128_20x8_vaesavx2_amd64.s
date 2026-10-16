@@ -4,8 +4,10 @@
 // 20-byte shape, 8 lanes (2 zero-padded blocks, 2 AES-128
 // permutations per cascade round).
 // The data blocks are staged once into the frame as 32-byte lane-pair
-// slots with K0 (and, for block 0, the length tag) folded in, and
-// every cascade round runs from those slots; see aescmacasm_fused.go for the
+// slots (block 0 with the length tag folded in) and every cascade
+// round runs from those slots; each lane is carried as state ^ K0
+// with K10 ^ K0 as the last-round key, so the frame holds public
+// block bytes only; see aescmacasm_fused.go for the
 // construction and the in-package parity tests for the bit-exact pin
 // against the pure-Go cascade.
 
@@ -20,11 +22,9 @@ TEXT ·aesCMAC128FusedChain20x8VaesAvx2Asm(SB), NOSPLIT, $256-40
 	MOVQ out+32(FP), DI
 
 	VPXOR X13, X13, X13
-	VBROADCASTI128 0(AX), Y14
 	MOVQ $20, R12
-	VMOVQ R12, X15
-	VPBROADCASTQ X15, Y15
-	VPXOR Y14, Y15, Y15
+	VMOVQ R12, X14
+	VPBROADCASTQ X14, Y14
 	// Lanes 0..3: pairs 0 and 1
 	MOVQ 0(DX), R8
 	MOVQ 8(DX), R9
@@ -37,7 +37,7 @@ TEXT ·aesCMAC128FusedChain20x8VaesAvx2Asm(SB), NOSPLIT, $256-40
 	VPINSRD $1, 4(R9), X4, X4
 	VPINSRQ $1, 8(R9), X4, X4
 	VINSERTI128 $1, X4, Y2, Y2
-	VPXOR Y15, Y2, Y2
+	VPXOR Y14, Y2, Y2
 	VMOVDQU Y2, 0(SP)
 	VPINSRD $0, 0(R10), X13, X2
 	VPINSRD $1, 4(R10), X2, X2
@@ -46,17 +46,15 @@ TEXT ·aesCMAC128FusedChain20x8VaesAvx2Asm(SB), NOSPLIT, $256-40
 	VPINSRD $1, 4(R11), X4, X4
 	VPINSRQ $1, 8(R11), X4, X4
 	VINSERTI128 $1, X4, Y2, Y2
-	VPXOR Y15, Y2, Y2
+	VPXOR Y14, Y2, Y2
 	VMOVDQU Y2, 32(SP)
 	VPINSRD $0, 16(R8), X13, X2
 	VPINSRD $0, 16(R9), X13, X4
 	VINSERTI128 $1, X4, Y2, Y2
-	VPXOR Y14, Y2, Y2
 	VMOVDQU Y2, 128(SP)
 	VPINSRD $0, 16(R10), X13, X2
 	VPINSRD $0, 16(R11), X13, X4
 	VINSERTI128 $1, X4, Y2, Y2
-	VPXOR Y14, Y2, Y2
 	VMOVDQU Y2, 160(SP)
 	// Lanes 4..7: pairs 2 and 3
 	MOVQ 32(DX), R8
@@ -70,7 +68,7 @@ TEXT ·aesCMAC128FusedChain20x8VaesAvx2Asm(SB), NOSPLIT, $256-40
 	VPINSRD $1, 4(R9), X4, X4
 	VPINSRQ $1, 8(R9), X4, X4
 	VINSERTI128 $1, X4, Y2, Y2
-	VPXOR Y15, Y2, Y2
+	VPXOR Y14, Y2, Y2
 	VMOVDQU Y2, 64(SP)
 	VPINSRD $0, 0(R10), X13, X2
 	VPINSRD $1, 4(R10), X2, X2
@@ -79,17 +77,15 @@ TEXT ·aesCMAC128FusedChain20x8VaesAvx2Asm(SB), NOSPLIT, $256-40
 	VPINSRD $1, 4(R11), X4, X4
 	VPINSRQ $1, 8(R11), X4, X4
 	VINSERTI128 $1, X4, Y2, Y2
-	VPXOR Y15, Y2, Y2
+	VPXOR Y14, Y2, Y2
 	VMOVDQU Y2, 96(SP)
 	VPINSRD $0, 16(R8), X13, X2
 	VPINSRD $0, 16(R9), X13, X4
 	VINSERTI128 $1, X4, Y2, Y2
-	VPXOR Y14, Y2, Y2
 	VMOVDQU Y2, 192(SP)
 	VPINSRD $0, 16(R10), X13, X2
 	VPINSRD $0, 16(R11), X13, X4
 	VINSERTI128 $1, X4, Y2, Y2
-	VPXOR Y14, Y2, Y2
 	VMOVDQU Y2, 224(SP)
 
 	VBROADCASTI128 16(AX), Y4
@@ -102,10 +98,12 @@ TEXT ·aesCMAC128FusedChain20x8VaesAvx2Asm(SB), NOSPLIT, $256-40
 	VBROADCASTI128 128(AX), Y11
 	VBROADCASTI128 144(AX), Y12
 	VBROADCASTI128 160(AX), Y13
-	VPXOR Y0, Y0, Y0
-	VPXOR Y1, Y1, Y1
-	VPXOR Y2, Y2, Y2
-	VPXOR Y3, Y3, Y3
+	VBROADCASTI128 0(AX), Y15
+	VPXOR Y15, Y13, Y13
+	VMOVDQU Y15, Y0
+	VMOVDQU Y15, Y1
+	VMOVDQU Y15, Y2
+	VMOVDQU Y15, Y3
 
 loop:
 	VBROADCASTI128 0(BX), Y14
@@ -145,6 +143,10 @@ loop:
 	DECQ CX
 	JNZ loop
 
+	VPXOR Y15, Y0, Y0
+	VPXOR Y15, Y1, Y1
+	VPXOR Y15, Y2, Y2
+	VPXOR Y15, Y3, Y3
 	VMOVDQU X0, 0(DI)
 	VEXTRACTI128 $1, Y0, 16(DI)
 	VMOVDQU X1, 32(DI)

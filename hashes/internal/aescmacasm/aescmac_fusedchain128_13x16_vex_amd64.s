@@ -9,28 +9,39 @@
 // Unique to the batch-16 kernel: groupIdx is synthesized in-register from
 // groupIdxBase per lane, avoiding the per-lane pointer gather overhead of
 // the x4 path. The synthesised block is round-invariant per lane and
-// carries K0 and the length tag; every cascade round XORs the pair and
-// the block into the state and runs the ten AES rounds under K1..K10.
+// carries the interlock-nonce fold v at bytes 9..12 and the length tag.
+// Every lane is carried as t = state ^ K0: t
+// starts at K0, every cascade round XORs the pair and the block into t
+// and runs nine AES rounds under K1..K9 and the last under
+// K10' = K10 ^ K0 (AESENCLAST(s, K10) ^ K0 = AESENCLAST(s, K10 ^ K0)),
+// and the lane output is t ^ K0. K0 and K10' exist only in registers;
+// the frame holds the public blocks only.
 //
 // Batch layout: two batches of 8 lanes; each batch runs the whole cascade
 // before the next starts. The 16 blocks are staged once into the frame
-// (16 bytes per lane) in the prologue. Per batch: X0–X7 states,
-// X8–X15 K1..K8 (K9 / K10 as memory operands).
+// (16 bytes per lane) in the prologue from the template in X12 —
+// absorb13Block XOR [13 | 13 ^ (v << 8)], the length tag with the
+// interlock-nonce fold in its second qword. Per batch: X0–X7 states,
+// X8–X14 K1..K7, X15 K10' (K8 / K9 as memory operands read from
+// the schedule).
 
 #include "textflag.h"
 
-// func aesCMAC128FusedChain13x16VexAsm(roundKeys *[176]byte, comps *uint64, nPairs int, groupIdxBase uint64, out *[16][2]uint64)
-TEXT ·aesCMAC128FusedChain13x16VexAsm(SB), NOSPLIT, $256-40
+// func aesCMAC128FusedChain13x16VexAsm(roundKeys *[176]byte, comps *uint64, nPairs int, groupIdxBase uint64, out *[16][2]uint64, v uint32)
+TEXT ·aesCMAC128FusedChain13x16VexAsm(SB), NOSPLIT, $256-44
 	MOVQ roundKeys+0(FP), AX
 	MOVQ out+32(FP), DI
 	MOVQ groupIdxBase+24(FP), R8
 
-	// Template X12 = absorb13Block ^ K0 ^ (13 || 13)
+	// Template X12 = absorb13Block ^ [13 | 13 ^ (v << 8)]: the length tag with the
+	// interlock-nonce fold v in bytes 9..12 of the second qword
 	VMOVDQU ·absorb13Block(SB), X12
 	MOVQ $13, R12
-	VPXOR 0(AX), X12, X12
+	MOVL v+40(FP), R9
+	SHLQ $8, R9
+	ORQ R12, R9
 	VMOVQ R12, X10
-	VPUNPCKLQDQ X10, X10, X10
+	VPINSRQ $1, R9, X10, X10
 	VPXOR X10, X12, X12
 
 	// Stage the 16 fill blocks into the frame at 16*lane(SP)
@@ -209,7 +220,7 @@ TEXT ·aesCMAC128FusedChain13x16VexAsm(SB), NOSPLIT, $256-40
 	VPXOR X12, X11, X11
 	VMOVDQU X11, 240(SP)
 
-	// Load K1..K8 (K9 / K10 are read as memory operands)
+	// Load K1..K7 and K10' = K10 ^ K0 (K8 / K9 are read as memory operands)
 	VMOVDQU 16(AX), X8
 	VMOVDQU 32(AX), X9
 	VMOVDQU 48(AX), X10
@@ -217,19 +228,20 @@ TEXT ·aesCMAC128FusedChain13x16VexAsm(SB), NOSPLIT, $256-40
 	VMOVDQU 80(AX), X12
 	VMOVDQU 96(AX), X13
 	VMOVDQU 112(AX), X14
-	VMOVDQU 128(AX), X15
+	VMOVDQU 160(AX), X15
+	VPXOR 0(AX), X15, X15
 
 	// ========== BATCH 1: lanes 0–7 ==========
 	MOVQ comps+8(FP), BX
 	MOVQ nPairs+16(FP), CX
-	VPXOR X0, X0, X0
-	VPXOR X1, X1, X1
-	VPXOR X2, X2, X2
-	VPXOR X3, X3, X3
-	VPXOR X4, X4, X4
-	VPXOR X5, X5, X5
-	VPXOR X6, X6, X6
-	VPXOR X7, X7, X7
+	VMOVDQU 0(AX), X0
+	VMOVDQU 0(AX), X1
+	VMOVDQU 0(AX), X2
+	VMOVDQU 0(AX), X3
+	VMOVDQU 0(AX), X4
+	VMOVDQU 0(AX), X5
+	VMOVDQU 0(AX), X6
+	VMOVDQU 0(AX), X7
 
 loop0:
 	VPXOR 0(BX), X0, X0
@@ -255,14 +267,22 @@ loop0:
 	VAESENC X12, X0, X0; VAESENC X12, X1, X1; VAESENC X12, X2, X2; VAESENC X12, X3, X3; VAESENC X12, X4, X4; VAESENC X12, X5, X5; VAESENC X12, X6, X6; VAESENC X12, X7, X7
 	VAESENC X13, X0, X0; VAESENC X13, X1, X1; VAESENC X13, X2, X2; VAESENC X13, X3, X3; VAESENC X13, X4, X4; VAESENC X13, X5, X5; VAESENC X13, X6, X6; VAESENC X13, X7, X7
 	VAESENC X14, X0, X0; VAESENC X14, X1, X1; VAESENC X14, X2, X2; VAESENC X14, X3, X3; VAESENC X14, X4, X4; VAESENC X14, X5, X5; VAESENC X14, X6, X6; VAESENC X14, X7, X7
-	VAESENC X15, X0, X0; VAESENC X15, X1, X1; VAESENC X15, X2, X2; VAESENC X15, X3, X3; VAESENC X15, X4, X4; VAESENC X15, X5, X5; VAESENC X15, X6, X6; VAESENC X15, X7, X7
+	VAESENC 128(AX), X0, X0; VAESENC 128(AX), X1, X1; VAESENC 128(AX), X2, X2; VAESENC 128(AX), X3, X3; VAESENC 128(AX), X4, X4; VAESENC 128(AX), X5, X5; VAESENC 128(AX), X6, X6; VAESENC 128(AX), X7, X7
 	VAESENC 144(AX), X0, X0; VAESENC 144(AX), X1, X1; VAESENC 144(AX), X2, X2; VAESENC 144(AX), X3, X3; VAESENC 144(AX), X4, X4; VAESENC 144(AX), X5, X5; VAESENC 144(AX), X6, X6; VAESENC 144(AX), X7, X7
-	VAESENCLAST 160(AX), X0, X0; VAESENCLAST 160(AX), X1, X1; VAESENCLAST 160(AX), X2, X2; VAESENCLAST 160(AX), X3, X3; VAESENCLAST 160(AX), X4, X4; VAESENCLAST 160(AX), X5, X5; VAESENCLAST 160(AX), X6, X6; VAESENCLAST 160(AX), X7, X7
+	VAESENCLAST X15, X0, X0; VAESENCLAST X15, X1, X1; VAESENCLAST X15, X2, X2; VAESENCLAST X15, X3, X3; VAESENCLAST X15, X4, X4; VAESENCLAST X15, X5, X5; VAESENCLAST X15, X6, X6; VAESENCLAST X15, X7, X7
 	ADDQ $16, BX
 	DECQ CX
 	JNZ loop0
 
-	// Store batch 1 outputs
+	// Store batch 1 outputs (t ^ K0)
+	VPXOR 0(AX), X0, X0
+	VPXOR 0(AX), X1, X1
+	VPXOR 0(AX), X2, X2
+	VPXOR 0(AX), X3, X3
+	VPXOR 0(AX), X4, X4
+	VPXOR 0(AX), X5, X5
+	VPXOR 0(AX), X6, X6
+	VPXOR 0(AX), X7, X7
 	VMOVDQU X0, 0(DI)
 	VMOVDQU X1, 16(DI)
 	VMOVDQU X2, 32(DI)
@@ -275,14 +295,14 @@ loop0:
 	// ========== BATCH 2: lanes 8–15 ==========
 	MOVQ comps+8(FP), BX
 	MOVQ nPairs+16(FP), CX
-	VPXOR X0, X0, X0
-	VPXOR X1, X1, X1
-	VPXOR X2, X2, X2
-	VPXOR X3, X3, X3
-	VPXOR X4, X4, X4
-	VPXOR X5, X5, X5
-	VPXOR X6, X6, X6
-	VPXOR X7, X7, X7
+	VMOVDQU 0(AX), X0
+	VMOVDQU 0(AX), X1
+	VMOVDQU 0(AX), X2
+	VMOVDQU 0(AX), X3
+	VMOVDQU 0(AX), X4
+	VMOVDQU 0(AX), X5
+	VMOVDQU 0(AX), X6
+	VMOVDQU 0(AX), X7
 
 loop1:
 	VPXOR 0(BX), X0, X0
@@ -308,14 +328,22 @@ loop1:
 	VAESENC X12, X0, X0; VAESENC X12, X1, X1; VAESENC X12, X2, X2; VAESENC X12, X3, X3; VAESENC X12, X4, X4; VAESENC X12, X5, X5; VAESENC X12, X6, X6; VAESENC X12, X7, X7
 	VAESENC X13, X0, X0; VAESENC X13, X1, X1; VAESENC X13, X2, X2; VAESENC X13, X3, X3; VAESENC X13, X4, X4; VAESENC X13, X5, X5; VAESENC X13, X6, X6; VAESENC X13, X7, X7
 	VAESENC X14, X0, X0; VAESENC X14, X1, X1; VAESENC X14, X2, X2; VAESENC X14, X3, X3; VAESENC X14, X4, X4; VAESENC X14, X5, X5; VAESENC X14, X6, X6; VAESENC X14, X7, X7
-	VAESENC X15, X0, X0; VAESENC X15, X1, X1; VAESENC X15, X2, X2; VAESENC X15, X3, X3; VAESENC X15, X4, X4; VAESENC X15, X5, X5; VAESENC X15, X6, X6; VAESENC X15, X7, X7
+	VAESENC 128(AX), X0, X0; VAESENC 128(AX), X1, X1; VAESENC 128(AX), X2, X2; VAESENC 128(AX), X3, X3; VAESENC 128(AX), X4, X4; VAESENC 128(AX), X5, X5; VAESENC 128(AX), X6, X6; VAESENC 128(AX), X7, X7
 	VAESENC 144(AX), X0, X0; VAESENC 144(AX), X1, X1; VAESENC 144(AX), X2, X2; VAESENC 144(AX), X3, X3; VAESENC 144(AX), X4, X4; VAESENC 144(AX), X5, X5; VAESENC 144(AX), X6, X6; VAESENC 144(AX), X7, X7
-	VAESENCLAST 160(AX), X0, X0; VAESENCLAST 160(AX), X1, X1; VAESENCLAST 160(AX), X2, X2; VAESENCLAST 160(AX), X3, X3; VAESENCLAST 160(AX), X4, X4; VAESENCLAST 160(AX), X5, X5; VAESENCLAST 160(AX), X6, X6; VAESENCLAST 160(AX), X7, X7
+	VAESENCLAST X15, X0, X0; VAESENCLAST X15, X1, X1; VAESENCLAST X15, X2, X2; VAESENCLAST X15, X3, X3; VAESENCLAST X15, X4, X4; VAESENCLAST X15, X5, X5; VAESENCLAST X15, X6, X6; VAESENCLAST X15, X7, X7
 	ADDQ $16, BX
 	DECQ CX
 	JNZ loop1
 
-	// Store batch 2 outputs
+	// Store batch 2 outputs (t ^ K0)
+	VPXOR 0(AX), X0, X0
+	VPXOR 0(AX), X1, X1
+	VPXOR 0(AX), X2, X2
+	VPXOR 0(AX), X3, X3
+	VPXOR 0(AX), X4, X4
+	VPXOR 0(AX), X5, X5
+	VPXOR 0(AX), X6, X6
+	VPXOR 0(AX), X7, X7
 	VMOVDQU X0, 128(DI)
 	VMOVDQU X1, 144(DI)
 	VMOVDQU X2, 160(DI)

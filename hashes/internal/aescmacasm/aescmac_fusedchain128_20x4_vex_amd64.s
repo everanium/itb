@@ -3,9 +3,10 @@
 // VEX-encoded AES-NI XMM fused ChainHash cascade kernel for AES-CMAC at the
 // 20-byte shape, 4 lanes (2 zero-padded blocks, 2 AES-128
 // permutations per cascade round).
-// The data blocks are staged once into the frame with K0 (and, for
-// block 0, the length tag) folded in, and every cascade round runs
-// from those 16-byte slots; see aescmacasm_fused.go for the
+// The data blocks are staged once into the frame (block 0 with the
+// length tag folded in) and every cascade round runs from those
+// 16-byte slots; each lane is carried as state ^ K0 with K10 ^ K0 as
+// the last-round key, so the frame holds public block bytes only; see aescmacasm_fused.go for the
 // construction and the in-package parity tests for the bit-exact pin
 // against the pure-Go cascade.
 
@@ -24,11 +25,9 @@ TEXT ·aesCMAC128FusedChain20x4VexAsm(SB), NOSPLIT, $128-40
 	MOVQ 24(DX), R11
 
 	VPXOR X13, X13, X13
-	VMOVDQU 0(AX), X14
 	MOVQ $20, R12
 	VMOVQ R12, X15
 	VPUNPCKLQDQ X15, X15, X15
-	VPXOR X14, X15, X15
 	VPINSRD $0, 0(R8), X13, X4
 	VPINSRD $1, 4(R8), X4, X4
 	VPINSRQ $1, 8(R8), X4, X4
@@ -50,16 +49,12 @@ TEXT ·aesCMAC128FusedChain20x4VexAsm(SB), NOSPLIT, $128-40
 	VPXOR X15, X4, X4
 	VMOVDQU X4, 48(SP)
 	VPINSRD $0, 16(R8), X13, X4
-	VPXOR X14, X4, X4
 	VMOVDQU X4, 64(SP)
 	VPINSRD $0, 16(R9), X13, X4
-	VPXOR X14, X4, X4
 	VMOVDQU X4, 80(SP)
 	VPINSRD $0, 16(R10), X13, X4
-	VPXOR X14, X4, X4
 	VMOVDQU X4, 96(SP)
 	VPINSRD $0, 16(R11), X13, X4
-	VPXOR X14, X4, X4
 	VMOVDQU X4, 112(SP)
 
 	VMOVDQU 16(AX), X6
@@ -72,10 +67,11 @@ TEXT ·aesCMAC128FusedChain20x4VexAsm(SB), NOSPLIT, $128-40
 	VMOVDQU 128(AX), X13
 	VMOVDQU 144(AX), X14
 	VMOVDQU 160(AX), X15
-	VPXOR X0, X0, X0
-	VPXOR X1, X1, X1
-	VPXOR X2, X2, X2
-	VPXOR X3, X3, X3
+	VPXOR 0(AX), X15, X15
+	VMOVDQU 0(AX), X0
+	VMOVDQU 0(AX), X1
+	VMOVDQU 0(AX), X2
+	VMOVDQU 0(AX), X3
 
 loop:
 	VMOVDQU 0(BX), X5
@@ -115,6 +111,10 @@ loop:
 	DECQ CX
 	JNZ loop
 
+	VPXOR 0(AX), X0, X0
+	VPXOR 0(AX), X1, X1
+	VPXOR 0(AX), X2, X2
+	VPXOR 0(AX), X3, X3
 	VMOVDQU X0, 0(DI)
 	VMOVDQU X1, 16(DI)
 	VMOVDQU X2, 32(DI)

@@ -2,7 +2,11 @@
 
 package itb
 
-import "github.com/everanium/itb/third/goaes"
+import (
+	"runtime"
+
+	"github.com/everanium/itb/third/goaes"
+)
 
 // On non-amd64 / non-arm64 platforms (or under the `purego` / `noitbasm`
 // build tags) there is no VAES or ARM Crypto Extension assembly; the
@@ -21,7 +25,10 @@ func areion256Permutex4SoA(b0, b1 *aes.Block4, second bool) {
 	var states [4][32]byte
 	unpack256x4SoA(b0, b1, &states)
 	areion256Permutex4Default(&states, rcs)
-	*b0, *b1 = pack256x4SoA(&states)
+	pack256x4SoAInto(&states, b0, b1)
+	// states holds the permutation output of a whitened input; zero it.
+	clear(states[:])
+	runtime.KeepAlive(&states)
 }
 
 func areion512Permutex4SoA(b0, b1, b2, b3 *aes.Block4, second bool) {
@@ -32,7 +39,10 @@ func areion512Permutex4SoA(b0, b1, b2, b3 *aes.Block4, second bool) {
 	var states [4][64]byte
 	unpack512x4SoA(b0, b1, b2, b3, &states)
 	areion512Permutex4Default(&states, rcs)
-	*b0, *b1, *b2, *b3 = pack512x4SoA(&states)
+	pack512x4SoAInto(&states, b0, b1, b2, b3)
+	// states holds the permutation output of a whitened input; zero it.
+	clear(states[:])
+	runtime.KeepAlive(&states)
 }
 
 // areionSoEM256Permutex4SoA — non-amd64 fallback. Mirrors the AVX2

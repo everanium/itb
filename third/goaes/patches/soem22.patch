@@ -1,14 +1,16 @@
 diff --git a/areion.go b/areion.go
-index 0e3e057..5f4bec0 100644
+index 0e3e057..5ad12d0 100644
 --- a/areion.go
 +++ b/areion.go
-@@ -51,6 +51,44 @@ var areionRoundConstants = [15][16]byte{
+@@ -51,6 +51,46 @@ var areionRoundConstants = [15][16]byte{
  	{0xb6, 0x10, 0xab, 0x2a, 0x6a, 0x39, 0xca, 0x55, 0x40, 0x14, 0xe8, 0x63, 0x62, 0x98, 0x48, 0x57},
  }
  
 +// Round constants of the second Areion permutation, used by the SoEM branch
 +// keyed with k2: the 15 128-bit words of the hexadecimal digits of pi that
-+// follow those of areionRoundConstants, in the same little-endian format. A
++// follow those of areionRoundConstants, in the same little-endian format, with
++// word 7 in the shifted form of word 7 of areionRoundConstants (its pi word
++// with the leading zero nibble dropped and a zero nibble appended). A
 +// permutation with different round constants is modelled as independent of
 +// the first.
 +var areionRoundConstants2 = [15][16]byte{
@@ -26,8 +28,8 @@ index 0e3e057..5f4bec0 100644
 +	{0xb1, 0x75, 0x85, 0xe9, 0x5d, 0x5d, 0x84, 0xef, 0x32, 0x80, 0xec, 0x5d, 0x60, 0xac, 0x7c, 0x48},
 +	// 0xdc262302eb651b8823893e81d396acc5
 +	{0xc5, 0xac, 0x96, 0xd3, 0x81, 0x3e, 0x89, 0x23, 0x88, 0x1b, 0x65, 0xeb, 0x02, 0x23, 0x26, 0xdc},
-+	// 0x0f6d6ff383f442392e0b4482a4842004
-+	{0x04, 0x20, 0x84, 0xa4, 0x82, 0x44, 0x0b, 0x2e, 0x39, 0x42, 0xf4, 0x83, 0xf3, 0x6f, 0x6d, 0x0f},
++	// 0xf6d6ff383f442392e0b4482a48420040
++	{0x40, 0x00, 0x42, 0x48, 0x2a, 0x48, 0xb4, 0xe0, 0x92, 0x23, 0x44, 0x3f, 0x38, 0xff, 0xd6, 0xf6},
 +	// 0x69c8f04a9e1f9b5e21c66842f6e96c9a
 +	{0x9a, 0x6c, 0xe9, 0xf6, 0x42, 0x68, 0xc6, 0x21, 0x5e, 0x9b, 0x1f, 0x9e, 0x4a, 0xf0, 0xc8, 0x69},
 +	// 0x670c9c61abd388f06a51a0d2d8542f68
@@ -47,7 +49,7 @@ index 0e3e057..5f4bec0 100644
  // Permute applies the 10-round Areion256 permutation in-place. The permutation
  // transforms the 32-byte state using AES round functions and pi-based constants.
  // Automatically uses hardware acceleration (AES-NI or ARM Crypto) when available,
-@@ -86,11 +124,17 @@ func (state *Areion512) InversePermute() {
+@@ -86,11 +126,17 @@ func (state *Areion512) InversePermute() {
  
  // Software implementation of Areion256 permutation
  func areion256PermuteSoftware(state *Areion256) {
@@ -66,7 +68,7 @@ index 0e3e057..5f4bec0 100644
  
  		if r%2 == 0 {
  			var temp [16]byte
-@@ -141,6 +185,12 @@ func areion256InversePermuteSoftware(state *Areion256) {
+@@ -141,6 +187,12 @@ func areion256InversePermuteSoftware(state *Areion256) {
  
  // Software implementation of Areion512 permutation
  func areion512PermuteSoftware(state *Areion512) {
@@ -79,7 +81,7 @@ index 0e3e057..5f4bec0 100644
  	x0 := (*[16]byte)(state[0:16])
  	x1 := (*[16]byte)(state[16:32])
  	x2 := (*[16]byte)(state[32:48])
-@@ -165,16 +215,16 @@ func areion512PermuteSoftware(state *Areion512) {
+@@ -165,16 +217,16 @@ func areion512PermuteSoftware(state *Areion512) {
  
  	// Main 12 rounds
  	for i := 0; i < 12; i += 4 {
@@ -103,7 +105,7 @@ index 0e3e057..5f4bec0 100644
  
  	// Final rotation: temp=x0; x0=x3; x3=x2; x2=x1; x1=temp
  	var temp [16]byte
-@@ -288,47 +338,50 @@ func Areion512EMDecrypt(key *[64]byte, block *[64]byte) [64]byte {
+@@ -288,47 +340,50 @@ func Areion512EMDecrypt(key *[64]byte, block *[64]byte) [64]byte {
  	return [64]byte(state)
  }
  
@@ -384,7 +386,7 @@ index ef26fd2..bb0669c 100644
 +	areion512PermuteSoftwareRC(state, &areionRoundConstants2)
 +}
 diff --git a/areion_test.go b/areion_test.go
-index 6a54c7f..0843fd7 100644
+index 6a54c7f..14eb7b4 100644
 --- a/areion_test.go
 +++ b/areion_test.go
 @@ -359,7 +359,7 @@ func TestAreionSoEM256(t *testing.T) {
@@ -392,7 +394,7 @@ index 6a54c7f..0843fd7 100644
  	var input [32]byte
  	out := AreionSoEM256(&key, &input)
 -	expected, _ := hex.DecodeString("d2754ec03e7025e852ab85dc0b38dae087add5a6522261dfc7b424c96cbed761")
-+	expected, _ := hex.DecodeString("e135afb2be0dee2857cc14aa4de7f022acd1e6489d8c1e53a20c99c4bf48f392")
++	expected, _ := hex.DecodeString("bc4b0a2d16987c40a216a53b568387a35b37830bd4ff779ca360255a41687f3c")
  	if !bytes.Equal(out[:], expected) {
  		t.Errorf("AreionSoEM256(zeros) failed\nGot:      %x\nExpected: %x", out[:], expected)
  	}
@@ -401,7 +403,7 @@ index 6a54c7f..0843fd7 100644
  	}
  	out = AreionSoEM256(&key, &input)
 -	expected, _ = hex.DecodeString("8cf756fef9750beb329f700a83e50493cec0615d698a7af94ab1654225d9320f")
-+	expected, _ = hex.DecodeString("7d988f8b9974656d7573b291fe378d7a6c5f9a9c0d71f4510953a27cc23a6baf")
++	expected, _ = hex.DecodeString("308aee3b62aae1b45265caedfec59750809019a0e0212e763720078b0959e2a8")
  	if !bytes.Equal(out[:], expected) {
  		t.Errorf("AreionSoEM256(seq) failed\nGot:      %x\nExpected: %x", out[:], expected)
  	}
@@ -410,7 +412,7 @@ index 6a54c7f..0843fd7 100644
  	var input [64]byte
  	out := AreionSoEM512(&key, &input)
 -	expected, _ := hex.DecodeString("53f751fa1dc08e0fd2bc595d06ebd77244aa9c66cd2a0c1823e27b31d114840622022da12be0ece250735ce6d170d77aa57d69191f1d01f3db3e3886b23e1918")
-+	expected, _ := hex.DecodeString("4ac61c79b8575a64a2a037a267e37375951aa9f1dc09ce4df0686488e48a0712d1d684bc003d906940e5a2d5c1eae993409b10d864da8886404c73f63890e07a")
++	expected, _ := hex.DecodeString("581f0632baade730452d4690acca763c952a3df2741f2cb64074985a248e93b3fe0b9de5d02abf8f6fd43c21c56cf314a7f5f5fba3b532bbb28e1e455122a7c0")
  	if !bytes.Equal(out[:], expected) {
  		t.Errorf("AreionSoEM512(zeros) failed\nGot:      %x\nExpected: %x", out[:], expected)
  	}
@@ -419,7 +421,7 @@ index 6a54c7f..0843fd7 100644
  	}
  	out = AreionSoEM512(&key, &input)
 -	expected, _ = hex.DecodeString("3cb3f1cc85dede951a4f8f7f3ad229457ed67c61cdf31ec7ad9e4e0aaa9a917897d2a5b2d561da88e503d701fdf15dbfdc1a69f39bd316785f10bb893ce17d32")
-+	expected, _ = hex.DecodeString("6970032eb5721f8d819a49a2ee8ca7a0416977cf58666de3848c6449315c6a05ee6c30d2de89bee708db8f9f2a045dbd71e8f5291f4912ca033364402989a6be")
++	expected, _ = hex.DecodeString("271fa05a95f4539759121ffeef462a7f21fd9ef9ae6e8e779c2ec80a5ed18a84bb0f5f9b8ca4bfd82cea7f000c16c71991c32aa31c1657f40890b12a51d2bcf1")
  	if !bytes.Equal(out[:], expected) {
  		t.Errorf("AreionSoEM512(seq) failed\nGot:      %x\nExpected: %x", out[:], expected)
  	}
@@ -463,7 +465,7 @@ index 6a54c7f..0843fd7 100644
 +func TestAreionPermute2KnownAnswer(t *testing.T) {
 +	var state256 Areion256
 +	areion256Permute2(&state256)
-+	expected, _ := hex.DecodeString("c9270896dbbf80b79db9975ca9f5ca83e5dfd3af48ac201800e5be74f767be2a")
++	expected, _ := hex.DecodeString("9459ad09732a12df686326cdb291bd021239b6ec01df49d7018902ea09473284")
 +	if !bytes.Equal(state256[:], expected) {
 +		t.Errorf("Areion256 second permutation (zeros) failed\nGot:      %x\nExpected: %x", state256[:], expected)
 +	}
@@ -471,14 +473,14 @@ index 6a54c7f..0843fd7 100644
 +		state256[i] = byte(i)
 +	}
 +	areion256Permute2(&state256)
-+	expected, _ = hex.DecodeString("2a105b2728271062195d5711cbfc592cafbe71252fb872fcdfd5b91b668be331")
++	expected, _ = hex.DecodeString("b59b22ce1537d50db949a4222621e9171525fcd650cae441a7c66162675e65e6")
 +	if !bytes.Equal(state256[:], expected) {
 +		t.Errorf("Areion256 second permutation (seq) failed\nGot:      %x\nExpected: %x", state256[:], expected)
 +	}
 +
 +	var state512 Areion512
 +	areion512Permute2(&state512)
-+	expected, _ = hex.DecodeString("f86bac361148ca71fb964680acdfe5dcedd597156b35a419cf8eb80d931b05f53223d4ac16f37d7492212fde03f81294ed8d974cd94c47751945be2edab7a952")
++	expected, _ = hex.DecodeString("eab2b67d13b277251c1b37b267f6e095ede50316c32346e27f9244df531f91541dfecdf5c6e45292bd10b12a077e08130ae3726f1e23fd48eb87d39db305eee8")
 +	if !bytes.Equal(state512[:], expected) {
 +		t.Errorf("Areion512 second permutation (zeros) failed\nGot:      %x\nExpected: %x", state512[:], expected)
 +	}
@@ -486,7 +488,7 @@ index 6a54c7f..0843fd7 100644
 +		state512[i] = byte(i)
 +	}
 +	areion512Permute2(&state512)
-+	expected, _ = hex.DecodeString("d2581b6f5b464de84bb66ce14f1310f38de46e1781633cd4fcbcc6c49e26fcf4e90764efc7e9fddf4083c1aafa5017c45dd2d429de57bbbf6df5e82934458645")
++	expected, _ = hex.DecodeString("bad430e7c4a11e8cfec7cc58a45915da0e88f49615200c41a45fea75e1725fb9f59818f3a300cb89abd6ed7e50ba5cc5b8c78e5240faeff2aed7233682bc296d")
 +	if !bytes.Equal(state512[:], expected) {
 +		t.Errorf("Areion512 second permutation (seq) failed\nGot:      %x\nExpected: %x", state512[:], expected)
 +	}

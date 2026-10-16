@@ -4,16 +4,19 @@ package areionasm
 
 import "testing"
 
-func neonFill256x8(k *[32]byte, c []uint64, base uint64, o *[8][4]uint64) {
-	areion256FusedChain13x8NeonAsm(k, &c[0], len(c)/4, base, o)
+func neonFill256x8(k *[32]byte, c []uint64, base uint64, v uint32, o *[8][4]uint64) {
+	areion256FusedChain13x8NeonAsm(k, &c[0], len(c)/4, base, o, v)
 }
-func neonFill512x8(k *[64]byte, c []uint64, base uint64, o *[8][8]uint64) {
-	areion512FusedChain13x8NeonAsm(k, &c[0], len(c)/8, base, o)
+func neonFill512x8(k *[64]byte, c []uint64, base uint64, v uint32, o *[8][8]uint64) {
+	areion512FusedChain13x8NeonAsm(k, &c[0], len(c)/8, base, o, v)
 }
 
 // TestFusedWideKernelParityArm64 pins the eight-lane NEON fill kernels
 // to the pure-Go cascade by direct call, independent of the dispatch
-// flag, and to the four-lane NEON kernels over the same groups.
+// flag, and to the four-lane NEON kernels over fill blocks built in
+// memory with the fold at bytes 9..12: the memory-reading kernel absorbs
+// whatever the buffer carries, so a synthesising kernel that dropped or
+// misplaced the fold diverges here.
 func TestFusedWideKernelParityArm64(t *testing.T) {
 	if !FusedHasARMAES {
 		t.Skip("ARM crypto extension not available")
@@ -23,17 +26,39 @@ func TestFusedWideKernelParityArm64(t *testing.T) {
 	t.Run("fill256x8-vs-x4", func(t *testing.T) {
 		for _, g := range groupCounts {
 			for _, base := range fillBases {
-				key := randomKey256()
-				comps := randomWords(4 * g)
-				var got, want [8][4]uint64
-				neonFill256x8(key, comps, base, &got)
-				var blocks [4][13]byte
-				for h := 0; h < 2; h++ {
-					ptrs := fillPtrs4(&blocks, base+uint64(4*h))
-					areion256FusedChain13x4NeonAsm(key, &comps[0], g, &ptrs, out8x256Half(&want, h))
+				for _, v := range fillFoldSet() {
+					key := randomKey256()
+					comps := randomWords(4 * g)
+					var got, want [8][4]uint64
+					neonFill256x8(key, comps, base, v, &got)
+					var blocks [4][13]byte
+					for h := 0; h < 2; h++ {
+						ptrs := fillPtrs4(&blocks, base+uint64(4*h), v)
+						areion256FusedChain13x4NeonAsm(key, &comps[0], g, &ptrs, out8x256Half(&want, h))
+					}
+					if got != want {
+						t.Fatalf("groups=%d base=%#x v=%#x: eight-lane kernel diverges from the four-lane kernel", g, base, v)
+					}
 				}
-				if got != want {
-					t.Fatalf("groups=%d base=%#x: eight-lane kernel diverges from the four-lane kernel", g, base)
+			}
+		}
+	})
+	t.Run("fill512x8-vs-x4", func(t *testing.T) {
+		for _, g := range groupCounts {
+			for _, base := range fillBases {
+				for _, v := range fillFoldSet() {
+					key := randomKey512()
+					comps := randomWords(8 * g)
+					var got, want [8][8]uint64
+					neonFill512x8(key, comps, base, v, &got)
+					var blocks [4][13]byte
+					for h := 0; h < 2; h++ {
+						ptrs := fillPtrs4(&blocks, base+uint64(4*h), v)
+						areion512FusedChain13x4NeonAsm(key, &comps[0], g, &ptrs, out8x512Half(&want, h))
+					}
+					if got != want {
+						t.Fatalf("groups=%d base=%#x v=%#x: eight-lane kernel diverges from the four-lane kernel", g, base, v)
+					}
 				}
 			}
 		}

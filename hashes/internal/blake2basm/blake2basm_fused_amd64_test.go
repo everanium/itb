@@ -3,6 +3,7 @@
 package blake2basm
 
 import (
+	"crypto/rand"
 	"fmt"
 	"testing"
 
@@ -75,13 +76,59 @@ func TestFusedKernelParityAmd64(t *testing.T) {
 				t.Run("512x4/"+shapeName(n), func(t *testing.T) { checkX4_512(t, tier.name, n, kernels512x4[tier.name][n]) })
 			}
 			if tier.avx512 {
-				t.Run("fill256x8", func(t *testing.T) {
-					checkFill256(t, "avx512-x8", func(k *[32]byte, c []uint64, base uint64, o *[8][4]uint64) {
-						blake2b256FusedChain13x8Avx512Asm(k, &c[0], len(c)/4, base, o)
-					})
-				})
+				t.Run("fill256x8", func(t *testing.T) { checkFill256(t, "avx512-x8", fill256x8Kernel) })
 			}
 		})
+	}
+}
+
+// TestFusedFillSynthesisedVsMemoryAmd64 pins the eight-lane ZMM fill
+// kernels, which synthesise their blocks in-register from the group
+// index base and the fold, to the four-lane and single-lane kernels of
+// every executable tier reading the same blocks from memory, built by
+// fillPtrs4 with the fold at bytes 9..12. The memory kernels absorb
+// whatever the buffer carries, so a synthesising kernel that misplaced
+// or dropped the fold would diverge here.
+func TestFusedFillSynthesisedVsMemoryAmd64(t *testing.T) {
+	if !hasZMM() {
+		t.Skip("requires AVX-512F")
+	}
+	for _, g := range groupCounts {
+		for _, base := range fillBases {
+			for _, v := range fillFoldSet() {
+				key256, key512 := randomKey256(), randomKey512()
+				c256, c512 := randomWords(4*g), randomWords(8*g)
+				var z256 [8][4]uint64
+				var z512 [8][8]uint64
+				fill256x8Kernel(key256, c256, base, v, &z256)
+				fill512x8Kernel(key512, c512, base, v, &z512)
+				var blocks [4][13]byte
+				for h := 0; h < 2; h++ {
+					ptrs := fillPtrs4(&blocks, base+uint64(4*h), v)
+					for _, tier := range amd64FusedTiers() {
+						if !tier.ok {
+							continue
+						}
+						var m256 [4][4]uint64
+						var m512 [4][8]uint64
+						kernels256x4[tier.name][13](key256, c256, &ptrs, &m256)
+						kernels512x4[tier.name][13](key512, c512, &ptrs, &m512)
+						if *out8x256Half(&z256, h) != m256 || *out8x512Half(&z512, h) != m512 {
+							t.Fatalf("groups=%d base=%#x v=%#x half %d: the ZMM fill kernel diverges from the %s memory kernel", g, base, v, h, tier.name)
+						}
+					}
+					for i := range ptrs {
+						var s256 [4]uint64
+						var s512 [8]uint64
+						kernels256x1[13](key256, c256, ptrs[i], &s256)
+						kernels512x1[13](key512, c512, ptrs[i], &s512)
+						if z256[4*h+i] != s256 || z512[4*h+i] != s512 {
+							t.Fatalf("groups=%d base=%#x v=%#x lane %d: the ZMM fill kernel diverges from the GPR memory kernel", g, base, v, 4*h+i)
+						}
+					}
+				}
+			}
+		}
 	}
 }
 
@@ -201,15 +248,63 @@ func BenchmarkFill(b *testing.B) {
 			b.Run(fmt.Sprintf("%s/fill256x8/groups%d", tier.name, g), func(b *testing.B) {
 				b.SetBytes(8 * 13)
 				for i := 0; i < b.N; i++ {
-					Fused256Fill13x8(key256, c256, uint64(i)*8, &o8)
+					Fused256Fill13x8(key256, c256, uint64(i)*8, 0xA5C33C5A, &o8)
 				}
 			})
 			b.Run(fmt.Sprintf("%s/fill512x4/groups%d", tier.name, g), func(b *testing.B) {
 				b.SetBytes(4 * 13)
 				for i := 0; i < b.N; i++ {
-					Fused512Fill13x4(key512, c512, uint64(i)*4, &o4)
+					Fused512Fill13x4(key512, c512, uint64(i)*4, 0xA5C33C5A, &o4)
 				}
 			})
 		}
 	}
+}
+
+// TestFusedKernelsLeaveNoSecretInFrame runs the four-lane kernels of
+// every tier the host can execute, the eight-lane ZMM kernels (the
+// per-pixel kernels and the fill kernels over their synthesised blocks)
+// and the single-lane kernels under the stack-residue probe: no key word
+// and no seed-injected word may be left in the stack once a kernel has
+// returned.
+func TestFusedKernelsLeaveNoSecretInFrame(t *testing.T) {
+	for _, tier := range amd64FusedTiers() {
+		if !tier.ok {
+			continue
+		}
+		checkBlake2bResidue(t, tier.name, kernels256x4[tier.name], kernels512x4[tier.name], nil, nil)
+	}
+	checkBlake2bResidue(t, "gpr", nil, nil, kernels256x1, kernels512x1)
+	if !cpuid.AVX512F {
+		return
+	}
+	key256, key512 := randomKey256(), randomKey512()
+	c256, c512 := randomWords(4), randomWords(8)
+	for _, n := range Shapes {
+		var bufs [8][]byte
+		var ptrs [8]*byte
+		for l := range bufs {
+			bufs[l] = make([]byte, n)
+			rand.Read(bufs[l])
+			ptrs[l] = &bufs[l][0]
+		}
+		if f, ok := kernels256x8[n]; ok {
+			var out [8][4]uint64
+			res := stackResidue(func() { f(key256, c256, &ptrs, &out) })
+			assertNoSecretResidue(t, fmt.Sprintf("avx512 256x8 n=%d", n), res, blake2bSecrets(key256[:], c256, bufs[:]), nil)
+		}
+		if f, ok := kernels512x8[n]; ok {
+			var out [8][8]uint64
+			res := stackResidue(func() { f(key512, c512, &ptrs, &out) })
+			assertNoSecretResidue(t, fmt.Sprintf("avx512 512x8 n=%d", n), res, blake2bSecrets(key512[:], c512, bufs[:]), nil)
+		}
+	}
+	base, v := uint64(0x0123456789ABCDEF), uint32(0xA5C33C5A)
+	lanes := fillBlocks(base, v, 8)
+	var f256 [8][4]uint64
+	res := stackResidue(func() { fill256x8Kernel(key256, c256, base, v, &f256) })
+	assertNoSecretResidue(t, "avx512 fill256x8", res, blake2bSecrets(key256[:], c256, lanes), nil)
+	var f512 [8][8]uint64
+	res = stackResidue(func() { fill512x8Kernel(key512, c512, base, v, &f512) })
+	assertNoSecretResidue(t, "avx512 fill512x8", res, blake2bSecrets(key512[:], c512, lanes), nil)
 }

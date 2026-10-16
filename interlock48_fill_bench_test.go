@@ -45,10 +45,12 @@ func BenchmarkLockFillX4(b *testing.B) {
 	}
 	lockKey := seed.deriveInterLockSeed(nonce)
 	stable := [4][4]uint64{lockKey, lockKey, lockKey, lockKey}
+	fold := interlockNonceFold(nonce)
 	fillBytes := func(s *lockFillScratch48, groupIdx uint64) {
 		for i := range s.bufs {
 			s.bufs[i][0] = 0x03
 			binary.LittleEndian.PutUint64(s.bufs[i][1:9], groupIdx+uint64(i))
+			copy(s.bufs[i][9:13], fold[:])
 			s.data[i] = s.bufs[i][:]
 		}
 	}
@@ -56,7 +58,8 @@ func BenchmarkLockFillX4(b *testing.B) {
 		for i := range s.bufs {
 			gi := groupIdx + uint64(i)
 			binary.LittleEndian.PutUint64(s.bufs[i][0:8], 0x03|gi<<8)
-			binary.LittleEndian.PutUint32(s.bufs[i][8:12], uint32(gi>>56))
+			binary.LittleEndian.PutUint32(s.bufs[i][8:12], uint32(gi>>56)|binary.LittleEndian.Uint32(fold[:])<<8)
+			s.bufs[i][12] = fold[3]
 			s.data[i] = s.bufs[i][:]
 		}
 	}
@@ -119,6 +122,7 @@ func BenchmarkLockFillX4Wide(b *testing.B) {
 	for i := range nonce {
 		nonce[i] = byte(i)
 	}
+	fold := interlockNonceFold(nonce)
 	b.Run("256", func(b *testing.B) {
 		h, bh, _ := MakeAreionSoEM256Hash()
 		seed, err := NewSeed256(512, h)
@@ -135,6 +139,7 @@ func BenchmarkLockFillX4Wide(b *testing.B) {
 			for i := range s.bufs {
 				s.bufs[i][0] = 0x03
 				binary.LittleEndian.PutUint64(s.bufs[i][1:9], groupIdx+uint64(i))
+				copy(s.bufs[i][9:13], fold[:])
 				s.data[i] = s.bufs[i][:]
 			}
 			out := bh(&s.data, [4][4]uint64{lockKey, lockKey, lockKey, lockKey})
@@ -160,6 +165,7 @@ func BenchmarkLockFillX4Wide(b *testing.B) {
 			for i := range s.bufs {
 				s.bufs[i][0] = 0x03
 				binary.LittleEndian.PutUint64(s.bufs[i][1:9], groupIdx+uint64(i))
+				copy(s.bufs[i][9:13], fold[:])
 				s.data[i] = s.bufs[i][:]
 			}
 			out := bh(&s.data, [4][8]uint64{lockKey, lockKey, lockKey, lockKey})
@@ -226,8 +232,8 @@ func benchLockFillSuper16(b *testing.B, bits int) {
 		b.Fatal(err)
 	}
 	seed.BatchHash = bh
-	seed.SetInterlockBatch16(func(components []uint64, groupIdxBase uint64, out *[16][2]uint64) {
-		aesitbasm.FusedChain13x16(&key, components, groupIdxBase, out)
+	seed.SetInterlockBatch16(func(components []uint64, groupIdxBase uint64, v uint32, out *[16][2]uint64) {
+		aesitbasm.FusedChain13x16(&key, components, groupIdxBase, v, out)
 	})
 	nonce := make([]byte, 64)
 	for i := range nonce {

@@ -4,6 +4,7 @@ package siphashasm
 
 import (
 	"fmt"
+	"math/rand"
 	"testing"
 
 	"github.com/everanium/itb/internal/cpuid"
@@ -22,12 +23,12 @@ type fusedX16Tier struct {
 
 func amd64FusedX16Tiers() []fusedX16Tier {
 	return []fusedX16Tier{
-		{"avx512", func() bool { return cpuid.AVX512F }, func(comps []uint64, base uint64, out *[16][2]uint64) {
-			sipHash24FusedChain13x16Avx512Asm(&comps[0], len(comps)/2, base, out)
+		{"avx512", func() bool { return cpuid.AVX512F }, func(comps []uint64, base uint64, v uint32, out *[16][2]uint64) {
+			sipHash24FusedChain13x16Avx512Asm(&comps[0], len(comps)/2, base, out, v)
 		}, true, false},
-		{"avx2", func() bool { return cpuid.AVX2 }, func(comps []uint64, base uint64, out *[16][2]uint64) {
-			sipHash24FusedChain13x8Avx2Asm(&comps[0], len(comps)/2, base, x16Half(out, 0))
-			sipHash24FusedChain13x8Avx2Asm(&comps[0], len(comps)/2, base+8, x16Half(out, 1))
+		{"avx2", func() bool { return cpuid.AVX2 }, func(comps []uint64, base uint64, v uint32, out *[16][2]uint64) {
+			sipHash24FusedChain13x8Avx2Asm(&comps[0], len(comps)/2, base, x16Half(out, 0), v)
+			sipHash24FusedChain13x8Avx2Asm(&comps[0], len(comps)/2, base+8, x16Half(out, 1), v)
 		}, false, true},
 		{"gpr", func() bool { return true }, nil, false, false},
 		{"scalar", func() bool { return true }, nil, false, false},
@@ -90,19 +91,54 @@ func TestFusedChain13x16CrossTier(t *testing.T) {
 		for _, tc := range fusedX16FixedCases {
 			comps := fusedX16Components(tc.seed0, tc.seed1, pairs)
 			for _, base := range tc.bases {
-				var results []result
-				for _, tier := range amd64FusedX16Tiers() {
-					if !tier.ok() {
-						continue
+				for _, v := range tc.folds {
+					var results []result
+					for _, tier := range amd64FusedX16Tiers() {
+						if !tier.ok() {
+							continue
+						}
+						HasAVX512X16, HasAVX2X16 = tier.avx512, tier.avx2
+						var out [16][2]uint64
+						FusedChain13x16(comps, base, v, &out)
+						results = append(results, result{tier.name, out})
 					}
-					HasAVX512X16, HasAVX2X16 = tier.avx512, tier.avx2
-					var out [16][2]uint64
-					FusedChain13x16(comps, base, &out)
-					results = append(results, result{tier.name, out})
+					for _, r := range results[1:] {
+						if r.out != results[0].out {
+							t.Errorf("%s pairs=%d base=%#x v=%#x: %s differs from %s", tc.name, pairs, base, v, r.tier, results[0].tier)
+						}
+					}
 				}
-				for _, r := range results[1:] {
-					if r.out != results[0].out {
-						t.Errorf("%s pairs=%d base=%#x: %s differs from %s", tc.name, pairs, base, r.tier, results[0].tier)
+			}
+		}
+	}
+}
+
+// TestFusedChain13x16Avx512MatchesX4 pins the ZMM sixteen-lane fill
+// kernel lane for lane to four calls of the four-lane AVX-512 kernel
+// over fill blocks built explicitly in memory with the fold at bytes
+// 9..12, at every pair count, probe base and fold — the memory-reading
+// kernel absorbs whatever the buffer carries, so a synthesising kernel
+// that dropped or misplaced the fold would diverge here by direct call,
+// independent of the dispatch flags.
+func TestFusedChain13x16Avx512MatchesX4(t *testing.T) {
+	if !cpuid.AVX512F {
+		t.Skip("AVX-512F not available")
+	}
+	rng := rand.New(rand.NewSource(13))
+	for _, pairs := range fusedX16PairCounts {
+		for _, tc := range fusedX16FixedCases {
+			comps := fusedX16Components(tc.seed0, tc.seed1, pairs)
+			for _, base := range append(tc.bases, 0xFFFFFFFFFFFFFFF8, 0x00000000FFFFFFFC) {
+				for _, v := range append(tc.folds, rng.Uint32()) {
+					var viaX4, viaX16 [16][2]uint64
+					blocks := fillBlocks16(base, v)
+					for q := 0; q < 4; q++ {
+						ptrs := x16Quarter(&blocks, q)
+						sipHash24FusedChain13x4Avx512Asm(&comps[0], len(comps)/2, &ptrs, x16Out(&viaX4, q))
+					}
+					sipHash24FusedChain13x16Avx512Asm(&comps[0], len(comps)/2, base, &viaX16, v)
+					if viaX4 != viaX16 {
+						t.Fatalf("%s pairs=%d base=%#x v=%#x: sixteen-lane kernel %v != four-lane kernels %v", tc.name, pairs, base, v, viaX16, viaX4)
 					}
 				}
 			}
@@ -130,7 +166,7 @@ func BenchmarkTierX16(b *testing.B) {
 				b.ReportAllocs()
 				b.ResetTimer()
 				for i := 0; i < b.N; i++ {
-					FusedChain13x16(comps, uint64(i*16), &out)
+					FusedChain13x16(comps, uint64(i*16), 0xA5C33C5A, &out)
 				}
 			})
 		}

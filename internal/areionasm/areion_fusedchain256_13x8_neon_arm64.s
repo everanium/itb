@@ -10,18 +10,21 @@
 
 #include "textflag.h"
 
-// func areion256FusedChain13x8NeonAsm(fixedKey *[32]byte, comps *uint64, nGroups int, groupIdxBase uint64, out *[8][4]uint64)
-TEXT ·areion256FusedChain13x8NeonAsm(SB), NOSPLIT, $512-40
+// func areion256FusedChain13x8NeonAsm(fixedKey *[32]byte, comps *uint64, nGroups int, groupIdxBase uint64, out *[8][4]uint64, v uint32)
+TEXT ·areion256FusedChain13x8NeonAsm(SB), NOSPLIT, $512-44
 	MOVD fixedKey+0(FP), R0
 	MOVD out+32(FP), R4
 	MOVD $frame-512(SP), R7
 	MOVD groupIdxBase+24(FP), R12
 	MOVD $13, R13
+	// Interlock-nonce fold v (bytes 9..12 of every fill block), ORed in as v << 8
+	MOVWU v+40(FP), R8
 	MOVD R13, 0(R7)
 	LSL $8, R12, R14
 	ORR $3, R14, R14
 	MOVD R14, 8(R7)
 	LSR $56, R12, R14
+	ORR R8<<8, R14, R14
 	MOVD R14, 16(R7)
 	MOVD ZR, 24(R7)
 	ADD $1, R12, R12
@@ -30,6 +33,7 @@ TEXT ·areion256FusedChain13x8NeonAsm(SB), NOSPLIT, $512-40
 	ORR $3, R14, R14
 	MOVD R14, 40(R7)
 	LSR $56, R12, R14
+	ORR R8<<8, R14, R14
 	MOVD R14, 48(R7)
 	MOVD ZR, 56(R7)
 	ADD $1, R12, R12
@@ -38,6 +42,7 @@ TEXT ·areion256FusedChain13x8NeonAsm(SB), NOSPLIT, $512-40
 	ORR $3, R14, R14
 	MOVD R14, 72(R7)
 	LSR $56, R12, R14
+	ORR R8<<8, R14, R14
 	MOVD R14, 80(R7)
 	MOVD ZR, 88(R7)
 	ADD $1, R12, R12
@@ -46,6 +51,7 @@ TEXT ·areion256FusedChain13x8NeonAsm(SB), NOSPLIT, $512-40
 	ORR $3, R14, R14
 	MOVD R14, 104(R7)
 	LSR $56, R12, R14
+	ORR R8<<8, R14, R14
 	MOVD R14, 112(R7)
 	MOVD ZR, 120(R7)
 	ADD $1, R12, R12
@@ -54,6 +60,7 @@ TEXT ·areion256FusedChain13x8NeonAsm(SB), NOSPLIT, $512-40
 	ORR $3, R14, R14
 	MOVD R14, 136(R7)
 	LSR $56, R12, R14
+	ORR R8<<8, R14, R14
 	MOVD R14, 144(R7)
 	MOVD ZR, 152(R7)
 	ADD $1, R12, R12
@@ -62,6 +69,7 @@ TEXT ·areion256FusedChain13x8NeonAsm(SB), NOSPLIT, $512-40
 	ORR $3, R14, R14
 	MOVD R14, 168(R7)
 	LSR $56, R12, R14
+	ORR R8<<8, R14, R14
 	MOVD R14, 176(R7)
 	MOVD ZR, 184(R7)
 	ADD $1, R12, R12
@@ -70,6 +78,7 @@ TEXT ·areion256FusedChain13x8NeonAsm(SB), NOSPLIT, $512-40
 	ORR $3, R14, R14
 	MOVD R14, 200(R7)
 	LSR $56, R12, R14
+	ORR R8<<8, R14, R14
 	MOVD R14, 208(R7)
 	MOVD ZR, 216(R7)
 	ADD $1, R12, R12
@@ -78,6 +87,7 @@ TEXT ·areion256FusedChain13x8NeonAsm(SB), NOSPLIT, $512-40
 	ORR $3, R14, R14
 	MOVD R14, 232(R7)
 	LSR $56, R12, R14
+	ORR R8<<8, R14, R14
 	MOVD R14, 240(R7)
 	MOVD ZR, 248(R7)
 	ADD $1, R12, R12
@@ -1121,4 +1131,22 @@ loop1:
 	VST1 [V8.B16, V9.B16], (R6)
 	ADD $224, R4, R6
 	VST1 [V12.B16, V13.B16], (R6)
+	VEOR V16.B16, V16.B16, V16.B16
+	VEOR V17.B16, V17.B16, V17.B16
+	ADD $256, R7, R6
+	VST1 [V16.B16, V17.B16], (R6)
+	ADD $288, R7, R6
+	VST1 [V16.B16, V17.B16], (R6)
+	ADD $320, R7, R6
+	VST1 [V16.B16, V17.B16], (R6)
+	ADD $352, R7, R6
+	VST1 [V16.B16, V17.B16], (R6)
+	ADD $384, R7, R6
+	VST1 [V16.B16, V17.B16], (R6)
+	ADD $416, R7, R6
+	VST1 [V16.B16, V17.B16], (R6)
+	ADD $448, R7, R6
+	VST1 [V16.B16, V17.B16], (R6)
+	ADD $480, R7, R6
+	VST1 [V16.B16, V17.B16], (R6)
 	RET

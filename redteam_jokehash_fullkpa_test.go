@@ -249,7 +249,7 @@ func TestRedTeamJokeHashFullKPA(t *testing.T) {
 		distinct := map[triple]struct{}{}
 		for j := 0; j < chunks; j++ {
 			var m [lockBatchFactor48Max][3]uint64
-			buf := make([]byte, 9)
+			buf := make([]byte, 13)
 			bp.fill(buf, uint64(j), &m)
 			masks[j] = triple{m[0][0], m[0][1], m[0][2]}
 			distinct[masks[j]] = struct{}{}
@@ -260,14 +260,14 @@ func TestRedTeamJokeHashFullKPA(t *testing.T) {
 		evenClone.Components[0] ^= 1
 		bpE := buildLockBatchPRF48_128Cfg(cfg, evenClone, ilNonce)
 		var mE [lockBatchFactor48Max][3]uint64
-		bpE.fill(make([]byte, 9), 0, &mE)
+		bpE.fill(make([]byte, 13), 0, &mE)
 		evenChangesMask := triple{mE[0][0], mE[0][1], mE[0][2]} != masks[0]
 
 		oddClone, _ := SeedFromComponents128(jokeHash, append([]uint64(nil), ls.Components...)...)
 		oddClone.Components[1] ^= 0xFFFFFFFFFFFFFFFF
 		bpO := buildLockBatchPRF48_128Cfg(cfg, oddClone, ilNonce)
 		var mO [lockBatchFactor48Max][3]uint64
-		bpO.fill(make([]byte, 9), 0, &mO)
+		bpO.fill(make([]byte, 13), 0, &mO)
 		oddKeepsMask := triple{mO[0][0], mO[0][1], mO[0][2]} == masks[0]
 
 		t.Logf("M3 barrier masks: distinct triples across %d chunks = %d (nullHash=1); chunk0 != chunk1: %v",
@@ -348,7 +348,7 @@ func TestRedTeamJokeHashFullKPA(t *testing.T) {
 	// ---------------------------------------------------------------
 	t.Logf("CONCLUSION: every reduction step the nullHash Stage 1 attack used is closed under jokeHash:")
 	t.Logf("  - no 16-bit constant collapse (M1: 256-bit even key per role)")
-	t.Logf("  - no constant per-pixel dataHash schedule to brute (M2: per-pixel/per-nonce non-collapse); the noise position IS a public constant under jokeHash (M2), which removes one 3-bit unknown per pixel and leaves the rotation and the eight channel masks")
+	t.Logf("  - no constant per-pixel dataHash or noisePos schedule to brute (M2: 1000/1000 distinct dataHash, 8/8 noisePos spread, 7/7 rotation spread)")
 	t.Logf("  - no single message-wide lock mask to precompute (M3: per-chunk masks, 2^16 brute reproduces 0)")
 	t.Logf("  - no Pixel Barrier known-plaintext (M4: barrier locks lanes behind the 256-bit lockSeed)")
 	t.Logf("The joint unknown is ~5 x 256 = ~1280 bits with a combinadic-unrank barrier between the KPA lever and the exploitable T-function layer. No sub-2^256 decomposition was found; a full joint SAT/SMT model was assessed as beyond the analysis budget and likely intractable due to the non-T-function unrank. Result: attack does not converge (characterised null result; positive evidence for the barrier).")

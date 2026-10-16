@@ -3,8 +3,10 @@
 // VEX-encoded AES-NI XMM fused ChainHash cascade kernel for AES-ITB-128 at the
 // 13-byte shape, 4 lanes (1 PKCS#7 block, 3 AES rounds per
 // cascade round).
-// The padded data blocks are staged once into the frame and every
-// cascade round runs from those 16-byte slots; see aesitbasm_fused.go for the
+// The padded data blocks are staged once into the frame, every block
+// past block 0 with the round constant of the preceding absorb round
+// folded in so it serves as that round's key, and every cascade round
+// runs from those 16-byte slots; see aesitbasm_fused.go for the
 // construction and the in-package parity tests for the bit-exact pin
 // against the pure-Go cascade.
 
@@ -43,11 +45,6 @@ TEXT ·aesITB128FusedChain13x4VexAsm(SB), NOSPLIT, $64-40
 	VMOVDQU ·RC+0(SB), X5
 	VMOVDQU ·RC+16(SB), X6
 	VMOVDQU ·RC+32(SB), X7
-	VMOVDQU ·RC+48(SB), X8
-	VMOVDQU ·RC+64(SB), X9
-	VMOVDQU ·RC+80(SB), X10
-	VMOVDQU ·RC+96(SB), X11
-	VMOVDQU ·RC+112(SB), X12
 	VMOVDQU 0(AX), X13
 	VPXOR X0, X0, X0
 	VPXOR X1, X1, X1
@@ -66,8 +63,8 @@ loop:
 	VPXOR 32(SP), X2, X2
 	VPXOR 48(SP), X3, X3
 	VAESENC X5, X0, X0; VAESENC X5, X1, X1; VAESENC X5, X2, X2; VAESENC X5, X3, X3
-	VAESENC X5, X0, X0; VAESENC X5, X1, X1; VAESENC X5, X2, X2; VAESENC X5, X3, X3
 	VAESENC X6, X0, X0; VAESENC X6, X1, X1; VAESENC X6, X2, X2; VAESENC X6, X3, X3
+	VAESENC X7, X0, X0; VAESENC X7, X1, X1; VAESENC X7, X2, X2; VAESENC X7, X3, X3
 	ADDQ $16, BX
 	DECQ CX
 	JNZ loop

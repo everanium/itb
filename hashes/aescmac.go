@@ -315,7 +315,7 @@ func aesCMACInterlockFillBatch16(key []byte) (itb.InterlockFillFunc16, error) {
 	var k [16]byte
 	copy(k[:], key)
 	s := aescmacasm.NewSchedule(k)
-	return func(components []uint64, groupIdxBase uint64, out *[16][2]uint64) {
-		aescmacasm.FusedChain13x16(s, components, groupIdxBase, out)
+	return func(components []uint64, groupIdxBase uint64, v uint32, out *[16][2]uint64) {
+		aescmacasm.FusedChain13x16(s, components, groupIdxBase, v, out)
 	}, nil
 }

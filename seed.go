@@ -35,8 +35,11 @@ const NonceSize = 64
 const MaxKeyBits = 2048
 
 // secureWipe zeroes a byte slice to minimize sensitive data exposure in memory.
-// clear() lowers to runtime.memclrNoHeapPointers — an observable side-effect
-// the compiler cannot elide, widening to vector stores on amd64.
+// On a heap buffer or a large slice clear() lowers to a
+// runtime.memclrNoHeapPointers call, which the compiler keeps. On a small
+// stack array it lowers to inline vector stores, and the compiler may drop
+// those as dead stores once the array is not read again; a stack copy
+// therefore needs runtime.KeepAlive(&array) after the wipe.
 func secureWipe(b []byte) {
 	clear(b)
 }

@@ -47,8 +47,8 @@ DATA areionFill13<>+0x0f0(SB)/8, $3
 DATA areionFill13<>+0x0f8(SB)/8, $3
 GLOBL areionFill13<>(SB), RODATA|NOPTR, $256
 
-// func areion256FusedChain13x8Avx512Asm(fixedKey *[32]byte, comps *uint64, nGroups int, groupIdxBase uint64, out *[8][4]uint64)
-TEXT ·areion256FusedChain13x8Avx512Asm(SB), NOSPLIT, $0-40
+// func areion256FusedChain13x8Avx512Asm(fixedKey *[32]byte, comps *uint64, nGroups int, groupIdxBase uint64, out *[8][4]uint64, v uint32)
+TEXT ·areion256FusedChain13x8Avx512Asm(SB), NOSPLIT, $0-44
 	MOVQ fixedKey+0(FP), AX
 	MOVQ comps+8(FP), BX
 	MOVQ nGroups+16(FP), CX
@@ -57,6 +57,10 @@ TEXT ·areion256FusedChain13x8Avx512Asm(SB), NOSPLIT, $0-40
 	VBROADCASTI32X4 0(AX), Z8
 	VBROADCASTI32X4 16(AX), Z9
 	VPBROADCASTQ groupIdxBase+24(FP), Z13
+	// Interlock-nonce fold v << 8 (bytes 9..12 of every fill block) broadcast to Z12
+	MOVL v+40(FP), R9
+	SHLQ $8, R9
+	VPBROADCASTQ R9, Z12
 	VMOVDQU64 areionFill13<>+128(SB), Z19
 	VPADDQ areionFill13<>+0(SB), Z13, Z7
 	VPADDQ areionFill13<>+64(SB), Z13, Z23
@@ -64,11 +68,13 @@ TEXT ·areion256FusedChain13x8Avx512Asm(SB), NOSPLIT, $0-40
 	VPORQ areionFill13<>+192(SB), Z24, Z24
 	VPUNPCKLQDQ Z24, Z19, Z24
 	VPSRLQ $56, Z7, Z25
+	VPORQ Z12, Z25, Z25
 	VPUNPCKLQDQ Z3, Z25, Z25
 	VPSLLQ $8, Z23, Z28
 	VPORQ areionFill13<>+192(SB), Z28, Z28
 	VPUNPCKLQDQ Z28, Z19, Z28
 	VPSRLQ $56, Z23, Z29
+	VPORQ Z12, Z29, Z29
 	VPUNPCKLQDQ Z3, Z29, Z29
 	VPXORD Z14, Z14, Z14
 	VPXORD Z15, Z15, Z15

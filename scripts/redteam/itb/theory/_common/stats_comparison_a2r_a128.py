@@ -71,9 +71,10 @@ primitives)
   * rand_key  — fixed data, N random keys (key-driven marginals).
   * counter   — fixed key, data = LE32(i) || fixed nonce, i = 0..N-1 (shapes
                 block / 20 / 36 / 68; the shipped per-pixel pattern), or
-                0x03 || LE64(i) || 0^4 at shape 13 (the shipped fill
-                pattern). This is the input the downstream consumers
-                actually present.
+                0x03 || LE64(i) || c at shape 13 (the shipped fill
+                pattern; c is a fixed 4-byte word per trial, standing in
+                for the per-message interlock-nonce fold). This is the
+                input the downstream consumers actually present.
   * aval_data — M random (key, data) bases; every data bit flipped in turn;
                 output-difference statistics (data avalanche + low-byte DDT).
   * aval_key  — M random bases; every key bit flipped in turn (key avalanche
@@ -323,7 +324,7 @@ def gen_inputs(config: str, shape: str, n: int, seed: int):
             data[:, 0] = 0x03
             for k in range(8):
                 data[:, 1 + k] = ((idx >> np.uint64(8 * k)) & np.uint64(0xFF)).astype(np.uint8)
-            data[:, 9:] = 0
+            data[:, 9:] = rng.integers(0, 256, size=(1, L - 9), dtype=np.uint8)
         else:
             for k in range(4):
                 data[:, k] = ((idx >> np.uint64(8 * k)) & np.uint64(0xFF)).astype(np.uint8)

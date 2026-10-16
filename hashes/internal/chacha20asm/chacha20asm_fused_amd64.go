@@ -28,7 +28,7 @@ var (
 // (Fused256Fill13x8), overridable on its own through
 // ITB_FORCE_INTERLOCK_PRF_FILL_TIER. The AVX-512 and AVX2 tiers run their
 // dedicated eight-lane YMM kernel over fill blocks synthesised
-// in-register.
+// in-register from the group index base and the interlock-nonce fold.
 var (
 	HasAVX512X16 = cpuid.AVX512F
 	HasAVX2X16   = cpuid.AVX2 && !cpuid.AVX512F
@@ -185,31 +185,33 @@ func Fused256Chain68x1(fixedKey *[32]byte, components []uint64, data *byte, out 
 }
 
 // Fused256Fill13x8 is the batch-16 Interlocked Barrier fill hook: lane i
-// (0..7) runs the cascade over the fill block of group groupIdxBase+i.
-// The AVX-512 and AVX2 tiers synthesise the blocks in-register and run
+// (0..7) runs the cascade over the fill block
+// [0x03 | LE64(groupIdxBase+i) | LE32(v)] of group groupIdxBase+i, v
+// being the per-message interlock-nonce fold. The AVX-512 and AVX2 tiers
+// synthesise the blocks in-register from groupIdxBase and v and run
 // their eight-lane YMM kernel; without a SIMD fill tier the GPR arm runs
 // eight single-lane calls over Go-synthesised blocks. The dispatch
 // follows the batch-16 flags so ITB_FORCE_INTERLOCK_PRF_FILL_TIER
 // selects the arm.
-func Fused256Fill13x8(fixedKey *[32]byte, components []uint64, groupIdxBase uint64, out *[8][4]uint64) {
+func Fused256Fill13x8(fixedKey *[32]byte, components []uint64, groupIdxBase uint64, v uint32, out *[8][4]uint64) {
 	if !validComponents256(components) {
-		scalarFill256X8(fixedKey, components, groupIdxBase, out)
+		scalarFill256X8(fixedKey, components, groupIdxBase, v, out)
 		return
 	}
 	c, ng := &components[0], len(components)/4
 	switch {
 	case HasAVX512X16:
-		chacha20FusedChain13x8Avx512Asm(fixedKey, c, ng, groupIdxBase, out)
+		chacha20FusedChain13x8Avx512Asm(fixedKey, c, ng, groupIdxBase, out, v)
 	case HasAVX2X16:
-		chacha20FusedChain13x8Avx2Asm(fixedKey, c, ng, groupIdxBase, out)
+		chacha20FusedChain13x8Avx2Asm(fixedKey, c, ng, groupIdxBase, out, v)
 	default:
 		if !HasGPRX16 {
-			scalarFill256X8(fixedKey, components, groupIdxBase, out)
+			scalarFill256X8(fixedKey, components, groupIdxBase, v, out)
 			return
 		}
 		var block [13]byte
 		for i := range out {
-			fillBlock(&block, groupIdxBase+uint64(i))
+			fillBlock(&block, groupIdxBase+uint64(i), v)
 			chacha20FusedChain13x1GprAsm(fixedKey, c, ng, &block[0], &out[i])
 		}
 	}
@@ -334,7 +336,7 @@ func chacha20FusedChain68x4Avx2Asm(fixedKey *[32]byte, comps *uint64, nGroups in
 
 //
 //go:noescape
-func chacha20FusedChain13x8Avx512Asm(fixedKey *[32]byte, comps *uint64, nGroups int, groupIdxBase uint64, out *[8][4]uint64)
+func chacha20FusedChain13x8Avx512Asm(fixedKey *[32]byte, comps *uint64, nGroups int, groupIdxBase uint64, out *[8][4]uint64, v uint32)
 
 //
 //go:noescape
@@ -350,7 +352,7 @@ func chacha20FusedChain68x8Avx512Asm(fixedKey *[32]byte, comps *uint64, nGroups 
 
 //
 //go:noescape
-func chacha20FusedChain13x8Avx2Asm(fixedKey *[32]byte, comps *uint64, nGroups int, groupIdxBase uint64, out *[8][4]uint64)
+func chacha20FusedChain13x8Avx2Asm(fixedKey *[32]byte, comps *uint64, nGroups int, groupIdxBase uint64, out *[8][4]uint64, v uint32)
 
 //
 //go:noescape

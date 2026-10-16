@@ -156,15 +156,17 @@ func attachInterlockBatch32x256(s *itb.Seed256, name string, key []byte) error {
 }
 
 // smokeWideHooks256 is the Register-time check of the optional
-// [Spec.FusedChainHash256x8] and [Spec.InterlockFillBatch32x256]
-// factories of a user-registered W256 Spec: each populated factory must
-// return without error, and a non-nil kernel must be bit-exact with the
-// sequential HashFunc256 loop over the same (components, data) tuples —
-// the eight-lane evaluator on every lane it accepts, the batch-32 fill
-// kernel on every group of a probe base. A nil kernel is a valid
-// opt-out.
+// [Spec.FusedChainHash256x8], [Spec.InterlockFillBatch16x256] and
+// [Spec.InterlockFillBatch32x256] factories of a user-registered W256
+// Spec: each populated factory must return without error, and a non-nil
+// kernel must be bit-exact with the sequential HashFunc256 loop over the
+// same (components, data) tuples — the eight-lane evaluator on every
+// lane it accepts, the batch-16 and batch-32 fill kernels on every group
+// of a probe base under a nonzero interlock-nonce fold (so a kernel that
+// leaves bytes 9..12 of its blocks at zero is refused). A nil kernel is
+// a valid opt-out.
 func smokeWideHooks256(spec Spec, single itb.HashFunc256, key []byte) error {
-	if spec.FusedChainHash256x8 == nil && spec.InterlockFillBatch32x256 == nil {
+	if spec.FusedChainHash256x8 == nil && spec.InterlockFillBatch16x256 == nil && spec.InterlockFillBatch32x256 == nil {
 		return nil
 	}
 	var comps [8]uint64
@@ -207,6 +209,30 @@ func smokeWideHooks256(spec Spec, single itb.HashFunc256, key []byte) error {
 			}
 		}
 	}
+	const fillBase = uint64(0x0123456789ab)
+	const fillFold = uint32(0x9e3779b9)
+	fillBlock := func(i int) []byte {
+		var block [13]byte
+		block[0] = 0x03
+		binary.LittleEndian.PutUint64(block[1:9], fillBase+uint64(i))
+		binary.LittleEndian.PutUint32(block[9:13], fillFold)
+		return block[:]
+	}
+	if spec.InterlockFillBatch16x256 != nil {
+		fill, err := spec.InterlockFillBatch16x256(key)
+		if err != nil {
+			return fmt.Errorf("hashes: Register: %q InterlockFillBatch16x256(key): %w", spec.Name, err)
+		}
+		if fill != nil {
+			var out [8][4]uint64
+			fill(comps[:], fillBase, fillFold, &out)
+			for i := range out {
+				if out[i] != seqChain(fillBlock(i)) {
+					return fmt.Errorf("hashes: Register: %q InterlockFillBatch16x256 group %d diverges from the sequential HashFunc256 loop", spec.Name, i)
+				}
+			}
+		}
+	}
 	if spec.InterlockFillBatch32x256 != nil {
 		fill, err := spec.InterlockFillBatch32x256(key)
 		if err != nil {
@@ -214,13 +240,9 @@ func smokeWideHooks256(spec Spec, single itb.HashFunc256, key []byte) error {
 		}
 		if fill != nil {
 			var out [16][4]uint64
-			const base = uint64(0x0123456789ab)
-			fill(comps[:], base, &out)
+			fill(comps[:], fillBase, fillFold, &out)
 			for i := range out {
-				var block [13]byte
-				block[0] = 0x03
-				binary.LittleEndian.PutUint64(block[1:9], base+uint64(i))
-				if out[i] != seqChain(block[:]) {
+				if out[i] != seqChain(fillBlock(i)) {
 					return fmt.Errorf("hashes: Register: %q InterlockFillBatch32x256 group %d diverges from the sequential HashFunc256 loop", spec.Name, i)
 				}
 			}

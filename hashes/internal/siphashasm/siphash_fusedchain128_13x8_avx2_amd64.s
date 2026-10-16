@@ -7,10 +7,12 @@
 // for the construction; the kernel is pinned to the pure-Go reference
 // (scalarFusedX16, through the dispatcher) by the in-package parity tests.
 //
-// The fill block [0x03 | LE64(groupIdxBase+i) | 4×0x00] of lane i is
-// synthesised in-register as its two message words m0 = (idx << 8) | 0x03
-// and m1 = (idx >> 56) | (13 << 56) (idx = groupIdxBase + i, lane offsets
-// from lane8<>) and staged into the frame; the eight lanes run as two
+// The fill block [0x03 | LE64(groupIdxBase+i) | LE32(v)] of lane i (v the
+// per-message interlock-nonce fold) is synthesised in-register as its two
+// message words m0 = (idx << 8) | 0x03 and
+// m1 = (idx >> 56) | (v << 8) | (13 << 56) (idx = groupIdxBase + i, lane
+// offsets from lane8<>; the fold is ORed into the tag constant once) and
+// staged into the frame; the eight lanes run as two
 // four-lane YMM groups whose instruction streams are interleaved, so the
 // two dependency chains overlap on the vector ALUs. Y0..Y3 / Y4..Y7 hold
 // the two states, Y8/Y9 and Y10/Y11 the (lo, hi) carries, Y12/Y13 the
@@ -61,18 +63,22 @@ DATA rol16q<>+16(SB)/8, $0x0504030201000706
 DATA rol16q<>+24(SB)/8, $0x0d0c0b0a09080f0e
 GLOBL rol16q<>(SB), RODATA|NOPTR, $32
 
-// func sipHash24FusedChain13x8Avx2Asm(comps *uint64, nPairs int, groupIdxBase uint64, out *[8][2]uint64)
-TEXT ·sipHash24FusedChain13x8Avx2Asm(SB), NOSPLIT, $128-32
+// func sipHash24FusedChain13x8Avx2Asm(comps *uint64, nPairs int, groupIdxBase uint64, out *[8][2]uint64, v uint32)
+TEXT ·sipHash24FusedChain13x8Avx2Asm(SB), NOSPLIT, $128-36
 	MOVQ comps+0(FP), BX
 	MOVQ nPairs+8(FP), CX
 	MOVQ out+24(FP), DI
 
-	// Synthesise the words: m0 = (idx << 8) | 0x03, m1 = (idx >> 56) | (13 << 56), idx = groupIdxBase + lane
+	// Synthesise the words: m0 = (idx << 8) | 0x03, m1 = (idx >> 56) | (v << 8) | (13 << 56), idx = groupIdxBase + lane;
+	// the interlock-nonce fold v << 8 is ORed into the tag constant once (Y15)
 	VPBROADCASTQ groupIdxBase+16(FP), Y12
 	MOVQ $3, R12
 	VMOVQ R12, X14
 	VPBROADCASTQ X14, Y14
 	MOVQ $0xd00000000000000, R12
+	MOVL v+32(FP), R13
+	SHLQ $8, R13
+	ORQ R13, R12
 	VMOVQ R12, X15
 	VPBROADCASTQ X15, Y15
 	VPADDQ lane8<>+0(SB), Y12, Y13

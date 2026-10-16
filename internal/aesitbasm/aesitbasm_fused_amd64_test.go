@@ -127,3 +127,28 @@ func BenchmarkFusedTier(b *testing.B) {
 		}
 	}
 }
+
+// TestFusedKernelsLeaveNoSecretInFrame runs every AES-ITB-128 fused
+// kernel the host can execute — x1, x4, x8 and batch-16 — under the
+// stack-residue probe after the probe's negative control: no key, no
+// component pair, no key-folded block and no lane output may be left in
+// the stack once a kernel has returned; the frame holds public blocks
+// only.
+func TestFusedKernelsLeaveNoSecretInFrame(t *testing.T) {
+	checkResidueProbeSeesKeyFold(t)
+	for _, tier := range amd64FusedTiers() {
+		if tier.ok {
+			checkAESITBResidue(t, tier.name, tier.x4, tier.x1, nil, nil)
+		}
+	}
+	for _, tier := range amd64X8Tiers() {
+		if tier.ok {
+			checkAESITBResidue(t, tier.name, nil, nil, tier.x8, nil)
+		}
+	}
+	for _, tier := range amd64FusedX16Tiers() {
+		if tier.k != nil && tier.ok() {
+			checkAESITBResidue(t, tier.name, nil, nil, nil, tier.k)
+		}
+	}
+}

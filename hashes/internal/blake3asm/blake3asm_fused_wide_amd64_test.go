@@ -19,10 +19,10 @@ var kernels256x8 = map[string]map[int]x8fn256{
 	"avx2":   {20: wrap8_256(blake3FusedChain20x8Avx2Asm), 36: wrap8_256(blake3FusedChain36x8Avx2Asm), 68: wrap8_256(blake3FusedChain68x8Avx2Asm)},
 }
 
-type fill8fn256 func(*[32]byte, []uint64, uint64, *[8][4]uint64)
-
-func wrapFill8_256(f func(*[32]byte, *uint64, int, uint64, *[8][4]uint64)) fill8fn256 {
-	return func(k *[32]byte, c []uint64, base uint64, o *[8][4]uint64) { f(k, &c[0], len(c)/4, base, o) }
+func wrapFill8_256(f func(*[32]byte, *uint64, int, uint64, *[8][4]uint64, uint32)) fill8fn256 {
+	return func(k *[32]byte, c []uint64, base uint64, v uint32, o *[8][4]uint64) {
+		f(k, &c[0], len(c)/4, base, o, v)
+	}
 }
 
 // fill256x8Kernels maps each tier to its eight-lane fill kernel.
@@ -91,7 +91,7 @@ func TestFusedWideCrossTierAmd64(t *testing.T) {
 			continue
 		}
 		var o [8][4]uint64
-		fill256x8Kernels[tier.name](key256, c256, 0x0123456789ab, &o)
+		fill256x8Kernels[tier.name](key256, c256, 0x0123456789ab, 0x5A3CC3A5, &o)
 		if ref == nil {
 			ref = &o
 			continue
@@ -99,6 +99,42 @@ func TestFusedWideCrossTierAmd64(t *testing.T) {
 		if o != *ref {
 			t.Fatalf("fill: tier %s eight-lane kernel diverges from the first executable tier", tier.name)
 		}
+	}
+}
+
+// TestFusedFillMatchesMemoryKernelsAmd64 pins every executable tier's
+// eight-lane fill kernel, which synthesises its blocks in-register from
+// groupIdxBase and the fold, to two calls of the same tier's four-lane
+// 13-byte kernel over blocks built in memory by fillPtrs4 with the fold
+// at bytes 9..12. The memory-reading kernel absorbs whatever the buffer
+// carries, so a synthesising kernel that misplaced or dropped the fold
+// diverges here even where its scalar reference shared the mistake.
+func TestFusedFillMatchesMemoryKernelsAmd64(t *testing.T) {
+	for _, tier := range amd64CascadeTiers() {
+		t.Run(tier.name, func(t *testing.T) {
+			if !tier.ok {
+				t.Skip(tier.skipMsg)
+			}
+			x8, x4 := fill256x8Kernels[tier.name], kernels256x4[tier.name][13]
+			for _, g := range groupCounts {
+				for _, base := range fillBases {
+					key := randomKey256()
+					comps := randomWords(4 * g)
+					for _, v := range fillFoldVectors() {
+						var got, want [8][4]uint64
+						x8(key, comps, base, v, &got)
+						var blocks [4][13]byte
+						for h := 0; h < 2; h++ {
+							ptrs := fillPtrs4(&blocks, base+uint64(4*h), v)
+							x4(key, comps, &ptrs, out8x256Half(&want, h))
+						}
+						if got != want {
+							t.Fatalf("%s groups=%d base=%#x v=%#x: synthesised %x, memory kernels %x", tier.name, g, base, v, got, want)
+						}
+					}
+				}
+			}
+		})
 	}
 }
 
@@ -153,7 +189,7 @@ func BenchmarkFillWide(b *testing.B) {
 				b.SetBytes(8 * 13)
 				f := fill256x8Kernels[tier.name]
 				for i := 0; i < b.N; i++ {
-					f(key256, c256, uint64(i)*8, &o8)
+					f(key256, c256, uint64(i)*8, 0xA5C33C5A, &o8)
 				}
 			})
 			b.Run(fmt.Sprintf("fill256/%s/2x4/groups%d", tier.name, g), func(b *testing.B) {
@@ -162,7 +198,7 @@ func BenchmarkFillWide(b *testing.B) {
 				f := kernels256x4[tier.name][13]
 				for i := 0; i < b.N; i++ {
 					for h := 0; h < 2; h++ {
-						ptrs := fillPtrs4(&blocks, uint64(i)*8+uint64(4*h))
+						ptrs := fillPtrs4(&blocks, uint64(i)*8+uint64(4*h), 0xA5C33C5A)
 						f(key256, c256, &ptrs, out8x256Half(&o8, h))
 					}
 				}

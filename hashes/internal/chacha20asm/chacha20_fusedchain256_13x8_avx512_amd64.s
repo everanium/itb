@@ -32,8 +32,8 @@
 	CHACHA_QR(Y2, Y7, Y8, Y13); \
 	CHACHA_QR(Y3, Y4, Y9, Y14)
 
-// func chacha20FusedChain13x8Avx512Asm(fixedKey *[32]byte, comps *uint64, nGroups int, groupIdxBase uint64, out *[8][4]uint64)
-TEXT ·chacha20FusedChain13x8Avx512Asm(SB), NOSPLIT, $128-40
+// func chacha20FusedChain13x8Avx512Asm(fixedKey *[32]byte, comps *uint64, nGroups int, groupIdxBase uint64, out *[8][4]uint64, v uint32)
+TEXT ·chacha20FusedChain13x8Avx512Asm(SB), NOSPLIT, $128-44
 	MOVQ fixedKey+0(FP), AX
 	MOVQ comps+8(FP), BX
 	MOVQ nGroups+16(FP), CX
@@ -41,10 +41,15 @@ TEXT ·chacha20FusedChain13x8Avx512Asm(SB), NOSPLIT, $128-40
 
 	VPBROADCASTQ groupIdxBase+24(FP), Z0
 	VPADDQ laneIdx<>(SB), Z0, Z0
+	// The interlock-nonce fold v: v << 8 (Y3) for word 2, v >> 24 (Y2) for word 3
+	MOVL v+40(FP), R13
+	VPBROADCASTD R13, Y2
+	VPSLLD $8, Y2, Y3
+	VPSRLD $24, Y2, Y2
 	VPSLLQ $8, Z0, Z1
 	MOVQ $3, R12
-	VPBROADCASTQ R12, Z2
-	VPORQ Z2, Z1, Z1
+	VPBROADCASTQ R12, Z4
+	VPORQ Z4, Z1, Z1
 	VPMOVQD Z1, Y1
 	VMOVDQU32 Y1, 0(SP)
 	VPSRLQ $24, Z0, Z1
@@ -52,9 +57,11 @@ TEXT ·chacha20FusedChain13x8Avx512Asm(SB), NOSPLIT, $128-40
 	VMOVDQU32 Y1, 32(SP)
 	VPSRLQ $56, Z0, Z1
 	VPMOVQD Z1, Y1
+	VPORD Y3, Y1, Y1
 	VMOVDQU32 Y1, 64(SP)
 	MOVQ $0x8d000000, R12
 	VPBROADCASTD R12, Y1
+	VPORD Y2, Y1, Y1
 	VMOVDQU32 Y1, 96(SP)
 
 	VPXORD Y0, Y0, Y0

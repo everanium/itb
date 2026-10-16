@@ -3,9 +3,10 @@
 // Legacy-SSE AES-NI XMM fused ChainHash cascade kernel for AES-CMAC at the
 // 36-byte shape, 1 lane (3 zero-padded blocks, 3 AES-128
 // permutations per cascade round).
-// The data blocks are staged once into the frame with K0 (and, for
-// block 0, the length tag) folded in, and every cascade round runs
-// from those 16-byte slots; see aescmacasm_fused.go for the
+// The data blocks are staged once into the frame (block 0 with the
+// length tag folded in) and every cascade round runs from those
+// 16-byte slots; each lane is carried as state ^ K0 with K10 ^ K0 as
+// the last-round key, so the frame holds public block bytes only; see aescmacasm_fused.go for the
 // construction and the in-package parity tests for the bit-exact pin
 // against the pure-Go cascade.
 
@@ -21,11 +22,9 @@ TEXT ·aesCMAC128FusedChain36x1AesNiAsm(SB), NOSPLIT, $192-40
 	MOVQ DX, R8
 
 	PXOR X13, X13
-	MOVOU 0(AX), X14
 	MOVQ $36, R12
 	MOVQ R12, X15
 	PUNPCKLQDQ X15, X15
-	PXOR X14, X15
 	MOVOU X13, X4
 	PINSRD $0, 0(R8), X4
 	PINSRD $1, 4(R8), X4
@@ -33,11 +32,9 @@ TEXT ·aesCMAC128FusedChain36x1AesNiAsm(SB), NOSPLIT, $192-40
 	PXOR X15, X4
 	MOVOU X4, 0(SP)
 	MOVOU 16(R8), X4
-	PXOR X14, X4
 	MOVOU X4, 64(SP)
 	MOVOU X13, X4
 	PINSRD $0, 32(R8), X4
-	PXOR X14, X4
 	MOVOU X4, 128(SP)
 
 	MOVOU 16(AX), X6
@@ -50,7 +47,9 @@ TEXT ·aesCMAC128FusedChain36x1AesNiAsm(SB), NOSPLIT, $192-40
 	MOVOU 128(AX), X13
 	MOVOU 144(AX), X14
 	MOVOU 160(AX), X15
-	PXOR X0, X0
+	MOVOU 0(AX), X4
+	PXOR X4, X15
+	MOVOU 0(AX), X0
 
 loop:
 	MOVOU 0(BX), X5
@@ -95,5 +94,7 @@ loop:
 	DECQ CX
 	JNZ loop
 
+	MOVOU 0(AX), X4
+	PXOR X4, X0
 	MOVOU X0, 0(DI)
 	RET

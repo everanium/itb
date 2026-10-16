@@ -19,14 +19,19 @@ func wrap8_512(f func(*[64]byte, *uint64, int, *[8]*byte, *[8][8]uint64)) x8fn51
 var kernels256x8 = map[int]x8fn256{20: wrap8_256(areion256FusedChain20x8Avx512Asm), 36: wrap8_256(areion256FusedChain36x8Avx512Asm), 68: wrap8_256(areion256FusedChain68x8Avx512Asm)}
 var kernels512x8 = map[int]x8fn512{20: wrap8_512(areion512FusedChain20x8Avx512Asm), 36: wrap8_512(areion512FusedChain36x8Avx512Asm), 68: wrap8_512(areion512FusedChain68x8Avx512Asm)}
 
-func fill512x8Kernel(k *[64]byte, c []uint64, base uint64, o *[8][8]uint64) {
-	areion512FusedChain13x8Avx512Asm(k, &c[0], len(c)/8, base, o)
+func fill512x8Kernel(k *[64]byte, c []uint64, base uint64, v uint32, o *[8][8]uint64) {
+	areion512FusedChain13x8Avx512Asm(k, &c[0], len(c)/8, base, o, v)
 }
 
 func hasZMM() bool { return cpuid.VAESZMM }
 
 // TestFusedWideKernelParityAmd64 pins every wide ZMM kernel to the
-// pure-Go cascade by direct call, independent of the dispatch flags.
+// pure-Go cascade by direct call, independent of the dispatch flags,
+// and the two synthesising ZMM fill kernels to the four-lane ZMM
+// kernels over fill blocks built in memory with the fold at bytes
+// 9..12: the memory-reading kernel absorbs whatever the buffer carries,
+// so a synthesising kernel that dropped or misplaced the fold diverges
+// here.
 func TestFusedWideKernelParityAmd64(t *testing.T) {
 	if !hasZMM() {
 		t.Skip("requires VAES+AVX-512")
@@ -36,6 +41,46 @@ func TestFusedWideKernelParityAmd64(t *testing.T) {
 		t.Run("512x8/"+shapeName(n), func(t *testing.T) { checkX8_512(t, "avx512", n, kernels512x8[n]) })
 	}
 	t.Run("fill512x8", func(t *testing.T) { checkFill512X8(t, "avx512-x8", fill512x8Kernel) })
+	t.Run("fill256x8-vs-x4", func(t *testing.T) {
+		for _, g := range groupCounts {
+			for _, base := range fillBases {
+				for _, v := range fillFoldSet() {
+					key := randomKey256()
+					comps := randomWords(4 * g)
+					var got, want [8][4]uint64
+					fill256x8Kernel(key, comps, base, v, &got)
+					var blocks [4][13]byte
+					for h := 0; h < 2; h++ {
+						ptrs := fillPtrs4(&blocks, base+uint64(4*h), v)
+						areion256FusedChain13x4Avx512Asm(key, &comps[0], g, &ptrs, out8x256Half(&want, h))
+					}
+					if got != want {
+						t.Fatalf("groups=%d base=%#x v=%#x: eight-lane kernel diverges from the four-lane kernel", g, base, v)
+					}
+				}
+			}
+		}
+	})
+	t.Run("fill512x8-vs-x4", func(t *testing.T) {
+		for _, g := range groupCounts {
+			for _, base := range fillBases {
+				for _, v := range fillFoldSet() {
+					key := randomKey512()
+					comps := randomWords(8 * g)
+					var got, want [8][8]uint64
+					fill512x8Kernel(key, comps, base, v, &got)
+					var blocks [4][13]byte
+					for h := 0; h < 2; h++ {
+						ptrs := fillPtrs4(&blocks, base+uint64(4*h), v)
+						areion512FusedChain13x4Avx512Asm(key, &comps[0], g, &ptrs, out8x512Half(&want, h))
+					}
+					if got != want {
+						t.Fatalf("groups=%d base=%#x v=%#x: eight-lane kernel diverges from the four-lane kernel", g, base, v)
+					}
+				}
+			}
+		}
+	})
 }
 
 // TestFusedWideDispatcherTiersAmd64 installs every executable dispatch
@@ -86,7 +131,7 @@ func BenchmarkFillWide(b *testing.B) {
 		b.Run(fmt.Sprintf("fill512/x8/groups%d", g), func(b *testing.B) {
 			b.SetBytes(8 * 13)
 			for i := 0; i < b.N; i++ {
-				fill512x8Kernel(key512, c512, uint64(i)*8, &o8)
+				fill512x8Kernel(key512, c512, uint64(i)*8, 0x80000001, &o8)
 			}
 		})
 		b.Run(fmt.Sprintf("fill512/2x4/groups%d", g), func(b *testing.B) {
@@ -94,7 +139,7 @@ func BenchmarkFillWide(b *testing.B) {
 			var blocks [4][13]byte
 			for i := 0; i < b.N; i++ {
 				for h := 0; h < 2; h++ {
-					ptrs := fillPtrs4(&blocks, uint64(i)*8+uint64(4*h))
+					ptrs := fillPtrs4(&blocks, uint64(i)*8+uint64(4*h), 0x80000001)
 					areion512FusedChain13x4Avx512Asm(key512, &c512[0], g, &ptrs, out8x512Half(&o8, h))
 				}
 			}

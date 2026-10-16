@@ -416,16 +416,16 @@ func Registry(f *Figures) []Expectation {
 	add(
 		sweep("FAQ.md", `512-byte plaintext, `+num+`×`+num+` = `+num+`-pixel container`,
 			w("m1_side_512", plain(m1[512].Side)), w("m1_side_512", plain(m1[512].Side)), w("m1_P_512", plain(m1[512].P))),
-		expect("FAQ.md", `same 512-byte plaintext / `+num+`×`+num+` = `+num+`-pixel container as Question 1`,
-			w("m1_side_512", plain(m1[512].Side)), w("m1_side_512", plain(m1[512].Side)), w("m1_P_512", plain(m1[512].P))),
-		expect("FAQ.md", `same 512-byte plaintext / `+num+`×`+num+` container as Question 1`, w("m1_side_512", plain(m1[512].Side)), w("m1_side_512", plain(m1[512].Side))),
-		expect("FAQ.md", `where .B = C\(32, 16\) = `+num+`. and .A = C\(48, 16\) = `+num+`.\..*because .gcd\(A, B\) = `+num+`., evaluating both indices directly as .rank mod A. and .rank mod B. would restrict reachable pairs to a `+num+`× smaller subspace \(~`+dec+` bits lost\)`,
-			w("B", commaBig(f.B)), w("A", commaBig(f.A)), w("gcd", comma(gcd)), w("gcd", plain(gcd)), w("log2_gcd", fixed(f.Log2GCD, 2))),
-		expect("FAQ.md", `mapping .2\^128. rank values into .`+p2d+`. mask triples`, w("log2_AB", "2^"+log2AB)),
-		expect("FAQ.md", `the attacker gets 48 constraints on .≈ `+p2d+`. candidate masks — approximately .`+p2+`. masks remain consistent`,
-			w("log2_AB", "2^"+log2AB), w("masks_per_crib", "2^"+fixed(math.Floor(f.Log2AB-48), 0))),
-		expect("FAQ.md", `avoiding the .gcd\(A, B\) = `+num+`. anti-collapse trap`, w("gcd", comma(gcd))),
-		expect("FAQ.md", `requires enumerating .C\(48, 16\) × C\(32, 16\) ≈ `+p2d+`. preimages`, w("log2_AB", "2^"+log2AB)),
+		expect("FAQ.md", `512-byte plaintext, `+num+`×`+num+` container`,
+			w("m1_side_512", plain(m1[512].Side)), w("m1_side_512", plain(m1[512].Side))),
+		expect("FAQ.md", `draw from .C\(48, 16\) · C\(32, 16\) ≈ `+p2d+`. mask triples`,
+			w("log2_AB", "2^"+log2AB)),
+		expect("FAQ.md", `with .B = C\(32, 16\) = `+num+`. and .A = C\(48, 16\) = `+num+`.\).*avoid the .gcd\(A, B\) = `+num+`. CRT reduction trap`,
+			w("B", commaBig(f.B)), w("A", commaBig(f.A)), w("gcd", comma(gcd))),
+		expect("FAQ.md", `maps onto .Ω_chunk = A · B ≈ `+p2d+`. mask triples`,
+			w("log2_AB", "2^"+log2AB)),
+		expect("FAQ.md", `leave .≈ `+p2+`. compatible mask triples out of .`+p2d+`.`,
+			w("masks_per_crib", "2^"+fixed(math.Floor(f.Log2AB-48), 0)), w("log2_AB", "2^"+log2AB)),
 	)
 
 	// ----- REDTEAM.md -------------------------------------------------
@@ -521,7 +521,7 @@ func Registry(f *Figures) []Expectation {
 	for _, file := range []string{"SCIENCE.md", "ITB.md", "README.md", "FAQ.md", "REDTEAM.md", "SECURITY.md"} {
 		add(sweep(file, `\b(66,\d{3})\b`, w("gcd", comma(gcd))))
 	}
-	for _, file := range []string{"PROOFS.md", "FAQ.md", "REDTEAM.md", "HARNESS.md"} {
+	for _, file := range []string{"PROOFS.md", "REDTEAM.md", "HARNESS.md"} {
 		add(sweep(file, `\b(66\d{3})\b`, w("gcd", plain(gcd))))
 	}
 	return exps

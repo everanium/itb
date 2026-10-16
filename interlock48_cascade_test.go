@@ -68,8 +68,8 @@ func cascadeLockSeed(t *testing.T, key [16]byte, comps []uint64, armed bool) *Se
 			return out, true
 		}
 	}
-	seed.SetInterlockBatch16(func(components []uint64, groupIdxBase uint64, out *[16][2]uint64) {
-		aesitbasm.FusedChain13x16(&key, components, groupIdxBase, out)
+	seed.SetInterlockBatch16(func(components []uint64, groupIdxBase uint64, v uint32, out *[16][2]uint64) {
+		aesitbasm.FusedChain13x16(&key, components, groupIdxBase, v, out)
 	})
 	return seed
 }
@@ -95,12 +95,25 @@ var cascadeLockSeedComponents = [][]uint64{
 	}(),
 }
 
-// cascadeFillBlock returns the fill block of group g.
-func cascadeFillBlock(g uint64) [13]byte {
+// cascadeFillBlock returns the fill block [0x03 | LE64(g) | LE32(v)] of
+// group g under the interlock-nonce fold v.
+func cascadeFillBlock(g uint64, v uint32) [13]byte {
 	var buf [13]byte
 	buf[0] = 0x03
 	binary.LittleEndian.PutUint64(buf[1:9], g)
+	binary.LittleEndian.PutUint32(buf[9:13], v)
 	return buf
+}
+
+// testNonceFold is the test-side reference of the interlock-nonce fold,
+// written as the XOR of the nonce's little-endian 32-bit words so that
+// it is an independent formulation of the production bytewise fold.
+func testNonceFold(nonce []byte) uint32 {
+	var v uint32
+	for i := 0; i+4 <= len(nonce); i += 4 {
+		v ^= binary.LittleEndian.Uint32(nonce[i:])
+	}
+	return v
 }
 
 // TestCascadeFillThreeArmParity pins every fill closure of the cascade
@@ -131,7 +144,7 @@ func TestCascadeFillThreeArmParity(t *testing.T) {
 					for _, base := range x16FillRanksBases {
 						var want [16][2]uint64
 						for j := 0; j < 16; j++ {
-							buf := cascadeFillBlock(base + uint64(j))
+							buf := cascadeFillBlock(base+uint64(j), testNonceFold(nonce))
 							want[j][0], want[j][1] = aesitbasm.ScalarFusedChain(&key, lockComps, buf[:])
 						}
 
@@ -202,7 +215,7 @@ func TestCascadeFillHookIndependence(t *testing.T) {
 		}
 		lockLo, lockHi := hooked.deriveInterLockSeed(nonce)
 		for g := uint64(0); g < 64; g++ {
-			buf := cascadeFillBlock(g)
+			buf := cascadeFillBlock(g, testNonceFold(nonce))
 			var a, b, derived [2]uint64
 			bpHooked.fillRanks(buf[:], g, a[:])
 			bpPlain.fillRanks(buf[:], g, b[:])
@@ -229,7 +242,7 @@ func TestCascadeFillNonceBinding(t *testing.T) {
 		bpA := buildLockBatchPRF48_128(seed, nonceA)
 		bpB := buildLockBatchPRF48_128(seed, nonceB)
 		for g := uint64(0); g < 32; g++ {
-			buf := cascadeFillBlock(g)
+			buf := cascadeFillBlock(g, testNonceFold(nonceA)) // scratch: each closure rewrites all 13 bytes
 			var a, b [2]uint64
 			bpA.fillRanks(buf[:], g, a[:])
 			bpB.fillRanks(buf[:], g, b[:])
@@ -258,8 +271,8 @@ func TestCascadeFill128DisarmKnobs(t *testing.T) {
 			}
 		}
 		seed := cascadeLockSeed(t, key, comps, true)
-		seed.SetInterlockBatch16(func(components []uint64, groupIdxBase uint64, out *[16][2]uint64) {
-			aesitbasm.FusedChain13x16(&key, components, groupIdxBase, out)
+		seed.SetInterlockBatch16(func(components []uint64, groupIdxBase uint64, v uint32, out *[16][2]uint64) {
+			aesitbasm.FusedChain13x16(&key, components, groupIdxBase, v, out)
 		})
 		bp := buildLockBatchPRF48_128(seed, nonce)
 		if (bp.fillRanksX4 != nil) != x4 || (bp.fillRanksSuper != nil) != b16 {
@@ -282,8 +295,9 @@ func TestCascadeFill128DisarmKnobs(t *testing.T) {
 // depth) on fixed key, components and interlock nonce at every shipped
 // key size, independently of the kernel ≡ reference parity the other
 // tests provide: a kernel and its reference drifting together would
-// pass parity and fail here. Computed through the pure-Go cascade on
-// amd64 and verified byte-identical on arm64 NEON.
+// pass parity and fail here. Computed through the pure-Go cascade and
+// matched byte for byte by an independent implementation of the
+// construction written from its specification.
 
 var cascadeGoldenNonce = func() []byte {
 	nonce := make([]byte, 32)
@@ -301,31 +315,31 @@ var cascadeGoldenGroups = []uint64{0, 1, 15, 16, 0xFF, 0x0100000000000000, 0xFFF
 // cascadeGoldenNonce.
 var cascadeGoldenWant = [3][7][2]uint64{
 	{
-		{0x6355a475722e19d5, 0xe9b23a5bbab3d4e9},
-		{0x21ef720c07c68066, 0x93a029ea10f16180},
-		{0x92375ee7b88106b8, 0x4047c456cbc37cc9},
-		{0xe29cbd78bde2aa5e, 0xd2c15e3a1a035ab3},
-		{0x5258b50ff8234654, 0x3910b86cb8eeec90},
-		{0x3e1413130c23ca5b, 0x22f75dbf53575cee},
-		{0xafab0bf795b9e008, 0x13774d430afeb914},
+		{0xdd1e78ff0ac89daf, 0xc17e89b94dd0429a},
+		{0x6cfe4d112053795a, 0x5bae2ba0254fd51e},
+		{0xb054a0c7575a8a38, 0x7b372f84b96a4497},
+		{0xda02edc4388eb2a8, 0xcbe6864bfaeb3804},
+		{0xfc26133385410176, 0xae92567b15ef35d2},
+		{0xe4d78413a3a8ee34, 0x396a670dbb7ab1cb},
+		{0xd9028d63c216c54b, 0x26635b791d947b78},
 	},
 	{
-		{0xf84e3090c79606d4, 0x241f634bf64928ee},
-		{0xeef65a19f886a9a3, 0xbd1350cbc18b4c80},
-		{0x0a34d05227658e7f, 0x434114171c438a00},
-		{0x6e64d1dfce9d2809, 0x5d14f64ca80b7d99},
-		{0x3f1df24acb09d260, 0x68885b9720160460},
-		{0x5f737b2c97228a2a, 0xeb09c02da5e7dafd},
-		{0xbbffca6856730141, 0x6792a88ebc28217a},
+		{0xc7c891fc7f11cda1, 0xef57632440eeea26},
+		{0xded82370595d5a0d, 0xb51c3cb2aa5b214d},
+		{0x3bf5b89a7d2ab7c9, 0xcb461e0892d6f330},
+		{0x8ab0b3aa57d2ea62, 0xdd297d627be6db68},
+		{0x07856022d62c0646, 0x1e20a468ad58c766},
+		{0xce71e98aac36cca3, 0x8e3dce4c4fd6d86b},
+		{0xe4f592079c4782d1, 0x1ba4ac1a45e06210},
 	},
 	{
-		{0x1ba9fafd7da38b97, 0x7ecf5039663faf50},
-		{0xce4959bceddd0dd0, 0x12e7588a4f0cc3a6},
-		{0x9f53df606d49f27a, 0xcb5a323ceeb4b692},
-		{0x972ec0354e18d781, 0x8e76e661895771e9},
-		{0x41ae92234aef5b4e, 0x33300298a6629137},
-		{0x097d2c4e6c21f4df, 0x4376defe766c1f91},
-		{0xc04b042e7c359654, 0x067d6768fe155123},
+		{0xb009c0be4b11adf6, 0x5e2d53931c717965},
+		{0xc2b9a85a96f010bf, 0x3c227e28e288ba31},
+		{0x280c31b27708d55a, 0x36564402ae0e0210},
+		{0x06e44540a727085c, 0xf20ff3bf7bc3c8b2},
+		{0x1a78f2e65d33fb7c, 0x59570b15bf419f83},
+		{0x308426cb5953948d, 0x6a2bd2f26b8cce75},
+		{0x9f551c85ac131ebf, 0xf787406c9dcd0b7b},
 	},
 }
 
@@ -338,7 +352,7 @@ func TestCascadeFillGolden(t *testing.T) {
 		seed := cascadeLockSeed(t, key, cascadeLockSeedComponents[i], true)
 		bp := buildLockBatchPRF48_128(seed, cascadeGoldenNonce)
 		for j, g := range cascadeGoldenGroups {
-			buf := cascadeFillBlock(g)
+			buf := cascadeFillBlock(g, testNonceFold(cascadeGoldenNonce))
 			var got [2]uint64
 			bp.fillRanks(buf[:], g, got[:])
 			if got != cascadeGoldenWant[i][j] {
@@ -510,10 +524,10 @@ func cascadeWideCases() []cascadeWideCase {
 						}
 						return out, true
 					}
-					seed.SetInterlockBatch16(func(c []uint64, base uint64, out *[16][2]uint64) {
+					seed.SetInterlockBatch16(func(c []uint64, base uint64, v uint32, out *[16][2]uint64) {
 						calls.Add(1)
 						for i := range out {
-							b := cascadeFillBlock(base + uint64(i))
+							b := cascadeFillBlock(base+uint64(i), v)
 							out[i][0], out[i][1] = refCascade128(c, b[:])
 						}
 					})
@@ -521,12 +535,12 @@ func cascadeWideCases() []cascadeWideCase {
 				return buildLockBatchPRF48_128(seed, nonce)
 			},
 			ref: func(comps []uint64, nonce []byte, g uint64) []uint64 {
-				b := cascadeFillBlock(g)
+				b := cascadeFillBlock(g, testNonceFold(nonce))
 				lo, hi := refCascade128(refLockComps128(comps, nonce), b[:])
 				return []uint64{lo, hi}
 			},
 			derived: func(comps []uint64, nonce []byte, g uint64) []uint64 {
-				b := cascadeFillBlock(g)
+				b := cascadeFillBlock(g, testNonceFold(nonce))
 				k := refLockComps128(comps, nonce)
 				lo, hi := sipHash128(b[:], k[0], k[1])
 				return []uint64{lo, hi}
@@ -553,10 +567,10 @@ func cascadeWideCases() []cascadeWideCase {
 						}
 						return out, true
 					}
-					seed.SetInterlockBatch16(func(c []uint64, base uint64, out *[8][4]uint64) {
+					seed.SetInterlockBatch16(func(c []uint64, base uint64, v uint32, out *[8][4]uint64) {
 						calls.Add(1)
 						for i := range out {
-							b := cascadeFillBlock(base + uint64(i))
+							b := cascadeFillBlock(base+uint64(i), v)
 							out[i] = refCascade256(c, b[:])
 						}
 					})
@@ -564,12 +578,12 @@ func cascadeWideCases() []cascadeWideCase {
 				return buildLockBatchPRF48_256(seed, nonce)
 			},
 			ref: func(comps []uint64, nonce []byte, g uint64) []uint64 {
-				b := cascadeFillBlock(g)
+				b := cascadeFillBlock(g, testNonceFold(nonce))
 				out := refCascade256(refLockComps256(comps, nonce), b[:])
 				return out[:]
 			},
 			derived: func(comps []uint64, nonce []byte, g uint64) []uint64 {
-				b := cascadeFillBlock(g)
+				b := cascadeFillBlock(g, testNonceFold(nonce))
 				k := refLockComps256(comps, nonce)
 				var seed [4]uint64
 				copy(seed[:], k[:4])
@@ -598,10 +612,10 @@ func cascadeWideCases() []cascadeWideCase {
 						}
 						return out, true
 					}
-					seed.SetInterlockBatch16(func(c []uint64, base uint64, out *[4][8]uint64) {
+					seed.SetInterlockBatch16(func(c []uint64, base uint64, v uint32, out *[4][8]uint64) {
 						calls.Add(1)
 						for i := range out {
-							b := cascadeFillBlock(base + uint64(i))
+							b := cascadeFillBlock(base+uint64(i), v)
 							out[i] = refCascade512(c, b[:])
 						}
 					})
@@ -609,12 +623,12 @@ func cascadeWideCases() []cascadeWideCase {
 				return buildLockBatchPRF48_512(seed, nonce)
 			},
 			ref: func(comps []uint64, nonce []byte, g uint64) []uint64 {
-				b := cascadeFillBlock(g)
+				b := cascadeFillBlock(g, testNonceFold(nonce))
 				out := refCascade512(refLockComps512(comps, nonce), b[:])
 				return out[:]
 			},
 			derived: func(comps []uint64, nonce []byte, g uint64) []uint64 {
-				b := cascadeFillBlock(g)
+				b := cascadeFillBlock(g, testNonceFold(nonce))
 				k := refLockComps512(comps, nonce)
 				var seed [8]uint64
 				copy(seed[:], k[:8])
@@ -828,19 +842,19 @@ func TestCascadeFillWideNonceBinding(t *testing.T) {
 // depth) at every width, independently of any primitive kernel.
 var cascadeWideGolden = map[string][3]string{
 	"128": {
-		"1400e4eab62502cc568dc80df3389674d31edc982c203d6c4db6a27fb26c4bad",
-		"dc4ffde4bef8db7e9f64e55e87edac80869a062e682c7f80a1f32c6287624e0e",
-		"ab35392b9e0e53eacf59fe1cb81e10c05f7f03d6567e30b0ee0a287f9cab3576",
+		"93b8f1e6be4a2c45ee0345e0241aea3cc5db984479cc8e032d5b7a976a3140e9",
+		"83e45ec8f8488c946f92df57327895f28704d7f174b49365f07cfe27540f4326",
+		"5bcb87411c3f84edecc1217eef6a839f3ce373e301a69e68dbb4ca26574e8494",
 	},
 	"256": {
-		"51a5e39ed38c6e0d067ae3e3a973f39e46a30a08f724d63139466b8da0a4d5b7",
-		"4b6a0ff8ce904b233272c5589859cb5c449b02676369efbdb729a1eb81269f53",
-		"71a12d11b46cd3dfceb446741a99b17a0bf46876eec77666daf7e1aa8707fa74",
+		"82d043b739e5e2de4be52b8909d3cba0ff83ebff5c41f04837277a1c6d912a41",
+		"ead63582dcdecae5947cb8b5ac2f82807eed871ded34226191a598a518fdd065",
+		"597dfe0a66c762b64d552cd46cf1dbc951bafd47a0247902d5eacd4df157812d",
 	},
 	"512": {
-		"b54060e590a75b73ee4798d7dc8efbb60658b026c9254dbd6de51c4fa56a0d36",
-		"cdd7293d64265c3e54972b0fa5dab7daf4104cff500db01727f6c2b275f582f3",
-		"c2e02767094da0f26ee955d4c1e86fc6b4b8a9a4f4752bff08021127cfa6f294",
+		"84361b15d781b37db96b668cba443e40456cf926daf74bf2ed41df6b2c9ad7fb",
+		"49a75190ed96c2dafd6f73786ffae8f5cac611f03c9dece7b1fc1ac9836066b6",
+		"a93c7938027a04a2c19924464c74f71d355718d011ddf03b966f37f2b81cc723",
 	},
 }
 
@@ -1017,17 +1031,17 @@ func cascadeWide32Cases() []cascadeWide32Case {
 					t.Fatal(err)
 				}
 				seed.BatchHash = synthBatch256(testHash256)
-				seed.SetInterlockBatch16(func(c []uint64, base uint64, out *[8][4]uint64) {
+				seed.SetInterlockBatch16(func(c []uint64, base uint64, v uint32, out *[8][4]uint64) {
 					for i := range out {
-						b := cascadeFillBlock(base + uint64(i))
+						b := cascadeFillBlock(base+uint64(i), v)
 						out[i] = refCascade256(c, b[:])
 					}
 				})
 				if wide {
-					seed.SetInterlockBatch32(func(c []uint64, base uint64, out *[16][4]uint64) {
+					seed.SetInterlockBatch32(func(c []uint64, base uint64, v uint32, out *[16][4]uint64) {
 						calls.Add(1)
 						for i := range out {
-							b := cascadeFillBlock(base + uint64(i))
+							b := cascadeFillBlock(base+uint64(i), v)
 							out[i] = refCascade256(c, b[:])
 						}
 					})
@@ -1038,7 +1052,7 @@ func cascadeWide32Cases() []cascadeWide32Case {
 				return buildLockBatchPRF48_256(seed, nonce)
 			},
 			ref: func(comps []uint64, nonce []byte, g uint64) []uint64 {
-				b := cascadeFillBlock(g)
+				b := cascadeFillBlock(g, testNonceFold(nonce))
 				out := refCascade256(refLockComps256(comps, nonce), b[:])
 				return out[:]
 			},
@@ -1051,17 +1065,17 @@ func cascadeWide32Cases() []cascadeWide32Case {
 					t.Fatal(err)
 				}
 				seed.BatchHash = synthBatch512(testHash512)
-				seed.SetInterlockBatch16(func(c []uint64, base uint64, out *[4][8]uint64) {
+				seed.SetInterlockBatch16(func(c []uint64, base uint64, v uint32, out *[4][8]uint64) {
 					for i := range out {
-						b := cascadeFillBlock(base + uint64(i))
+						b := cascadeFillBlock(base+uint64(i), v)
 						out[i] = refCascade512(c, b[:])
 					}
 				})
 				if wide {
-					seed.SetInterlockBatch32(func(c []uint64, base uint64, out *[8][8]uint64) {
+					seed.SetInterlockBatch32(func(c []uint64, base uint64, v uint32, out *[8][8]uint64) {
 						calls.Add(1)
 						for i := range out {
-							b := cascadeFillBlock(base + uint64(i))
+							b := cascadeFillBlock(base+uint64(i), v)
 							out[i] = refCascade512(c, b[:])
 						}
 					})
@@ -1072,7 +1086,7 @@ func cascadeWide32Cases() []cascadeWide32Case {
 				return buildLockBatchPRF48_512(seed, nonce)
 			},
 			ref: func(comps []uint64, nonce []byte, g uint64) []uint64 {
-				b := cascadeFillBlock(g)
+				b := cascadeFillBlock(g, testNonceFold(nonce))
 				out := refCascade512(refLockComps512(comps, nonce), b[:])
 				return out[:]
 			},
@@ -1260,5 +1274,96 @@ func TestCascadeFillWide32DisarmKnobs(t *testing.T) {
 			check("ITB_FORCE_INTERLOCK_PRF_FILL_SEQ", false, false, false)
 			check("", true, true, true)
 		})
+	}
+}
+
+// TestInterlockNonceFold pins the interlock-nonce fold carried in bytes
+// 9..12 of every Rank Barrier fill block: at every shipped nonce width
+// the production fold equals the independent word-XOR formulation
+// (testNonceFold), flipping any single nonce byte changes it, the fill
+// closures rewrite the fold into the block on every call (a stale
+// value in the worker scratch never survives into the next cascade),
+// and a nonce differing in one byte yields a different mask triple on
+// the same group under the same lockSeed.
+func TestInterlockNonceFold(t *testing.T) {
+	for _, size := range []int{16, 32, 64} {
+		nonce := make([]byte, size)
+		for i := range nonce {
+			nonce[i] = byte(i*73 + 11)
+		}
+		fold := interlockNonceFold(nonce)
+		if got, want := interlockNonceFoldWord(fold), testNonceFold(nonce); got != want {
+			t.Fatalf("nonce %d bytes: fold %#x, word-XOR reference %#x", size, got, want)
+		}
+		var byHand [4]byte
+		for i := 0; i < size; i += 4 {
+			for j := 0; j < 4; j++ {
+				byHand[j] ^= nonce[i+j]
+			}
+		}
+		if fold != byHand {
+			t.Fatalf("nonce %d bytes: fold %x, bytewise slice XOR %x", size, fold, byHand)
+		}
+		for i := range nonce {
+			flipped := append([]byte(nil), nonce...)
+			flipped[i] ^= 0x80
+			if interlockNonceFold(flipped) == fold {
+				t.Fatalf("nonce %d bytes: flipping byte %d leaves the fold unchanged", size, i)
+			}
+		}
+	}
+
+	nonce := interlock48Nonce()
+	fold := interlockNonceFold(nonce)
+	seed := cascadeLockSeed(t, cascadeLockSeedKeys[1], cascadeLockSeedComponents[1], true)
+	bp := buildLockBatchPRF48_128(seed, nonce)
+	var buf [13]byte
+	var masks [lockBatchFactor48Max][3]uint64
+	var prf [2]uint64
+	for g := uint64(0); g < 8; g++ {
+		for i := range buf {
+			buf[i] = 0xFF
+		}
+		bp.fill(buf[:], g, &masks)
+		if [4]byte(buf[9:13]) != fold {
+			t.Fatalf("fill group %d left bytes 9..12 at %x, want the fold %x", g, buf[9:13], fold)
+		}
+		for i := range buf {
+			buf[i] = 0xFF
+		}
+		bp.fillRanks(buf[:], g, prf[:])
+		if [4]byte(buf[9:13]) != fold {
+			t.Fatalf("fillRanks group %d left bytes 9..12 at %x, want the fold %x", g, buf[9:13], fold)
+		}
+	}
+	if bp.fillRanksX4 != nil {
+		var scratch lockFillScratch48
+		for i := range scratch.bufs {
+			for j := range scratch.bufs[i] {
+				scratch.bufs[i][j] = 0xFF
+			}
+		}
+		var x4 [8 * lockBatchFactor48Max]uint64
+		bp.fillRanksX4(&scratch, 3, x4[:])
+		for i := range scratch.bufs {
+			if [4]byte(scratch.bufs[i][9:13]) != fold {
+				t.Fatalf("fillRanksX4 lane %d left bytes 9..12 at %x, want the fold %x", i, scratch.bufs[i][9:13], fold)
+			}
+		}
+	}
+
+	// A nonce that differs from the first in exactly one byte changes
+	// the fold and, through it and the derived key, the mask triple of
+	// every probed group.
+	other := append([]byte(nil), nonce...)
+	other[len(other)-1] ^= 0x01
+	bpOther := buildLockBatchPRF48_128(seed, other)
+	for g := uint64(0); g < 8; g++ {
+		var a, b [lockBatchFactor48Max][3]uint64
+		bp.fill(buf[:], g, &a)
+		bpOther.fill(buf[:], g, &b)
+		if a[0] == b[0] {
+			t.Fatalf("group %d: mask triple identical under two nonces differing in one byte", g)
+		}
 	}
 }

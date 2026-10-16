@@ -26,6 +26,9 @@ func newCMAC(block cipher.Block) *cmac {
 
 	k1 := dbl(l)
 	k2 := dbl(k1)
+	// L is the encryption of the zero block under the key; only the
+	// subkeys are kept.
+	clear(l)
 
 	return &cmac{
 		block: block,
@@ -71,6 +74,8 @@ func (c *cmac) sum(msg []byte) []byte {
 	}
 	xorInto(x, last)
 	c.block.Encrypt(x, x)
+	// last carries the final block masked with a subkey; zero it.
+	clear(last)
 	return x
 }
 

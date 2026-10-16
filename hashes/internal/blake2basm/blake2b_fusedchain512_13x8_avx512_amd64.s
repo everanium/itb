@@ -35,13 +35,15 @@
 	BLAKE2B_G(Z2, Z7, Z8, Z13, s12, s13); \
 	BLAKE2B_G(Z3, Z4, Z9, Z14, s14, s15)
 
-// func blake2b512FusedChain13x8Avx512Asm(fixedKey *[64]byte, comps *uint64, nGroups int, groupIdxBase uint64, out *[8][8]uint64)
-TEXT ·blake2b512FusedChain13x8Avx512Asm(SB), NOSPLIT, $512-40
+// func blake2b512FusedChain13x8Avx512Asm(fixedKey *[64]byte, comps *uint64, nGroups int, groupIdxBase uint64, out *[8][8]uint64, v uint32)
+TEXT ·blake2b512FusedChain13x8Avx512Asm(SB), NOSPLIT, $512-44
 	MOVQ fixedKey+0(FP), AX
 	MOVQ comps+8(FP), BX
 	MOVQ nGroups+16(FP), CX
 	MOVQ out+32(FP), DX
 
+	// Fill blocks [0x03 | LE64(groupIdxBase+i) | LE32(v)] as the data
+	// words D0 = (idx << 8) | 0x03 and D1 = (idx >> 56) | (v << 8).
 	VPBROADCASTQ groupIdxBase+24(FP), Z0
 	VPADDQ laneIdx<>(SB), Z0, Z0
 	VPSLLQ $8, Z0, Z1
@@ -49,7 +51,11 @@ TEXT ·blake2b512FusedChain13x8Avx512Asm(SB), NOSPLIT, $512-40
 	VPBROADCASTQ R12, Z2
 	VPORQ Z2, Z1, Z1
 	VMOVDQU64 Z1, 0(SP)
+	MOVL v+40(FP), R12
+	SHLQ $8, R12
+	VPBROADCASTQ R12, Z2
 	VPSRLQ $56, Z0, Z1
+	VPORQ Z2, Z1, Z1
 	VMOVDQU64 Z1, 64(SP)
 	VPXORQ Z2, Z2, Z2
 	VMOVDQU64 Z2, 128(SP)

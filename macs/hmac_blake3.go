@@ -2,6 +2,7 @@ package macs
 
 import (
 	"fmt"
+	"runtime"
 
 	"github.com/zeebo/blake3"
 
@@ -36,6 +37,9 @@ func HMACBLAKE3(key []byte) (itb.MACFunc, error) {
 		h.Write(data)
 		var out [32]byte
 		h.Sum(out[:0])
+		// The clone carries the BLAKE3 key; zero it.
+		*h = blake3.Hasher{}
+		runtime.KeepAlive(h)
 		return append([]byte(nil), out[:]...)
 	}, nil
 }
@@ -60,6 +64,9 @@ func HMACBLAKE3Incremental(key []byte) (itb.MACIncrementalFunc, error) {
 		}
 		var out [32]byte
 		h.Sum(out[:0])
+		// The clone carries the BLAKE3 key; zero it.
+		*h = blake3.Hasher{}
+		runtime.KeepAlive(h)
 		return append([]byte(nil), out[:]...)
 	}, nil
 }

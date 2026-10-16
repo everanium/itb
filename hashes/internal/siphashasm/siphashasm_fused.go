@@ -49,23 +49,26 @@ func validComponents(components []uint64) bool {
 }
 
 // fillBlocks16 synthesises the sixteen 13-byte Interlocked Barrier fill
-// blocks [0x03 | LE64(groupIdxBase+i) | 4×0x00] for lanes 0..15.
-func fillBlocks16(groupIdxBase uint64) [16][13]byte {
+// blocks [0x03 | LE64(groupIdxBase+i) | LE32(v)] for lanes 0..15, v being
+// the per-message interlock-nonce fold the caller supplies.
+func fillBlocks16(groupIdxBase uint64, v uint32) [16][13]byte {
 	var blocks [16][13]byte
 	for i := range blocks {
 		blocks[i][0] = 0x03
 		binary.LittleEndian.PutUint64(blocks[i][1:9], groupIdxBase+uint64(i))
+		binary.LittleEndian.PutUint32(blocks[i][9:13], v)
 	}
 	return blocks
 }
 
 // scalarFusedX16 is the pure-Go reference of the batch-16 fused cascade
 // at the Interlocked Barrier fill shape: lane i (0..15) runs
-// ScalarFusedChain over its fill block with the shared components. out
-// receives the 16 rank pairs in lane order. With one component pair the
-// cascade is the plain chain-absorb of each fill block under that pair.
-func scalarFusedX16(components []uint64, groupIdxBase uint64, out *[16][2]uint64) {
-	blocks := fillBlocks16(groupIdxBase)
+// ScalarFusedChain over its fill block (fillBlocks16 of groupIdxBase and
+// the interlock-nonce fold v) with the shared components. out receives
+// the 16 rank pairs in lane order. With one component pair the cascade is
+// the plain chain-absorb of each fill block under that pair.
+func scalarFusedX16(components []uint64, groupIdxBase uint64, v uint32, out *[16][2]uint64) {
+	blocks := fillBlocks16(groupIdxBase, v)
 	for i := range blocks {
 		out[i][0], out[i][1] = ScalarFusedChain(components, blocks[i][:])
 	}

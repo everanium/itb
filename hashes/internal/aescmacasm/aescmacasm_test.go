@@ -207,7 +207,8 @@ func mixColumns(s [16]byte) [16]byte {
 }
 
 // TestAbsorb13Block pins the batch-16 template to the fill block of
-// group 0: the 0x03 domain tag and fifteen zero bytes.
+// group 0 under a zero interlock-nonce fold: the 0x03 domain tag and
+// fifteen zero bytes (the kernels XOR the group index and the fold in).
 func TestAbsorb13Block(t *testing.T) {
 	if absorb13Block[0] != 0x03 {
 		t.Fatalf("absorb13Block[0] = %#x, want 0x03", absorb13Block[0])

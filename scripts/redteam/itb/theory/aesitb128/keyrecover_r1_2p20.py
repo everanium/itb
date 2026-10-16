@@ -13,13 +13,13 @@ seed) from the **lo lane alone**, without ever seeing the hi lane, at
 below 2⁶⁴.
 
 Structure (one-block input, ≤ 15 bytes → three full AES rounds P under the
-public constants RC0, RC0, RC1; `chainhashes/aesitb128.py` docstring):
+public constants RC0, RC1, RC2; `chainhashes/aesitb128.py` docstring):
 
-    out = R_RC1( R_RC0( R_RC0( x ) ) ),   x = K ⊕ pad(data),   K = fixedKey ⊕ seed
+    out = R_RC2( R_RC1( R_RC0( x ) ) ),   x = K ⊕ pad(data),   K = fixedKey ⊕ seed
 
 `R` is a full AESENC (MixColumns on every round). The lo lane is
 `out[0:8]` = columns 0, 1 of the column-major state. Peel the last round on
-those two columns — the last round key RC1 is public, InvMixColumns is
+those two columns — the last round key RC2 is public, InvMixColumns is
 per-column — and InvSubBytes recovers 8 bytes of the round-2 output state
 `y2` at the two state diagonals `prim._SR_IDX[:8] = {0,5,10,15,4,9,14,3}`
 (ShiftRows relabels the two peeled columns onto those positions; no
@@ -94,8 +94,10 @@ for _a in range(1, 256):
 
 SB = prim._SB_T
 ISB = prim._ISB_T
-RC1 = prim._RC_ARR[1]
 RC0 = prim._RC_ARR[0]
+RC1 = prim._RC_ARR[1]
+RC2 = prim._RC_ARR[2]
+assert prim.final_rc(prim.nblocks(DATA_LEN)) == (prim.RC[1], prim.RC[2])
 PEEL_POS = prim._SR_IDX[:8]      # y2 positions the two lo-lane columns land on
 VARR = np.arange(256, dtype=np.uint8)
 CARR = np.arange(256, dtype=np.uint8)
@@ -124,18 +126,20 @@ def true_y2(K, padded):
     """Ground-truth round-2 output state for x = K ⊕ padded (report-only)."""
     x = (np.frombuffer(K, dtype=np.uint8) ^ padded)[None, :]
     y1 = prim._round_batch(x, RC0)
-    return prim._round_batch(y1, RC0)[0]
+    return prim._round_batch(y1, RC1)[0]
 
 
 # ---- peel: lo lane (8 bytes) -> 8 bytes of y2 -------------------------------
-def peel_lo(lo_arr):
+def peel_lo(lo_arr, data_len=DATA_LEN):
     """(N, 8) lo-lane rows -> (N, 8) recovered y2 bytes at PEEL_POS order.
 
-    Remove the public last round key RC1[0:8], InvMixColumns the two
-    columns (pad to 16, InvMC is per-column), InvSubBytes."""
+    Remove the public last round key of the data_len shape (RC2 at the
+    one-block lab shape; `prim.final_rc`) on bytes 0..7, InvMixColumns the
+    two columns (pad to 16, InvMC is per-column), InvSubBytes."""
+    last = np.frombuffer(prim.final_rc(prim.nblocks(data_len))[1], dtype=np.uint8)
     n = lo_arr.shape[0]
     buf = np.zeros((n, 16), dtype=np.uint8)
-    buf[:, :8] = lo_arr ^ RC1[:8]
+    buf[:, :8] = lo_arr ^ last[:8]
     inv = prim._inv_mix_batch(buf)[:, :8]     # cols 0,1 of SR(SB(y2))
     return ISB[inv]                           # y2 bytes at PEEL_POS
 
@@ -201,8 +205,8 @@ def brute_last_byte(query, K14, comps):
         K = bytes(K14) + bytes([g])
         x = (np.frombuffer(K, dtype=np.uint8) ^ padded)[None, :]
         s = prim._round_batch(x, RC0)
-        s = prim._round_batch(s, RC0)
-        out = prim._round_batch(s, RC1)[0]
+        s = prim._round_batch(s, RC1)
+        out = prim._round_batch(s, RC2)[0]
         if np.array_equal(out[:8], obs):
             return g
     return None
@@ -294,7 +298,7 @@ def structured_probe_scores(query, b: int, data_len: int):
         d[b] = v
         texts.append(bytes(d))
     lo = np.stack([query(t) for t in texts])
-    y2rec = peel_lo(lo)
+    y2rec = peel_lo(lo, data_len)
     score = kb_scores(y2rec)
     srt = np.sort(score)
     return int(np.argmax(score)), int(srt[-1]), int(srt[-2])

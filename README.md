@@ -1275,7 +1275,7 @@ Per-binding examples ship in each binding's own directory under `bindings/<lang>
 
 ## See also
 
-- [FAQ.md](FAQ.md) — Simple analytical/empirical walkthrough of the most-asked cryptanalytic scenarios under the shipped barrier.
+- [FAQ.md](FAQ.md) — Analytical and empirical walkthrough of broken primitives under the shipped barrier (8-bit total PRF failure inversion in `nullHash`, `quadHash`, `trainHash`, and 64-bit algebraic stress controls in `jokeHash`, `CRC128`, `FNV-1a`).
 - [ITB.md](ITB.md) — How the barrier works (accessible explanation) and shipped feature reference.
 - [PROOFS.md](PROOFS.md) — Formal security proofs.
 - [SCIENCE.md](SCIENCE.md) — Scientific analysis and formal security arguments.

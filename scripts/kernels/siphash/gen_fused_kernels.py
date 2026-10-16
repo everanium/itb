@@ -18,11 +18,18 @@ two SipRound dependency chains overlap on the vector ALUs.
 
 A third family, x16 at shape 13 only, is the Interlocked Barrier PRF fill
 kernel (siphash_fusedchain128_13x16_avx512_amd64.s): the kernel receives
-groupIdxBase in the frame and synthesises the 16 per-lane fill blocks
-in-register — [0x03 | LE64(groupIdxBase+i) | 4×0x00] for lane i — as the
-two message words m0 = (idx << 8) | 0x03 and m1 = (idx >> 56) | (13 << 56),
+groupIdxBase and the per-message interlock-nonce fold v (a uint32, the
+little-endian image of bytes 9..12 of every fill block) in the frame and
+synthesises the 16 per-lane fill blocks in-register —
+[0x03 | LE64(groupIdxBase+i) | LE32(v)] for lane i — as the two message
+words m0 = (idx << 8) | 0x03 and m1 = (idx >> 56) | (v << 8) | (13 << 56),
 then runs the cascade on two eight-lane groups whose instruction streams
-are interleaved. The avx2 and neon tiers carry the eight-lane fill kernel
+are interleaved. In m1 the idx >> 56 byte occupies bits 0..7, v << 8 bits
+8..39 and the length tag bits 56..63, so the fold is ORed once, shifted
+left by 8, from R13 into the tag constant in R12 before R12 is broadcast
+(SHLQ + ORQ on amd64, a shifted-register ORR on arm64); the per-lane
+synthesis needs no further change.
+The avx2 and neon tiers carry the eight-lane fill kernel
 instead (siphash_fusedchain128_13x8_{avx2_amd64,neon_arm64}.s): the same
 in-register block synthesis for lanes groupIdxBase .. groupIdxBase+7, two
 four-lane groups (YMM) or four two-lane pairs (NEON) with interleaved
@@ -55,6 +62,8 @@ Register plans:
     avx512 x16  Z0..Z3 / Z4..Z7 the two groups' states, Z8..Z11 lo/hi,
                 Z12..Z15 the synthesised words, Z16..Z21 constants,
                 Z22/Z23 pair broadcasts, Z24..Z27 k0/k1, Z28..Z31 scratch
+                (Z31 the fold-carrying tag (13 << 56) | (v << 8) during
+                the synthesis)
     avx2 x4     Y0..Y3 state, Y4/Y6 k0/k1, Y5 rotate scratch, Y7/Y8 lo/hi,
                 Y9..Y14 constants, Y15 pair broadcast; the words are staged
                 once into the frame as 32-byte slots and read back as VPXOR
@@ -62,7 +71,8 @@ Register plans:
     avx2 x8     two four-lane groups: Y0..Y3 / Y4..Y7 state, Y8/Y9 and
                 Y10/Y11 lo/hi, Y12/Y13 rotate scratch, Y14 pair broadcast;
                 the six constants live in RODATA (sipc<>) and the words —
-                the two synthesised fill words at shape 13, the 3 / 5 / 9
+                the two synthesised fill words at shape 13 (Y15 the
+                fold-carrying tag during the synthesis), the 3 / 5 / 9
                 words staged from the lane pointers at shapes 20 / 36 /
                 68 — in the frame, both read as VPXOR memory operands — 15
                 of 16 registers, no spill (16 lanes would need 16
@@ -80,8 +90,9 @@ Register plans:
                 V8..V11 v2, V12..V15 v3 (alternate V20..V23), V24..V27 lo,
                 V28..V31 hi; the constants stay in R19..R24 and are VDUP'd
                 on demand, the pair broadcasts and the synthesised words
-                (staged in the frame, reloaded with VLD1) pass through the
-                alternate registers, which are free at every round boundary
+                (V22 the fold-carrying tag during the synthesis; staged in
+                the frame, reloaded with VLD1) pass through the alternate
+                registers, which are free at every round boundary
                 — 32 of 32 registers, no spill in the round stream (a
                 sixteen-lane kernel would need all 32 for state alone)
     gpr arm64   R8..R11 state, R12/R13 lo/hi, R14/R15 k0/k1, R19 tail word,
@@ -270,13 +281,14 @@ def evex_x16():
     A = ("Z0", "Z1", "Z2", "Z3")
     B = ("Z4", "Z5", "Z6", "Z7")
     S = [A, B]
-    L = ["// func sipHash24FusedChain13x16Avx512Asm(comps *uint64, nPairs int, groupIdxBase uint64, out *[16][2]uint64)",
-         "TEXT ·sipHash24FusedChain13x16Avx512Asm(SB), NOSPLIT, $0-32",
+    L = ["// func sipHash24FusedChain13x16Avx512Asm(comps *uint64, nPairs int, groupIdxBase uint64, out *[16][2]uint64, v uint32)",
+         "TEXT ·sipHash24FusedChain13x16Avx512Asm(SB), NOSPLIT, $0-36",
          "\tMOVQ comps+0(FP), BX", "\tMOVQ nPairs+8(FP), CX", "\tMOVQ out+24(FP), DI", "",
-         "\t// Synthesise the words: m0 = (idx << 8) | 0x03, m1 = (idx >> 56) | (13 << 56), idx = groupIdxBase + lane",
+         "\t// Synthesise the words: m0 = (idx << 8) | 0x03, m1 = (idx >> 56) | (v << 8) | (13 << 56), idx = groupIdxBase + lane;",
+         "\t// the interlock-nonce fold v << 8 is ORed into the tag constant once (Z31)",
          "\tVPBROADCASTQ groupIdxBase+16(FP), Z28",
          "\tMOVQ $3, R12", "\tVPBROADCASTQ R12, Z30",
-         f"\tMOVQ ${tag(13):#x}, R12", "\tVPBROADCASTQ R12, Z31"]
+         f"\tMOVQ ${tag(13):#x}, R12", "\tMOVL v+32(FP), R13", "\tSHLQ $8, R13", "\tORQ R13, R12", "\tVPBROADCASTQ R12, Z31"]
     for g, (w0, w1) in enumerate((("Z12", "Z13"), ("Z14", "Z15"))):
         L += [f"\tVPADDQ ·laneIdx16+{64 * g}(SB), Z28, Z29",
               f"\tVPSLLQ $8, Z29, {w0}", f"\tVPORQ Z30, {w0}, {w0}",
@@ -382,10 +394,12 @@ AVX2_X8_HEADER = f"""//go:build {AMD}
 // for the construction; the kernel is pinned to the pure-Go reference
 // (scalarFusedX16, through the dispatcher) by the in-package parity tests.
 //
-// The fill block [0x03 | LE64(groupIdxBase+i) | 4×0x00] of lane i is
-// synthesised in-register as its two message words m0 = (idx << 8) | 0x03
-// and m1 = (idx >> 56) | (13 << 56) (idx = groupIdxBase + i, lane offsets
-// from lane8<>) and staged into the frame; the eight lanes run as two
+// The fill block [0x03 | LE64(groupIdxBase+i) | LE32(v)] of lane i (v the
+// per-message interlock-nonce fold) is synthesised in-register as its two
+// message words m0 = (idx << 8) | 0x03 and
+// m1 = (idx >> 56) | (v << 8) | (13 << 56) (idx = groupIdxBase + i, lane
+// offsets from lane8<>; the fold is ORed into the tag constant once) and
+// staged into the frame; the eight lanes run as two
 // four-lane YMM groups whose instruction streams are interleaved, so the
 // two dependency chains overlap on the vector ALUs. Y0..Y3 / Y4..Y7 hold
 // the two states, Y8/Y9 and Y10/Y11 the (lo, hi) carries, Y12/Y13 the
@@ -437,13 +451,14 @@ def avx2_x8_fill():
     """Eight-lane batch fill kernel on the AVX2 tier: word w of group g is
     staged at 64*w + 32*g (SP)."""
     L = [AVX2_X8_DATA,
-         "// func sipHash24FusedChain13x8Avx2Asm(comps *uint64, nPairs int, groupIdxBase uint64, out *[8][2]uint64)",
-         "TEXT ·sipHash24FusedChain13x8Avx2Asm(SB), NOSPLIT, $128-32",
+         "// func sipHash24FusedChain13x8Avx2Asm(comps *uint64, nPairs int, groupIdxBase uint64, out *[8][2]uint64, v uint32)",
+         "TEXT ·sipHash24FusedChain13x8Avx2Asm(SB), NOSPLIT, $128-36",
          "\tMOVQ comps+0(FP), BX", "\tMOVQ nPairs+8(FP), CX", "\tMOVQ out+24(FP), DI", "",
-         "\t// Synthesise the words: m0 = (idx << 8) | 0x03, m1 = (idx >> 56) | (13 << 56), idx = groupIdxBase + lane",
+         "\t// Synthesise the words: m0 = (idx << 8) | 0x03, m1 = (idx >> 56) | (v << 8) | (13 << 56), idx = groupIdxBase + lane;",
+         "\t// the interlock-nonce fold v << 8 is ORed into the tag constant once (Y15)",
          "\tVPBROADCASTQ groupIdxBase+16(FP), Y12",
          "\tMOVQ $3, R12", "\tVMOVQ R12, X14", "\tVPBROADCASTQ X14, Y14",
-         f"\tMOVQ ${tag(13):#x}, R12", "\tVMOVQ R12, X15", "\tVPBROADCASTQ X15, Y15"]
+         f"\tMOVQ ${tag(13):#x}, R12", "\tMOVL v+32(FP), R13", "\tSHLQ $8, R13", "\tORQ R13, R12", "\tVMOVQ R12, X15", "\tVPBROADCASTQ X15, Y15"]
     for g in range(2):
         L += [f"\tVPADDQ lane8<>+{32 * g}(SB), Y12, Y13",
               f"\tVPSLLQ $8, Y13, Y0", "\tVPOR Y14, Y0, Y0", f"\tVMOVDQU Y0, {32 * g}(SP)",
@@ -698,10 +713,12 @@ NEON_X8_HEADER = f"""//go:build {ARM}
 // for the construction; the kernel is pinned to the pure-Go reference
 // (scalarFusedX16, through the dispatcher) by the in-package parity tests.
 //
-// The fill block [0x03 | LE64(groupIdxBase+i) | 4×0x00] of lane i is
-// synthesised in-register as its two message words m0 = (idx << 8) | 0x03
-// and m1 = (idx >> 56) | (13 << 56) (idx = groupIdxBase + i, lane offsets
-// from ·laneIdx16) and staged into the frame; the eight lanes run as four
+// The fill block [0x03 | LE64(groupIdxBase+i) | LE32(v)] of lane i (v the
+// per-message interlock-nonce fold) is synthesised in-register as its two
+// message words m0 = (idx << 8) | 0x03 and
+// m1 = (idx >> 56) | (v << 8) | (13 << 56) (idx = groupIdxBase + i, lane
+// offsets from ·laneIdx16; the fold is ORed into the tag constant once)
+// and staged into the frame; the eight lanes run as four
 // two-lane pairs whose instruction streams are interleaved. V0..V15 hold
 // the four states (V16..V23 the rotate alternates of v1 / v3), V24..V27
 // the lo and V28..V31 the hi carries; the six constants stay in R19..R24
@@ -744,15 +761,17 @@ def neon_round4():
 def neon_x8_fill():
     """Eight-lane batch fill kernel on the NEON tier: word 0 of the four
     pairs is staged at words-128(SP), word 1 at words-64(SP)."""
-    L = ["// func sipHash24FusedChain13x8NeonAsm(comps *uint64, nPairs int, groupIdxBase uint64, out *[8][2]uint64)",
-         "TEXT ·sipHash24FusedChain13x8NeonAsm(SB), NOSPLIT, $128-32",
+    L = ["// func sipHash24FusedChain13x8NeonAsm(comps *uint64, nPairs int, groupIdxBase uint64, out *[8][2]uint64, v uint32)",
+         "TEXT ·sipHash24FusedChain13x8NeonAsm(SB), NOSPLIT, $128-36",
          "\tMOVD comps+0(FP), R6", "\tMOVD nPairs+8(FP), R7", "\tMOVD groupIdxBase+16(FP), R5", "\tMOVD out+24(FP), R3",
          "\tMOVD $words-128(SP), R4", "\tADD $64, R4, R14", ""]
     for i, c in enumerate(CONSTS):
         L.append(f"\tMOVD ${c:#x}, R{19 + i}")
-    L += ["", "\t// Synthesise the words: m0 = (idx << 8) | 0x03, m1 = (idx >> 56) | (13 << 56), idx = groupIdxBase + lane",
+    L += ["", "\t// Synthesise the words: m0 = (idx << 8) | 0x03, m1 = (idx >> 56) | (v << 8) | (13 << 56), idx = groupIdxBase + lane;",
+          "\t// the interlock-nonce fold v << 8 is ORed into the tag constant once (V22)",
           "\tMOVD $·laneIdx16(SB), R12", "\tVLD1 (R12), [V16.D2, V17.D2, V18.D2, V19.D2]",
-          "\tVDUP R5, V20.D2", "\tMOVD $3, R12", "\tVDUP R12, V21.D2", f"\tMOVD ${tag(13):#x}, R12", "\tVDUP R12, V22.D2",
+          "\tVDUP R5, V20.D2", "\tMOVD $3, R12", "\tVDUP R12, V21.D2",
+          f"\tMOVD ${tag(13):#x}, R12", "\tMOVWU v+32(FP), R13", "\tORR R13<<8, R12, R12", "\tVDUP R12, V22.D2",
           "\t" + "; ".join(f"VADD V20.D2, V{16 + p}.D2, V{16 + p}.D2" for p in range(4))]
     L += ["\t" + "; ".join(f"VSHL $8, V{16 + p}.D2, V{24 + p}.D2" for p in range(4)),
           "\t" + "; ".join(f"VORR V21.B16, V{24 + p}.B16, V{24 + p}.B16" for p in range(4)),
@@ -844,11 +863,12 @@ X16_HEADER = f"""//go:build {AMD}
 // in-package parity tests.
 //
 // Unique to the batch-16 kernel: the fill block
-// [0x03 | LE64(groupIdxBase+i) | 4×0x00] of lane i is synthesised
-// in-register as its two message words m0 = (idx << 8) | 0x03 and
-// m1 = (idx >> 56) | (13 << 56) (idx = groupIdxBase + i, with the lane
-// offsets read from ·laneIdx16), so the batch-16 path pays no per-lane
-// pointer gather. The sixteen lanes run as two eight-lane groups whose
+// [0x03 | LE64(groupIdxBase+i) | LE32(v)] of lane i (v the per-message
+// interlock-nonce fold) is synthesised in-register as its two message
+// words m0 = (idx << 8) | 0x03 and m1 = (idx >> 56) | (v << 8) | (13 << 56)
+// (idx = groupIdxBase + i, with the lane offsets read from ·laneIdx16 and
+// the fold ORed into the tag constant once), so the batch-16 path pays no
+// per-lane pointer gather. The sixteen lanes run as two eight-lane groups whose
 // instruction streams are interleaved, so the two independent dependency
 // chains overlap on the vector ALUs. The 16 (lo, hi) pairs are
 // interleaved through ·interleaveIdx16 and written as four 64-byte

@@ -8,9 +8,10 @@ import (
 )
 
 // The input-entropy differential audit (internal/kernelaudit) of the
-// fused cascade: every bit of every lane buffer, component word and
-// group index base must reach the output, lane for lane (the SipHash-2-4
-// key is the first component pair, so the component sweep covers it),
+// fused cascade: every bit of every lane buffer, component word, group
+// index base and interlock-nonce fold must reach the output, lane for
+// lane (the SipHash-2-4 key is the first component pair, so the
+// component sweep covers it),
 // and the kernel must agree with the pure-Go cascade (ScalarFusedChain /
 // scalarFusedX16) at the baseline and after every flip. The helpers
 // drive the single-, four-, eight- and sixteen-lane evaluators through
@@ -34,7 +35,7 @@ func refLanes(in *kernelaudit.Inputs) [][2]uint64 {
 // refFill evaluates the pure-Go batch-16 fill cascade.
 func refFill(in *kernelaudit.Inputs) [][2]uint64 {
 	var out [16][2]uint64
-	scalarFusedX16(in.Comps, in.Base, &out)
+	scalarFusedX16(in.Comps, in.Base, in.Fold, &out)
 	return out[:]
 }
 
@@ -95,7 +96,7 @@ func auditX16(t *testing.T, label string, f fusedX16Fn) {
 		cfg := kernelaudit.Config{Label: fmt.Sprintf("%s x16 pairs=%d", label, pairs), Words: 2 * pairs, Lanes: 16, Base: true}
 		reportAudit(t, kernelaudit.DifferentialRef(cfg, func(in *kernelaudit.Inputs) [][2]uint64 {
 			var out [16][2]uint64
-			f(in.Comps, in.Base, &out)
+			f(in.Comps, in.Base, in.Fold, &out)
 			return out[:]
 		}, refFill))
 	}

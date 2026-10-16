@@ -177,6 +177,9 @@ func BuildCBCMACChainAbsorb128(block cipher.Block) itb.HashFunc128 {
 	return func(data []byte, seed0, seed1 uint64) (uint64, uint64) {
 		bp := pool.Get().(*[]byte)
 		lo, hi := cbcMACChainAbsorbOne(block, (*bp)[:bs], data, seed0, seed1, 0x01)
+		// The scratch state is seed- and key-derived; zero it before it
+		// goes back to the pool.
+		clear((*bp)[:bs])
 		pool.Put(bp)
 		return lo, hi
 	}
@@ -200,6 +203,9 @@ func BuildCBCMACChainAbsorb256(block cipher.Block) itb.HashFunc256 {
 		st := (*bp)[:bs]
 		lo0, hi0 := cbcMACChainAbsorbOne(block, st, data, seed[0], seed[1], 0x02)
 		lo1, hi1 := cbcMACChainAbsorbOne(block, st, data, seed[2], seed[3], 0x03)
+		// The scratch state is seed- and key-derived; zero it before it
+		// goes back to the pool.
+		clear(st)
 		pool.Put(bp)
 		return [4]uint64{lo0, hi0, lo1, hi1}
 	}
@@ -231,6 +237,9 @@ func BuildCBCMACChainAbsorb512(block cipher.Block) itb.HashFunc512 {
 		lo1, hi1 := cbcMACChainAbsorbOne(block, st, data, seed[2], seed[3], 0x05)
 		lo2, hi2 := cbcMACChainAbsorbOne(block, st, data, seed[4], seed[5], 0x06)
 		lo3, hi3 := cbcMACChainAbsorbOne(block, st, data, seed[6], seed[7], 0x07)
+		// The scratch state is seed- and key-derived; zero it before it
+		// goes back to the pool.
+		clear(st)
 		pool.Put(bp)
 		return [8]uint64{lo0, hi0, lo1, hi1, lo2, hi2, lo3, hi3}
 	}
@@ -326,6 +335,9 @@ func BuildSpongeChainAbsorb128(permute Permute, rate, capacity int, fixedKey []b
 	return func(data []byte, seed0, seed1 uint64) (uint64, uint64) {
 		bp := pool.Get().(*[]byte)
 		lo, hi := spongeChainAbsorbOne(permute, (*bp)[:rate+capacity], rate, capacity, fixedKey, data, seed0, seed1, 0x11)
+		// The scratch state is seed- and key-derived; zero it before it
+		// goes back to the pool.
+		clear((*bp)[:rate+capacity])
 		pool.Put(bp)
 		return lo, hi
 	}
@@ -351,6 +363,9 @@ func BuildSpongeChainAbsorb256(permute Permute, rate, capacity int, fixedKey []b
 		st := (*bp)[:rate+capacity]
 		lo0, hi0 := spongeChainAbsorbOne(permute, st, rate, capacity, fixedKey, data, seed[0], seed[1], 0x12)
 		lo1, hi1 := spongeChainAbsorbOne(permute, st, rate, capacity, fixedKey, data, seed[2], seed[3], 0x13)
+		// The scratch state is seed- and key-derived; zero it before it
+		// goes back to the pool.
+		clear(st)
 		pool.Put(bp)
 		return [4]uint64{lo0, hi0, lo1, hi1}
 	}
@@ -378,6 +393,9 @@ func BuildSpongeChainAbsorb512(permute Permute, rate, capacity int, fixedKey []b
 		lo1, hi1 := spongeChainAbsorbOne(permute, st, rate, capacity, fixedKey, data, seed[2], seed[3], 0x15)
 		lo2, hi2 := spongeChainAbsorbOne(permute, st, rate, capacity, fixedKey, data, seed[4], seed[5], 0x16)
 		lo3, hi3 := spongeChainAbsorbOne(permute, st, rate, capacity, fixedKey, data, seed[6], seed[7], 0x17)
+		// The scratch state is seed- and key-derived; zero it before it
+		// goes back to the pool.
+		clear(st)
 		pool.Put(bp)
 		return [8]uint64{lo0, hi0, lo1, hi1, lo2, hi2, lo3, hi3}
 	}
@@ -471,6 +489,9 @@ func BuildARXChainAbsorb128(hashFn Hash256Fn, fixedKey []byte) itb.HashFunc128 {
 	return func(data []byte, seed0, seed1 uint64) (uint64, uint64) {
 		bp, buf := scratchAtLeast(pool, prefixLen+len(data))
 		out := arxAbsorbHash256(hashFn, buf, fixedKey, data, seed0, seed1, 0x21)
+		// The scratch holds fixedKey ‖ seed ‖ data; zero it before it
+		// goes back to the pool.
+		clear(buf)
 		pool.Put(bp)
 		return binary.LittleEndian.Uint64(out[0:8]), binary.LittleEndian.Uint64(out[8:16])
 	}
@@ -494,6 +515,9 @@ func BuildARXChainAbsorb256(hashFn Hash256Fn, fixedKey []byte) itb.HashFunc256 {
 		// hashFn. The scratch buffer is fully overwritten on each call,
 		// so it is reused across both passes.
 		out2 := arxAbsorbHash256(hashFn, buf, fixedKey, data, seed[2], seed[3], 0x23)
+		// The scratch holds fixedKey ‖ seed ‖ data; zero it before it
+		// goes back to the pool.
+		clear(buf)
 		pool.Put(bp)
 		return [4]uint64{
 			binary.LittleEndian.Uint64(out[0:8]),
@@ -523,6 +547,9 @@ func BuildARXChainAbsorb512(hashFn Hash512Fn, fixedKey []byte) itb.HashFunc512 {
 		// which are unpacked directly.
 		bp, buf := scratchAtLeast(pool, prefixLen+len(data))
 		out := arxAbsorbHash512(hashFn, buf, fixedKey, data, seed, 0x24)
+		// The scratch holds fixedKey ‖ seed ‖ data; zero it before it
+		// goes back to the pool.
+		clear(buf)
 		pool.Put(bp)
 		return [8]uint64{
 			binary.LittleEndian.Uint64(out[0:8]),

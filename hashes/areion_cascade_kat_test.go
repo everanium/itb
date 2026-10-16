@@ -27,42 +27,42 @@ type areionCascadeKAT struct {
 }
 
 var areionCascadeKATs = []areionCascadeKAT{
-	{256, 2, 13, "2b13c970a1c903915b0af01b98cf756d68e4378a079e2ebc31fe94853a79c579", "f417125ba6ce70d5", "b5d0ec9dd0ebcffaa07f2147fca3fd0f06d4ba5064a3a57c58b19e195705b5fe"},
-	{256, 2, 20, "4f346771a2d7db7f50b1ec61c9174afaab36f286fab9753bd688e6253b5da40e", "00772f039fcf9771", "4ff73f25be704a534f9b9b3a6e0192b3b1ab7c2484a7233f61c4439e76d36ef1"},
-	{256, 2, 36, "b8c45498f72752ce6d0251c03e0b3474e492a85717df73696010b7e41724a91c", "6ab442c21cd9cf28", "4c67838deed163ed368dbf3b0ba680c341117779613edd9216c218e80e3293cb"},
-	{256, 2, 68, "50e3cd88fe7bf669f72eb5ff344449c2d6226f56f3906f503dfff31bfdc95e62", "5df100a1417ea742", "668aea14289f9d50f49d787185295301e4f23ba8d752a76e8ffc5ed32a4fc80c"},
-	{256, 4, 13, "4d7b6837f55ced45e1f25439df2f28b20e0ed1c22a83e8b35a5ffd0ddbdbf3db", "20a7b66c8ad5c0cf", "08584ca3e5589c3cf71dee6ecfef75df9f97b4d9f53f22087bb87fa401681cbb"},
-	{256, 4, 20, "a4888ae00bf327fdc45c5f573a1b87a41c12fa75f583859b14417fb4390cf1ab", "4f1b0bbfab485368", "30bdc4ca252009fe879b3c8548eaf55f30e3eea5b30f05d287029464f71ee61d"},
-	{256, 4, 36, "56cd922f8a92a3a73107ad4b1e7e25b97201133c658bdb06573c345e4084f2bd", "9a3ed4487cfa0ab3", "28629dc2ad7fda994190044287a2c4aaadb3788de4f998f53ddc575f67f5dfea"},
-	{256, 4, 68, "081cb180cc4d76f54912846bd49b2ca9e3515217989e44657365f284f0ba6fb6", "466ee665c0fa46bd", "b891a70cc3afa02bbb6b248d3ee056931e61f32272984f6128b1c9ffd0d5d2c2"},
-	{256, 8, 13, "8c781b72ef30a2d5a7b271168c0eda6635f5c8de361e2ff36230d093a19fa0c2", "20afcec51b32e466", "51a3c52e10bf1393299480bdbc7d8bdbc892e268306f85a9550c819d7bc20e61"},
-	{256, 8, 20, "07f633cc35c4b0259fce37e0a622a58757fd474fbac4147b119b3653be3b5a0c", "b9302ea9736271dd", "38a1fbcd8925fd86847fe2c1c4c0d93d8c6b8a2f6b122404a233b6025dbbb94e"},
-	{256, 8, 36, "30566cdeea0647bd4c4bd23e1bb3bc05543c420f4c455094111cd965f281cf08", "f75682b6c07176c9", "5eec67778947f74144580501bd8222908a9ea1442a92146ffe8be47ad0300fe4"},
-	{256, 8, 68, "e25d750c36aa2c893e6c6ef0b1807517bb481a49b9d28d91e2447fa11c0fe8a1", "2e6d7a38d6c0947f", "ae70da96a88f40c2009accb60fc1180ae893808f0902ad5a204108891a7823d0"},
-	{512, 1, 13, "4ed5fb4f2dc4f143", "6295b48c779f1ee9", "ba819ecd837864aa"},
-	{512, 1, 20, "e9d06bbe343e6f4b", "8c4d4a7d5ccac072", "bda55951870d604e"},
-	{512, 1, 36, "6c670276dffaee4e", "349e39acb2d3c78c", "fd6e50bb44501ab4"},
-	{512, 1, 68, "bc324b4a25d22628", "5a96b94eb6039d6a", "74bbbcb5b668fdee"},
-	{512, 2, 13, "da730a4dee4e2a90", "9a72dc0db49a62ca", "269de0c8a828f7a3"},
-	{512, 2, 20, "21bde0d438b58d22", "5daf95d30d5ae4cd", "7c8a6f4ffc97fb25"},
-	{512, 2, 36, "6e4fc6368f893dfe", "d729e6a7522735e5", "8c7602081fc9484a"},
-	{512, 2, 68, "8b365bc2f7b5174e", "0473fbd392ce891e", "d569412658ef6292"},
-	{512, 4, 13, "b0d6a9652b47a4e1", "ff3346aa405b7585", "2311f52a26f7c1d2"},
-	{512, 4, 20, "0b61f47065643e4b", "2fca1db42b1bc3ec", "3f2761f0a8062338"},
-	{512, 4, 36, "c475e186d423f8b2", "349ecc276c9599aa", "b88148b323cba7f1"},
-	{512, 4, 68, "236a090f06c776c3", "2ba2ab2b00831a18", "641c8f5742e39682"},
+	{256, 2, 13, "cfbac793d58a754183eb8a690ddf4e74ef261ed8bae33d12516ae0a1d58d0d2c", "230fc6a79f14a240", "eb4a0beb8c12c20550c9473d57243de4c868b371752660b00afccfe5b7367aa4"},
+	{256, 2, 20, "24ada5f3fc58b9ab8c39319b27a762074393da6766a5defca4dc11b0457c904a", "b6dc6f6c44dac6d0", "8369b1e4f374001f8e5fc09c8c186489fb36ff54e46f09c38a69c71066bdc54b"},
+	{256, 2, 36, "d00d68ac30d6d5b33e1aab1e9c028bb278af815e5ce5d5157704a8bee18f0277", "fa4a3e6bde41fd02", "b6e95d3f4421afd731cb3d935f524dc70fb09f8677e662d4b88ab79d9f9f03a8"},
+	{256, 2, 68, "608cef5f22a55ba186d50885ca7e3f038d0acee2fcc54dc2ac6f48238e5a1632", "57ebd6e9ccee2b73", "b0fc418cc5b90dac3d9266862661fea5290b8e7a8c2560f0e964074362f435a8"},
+	{256, 4, 13, "7985b93b335dee58dac0d4e42615c6174284d59ee130ec2515f2e4fdfe330986", "c1832b3b0db49581", "221e3847d067721816e46057c7e6fafbb717552b77029fa839e8e23bf9f3d8ff"},
+	{256, 4, 20, "255e3ec30047e9dd1481c2ddc482bbf5ba6e7fef035527d13d37e55d72266877", "d88b7311231c4b01", "0983cd28597dd0f0644ee1003b76560d48db6128f429d5dd4b191fc232eed341"},
+	{256, 4, 36, "1ad6a5bc2a586c2b6c937fb744bb5035e8e56e6580b2acbf7a7470a0c70d0b51", "1e003f834c60087f", "996983d678764fa40722a9d6b16f108c59076502c08b16a136509a0ba5bf3b4a"},
+	{256, 4, 68, "71b29998c67e64967cfe244153c5ca4b665cde24d2ede6e8defdeb3440010809", "73125f2d3115b2e2", "c24a6fded0c121948104791df703442ae33d096915b439b46b7e4fe6b6d98024"},
+	{256, 8, 13, "e98afacf92f920fa62a6616a849e4fababb06af9dd5fe709ba341632c0b972f2", "278aacb23fa471f5", "1713ebe84f2b0b96a35f1b2c4bd30e3cfd7a7c65279e4ba7855a57e57bb14ad0"},
+	{256, 8, 20, "ba04c32842b5cdcc45e870c83fbe93ebb066d5d0639d73f5e98a5674766dd59a", "4498d9247200bf46", "5b9ceb985ab8505cb3db82d66de9e3180aa20de9be1a8c8948f6b73a8e02dce0"},
+	{256, 8, 36, "57276e6980d37dc12796d804f206342ba2ce1fc7cd3a2711b07269eb7949832e", "6437cb8d56447875", "0a3bd3c59d5b94324aba7482f87257ccbab304ce49ed9879d6b3bf5499cbd1e3"},
+	{256, 8, 68, "a8fc8f83205418a8caa9077bc154146c460c304d207e8fa4f66657042bb05cc9", "8d9458485cafb58c", "8d2d131e76a1b80241167dccd759e68fede333ab61962939dd69e0056d2854a5"},
+	{512, 1, 13, "a65b1ab051ea7a49", "01944dcceaf622e2", "947b569e53c66ec2"},
+	{512, 1, 20, "c342a2367d1f8cd2", "8f630471182a0351", "e9fa4a0d167e205e"},
+	{512, 1, 36, "1938d77b58f37710", "bde40e3152b8ed90", "01675d8b0a67a640"},
+	{512, 1, 68, "6d144e0b3ad5b59d", "fa1d320ff54ad88c", "b7213aee441cf042"},
+	{512, 2, 13, "83791100e4c5e411", "69836e9505e2b4d9", "a5bd3694873eed23"},
+	{512, 2, 20, "c795af09f96bd8df", "de2292a94de136eb", "cddc06dffd9a678d"},
+	{512, 2, 36, "35e184af440e7998", "8a372c0ab25d68cd", "7b24e9cf66b2950a"},
+	{512, 2, 68, "d90af2fa09f08b89", "bd7b82f6e642d594", "acdf4297a0b8a8be"},
+	{512, 4, 13, "35dce72a596d731b", "56f8d358b4da4e81", "c0c822a066410ddb"},
+	{512, 4, 20, "bcee06a02033185c", "65cdded86805a170", "c5b0a73504a5100b"},
+	{512, 4, 36, "9391abea22993864", "393cca0615003963", "9a47d0ee927ac2d3"},
+	{512, 4, 68, "c01de319cadefe0b", "662cdcb171f04a58", "44ceb14b8bb5eb69"},
 }
 
 // areionFillKATs are the folds of the batch-16 fill output over the lock
-// components at group index base 0x00FFFFFFFFFFFFF8, keyed by width and
+// components at group index base 0x00FFFFFFFFFFFFF8 under katFillFold, keyed by width and
 // group count.
 var areionFillKATs = map[[2]int]string{
-	{256, 2}: "3beff9c23dd4ab2b",
-	{256, 4}: "760e73aebde31e7e",
-	{256, 8}: "e77c0aa5c428dbcc",
-	{512, 1}: "bfde2418239391b1",
-	{512, 2}: "ad9825acb54d59aa",
-	{512, 4}: "d3c0de02b9eea498",
+	{256, 2}: "dc941be9ddad5838",
+	{256, 4}: "3777ca979bb287f5",
+	{256, 8}: "2c5062e2efd5077a",
+	{512, 1}: "f9af12eb0ba23752",
+	{512, 2}: "1279dffebb43ad35",
+	{512, 4}: "047b6d6fd1749c10",
 }
 
 func areionKATKey(width int) []byte {
@@ -117,14 +117,21 @@ func seqCascade512(h itb.HashFunc512, comps []uint64, buf []byte) [8]uint64 {
 	return out
 }
 
-func fillBlockKAT(groupIdx uint64) []byte {
+func fillBlockKAT(groupIdx uint64, v uint32) []byte {
 	blk := make([]byte, 13)
 	blk[0] = 0x03
 	for j := 0; j < 8; j++ {
 		blk[1+j] = byte(groupIdx >> (8 * j))
 	}
+	for j := 0; j < 4; j++ {
+		blk[9+j] = byte(v >> (8 * j))
+	}
 	return blk
 }
+
+// katFillFold is the interlock-nonce fold every fill KAT is pinned under
+// — a fixed nonzero word, so the goldens cover bytes 9..12 of the block.
+const katFillFold uint32 = 0x9E3779B9
 
 func foldWords(acc uint64, w []uint64) uint64 {
 	for i, x := range w {
@@ -186,13 +193,13 @@ func TestAreionCascadeKAT(t *testing.T) {
 				}
 				if kat.n == 13 {
 					var out [8][4]uint64
-					hooked.InterlockFillX16()(lock, 0x00FFFFFFFFFFFFF8, &out)
+					hooked.InterlockFillX16()(lock, 0x00FFFFFFFFFFFFF8, katFillFold, &out)
 					var acc uint64
 					for i := range out {
 						acc = foldWords(acc, out[i][:])
 					}
 					for i := range out {
-						if want := seqCascade256(plain.Hash, lock, fillBlockKAT(0x00FFFFFFFFFFFFF8+uint64(i))); out[i] != want {
+						if want := seqCascade256(plain.Hash, lock, fillBlockKAT(0x00FFFFFFFFFFFFF8+uint64(i), katFillFold)); out[i] != want {
 							t.Errorf("batch-16 fill lane %d diverges from the sequential cascade", i)
 						}
 					}
@@ -241,11 +248,11 @@ func TestAreionCascadeKAT(t *testing.T) {
 				}
 				if kat.n == 13 {
 					var out [4][8]uint64
-					hooked.InterlockFillX16()(lock, 0x00FFFFFFFFFFFFF8, &out)
+					hooked.InterlockFillX16()(lock, 0x00FFFFFFFFFFFFF8, katFillFold, &out)
 					var acc uint64
 					for i := range out {
 						acc = foldWords(acc, out[i][:])
-						if want := seqCascade512(plain.Hash, lock, fillBlockKAT(0x00FFFFFFFFFFFFF8+uint64(i))); out[i] != want {
+						if want := seqCascade512(plain.Hash, lock, fillBlockKAT(0x00FFFFFFFFFFFFF8+uint64(i), katFillFold)); out[i] != want {
 							t.Errorf("batch-16 fill lane %d diverges from the sequential cascade", i)
 						}
 					}
@@ -304,8 +311,8 @@ func TestAreionHooksZeroAlloc(t *testing.T) {
 	fill256, fill512 := s256.InterlockFillX16(), s512.InterlockFillX16()
 	var out256 [8][4]uint64
 	var out512 [4][8]uint64
-	check("areion256 InterlockFillX16", func() { fill256(lock256, 0x00FFFFFFFFFFFFF8, &out256) })
-	check("areion512 InterlockFillX16", func() { fill512(lock512, 0x00FFFFFFFFFFFFF8, &out512) })
+	check("areion256 InterlockFillX16", func() { fill256(lock256, 0x00FFFFFFFFFFFFF8, katFillFold, &out256) })
+	check("areion512 InterlockFillX16", func() { fill512(lock512, 0x00FFFFFFFFFFFFF8, katFillFold, &out512) })
 }
 
 // TestAreionWideHooksZeroAlloc asserts that the eight-lane per-pixel
@@ -353,5 +360,5 @@ func TestAreionWideHooksZeroAlloc(t *testing.T) {
 		t.Fatal("areion512 carries no batch-32 fill hook")
 	}
 	var out [8][8]uint64
-	check("areion512 InterlockFillX32", func() { fill(lock512, 0x00FFFFFFFFFFFFF8, &out) })
+	check("areion512 InterlockFillX32", func() { fill(lock512, 0x00FFFFFFFFFFFFF8, katFillFold, &out) })
 }

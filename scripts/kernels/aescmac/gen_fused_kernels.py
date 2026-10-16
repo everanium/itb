@@ -18,10 +18,18 @@ ymm_fused_x8 and xmm_fused_x8 for the register plans.
 A third family, x16 at shape 13 only, is the Interlocked Barrier PRF fill
 kernel (aescmac_fusedchain128_13x16_<tier>_amd64.s for the four amd64 tiers
 and aescmac_fusedchain128_13x16_neon_arm64.s): the kernel receives
-groupIdxBase in a GPR and synthesises the 16 per-lane fill blocks
-in-register — [0x03 | LE64(groupIdxBase+i) | 7×0x00] for lane i — so the
+groupIdxBase in a GPR and the per-message interlock-nonce fold v (a
+uint32, the little-endian image of bytes 9..12 of every fill block) and
+synthesises the 16 per-lane fill blocks in-register —
+[0x03 | LE64(groupIdxBase+i) | LE32(v) | 3×0x00] for lane i — so the
 batch-16 path pays no per-lane pointer gather, then runs the same cascade
-per lane. See the x16 section below for the per-tier register plans.
+per lane. v << 8 occupies bits 8..39 of the block's second qword, the
+length tag 13 bits 0..7 and idx >> 56 bits 0..7 of the synthesised
+index word, so the fold is ORed (equivalently XORed) in once per call:
+every tier folds [13 | 13 ^ (v << 8)] — the length tag with the fold in
+its second qword — into the template it XORs into every lane's block
+(the absorb13Block template on the XMM / YMM / ZMM tiers, V27 on NEON).
+See the x16 section below for the per-tier register plans.
 
 Cascade evaluated per lane (see aescmacasm_fused.go):
     state = 0
@@ -32,14 +40,20 @@ Cascade evaluated per lane (see aescmacasm_fused.go):
     out = state
 AES_K is the full AES-128 permutation under the eleven round keys K0..K10
 of the schedule the kernels receive (aescmacasm.ExpandKeyAES128). The data
-blocks are round-invariant and are staged once with K0 folded in (block 0
-additionally with the length tag), so every permutation in the loop runs
-nine AESENC under K1..K9 and one AESENCLAST under K10 from the staged
-block XOR. The XMM tiers stage the blocks into the stack frame at
-SP + 16*lanes*b + 16*lane; the YMM tier stages them as 32-byte lane-pair
-slots at SP + 16*lanes*b + 32*pair; the ZMM tiers keep them in registers. On arm64 the
-zero-padded tail block sits in V28..V31 and full blocks are reloaded from
-the lane pointer each round.
+blocks are round-invariant and are staged once (block 0 with the length
+tag folded in), so every permutation in the loop runs nine AESENC under
+K1..K9 and one AESENCLAST from the staged block XOR. The ZMM tiers stage
+the blocks in registers with K0 folded in and run the last round under
+K10. The XMM and YMM tiers stage the bare blocks into the stack frame
+(XMM at SP + 16*lanes*b + 16*lane, YMM as 32-byte lane-pair slots at
+SP + 16*lanes*b + 32*pair) and carry every lane as t = state ^ K0 instead
+of the state itself: t starts at K0, the last round of every permutation
+is AESENCLAST under K10' = K10 ^ K0 (exact, since
+AESENCLAST(s, K10) ^ K0 = AESENCLAST(s, K10 ^ K0)), so the K0 whitening of
+the next permutation is already in t, and the lane output is t ^ K0.
+K0 and K10' exist only in registers; every frame slot holds public block
+bytes. On arm64 the zero-padded tail block sits in V28..V31 and full
+blocks are reloaded from the lane pointer each round.
 
 Load shapes are matched to the stores the Go call sites leave in flight
 so store-to-load forwarding succeeds: the caller writes a 4-byte pixel
@@ -51,25 +65,32 @@ Go side reads them back with — rather than one 32- or 64-byte store,
 except the batch-16 kernels, whose full-width stores feed 8-byte reads
 far enough behind the store (see the x16 section).
 
-Round-key residency per tier (K1..K10 are the keys the loop consumes):
-    xmm x4/x1     X6..X15 = K1..K10; X5 pair load; X4 scratch; X13 is the
-                  zero insert source during staging
-    ymm x4        Y3..Y12 = K1..K10 broadcasts; Y13 pair broadcast; blocks
-                  in the frame
+Round-key residency per tier (K1..K9 and the last-round key are the keys
+the loop consumes; the last-round key is K10' = K10 ^ K0 on the XMM
+tiers and the four- / eight-lane YMM tiers, K10 elsewhere):
+    xmm x4/x1     X6..X14 = K1..K9, X15 = K10'; X5 pair load; X4 scratch;
+                  X13 is the zero insert source and X15 the length tag
+                  during staging
+    ymm x4        Y3..Y11 = K1..K9, Y12 = K10' broadcasts; Y13 pair
+                  broadcast; Y14 K0 broadcast; blocks in the frame
     zmm x4        Z1..Z10 = K1..K10; Z11 pair; Z15.. blocks
     zmm x8        Z2..Z11 = K1..K10; Z12 pair; Z16.. blocks (two groups)
-    ymm x8        Y4..Y13 = K1..K10 broadcasts; Y14 pair broadcast; blocks
-                  in the frame as 32-byte lane-pair slots
-    xmm x8 vex    X8..X15 = K1..K8; K9 / K10 and the pair as VEX memory
-                  operands; blocks in the frame
-    xmm x8 aesni  X9..X15 = K4..K10; K1..K3, the pair and the blocks
-                  reloaded through X8 per round
-    xmm x16 vex   X8..X15 = K1..K8; K9 / K10 as VAESENC memory operands
-    xmm x16 aesni X9..X15 = K4..K10; K1..K3 reloaded through X8 per round
-                  (legacy-SSE AESENC m128 needs a 16-byte-aligned operand
-                  the Go frame does not guarantee)
-    ymm x16       Y9..Y15 = K1..K7; K8..K10 duplicated into the frame as
-                  32-byte slots and consumed as VAESENC memory operands
+    ymm x8        Y4..Y12 = K1..K9, Y13 = K10' broadcasts; Y14 pair
+                  broadcast; Y15 K0 broadcast; blocks in the frame as
+                  32-byte lane-pair slots
+    xmm x8 vex    X8..X14 = K1..K7, X15 = K10'; K8 / K9 and the pair as
+                  VEX memory operands read from the schedule; blocks in
+                  the frame
+    xmm x8 aesni  X9..X14 = K4..K9, X15 = K10'; K1..K3, the pair and the
+                  blocks reloaded through X8 per round
+    xmm x16 vex   X8..X14 = K1..K7, X15 = K10'; K8 / K9 as VAESENC memory
+                  operands read from the schedule
+    xmm x16 aesni X9..X14 = K4..K9, X15 = K10'; K1..K3 reloaded through X8
+                  per round (legacy-SSE AESENC m128 needs a 16-byte-aligned
+                  operand the Go frame does not guarantee)
+    ymm x16       Y8..Y13 = K1..K6; Y14 / Y15 carry pair ^ K0 and then
+                  K7..K10, broadcast from the schedule every cascade
+                  round; blocks in the frame
     zmm x16       Z4..Z13 = K1..K10; Z14 pair; Z16..Z19 blocks
     neon          V16..V24 = K1..K9, V25 = K10; K0 folded into the AESE
                   operand of every block, K10 of block b folded into the
@@ -95,13 +116,16 @@ def blocks(n):
 
 def staging_note(tier):
     if tier == "xmm":
-        return ("// The data blocks are staged once into the frame with K0 (and, for\n"
-                "// block 0, the length tag) folded in, and every cascade round runs\n"
-                "// from those 16-byte slots")
+        return ("// The data blocks are staged once into the frame (block 0 with the\n"
+                "// length tag folded in) and every cascade round runs from those\n"
+                "// 16-byte slots; each lane is carried as state ^ K0 with K10 ^ K0 as\n"
+                "// the last-round key, so the frame holds public block bytes only")
     if tier == "ymm":
         return ("// The data blocks are staged once into the frame as 32-byte lane-pair\n"
-                "// slots with K0 (and, for block 0, the length tag) folded in, and\n"
-                "// every cascade round runs from those slots")
+                "// slots (block 0 with the length tag folded in) and every cascade\n"
+                "// round runs from those slots; each lane is carried as state ^ K0\n"
+                "// with K10 ^ K0 as the last-round key, so the frame holds public\n"
+                "// block bytes only")
     return ("// The data blocks are staged once in registers with K0 (and, for\n"
             "// block 0, the length tag) folded in, and every cascade round runs\n"
             "// from registers")
@@ -192,27 +216,37 @@ def prologue_amd64(lanes):
 
 
 def xmm_consts(shape, vex):
-    """X13 = 0 (insert source), X14 = K0, X15 = K0 ^ (len || len)."""
+    """X13 = 0 (insert source), X15 = (len || len), the public length tag."""
     if vex:
-        return ["\tVPXOR X13, X13, X13", "\tVMOVDQU 0(AX), X14", f"\tMOVQ ${shape}, R12", "\tVMOVQ R12, X15",
-                "\tVPUNPCKLQDQ X15, X15, X15", "\tVPXOR X14, X15, X15"]
-    return ["\tPXOR X13, X13", "\tMOVOU 0(AX), X14", f"\tMOVQ ${shape}, R12", "\tMOVQ R12, X15",
-            "\tPUNPCKLQDQ X15, X15", "\tPXOR X14, X15"]
+        return ["\tVPXOR X13, X13, X13", f"\tMOVQ ${shape}, R12", "\tVMOVQ R12, X15",
+                "\tVPUNPCKLQDQ X15, X15, X15"]
+    return ["\tPXOR X13, X13", f"\tMOVQ ${shape}, R12", "\tMOVQ R12, X15",
+            "\tPUNPCKLQDQ X15, X15"]
 
 
-def xmm_fold(b):
-    return "X15" if b == 0 else "X14"
+def xmm_stage_block(b, vex):
+    """Fold the length tag into block 0; blocks past the first are staged bare."""
+    if b != 0:
+        return []
+    return ["\tVPXOR X15, X4, X4" if vex else "\tPXOR X15, X4"]
+
+
+def xmm_k10_fold(vex, reg="X15", tmp="X4"):
+    """reg holds K10; fold K0 in to form the last-round key K10' = K10 ^ K0."""
+    if vex:
+        return [f"\tVPXOR 0(AX), {reg}, {reg}"]
+    return [f"\tMOVOU 0(AX), {tmp}", f"\tPXOR {tmp}, {reg}"]
 
 
 def stage_amd64(shape, lanes, vex, regs):
-    """Prologue: stage folded blocks into the frame at 64*b + 16*lane (SP)."""
+    """Prologue: stage the public blocks into the frame at 64*b + 16*lane (SP)."""
     nb = blocks(shape)
     mov = "VMOVDQU" if vex else "MOVOU"
     L = xmm_consts(shape, vex)
     for b in range(nb):
         for l in range(lanes):
             L += lane_block(shape, b, regs[l], vex)
-            L.append(f"\tVPXOR {xmm_fold(b)}, X4, X4" if vex else f"\tPXOR {xmm_fold(b)}, X4")
+            L += xmm_stage_block(b, vex)
             L.append(f"\t{mov} X4, {64 * b + 16 * l}(SP)")
     return L
 
@@ -235,6 +269,13 @@ def xmm_rounds(lanes, vex, key):
     return L
 
 
+def xmm_unfold(lanes, vex, tmp, first=0):
+    """Lane outputs: XOR K0 back out of t = state ^ K0 on lanes first..first+lanes-1."""
+    if vex:
+        return [f"\tVPXOR 0(AX), X{l}, X{l}" for l in range(first, first + lanes)]
+    return [f"\tMOVOU 0(AX), {tmp}"] + [f"\tPXOR {tmp}, X{l}" for l in range(first, first + lanes)]
+
+
 def xmm_fused(shape, lanes, vex):
     nb = blocks(shape)
     tier = "Vex" if vex else "AesNi"
@@ -250,8 +291,9 @@ def xmm_fused(shape, lanes, vex):
     mov = "VMOVDQU" if vex else "MOVOU"
     for r in range(1, 11):
         L.append(f"\t{mov} {16 * r}(AX), X{5 + r}")
+    L += xmm_k10_fold(vex)
     for l in range(lanes):
-        L.append(f"\tVPXOR X{l}, X{l}, X{l}" if vex else f"\tPXOR X{l}, X{l}")
+        L.append(f"\t{mov} 0(AX), X{l}")
     L.append("")
     L.append("loop:")
     key = lambda r: f"X{5 + r}"
@@ -273,6 +315,7 @@ def xmm_fused(shape, lanes, vex):
                 L.append(f"\tPXOR X4, X{l}")
             L += xmm_rounds(lanes, False, key)
     L += ["\tADDQ $16, BX", "\tDECQ CX", "\tJNZ loop", ""]
+    L += xmm_unfold(lanes, vex, "X4")
     for l in range(lanes):
         L.append(f"\t{mov} X{l}, {16 * l}(DI)")
     L.append("\tRET")
@@ -282,11 +325,13 @@ def xmm_fused(shape, lanes, vex):
 def ymm_fused(shape):
     """VAES YMM: lanes (0, 1) in Y0, lanes (2, 3) in Y1.
 
-    Round keys K1..K10 broadcast into Y3..Y12; Y13 holds the per-round
-    component pair broadcast. Every block is staged into the frame as two
-    32-byte lane-pair slots (SP + 64*b for lanes 0/1, SP + 64*b + 32 for
-    lanes 2/3) with K0 — and the length tag for block 0 — folded in, and
-    consumed as a 32-byte VPXOR operand every round.
+    Round keys K1..K9 broadcast into Y3..Y11 and K10' = K10 ^ K0 into
+    Y12; Y13 holds the per-round component pair broadcast and Y14 the K0
+    broadcast (the start value of t = state ^ K0 and the output unfold).
+    Every block is staged bare into the frame as two 32-byte lane-pair
+    slots (SP + 64*b for lanes 0/1, SP + 64*b + 32 for lanes 2/3; block 0
+    with the length tag folded in) and consumed as a 32-byte VPXOR
+    operand every round.
     """
     nb = blocks(shape)
     regs = ["R8", "R9", "R10", "R11"]
@@ -295,10 +340,9 @@ def ymm_fused(shape):
          f"TEXT ·aesCMAC128FusedChain{shape}x4VaesAvx2Asm(SB), NOSPLIT, ${frame}-40"]
     L += prologue_amd64(4)
     L.append("")
-    L += ["\tVPXOR X13, X13, X13", "\tVBROADCASTI128 0(AX), Y14", f"\tMOVQ ${shape}, R12", "\tVMOVQ R12, X15",
-          "\tVPBROADCASTQ X15, Y15", "\tVPXOR Y14, Y15, Y15"]
+    L += ["\tVPXOR X13, X13, X13", f"\tMOVQ ${shape}, R12", "\tVMOVQ R12, X15",
+          "\tVPBROADCASTQ X15, Y15"]
     for b in range(nb):
-        fold = "Y15" if b == 0 else "Y14"
         for ra, rb, off in ((regs[0], regs[1], 64 * b), (regs[2], regs[3], 64 * b + 32)):
             if 0 < b < nb - 1:
                 L.append(f"\tVMOVDQU {16 * b}({ra}), X2")
@@ -307,12 +351,14 @@ def ymm_fused(shape):
                 L += lane_block(shape, b, ra, True, dst="X2")
                 L += lane_block(shape, b, rb, True)
                 L.append("\tVINSERTI128 $1, X4, Y2, Y2")
-            L.append(f"\tVPXOR {fold}, Y2, Y2")
+            if b == 0:
+                L.append("\tVPXOR Y15, Y2, Y2")
             L.append(f"\tVMOVDQU Y2, {off}(SP)")
     L.append("")
     for r in range(1, 11):
         L.append(f"\tVBROADCASTI128 {16 * r}(AX), Y{2 + r}")
-    L += ["\tVPXOR Y0, Y0, Y0", "\tVPXOR Y1, Y1, Y1", "", "loop:",
+    L += ["\tVBROADCASTI128 0(AX), Y14", "\tVPXOR Y14, Y12, Y12",
+          "\tVMOVDQU Y14, Y0", "\tVMOVDQU Y14, Y1", "", "loop:",
           "\tVBROADCASTI128 0(BX), Y13", "\tVPXOR Y13, Y0, Y0", "\tVPXOR Y13, Y1, Y1"]
     for b in range(nb):
         L.append(f"\tVPXOR {64 * b}(SP), Y0, Y0")
@@ -320,7 +366,8 @@ def ymm_fused(shape):
         for r in range(1, 10):
             L.append(f"\tVAESENC Y{2 + r}, Y0, Y0; VAESENC Y{2 + r}, Y1, Y1")
         L.append("\tVAESENCLAST Y12, Y0, Y0; VAESENCLAST Y12, Y1, Y1")
-    L += ["\tADDQ $16, BX", "\tDECQ CX", "\tJNZ loop", "", "\tVMOVDQU X0, 0(DI)", "\tVEXTRACTI128 $1, Y0, 16(DI)",
+    L += ["\tADDQ $16, BX", "\tDECQ CX", "\tJNZ loop", "", "\tVPXOR Y14, Y0, Y0", "\tVPXOR Y14, Y1, Y1",
+          "\tVMOVDQU X0, 0(DI)", "\tVEXTRACTI128 $1, Y0, 16(DI)",
           "\tVMOVDQU X1, 32(DI)", "\tVEXTRACTI128 $1, Y1, 48(DI)", "\tVZEROUPPER", "\tRET"]
     return "\n".join(L) + "\n"
 
@@ -435,13 +482,14 @@ def zmm_fused_x8(shape):
 def ymm_fused_x8(shape):
     """VAES YMM, eight lanes: lane pair (2i, 2i+1) in Y(i), i = 0..3.
 
-    Register plan: Y4..Y13 K1..K10 broadcasts, Y14 the per-round pair
-    broadcast, Y15 free — 15 of 16, no spill. Every block of every pair
-    is staged into the frame as a 32-byte lane-pair slot at
-    SP + 128*b + 32*i with K0 (and the length tag for block 0) folded
-    in, and consumed as a 32-byte VPXOR memory operand every round (the
-    plan of the four-lane kernel at twice the states; X13 / Y14 / Y15
-    serve the staging before the keys land). The lane pointers are read
+    Register plan: Y4..Y12 K1..K9 broadcasts, Y13 K10' = K10 ^ K0, Y14
+    the per-round pair broadcast, Y15 the K0 broadcast (the start value
+    of t = state ^ K0 and the output unfold) — 16 of 16, no spill. Every
+    block of every pair is staged bare into the frame as a 32-byte
+    lane-pair slot at SP + 128*b + 32*i (block 0 with the length tag
+    folded in) and consumed as a 32-byte VPXOR memory operand every
+    round (the plan of the four-lane kernel at twice the states; X13 /
+    Y14 serve the staging before the keys land). The lane pointers are read
     four at a time through R8..R11 (group 0 from dataPtrs[0..3], group
     1 from dataPtrs[4..7]) with the same exact-width block-0 / tail
     inserts as the four-lane kernel.
@@ -458,14 +506,13 @@ def ymm_fused_x8(shape):
          f"TEXT ·aesCMAC128FusedChain{shape}x8VaesAvx2Asm(SB), NOSPLIT, ${frame}-40",
          "\tMOVQ roundKeys+0(FP), AX", "\tMOVQ comps+8(FP), BX", "\tMOVQ nPairs+16(FP), CX",
          "\tMOVQ dataPtrs+24(FP), DX", "\tMOVQ out+32(FP), DI", ""]
-    L += ["\tVPXOR X13, X13, X13", "\tVBROADCASTI128 0(AX), Y14", f"\tMOVQ ${shape}, R12", "\tVMOVQ R12, X15",
-          "\tVPBROADCASTQ X15, Y15", "\tVPXOR Y14, Y15, Y15"]
+    L += ["\tVPXOR X13, X13, X13", f"\tMOVQ ${shape}, R12", "\tVMOVQ R12, X14",
+          "\tVPBROADCASTQ X14, Y14"]
     for g in range(2):
         L.append(f"\t// Lanes {4 * g}..{4 * g + 3}: pairs {2 * g} and {2 * g + 1}")
         for l in range(4):
             L.append(f"\tMOVQ {32 * g + 8 * l}(DX), {regs[l]}")
         for b in range(nb):
-            fold = "Y15" if b == 0 else "Y14"
             for ra, rb, off in ((regs[0], regs[1], 128 * b + 64 * g), (regs[2], regs[3], 128 * b + 64 * g + 32)):
                 if 0 < b < nb - 1:
                     L.append(f"\tVMOVDQU {16 * b}({ra}), X2")
@@ -474,13 +521,15 @@ def ymm_fused_x8(shape):
                     L += lane_block(shape, b, ra, True, dst="X2")
                     L += lane_block(shape, b, rb, True)
                     L.append("\tVINSERTI128 $1, X4, Y2, Y2")
-                L.append(f"\tVPXOR {fold}, Y2, Y2")
+                if b == 0:
+                    L.append("\tVPXOR Y14, Y2, Y2")
                 L.append(f"\tVMOVDQU Y2, {off}(SP)")
     L.append("")
     for r in range(1, 11):
         L.append(f"\tVBROADCASTI128 {16 * r}(AX), Y{3 + r}")
+    L += ["\tVBROADCASTI128 0(AX), Y15", "\tVPXOR Y15, Y13, Y13"]
     states = [f"Y{i}" for i in range(4)]
-    L += [f"\tVPXOR {y}, {y}, {y}" for y in states]
+    L += [f"\tVMOVDQU Y15, {y}" for y in states]
     L += ["", "loop:", "\tVBROADCASTI128 0(BX), Y14"]
     L += [f"\tVPXOR Y14, {y}, {y}" for y in states]
     for b in range(nb):
@@ -490,25 +539,47 @@ def ymm_fused_x8(shape):
             L.append("\t" + "; ".join(f"VAESENC Y{3 + r}, {y}, {y}" for y in states))
         L.append("\t" + "; ".join(f"VAESENCLAST Y13, {y}, {y}" for y in states))
     L += ["\tADDQ $16, BX", "\tDECQ CX", "\tJNZ loop", ""]
+    L += [f"\tVPXOR Y15, {y}, {y}" for y in states]
     for i, y in enumerate(states):
         L += [f"\tVMOVDQU X{i}, {32 * i}(DI)", f"\tVEXTRACTI128 $1, {y}, {32 * i + 16}(DI)"]
     L += ["\tVZEROUPPER", "\tRET"]
     return "\n".join(L) + "\n"
 
 
+def xmm_x8_keys(vex):
+    """Round keys of the eight-state XMM plan: VEX X8..X14 = K1..K7 and
+    X15 = K10'; legacy SSE X9..X14 = K4..K9 and X15 = K10'."""
+    if vex:
+        L = [f"\tVMOVDQU {16 * r}(AX), X{7 + r}" for r in range(1, 8)]
+    else:
+        L = [f"\tMOVOU {16 * r}(AX), X{5 + r}" for r in range(4, 10)]
+    L.append(f"\t{'VMOVDQU' if vex else 'MOVOU'} 160(AX), X15")
+    return L + xmm_k10_fold(vex, tmp="X8")
+
+
+def xmm_x8_key(vex):
+    """Operand of round key r in the eight-state XMM plan."""
+    if vex:
+        return lambda r: f"X{7 + r}" if r <= 7 else ("X15" if r == 10 else f"{16 * r}(AX)")
+    return lambda r: "X15" if r == 10 else f"X{5 + r}"
+
+
 def xmm_fused_x8(shape, vex):
     """XMM, eight lanes: lane l in X(l), l = 0..7, eight independent AES
     chains per call.
 
-    Register plan (the plan of the batch-16 XMM kernels): on the VEX
-    tier X8..X15 = K1..K8 and K9 / K10 are VAESENC memory operands, the
-    pair a VPXOR memory operand; on the legacy-SSE tier X9..X15 = K4..K10
-    and K1..K3, the pair and every block are reloaded through X8 per
-    round (legacy-SSE AESENC / PXOR m128 need a 16-byte-aligned operand
-    the Go frame does not guarantee) — 16 of 16, no spill. Every block
-    of every lane is staged into the frame at SP + 128*b + 16*l with K0
-    (and the length tag for block 0) folded in; X13 / X14 / X15 serve
-    the staging before the keys land. The lane pointers are read four at
+    Register plan (the plan of the batch-16 XMM kernels): every lane is
+    carried as t = state ^ K0 (start K0, output t ^ K0) with
+    K10' = K10 ^ K0 as the last-round key. On the VEX tier X8..X14 =
+    K1..K7, X15 = K10', K8 / K9 are VAESENC memory operands read from
+    the schedule and the pair a VPXOR memory operand; on the legacy-SSE
+    tier X9..X14 = K4..K9, X15 = K10', and K1..K3, the pair and every
+    block are reloaded through X8 per round (legacy-SSE AESENC / PXOR
+    m128 need a 16-byte-aligned operand the Go frame does not
+    guarantee) — 16 of 16, no spill. Every block of every lane is staged
+    bare into the frame at SP + 128*b + 16*l (block 0 with the length
+    tag folded in); X13 / X15 serve the staging before the keys land.
+    The lane pointers are read four at
     a time through R8..R11 with the same exact-width block-0 / tail
     inserts as the four-lane kernel. Output: eight 16-byte stores.
     """
@@ -529,19 +600,13 @@ def xmm_fused_x8(shape, vex):
         for b in range(nb):
             for l in range(4):
                 L += lane_block(shape, b, regs[l], vex)
-                L.append(f"\tVPXOR {xmm_fold(b)}, X4, X4" if vex else f"\tPXOR {xmm_fold(b)}, X4")
+                L += xmm_stage_block(b, vex)
                 L.append(f"\t{mov} X4, {128 * b + 16 * (4 * g + l)}(SP)")
     L.append("")
-    if vex:
-        for r in range(1, 9):
-            L.append(f"\tVMOVDQU {16 * r}(AX), X{7 + r}")
-        key = lambda r: f"X{7 + r}" if r <= 8 else f"{16 * r}(AX)"
-    else:
-        for r in range(4, 11):
-            L.append(f"\tMOVOU {16 * r}(AX), X{5 + r}")
-        key = lambda r: f"X{5 + r}"
+    L += xmm_x8_keys(vex)
+    key = xmm_x8_key(vex)
     for l in range(8):
-        L.append(f"\tVPXOR X{l}, X{l}, X{l}" if vex else f"\tPXOR X{l}, X{l}")
+        L.append(f"\t{mov} 0(AX), X{l}")
     L += ["", "loop:"]
     if vex:
         for l in range(8):
@@ -566,6 +631,7 @@ def xmm_fused_x8(shape, vex):
                     L.append("\t" + "; ".join(f"AESENC {key(r)}, X{l}" for l in range(8)))
             L.append("\t" + "; ".join(f"AESENCLAST {key(10)}, X{l}" for l in range(8)))
     L += ["\tADDQ $16, BX", "\tDECQ CX", "\tJNZ loop", ""]
+    L += xmm_unfold(8, vex, "X8")
     for l in range(8):
         L.append(f"\t{mov} X{l}, {16 * l}(DI)")
     L.append("\tRET")
@@ -678,10 +744,13 @@ def neon_fused(shape, lanes):
 # ---------------------------------------------------------------- x16 fill family
 #
 # The batch-16 kernels at the 13-byte fill shape. Every tier folds the
-# round-invariant synthesised block (with K0 and the length tag) and the
-# per-round pair into the state and runs the ten AES rounds under
-# K1..K10; with one pair the cascade is the plain chain-absorb of the
-# shape. Parity with scalarFusedX16 (aescmacasm_fused.go) is enforced by
+# round-invariant synthesised block (with the length tag) and the
+# per-round pair into the state and runs the ten AES rounds; with one
+# pair the cascade is the plain chain-absorb of the shape. The ZMM and
+# NEON tiers keep K0 folded into the register-resident block; the XMM
+# tiers stage the public block in the frame and carry each lane as
+# t = state ^ K0 with K10 ^ K0 as the last-round key; the YMM tier stages
+# the public block in the frame and folds K0 into the per-round pair. Parity with scalarFusedX16 (aescmacasm_fused.go) is enforced by
 # the in-package parity tests.
 #
 # Output store width: the wide tiers write the 16 rank pairs at their full
@@ -692,7 +761,7 @@ def neon_fused(shape, lanes):
 # carries no numeric tables of its own: the absorb block and the ZMM
 # lane-offset table are read from the Go side (·absorb13Block, ·laneIdxZ).
 
-X16_SIG = "roundKeys *[176]byte, comps *uint64, nPairs int, groupIdxBase uint64, out *[16][2]uint64"
+X16_SIG = "roundKeys *[176]byte, comps *uint64, nPairs int, groupIdxBase uint64, out *[16][2]uint64, v uint32"
 
 X16_TIERS = {
     "aesni": ("Legacy-SSE AES-NI XMM (AESENC xmm, xmm)", AMD,
@@ -712,23 +781,39 @@ X16_CASCADE_NOTE = """//
 // Unique to the batch-16 kernel: groupIdx is synthesized in-register from
 // groupIdxBase per lane, avoiding the per-lane pointer gather overhead of
 // the x4 path. The synthesised block is round-invariant per lane and
-// carries K0 and the length tag; every cascade round XORs the pair and
-// the block into the state and runs the ten AES rounds under K1..K10.
+// carries the interlock-nonce fold v at bytes 9..12, K0 and the length
+// tag; every cascade round XORs the pair and the block into the state
+// and runs the ten AES rounds under K1..K10.
+"""
+
+X16_CASCADE_NOTE_XMM = """//
+// Unique to the batch-16 kernel: groupIdx is synthesized in-register from
+// groupIdxBase per lane, avoiding the per-lane pointer gather overhead of
+// the x4 path. The synthesised block is round-invariant per lane and
+// carries the interlock-nonce fold v at bytes 9..12 and the length tag.
+// Every lane is carried as t = state ^ K0: t
+// starts at K0, every cascade round XORs the pair and the block into t
+// and runs nine AES rounds under K1..K9 and the last under
+// K10' = K10 ^ K0 (AESENCLAST(s, K10) ^ K0 = AESENCLAST(s, K10 ^ K0)),
+// and the lane output is t ^ K0. K0 and K10' exist only in registers;
+// the frame holds the public blocks only.
 """
 
 
 def x16_comment_xmm(tier_desc, vex):
-    keys = ("X8–X15 K1..K8 (K9 / K10 as memory operands)" if vex
-            else "X9–X15 K4..K10 (K1..K3 reloaded through X8 per round)")
+    keys = ("X8–X14 K1..K7, X15 K10' (K8 / K9 as memory operands read from\n// the schedule)" if vex
+            else "X9–X14 K4..K9, X15 K10' (K1..K3 reloaded through X8 per\n// round)")
     return f"""// {tier_desc} 16-lane fused ChainHash cascade kernel for AES-CMAC
 // at the 13-byte per-lane fill shape (1 zero-padded block, 1 AES-128
 // permutation per lane and cascade round). See aescmacasm_fused.go for
 // the construction; every tier is pinned to the pure-Go reference
 // (scalarFusedX16) by the in-package parity tests.
-""" + X16_CASCADE_NOTE + f"""//
+""" + X16_CASCADE_NOTE_XMM + f"""//
 // Batch layout: two batches of 8 lanes; each batch runs the whole cascade
 // before the next starts. The 16 blocks are staged once into the frame
-// (16 bytes per lane) in the prologue. Per batch: X0–X7 states,
+// (16 bytes per lane) in the prologue from the template in X12 —
+// absorb13Block XOR [13 | 13 ^ (v << 8)], the length tag with the
+// interlock-nonce fold in its second qword. Per batch: X0–X7 states,
 // {keys}.
 """
 
@@ -745,24 +830,27 @@ def x16_comment_ymm(tier_desc):
 // VPUNPCKLQDQ, avoiding per-lane pointer gather overhead of the x4 path.
 // The 8 block pairs are staged to the frame with 32-byte stores in the
 // prologue and read back as 32-byte VPXOR operands in every cascade
-// round; K8..K10 are duplicated into the frame behind them and consumed
-// as 32-byte VAESENC operands (the register file cannot hold states,
-// eleven keys and blocks).
+// round. K1..K6 stay resident; every cascade round broadcasts K0 from the
+// schedule and folds it into the pair, and broadcasts K7..K10 into the
+// two temps ahead of their rounds, so the eight states, the pair and the
+// eleven keys share the register file without any key or key-derived
+// value reaching the frame, which holds the public blocks only.
 //
 // Register allocation:
 //   Y0–Y7      states, pair i = lanes (2i, 2i+1)
-//   Y8         component pair, broadcast per cascade round
-//   Y9–Y15     K1..K7 broadcasts
-//   Y10, Y11, Y15   scratch during block synthesis (prologue only)
+//   Y8–Y13     K1..K6 broadcasts
+//   Y14, Y15   pair ^ K0 per cascade round, then K7..K10 in turn
+//   Y9, Y10, Y11, Y15   scratch during block synthesis (prologue only)
 //   0(SP)..255(SP)    the 8 staged block pairs
-//   256(SP)..351(SP)  K8, K9, K10 duplicated across both halves
 //
 // Per-pair synthesis (no index vector):
 //   - Calculate groupIdx for both lanes (2i and 2i+1)
 //   - Load into X11 (lane 2i) and X15 (lane 2i+1)
 //   - VINSERTI128 to form YMM with [gi_even | gi_odd]
 //   - VPUNPCKLQDQ to transform [gi, 0] into [gi<<8, gi>>56] per 128-bit half
-//   - XOR with the template (absorb13Block ^ K0 ^ length tag), store to the frame
+//   - XOR with the template (absorb13Block ^ [13 | 13 ^ (v << 8)], the
+//     length tag with the interlock-nonce fold in its second qword),
+//     store to the frame
 """
 
 
@@ -784,7 +872,9 @@ def x16_comment_zmm(tier_desc):
 //   Z0–Z3      states, group j = lanes (4j, 4j+1, 4j+2, 4j+3)
 //   Z4–Z13     K1..K10 broadcasts
 //   Z14        component pair, broadcast per cascade round
-//   Z15        block template: absorb13Block ^ K0 ^ length tag (prologue only)
+//   Z15        block template: absorb13Block ^ K0 ^ [13 | 13 ^ (v << 8)]
+//              (the length tag with the interlock-nonce fold in its
+//              second qword; prologue only)
 //   Z16–Z19    fill blocks, group j = lanes (4j .. 4j+3)
 //   Z20–Z22    groupIdxBase broadcast and synthesis scratch (prologue only)
 //
@@ -802,12 +892,15 @@ def x16_comment_neon(tier_desc):
 // per-lane fill shape. See aescmacasm_fused.go for the construction; the
 // kernel is pinned to the pure-Go reference (scalarFusedX16) by the
 // in-package parity tests.
-""" + X16_CASCADE_NOTE + """// Block layout per lane: [0x03 | LE64(groupIdxBase+i) | 7×0x00] (domain
-// tag, 8-byte index, zero padding), XORed with K0 and the length tag.
+""" + X16_CASCADE_NOTE + """// Block layout per lane: [0x03 | LE64(groupIdxBase+i) | LE32(v) | 3×0x00]
+// (domain tag, 8-byte index, interlock-nonce fold, zero padding), XORed
+// with K0 and the length tag; the fold is ORed into the length-tag GPR
+// of the second qword once per call.
 //
 // Batch layout: two batches of 8 lanes, each register-resident — V0..V7
 // states, V8..V15 blocks, V16..V24 K1..K9, V25 K10, V26 pair load, V27
-// K0 ^ length tag. Each batch runs the whole cascade before the next
+// K0 ^ [13 | 13 ^ (v << 8)] (the length tag with the fold in its second
+// qword). Each batch runs the whole cascade before the next
 // starts. Issue order inside a round is round-major: every step (the
 // pair fold, each AESE + AESMC round, the final K10 XOR) runs across all
 // 8 lanes before the next step starts, so the 8 independent chains keep
@@ -834,21 +927,26 @@ def x16_xmm(vex):
     """Two batches of eight lanes; the 16 blocks are built from the
     groupIdx GPR as [idx<<8 | idx>>56] via shift + PUNPCKLQDQ, XORed with
     the template (absorb13Block, which carries the 0x03 domain tag, XOR
-    K0 XOR the length tag) and staged to the frame. Each batch then runs
-    the full cascade from the staged blocks. The legacy-SSE tier reloads
-    each block and each of K1..K3 through a register (PXOR / AESENC m128
-    would require 16-byte alignment the Go frame does not guarantee)."""
+    [13 | 13 ^ (v << 8)] — the length tag with the interlock-nonce fold
+    in its second qword, assembled in R12 / R9 and inserted qword by
+    qword into X10) and staged to the frame. Each batch then runs the
+    full cascade from the staged blocks, every lane carried as
+    t = state ^ K0 with K10' = K10 ^ K0 as the last-round key. The
+    legacy-SSE tier reloads each block and each of K1..K3 through a
+    register (PXOR / AESENC m128 would require 16-byte alignment the Go
+    frame does not guarantee)."""
     tier = "Vex" if vex else "AesNi"
     mov = "VMOVDQU" if vex else "MOVOU"
     L = [f"// func aesCMAC128FusedChain13x16{tier}Asm({X16_SIG})",
-         f"TEXT ·aesCMAC128FusedChain13x16{tier}Asm(SB), NOSPLIT, $256-40",
+         f"TEXT ·aesCMAC128FusedChain13x16{tier}Asm(SB), NOSPLIT, $256-44",
          "\tMOVQ roundKeys+0(FP), AX", "\tMOVQ out+32(FP), DI", "\tMOVQ groupIdxBase+24(FP), R8", "",
-         "\t// Template X12 = absorb13Block ^ K0 ^ (13 || 13)",
-         f"\t{mov} ·absorb13Block(SB), X12", "\tMOVQ $13, R12"]
+         "\t// Template X12 = absorb13Block ^ [13 | 13 ^ (v << 8)]: the length tag with the",
+         "\t// interlock-nonce fold v in bytes 9..12 of the second qword",
+         f"\t{mov} ·absorb13Block(SB), X12", "\tMOVQ $13, R12", "\tMOVL v+40(FP), R9", "\tSHLQ $8, R9", "\tORQ R12, R9"]
     if vex:
-        L += ["\tVPXOR 0(AX), X12, X12", "\tVMOVQ R12, X10", "\tVPUNPCKLQDQ X10, X10, X10", "\tVPXOR X10, X12, X12", ""]
+        L += ["\tVMOVQ R12, X10", "\tVPINSRQ $1, R9, X10, X10", "\tVPXOR X10, X12, X12", ""]
     else:
-        L += ["\tMOVOU 0(AX), X8", "\tPXOR X8, X12", "\tMOVQ R12, X10", "\tPUNPCKLQDQ X10, X10", "\tPXOR X10, X12", ""]
+        L += ["\tMOVQ R12, X10", "\tPINSRQ $1, R9, X10", "\tPXOR X10, X12", ""]
     L.append("\t// Stage the 16 fill blocks into the frame at 16*lane(SP)")
     for lane in range(16):
         L.append(f"\t// Lane {lane}: idx = base" + (f" + {lane}" if lane else ""))
@@ -863,21 +961,17 @@ def x16_xmm(vex):
                   "\tPUNPCKLQDQ X15, X11", "\tPXOR X12, X11", f"\tMOVOU X11, {16 * lane}(SP)"]
         L.append("")
     if vex:
-        L.append("\t// Load K1..K8 (K9 / K10 are read as memory operands)")
-        for r in range(1, 9):
-            L.append(f"\tVMOVDQU {16 * r}(AX), X{7 + r}")
-        key = lambda r: f"X{7 + r}" if r <= 8 else f"{16 * r}(AX)"
+        L.append("\t// Load K1..K7 and K10' = K10 ^ K0 (K8 / K9 are read as memory operands)")
     else:
-        L.append("\t// Load K4..K10 (K1..K3 are reloaded through X8 per round)")
-        for r in range(4, 11):
-            L.append(f"\tMOVOU {16 * r}(AX), X{5 + r}")
-        key = lambda r: f"X{5 + r}"
+        L.append("\t// Load K4..K9 and K10' = K10 ^ K0 (K1..K3 are reloaded through X8 per round)")
+    L += xmm_x8_keys(vex)
+    key = xmm_x8_key(vex)
     L.append("")
     for b in range(2):
         L += [f"\t// ========== BATCH {b + 1}: lanes {8 * b}–{8 * b + 7} ==========",
               "\tMOVQ comps+8(FP), BX", "\tMOVQ nPairs+16(FP), CX"]
         for l in range(8):
-            L.append(f"\tVPXOR X{l}, X{l}, X{l}" if vex else f"\tPXOR X{l}, X{l}")
+            L.append(f"\t{mov} 0(AX), X{l}")
         L += ["", f"loop{b}:"]
         if vex:
             for l in range(8):
@@ -899,7 +993,8 @@ def x16_xmm(vex):
                 else:
                     L.append("\t" + "; ".join(f"AESENC {key(r)}, X{l}" for l in range(8)))
             L.append("\t" + "; ".join(f"AESENCLAST {key(10)}, X{l}" for l in range(8)))
-        L += ["\tADDQ $16, BX", "\tDECQ CX", f"\tJNZ loop{b}", "", f"\t// Store batch {b + 1} outputs"]
+        L += ["\tADDQ $16, BX", "\tDECQ CX", f"\tJNZ loop{b}", "", f"\t// Store batch {b + 1} outputs (t ^ K0)"]
+        L += xmm_unfold(8, vex, "X8")
         for l in range(8):
             L.append(f"\t{mov} X{l}, {16 * (8 * b + l)}(DI)")
         L.append("")
@@ -911,15 +1006,21 @@ def x16_ymm():
     """Eight YMM states of two lanes; each pair's two groupIdx values are
     materialised via LEAQ, moved into the two 128-bit halves, turned into
     [idx<<8 | idx>>56] with one shift pair and VPUNPCKLQDQ, XORed with the
-    template and stored to the frame as one 32-byte block pair. K8..K10
-    are duplicated into the frame behind the blocks."""
+    template (absorb13Block ^ [13 | 13 ^ (v << 8)], the length tag with
+    the interlock-nonce fold in its second qword, assembled in R12 / R9,
+    inserted into X9 and spread to both halves of Y9) and stored to the
+    frame as one 32-byte block pair. K1..K6 stay resident; K0 (folded
+    into the pair) and K7..K10 are broadcast from the schedule into the
+    two temps every cascade round."""
     L = [f"// func aesCMAC128FusedChain13x16VaesAvx2Asm({X16_SIG})",
-         "TEXT ·aesCMAC128FusedChain13x16VaesAvx2Asm(SB), NOSPLIT, $352-40",
+         "TEXT ·aesCMAC128FusedChain13x16VaesAvx2Asm(SB), NOSPLIT, $256-44",
          "\tMOVQ roundKeys+0(FP), AX", "\tMOVQ comps+8(FP), BX", "\tMOVQ nPairs+16(FP), CX",
          "\tMOVQ out+32(FP), DI", "\tMOVQ groupIdxBase+24(FP), R8", "",
-         "\t// Template Y10 = absorb13Block ^ K0 ^ (13 || 13), broadcast to both halves",
-         "\tVBROADCASTI128 ·absorb13Block(SB), Y10", "\tVBROADCASTI128 0(AX), Y9", "\tVPXOR Y9, Y10, Y10",
-         "\tMOVQ $13, R12", "\tVMOVQ R12, X9", "\tVPBROADCASTQ X9, Y9", "\tVPXOR Y9, Y10, Y10", "",
+         "\t// Template Y10 = absorb13Block ^ [13 | 13 ^ (v << 8)] in both halves: the length",
+         "\t// tag with the interlock-nonce fold v in bytes 9..12 of each second qword",
+         "\tVBROADCASTI128 ·absorb13Block(SB), Y10",
+         "\tMOVQ $13, R12", "\tMOVL v+40(FP), R9", "\tSHLQ $8, R9", "\tORQ R12, R9",
+         "\tVMOVQ R12, X9", "\tVPINSRQ $1, R9, X9, X9", "\tVINSERTI128 $1, X9, Y9, Y9", "\tVPXOR Y9, Y10, Y10", "",
          "\t// Stage the 8 block pairs into the frame at 32*pair(SP)"]
     for p in range(8):
         L.append(f"\t// ========== Pair {p}: lanes {2 * p}–{2 * p + 1} ==========")
@@ -927,24 +1028,25 @@ def x16_ymm():
         L += ["\tVMOVQ R9, X11", f"\tLEAQ {2 * p + 1}(R8), R9", "\tVMOVQ R9, X15",
               "\tVINSERTI128 $1, X15, Y11, Y11", "\tVPSRLQ $56, Y11, Y15", "\tVPSLLQ $8, Y11, Y11",
               "\tVPUNPCKLQDQ Y15, Y11, Y11", "\tVPXOR Y10, Y11, Y11", f"\tVMOVDQU Y11, {32 * p}(SP)", ""]
-    L.append("\t// Duplicate K8..K10 into the frame at 256(SP), 288(SP), 320(SP)")
-    for r in range(8, 11):
-        L += [f"\tVBROADCASTI128 {16 * r}(AX), Y9", f"\tVMOVDQU Y9, {256 + 32 * (r - 8)}(SP)"]
-    L.append("\t// Load K1..K7")
-    for r in range(1, 8):
-        L.append(f"\tVBROADCASTI128 {16 * r}(AX), Y{8 + r}")
+    L.append("\t// Load K1..K6")
+    for r in range(1, 7):
+        L.append(f"\tVBROADCASTI128 {16 * r}(AX), Y{7 + r}")
     for i in range(8):
         L.append(f"\tVPXOR Y{i}, Y{i}, Y{i}")
-    L += ["", "loop:", "\tVBROADCASTI128 0(BX), Y8"]
+    L += ["", "loop:", "\t// Pair ^ K0 into every state, then the block",
+          "\tVBROADCASTI128 0(BX), Y14", "\tVBROADCASTI128 0(AX), Y15", "\tVPXOR Y15, Y14, Y14"]
     for i in range(8):
-        L.append(f"\tVPXOR Y8, Y{i}, Y{i}")
+        L.append(f"\tVPXOR Y14, Y{i}, Y{i}")
     for i in range(8):
         L.append(f"\tVPXOR {32 * i}(SP), Y{i}, Y{i}")
-    L.append("\t// AES rounds 1..10 on all 8 YMM pairs (K1..K7 in registers, K8..K10 from the frame)")
-    key = lambda r: f"Y{8 + r}" if r <= 7 else f"{256 + 32 * (r - 8)}(SP)"
-    for r in range(1, 10):
-        L.append("\t" + "; ".join(f"VAESENC {key(r)}, Y{i}, Y{i}" for i in range(8)))
-    L.append("\t" + "; ".join(f"VAESENCLAST {key(10)}, Y{i}, Y{i}" for i in range(8)))
+    L.append("\t// AES rounds 1..6 under the resident K1..K6, 7..10 under K7..K10 broadcast into Y14 / Y15")
+    for r in range(1, 7):
+        L.append("\t" + "; ".join(f"VAESENC Y{7 + r}, Y{i}, Y{i}" for i in range(8)))
+    for r in range(7, 11):
+        t = "Y14" if r % 2 else "Y15"
+        L.append(f"\tVBROADCASTI128 {16 * r}(AX), {t}")
+        op = "VAESENCLAST" if r == 10 else "VAESENC"
+        L.append("\t" + "; ".join(f"{op} {t}, Y{i}, Y{i}" for i in range(8)))
     L += ["\tADDQ $16, BX", "\tDECQ CX", "\tJNZ loop", "", "\t// Store outputs: pair i at [32i..32i+32]"]
     for i in range(8):
         L.append(f"\tVMOVDQU Y{i}, {32 * i}(DI)")
@@ -954,17 +1056,26 @@ def x16_ymm():
 
 def x16_zmm():
     """Four ZMM states of four lanes; groupIdxBase is broadcast once and each
-    group adds its laneIdxZ offset row, so the whole synthesis is vector
-    arithmetic (no GPR-to-vector moves). Blocks stay in Z16..Z19 and every
-    cascade round is one VPTERNLOGQ plus ten AES rounds per group."""
+    group adds its laneIdxZ offset row, so the per-group synthesis is
+    vector arithmetic (the only GPR-to-vector moves build the template:
+    [13 | 13 ^ (v << 8)], the length tag with the interlock-nonce fold in
+    its second qword, is assembled in R12 / R9, inserted into X10 with
+    VEX-encoded moves — X10 is free until K7 lands, and a low register
+    keeps the kernel on the AVX-512F floor the dispatch gate checks — and
+    spread to all four 128-bit lanes by VSHUFI64X2). Blocks stay in
+    Z16..Z19 and every cascade round is one VPTERNLOGQ plus ten AES
+    rounds per group."""
     L = [f"// func aesCMAC128FusedChain13x16Avx512Asm({X16_SIG})",
-         "TEXT ·aesCMAC128FusedChain13x16Avx512Asm(SB), NOSPLIT, $0-40",
+         "TEXT ·aesCMAC128FusedChain13x16Avx512Asm(SB), NOSPLIT, $0-44",
          "\tMOVQ roundKeys+0(FP), AX", "\tMOVQ comps+8(FP), BX", "\tMOVQ nPairs+16(FP), CX",
          "\tMOVQ out+32(FP), DI", "",
-         "\t// Broadcast groupIdxBase to Z20 (all 8 qwords); template Z15 = absorb13Block ^ K0 ^ (13 || 13)",
+         "\t// Broadcast groupIdxBase to Z20 (all 8 qwords); template Z15 = absorb13Block ^ K0 ^",
+         "\t// [13 | 13 ^ (v << 8)], the length tag with the interlock-nonce fold v in bytes 9..12",
+         "\t// of each second qword",
          "\tVPBROADCASTQ groupIdxBase+24(FP), Z20", "\tVBROADCASTI32X4 ·absorb13Block(SB), Z15",
          "\tVBROADCASTI32X4 0(AX), Z21", "\tVPXORD Z21, Z15, Z15",
-         "\tMOVQ $13, R12", "\tVPBROADCASTQ R12, Z21", "\tVPXORD Z21, Z15, Z15", ""]
+         "\tMOVQ $13, R12", "\tMOVL v+40(FP), R9", "\tSHLQ $8, R9", "\tORQ R12, R9",
+         "\tVMOVQ R12, X10", "\tVPINSRQ $1, R9, X10, X10", "\tVSHUFI64X2 $0, Z10, Z10, Z10", "\tVPXORD Z10, Z15, Z15", ""]
     for g in range(4):
         L += [f"\t// ========== Group {g}: lanes {4 * g}–{4 * g + 3} ==========",
               f"\tVPADDQ ·laneIdxZ+{64 * g}(SB), Z20, Z21", "\tVPSRLQ $56, Z21, Z22", "\tVPSLLQ $8, Z21, Z21",
@@ -988,22 +1099,26 @@ def x16_zmm():
 
 def x16_neon():
     """Two batches of eight lanes, register-resident; the block is assembled
-    in GPRs (D[0] = idx<<8 | 0x03, D[1] = idx>>56), XORed with K0 and the
-    length tag, and is the first AESE operand of every cascade round.
-    Issue order is round-major within a batch."""
+    in GPRs (D[0] = idx<<8 | 0x03, D[1] = idx>>56), XORed with V27 =
+    K0 ^ [13 | 13 ^ (v << 8)] — the length tag with the interlock-nonce
+    fold in its second qword, ORed into the tag GPR once per call — and
+    is the first AESE operand of every cascade round. Issue order is
+    round-major within a batch."""
     L = [f"// func aesCMAC128FusedChain13x16NeonAsm({X16_SIG})",
-         "TEXT ·aesCMAC128FusedChain13x16NeonAsm(SB), NOSPLIT, $0-40",
+         "TEXT ·aesCMAC128FusedChain13x16NeonAsm(SB), NOSPLIT, $0-44",
          "\tMOVD roundKeys+0(FP), R0", "\tMOVD comps+8(FP), R1", "\tMOVD nPairs+16(FP), R2",
          "\tMOVD groupIdxBase+24(FP), R3", "\tMOVD out+32(FP), R4", "",
          "\t// Load K1..K9 (V16..V24) and K10 (V25)"]
     L += neon_keys("R0", "R5")
-    L += ["", "\t// V27 = K0 ^ (13 || 13)", "\tVLD1 (R0), [V27.B16]", "\tMOVD $13, R7",
-          "\tVMOV R7, V26.D[0]", "\tVMOV R7, V26.D[1]", "\tVEOR V26.B16, V27.B16, V27.B16", ""]
+    L += ["", "\t// V27 = K0 ^ [13 | 13 ^ (v << 8)]: the length tag with the interlock-nonce",
+          "\t// fold v in bytes 9..12 of the second qword",
+          "\tVLD1 (R0), [V27.B16]", "\tMOVD $13, R7", "\tMOVWU v+40(FP), R12", "\tORR R12<<8, R7, R12",
+          "\tVMOV R7, V26.D[0]", "\tVMOV R12, V26.D[1]", "\tVEOR V26.B16, V27.B16, V27.B16", ""]
     for b in range(2):
         L += [f"\t// ========== BATCH {b + 1}: lanes {8 * b}–{8 * b + 7} ==========",
               "\t// Step 1 — synthesise the 8 fill blocks in V8..V15:",
-              "\t// [0x03 | LE64(groupIdxBase+i) | 7×0x00] as D[0] = (idx << 8) | 0x03,",
-              "\t// D[1] = idx >> 56, then XOR K0 and the length tag."]
+              "\t// [0x03 | LE64(groupIdxBase+i) | LE32(v) | 3×0x00] as D[0] = (idx << 8) | 0x03,",
+              "\t// D[1] = idx >> 56, then XOR V27 (K0, the length tag and the fold)."]
         for l in range(8):
             lane = 8 * b + l
             L.append("\tMOVD R3, R6" if lane == 0 else f"\tADD ${lane}, R3, R6")

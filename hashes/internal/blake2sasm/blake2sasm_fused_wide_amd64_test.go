@@ -19,10 +19,12 @@ var kernels256x8 = map[string]map[int]x8fn256{
 	"avx2":   {20: wrap8_256(blake2sFusedChain20x8Avx2Asm), 36: wrap8_256(blake2sFusedChain36x8Avx2Asm), 68: wrap8_256(blake2sFusedChain68x8Avx2Asm)},
 }
 
-type fill8fn256 func(*[32]byte, []uint64, uint64, *[8][4]uint64)
+type fill8fn256 func(*[32]byte, []uint64, uint64, uint32, *[8][4]uint64)
 
-func wrapFill8_256(f func(*[32]byte, *uint64, int, uint64, *[8][4]uint64)) fill8fn256 {
-	return func(k *[32]byte, c []uint64, base uint64, o *[8][4]uint64) { f(k, &c[0], len(c)/4, base, o) }
+func wrapFill8_256(f func(*[32]byte, *uint64, int, uint64, *[8][4]uint64, uint32)) fill8fn256 {
+	return func(k *[32]byte, c []uint64, base uint64, v uint32, o *[8][4]uint64) {
+		f(k, &c[0], len(c)/4, base, o, v)
+	}
 }
 
 // fill256x8Kernels maps each tier to its eight-lane fill kernel.
@@ -55,7 +57,11 @@ func TestFusedWideKernelParityAmd64(t *testing.T) {
 
 // TestFusedWideCrossTierAmd64 feeds the same inputs to every executable
 // eight-lane kernel of a shape and to two calls of the same tier's
-// four-lane kernel, and requires identical output.
+// four-lane kernel, and requires identical output. For the fill kernel
+// the four-lane calls run over fill blocks built explicitly in memory
+// with the fold at bytes 9..12 — the memory-reading kernel absorbs
+// whatever the buffer carries, so a synthesising kernel that dropped or
+// misplaced the fold would diverge here.
 func TestFusedWideCrossTierAmd64(t *testing.T) {
 	for _, n := range []int{20, 36, 68} {
 		key256 := randomKey256()
@@ -85,19 +91,32 @@ func TestFusedWideCrossTierAmd64(t *testing.T) {
 	}
 	key256 := randomKey256()
 	c256 := randomWords(16)
-	var ref *[8][4]uint64
-	for _, tier := range amd64CascadeTiers() {
-		if !tier.ok {
-			continue
-		}
-		var o [8][4]uint64
-		fill256x8Kernels[tier.name](key256, c256, 0x0123456789ab, &o)
-		if ref == nil {
-			ref = &o
-			continue
-		}
-		if o != *ref {
-			t.Fatalf("fill: tier %s eight-lane kernel diverges from the first executable tier", tier.name)
+	for _, base := range append([]uint64{randomWords(1)[0]}, fillBases...) {
+		for _, v := range append([]uint32{randomFold()}, fillFolds...) {
+			var ref *[8][4]uint64
+			for _, tier := range amd64CascadeTiers() {
+				if !tier.ok {
+					continue
+				}
+				var o8, o4 [8][4]uint64
+				fill256x8Kernels[tier.name](key256, c256, base, v, &o8)
+				var blocks [4][13]byte
+				f := kernels256x4[tier.name][13]
+				for h := 0; h < 2; h++ {
+					ptrs := fillPtrs4(&blocks, base+uint64(4*h), v)
+					f(key256, c256, &ptrs, out8x256Half(&o4, h))
+				}
+				if o8 != o4 {
+					t.Fatalf("fill base=%#x v=%#x: tier %s eight-lane kernel diverges from two four-lane calls over explicit blocks", base, v, tier.name)
+				}
+				if ref == nil {
+					ref = &o8
+					continue
+				}
+				if o8 != *ref {
+					t.Fatalf("fill base=%#x v=%#x: tier %s eight-lane kernel diverges from the first executable tier", base, v, tier.name)
+				}
+			}
 		}
 	}
 }
@@ -149,11 +168,12 @@ func BenchmarkFillWide(b *testing.B) {
 			key256 := randomKey256()
 			c256 := randomWords(4 * g)
 			var o8 [8][4]uint64
+			const v = uint32(0xA5C33C5A)
 			b.Run(fmt.Sprintf("fill256/%s/x8/groups%d", tier.name, g), func(b *testing.B) {
 				b.SetBytes(8 * 13)
 				f := fill256x8Kernels[tier.name]
 				for i := 0; i < b.N; i++ {
-					f(key256, c256, uint64(i)*8, &o8)
+					f(key256, c256, uint64(i)*8, v, &o8)
 				}
 			})
 			b.Run(fmt.Sprintf("fill256/%s/2x4/groups%d", tier.name, g), func(b *testing.B) {
@@ -162,7 +182,7 @@ func BenchmarkFillWide(b *testing.B) {
 				f := kernels256x4[tier.name][13]
 				for i := 0; i < b.N; i++ {
 					for h := 0; h < 2; h++ {
-						ptrs := fillPtrs4(&blocks, uint64(i)*8+uint64(4*h))
+						ptrs := fillPtrs4(&blocks, uint64(i)*8+uint64(4*h), v)
 						f(key256, c256, &ptrs, out8x256Half(&o8, h))
 					}
 				}

@@ -22,7 +22,7 @@ func TestInputEntropyKernelsArm64(t *testing.T) {
 		auditX4(t, "neon", n, x4[n])
 		auditX1(t, "neon", n, x1[n])
 	}
-	auditX16(t, "neon", func(key *[16]byte, comps []uint64, base uint64, out *[16][2]uint64) {
-		aesITB128FusedChain13x16NeonAsm(key, &comps[0], len(comps)/2, base, out)
+	auditX16(t, "neon", func(key *[16]byte, comps []uint64, base uint64, v uint32, out *[16][2]uint64) {
+		aesITB128FusedChain13x16NeonAsm(key, &comps[0], len(comps)/2, base, out, v)
 	})
 }

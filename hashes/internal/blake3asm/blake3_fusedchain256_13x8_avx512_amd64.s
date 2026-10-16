@@ -1,8 +1,10 @@
 //go:build amd64 && !purego && !noitbasm
 
 // AVX-512 YMM (eight lanes) batch-16 Interlocked Barrier fill kernel for BLAKE3 at the
-// 13-byte shape, 8 lanes (1 compression per cascade round). The data
-// words are staged once per call and the seed-injected words rebuilt
+// 13-byte shape, 8 lanes (1 compression per cascade round). The fill
+// blocks [0x03 | LE64(groupIdxBase+i) | LE32(v)] are synthesised
+// in-register once per call from groupIdxBase and the per-message
+// interlock-nonce fold v, and the seed-injected words rebuilt
 // each round; see blake3asm_fused.go for the construction and the
 // in-package parity tests for the bit-exact pin against the pure-Go
 // cascade.
@@ -35,15 +37,21 @@
 	BLAKE3_G(Y2, Y7, Y8, Y13, s12, s13); \
 	BLAKE3_G(Y3, Y4, Y9, Y14, s14, s15)
 
-// func blake3FusedChain13x8Avx512Asm(fixedKey *[32]byte, comps *uint64, nGroups int, groupIdxBase uint64, out *[8][4]uint64)
-TEXT ·blake3FusedChain13x8Avx512Asm(SB), NOSPLIT, $256-40
+// func blake3FusedChain13x8Avx512Asm(fixedKey *[32]byte, comps *uint64, nGroups int, groupIdxBase uint64, out *[8][4]uint64, v uint32)
+TEXT ·blake3FusedChain13x8Avx512Asm(SB), NOSPLIT, $256-44
 	MOVQ fixedKey+0(FP), AX
 	MOVQ comps+8(FP), BX
 	MOVQ nGroups+16(FP), CX
 	MOVQ out+32(FP), DX
 
+	// Fill blocks [0x03 | LE64(groupIdxBase+i) | LE32(v)] as data dwords:
+	// D0 = (idx << 8) | 0x03, D1 = idx >> 24, D2 = (idx >> 56) | (v << 8), D3 = v >> 24
 	VPBROADCASTQ groupIdxBase+24(FP), Z0
 	VPADDQ laneIdx<>(SB), Z0, Z0
+	MOVL v+40(FP), R12
+	VPBROADCASTD R12, Y3
+	VPSLLD $8, Y3, Y4
+	VPSRLD $24, Y3, Y3
 	VPSLLQ $8, Z0, Z1
 	MOVQ $3, R12
 	VPBROADCASTQ R12, Z2
@@ -55,9 +63,10 @@ TEXT ·blake3FusedChain13x8Avx512Asm(SB), NOSPLIT, $256-40
 	VMOVDQU32 Y1, 32(SP)
 	VPSRLQ $56, Z0, Z1
 	VPMOVQD Z1, Y1
+	VPORD Y4, Y1, Y1
 	VMOVDQU32 Y1, 64(SP)
+	VMOVDQU32 Y3, 96(SP)
 	VPXORD Y2, Y2, Y2
-	VMOVDQU32 Y2, 96(SP)
 	VMOVDQU32 Y2, 128(SP)
 	VMOVDQU32 Y2, 160(SP)
 	VMOVDQU32 Y2, 192(SP)

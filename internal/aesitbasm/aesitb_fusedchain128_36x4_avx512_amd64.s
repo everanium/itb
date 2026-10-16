@@ -3,8 +3,10 @@
 // VAES ZMM (four lanes per register) fused ChainHash cascade kernel for AES-ITB-128 at the
 // 36-byte shape, 4 lanes (3 PKCS#7 blocks, 5 AES rounds per
 // cascade round).
-// The padded data blocks are staged once in registers (Z15..) and
-// every cascade round runs from registers; see aesitbasm_fused.go for the
+// The padded data blocks are staged once in registers (Z15..), block 0
+// with the key folded in and every later block with the round constant
+// of the preceding absorb round folded in so it serves as that round's
+// key, and every cascade round runs from registers; see aesitbasm_fused.go for the
 // construction and the in-package parity tests for the bit-exact pin
 // against the pure-Go cascade.
 
@@ -53,29 +55,26 @@ TEXT ·aesITB128FusedChain36x4Avx512Asm(SB), NOSPLIT, $0-40
 	VPINSRD $0, 32(R11), X13, X4
 	VINSERTI64X2 $3, X4, Z17, Z17
 
-	VBROADCASTI32X4 ·RC+0(SB), Z2
-	VBROADCASTI32X4 ·RC+16(SB), Z3
-	VBROADCASTI32X4 ·RC+32(SB), Z4
-	VBROADCASTI32X4 ·RC+48(SB), Z5
-	VBROADCASTI32X4 ·RC+64(SB), Z6
-	VBROADCASTI32X4 ·RC+80(SB), Z7
-	VBROADCASTI32X4 ·RC+96(SB), Z8
-	VBROADCASTI32X4 ·RC+112(SB), Z9
 	VBROADCASTI32X4 0(AX), Z13
+	VPXORD Z13, Z15, Z15
+	VBROADCASTI32X4 ·RC+0(SB), Z13
+	VPXORD Z13, Z16, Z16
+	VBROADCASTI32X4 ·RC+16(SB), Z13
+	VPXORD Z13, Z17, Z17
+	VBROADCASTI32X4 ·RC+32(SB), Z2
+	VBROADCASTI32X4 ·RC+48(SB), Z3
+	VBROADCASTI32X4 ·RC+64(SB), Z4
 	VPXORD Z0, Z0, Z0
 
 loop:
 	VBROADCASTI32X4 0(BX), Z14
-	VPXORD Z13, Z14, Z14
 	VPXORD Z14, Z0, Z0
 	VPXORD Z15, Z0, Z0
+	VAESENC Z16, Z0, Z0
+	VAESENC Z17, Z0, Z0
 	VAESENC Z2, Z0, Z0
-	VPXORD Z16, Z0, Z0
 	VAESENC Z3, Z0, Z0
-	VPXORD Z17, Z0, Z0
 	VAESENC Z4, Z0, Z0
-	VAESENC Z2, Z0, Z0
-	VAESENC Z3, Z0, Z0
 	ADDQ $16, BX
 	DECQ CX
 	JNZ loop

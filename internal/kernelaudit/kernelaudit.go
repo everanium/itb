@@ -14,7 +14,8 @@
 //     lane's output and no other lane's (lane isolation);
 //   - every bit of every component word, of the key and — for the
 //     Interlocked Barrier fill kernels that synthesise their blocks from
-//     a group index — of the group index base changes every lane;
+//     a group index and the per-message interlock-nonce fold — of the
+//     group index base and of the fold changes every lane;
 //   - the lanes are pairwise distinct on distinct inputs;
 //   - rotating the lane buffers by one position rotates the outputs the
 //     same way (a kernel reading a lane through the wrong pointer), and
@@ -53,7 +54,10 @@ type Config struct {
 	// N is the length in bytes of every lane's data buffer; 0 for the
 	// fill kernels that synthesise their blocks from the group index.
 	N int
-	// Base reports whether the kernel takes a group index base.
+	// Base reports whether the kernel is a fill kernel taking a group
+	// index base and the per-message interlock-nonce fold (Inputs.Base
+	// and Inputs.Fold); both are drawn and bit-flipped like the other
+	// inputs.
 	Base bool
 }
 
@@ -63,6 +67,7 @@ type Inputs struct {
 	Comps []uint64
 	Lanes [][]byte
 	Base  uint64
+	Fold  uint32
 }
 
 // Eval evaluates the kernel on the inputs and returns one output per
@@ -155,6 +160,7 @@ func differential[O comparable](cfg Config, kernel, ref Eval[O]) []string {
 		}
 	}
 	in.Base = rng.Uint64()
+	in.Fold = rng.Uint32()
 
 	baseline := eval(in)
 	if len(baseline) != cfg.Lanes {
@@ -218,6 +224,11 @@ func differential[O comparable](cfg Config, kernel, ref Eval[O]) []string {
 			in.Base ^= 1 << b
 			allMove("base bit ignored", fmt.Sprintf("bit %d", b))
 			in.Base ^= 1 << b
+		}
+		for b := 0; b < 32; b++ {
+			in.Fold ^= 1 << b
+			allMove("fold bit ignored", fmt.Sprintf("bit %d", b))
+			in.Fold ^= 1 << b
 		}
 	}
 	// Restored inputs reproduce the baseline.

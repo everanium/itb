@@ -119,3 +119,51 @@ func TestChaCha20NotAffineInData(t *testing.T) {
 		}
 	}
 }
+
+// TestAESITB128NotAffineInData holds the AES-ITB-128 closure to the same
+// data-path guards at every shipped input shape and at block-boundary
+// lengths: the digest is not affine in the data under one key and seed,
+// swapping two 16-byte absorbed blocks or two 24-byte windows changes
+// it, and the low output word depends on the data. The closure keeps a
+// 128-bit state throughout — the narrowest width any input bit passes
+// through is the full 16-byte AES state.
+func TestAESITB128NotAffineInData(t *testing.T) {
+	r := rand.New(rand.NewSource(0xAE51))
+	var fixedKey [16]byte
+	r.Read(fixedKey[:])
+	single, _, _, err := Make128Pair(CipherAESITB128, fixedKey[:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := func(data []byte, seed [4]uint64) [4]uint64 {
+		lo, hi := single(data, seed[0], seed[1])
+		return [4]uint64{lo, hi}
+	}
+	for _, n := range []int{13, 15, 16, 17, 20, 32, 33, 36, 64, 65, 68, 96, 128} {
+		if affineInData(h, n, r, 8) {
+			t.Errorf("n=%d: the AES-ITB-128 digest is affine in the data", n)
+		}
+	}
+	if windowSwapCollides(h, r) {
+		t.Error("swapping two 24-byte windows of a 68-byte input leaves the AES-ITB-128 digest unchanged")
+	}
+	seed := [4]uint64{r.Uint64(), r.Uint64()}
+	for _, n := range []int{36, 68} {
+		d := make([]byte, n)
+		r.Read(d)
+		s := append([]byte(nil), d...)
+		copy(s[0:16], d[16:32])
+		copy(s[16:32], d[0:16])
+		if !bytes.Equal(d, s) && h(d, seed) == h(s, seed) {
+			t.Errorf("n=%d: swapping absorbed blocks 0 and 1 leaves the digest unchanged", n)
+		}
+	}
+	for _, n := range []int{13, 20, 36, 68} {
+		d1, d2 := make([]byte, n), make([]byte, n)
+		r.Read(d1)
+		r.Read(d2)
+		if h(d1, seed)[0] == h(d2, seed)[0] {
+			t.Errorf("n=%d: output word 0 does not depend on the data", n)
+		}
+	}
+}

@@ -234,7 +234,7 @@ index bb0669c7..a54d81c9 100644
  package aes
  
 diff --git a/areion_test.go b/areion_test.go
-index 0843fd7c..ce2e7eec 100644
+index 14eb7b44..9013e703 100644
 --- a/areion_test.go
 +++ b/areion_test.go
 @@ -118,95 +118,6 @@ func TestAreion512Roundtrip(t *testing.T) {

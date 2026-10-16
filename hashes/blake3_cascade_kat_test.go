@@ -43,12 +43,12 @@ var blake3CascadeKATs = []blake3CascadeKAT{
 }
 
 // blake3FillKATs are the folds of the batch-16 fill output over the lock
-// components at group index base 0x00FFFFFFFFFFFFF8, keyed by group
+// components at group index base 0x00FFFFFFFFFFFFF8 under katFillFold, keyed by group
 // count.
 var blake3FillKATs = map[int]string{
-	2: "018368a1f8d213c0",
-	4: "05f4ebdfd9231237",
-	8: "1d698bdccb7ce9f8",
+	2: "837cc14763c5984e",
+	4: "f1a5571eb3d46042",
+	8: "70b660c4fb9ac237",
 }
 
 func blake3KATKey() []byte {
@@ -126,11 +126,11 @@ func TestBLAKE3CascadeKAT(t *testing.T) {
 			}
 			if kat.n == 13 {
 				var out [8][4]uint64
-				hooked.InterlockFillX16()(lock, 0x00FFFFFFFFFFFFF8, &out)
+				hooked.InterlockFillX16()(lock, 0x00FFFFFFFFFFFFF8, katFillFold, &out)
 				var acc uint64
 				for i := range out {
 					acc = foldWords(acc, out[i][:])
-					if want := seqCascade256(plain.Hash, lock, fillBlockKAT(0x00FFFFFFFFFFFFF8+uint64(i))); out[i] != want {
+					if want := seqCascade256(plain.Hash, lock, fillBlockKAT(0x00FFFFFFFFFFFFF8+uint64(i), katFillFold)); out[i] != want {
 						t.Errorf("batch-16 fill lane %d diverges from the sequential cascade", i)
 					}
 				}
@@ -185,7 +185,7 @@ func TestBLAKE3HooksZeroAlloc(t *testing.T) {
 	}
 	fill := s.InterlockFillX16()
 	var out [8][4]uint64
-	check("blake3 InterlockFillX16", func() { fill(lock, 0x00FFFFFFFFFFFFF8, &out) })
+	check("blake3 InterlockFillX16", func() { fill(lock, 0x00FFFFFFFFFFFFF8, katFillFold, &out) })
 }
 
 // TestBLAKE3WideHooksZeroAlloc asserts that the eight-lane per-pixel

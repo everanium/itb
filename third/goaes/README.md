@@ -28,7 +28,9 @@ carries the SoEM22 construction instead:
 `P1` is Areion under the existing round constants (unchanged); `P2` is
 Areion under a second constant table `areionRoundConstants2` — the next
 fifteen 128-bit words of the hexadecimal digits of π, little-endian, in the
-same format — modelled as a permutation independent of `P1`. This is
+same format, with word 7 in the shifted form of word 7 of the first table
+(leading zero nibble dropped, zero nibble appended) — modelled as a
+permutation independent of `P1`. This is
 CLM19 Eq. (4) with its output whitening; CLM19 Theorem 1 proves it a PRF up
 to about 2^(2n/3) queries in the random-permutation model, with both
 subkeys secret and independently random. The domain constant `d` is

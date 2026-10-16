@@ -10,43 +10,49 @@
 // groupIdxBase per lane, avoiding the per-lane pointer gather overhead of
 // the x4 path. The synthesised block is round-invariant per lane; every
 // cascade round XORs key XOR (c0 || c1) and the block into the state and
-// runs the three AES rounds (absorb, finaliser RC[0], finaliser RC[1]).
-// Block layout per lane: [0x03 | LE64(groupIdxBase+i) | 4×0x00 | 3×0x03]
-// (domain tag, 8-byte index, 4 zero bytes, 3 PKCS#7 padding bytes).
+// runs the three AES rounds (absorb RC[0], finalisers RC[1] and RC[2]).
+// Block layout per lane: [0x03 | LE64(groupIdxBase+i) | LE32(v) | 3×0x03]
+// (domain tag, 8-byte index, interlock-nonce fold, 3 PKCS#7 padding
+// bytes); the fold is ORed into the pad-tail GPR once per call.
 //
 // Batch layout: two batches of 8 lanes, each register-resident — V0..V7
-// states, V8..V15 blocks, V16 / V17 RC[0] / RC[1], V18 key, V19 key XOR
-// pair (per round), V20 pair load. Each batch runs the whole cascade
-// before the next starts. Issue order inside a round is round-major:
-// every step (the key XOR pair fold, each of the three AESE+AESMC rounds,
-// the final RC[1] XOR) runs across all 8 lanes before the next step
+// states, V8..V15 blocks (the key folded in once per batch), V16 / V17 /
+// V21 RC[0] / RC[1] / RC[2], V18 key, V19 component pair (per round).
+// Each batch runs the whole cascade before the next starts. Issue order
+// inside a round is round-major: every step (the component pair fold,
+// each of the three AESE+AESMC rounds, the final RC[2] XOR) runs across
+// all 8 lanes before the next step
 // starts, so the 8 independent chains keep both crypto pipes busy
 // instead of serialising each lane's dependency chain behind the
 // previous lane's.
 
 #include "textflag.h"
 
-// func aesITB128FusedChain13x16NeonAsm(key *[16]byte, comps *uint64, nPairs int, groupIdxBase uint64, out *[16][2]uint64)
-TEXT ·aesITB128FusedChain13x16NeonAsm(SB), NOSPLIT, $0-40
+// func aesITB128FusedChain13x16NeonAsm(key *[16]byte, comps *uint64, nPairs int, groupIdxBase uint64, out *[16][2]uint64, v uint32)
+TEXT ·aesITB128FusedChain13x16NeonAsm(SB), NOSPLIT, $0-44
 	MOVD key+0(FP), R0
 	MOVD comps+8(FP), R1
 	MOVD nPairs+16(FP), R2
 	MOVD groupIdxBase+24(FP), R3
 	MOVD out+32(FP), R4
 
-	// Load key (V18) and round constants RC[0] (V16), RC[1] (V17)
+	// Load key (V18) and round constants RC[0] (V16), RC[1] (V17), RC[2] (V21)
 	VLD1 (R0), [V18.B16]
 	MOVD $·RC(SB), R5
 	VLD1.P 16(R5), [V16.B16]  // RC[0]
-	VLD1 (R5), [V17.B16]      // RC[1]
+	VLD1.P 16(R5), [V17.B16]  // RC[1]
+	VLD1 (R5), [V21.B16]      // RC[2]
 
-	// Materialized constant for pad tail: bytes 13-15 = 0x03
+	// Materialized constant for the block's second qword: pad tail bytes 13-15 = 0x03
+	// with the interlock-nonce fold v in bytes 9-12 (v << 8)
 	MOVD $0x0303030000000000, R7
+	MOVWU v+40(FP), R12
+	ORR R12<<8, R7, R7
 
 	// ========== BATCH 1: lanes 0–7 ==========
 	// Step 1 — synthesise the 8 fill blocks in V8..V15:
-	// [0x03 | LE64(groupIdxBase+i) | 4×0x00 | 3×0x03] as
-	// D[0] = (idx << 8) | 0x03, D[1] = (idx >> 56) | pad tail.
+	// [0x03 | LE64(groupIdxBase+i) | LE32(v) | 3×0x03] as
+	// D[0] = (idx << 8) | 0x03, D[1] = (idx >> 56) | (v << 8) | pad tail.
 	MOVD R3, R6
 	LSL $8, R6, R8
 	ORR $3, R8, R8
@@ -103,6 +109,15 @@ TEXT ·aesITB128FusedChain13x16NeonAsm(SB), NOSPLIT, $0-40
 	ORR R7, R9, R9
 	VMOV R8, V15.D[0]
 	VMOV R9, V15.D[1]
+	// Fold the key into the 8 fill blocks once.
+	VEOR V18.B16, V8.B16, V8.B16
+	VEOR V18.B16, V9.B16, V9.B16
+	VEOR V18.B16, V10.B16, V10.B16
+	VEOR V18.B16, V11.B16, V11.B16
+	VEOR V18.B16, V12.B16, V12.B16
+	VEOR V18.B16, V13.B16, V13.B16
+	VEOR V18.B16, V14.B16, V14.B16
+	VEOR V18.B16, V15.B16, V15.B16
 
 	// Step 2 — zero the 8 states, reset the component cursor and pair count.
 	VEOR V0.B16, V0.B16, V0.B16
@@ -117,10 +132,10 @@ TEXT ·aesITB128FusedChain13x16NeonAsm(SB), NOSPLIT, $0-40
 	MOVD R2, R11
 
 loop0:
-	// Fold key XOR pair (V19) into every state, then the block as the
-	// first AESE key operand, two RC[0] rounds and the final RC[1] XOR.
-	VLD1.P 16(R10), [V20.B16]
-	VEOR V18.B16, V20.B16, V19.B16
+	// Fold the component pair (V19) into every state, then the
+	// key-folded block as the first AESE key operand, the RC[0] and
+	// RC[1] rounds and the final RC[2] XOR.
+	VLD1.P 16(R10), [V19.B16]
 	VEOR V19.B16, V0.B16, V0.B16
 	VEOR V19.B16, V1.B16, V1.B16
 	VEOR V19.B16, V2.B16, V2.B16
@@ -161,30 +176,30 @@ loop0:
 	AESMC V6.B16, V6.B16
 	AESE V16.B16, V7.B16
 	AESMC V7.B16, V7.B16
-	AESE V16.B16, V0.B16
+	AESE V17.B16, V0.B16
 	AESMC V0.B16, V0.B16
-	AESE V16.B16, V1.B16
+	AESE V17.B16, V1.B16
 	AESMC V1.B16, V1.B16
-	AESE V16.B16, V2.B16
+	AESE V17.B16, V2.B16
 	AESMC V2.B16, V2.B16
-	AESE V16.B16, V3.B16
+	AESE V17.B16, V3.B16
 	AESMC V3.B16, V3.B16
-	AESE V16.B16, V4.B16
+	AESE V17.B16, V4.B16
 	AESMC V4.B16, V4.B16
-	AESE V16.B16, V5.B16
+	AESE V17.B16, V5.B16
 	AESMC V5.B16, V5.B16
-	AESE V16.B16, V6.B16
+	AESE V17.B16, V6.B16
 	AESMC V6.B16, V6.B16
-	AESE V16.B16, V7.B16
+	AESE V17.B16, V7.B16
 	AESMC V7.B16, V7.B16
-	VEOR V17.B16, V0.B16, V0.B16
-	VEOR V17.B16, V1.B16, V1.B16
-	VEOR V17.B16, V2.B16, V2.B16
-	VEOR V17.B16, V3.B16, V3.B16
-	VEOR V17.B16, V4.B16, V4.B16
-	VEOR V17.B16, V5.B16, V5.B16
-	VEOR V17.B16, V6.B16, V6.B16
-	VEOR V17.B16, V7.B16, V7.B16
+	VEOR V21.B16, V0.B16, V0.B16
+	VEOR V21.B16, V1.B16, V1.B16
+	VEOR V21.B16, V2.B16, V2.B16
+	VEOR V21.B16, V3.B16, V3.B16
+	VEOR V21.B16, V4.B16, V4.B16
+	VEOR V21.B16, V5.B16, V5.B16
+	VEOR V21.B16, V6.B16, V6.B16
+	VEOR V21.B16, V7.B16, V7.B16
 	SUBS $1, R11, R11
 	BNE loop0
 
@@ -200,8 +215,8 @@ loop0:
 
 	// ========== BATCH 2: lanes 8–15 ==========
 	// Step 1 — synthesise the 8 fill blocks in V8..V15:
-	// [0x03 | LE64(groupIdxBase+i) | 4×0x00 | 3×0x03] as
-	// D[0] = (idx << 8) | 0x03, D[1] = (idx >> 56) | pad tail.
+	// [0x03 | LE64(groupIdxBase+i) | LE32(v) | 3×0x03] as
+	// D[0] = (idx << 8) | 0x03, D[1] = (idx >> 56) | (v << 8) | pad tail.
 	ADD $8, R3, R6
 	LSL $8, R6, R8
 	ORR $3, R8, R8
@@ -258,6 +273,15 @@ loop0:
 	ORR R7, R9, R9
 	VMOV R8, V15.D[0]
 	VMOV R9, V15.D[1]
+	// Fold the key into the 8 fill blocks once.
+	VEOR V18.B16, V8.B16, V8.B16
+	VEOR V18.B16, V9.B16, V9.B16
+	VEOR V18.B16, V10.B16, V10.B16
+	VEOR V18.B16, V11.B16, V11.B16
+	VEOR V18.B16, V12.B16, V12.B16
+	VEOR V18.B16, V13.B16, V13.B16
+	VEOR V18.B16, V14.B16, V14.B16
+	VEOR V18.B16, V15.B16, V15.B16
 
 	// Step 2 — zero the 8 states, reset the component cursor and pair count.
 	VEOR V0.B16, V0.B16, V0.B16
@@ -272,10 +296,10 @@ loop0:
 	MOVD R2, R11
 
 loop1:
-	// Fold key XOR pair (V19) into every state, then the block as the
-	// first AESE key operand, two RC[0] rounds and the final RC[1] XOR.
-	VLD1.P 16(R10), [V20.B16]
-	VEOR V18.B16, V20.B16, V19.B16
+	// Fold the component pair (V19) into every state, then the
+	// key-folded block as the first AESE key operand, the RC[0] and
+	// RC[1] rounds and the final RC[2] XOR.
+	VLD1.P 16(R10), [V19.B16]
 	VEOR V19.B16, V0.B16, V0.B16
 	VEOR V19.B16, V1.B16, V1.B16
 	VEOR V19.B16, V2.B16, V2.B16
@@ -316,30 +340,30 @@ loop1:
 	AESMC V6.B16, V6.B16
 	AESE V16.B16, V7.B16
 	AESMC V7.B16, V7.B16
-	AESE V16.B16, V0.B16
+	AESE V17.B16, V0.B16
 	AESMC V0.B16, V0.B16
-	AESE V16.B16, V1.B16
+	AESE V17.B16, V1.B16
 	AESMC V1.B16, V1.B16
-	AESE V16.B16, V2.B16
+	AESE V17.B16, V2.B16
 	AESMC V2.B16, V2.B16
-	AESE V16.B16, V3.B16
+	AESE V17.B16, V3.B16
 	AESMC V3.B16, V3.B16
-	AESE V16.B16, V4.B16
+	AESE V17.B16, V4.B16
 	AESMC V4.B16, V4.B16
-	AESE V16.B16, V5.B16
+	AESE V17.B16, V5.B16
 	AESMC V5.B16, V5.B16
-	AESE V16.B16, V6.B16
+	AESE V17.B16, V6.B16
 	AESMC V6.B16, V6.B16
-	AESE V16.B16, V7.B16
+	AESE V17.B16, V7.B16
 	AESMC V7.B16, V7.B16
-	VEOR V17.B16, V0.B16, V0.B16
-	VEOR V17.B16, V1.B16, V1.B16
-	VEOR V17.B16, V2.B16, V2.B16
-	VEOR V17.B16, V3.B16, V3.B16
-	VEOR V17.B16, V4.B16, V4.B16
-	VEOR V17.B16, V5.B16, V5.B16
-	VEOR V17.B16, V6.B16, V6.B16
-	VEOR V17.B16, V7.B16, V7.B16
+	VEOR V21.B16, V0.B16, V0.B16
+	VEOR V21.B16, V1.B16, V1.B16
+	VEOR V21.B16, V2.B16, V2.B16
+	VEOR V21.B16, V3.B16, V3.B16
+	VEOR V21.B16, V4.B16, V4.B16
+	VEOR V21.B16, V5.B16, V5.B16
+	VEOR V21.B16, V6.B16, V6.B16
+	VEOR V21.B16, V7.B16, V7.B16
 	SUBS $1, R11, R11
 	BNE loop1
 

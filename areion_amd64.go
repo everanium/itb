@@ -3,6 +3,8 @@
 package itb
 
 import (
+	"runtime"
+
 	"github.com/everanium/itb/third/goaes"
 
 	"github.com/everanium/itb/internal/areionasm"
@@ -52,7 +54,13 @@ func areionSoEM256Permutex4SoA(s1b0, s1b1, s2b0, s2b1 *aes.Block4) {
 				states1[lane][i] ^= states2[lane][i]
 			}
 		}
-		*s1b0, *s1b1 = pack256x4SoA(&states1)
+		pack256x4SoAInto(&states1, s1b0, s1b1)
+		// states1 / states2 hold permutation outputs of whitened
+		// inputs; zero them.
+		clear(states1[:])
+		clear(states2[:])
+		runtime.KeepAlive(&states1)
+		runtime.KeepAlive(&states2)
 	}
 }
 
@@ -95,6 +103,12 @@ func areionSoEM512Permutex4SoA(a1, b1, c1, d1, a2, b2, c2, d2 *aes.Block4) {
 				states1[lane][i] ^= states2[lane][i]
 			}
 		}
-		*a1, *b1, *c1, *d1 = pack512x4SoA(&states1)
+		pack512x4SoAInto(&states1, a1, b1, c1, d1)
+		// states1 / states2 hold permutation outputs of whitened
+		// inputs; zero them.
+		clear(states1[:])
+		clear(states2[:])
+		runtime.KeepAlive(&states1)
+		runtime.KeepAlive(&states2)
 	}
 }

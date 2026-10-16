@@ -20,12 +20,18 @@ chacha20_fusedchain256_{20,36,68}x8_{avx512,avx2}_amd64.s (eight lane
 pointers, staged four at a time) and the Interlocked Barrier fill
 kernel chacha20_fusedchain256_13x8_{avx512,avx2}_amd64.s (the batch-16
 hook of width 256), with the eight 13-byte fill blocks
-[0x03 | LE64(groupIdxBase+i) | 4×0x00] synthesised in-register from
-groupIdxBase as the slot words (idx << 8) | 0x03, idx >> 24, idx >> 56
-and the constant tag word 0x8D << 24 (the qword lane arithmetic on ZMM
-narrowed to the dword lanes by VPMOVQD on avx512; on two YMM halves
-narrowed by VPSHUFD + VPERMQ and joined by VINSERTI128 on avx2). The
-neon tier runs the fill hook as two four-lane kernel calls over
+[0x03 | LE64(groupIdxBase+i) | LE32(v)] — v the per-message
+interlock-nonce fold, one uint32 argument after out — synthesised
+in-register from groupIdxBase and v as the slot words (idx << 8) | 0x03,
+idx >> 24, (idx >> 56) | (v << 8) and the tag word (v >> 24) | 0x8D << 24
+(the qword lane arithmetic on ZMM narrowed to the dword lanes by VPMOVQD
+on avx512; on two YMM halves narrowed by VPSHUFD + VPERMQ and joined by
+VINSERTI128 on avx2; the fold is loaded once into R13 and broadcast to
+every dword lane — straight from the GPR on avx512, through VMOVD on
+avx2 — then shifted left by 8 for word 2 and right by 24 for word 3;
+idx >> 56 occupies bits 0..7 of word 2 and v << 8 bits 8..31, so the OR
+is exact).
+The neon tier runs the fill hook as two four-lane kernel calls over
 Go-synthesised blocks. The
 single-lane entry points of every tier run the general-purpose-register
 kernels chacha20_fusedchain256_{13,20,36,68}x1_gpr_{amd64,arm64}.s: the
@@ -73,32 +79,45 @@ Register plans:
                 every frame fits the NOSPLIT budget
     avx2 x4     X0..X14 v[0..14], X15 the rotate temp, v[15] in a frame
                 slot with v[12] spilled around the two quarter rounds that
-                touch v[15]; the key words, the slot words and the
-                replicated constants are memory operands; rol16 / rol8 =
-                VPSHUFB with byte masks, rol12 / rol7 = shift-shift-or
+                touch v[15]; the key words are rebuilt at the top of every
+                cascade round straight into X4..X11 — the b and c rows,
+                dead between rounds — with X15 as the component temp; the
+                slot words and the replicated constants are memory
+                operands; rol16 / rol8 = VPSHUFB with byte masks, rol12 /
+                rol7 = shift-shift-or
     avx2 x8     the same plan on YMM registers (eight dword lanes, one
                 per pixel): Y0..Y14 v[0..14], Y15 the rotate temp, v[15]
-                and the v[12] spill as 32-byte frame slots, the key words,
-                slot words, replicated constants and byte masks as 32-byte
-                memory operands — 16 of 16 with the one spill of the
-                four-lane plan and no other; the shape-68 kernel (960-byte
-                frame) carries the stack check
+                and the v[12] spill as 32-byte frame slots, the key words
+                rebuilt into Y4..Y11, the slot words, replicated constants
+                and byte masks as 32-byte memory operands — 16 of 16 with
+                the one spill of the four-lane plan and no other
     neon x4     V0..V15 v[0..15] (four dword lanes per register, one
                 pass), V16..V23 the key words, V24 the rotate alternate
                 (VSHL + VSRI — the rotated word lands in the alternate
                 register and the register roles swap; rol16 = VREV32 on
                 16-bit elements, rol8 = VTBL against the byte mask in
                 V25, both in place), V26 the temp; the block state is
-                restored to its canonical registers after every block
+                restored to its canonical registers after every block and
+                the output words are extracted lane by lane straight from
+                the state registers
     gpr amd64   v[0..15] in AX, BX, CX, DX, SI, DI, BP, R8..R11, R12..R15
                 with v[11] — a c word, whose two quarter-round steps read
                 or update it through one memory operand each — in a frame
                 slot (15 of 15 usable registers), 32-bit operations; the
-                key words, the slot words, the group counter and the
-                component / key / output pointers in the frame
+                key words are rebuilt at the top of every cascade round
+                straight into the b-row registers and the v[11] slot (the
+                output word each one consumes frees its register as the
+                temp of the next); the slot words, the group counter and
+                the component / key / output pointers in the frame
     gpr arm64   v[0..15] in R8..R17, R19..R24 (W-form operations); R0
                 key, R1 components, R2 group counter, R4 output, R7 frame
-                base, R5 / R6 the temps, R25 the constant table
+                base, R5 / R6 the temps, R25 the constant table; the key
+                words are rebuilt straight into the b-row registers
+
+The key words K ⊕ component ⊕ h exist only in registers on every tier
+(and, on gpr amd64, in the v[11] state slot); the frame slots that hold
+state words — the v[15] / v[12] slots of the avx2 tier and the v[11]
+slot of gpr amd64 — are zeroed before return.
 """
 import os
 import sys
@@ -230,6 +249,12 @@ def text_flags(frame):
     return "NOSPLIT, " if frame.aligned <= NOSPLIT_FRAME_MAX else ""
 
 
+def args_bytes(fill):
+    """The argument-area size of a kernel: five 8-byte arguments, plus the
+    4-byte interlock-nonce fold v after out on the fill kernels."""
+    return 44 if fill else 40
+
+
 def prologue_amd64(x8):
     lines = ["\tMOVQ fixedKey+0(FP), AX", "\tMOVQ comps+8(FP), BX", "\tMOVQ nGroups+16(FP), CX"]
     if not x8:
@@ -304,16 +329,25 @@ def evex_kernel(n, x8=False, fill=False):
     frame = Frame()
     build = []
     if fill:
-        # One slot block: [0x03 | LE64(idx) | 4×0x00 | 0x00 0x00 | tag].
+        # One slot block: [0x03 | LE64(idx) | LE32(v) | 0x00 0x00 | tag],
+        # v the interlock-nonce fold. Word 2 is (idx >> 56) | (v << 8),
+        # word 3 is (v >> 24) | (tag << 24); the fold is loaded into R13
+        # and broadcast once (Y2), shifted into Y3 / Y2 before the words
+        # are built.
         s = [[frame.alloc(("S", 0, w), lane_bytes) for w in range(4)]]
         tag = TAG_FINAL | 13
         build += [
             "\tVPBROADCASTQ groupIdxBase+24(FP), Z0",
             "\tVPADDQ laneIdx<>(SB), Z0, Z0",
+            "\t// The interlock-nonce fold v: v << 8 (Y3) for word 2, v >> 24 (Y2) for word 3",
+            "\tMOVL v+40(FP), R13",
+            "\tVPBROADCASTD R13, Y2",
+            "\tVPSLLD $8, Y2, Y3",
+            "\tVPSRLD $24, Y2, Y2",
             "\tVPSLLQ $8, Z0, Z1",
             "\tMOVQ $3, R12",
-            "\tVPBROADCASTQ R12, Z2",
-            "\tVPORQ Z2, Z1, Z1",
+            "\tVPBROADCASTQ R12, Z4",
+            "\tVPORQ Z4, Z1, Z1",
             "\tVPMOVQD Z1, Y1",
             f"\tVMOVDQU32 Y1, {s[0][0]}(SP)",
             "\tVPSRLQ $24, Z0, Z1",
@@ -321,9 +355,11 @@ def evex_kernel(n, x8=False, fill=False):
             f"\tVMOVDQU32 Y1, {s[0][1]}(SP)",
             "\tVPSRLQ $56, Z0, Z1",
             "\tVPMOVQD Z1, Y1",
+            "\tVPORD Y3, Y1, Y1",
             f"\tVMOVDQU32 Y1, {s[0][2]}(SP)",
             f"\tMOVQ $0x{tag << 24:08x}, R12",
             "\tVPBROADCASTD R12, Y1",
+            "\tVPORD Y2, Y1, Y1",
             f"\tVMOVDQU32 Y1, {s[0][3]}(SP)",
         ]
     else:
@@ -339,10 +375,10 @@ def evex_kernel(n, x8=False, fill=False):
 
     lines = [header(AMD, n, lanes, "AVX-512 " + ("YMM (eight lanes)" if x8 else "XMM (four lanes)"), fill=fill)]
     lines.append(evex_macros(p))
-    kind = "groupIdxBase uint64, out *[8][4]uint64" if fill else f"dataPtrs *[{lanes}]*byte, out *[{lanes}][4]uint64"
+    kind = "groupIdxBase uint64, out *[8][4]uint64, v uint32" if fill else f"dataPtrs *[{lanes}]*byte, out *[{lanes}][4]uint64"
     fn = f"chacha20FusedChain{n}x{lanes}Avx512Asm"
     lines.append(f"// func {fn}(fixedKey *[32]byte, comps *uint64, nGroups int, {kind})")
-    lines.append(f"TEXT ·{fn}(SB), {text_flags(frame)}${frame.aligned}-40")
+    lines.append(f"TEXT ·{fn}(SB), {text_flags(frame)}${frame.aligned}-{args_bytes(fill)}")
     lines += prologue_amd64(x8)
     lines.append("")
     lines += build
@@ -394,8 +430,8 @@ def evex_kernel(n, x8=False, fill=False):
 
 def avx2_macros(p, lane_bytes):
     """The quarter round, the frame-slot offsets and the double round on
-    the register prefix p (X at four lanes, Y at eight): the key words
-    K(0..7) and the v[15] / v[12] slots are lane_bytes wide."""
+    the register prefix p (X at four lanes, Y at eight): the v[15] /
+    v[12] slots are lane_bytes wide."""
     return f"""#define ROLD(x, n, rn, t) \\
 \tVPSLLD n, x, t; \\
 \tVPSRLD rn, x, x; \\
@@ -415,9 +451,8 @@ def avx2_macros(p, lane_bytes):
 \tVPXOR c, b, b; \\
 \tROLD(b, $7, $25, t)
 
-#define K(j)   (j*{lane_bytes})
-#define V15    {8 * lane_bytes}
-#define V12    {9 * lane_bytes}
+#define V15    0
+#define V12    {lane_bytes}
 
 #define DR \\
 \tQR({p}0, {p}4, {p}8,  {p}12, {p}15); \\
@@ -452,7 +487,8 @@ def avx2_tables(lane_bytes):
 
 # The constants of the eight-lane fill kernel: the qword 3 in every lane
 # (the tag byte 0x03 of the fill block) and the tag dword of its final
-# slot word.
+# slot word, into which the top byte of the interlock-nonce fold is ORed
+# at run time.
 AVX2_FILL_TABLES = f"""DATA fillc<>+0(SB)/8, $3
 DATA fillc<>+8(SB)/8, $3
 DATA fillc<>+16(SB)/8, $3
@@ -467,24 +503,34 @@ def avx2_fill_build(frame):
     registers: the lane indices as qwords (lanes 0..3 in Y1, 4..7 in
     Y2), each slot word as a qword shift of the index, narrowed to the
     dword lanes by VPSHUFD + VPERMQ per register half and joined by
-    VINSERTI128 into one 32-byte slot store."""
+    VINSERTI128 into one 32-byte slot store. The interlock-nonce fold v
+    is loaded into R13 and broadcast once through X5 (Y5): v << 8 (Y6)
+    is ORed into the packed word 2 and v >> 24 (Y5) into the tag word
+    3."""
     s = [frame.alloc(("S", 0, w), 32) for w in range(4)]
     lines = [
         "\tVPBROADCASTQ groupIdxBase+24(FP), Y0",
         "\tVPADDQ laneIdx<>+0(SB), Y0, Y1",
         "\tVPADDQ laneIdx<>+32(SB), Y0, Y2",
+        "\t// The interlock-nonce fold v: v << 8 (Y6) for word 2, v >> 24 (Y5) for word 3",
+        "\tMOVL v+40(FP), R13",
+        "\tVMOVD R13, X5",
+        "\tVPBROADCASTD X5, Y5",
+        "\tVPSLLD $8, Y5, Y6",
+        "\tVPSRLD $24, Y5, Y5",
     ]
 
-    def pack(off):
+    def pack(off, fold=None):
         return ["\tVPSHUFD $0x08, Y3, Y3", "\tVPERMQ $0x08, Y3, Y3",
                 "\tVPSHUFD $0x08, Y4, Y4", "\tVPERMQ $0x08, Y4, Y4",
-                "\tVINSERTI128 $1, X4, Y3, Y3", f"\tVMOVDQU Y3, {off}(SP)"]
+                "\tVINSERTI128 $1, X4, Y3, Y3"] + \
+               ([f"\tVPOR {fold}, Y3, Y3"] if fold else []) + [f"\tVMOVDQU Y3, {off}(SP)"]
 
     lines += ["\tVPSLLQ $8, Y1, Y3", "\tVPSLLQ $8, Y2, Y4",
               "\tVPOR fillc<>+0(SB), Y3, Y3", "\tVPOR fillc<>+0(SB), Y4, Y4"] + pack(s[0])
     lines += ["\tVPSRLQ $24, Y1, Y3", "\tVPSRLQ $24, Y2, Y4"] + pack(s[1])
-    lines += ["\tVPSRLQ $56, Y1, Y3", "\tVPSRLQ $56, Y2, Y4"] + pack(s[2])
-    lines += ["\tVPBROADCASTD fillc<>+32(SB), Y3", f"\tVMOVDQU Y3, {s[3]}(SP)"]
+    lines += ["\tVPSRLQ $56, Y1, Y3", "\tVPSRLQ $56, Y2, Y4"] + pack(s[2], fold="Y6")
+    lines += ["\tVPBROADCASTD fillc<>+32(SB), Y3", "\tVPOR Y5, Y3, Y3", f"\tVMOVDQU Y3, {s[3]}(SP)"]
     return lines
 
 
@@ -496,7 +542,7 @@ def avx2_kernel(n, x8=False, fill=False):
     p = "Y" if x8 else "X"
     lanes = 8 if x8 else 4
     lane_bytes = 4 * lanes
-    frame = Frame(10 * lane_bytes)  # K(0..7), V15, V12
+    frame = Frame(2 * lane_bytes)  # V15, V12
     if fill:
         build = avx2_fill_build(frame)
     else:
@@ -504,10 +550,10 @@ def avx2_kernel(n, x8=False, fill=False):
     m = nblocks(n)
     lines = [header(AMD, n, lanes, "AVX2 " + ("YMM (eight lanes)" if x8 else "XMM (four lanes)"), fill=fill)]
     lines.append(avx2_macros(p, lane_bytes))
-    kind = "groupIdxBase uint64, out *[8][4]uint64" if fill else f"dataPtrs *[{lanes}]*byte, out *[{lanes}][4]uint64"
+    kind = "groupIdxBase uint64, out *[8][4]uint64, v uint32" if fill else f"dataPtrs *[{lanes}]*byte, out *[{lanes}][4]uint64"
     fn = f"chacha20FusedChain{n}x{lanes}Avx2Asm"
     lines.append(f"// func {fn}(fixedKey *[32]byte, comps *uint64, nGroups int, {kind})")
-    lines.append(f"TEXT ·{fn}(SB), {text_flags(frame)}${frame.aligned}-40")
+    lines.append(f"TEXT ·{fn}(SB), {text_flags(frame)}${frame.aligned}-{args_bytes(fill)}")
     lines += prologue_amd64(x8)
     lines.append("")
     lines += build
@@ -518,24 +564,21 @@ def avx2_kernel(n, x8=False, fill=False):
     lines.append(f"\tVMOVDQU {p}0, V15(SP)")
     lines.append("")
     lines.append("loop:")
-    # Key words: K ⊕ component dword ⊕ h dword; h[7] is the v[15] slot
-    # and register 4 (dead between blocks) carries the component
-    # broadcast.
+    # Key words: K ⊕ component dword ⊕ h dword, built straight into the
+    # b and c rows v[4..11] (dead between rounds, the block-0 state of
+    # those words); h[7] is the v[15] slot and register 15 (free at the
+    # loop top) carries the component broadcast.
     for j in range(8):
-        lines.append(f"\tVPBROADCASTD {4 * j}(AX), {p}15")
+        lines.append(f"\tVPBROADCASTD {4 * j}(AX), {p}{4 + j}")
         if j == 7:
-            lines.append(f"\tVPXOR V15(SP), {p}15, {p}15")
+            lines.append(f"\tVPXOR V15(SP), {p}{4 + j}, {p}{4 + j}")
         else:
-            lines.append(f"\tVPXOR {p}{OUT_WORDS[j]}, {p}15, {p}15")
-        lines.append(f"\tVPBROADCASTD {4 * j}(BX), {p}4")
-        lines.append(f"\tVPXOR {p}4, {p}15, {p}15")
-        lines.append(f"\tVMOVDQU {p}15, K({j})(SP)")
+            lines.append(f"\tVPXOR {p}{OUT_WORDS[j]}, {p}{4 + j}, {p}{4 + j}")
+        lines.append(f"\tVPBROADCASTD {4 * j}(BX), {p}15")
+        lines.append(f"\tVPXOR {p}15, {p}{4 + j}, {p}{4 + j}")
     for b in range(m):
         lines.append("")
-        if b == 0:
-            for j in range(8):
-                lines.append(f"\tVMOVDQU K({j})(SP), {p}{4 + j}")
-        else:
+        if b > 0:
             for j in range(7):
                 lines.append(f"\tVMOVDQA {p}{OUT_WORDS[j]}, {p}{4 + j}")
             lines.append(f"\tVMOVDQU V15(SP), {p}11")
@@ -564,6 +607,10 @@ def avx2_kernel(n, x8=False, fill=False):
         else:
             for l in range(4):
                 lines.append(f"\tVPEXTRD ${l}, X{OUT_WORDS[i]}, {32 * l + 4 * i}(DX)")
+    # The v[15] / v[12] slots held state words: zero them.
+    lines.append(f"\tVPXOR {p}4, {p}4, {p}4")
+    lines.append(f"\tVMOVDQU {p}4, V15(SP)")
+    lines.append(f"\tVMOVDQU {p}4, V12(SP)")
     lines.append("\tVZEROUPPER")
     lines.append("\tRET")
     lines.append("")
@@ -684,7 +731,6 @@ GLOBL rol8<>(SB), RODATA|NOPTR, $16
 
 def neon_kernel(n):
     frame = Frame()
-    o_off = [frame.alloc(("O", i), 16) for i in range(8)]
     build = stage_arm64(n, frame)
     m = nblocks(n)
     L = []
@@ -747,10 +793,8 @@ def neon_kernel(n):
     emit("\tCBNZ R2, loop")
     emit("")
     for i in range(WORDS):
-        emit(f"\tFMOVQ F{OUT_WORDS[i]}, {o_off[i]}(R7)")
-    for i in range(WORDS):
         for l in range(4):
-            emit(f"\tMOVWU {o_off[i] + 4 * l}(R7), R12")
+            emit(f"\tVMOV V{OUT_WORDS[i]}.S[{l}], R12")
             emit(f"\tMOVW R12, {32 * l + 4 * i}(R3)")
     emit("")
     emit("\tRET")
@@ -782,7 +826,6 @@ def gpr_header(build, n, tier_desc):
 
 def gpr_kernel_amd64(n):
     frame = Frame()
-    k_off = [frame.alloc(("K", j), 4) for j in range(8)]
     blocks = slot_words(n)
     m = len(blocks)
     s_off = [[frame.alloc(("S", b, w), 4) for w in range(4)] for b in range(m)]
@@ -814,22 +857,24 @@ def gpr_kernel_amd64(n):
     for i in OUT_WORDS:
         L.append(f"\tXORL {R[i]}, {R[i]}")
     L += ["", "loop:"]
-    # Key words: K ⊕ component dword ⊕ h dword (h in the output words;
-    # the b words v[4..10] are dead between rounds and serve as scratch).
+    # Key words: K ⊕ component dword ⊕ h dword, built straight into the
+    # block-0 state words v[4..11] (dead between rounds). R9 / R11 carry
+    # the component / key pointers, so the words of v[8] and v[10] are
+    # built in AX / BX — h[0] / h[1], free once words 0 / 1 have consumed
+    # them — and moved in last; word 7 goes to the v[11] slot through AX.
     L += [f"\tMOVQ {cmp}(SP), R9", f"\tMOVQ {keyp}(SP), R11"]
-    for j in range(8):
-        L += [f"\tMOVL {4 * j}(R11), R10", f"\tXORL {4 * j}(R9), R10", f"\tXORL {R[OUT_WORDS[j]]}, R10",
-              f"\tMOVL R10, {k_off[j]}(SP)"]
-    L += ["\tADDQ $32, R9", f"\tMOVQ R9, {cmp}(SP)"]
+
+    def kword(j, dst):
+        return [f"\tMOVL {4 * j}(R11), {dst}", f"\tXORL {4 * j}(R9), {dst}", f"\tXORL {R[OUT_WORDS[j]]}, {dst}"]
+
+    for j in (0, 1, 2, 3, 5):
+        L += kword(j, R[4 + j])
+    L += kword(7, "AX") + [f"\tMOVL AX, {spill}(SP)"]
+    L += kword(4, "AX") + kword(6, "BX")
+    L += ["\tADDQ $32, R9", f"\tMOVQ R9, {cmp}(SP)", f"\tMOVL AX, {R[8]}", f"\tMOVL BX, {R[10]}"]
     for b in range(m):
         L.append("")
-        if b == 0:
-            for j in range(8):
-                if R[4 + j] is None:
-                    L += [f"\tMOVL {k_off[j]}(SP), R12", f"\tMOVL R12, {spill}(SP)"]
-                else:
-                    L.append(f"\tMOVL {k_off[j]}(SP), {R[4 + j]}")
-        else:
+        if b > 0:
             for j in range(8):
                 if R[4 + j] is None:
                     L.append(f"\tMOVL {R[OUT_WORDS[j]]}, {spill}(SP)")
@@ -849,13 +894,13 @@ def gpr_kernel_amd64(n):
     L += ["", f"\tDECQ {cnt}(SP)", "\tJNZ loop", "", f"\tMOVQ {outp}(SP), R9"]
     for i in range(WORDS):
         L.append(f"\tMOVL {R[OUT_WORDS[i]]}, {4 * i}(R9)")
-    L += ["\tRET", ""]
+    # The v[11] slot held a key word and state: zero it.
+    L += [f"\tMOVL $0, {spill}(SP)", "\tRET", ""]
     return "\n".join(L)
 
 
 def gpr_kernel_arm64(n):
     frame = Frame()
-    k_off = [frame.alloc(("K", j), 4) for j in range(8)]
     blocks = slot_words(n)
     m = len(blocks)
     s_off = [[frame.alloc(("S", b, w), 4) for w in range(4)] for b in range(m)]
@@ -876,16 +921,15 @@ def gpr_kernel_arm64(n):
     for i in OUT_WORDS:
         L.append(f"\tMOVW ZR, {R[i]}")
     L += ["", "loop:"]
+    # Key words: K ⊕ component dword ⊕ h dword, built straight into the
+    # block-0 state words v[4..11] (dead between rounds).
     for j in range(8):
         L += [f"\tMOVWU {4 * j}(R0), R5", f"\tMOVWU {4 * j}(R1), R6", "\tEORW R6, R5, R5",
-              f"\tEORW {R[OUT_WORDS[j]]}, R5, R5", f"\tMOVW R5, {k_off[j]}(R7)"]
+              f"\tEORW {R[OUT_WORDS[j]]}, R5, {R[4 + j]}"]
     L.append("\tADD $32, R1, R1")
     for b in range(m):
         L.append("")
-        if b == 0:
-            for j in range(8):
-                L.append(f"\tMOVWU {k_off[j]}(R7), {R[4 + j]}")
-        else:
+        if b > 0:
             for j in range(8):
                 L.append(f"\tMOVWU {R[OUT_WORDS[j]]}, {R[4 + j]}")
         for i in range(4):

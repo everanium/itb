@@ -18,7 +18,10 @@
 // rounds, so at cascade depth r = 2 the peeled last-call seed is
 //
 //	Y = k2 XOR h1(d),   h1(d) = P(K1 XOR pad(d)),   P = 4 public AES rounds
-//	W = InvMixColumns(Y XOR RC[1]),   W[p] = kappa[p] XOR ShiftRows(SubBytes(X'))[p]
+//	W = InvMixColumns(Y XOR RC_last), W[p] = kappa[p] XOR ShiftRows(SubBytes(X'))[p]
+//
+// with RC_last = RC[(nblk+1) mod 8] the last finalising constant of the shape
+// (RC[3] at 20 B; lastRC below).
 //
 // where X' is the state entering P's last round (balanced over a Lambda-set),
 // k2 = comps[2:4] is the constant last-call component pair, and
@@ -90,18 +93,25 @@ var fixedKey = [16]byte{
 	0x88, 0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF,
 }
 
-// NUMS round constants (aesitb.go aesITBRoundConstants). RC entries are raw
-// 16-byte blocks, not little-endian words.
+// NUMS round constants (aesitb.go aesITBRoundConstants): the first eight
+// 128-bit words of the hexadecimal fractional expansion of pi, word bytes
+// most significant first. RC entries are raw 16-byte blocks, not
+// little-endian words.
 var rc = [8][16]byte{
-	{0x6A, 0x09, 0xE6, 0x67, 0xBB, 0x67, 0xAE, 0x85, 0x3C, 0x6E, 0xF3, 0x72, 0xA5, 0x4F, 0xF5, 0x3A},
-	{0x51, 0x0E, 0x52, 0x7F, 0x9B, 0x05, 0x68, 0x8C, 0x1F, 0x83, 0xD9, 0xAB, 0x5B, 0xE0, 0xCD, 0x19},
-	{0x6A, 0x09, 0xE6, 0x67, 0xF3, 0xBC, 0xC9, 0x08, 0xBB, 0x67, 0xAE, 0x85, 0x84, 0xCA, 0xA7, 0x3B},
-	{0x3C, 0x6E, 0xF3, 0x72, 0xFE, 0x94, 0xF8, 0x2B, 0xA5, 0x4F, 0xF5, 0x3A, 0x5F, 0x1D, 0x36, 0xF1},
-	{0x51, 0x0E, 0x52, 0x7F, 0xAD, 0xE6, 0x82, 0xD1, 0x9B, 0x05, 0x68, 0x8C, 0x2B, 0x3E, 0x6C, 0x1F},
-	{0x1F, 0x83, 0xD9, 0xAB, 0xFB, 0x41, 0xBD, 0x6B, 0x5B, 0xE0, 0xCD, 0x19, 0x13, 0x7E, 0x21, 0x79},
-	{0xCB, 0xBB, 0x9D, 0x5D, 0xC1, 0x05, 0x9E, 0xD8, 0x62, 0x9A, 0x29, 0x2A, 0x36, 0x7C, 0xD5, 0x07},
-	{0x91, 0x59, 0x01, 0x5A, 0x30, 0x70, 0xDD, 0x17, 0x15, 0x2F, 0xEC, 0xD8, 0xF7, 0x0E, 0x59, 0x39},
+	{0x24, 0x3F, 0x6A, 0x88, 0x85, 0xA3, 0x08, 0xD3, 0x13, 0x19, 0x8A, 0x2E, 0x03, 0x70, 0x73, 0x44},
+	{0xA4, 0x09, 0x38, 0x22, 0x29, 0x9F, 0x31, 0xD0, 0x08, 0x2E, 0xFA, 0x98, 0xEC, 0x4E, 0x6C, 0x89},
+	{0x45, 0x28, 0x21, 0xE6, 0x38, 0xD0, 0x13, 0x77, 0xBE, 0x54, 0x66, 0xCF, 0x34, 0xE9, 0x0C, 0x6C},
+	{0xC0, 0xAC, 0x29, 0xB7, 0xC9, 0x7C, 0x50, 0xDD, 0x3F, 0x84, 0xD5, 0xB5, 0xB5, 0x47, 0x09, 0x17},
+	{0x92, 0x16, 0xD5, 0xD9, 0x89, 0x79, 0xFB, 0x1B, 0xD1, 0x31, 0x0B, 0xA6, 0x98, 0xDF, 0xB5, 0xAC},
+	{0x2F, 0xFD, 0x72, 0xDB, 0xD0, 0x1A, 0xDF, 0xB7, 0xB8, 0xE1, 0xAF, 0xED, 0x6A, 0x26, 0x7E, 0x96},
+	{0xBA, 0x7C, 0x90, 0x45, 0xF1, 0x2C, 0x7F, 0x99, 0x24, 0xA1, 0x99, 0x47, 0xB3, 0x91, 0x6C, 0xF7},
+	{0x08, 0x01, 0xF2, 0xE2, 0x85, 0x8E, 0xFC, 0x16, 0x63, 0x69, 0x20, 0xD8, 0x71, 0x57, 0x4E, 0x69},
 }
+
+// lastRC is the last finalising round constant of the --data-len shape,
+// RC[(nblk+1) mod 8] for nblk padded blocks — the public constant every
+// last-round peel removes. Set in main after flag parsing.
+var lastRC [16]byte
 
 // ---- AES building blocks (FIPS-197, column-major state s[4*col+row]) --------
 var (
@@ -218,14 +228,15 @@ func pkcs7(data []byte) []byte {
 }
 
 // invertGeneric recovers (seed0, seed1) from one (data, full 16-byte output)
-// pair: it walks the two finaliser rounds and every absorbed block backwards,
-// the only unknown falling out as the initial seed block XOR fixedKey.
+// pair: it walks the two finaliser rounds (RC[(nblk+1) mod 8], then
+// RC[nblk mod 8]) and every absorbed block backwards, the only unknown
+// falling out as the initial seed block XOR fixedKey.
 func invertGeneric(data []byte, out16 [16]byte) (uint64, uint64) {
-	state := out16
-	state = invRound(state, rc[1])
-	state = invRound(state, rc[0])
 	padded := pkcs7(data)
 	nblk := len(padded) / 16
+	state := out16
+	state = invRound(state, rc[(nblk+1)%8])
+	state = invRound(state, rc[nblk%8])
 	for i := nblk - 1; i >= 0; i-- {
 		state = invRound(state, rc[i%8])
 		for j := 0; j < 16; j++ {
@@ -472,7 +483,7 @@ func (cfg *config) subBlockMask(h func([]byte, uint64, uint64) (uint64, uint64),
 		for l := 0; l < lanes; l++ {
 			yb := seedBytes(last[l][0], last[l][1])
 			for i := 0; i < 16; i++ {
-				yb[i] ^= rc[1][i]
+				yb[i] ^= lastRC[i]
 			}
 			w := invMixColumns(yb)
 			for p := 0; p < 16; p++ {
@@ -606,7 +617,7 @@ func (cfg *config) runPairConst(h func([]byte, uint64, uint64) (uint64, uint64),
 		for l := 0; l < lanes; l++ {
 			yb := seedBytes(last[l][0], last[l][1])
 			for i := 0; i < 16; i++ {
-				yb[i] ^= rc[1][i]
+				yb[i] ^= lastRC[i]
 			}
 			W[base+l] = invMixColumns(yb)
 		}
@@ -764,22 +775,25 @@ var kat = []struct {
 	s0, s1 uint64
 	want   string
 }{
-	{0, 0x0, 0x0, "d03e268799c14203bdb3e663165d6b23"},
-	{1, 0x0, 0x0, "f2a4e404c80c84451e35cadcc7f22bb9"},
-	{15, 0x0, 0x0, "95be57f5a239f3ab144382b7cd8695de"},
-	{16, 0x0, 0x0, "3171e8f8165c8ff5203ac9aa371c719a"},
-	{17, 0x0, 0x0, "48d3f6fcc2985cf31a074ea2c78b1d09"},
-	{31, 0x0, 0x0, "064e72d014e7a41c4fc3b7d1b938f625"},
-	{32, 0x0, 0x0, "e08f48e9037d3bc81d03dc0adc1b9d3b"},
-	{33, 0x0, 0x0, "7370df93d8fd5e118d33484f582e1750"},
-	{63, 0x0, 0x0, "c17822cc92d1a5fb712a1ea655de82ad"},
-	{64, 0x0, 0x0, "81615890aab0306bf4b32bbe2d7ca1af"},
-	{0, 0x1, 0x0, "787e6d0bae570d2ec58796bcbf68c172"},
-	{0, 0x0, 0x1, "e9d430852929ab3d88c240ddc40f823c"},
-	{5, 0x123456789abcdef, 0xfedcba9876543210, "7486079419f3f0767b579065d6cc3d93"},
-	{16, 0xffffffffffffffff, 0xffffffffffffffff, "2eae20695db216506bd63f96fda12ca0"},
-	{33, 0x7, 0x9, "dccfc56b263e1a2fc13052534f15092e"},
-	{64, 0x8000000000000000, 0x1, "a7a8e09b329611b7aec6a97b0e75cd25"},
+	{0, 0x0, 0x0, "b184dc9639cb19463a318b5bdbef60b3"},
+	{1, 0x0, 0x0, "98aa26e22213e0995747f26166741da1"},
+	{15, 0x0, 0x0, "67ff582c8131e477e50a0d5ad8159ffa"},
+	{16, 0x0, 0x0, "b525d15864f5da4095cac4878e734e65"},
+	{17, 0x0, 0x0, "b83d1718c4886682779773e766da4740"},
+	{31, 0x0, 0x0, "b4bb6ec276da61c523e83bdb6c71d283"},
+	{32, 0x0, 0x0, "6bce525c8ccab6ef9397b24764613f7b"},
+	{33, 0x0, 0x0, "12bf744bf5dc16db8fe26756e0bdfdc9"},
+	{63, 0x0, 0x0, "b60baf0921ce4914e43c7d22742bc285"},
+	{64, 0x0, 0x0, "1f43035d6a9e6d218803d2e171b9d4e1"},
+	{0, 0x1, 0x0, "877c1a9b664408e3a0f05d6e0bc743d3"},
+	{0, 0x0, 0x1, "3e3957b58667430747216ab9e87dd55a"},
+	{5, 0x123456789abcdef, 0xfedcba9876543210, "4769146529998d0c4d2861b4bc1efdfe"},
+	{16, 0xffffffffffffffff, 0xffffffffffffffff, "b0e1cbcf08246eb0a7f190fe1ad780dd"},
+	{33, 0x7, 0x9, "57e01a09debb3f6a814a92505188b8d0"},
+	{64, 0x8000000000000000, 0x1, "98876054889177dd47c546cd01811630"},
+	{80, 0x0, 0x0, "bb2af2751c71a52fd0fc49c95ef350c0"},
+	{96, 0x0, 0x0, "37d5acf4a140659dba5d810f10b62d0a"},
+	{128, 0x123456789abcdef, 0xfedcba987654321, "71f22c5f6678b8026faabb5aa7bb6ee5"},
 }
 
 func selfTest(cfg *config, h func([]byte, uint64, uint64) (uint64, uint64)) error {
@@ -916,7 +930,7 @@ func selfTestDiagonal() error {
 // One order-N Lambda-set is 2^(8N) texts spanning the N active positions (a
 // diagonal for the column-saturation property). The peeled value
 //
-//	W[p] = InvMixColumns(Y ^ RC[1])[p] = kappa[p] ^ ShiftRows(SubBytes(X'))[p],
+//	W[p] = InvMixColumns(Y ^ RC_last)[p] = kappa[p] ^ ShiftRows(SubBytes(X'))[p],
 //
 // with X' the state entering P's last round and kappa = InvMixColumns(k2),
 // mirrors the order-1 kappa engine exactly. Over a set balanced after T-1
@@ -984,7 +998,7 @@ func (cfg *config) globalParityMask(comps []uint64, setSeed uint64,
 					for l := 0; l < lanes; l++ {
 						yb := seedBytes(last[l][0], last[l][1])
 						for i := 0; i < 16; i++ {
-							yb[i] ^= rc[1][i]
+							yb[i] ^= lastRC[i]
 						}
 						wv := invMixColumns(yb)
 						for p := 0; p < 16; p++ {
@@ -1285,6 +1299,7 @@ func main() {
 		observable: *observable, nonceModel: *nonceModel, sets: *sets,
 	}
 
+	lastRC = rc[(shapeT(*dataLen)-1)%8]
 	h, _ := hashes.AESITB128PairWithKey(fixedKey)
 	if err := selfTest(cfg, h); err != nil {
 		fmt.Fprintln(os.Stderr, "self-test FAILED:", err)
@@ -1306,7 +1321,7 @@ func main() {
 	}
 	fmt.Printf("  active=%v, early-exit=%v, workers=%d, seed=%d\n",
 		cfg.active, cfg.earlyExit, cfg.workers, *seed)
-	fmt.Printf("  self-test OK (16 generic KATs + invertGeneric round-trip + batched cascade parity 4 shapes + diagonal pin)\n")
+	fmt.Printf("  self-test OK (%d generic KATs + invertGeneric round-trip + batched cascade parity 4 shapes + diagonal pin)\n", len(kat))
 	fmt.Printf("  attacker model: observable=%s, nonce=%s\n", cfg.observable, cfg.nonceModel)
 	fmt.Println()
 
@@ -1404,13 +1419,14 @@ func (cfg *config) runLabTrials(h func([]byte, uint64, uint64) (uint64, uint64),
 // combinadic unrank, never on the wire. With the hi lane hidden the full-state
 // peel does not exist, so the kappa-byte engine has no Y to work on; the one
 // step that remains public is the LAST finaliser round on the two visible
-// state columns (RC[1] known, InvMixColumns per column):
+// state columns (the last finalising constant RC_last known, InvMixColumns
+// per column):
 //
-//	w[0..7] = InvMixColumns(lo(h_r) ^ RC[1][0:8])   (columns 0, 1 of SR(SB(X')))
+//	w[0..7] = InvMixColumns(lo(h_r) ^ RC_last[0:8])   (columns 0, 1 of SR(SB(X')))
 //
 // where X' is the state entering that round. Over a Lambda-set, X' is balanced
 // exactly when the integral survives to the last round, so the per-position
-// balance test Sum_texts InvSubBytes(w[p] ^ g) == 0 with g = 0 (RC[1] already
+// balance test Sum_texts InvSubBytes(w[p] ^ g) == 0 with g = 0 (RC_last already
 // removed — there is no unknown post-whitening on this lane) is a
 // distinguisher, not a recovery: nothing key-dependent is peeled. The
 // g-survivor count per position is reported alongside so a balanced reading
@@ -1440,7 +1456,8 @@ func isFlagSet(name string) bool {
 // per-pixel shape — the only data bytes whose value the attacker sees enumerate
 // naturally: LE32(idx) at bytes 0..3 for the 20 / 36 / 68-byte pixel shapes,
 // LE64(groupIdx) at bytes 1..8 for the 13-byte Interlocked Barrier fill shape
-// (byte 0 is the 0x03 domain tag, bytes 9..12 are reserved zeros).
+// (byte 0 is the 0x03 domain tag, bytes 9..12 carry the per-message
+// interlock-nonce fold, constant across a message and never enumerated).
 func idxPositions(shape int) (int, int) {
 	if shape == 13 {
 		return 1, 8
@@ -1471,7 +1488,7 @@ func (t *loTables) add(lo uint64) {
 		t.diffOr[p] |= b[p] ^ t.first[p]
 	}
 	for i := 0; i < 8; i++ {
-		b[i] ^= rc[1][i]
+		b[i] ^= lastRC[i]
 	}
 	// InvMixColumns is column-local; columns 2 and 3 carry zeros and are
 	// never read.

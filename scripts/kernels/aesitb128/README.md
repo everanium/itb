@@ -37,6 +37,19 @@ Each eight-lane arm is pinned to two calls of its tier's four-lane
 kernel and to the pure-Go cascade by the in-package parity tests, and
 disarmed by `ITB_FORCE_CHAINHASH_X4=1`.
 
+Every fused kernel folds the public round constant of each absorb round
+into the next staged block once, before the cascade loop. AESENC ends with
+the round-key XOR, so `AESENC(s, RC[b-1]) ^ block_b` equals
+`AESENC(s, RC[b-1] ^ block_b)`: the staged block `b > 0` serves as the
+round key of absorb round `b-1`, and the cascade round runs its absorb and
+finaliser rounds back to back with no XOR between them (on arm64 the AESE
+form, which XORs its key before SubBytes, takes the folded block as the key
+of round `b`). Where block 0 stays in a register for the whole call (the
+four-lane YMM kernel, the ZMM tier, NEON, and the register-resident
+batch-16 blocks of ZMM and NEON) the key is folded into it as well, so the
+per-round fold is the component pair alone; frame slots receive the public
+constant fold only, and the frame-staged tiers keep the key in a register.
+
 ## Batch-16 Interlocked Barrier fill kernels — `gen_fused_kernels.py`
 
 The same generator emits the 16-lane fused cascade kernels at the 13-byte
@@ -44,8 +57,9 @@ shape that fill the Interlocked Barrier PRF for 16 consecutive groups per
 call: five files, `aesitb_fusedchain128_13x16_<tier>_amd64.s` (tiers
 aesni / vex / vaesavx2 / avx512) and
 `aesitb_fusedchain128_13x16_neon_arm64.s`. The kernels receive
-`groupIdxBase` in a register and synthesise the 16 per-lane fill blocks
-in-register, so the batch-16 path pays no per-lane pointer gather and no
+`groupIdxBase` and the per-message interlock-nonce fold in registers and
+synthesise the 16 per-lane fill blocks in-register, so the batch-16 path
+pays no per-lane pointer gather and no
 store ahead of the call; every lane then runs the whole ChainHash cascade
 over the caller's component slice (the prepended lock components of the
 cascade fill), and with one pair the kernel is the plain chain-absorb of
@@ -61,10 +75,10 @@ serialises consecutive kernel calls and costs more than the kernel itself:
 - block 0 of the multi-block shapes follows the caller's 4-byte
   pixel-index store at offset 0 and is read as two 4-byte inserts plus an
   8-byte insert, never as one 16-byte load;
-- the fused kernels stage the padded data blocks in registers on the wide
-  tiers (with 32-byte stores read back by 32-byte loads for the blocks the
-  YMM register file cannot hold), so no wide in-loop load spans a
-  narrower staging store;
+- the fused kernels stage the padded data blocks in registers on the
+  four-lane wide tiers, and the eight-lane YMM kernel stages them in the
+  frame as 32-byte stores read back by 32-byte loads, so no wide in-loop
+  load spans a narrower staging store;
 - the lane outputs are written as four 16-byte stores on every tier — the
   width the Go side reads them back with — rather than one 32- or 64-byte
   store.

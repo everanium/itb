@@ -1,6 +1,7 @@
 package hashes
 
 import (
+	"encoding/binary"
 	"fmt"
 
 	"github.com/everanium/itb"
@@ -211,7 +212,8 @@ func aesITB128FusedChainHash8(k [16]byte) itb.BatchFusedChainHashFunc128x8 {
 // aesITB128InterlockFillBatch16 is the [Spec.InterlockFillBatch16] factory.
 // Returns the batch-16 Interlocked Barrier fill kernel that synthesizes 16
 // consecutive 13-byte fill buffers (domain tag 0x03, group index at bytes
-// [1:9], 4 zero bytes, 3-byte PKCS#7 pad) and runs the whole AES-ITB ChainHash cascade over the
+// [1:9], the per-message interlock-nonce fold v at bytes [9:13], 3-byte
+// PKCS#7 pad) and runs the whole AES-ITB ChainHash cascade over the
 // supplied components on every lane inside one internal/aesitbasm kernel
 // call (tier avx512, vaesavx2, vex, aesni, neon, or the scalar reference)
 // — the batch-16 arm of the cascade fill every lockSeed runs, see
@@ -222,8 +224,8 @@ func aesITB128InterlockFillBatch16(key []byte) (itb.InterlockFillFunc16, error) 
 	}
 	var k [16]byte
 	copy(k[:], key)
-	return func(components []uint64, groupIdxBase uint64, out *[16][2]uint64) {
-		aesitbasm.FusedChain13x16(&k, components, groupIdxBase, out)
+	return func(components []uint64, groupIdxBase uint64, v uint32, out *[16][2]uint64) {
+		aesitbasm.FusedChain13x16(&k, components, groupIdxBase, v, out)
 	}, nil
 }
 
@@ -251,20 +253,17 @@ func attachInterlockBatch16(s *itb.Seed128, name string, key []byte) error {
 }
 
 // smokeWideHooks128 is the Register-time check of the optional
-// [Spec.FusedChainHash128x8] factory of a user-registered W128 Spec — the
-// width-128 counterpart of smokeWideHooks256: a populated factory must
-// return without error, and a non-nil evaluator must be bit-exact with
-// the sequential HashFunc128 loop on every lane it accepts. A nil
-// evaluator is a valid opt-out.
+// [Spec.FusedChainHash128x8] and [Spec.InterlockFillBatch16] factories
+// of a user-registered W128 Spec — the width-128 counterpart of
+// smokeWideHooks256: each populated factory must return without error,
+// and a non-nil kernel must be bit-exact with the sequential HashFunc128
+// loop over the same (components, data) tuples — the eight-lane
+// evaluator on every lane it accepts, the batch-16 fill kernel on every
+// group of a probe base under a nonzero interlock-nonce fold (so a
+// kernel that leaves bytes 9..12 of its blocks at zero is refused). A
+// nil kernel is a valid opt-out.
 func smokeWideHooks128(spec Spec, single itb.HashFunc128, key []byte) error {
-	if spec.FusedChainHash128x8 == nil {
-		return nil
-	}
-	x8, err := spec.FusedChainHash128x8(key)
-	if err != nil {
-		return fmt.Errorf("hashes: Register: %q FusedChainHash128x8(key): %w", spec.Name, err)
-	}
-	if x8 == nil {
+	if spec.FusedChainHash128x8 == nil && spec.InterlockFillBatch16 == nil {
 		return nil
 	}
 	var comps [8]uint64
@@ -278,18 +277,47 @@ func smokeWideHooks128(spec Spec, single itb.HashFunc128, key []byte) error {
 		}
 		return [2]uint64{lo, hi}
 	}
-	for _, n := range [...]int{13, 20, 36, 68} {
-		var lanes [8][]byte
-		for l := range lanes {
-			lanes[l] = make([]byte, n)
-			for i := range lanes[l] {
-				lanes[l][i] = byte(i + l*7)
+	if spec.FusedChainHash128x8 != nil {
+		x8, err := spec.FusedChainHash128x8(key)
+		if err != nil {
+			return fmt.Errorf("hashes: Register: %q FusedChainHash128x8(key): %w", spec.Name, err)
+		}
+		if x8 != nil {
+			for _, n := range [...]int{13, 20, 36, 68} {
+				var lanes [8][]byte
+				for l := range lanes {
+					lanes[l] = make([]byte, n)
+					for i := range lanes[l] {
+						lanes[l][i] = byte(i + l*7)
+					}
+				}
+				if out, ok := x8(comps[:], &lanes); ok {
+					for l := 0; l < 8; l++ {
+						if out[l] != seqChain(lanes[l]) {
+							return fmt.Errorf("hashes: Register: %q FusedChainHash128x8 lane %d diverges from the sequential HashFunc128 loop at len=%d", spec.Name, l, n)
+						}
+					}
+				}
 			}
 		}
-		if out, ok := x8(comps[:], &lanes); ok {
-			for l := 0; l < 8; l++ {
-				if out[l] != seqChain(lanes[l]) {
-					return fmt.Errorf("hashes: Register: %q FusedChainHash128x8 lane %d diverges from the sequential HashFunc128 loop at len=%d", spec.Name, l, n)
+	}
+	if spec.InterlockFillBatch16 != nil {
+		fill, err := spec.InterlockFillBatch16(key)
+		if err != nil {
+			return fmt.Errorf("hashes: Register: %q InterlockFillBatch16(key): %w", spec.Name, err)
+		}
+		if fill != nil {
+			var out [16][2]uint64
+			const base = uint64(0x0123456789ab)
+			const fold = uint32(0x9e3779b9)
+			fill(comps[:], base, fold, &out)
+			for i := range out {
+				var block [13]byte
+				block[0] = 0x03
+				binary.LittleEndian.PutUint64(block[1:9], base+uint64(i))
+				binary.LittleEndian.PutUint32(block[9:13], fold)
+				if out[i] != seqChain(block[:]) {
+					return fmt.Errorf("hashes: Register: %q InterlockFillBatch16 group %d diverges from the sequential HashFunc128 loop", spec.Name, i)
 				}
 			}
 		}

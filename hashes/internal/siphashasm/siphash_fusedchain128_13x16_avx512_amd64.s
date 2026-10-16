@@ -7,11 +7,12 @@
 // in-package parity tests.
 //
 // Unique to the batch-16 kernel: the fill block
-// [0x03 | LE64(groupIdxBase+i) | 4×0x00] of lane i is synthesised
-// in-register as its two message words m0 = (idx << 8) | 0x03 and
-// m1 = (idx >> 56) | (13 << 56) (idx = groupIdxBase + i, with the lane
-// offsets read from ·laneIdx16), so the batch-16 path pays no per-lane
-// pointer gather. The sixteen lanes run as two eight-lane groups whose
+// [0x03 | LE64(groupIdxBase+i) | LE32(v)] of lane i (v the per-message
+// interlock-nonce fold) is synthesised in-register as its two message
+// words m0 = (idx << 8) | 0x03 and m1 = (idx >> 56) | (v << 8) | (13 << 56)
+// (idx = groupIdxBase + i, with the lane offsets read from ·laneIdx16 and
+// the fold ORed into the tag constant once), so the batch-16 path pays no
+// per-lane pointer gather. The sixteen lanes run as two eight-lane groups whose
 // instruction streams are interleaved, so the two independent dependency
 // chains overlap on the vector ALUs. The 16 (lo, hi) pairs are
 // interleaved through ·interleaveIdx16 and written as four 64-byte
@@ -20,17 +21,21 @@
 
 #include "textflag.h"
 
-// func sipHash24FusedChain13x16Avx512Asm(comps *uint64, nPairs int, groupIdxBase uint64, out *[16][2]uint64)
-TEXT ·sipHash24FusedChain13x16Avx512Asm(SB), NOSPLIT, $0-32
+// func sipHash24FusedChain13x16Avx512Asm(comps *uint64, nPairs int, groupIdxBase uint64, out *[16][2]uint64, v uint32)
+TEXT ·sipHash24FusedChain13x16Avx512Asm(SB), NOSPLIT, $0-36
 	MOVQ comps+0(FP), BX
 	MOVQ nPairs+8(FP), CX
 	MOVQ out+24(FP), DI
 
-	// Synthesise the words: m0 = (idx << 8) | 0x03, m1 = (idx >> 56) | (13 << 56), idx = groupIdxBase + lane
+	// Synthesise the words: m0 = (idx << 8) | 0x03, m1 = (idx >> 56) | (v << 8) | (13 << 56), idx = groupIdxBase + lane;
+	// the interlock-nonce fold v << 8 is ORed into the tag constant once (Z31)
 	VPBROADCASTQ groupIdxBase+16(FP), Z28
 	MOVQ $3, R12
 	VPBROADCASTQ R12, Z30
 	MOVQ $0xd00000000000000, R12
+	MOVL v+32(FP), R13
+	SHLQ $8, R13
+	ORQ R13, R12
 	VPBROADCASTQ R12, Z31
 	VPADDQ ·laneIdx16+0(SB), Z28, Z29
 	VPSLLQ $8, Z29, Z12

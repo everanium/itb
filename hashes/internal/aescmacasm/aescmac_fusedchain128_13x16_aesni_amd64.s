@@ -9,29 +9,39 @@
 // Unique to the batch-16 kernel: groupIdx is synthesized in-register from
 // groupIdxBase per lane, avoiding the per-lane pointer gather overhead of
 // the x4 path. The synthesised block is round-invariant per lane and
-// carries K0 and the length tag; every cascade round XORs the pair and
-// the block into the state and runs the ten AES rounds under K1..K10.
+// carries the interlock-nonce fold v at bytes 9..12 and the length tag.
+// Every lane is carried as t = state ^ K0: t
+// starts at K0, every cascade round XORs the pair and the block into t
+// and runs nine AES rounds under K1..K9 and the last under
+// K10' = K10 ^ K0 (AESENCLAST(s, K10) ^ K0 = AESENCLAST(s, K10 ^ K0)),
+// and the lane output is t ^ K0. K0 and K10' exist only in registers;
+// the frame holds the public blocks only.
 //
 // Batch layout: two batches of 8 lanes; each batch runs the whole cascade
 // before the next starts. The 16 blocks are staged once into the frame
-// (16 bytes per lane) in the prologue. Per batch: X0–X7 states,
-// X9–X15 K4..K10 (K1..K3 reloaded through X8 per round).
+// (16 bytes per lane) in the prologue from the template in X12 —
+// absorb13Block XOR [13 | 13 ^ (v << 8)], the length tag with the
+// interlock-nonce fold in its second qword. Per batch: X0–X7 states,
+// X9–X14 K4..K9, X15 K10' (K1..K3 reloaded through X8 per
+// round).
 
 #include "textflag.h"
 
-// func aesCMAC128FusedChain13x16AesNiAsm(roundKeys *[176]byte, comps *uint64, nPairs int, groupIdxBase uint64, out *[16][2]uint64)
-TEXT ·aesCMAC128FusedChain13x16AesNiAsm(SB), NOSPLIT, $256-40
+// func aesCMAC128FusedChain13x16AesNiAsm(roundKeys *[176]byte, comps *uint64, nPairs int, groupIdxBase uint64, out *[16][2]uint64, v uint32)
+TEXT ·aesCMAC128FusedChain13x16AesNiAsm(SB), NOSPLIT, $256-44
 	MOVQ roundKeys+0(FP), AX
 	MOVQ out+32(FP), DI
 	MOVQ groupIdxBase+24(FP), R8
 
-	// Template X12 = absorb13Block ^ K0 ^ (13 || 13)
+	// Template X12 = absorb13Block ^ [13 | 13 ^ (v << 8)]: the length tag with the
+	// interlock-nonce fold v in bytes 9..12 of the second qword
 	MOVOU ·absorb13Block(SB), X12
 	MOVQ $13, R12
-	MOVOU 0(AX), X8
-	PXOR X8, X12
+	MOVL v+40(FP), R9
+	SHLQ $8, R9
+	ORQ R12, R9
 	MOVQ R12, X10
-	PUNPCKLQDQ X10, X10
+	PINSRQ $1, R9, X10
 	PXOR X10, X12
 
 	// Stage the 16 fill blocks into the frame at 16*lane(SP)
@@ -210,7 +220,7 @@ TEXT ·aesCMAC128FusedChain13x16AesNiAsm(SB), NOSPLIT, $256-40
 	PXOR X12, X11
 	MOVOU X11, 240(SP)
 
-	// Load K4..K10 (K1..K3 are reloaded through X8 per round)
+	// Load K4..K9 and K10' = K10 ^ K0 (K1..K3 are reloaded through X8 per round)
 	MOVOU 64(AX), X9
 	MOVOU 80(AX), X10
 	MOVOU 96(AX), X11
@@ -218,18 +228,20 @@ TEXT ·aesCMAC128FusedChain13x16AesNiAsm(SB), NOSPLIT, $256-40
 	MOVOU 128(AX), X13
 	MOVOU 144(AX), X14
 	MOVOU 160(AX), X15
+	MOVOU 0(AX), X8
+	PXOR X8, X15
 
 	// ========== BATCH 1: lanes 0–7 ==========
 	MOVQ comps+8(FP), BX
 	MOVQ nPairs+16(FP), CX
-	PXOR X0, X0
-	PXOR X1, X1
-	PXOR X2, X2
-	PXOR X3, X3
-	PXOR X4, X4
-	PXOR X5, X5
-	PXOR X6, X6
-	PXOR X7, X7
+	MOVOU 0(AX), X0
+	MOVOU 0(AX), X1
+	MOVOU 0(AX), X2
+	MOVOU 0(AX), X3
+	MOVOU 0(AX), X4
+	MOVOU 0(AX), X5
+	MOVOU 0(AX), X6
+	MOVOU 0(AX), X7
 
 loop0:
 	MOVOU 0(BX), X8
@@ -274,7 +286,16 @@ loop0:
 	DECQ CX
 	JNZ loop0
 
-	// Store batch 1 outputs
+	// Store batch 1 outputs (t ^ K0)
+	MOVOU 0(AX), X8
+	PXOR X8, X0
+	PXOR X8, X1
+	PXOR X8, X2
+	PXOR X8, X3
+	PXOR X8, X4
+	PXOR X8, X5
+	PXOR X8, X6
+	PXOR X8, X7
 	MOVOU X0, 0(DI)
 	MOVOU X1, 16(DI)
 	MOVOU X2, 32(DI)
@@ -287,14 +308,14 @@ loop0:
 	// ========== BATCH 2: lanes 8–15 ==========
 	MOVQ comps+8(FP), BX
 	MOVQ nPairs+16(FP), CX
-	PXOR X0, X0
-	PXOR X1, X1
-	PXOR X2, X2
-	PXOR X3, X3
-	PXOR X4, X4
-	PXOR X5, X5
-	PXOR X6, X6
-	PXOR X7, X7
+	MOVOU 0(AX), X0
+	MOVOU 0(AX), X1
+	MOVOU 0(AX), X2
+	MOVOU 0(AX), X3
+	MOVOU 0(AX), X4
+	MOVOU 0(AX), X5
+	MOVOU 0(AX), X6
+	MOVOU 0(AX), X7
 
 loop1:
 	MOVOU 0(BX), X8
@@ -339,7 +360,16 @@ loop1:
 	DECQ CX
 	JNZ loop1
 
-	// Store batch 2 outputs
+	// Store batch 2 outputs (t ^ K0)
+	MOVOU 0(AX), X8
+	PXOR X8, X0
+	PXOR X8, X1
+	PXOR X8, X2
+	PXOR X8, X3
+	PXOR X8, X4
+	PXOR X8, X5
+	PXOR X8, X6
+	PXOR X8, X7
 	MOVOU X0, 128(DI)
 	MOVOU X1, 144(DI)
 	MOVOU X2, 160(DI)

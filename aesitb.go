@@ -27,9 +27,8 @@ package itb
 //      near-uniform output distribution, ideal input for the 48-bit
 //      Interlocked Barrier's combinadic unrank (Exact-B reduction into
 //      C(48,16)·C(32,16) mask space).
-//   2. NUMS round constants. The eight 128-bit round keys are big-endian
-//      packings of FIPS 180-4 IV words (BLAKE3 IV == SHA-256 IV, SHA-512
-//      IV, SHA-384 IV) — fractional bits of square roots of small primes —
+//   2. NUMS round constants. The eight 128-bit round keys are the first
+//      eight 128-bit words of the hexadecimal fractional expansion of π,
 //      so no designer-chosen value enters the constants.
 
 import (
@@ -40,30 +39,28 @@ import (
 )
 
 // aesITBRoundConstants are eight pairwise-distinct Nothing-Up-My-Sleeve
-// round keys, each a big-endian packing of FIPS 180-4 initial-hash-value
-// words (fractional bits of square roots of small primes):
+// round keys: RC[i] is fractional hexadecimal digits 32·i + 1 … 32·i + 32
+// of π (π = 3.243F6A88…), i.e. the first eight 128-bit words of its
+// hexadecimal fractional expansion. Byte order: the 128-bit word is
+// loaded big-endian — its most significant byte (the first two hex
+// digits) is AES state byte 0 and its least significant byte is state
+// byte 15, in the column-major state order s[4·col + row] that AESENC
+// uses. RC[0] = 243F6A88 85A308D3 13198A2E 03707344 thus loads as
+// state bytes 0x24, 0x3F, 0x6A, 0x88, …, 0x44.
 //
-//   - RC[0..1]: BLAKE3 IV == SHA-256 IV (FIPS 180-4 § 5.3.3), eight 32-bit
-//     words for p ∈ {2, 3, 5, 7, 11, 13, 17, 19}.
-//   - RC[2..5]: SHA-512 IV (FIPS 180-4 § 5.3.5), eight 64-bit words for the
-//     same primes.
-//   - RC[6..7]: SHA-384 IV (FIPS 180-4 § 5.3.4), first four 64-bit words for
-//     p ∈ {23, 29, 31, 37}.
-//
-// The generic (nonce-free) hash cycles RC[0..7] over its input blocks and
-// finalises with RC[0] then RC[1].
+// The generic (nonce-free) hash runs RC[i mod 8] over its absorbed
+// blocks i = 0 … b−1 and finalises with RC[b mod 8] then
+// RC[(b+1) mod 8], continuing the cycle, so one call uses no constant
+// twice up to six absorbed blocks.
 var aesITBRoundConstants = [8][16]byte{
-	// SHA-256 IV[0..3], [4..7]
-	{0x6A, 0x09, 0xE6, 0x67, 0xBB, 0x67, 0xAE, 0x85, 0x3C, 0x6E, 0xF3, 0x72, 0xA5, 0x4F, 0xF5, 0x3A},
-	{0x51, 0x0E, 0x52, 0x7F, 0x9B, 0x05, 0x68, 0x8C, 0x1F, 0x83, 0xD9, 0xAB, 0x5B, 0xE0, 0xCD, 0x19},
-	// SHA-512 IV[0..1], [2..3], [4..5], [6..7]
-	{0x6A, 0x09, 0xE6, 0x67, 0xF3, 0xBC, 0xC9, 0x08, 0xBB, 0x67, 0xAE, 0x85, 0x84, 0xCA, 0xA7, 0x3B},
-	{0x3C, 0x6E, 0xF3, 0x72, 0xFE, 0x94, 0xF8, 0x2B, 0xA5, 0x4F, 0xF5, 0x3A, 0x5F, 0x1D, 0x36, 0xF1},
-	{0x51, 0x0E, 0x52, 0x7F, 0xAD, 0xE6, 0x82, 0xD1, 0x9B, 0x05, 0x68, 0x8C, 0x2B, 0x3E, 0x6C, 0x1F},
-	{0x1F, 0x83, 0xD9, 0xAB, 0xFB, 0x41, 0xBD, 0x6B, 0x5B, 0xE0, 0xCD, 0x19, 0x13, 0x7E, 0x21, 0x79},
-	// SHA-384 IV[0..1], [2..3]
-	{0xCB, 0xBB, 0x9D, 0x5D, 0xC1, 0x05, 0x9E, 0xD8, 0x62, 0x9A, 0x29, 0x2A, 0x36, 0x7C, 0xD5, 0x07},
-	{0x91, 0x59, 0x01, 0x5A, 0x30, 0x70, 0xDD, 0x17, 0x15, 0x2F, 0xEC, 0xD8, 0xF7, 0x0E, 0x59, 0x39},
+	{0x24, 0x3F, 0x6A, 0x88, 0x85, 0xA3, 0x08, 0xD3, 0x13, 0x19, 0x8A, 0x2E, 0x03, 0x70, 0x73, 0x44},
+	{0xA4, 0x09, 0x38, 0x22, 0x29, 0x9F, 0x31, 0xD0, 0x08, 0x2E, 0xFA, 0x98, 0xEC, 0x4E, 0x6C, 0x89},
+	{0x45, 0x28, 0x21, 0xE6, 0x38, 0xD0, 0x13, 0x77, 0xBE, 0x54, 0x66, 0xCF, 0x34, 0xE9, 0x0C, 0x6C},
+	{0xC0, 0xAC, 0x29, 0xB7, 0xC9, 0x7C, 0x50, 0xDD, 0x3F, 0x84, 0xD5, 0xB5, 0xB5, 0x47, 0x09, 0x17},
+	{0x92, 0x16, 0xD5, 0xD9, 0x89, 0x79, 0xFB, 0x1B, 0xD1, 0x31, 0x0B, 0xA6, 0x98, 0xDF, 0xB5, 0xAC},
+	{0x2F, 0xFD, 0x72, 0xDB, 0xD0, 0x1A, 0xDF, 0xB7, 0xB8, 0xE1, 0xAF, 0xED, 0x6A, 0x26, 0x7E, 0x96},
+	{0xBA, 0x7C, 0x90, 0x45, 0xF1, 0x2C, 0x7F, 0x99, 0x24, 0xA1, 0x99, 0x47, 0xB3, 0x91, 0x6C, 0xF7},
+	{0x08, 0x01, 0xF2, 0xE2, 0x85, 0x8E, 0xFC, 0x16, 0x63, 0x69, 0x20, 0xD8, 0x71, 0x57, 0x4E, 0x69},
 }
 
 // aesITB128GenericHash is the standard HashFunc128 for use through the
@@ -73,11 +70,12 @@ var aesITBRoundConstants = [8][16]byte{
 //
 //	state  = fixedKey XOR (LE64(seed0) || LE64(seed1))
 //	padded = data || PKCS#7 padding to a 16-byte multiple (always ≥ 1 byte)
-//	state  = AESRound(state XOR block_i, RC[i mod 8])   for each block i
-//	out    = AESRound(AESRound(state, RC[0]), RC[1])
+//	state  = AESRound(state XOR block_i, RC[i mod 8])   for each block i < b
+//	out    = AESRound(AESRound(state, RC[b mod 8]), RC[(b+1) mod 8])
 //
-// The padding is injective across input lengths, so inputs of different
-// lengths never absorb the same block sequence. The result is bit-exact
+// where b is the number of padded blocks. The padding is injective
+// across input lengths, so inputs of different lengths never absorb the
+// same block sequence. The result is bit-exact
 // for any given (data, seed0, seed1) tuple.
 func aesITB128GenericHash(fixedKey [16]byte) HashFunc128 {
 	return func(data []byte, seed0, seed1 uint64) (uint64, uint64) {
@@ -104,9 +102,10 @@ func aesITB128GenericHash(fixedKey [16]byte) HashFunc128 {
 			state[i] ^= pad
 		}
 		aes.RoundHW((*aes.Block)(&state), (*aes.Block)(&aesITBRoundConstants[blk&7]))
+		blk++
 
-		aes.RoundHW((*aes.Block)(&state), (*aes.Block)(&aesITBRoundConstants[0]))
-		aes.RoundHW((*aes.Block)(&state), (*aes.Block)(&aesITBRoundConstants[1]))
+		aes.RoundHW((*aes.Block)(&state), (*aes.Block)(&aesITBRoundConstants[blk&7]))
+		aes.RoundHW((*aes.Block)(&state), (*aes.Block)(&aesITBRoundConstants[(blk+1)&7]))
 		return binary.LittleEndian.Uint64(state[:8]), binary.LittleEndian.Uint64(state[8:])
 	}
 }
