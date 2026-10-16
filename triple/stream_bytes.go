@@ -26,7 +26,7 @@ import (
 //     wrapper composed via [wrapper.WrapInPlace] when engaged). A
 //     single-chunk wire is a valid Streaming wire: the streaming
 //     decoder accepts one final-flag chunk of any length within the
-//     itb-root single-message cap, independent of the resolved
+//     itb-root Single Message cap, independent of the resolved
 //     chunkSize.
 //  2. Tail-wrap path — when the parallax layer is disengaged, the
 //     wrapper layer is engaged, and the plaintext exceeds

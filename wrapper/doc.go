@@ -36,7 +36,7 @@
 // byte ranges of that single sequence concurrently — each worker seeks its own
 // keystream to its chunk offset (via ctr.NewAt) and emits a byte-identical
 // result, so parallelism changes neither the output nor reuses any counter.
-// This is standard CTR mode usage — not nonce-reuse. Nonce-reuse means two
+// This is standard CTR mode usage — not nonce reuse. Nonce reuse means two
 // distinct streams using the SAME (key, nonce); avoid that by using a fresh
 // CSPRNG nonce per stream, which every entry point in this package does.
 //

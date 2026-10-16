@@ -1,5 +1,5 @@
 // Package aesitb is an audit-oriented pure-Go reference implementation of
-// the AES-ITB primitive. The production inner-Barrier path does not use
+// the AES-ITB primitive. The production Rank Barrier and Pixel Barrier path does not use
 // this package — the shipping implementation lives in the itb root
 // package (aesitb.go), which wires the nonce-free generic hash
 // (HashGeneric here) into the ChainHash dispatch and the
@@ -18,7 +18,7 @@
 // AES-ITB is not a PRF standalone (Non-PRF, ClassNPRF in the hashes
 // registry): the seed enters once, by XOR, ahead of a fixed public
 // permutation, so one full 16-byte output inverts to the seed. Outside
-// ITB's inner-Barrier compositions its only sanctioned use is
+// ITB's Rank Barrier and Pixel Barrier compositions its only sanctioned use is
 // [FillNoise], under a key and nonce drawn inside the call and never
 // exposed. FillNoise must not be used to encrypt data, to derive keys,
 // nonces or seed components, or as a general-purpose random source; a

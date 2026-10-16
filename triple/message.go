@@ -33,7 +33,7 @@ import (
 var ErrProfileNoCipher = errors.New("triple: profile does not expose any cipher surface")
 
 // messageFastPathMaxBytes caps the plaintext size accepted by the
-// direct whole-buffer fast path. Matches the itb-root single-message
+// direct whole-buffer fast path. Matches the itb-root Single Message
 // cipher cap so oversized payloads fall through to the streaming
 // fallback (which chunks the plaintext at [Pipeline.resolved.ChunkSize]
 // granularity). Held as an explicit constant here rather than reading
@@ -58,7 +58,7 @@ const messageFastPathMaxBytes = 64 << 20
 //  2. Streaming-fallback path — chosen when the parallax layer is
 //     engaged, when the plaintext exceeds [messageFastPathMaxBytes],
 //     or when the resolved profile carries a mode the direct path does
-//     not cover. Composes the same triple chain the
+//     not cover. Composes the same Triple chain the
 //     [Pipeline.EncryptStream] surface uses, with the plaintext driven
 //     through a [bytes.Reader] into a [bytes.Buffer] wire sink.
 //
@@ -80,11 +80,8 @@ const messageFastPathMaxBytes = 64 << 20
 // is read-only. Multiple goroutines may call EncryptMessage against
 // the same [*Pipeline] simultaneously.
 //
-// Empty plaintext (nil or zero-length) is rejected with
-// [ErrEmptyInput] before any wire is produced — no zero-payload wire
-// exists on the Pipeline surface, so wire length never separates the
-// MAC and No MAC arms on an empty message. Callers for whom an empty
-// signal is meaningful send a marker byte instead.
+// Empty plaintext (nil or zero-length) is rejected upfront with
+// [ErrEmptyInput] before any wire is produced.
 //
 // Returns [ErrClosed] when [Pipeline.Close] has already run;
 // [ErrProfileNoCipher] when the resolved profile mode is blob-only;
@@ -121,7 +118,7 @@ func (p *Pipeline) EncryptMessage(plaintext []byte) ([]byte, error) {
 //     engaged or the wire carries a multi-chunk envelope (as produced
 //     by [Pipeline.EncryptStream] on plaintext larger than the
 //     resolved chunkSize). Feeds the wire bytes through a
-//     [bytes.Reader] into the reverse triple chain.
+//     [bytes.Reader] into the reverse Triple chain.
 //
 // Same concurrency posture as [Pipeline.EncryptMessage]: safe for
 // concurrent invocation on one [*Pipeline]. Wire bytes produced by
@@ -132,9 +129,8 @@ func (p *Pipeline) EncryptMessage(plaintext []byte) ([]byte, error) {
 // Message profiles reject [Pipeline.DecryptStream] with
 // [ErrProfileNotStreaming]).
 //
-// Empty wire (nil or zero-length) is rejected with [ErrEmptyInput]
-// before any parse — symmetric with [Pipeline.EncryptMessage]'s
-// empty-plaintext rejection, since no valid Pipeline wire is empty.
+// Empty wire (nil or zero-length) is rejected upfront with
+// [ErrEmptyInput] before any parse.
 //
 // Returns [ErrClosed] when [Pipeline.Close] has already run;
 // [ErrProfileNoCipher] when the resolved profile mode is blob-only;
@@ -163,12 +159,9 @@ func (p *Pipeline) DecryptMessage(wire []byte) ([]byte, error) {
 // within [messageFastPathMaxBytes]. Produces the same wire envelope as
 // the streaming fallback when the plaintext fits in a single chunk.
 func (p *Pipeline) encryptMessageDirect(plaintext []byte) ([]byte, error) {
-	// Empty plaintext on the No MAC arm carries no inner bytes: the
-	// wire is the outer cipher envelope alone when the wrapper layer
-	// is engaged (nonce-only — [wrapper.UnwrapInPlace] and
-	// [wrapper.NewUnwrapReader] decode it back to an empty inner
-	// stream), or empty when it is not (mirrors the underlying stream
-	// helpers' empty-input contract).
+	// Public entry points reject empty input with ErrEmptyInput
+	// upfront; this branch is a defensive guard if an internal caller
+	// passes an empty slice on the No MAC arm.
 	if len(plaintext) == 0 && p.macFunc == nil {
 		if p.resolved.Wrapper {
 			nonce, err := wrapper.WrapInPlace(p.wrapperCipher, p.wrapperKey, nil)
@@ -223,11 +216,9 @@ func (p *Pipeline) encryptMessageDirect(plaintext []byte) ([]byte, error) {
 func (p *Pipeline) decryptMessageDirect(wire []byte) ([]byte, bool, error) {
 	inner := wire
 	if p.resolved.Wrapper {
-		// Empty wire under wrapper-on maps to empty plaintext on the
-		// No MAC arm (mirrors the empty-input encrypt contract). The
-		// MAC arm requires the streamID + final chunk envelope and
-		// cannot decode an empty wire; delegating to the streaming
-		// fallback surfaces the appropriate error there.
+		// Public entry points reject empty wire with ErrEmptyInput
+		// upfront; this branch is a defensive guard if an internal
+		// caller passes an empty slice under wrapper-on.
 		if len(wire) == 0 {
 			if p.macFunc == nil {
 				return []byte{}, true, nil
@@ -446,11 +437,10 @@ func (p *Pipeline) encryptMessageStreaming(plaintext []byte) ([]byte, error) {
 	if err := joinCloseError(cipherErr, closeFn()); err != nil {
 		return nil, err
 	}
-	// An inner stream that produced no bytes (empty plaintext on the
-	// No MAC arm) leaves the wrapper writer's nonce pending; finalize
-	// so the wire still carries the outer cipher envelope. No-op when
-	// the wrapper layer is disengaged or any body byte has been
-	// emitted.
+	// Public entry points reject empty input with ErrEmptyInput
+	// upfront; FinishWrapStream flushes any pending wrapper state on
+	// close (no-op when wrapper is disengaged or body bytes were
+	// already emitted).
 	if err := wrapper.FinishWrapStream(innerDst); err != nil {
 		return nil, err
 	}
@@ -459,7 +449,7 @@ func (p *Pipeline) encryptMessageStreaming(plaintext []byte) ([]byte, error) {
 
 // decryptMessageStreaming is the fallback decrypt path. Mirror image
 // of [encryptMessageStreaming] — feeds the wire through a
-// [bytes.Reader] into the reverse triple chain. Covers parallax-on
+// [bytes.Reader] into the reverse Triple chain. Covers parallax-on
 // and multi-chunk wires.
 func (p *Pipeline) decryptMessageStreaming(wire []byte) ([]byte, error) {
 	var plain bytes.Buffer
@@ -506,7 +496,7 @@ func hasNoCipherSurface(mode string) bool {
 // chunk travels behind, emitted by the itb-root streaming encoders and
 // Single Message entries and consumed by their decoders. Held here as
 // a local mirror of the
-// itb-root constant so the triple message surface stays
+// itb-root constant so the Triple message surface stays
 // self-documenting without a cross-package import for a single byte
 // count.
 const streamIDPrefixLen = 32

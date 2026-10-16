@@ -155,13 +155,10 @@
 // streamID, bound into every chunk's MAC, and the prefix of every later
 // record is a fresh CSPRNG value bound into that chunk's MAC beside the
 // streamID; on the No MAC paths every prefix is a CSPRNG dummy of the
-// same length. A Single Message wire is exactly one record, so every
-// chunk record has the same shape as a Single Message wire, a Single
-// Message wire is byte-shape identical to a one-chunk stream, and the
-// Low-Level Single Message functions, the Low-Level streaming functions
-// and the high-level [github.com/everanium/itb/triple.Pipeline] with
-// the wrapper and parallax layers off all emit one record shape. See
-// README.md for the offset-level table.
+// same length. A Single Message wire is one record — byte-shape
+// identical to a one-chunk stream across the Low-Level functions and
+// [github.com/everanium/itb/triple.Pipeline] (with wrapper and parallax
+// off). See README.md for the offset-level table.
 //
 // # Concurrency
 //

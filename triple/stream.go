@@ -27,32 +27,17 @@ var ErrProfileNotStreaming = errors.New("triple: profile does not expose a strea
 // wire bytes to wireDst. Blocks until plainSrc returns [io.EOF] or an
 // error surfaces.
 //
-// Chain composition:
-//
-//  1. plainSrc → [parallax.NewEncryptReader when parallax on] → innerSrc
-//  2. wireDst  ← [wrapper.NewWrapWriter    when wrapper  on] ← innerDst
-//  3. Dispatch on MAC presence:
-//     MAC     → itb.EncryptStreamAuth3xCfg(cfg, seeds, innerSrc, innerDst, mac, chunkSize)
-//     No MAC  → itb.EncryptStream3xCfg    (cfg, seeds, innerSrc, innerDst,      chunkSize)
-//  4. Close parallax reader (releases pool scratch); finalize the
-//     wrapper writer via [wrapper.FinishWrapStream] so an inner
-//     stream that produced no bytes still emits its outer cipher
-//     nonce.
-//
-// When a layer is disabled the corresponding boundary is an identity
-// substitution — no wrapper [io.Reader] / [io.Writer] allocated on
-// the disabled side. Concurrent-safe: post-[Init] Pipeline state is
-// read-only from the cipher-path perspective; per-call state (the
-// parallax reader, the wrapper writer, per-chunk scratch inside the
-// itb IO entry) lives on this call's stack. Multiple goroutines may
-// call EncryptStream against the same [*Pipeline] simultaneously.
+// Disabled layers are identity substitutions with no wrapper
+// [io.Reader] / [io.Writer] allocated. On completion the parallax
+// reader is closed (releasing pool scratch) and the wrapper writer is
+// finalized via [wrapper.FinishWrapStream]. Concurrent-safe:
+// post-[Init] Pipeline state is read-only and per-call state lives on
+// this call's stack, so multiple goroutines may call EncryptStream
+// against the same [*Pipeline] simultaneously.
 //
 // An empty plaintext stream (plainSrc yields [io.EOF] before any
-// byte) is rejected with [ErrEmptyInput] before any wire byte is
-// written — no zero-payload wire exists on the Pipeline surface. The
-// check probes plainSrc for its first byte and, when one arrives,
-// re-chains it ahead of the remaining reader, so a non-empty source
-// is consumed exactly as supplied.
+// byte) is rejected upfront with [ErrEmptyInput] via a first-byte
+// probe and re-chain before any wire byte is written.
 //
 // Returns [ErrClosed] when [Pipeline.Close] has already run;
 // [ErrProfileNotStreaming] when the resolved profile mode is Single
@@ -98,11 +83,10 @@ func (p *Pipeline) EncryptStream(plainSrc io.Reader, wireDst io.Writer) error {
 	if err := joinCloseError(cipherErr, closeFn()); err != nil {
 		return err
 	}
-	// An inner stream that produced no bytes (empty plaintext on the
-	// No MAC arm) leaves the wrapper writer's nonce pending; finalize
-	// so the wire still carries the outer cipher envelope. No-op when
-	// the wrapper layer is disengaged or any body byte has been
-	// emitted.
+	// Public entry points reject empty input with ErrEmptyInput
+	// upfront; FinishWrapStream flushes any pending wrapper state on
+	// close (no-op when wrapper is disengaged or body bytes were
+	// already emitted).
 	return wrapper.FinishWrapStream(innerDst)
 }
 
@@ -113,22 +97,11 @@ func (p *Pipeline) EncryptStream(plainSrc io.Reader, wireDst io.Writer) error {
 // and writes plaintext bytes to plainDst. Blocks until wireSrc
 // returns [io.EOF] or an error surfaces.
 //
-// Chain composition (mirror of [Pipeline.EncryptStream]):
-//
-//  1. wireSrc  → [wrapper.NewUnwrapReader when wrapper  on] → innerSrc
-//  2. plainDst ← [parallax.NewDecryptWriter when parallax on] ← innerDst
-//  3. Dispatch on MAC presence:
-//     MAC     → itb.DecryptStreamAuth3xCfg(cfg, seeds, innerSrc, innerDst, mac)
-//     No MAC  → itb.DecryptStream3xCfg    (cfg, seeds, innerSrc, innerDst)
-//  4. Close parallax writer (flushes the trailing partial chunk +
-//     releases pool scratch); wrapper reader has no per-call state
-//     that needs an explicit close.
-//
-// An empty wire stream (wireSrc yields [io.EOF] before any byte) is
-// rejected with [ErrEmptyInput] before any parse — symmetric with
-// [Pipeline.EncryptStream]'s empty-plaintext rejection, since no
-// valid Pipeline wire is empty. Same first-byte probe + re-chain as
-// the encrypt side.
+// On completion the parallax writer is closed to flush the trailing
+// partial chunk and release pool scratch. An empty wire stream
+// (wireSrc yields [io.EOF] before any byte) is rejected upfront with
+// [ErrEmptyInput] via the same first-byte probe and re-chain as
+// [Pipeline.EncryptStream].
 //
 // Same concurrency posture as [Pipeline.EncryptStream]: safe for
 // concurrent invocation on one [*Pipeline]. Returns [ErrClosed] when

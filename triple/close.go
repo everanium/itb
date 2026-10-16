@@ -13,12 +13,13 @@ package triple
 // Pipeline before invoking Close, otherwise those operations may
 // observe zeroed key material and surface arbitrary errors.
 //
-// The two masters are retained only inside the wrap-layer blob kept
-// for [Pipeline.Save]; that blob is zeroed here together with the
-// parallax subkeys and the wrapper per-Pipeline key derived from
-// them at [Init] / [Load] time. The [Pipeline.Rekey] caller supplies
-// fresh masters directly; nothing stored on the Pipeline reveals the
-// masters after Close.
+// The two masters are retained inside the wrap-layer blob kept for
+// [Pipeline.Save]; Close zeroes that blob (including permMaster and
+// wrapMaster), the eight ITB seeds' Components, the per-slot PRF
+// fixed keys, the wrapper per-Pipeline key, and the MAC key, and
+// releases the parallax schedule and cipherset references. The
+// [Pipeline.Rekey] caller supplies fresh masters directly; nothing
+// stored on the Pipeline reveals the masters after Close.
 func (p *Pipeline) Close() error {
 	// Serialise a racing second Close body against the first. The
 	// atomic flag below is the check-then-act guard that keeps the
@@ -59,10 +60,7 @@ func (p *Pipeline) Close() error {
 	clear(p.blob)
 	p.blob = nil
 
-	// Drop parallax handles. The parallax package does not currently
-	// expose a Cipherset.Close for explicit per-subkey wipe (recorded
-	// as a best-practice gap in the parallax project memory); the
-	// GC reclaims the subkey buffers once the reference drops here.
+	// Drop parallax handles so the GC reclaims the cipherset and schedule.
 	p.parallaxSched = nil
 	p.parallaxCS = nil
 

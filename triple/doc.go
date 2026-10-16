@@ -85,11 +85,9 @@
 //
 // [Opts.KeyBits] and [Profile.KeyBits] accept any multiple of the
 // resolved primitive's native hash width in [512,
-// [github.com/everanium/itb.MaxKeyBits] = 2048]; every catalogued
-// profile ships with 1024, and 512 / 1024 / 2048 are the common
-// tunings, but intermediate multiples (640, 768, 896, 1152, 1280,
-// 1536, 1792 for width-128, and the corresponding multiples for
-// width-256 / width-512) are equally valid at the seed factory.
+// [github.com/everanium/itb.MaxKeyBits] = 2048] (see
+// [github.com/everanium/itb.NewSeed128]); every catalogued profile
+// ships with 1024, and 512 / 1024 / 2048 are the common tunings.
 //
 // The Streaming AEAD IO-Driven surface is the primary use case. The
 // Single Message surface ([Pipeline.EncryptMessage] /
@@ -124,8 +122,9 @@
 // project's PROOFS.md and SCIENCE.md.
 //
 // A [Pipeline] carries a private [github.com/everanium/itb.Config] so
-// two Pipelines with distinct NonceBits / BarrierFill / MaxWorkers
-// overrides coexist in the same process without cross-contamination.
+// two Pipelines with distinct Mode / NonceBits / BarrierFill /
+// TagStubSize / DRBG / MaxWorkers overrides coexist in the same
+// process without cross-contamination.
 // When an [Opts] field is left at zero the corresponding compile-in
 // default applies (see [github.com/everanium/itb.DefaultNonceBits] /
 // [github.com/everanium/itb.DefaultBarrierFill], and Mode 1 per-region

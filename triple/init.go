@@ -12,7 +12,7 @@ import (
 	"github.com/everanium/itb/wrapper"
 )
 
-// blobWrapV2 is the JSON wrap-layer that carries triple-side session
+// blobWrapV2 is the JSON wrap-layer that carries Triple-side session
 // state on the wire:
 //
 //	v   wrap-layer schema version (= 2)
@@ -102,10 +102,11 @@ const wrapMasterSize = 32
 // derived key + parallax subkeys are drawn from crypto/rand. The
 // returned blob bytes carry the full session bundle the receiver
 // needs — the resolved [Profile] record (profile defaults with the
-// Opts overrides folded in, Name carrying the profile name) + both
-// masters + the nested [itb.Blob{N}] with the 8 seed components,
-// per-slot PRF keys, MAC material, and the NonceBits / BarrierFill
-// snapshot. The receiver rebuilds an equivalent Pipeline with [Load]
+// Opts overrides folded in, Name carrying the profile name, including
+// DRBG and TagStubSize) + both masters + the nested [itb.Blob{N}]
+// with the 8 seed components, per-slot PRF keys, MAC material, and
+// the Mode / NonceBits / BarrierFill snapshot. The receiver rebuilds
+// an equivalent Pipeline with [Load]
 // without holding the profile literal or the Opts. Distribution of
 // the blob is the caller's responsibility — treat the blob as the
 // full key bundle.
@@ -157,7 +158,7 @@ func Init(profile string, opts Opts) (*Pipeline, []byte, error) {
 	}
 
 	// 8-seed allocation. Mixed-primitive profiles route through the
-	// per-slot allocator; single-primitive profiles keep the original
+	// per-slot allocator; single-primitive profiles use the
 	// one-primitive-for-all-eight-slots path.
 	var (
 		seeds   [8]any

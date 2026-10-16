@@ -12,8 +12,8 @@ import (
 )
 
 // Profile mode discriminators. profile.mode selects one of these to
-// tell downstream code (cipher-path stubs) which surface the Pipeline
-// exposes. Blob-only profiles have no cipher surface.
+// tell the Pipeline implementation which surface to expose. Blob-only
+// profiles have no cipher surface.
 const (
 	modeStreamingAEAD   = "streaming-aead"
 	modeStreamingNoAEAD = "streaming-noaead"
@@ -195,20 +195,15 @@ type Profile struct {
 	NonceBits int
 
 	// BarrierFill is the DRBG barrier fill margin (1 / 2 / 4 / 8 /
-	// 16 / 32) this Pipeline runs with. Same lifecycle as
-	// [Profile.NonceBits] — populated by [Inspect] / [Load] only;
-	// zero on Register-time Profile; a non-zero value at Register
-	// time is rejected. [itb.DefaultBarrierFill] is the fallback
-	// when [Opts.BarrierFill] is zero at Init.
+	// 16 / 32) this Pipeline runs with. Same inspection-only
+	// lifecycle as [Profile.NonceBits] ([itb.DefaultBarrierFill]
+	// fallback when [Opts.BarrierFill] is zero at Init).
 	BarrierFill int
 
 	// ContainerMode is the container floor sizing mode (1 for per-region,
-	// 2 for per-container) this Pipeline runs with. Same lifecycle as
-	// [Profile.NonceBits] and [Profile.BarrierFill] — populated by
-	// [Inspect] / [Load] from the blob's inner mode field only; zero on
-	// a Register-time Profile; a non-zero value at Register time is
-	// rejected fail-fast. 1 is the fallback when mode is left at zero or
-	// omitted in the blob.
+	// 2 for per-container) this Pipeline runs with. Same inspection-only
+	// lifecycle as [Profile.NonceBits], populated from the blob's inner
+	// mode field (1 fallback when [Opts.Mode] is zero at Init).
 	ContainerMode int
 
 	// DRBG is the name of the primitive that fills the container
@@ -244,7 +239,7 @@ type Profile struct {
 	// MAC's probed tag length regardless of this field.
 	TagStubSize int
 
-	// OuterCipher is the wrapper (Outer cipher) primitive name (e.g.
+	// OuterCipher is the wrapper (outer cipher) primitive name (e.g.
 	// "chacha20"). Empty when Wrapper is false; otherwise must be
 	// present in [github.com/everanium/itb/wrapper.CipherNames].
 	OuterCipher string
@@ -266,7 +261,7 @@ type Profile struct {
 	// Parallax engages the parallax layer for this profile.
 	Parallax bool
 
-	// Wrapper engages the wrapper (Outer cipher) layer for this
+	// Wrapper engages the wrapper (outer cipher) layer for this
 	// profile.
 	Wrapper bool
 
@@ -527,7 +522,7 @@ func init() {
 	}
 
 	// Mixed-primitive Single Message Triple, No MAC, parallax on +
-	// wrapper on. Width 512; alternates the two shipped width-512
+	// wrapper on. Width 512; alternates the shipped width-512
 	// primitives across every slot.
 	profileRegistry[ProfileSingleMsgTripleNoMACMixedV1] = Profile{
 		Name:                ProfileSingleMsgTripleNoMACMixedV1,
@@ -666,42 +661,14 @@ type profileWire struct {
 	ParallaxSegmentSize int      `json:"segment,omitempty"`
 }
 
-// MarshalJSON encodes p as the documented recipe object. Key set and
-// presence rules:
-//
-//	name           Name                 omitted when empty
-//	mode           Mode                 always
-//	width          Width                always
-//	hash           InnerHash            omitted when empty (mixed profiles)
-//	hashes         MixedHashes          omitted when every slot is empty;
-//	                                    otherwise exactly eight strings
-//	keybits        KeyBits              always
-//	nonce_bits     NonceBits            omitted when 0 (Register-time
-//	                                    profile); present when populated
-//	                                    by Inspect / Load from the blob's
-//	                                    inner Blob{N}.Globals
-//	barrier_fill   BarrierFill          same shape as nonce_bits
-//	container_mode ContainerMode        same shape as nonce_bits
-//	drbg           DRBG                 omitted when empty (auto tier)
-//	mac            MacName              omitted when empty (No MAC)
-//	tagstub        TagStubSize          omitted when 0
-//	chunk          ChunkSize            omitted when 0
-//	wrapper        Wrapper              always
-//	outer          OuterCipher          omitted when empty
-//	parallax       Parallax             always
-//	palette        ParallaxPalette      omitted when empty
-//	segment        ParallaxSegmentSize  omitted when 0
-//
-// The nonce_bits / barrier_fill / container_mode keys are inspection-only
-// (not part of the recipe): [Register] rejects a non-zero value on any
-// of them fail-fast, so a wrap-layer recipe emitted from marshalWrap never
-// carries them. [Inspect] populates them from the blob's inner
-// snapshot, so the JSON output surfaced through the CAPI Inspect entry
-// (and downstream bindings that read that JSON) carries them there.
-//
-// No semantic validation is applied by the codec; the field rules are
-// enforced by [Register] on the registry side and by [Load] on the
-// reopen side. json.Marshal of a Profile anywhere produces this form.
+// MarshalJSON encodes p as the documented recipe object; see the
+// package overview in doc.go for the key set and presence rules.
+// The inspection-only fields ([Profile.NonceBits],
+// [Profile.BarrierFill], [Profile.ContainerMode]) are omitted when 0
+// (Register-time profiles and wrap-layer recipes) and present when
+// populated by [Inspect] / [Load] from the blob's inner snapshot.
+// No semantic validation is applied by the codec; field rules are
+// enforced by [Register] and [Load].
 func (p Profile) MarshalJSON() ([]byte, error) {
 	w := profileWire{
 		Name:                p.Name,

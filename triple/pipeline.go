@@ -129,19 +129,14 @@ type Opts struct {
 	// a non-nil pointer forces the chosen setting.
 	WithParallax *bool
 
-	// WithWrapper overrides whether the wrapper (Outer cipher) layer
+	// WithWrapper overrides whether the wrapper (outer cipher) layer
 	// is engaged for this Pipeline. A nil pointer defers to the
 	// profile default; a non-nil pointer forces the chosen setting.
 	WithWrapper *bool
 
 	// MaxWorkers sets the Pipeline's per-instance worker cap at
-	// [Init] time. The value is clamped into the Pipeline's
-	// [itb.Config] envelope: n ≤ 0 selects auto (runtime.NumCPU at
-	// consumption), 1 ≤ n ≤ 256 pins the cap, n > 256 is treated as
-	// 256. The cap is per-machine performance tuning, not wire shape:
-	// it is never written to the blob, a loaded Pipeline starts at
-	// auto, and [Pipeline.MaxWorkers] overrides it after construction
-	// on either side.
+	// [Init] time; see [Pipeline.MaxWorkers] for the clamping and
+	// non-persistence rules.
 	MaxWorkers int
 
 	// NonceBits overrides the profile's on-wire nonce width in bits.
@@ -204,13 +199,13 @@ type Opts struct {
 	// [Profile] fields obey.
 	MixedHashes [8]string
 
-	// KeyBits overrides the profile's per-seed key width in bits (one
-	// of 512 / 1024 / 2048; must be an integer multiple of the
-	// primitive's native hash width). A zero value defers to the
-	// profile default.
+	// KeyBits overrides the profile's per-seed key width in bits (a
+	// positive integer multiple of the primitive's native hash width
+	// in [512, 2048], typically 512 / 1024 / 2048). A zero value
+	// defers to the profile default.
 	KeyBits int
 
-	// OuterCipher overrides the profile's wrapper (Outer cipher) name
+	// OuterCipher overrides the profile's wrapper (outer cipher) name
 	// (e.g. "chacha20"). An empty string defers to the profile
 	// default. Wrapper-off profiles ignore this field.
 	OuterCipher string
@@ -231,7 +226,7 @@ type Opts struct {
 //   - the resolved [Profile] record it was constructed from (the
 //     shape recorded in its blob);
 //   - a per-instance [github.com/everanium/itb.Config] carrying
-//     NonceBits / BarrierFill / MaxWorkers;
+//     Mode / NonceBits / BarrierFill / TagStubSize / DRBG / MaxWorkers;
 //   - the current wrap-layer blob, returned by [Pipeline.Save];
 //   - eight typed ITB seeds (noise + lock + three data + three start)
 //     matching the profile's inner hash width;
