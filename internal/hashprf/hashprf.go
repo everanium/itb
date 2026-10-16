@@ -153,6 +153,7 @@ func areionSeed256(key []byte) [4]uint64 {
 	h.Write(key)
 	var sum [sha512.Size]byte
 	h.Sum(sum[:0])
+	h.Reset()
 	var seed [4]uint64
 	for i := range seed {
 		seed[i] = binary.LittleEndian.Uint64(sum[i*8:])
@@ -173,6 +174,7 @@ func areionSeed512(key []byte) [8]uint64 {
 	h.Write(key)
 	var sum [sha512.Size]byte
 	h.Sum(sum[:0])
+	h.Reset()
 	var seed [8]uint64
 	for i := range seed {
 		seed[i] = binary.LittleEndian.Uint64(sum[i*8:])

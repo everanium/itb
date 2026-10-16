@@ -31,13 +31,18 @@ func NewSeed128(name string, keyBits int, key ...[]byte) (*itb.Seed128, []byte, 
 	}
 	s, err := itb.NewSeed128(keyBits, single)
 	if err != nil {
+		clear(fixedKey)
 		return nil, nil, err
 	}
 	s.BatchHash = batched
 	if err := attachFused128(s, name, fixedKey); err != nil {
+		clear(s.Components)
+		clear(fixedKey)
 		return nil, nil, err
 	}
 	if err := attachInterlockBatch16(s, name, fixedKey); err != nil {
+		clear(s.Components)
+		clear(fixedKey)
 		return nil, nil, err
 	}
 	return s, fixedKey, nil
@@ -53,16 +58,23 @@ func NewSeed256(name string, keyBits int, key ...[]byte) (*itb.Seed256, []byte, 
 	}
 	s, err := itb.NewSeed256(keyBits, single)
 	if err != nil {
+		clear(fixedKey)
 		return nil, nil, err
 	}
 	s.BatchHash = batched
 	if err := attachFused256(s, name, fixedKey); err != nil {
+		clear(s.Components)
+		clear(fixedKey)
 		return nil, nil, err
 	}
 	if err := attachInterlockBatch16x256(s, name, fixedKey); err != nil {
+		clear(s.Components)
+		clear(fixedKey)
 		return nil, nil, err
 	}
 	if err := attachInterlockBatch32x256(s, name, fixedKey); err != nil {
+		clear(s.Components)
+		clear(fixedKey)
 		return nil, nil, err
 	}
 	return s, fixedKey, nil
@@ -78,16 +90,23 @@ func NewSeed512(name string, keyBits int, key ...[]byte) (*itb.Seed512, []byte, 
 	}
 	s, err := itb.NewSeed512(keyBits, single)
 	if err != nil {
+		clear(fixedKey)
 		return nil, nil, err
 	}
 	s.BatchHash = batched
 	if err := attachFused512(s, name, fixedKey); err != nil {
+		clear(s.Components)
+		clear(fixedKey)
 		return nil, nil, err
 	}
 	if err := attachInterlockBatch16x512(s, name, fixedKey); err != nil {
+		clear(s.Components)
+		clear(fixedKey)
 		return nil, nil, err
 	}
 	if err := attachInterlockBatch32x512(s, name, fixedKey); err != nil {
+		clear(s.Components)
+		clear(fixedKey)
 		return nil, nil, err
 	}
 	return s, fixedKey, nil
@@ -111,15 +130,18 @@ func SeedFromComponents128(name string, key []byte, components ...uint64) (*itb.
 	if err != nil {
 		return nil, err
 	}
+	defer clear(fixedKey)
 	s, err := itb.SeedFromComponents128(single, components...)
 	if err != nil {
 		return nil, err
 	}
 	s.BatchHash = batched
 	if err := attachFused128(s, name, fixedKey); err != nil {
+		clear(s.Components)
 		return nil, err
 	}
 	if err := attachInterlockBatch16(s, name, fixedKey); err != nil {
+		clear(s.Components)
 		return nil, err
 	}
 	return s, nil
@@ -135,18 +157,22 @@ func SeedFromComponents256(name string, key []byte, components ...uint64) (*itb.
 	if err != nil {
 		return nil, err
 	}
+	defer clear(fixedKey)
 	s, err := itb.SeedFromComponents256(single, components...)
 	if err != nil {
 		return nil, err
 	}
 	s.BatchHash = batched
 	if err := attachFused256(s, name, fixedKey); err != nil {
+		clear(s.Components)
 		return nil, err
 	}
 	if err := attachInterlockBatch16x256(s, name, fixedKey); err != nil {
+		clear(s.Components)
 		return nil, err
 	}
 	if err := attachInterlockBatch32x256(s, name, fixedKey); err != nil {
+		clear(s.Components)
 		return nil, err
 	}
 	return s, nil
@@ -162,18 +188,22 @@ func SeedFromComponents512(name string, key []byte, components ...uint64) (*itb.
 	if err != nil {
 		return nil, err
 	}
+	defer clear(fixedKey)
 	s, err := itb.SeedFromComponents512(single, components...)
 	if err != nil {
 		return nil, err
 	}
 	s.BatchHash = batched
 	if err := attachFused512(s, name, fixedKey); err != nil {
+		clear(s.Components)
 		return nil, err
 	}
 	if err := attachInterlockBatch16x512(s, name, fixedKey); err != nil {
+		clear(s.Components)
 		return nil, err
 	}
 	if err := attachInterlockBatch32x512(s, name, fixedKey); err != nil {
+		clear(s.Components)
 		return nil, err
 	}
 	return s, nil

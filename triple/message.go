@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 
 	"github.com/everanium/itb"
 	"github.com/everanium/itb/wrapper"
@@ -192,6 +193,7 @@ func (p *Pipeline) encryptMessageDirect(plaintext []byte) ([]byte, error) {
 
 	// The buffer is sized to the final wire so the wrapper wrap
 	// operates in place on the body without a second allocation.
+	defer clear(inner)
 	nlen, err := wrapper.NonceSize(p.wrapperCipher)
 	if err != nil {
 		return nil, fmt.Errorf("triple: wrapper.NonceSize: %w", err)
@@ -201,6 +203,7 @@ func (p *Pipeline) encryptMessageDirect(plaintext []byte) ([]byte, error) {
 	copy(body, inner)
 	nonce, werr := wrapper.WrapInPlace(p.wrapperCipher, p.wrapperKey, body)
 	if werr != nil {
+		clear(out)
 		return nil, fmt.Errorf("triple: wrapper.WrapInPlace: %w", werr)
 	}
 	copy(out[:nlen], nonce)
@@ -233,6 +236,7 @@ func (p *Pipeline) decryptMessageDirect(wire []byte) ([]byte, bool, error) {
 			return nil, false, nil
 		}
 		buf := make([]byte, len(wire))
+		defer clear(buf)
 		copy(buf, wire)
 		unwrapped, uerr := wrapper.UnwrapInPlace(p.wrapperCipher, p.wrapperKey, buf)
 		if uerr != nil {
@@ -435,6 +439,11 @@ func (p *Pipeline) encryptMessageStreaming(plaintext []byte) ([]byte, error) {
 		)
 	}
 	if err := joinCloseError(cipherErr, closeFn()); err != nil {
+		if c, ok := innerDst.(io.Closer); ok {
+			_ = c.Close()
+		}
+		b := wire.Bytes()
+		clear(b[:cap(b)])
 		return nil, err
 	}
 	// Public entry points reject empty input with ErrEmptyInput
@@ -442,6 +451,8 @@ func (p *Pipeline) encryptMessageStreaming(plaintext []byte) ([]byte, error) {
 	// close (no-op when wrapper is disengaged or body bytes were
 	// already emitted).
 	if err := wrapper.FinishWrapStream(innerDst); err != nil {
+		b := wire.Bytes()
+		clear(b[:cap(b)])
 		return nil, err
 	}
 	return wire.Bytes(), nil
@@ -478,6 +489,8 @@ func (p *Pipeline) decryptMessageStreaming(wire []byte) ([]byte, error) {
 		)
 	}
 	if err := joinCloseError(cipherErr, closeFn()); err != nil {
+		b := plain.Bytes()
+		clear(b[:cap(b)])
 		return nil, err
 	}
 	return plain.Bytes(), nil

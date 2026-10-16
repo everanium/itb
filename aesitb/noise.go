@@ -2,6 +2,7 @@ package aesitb
 
 import (
 	"crypto/rand"
+	"runtime"
 
 	"github.com/everanium/itb/internal/aesitbasm"
 )
@@ -38,6 +39,7 @@ func FillNoise(dst []byte) error {
 	}
 	fillNoiseKeyed((*[16]byte)(seed[:16]), (*[32]byte)(seed[16:]), dst)
 	clear(seed[:])
+	runtime.KeepAlive(&seed)
 	return nil
 }
 
@@ -52,4 +54,5 @@ func fillNoiseKeyed(key *[16]byte, nonce *[32]byte, dst []byte) {
 	for i := range sched.RK {
 		clear(sched.RK[i][:])
 	}
+	runtime.KeepAlive(&sched)
 }

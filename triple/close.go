@@ -16,10 +16,13 @@ package triple
 // The two masters are retained inside the wrap-layer blob kept for
 // [Pipeline.Save]; Close zeroes that blob (including permMaster and
 // wrapMaster), the eight ITB seeds' Components, the per-slot PRF
-// fixed keys, the wrapper per-Pipeline key, and the MAC key, and
-// releases the parallax schedule and cipherset references. The
-// [Pipeline.Rekey] caller supplies fresh masters directly; nothing
-// stored on the Pipeline reveals the masters after Close.
+// fixed keys, the wrapper per-Pipeline key, the MAC key, and the
+// parallax cipherset subkeys (via [parallax.Cipherset.Close]),
+// replaces the seed hash and MAC closures so closure-captured key
+// schedules are released, and releases the parallax schedule and
+// cipherset references. The [Pipeline.Rekey] caller supplies fresh
+// masters directly; nothing stored on the Pipeline reveals the
+// masters after Close.
 func (p *Pipeline) Close() error {
 	// Serialise a racing second Close body against the first. The
 	// atomic flag below is the check-then-act guard that keeps the
@@ -30,8 +33,13 @@ func (p *Pipeline) Close() error {
 	if p.closed.Load() {
 		return nil
 	}
+	// Publish the close via atomic-store first so cipher-path methods
+	// consulting isClosed observe the transition before key material
+	// is wiped.
+	p.closed.Store(true)
 
-	// Zero the 8 seed Components in place.
+	// Zero the 8 seed Components in place and release closure-captured
+	// PRF key schedules.
 	for _, s := range p.seeds {
 		zeroSeedComponents(s, p.width)
 	}
@@ -48,24 +56,31 @@ func (p *Pipeline) Close() error {
 		p.wrapperKey = nil
 	}
 
-	// Zero the MAC key and drop the closure.
+	// Zero the MAC key and replace MAC closures with stateless stubs
+	// so closure-captured MAC key schedules are released without
+	// inducing a nil-func or MAC-to-No-MAC race on unsynchronised
+	// in-flight calls.
 	if p.macKey != nil {
 		clear(p.macKey)
 		p.macKey = nil
 	}
-	p.macFunc = nil
+	if p.macFunc != nil {
+		p.macFunc = func([]byte) []byte { return make([]byte, 32) }
+	}
+	if p.cfg != nil && p.cfg.MACIncremental != nil {
+		p.cfg.MACIncremental = func(...[]byte) []byte { return make([]byte, 32) }
+	}
 
 	// Zero the retained wrap-layer blob — it carries both masters and
 	// the inner seed / PRF-key / MAC-key material.
 	clear(p.blob)
 	p.blob = nil
 
-	// Drop parallax handles so the GC reclaims the cipherset and schedule.
+	// Zero parallax subkeys in place and drop parallax handles so the
+	// GC reclaims the cipherset and schedule.
+	_ = p.parallaxCS.Close()
 	p.parallaxSched = nil
 	p.parallaxCS = nil
 
-	// Publish the close via atomic-store so cipher-path methods
-	// consulting isClosed observe the transition without a lock.
-	p.closed.Store(true)
 	return nil
 }

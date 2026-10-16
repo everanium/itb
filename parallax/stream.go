@@ -459,6 +459,9 @@ func (r *chunkedEncryptReader) Read(p []byte) (int, error) {
 	if len(p) == 0 {
 		return 0, nil
 	}
+	if r.released {
+		return 0, io.EOF
+	}
 	total := 0
 	for len(p) > 0 {
 		// Serve any pending frame bytes first.
@@ -492,12 +495,14 @@ func (r *chunkedEncryptReader) Read(p []byte) (int, error) {
 			r.upstreamEOF = true
 			r.plainBuf = r.plainBuf[:n]
 		default:
+			r.release()
 			return total, err
 		}
 		if len(r.plainBuf) == 0 {
 			continue
 		}
 		if err := r.encodeFrame(); err != nil {
+			r.release()
 			return total, err
 		}
 	}
@@ -614,6 +619,9 @@ func (r *chunkedDecryptReader) Read(p []byte) (int, error) {
 	if len(p) == 0 {
 		return 0, nil
 	}
+	if r.released {
+		return 0, io.EOF
+	}
 	total := 0
 	for len(p) > 0 {
 		// Serve any pending plaintext first.
@@ -636,6 +644,7 @@ func (r *chunkedDecryptReader) Read(p []byte) (int, error) {
 				r.srcAtEOF = true
 				continue
 			}
+			r.release()
 			return total, err
 		}
 	}

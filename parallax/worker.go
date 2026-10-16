@@ -1,6 +1,7 @@
 package parallax
 
 import (
+	"io"
 	"runtime"
 	"sync"
 
@@ -83,6 +84,7 @@ func runRange(s *Schedule, cs *Cipherset, pi []int, nonce, dst, src []byte, segS
 	if err != nil {
 		return err
 	}
+	defer closeKeystreams(ks)
 
 	for segIdx := segStart; segIdx < segEnd; segIdx++ {
 		slot := pi[segIdx%n]
@@ -99,6 +101,14 @@ func runRange(s *Schedule, cs *Cipherset, pi []int, nonce, dst, src []byte, segS
 	return nil
 }
 
+func closeKeystreams(ks []ctr.ResettableKeystream) {
+	for _, k := range ks {
+		if c, ok := k.(io.Closer); ok {
+			_ = c.Close()
+		}
+	}
+}
+
 // buildKeystreamsForRange constructs one keystream per palette slot
 // under the slot's subkey and a per-cipher truncated view of the
 // per-message nonce. Each keystream is built at offset 0; the per-segment
@@ -108,10 +118,12 @@ func buildKeystreamsForRange(s *Schedule, cs *Cipherset, nonce []byte) ([]ctr.Re
 	for i, name := range s.palette {
 		sliceNonce, err := sliceNonceFor(name, nonce)
 		if err != nil {
+			closeKeystreams(ks[:i])
 			return nil, err
 		}
 		built, err := ctr.NewResettable(name, cs.subkeys[i], sliceNonce)
 		if err != nil {
+			closeKeystreams(ks[:i])
 			return nil, err
 		}
 		ks[i] = built

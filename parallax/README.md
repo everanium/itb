@@ -46,6 +46,7 @@ const (
 func NewSchedule(palette []string, segmentSize int) (*Schedule, error)
 func GenerateMasterKey() ([]byte, error)
 func NewCipherset(master []byte, schedule *Schedule) (*Cipherset, error)
+func (cs *Cipherset) Close() error
 
 func (s *Schedule) Palette() []string
 func (s *Schedule) PaletteSize() int
@@ -68,10 +69,10 @@ func (s *Schedule) NewDecryptReader(cs *Cipherset, src io.Reader) (io.ReadCloser
 ```
 
 - **`Schedule`** is the message-shaped half of the configuration: validated palette, segment size, and streaming chunk size. It is opaque; construct one with `NewSchedule`. Read-only accessors (`Palette`, `PaletteSize`, `SegmentSize`, `ChunkSize`) return its parameters; `SetSegmentSize` and `SetChunkSize` atomically swap one knob without affecting in-flight calls or in-flight streams.
-- **`Cipherset`** carries per-slot subkeys and a separate scheduling subkey derived from the master under the schedule's palette. It is opaque; construct one with `NewCipherset`. The same cipherset may be reused across many messages provided the master itself stays in scope and the schedule is unchanged.
+- **`Cipherset`** carries per-slot subkeys and a separate scheduling subkey derived from the master under the schedule's palette. It is opaque; construct one with `NewCipherset` and wipe its derived subkeys in place with `Close` once retired. The same cipherset may be reused across many messages provided the master itself stays in scope and the schedule is unchanged.
 - **`NewSchedule`** validates the palette (size, name registry membership, per-name length) and the segment size (positive, at most `MaxSegmentSize`, coprime to the per-mode ITB pipeline period) and returns a `*Schedule` whose Single Message API and per-chunk streaming encrypts both route through the supplied `segmentSize`. The streaming chunk size is initialised to `DefaultChunkSize` and is independently adjustable via `SetChunkSize`. The palette is copied; the caller may free or mutate the input slice after the call returns.
 - **`GenerateMasterKey`** draws a fresh `MasterKeySize`-byte (32-byte) CSPRNG master secret suitable for `NewCipherset`. The 32-byte length is the **minimum** accepted by `NewCipherset` (`MasterKeySize <= len(master) <= MaxMasterKeySize`, up to 128 bytes); callers that already hold a high-entropy secret within this range (an ML-KEM shared secret, a 64-byte HKDF output, a wrapped key from `wrapper/`) may pass that directly instead. `kdf.Derive` owns the per-anchor truncate / expand policy: bytes past the anchor primitive's KDF key length are not consumed, so passing a 64-byte master under a 32-byte anchor keys the schedule from the first 32 bytes.
-- **`NewCipherset`** derives the scheduling subkey under the label `"schedule:0"` and one per-slot subkey per palette entry under the label `"<slot-name>:<1-based-index>"`. The anchor `palette[0]` is the KDF PRF for every derivation; identical palette entries in distinct slots produce distinct subkeys via the index suffix.
+- **`NewCipherset`** derives the scheduling subkey under the label `"schedule:0"` and one per-slot subkey per palette entry under the label `"<slot-name>:<1-based-index>"`. The anchor `palette[0]` is the KDF PRF for every derivation; identical palette entries in distinct slots produce distinct subkeys via the index suffix. `Cipherset.Close` zeroes every per-slot subkey and the scheduling subkey in place without mutating slice headers (idempotent and nil-safe).
 - **`Encrypt`** allocates a fresh wire of the form `nonce ‖ ciphertext_body`, draws a 16-byte per-message nonce from `crypto/rand`, copies the plaintext into the body region, and XORs the segment keystreams over it. The returned slice owns its bytes; the input plaintext is untouched.
 - **`Decrypt`** reverses `Encrypt`. The 16-byte leading nonce is read from the wire and the body is decrypted into a freshly allocated buffer. A nonce-only wire round-trips as an empty plaintext.
 - **`EncryptInPlace`** mutates the supplied buffer: on success the buffer holds the ciphertext body, byte-identical to `wire[NonceSize:]`; on error the buffer is left unchanged. The returned wire is a fresh allocation that prepends the nonce. Suited to hot paths where the caller has just produced a plaintext that need not survive the call.
@@ -170,6 +171,7 @@ func main() {
         panic(err)
     }
     clear(master) // wipe master once cs holds the derived subkeys
+    defer cs.Close()
 
     plaintext := []byte("any text or binary data — including 0x00 bytes")
 
@@ -184,12 +186,13 @@ func main() {
         panic(err)
     }
 
-    // Rotation — feed a fresh master through the same schedule; the old
-    // cipherset and its subkeys are simply dropped. The Schedule itself
-    // (palette + segment size) is deployment-config and survives rotation:
+    // Rotation — feed a fresh master through the same schedule; close the
+    // old cipherset once retired to wipe its subkeys in place. The Schedule
+    // itself (palette + segment size) is deployment-config and survives rotation:
     // newMaster := nextSharedSecret // e.g. a follow-up ML-KEM encapsulation
     // csRotated, _ := parallax.NewCipherset(newMaster, schedule)
     // clear(newMaster)
+    // _ = cs.Close()
 
     fmt.Printf("round-trip ok: %t\n", string(recovered) == string(plaintext))
 }

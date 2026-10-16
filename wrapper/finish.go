@@ -24,10 +24,14 @@ import "io"
 // the wire's only write.
 func FinishWrapStream(w io.Writer) error {
 	kw, ok := w.(*keystreamWriter)
-	if !ok || !kw.noncePending {
+	if !ok {
 		return nil
 	}
-	kw.noncePending = false
-	_, err := kw.w.Write(kw.nonce)
+	var err error
+	if kw.noncePending {
+		kw.noncePending = false
+		_, err = kw.w.Write(kw.nonce)
+	}
+	_ = kw.Close()
 	return err
 }

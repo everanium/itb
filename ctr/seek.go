@@ -5,8 +5,6 @@ import (
 	"crypto/cipher"
 	"fmt"
 
-	"golang.org/x/crypto/chacha20"
-
 	"github.com/everanium/itb/hashes"
 	"github.com/everanium/itb/internal/hashprf"
 )
@@ -52,6 +50,7 @@ func discard(ks Keystream, n int) {
 	}
 	z := make([]byte, n)
 	ks.XORKeyStream(z, z)
+	clear(z)
 }
 
 // NewAt returns a keystream positioned so its first output byte is the byte at
@@ -89,7 +88,9 @@ func NewAt(name string, key, nonce []byte, byteOffset int) (Keystream, error) {
 		if err != nil {
 			return nil, err
 		}
-		ks := cipher.NewCTR(block, ivAt(nonce, blockOff))
+		iv := ivAt(nonce, blockOff)
+		ks := cipher.NewCTR(block, iv)
+		clear(iv)
 		discard(ks, intra)
 		return ks, nil
 	}
@@ -107,7 +108,7 @@ func NewAt(name string, key, nonce []byte, byteOffset int) (Keystream, error) {
 		c.counter = blockOff
 	case *prfHashCTRBatch:
 		c.counter = blockOff
-	case *chacha20.Cipher:
+	case *chaCha20CTR:
 		// ChaCha20's block counter is a uint32 (RFC 8439); a silent
 		// uint32(blockOff) truncation past 2^32 would reuse keystream
 		// bytes, weakening the wrapper's outer-layer format-deniability
@@ -121,9 +122,10 @@ func NewAt(name string, key, nonce []byte, byteOffset int) (Keystream, error) {
 		// counter and is practically unlimited for random nonces).
 		const chacha20MaxBlock = uint64(1) << 32
 		if blockOff >= chacha20MaxBlock {
+			_ = c.Close()
 			return nil, fmt.Errorf("ctr: chacha20 counter overflow — byteOffset %d requires block index %d ≥ 2^32 (~256 GiB per (key, nonce)); outer-layer format deniability weakens past this seek point, inner ITB confidentiality unaffected. Choose AES-128-CTR outer cipher for streams above this cap", byteOffset, blockOff)
 		}
-		c.SetCounter(uint32(blockOff))
+		c.c.SetCounter(uint32(blockOff))
 	default:
 		return nil, fmt.Errorf("ctr: %s keystream is not seekable", name)
 	}

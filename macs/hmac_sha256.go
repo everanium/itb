@@ -4,6 +4,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"hash"
+	"runtime"
 	"sync"
 
 	"github.com/everanium/itb"
@@ -43,9 +44,12 @@ func HMACSHA256(key []byte) (itb.MACFunc, error) {
 		h.Write(data)
 		var sum [32]byte
 		h.Sum(sum[:0])
+		h.Reset()
 		pool.Put(h)
 		out := make([]byte, 32)
 		copy(out, sum[:])
+		clear(sum[:])
+		runtime.KeepAlive(&sum)
 		return out
 	}, nil
 }
@@ -76,9 +80,12 @@ func HMACSHA256Incremental(key []byte) (itb.MACIncrementalFunc, error) {
 		}
 		var sum [32]byte
 		h.Sum(sum[:0])
+		h.Reset()
 		pool.Put(h)
 		out := make([]byte, 32)
 		copy(out, sum[:])
+		clear(sum[:])
+		runtime.KeepAlive(&sum)
 		return out
 	}, nil
 }

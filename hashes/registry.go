@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"hash"
+	"runtime"
 	"sync"
 
 	"github.com/everanium/itb"
@@ -477,6 +478,8 @@ func Make128(name string, key ...[]byte) (itb.HashFunc128, []byte, error) {
 			var k [16]byte
 			copy(k[:], explicit)
 			h, _, ret := AESITB128Pair(k)
+			clear(k[:])
+			runtime.KeepAlive(&k)
 			return h, ret[:], nil
 		}
 		h, _, ret := AESITB128Pair()
@@ -490,6 +493,8 @@ func Make128(name string, key ...[]byte) (itb.HashFunc128, []byte, error) {
 			var k [16]byte
 			copy(k[:], explicit)
 			fn, ret := AESCMAC(k)
+			clear(k[:])
+			runtime.KeepAlive(&k)
 			return fn, ret[:], nil
 		}
 		fn, ret := AESCMAC()
@@ -544,6 +549,8 @@ func Make128Pair(name string, key ...[]byte) (itb.HashFunc128, itb.BatchHashFunc
 			var k [16]byte
 			copy(k[:], explicit)
 			h, b, ret := AESITB128Pair(k)
+			clear(k[:])
+			runtime.KeepAlive(&k)
 			return h, b, ret[:], nil
 		}
 		h, b, ret := AESITB128Pair()
@@ -557,6 +564,8 @@ func Make128Pair(name string, key ...[]byte) (itb.HashFunc128, itb.BatchHashFunc
 			var k [16]byte
 			copy(k[:], explicit)
 			h, b, ret := AESCMACPair(k)
+			clear(k[:])
+			runtime.KeepAlive(&k)
 			return h, b, ret[:], nil
 		}
 		h, b, ret := AESCMACPair()
@@ -600,6 +609,8 @@ func Make256(name string, key ...[]byte) (itb.HashFunc256, []byte, error) {
 			var k [32]byte
 			copy(k[:], explicit)
 			h, _, ret := Areion256Pair(k)
+			clear(k[:])
+			runtime.KeepAlive(&k)
 			return h, ret[:], nil
 		}
 		h, _, ret := Areion256Pair()
@@ -613,6 +624,8 @@ func Make256(name string, key ...[]byte) (itb.HashFunc256, []byte, error) {
 			var k [32]byte
 			copy(k[:], explicit)
 			fn, ret := BLAKE2b256(k)
+			clear(k[:])
+			runtime.KeepAlive(&k)
 			return fn, ret[:], nil
 		}
 		fn, ret := BLAKE2b256()
@@ -626,6 +639,8 @@ func Make256(name string, key ...[]byte) (itb.HashFunc256, []byte, error) {
 			var k [32]byte
 			copy(k[:], explicit)
 			fn, ret := BLAKE2s(k)
+			clear(k[:])
+			runtime.KeepAlive(&k)
 			return fn, ret[:], nil
 		}
 		fn, ret := BLAKE2s()
@@ -639,6 +654,8 @@ func Make256(name string, key ...[]byte) (itb.HashFunc256, []byte, error) {
 			var k [32]byte
 			copy(k[:], explicit)
 			fn, ret := BLAKE3(k)
+			clear(k[:])
+			runtime.KeepAlive(&k)
 			return fn, ret[:], nil
 		}
 		fn, ret := BLAKE3()
@@ -652,6 +669,8 @@ func Make256(name string, key ...[]byte) (itb.HashFunc256, []byte, error) {
 			var k [32]byte
 			copy(k[:], explicit)
 			fn, ret := ChaCha20(k)
+			clear(k[:])
+			runtime.KeepAlive(&k)
 			return fn, ret[:], nil
 		}
 		fn, ret := ChaCha20()
@@ -700,6 +719,8 @@ func Make256Pair(name string, key ...[]byte) (itb.HashFunc256, itb.BatchHashFunc
 			var k [32]byte
 			copy(k[:], explicit)
 			h, b, ret := Areion256Pair(k)
+			clear(k[:])
+			runtime.KeepAlive(&k)
 			return h, b, ret[:], nil
 		}
 		h, b, ret := Areion256Pair()
@@ -713,6 +734,8 @@ func Make256Pair(name string, key ...[]byte) (itb.HashFunc256, itb.BatchHashFunc
 			var k [32]byte
 			copy(k[:], explicit)
 			h, b, ret := BLAKE2b256Pair(k)
+			clear(k[:])
+			runtime.KeepAlive(&k)
 			return h, b, ret[:], nil
 		}
 		h, b, ret := BLAKE2b256Pair()
@@ -726,6 +749,8 @@ func Make256Pair(name string, key ...[]byte) (itb.HashFunc256, itb.BatchHashFunc
 			var k [32]byte
 			copy(k[:], explicit)
 			h, b, ret := BLAKE2s256Pair(k)
+			clear(k[:])
+			runtime.KeepAlive(&k)
 			return h, b, ret[:], nil
 		}
 		h, b, ret := BLAKE2s256Pair()
@@ -739,6 +764,8 @@ func Make256Pair(name string, key ...[]byte) (itb.HashFunc256, itb.BatchHashFunc
 			var k [32]byte
 			copy(k[:], explicit)
 			h, b, ret := BLAKE3256Pair(k)
+			clear(k[:])
+			runtime.KeepAlive(&k)
 			return h, b, ret[:], nil
 		}
 		h, b, ret := BLAKE3256Pair()
@@ -752,6 +779,8 @@ func Make256Pair(name string, key ...[]byte) (itb.HashFunc256, itb.BatchHashFunc
 			var k [32]byte
 			copy(k[:], explicit)
 			h, b, ret := ChaCha20256Pair(k)
+			clear(k[:])
+			runtime.KeepAlive(&k)
 			return h, b, ret[:], nil
 		}
 		h, b, ret := ChaCha20256Pair()
@@ -788,6 +817,8 @@ func Make512(name string, key ...[]byte) (itb.HashFunc512, []byte, error) {
 			var k [64]byte
 			copy(k[:], explicit)
 			h, _, ret := Areion512Pair(k)
+			clear(k[:])
+			runtime.KeepAlive(&k)
 			return h, ret[:], nil
 		}
 		h, _, ret := Areion512Pair()
@@ -801,6 +832,8 @@ func Make512(name string, key ...[]byte) (itb.HashFunc512, []byte, error) {
 			var k [64]byte
 			copy(k[:], explicit)
 			fn, ret := BLAKE2b512(k)
+			clear(k[:])
+			runtime.KeepAlive(&k)
 			return fn, ret[:], nil
 		}
 		fn, ret := BLAKE2b512()
@@ -843,6 +876,8 @@ func Make512Pair(name string, key ...[]byte) (itb.HashFunc512, itb.BatchHashFunc
 			var k [64]byte
 			copy(k[:], explicit)
 			h, b, ret := Areion512Pair(k)
+			clear(k[:])
+			runtime.KeepAlive(&k)
 			return h, b, ret[:], nil
 		}
 		h, b, ret := Areion512Pair()
@@ -856,6 +891,8 @@ func Make512Pair(name string, key ...[]byte) (itb.HashFunc512, itb.BatchHashFunc
 			var k [64]byte
 			copy(k[:], explicit)
 			h, b, ret := BLAKE2b512Pair(k)
+			clear(k[:])
+			runtime.KeepAlive(&k)
 			return h, b, ret[:], nil
 		}
 		h, b, ret := BLAKE2b512Pair()
@@ -897,6 +934,7 @@ func smokeValidate(spec Spec) error {
 		if err != nil {
 			return fmt.Errorf("hashes: Register: %q Make128Pair(): %w", spec.Name, err)
 		}
+		defer clear(key)
 		if single == nil {
 			return fmt.Errorf("hashes: Register: %q Make128Pair returned a nil single-arm closure", spec.Name)
 		}
@@ -931,6 +969,7 @@ func smokeValidate(spec Spec) error {
 		if err != nil {
 			return fmt.Errorf("hashes: Register: %q Make256Pair(): %w", spec.Name, err)
 		}
+		defer clear(key)
 		if single == nil {
 			return fmt.Errorf("hashes: Register: %q Make256Pair returned a nil single-arm closure", spec.Name)
 		}
@@ -966,6 +1005,7 @@ func smokeValidate(spec Spec) error {
 		if err != nil {
 			return fmt.Errorf("hashes: Register: %q Make512Pair(): %w", spec.Name, err)
 		}
+		defer clear(key)
 		if single == nil {
 			return fmt.Errorf("hashes: Register: %q Make512Pair returned a nil single-arm closure", spec.Name)
 		}
@@ -1063,6 +1103,7 @@ func smokeOptionalHashHooks(spec Spec, probe []byte) (err error) {
 		// silently skipped in that case. The no-panic contract
 		// still holds via the outer defer/recover.
 		key := make([]byte, wantLen)
+		defer clear(key)
 		if _, rerr := rand.Read(key); rerr != nil {
 			return fmt.Errorf("hashes: Register: %q KeyedHash smoke: crypto/rand: %w", spec.Name, rerr)
 		}

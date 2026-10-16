@@ -222,6 +222,7 @@ func pooledFactoryPair(name string, tagSize int, newKeyed func(key []byte) (hash
 			h.Reset()
 			h.Write(data)
 			out := h.Sum(make([]byte, 0, tagSize))
+			h.Reset()
 			pool.Put(h)
 			return out
 		}, nil
@@ -238,6 +239,7 @@ func pooledFactoryPair(name string, tagSize int, newKeyed func(key []byte) (hash
 				h.Write(c)
 			}
 			out := h.Sum(make([]byte, 0, tagSize))
+			h.Reset()
 			pool.Put(h)
 			return out
 		}, nil

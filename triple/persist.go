@@ -61,6 +61,11 @@ func Load(blob []byte, masters ...[]byte) (*Pipeline, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer func() {
+		clear(wrap.Inner)
+		clear(wrap.PermMaster)
+		clear(wrap.WrapMaster)
+	}()
 	if err := checkRecipeProfile(wrap.Profile); err != nil {
 		return nil, err
 	}
@@ -90,6 +95,7 @@ func LoadF(path string, masters ...[]byte) (*Pipeline, error) {
 	if err != nil {
 		return nil, fmt.Errorf("triple: LoadF: %w", err)
 	}
+	defer clear(data)
 	return Load(data, masters...)
 }
 
@@ -175,6 +181,11 @@ func Inspect(blob []byte) (Profile, error) {
 	if err != nil {
 		return Profile{}, err
 	}
+	defer func() {
+		clear(wrap.Inner)
+		clear(wrap.PermMaster)
+		clear(wrap.WrapMaster)
+	}()
 	prof := wrap.Profile
 	var innerProbe struct {
 		Mode    int `json:"mode"`
@@ -222,12 +233,15 @@ func parseBlobWrap(blob []byte) (blobWrapV2, error) {
 	dec := json.NewDecoder(bytes.NewReader(blob))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&wrap); err != nil {
+		clear(wrap.Inner)
+		clear(wrap.PermMaster)
+		clear(wrap.WrapMaster)
 		return blobWrapV2{}, ErrBlobMalformed
 	}
-	if dec.More() {
-		return blobWrapV2{}, ErrBlobMalformed
-	}
-	if wrap.Profile.Mode == "" || len(wrap.Inner) == 0 {
+	if dec.More() || wrap.Profile.Mode == "" || len(wrap.Inner) == 0 {
+		clear(wrap.Inner)
+		clear(wrap.PermMaster)
+		clear(wrap.WrapMaster)
 		return blobWrapV2{}, ErrBlobMalformed
 	}
 	return wrap, nil

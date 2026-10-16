@@ -47,6 +47,9 @@ func buildEncryptChain(p *Pipeline, plainSrc io.Reader, wireDst io.Writer) (inne
 	if p.resolved.Parallax {
 		r, rerr := p.parallaxSched.NewEncryptReader(p.parallaxCS, plainSrc)
 		if rerr != nil {
+			if c, ok := innerDst.(io.Closer); ok {
+				_ = c.Close()
+			}
 			return nil, nil, nil, fmt.Errorf("triple: parallax.NewEncryptReader: %w", rerr)
 		}
 		innerSrc = r
@@ -64,30 +67,48 @@ func buildEncryptChain(p *Pipeline, plainSrc io.Reader, wireDst io.Writer) (inne
 //	wireSrc  → [wrapper.NewUnwrapReader when wrapper  on] → innerSrc
 //	plainDst ← [parallax.NewDecryptWriter when parallax on] ← innerDst
 //
-// closeFn returns nil when parallax is off. When parallax is on it
-// closes the [parallax.NewDecryptWriter]'s [io.WriteCloser] so the
-// trailing partial chunk (if any) is flushed and pool scratch returns
-// cleanly. As with the encrypt side the caller must invoke closeFn on
-// every exit path.
+// closeFn closes the [parallax.NewDecryptWriter]'s [io.WriteCloser]
+// first (when parallax is on) so the trailing partial chunk (if any)
+// is flushed and pool scratch returns cleanly, and then closes the
+// [wrapper.NewUnwrapReader] (when wrapper is on) to wipe per-stream
+// keystream state. As with the encrypt side the caller must invoke
+// closeFn on every exit path.
 func buildDecryptChain(p *Pipeline, wireSrc io.Reader, plainDst io.Writer) (innerSrc io.Reader, innerDst io.Writer, closeFn func() error, err error) {
 	innerSrc = wireSrc
+	var unwrapClose func() error
 	if p.resolved.Wrapper {
 		r, rerr := wrapper.NewUnwrapReader(p.wrapperCipher, p.wrapperKey, wireSrc)
 		if rerr != nil {
 			return nil, nil, nil, fmt.Errorf("triple: wrapper.NewUnwrapReader: %w", rerr)
 		}
 		innerSrc = r
+		if c, ok := r.(io.Closer); ok {
+			unwrapClose = c.Close
+		}
 	}
 
 	innerDst = plainDst
-	closeFn = func() error { return nil }
+	var decryptClose func() error
 	if p.resolved.Parallax {
 		w, werr := p.parallaxSched.NewDecryptWriter(p.parallaxCS, plainDst)
 		if werr != nil {
+			if unwrapClose != nil {
+				_ = unwrapClose()
+			}
 			return nil, nil, nil, fmt.Errorf("triple: parallax.NewDecryptWriter: %w", werr)
 		}
 		innerDst = w
-		closeFn = w.Close
+		decryptClose = w.Close
+	}
+	closeFn = func() error {
+		var cerr error
+		if decryptClose != nil {
+			cerr = decryptClose()
+		}
+		if unwrapClose != nil {
+			_ = unwrapClose()
+		}
+		return cerr
 	}
 	return innerSrc, innerDst, closeFn, nil
 }

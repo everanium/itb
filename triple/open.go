@@ -3,6 +3,7 @@ package triple
 import (
 	"bytes"
 	"fmt"
+	"runtime"
 
 	"github.com/everanium/itb"
 	"github.com/everanium/itb/hashes"
@@ -44,6 +45,8 @@ func openWrap(wrap blobWrapV2, masters [][]byte) (*Pipeline, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer clear(permMaster)
+	defer clear(wrapMaster)
 
 	// The record's Width is the inner blob width for both dispatch
 	// paths: checkRecipeProfile has already verified that InnerHash
@@ -72,6 +75,27 @@ func openWrap(wrap blobWrapV2, masters [][]byte) (*Pipeline, error) {
 		return nil, err
 	}
 
+	var (
+		sched      *parallax.Schedule
+		cs         *parallax.Cipherset
+		wrapperKey []byte
+		macFunc    itb.MACFunc
+		ok         bool
+	)
+	defer func() {
+		if !ok {
+			for _, s := range seeds {
+				zeroSeedComponents(s, width)
+			}
+			for _, k := range prfKeys {
+				clear(k)
+			}
+			_ = cs.Close()
+			clear(wrapperKey)
+			clear(macKey)
+		}
+	}()
+
 	// Cross-check the record against the inner blob: the MAC name
 	// must agree (both empty for No MAC) and the seed key width must
 	// equal the record's KeyBits. Either disagreement means the two
@@ -96,10 +120,6 @@ func openWrap(wrap blobWrapV2, masters [][]byte) (*Pipeline, error) {
 	cfg.DRBG = resolved.DRBG
 
 	// Parallax build.
-	var (
-		sched *parallax.Schedule
-		cs    *parallax.Cipherset
-	)
 	if resolved.Parallax {
 		sched, err = parallax.NewSchedule(resolved.ParallaxPalette, resolved.ParallaxSegmentSize)
 		if err != nil {
@@ -117,7 +137,6 @@ func openWrap(wrap blobWrapV2, masters [][]byte) (*Pipeline, error) {
 	}
 
 	// Wrapper build.
-	var wrapperKey []byte
 	if resolved.Wrapper {
 		wrapperKey, err = wrapper.DeriveKey(resolved.OuterCipher, wrapMaster)
 		if err != nil {
@@ -127,7 +146,6 @@ func openWrap(wrap blobWrapV2, masters [][]byte) (*Pipeline, error) {
 
 	// MAC build from the inner blob's material (already verified to
 	// agree with the record).
-	var macFunc itb.MACFunc
 	if macName != "" {
 		macFunc, err = macs.Make(macName, macKey)
 		if err != nil {
@@ -172,6 +190,7 @@ func openWrap(wrap blobWrapV2, masters [][]byte) (*Pipeline, error) {
 		macFunc:       macFunc,
 		macName:       macName,
 	}
+	ok = true
 	return p, nil
 }
 
@@ -225,12 +244,18 @@ func resolveOpenMasters(resolved Profile, wrap blobWrapV2, masters [][]byte) (pe
 		}
 	}
 	if resolved.Parallax && len(permMaster) == 0 {
+		clear(permMaster)
+		clear(wrapMaster)
 		return nil, nil, ErrMissingMasters
 	}
 	if resolved.Wrapper && len(wrapMaster) == 0 {
+		clear(permMaster)
+		clear(wrapMaster)
 		return nil, nil, ErrMissingMasters
 	}
 	if len(permMaster) > 0 && len(wrapMaster) > 0 && bytes.Equal(permMaster, wrapMaster) {
+		clear(permMaster)
+		clear(wrapMaster)
 		return nil, nil, ErrIdenticalMasters
 	}
 	return permMaster, wrapMaster, nil
@@ -253,6 +278,60 @@ func importInnerBlob(width int, cfg *itb.Config, innerBytes []byte, innerHash st
 	return [8]any{}, [8][]byte{}, "", nil, fmt.Errorf("triple: unsupported inner blob width %d", width)
 }
 
+func wipeBlob128(b *itb.Blob128) {
+	clear(b.KeyN)
+	clear(b.KeyL)
+	clear(b.KeyD1)
+	clear(b.KeyD2)
+	clear(b.KeyD3)
+	clear(b.KeyS1)
+	clear(b.KeyS2)
+	clear(b.KeyS3)
+	clear(b.MACKey)
+	for _, s := range []*itb.Seed128{b.NS, b.LS, b.DS1, b.DS2, b.DS3, b.SS1, b.SS2, b.SS3} {
+		if s != nil {
+			clear(s.Components)
+		}
+	}
+	runtime.KeepAlive(b)
+}
+
+func wipeBlob256(b *itb.Blob256) {
+	clear(b.KeyN[:])
+	clear(b.KeyL[:])
+	clear(b.KeyD1[:])
+	clear(b.KeyD2[:])
+	clear(b.KeyD3[:])
+	clear(b.KeyS1[:])
+	clear(b.KeyS2[:])
+	clear(b.KeyS3[:])
+	clear(b.MACKey)
+	for _, s := range []*itb.Seed256{b.NS, b.LS, b.DS1, b.DS2, b.DS3, b.SS1, b.SS2, b.SS3} {
+		if s != nil {
+			clear(s.Components)
+		}
+	}
+	runtime.KeepAlive(b)
+}
+
+func wipeBlob512(b *itb.Blob512) {
+	clear(b.KeyN[:])
+	clear(b.KeyL[:])
+	clear(b.KeyD1[:])
+	clear(b.KeyD2[:])
+	clear(b.KeyD3[:])
+	clear(b.KeyS1[:])
+	clear(b.KeyS2[:])
+	clear(b.KeyS3[:])
+	clear(b.MACKey)
+	for _, s := range []*itb.Seed512{b.NS, b.LS, b.DS1, b.DS2, b.DS3, b.SS1, b.SS2, b.SS3} {
+		if s != nil {
+			clear(s.Components)
+		}
+	}
+	runtime.KeepAlive(b)
+}
+
 // importInnerBlob128 decodes a 128-bit-width inner blob and rebuilds
 // the eight typed seeds. Each seed's Hash + BatchHash closure comes
 // from [hashes.Make128Pair] re-invoked with the imported per-slot
@@ -264,6 +343,7 @@ func importInnerBlob128(cfg *itb.Config, innerBytes []byte, innerHash string) ([
 	if err := b.Import3Cfg(innerBytes, cfg); err != nil {
 		return out, keys, "", nil, fmt.Errorf("triple: Blob128.Import3Cfg: %w", err)
 	}
+	defer wipeBlob128(&b)
 	if b.LS == nil {
 		return out, keys, "", nil, fmt.Errorf("triple: inner blob missing lockSeed slot")
 	}
@@ -278,8 +358,14 @@ func importInnerBlob128(cfg *itb.Config, innerBytes []byte, innerHash string) ([
 			// Components carry all state.
 			seed, err = hashes.SeedFromComponents128(innerHash, nil, rawSeeds[i].Components...)
 			if err != nil {
-				return out, keys, "", nil, fmt.Errorf("triple: hashes.SeedFromComponents128(%q): %w", innerHash, err)
+				clear(keys[i])
+				for j := 0; j < i; j++ {
+					zeroSeedComponents(out[j], 128)
+					clear(keys[j])
+				}
+				return [8]any{}, [8][]byte{}, "", nil, fmt.Errorf("triple: hashes.SeedFromComponents128(%q): %w", innerHash, err)
 			}
+			clear(keys[i])
 			keys[i] = nil
 		}
 		out[i] = seed
@@ -297,16 +383,22 @@ func importInnerBlob256(cfg *itb.Config, innerBytes []byte, innerHash string) ([
 	if err := b.Import3Cfg(innerBytes, cfg); err != nil {
 		return out, keys, "", nil, fmt.Errorf("triple: Blob256.Import3Cfg: %w", err)
 	}
+	defer wipeBlob256(&b)
 	if b.LS == nil {
 		return out, keys, "", nil, fmt.Errorf("triple: inner blob missing lockSeed slot")
 	}
-	rawKeys := [8][32]byte{b.KeyN, b.KeyL, b.KeyD1, b.KeyD2, b.KeyD3, b.KeyS1, b.KeyS2, b.KeyS3}
+	rawKeys := [8][]byte{b.KeyN[:], b.KeyL[:], b.KeyD1[:], b.KeyD2[:], b.KeyD3[:], b.KeyS1[:], b.KeyS2[:], b.KeyS3[:]}
 	rawSeeds := [8]*itb.Seed256{b.NS, b.LS, b.DS1, b.DS2, b.DS3, b.SS1, b.SS2, b.SS3}
 	for i := 0; i < 8; i++ {
-		keys[i] = append([]byte(nil), rawKeys[i][:]...)
+		keys[i] = append([]byte(nil), rawKeys[i]...)
 		seed, err := hashes.SeedFromComponents256(innerHash, keys[i], rawSeeds[i].Components...)
 		if err != nil {
-			return out, keys, "", nil, fmt.Errorf("triple: hashes.SeedFromComponents256(%q): %w", innerHash, err)
+			clear(keys[i])
+			for j := 0; j < i; j++ {
+				zeroSeedComponents(out[j], 256)
+				clear(keys[j])
+			}
+			return [8]any{}, [8][]byte{}, "", nil, fmt.Errorf("triple: hashes.SeedFromComponents256(%q): %w", innerHash, err)
 		}
 		out[i] = seed
 	}
@@ -322,16 +414,22 @@ func importInnerBlob512(cfg *itb.Config, innerBytes []byte, innerHash string) ([
 	if err := b.Import3Cfg(innerBytes, cfg); err != nil {
 		return out, keys, "", nil, fmt.Errorf("triple: Blob512.Import3Cfg: %w", err)
 	}
+	defer wipeBlob512(&b)
 	if b.LS == nil {
 		return out, keys, "", nil, fmt.Errorf("triple: inner blob missing lockSeed slot")
 	}
-	rawKeys := [8][64]byte{b.KeyN, b.KeyL, b.KeyD1, b.KeyD2, b.KeyD3, b.KeyS1, b.KeyS2, b.KeyS3}
+	rawKeys := [8][]byte{b.KeyN[:], b.KeyL[:], b.KeyD1[:], b.KeyD2[:], b.KeyD3[:], b.KeyS1[:], b.KeyS2[:], b.KeyS3[:]}
 	rawSeeds := [8]*itb.Seed512{b.NS, b.LS, b.DS1, b.DS2, b.DS3, b.SS1, b.SS2, b.SS3}
 	for i := 0; i < 8; i++ {
-		keys[i] = append([]byte(nil), rawKeys[i][:]...)
+		keys[i] = append([]byte(nil), rawKeys[i]...)
 		seed, err := hashes.SeedFromComponents512(innerHash, keys[i], rawSeeds[i].Components...)
 		if err != nil {
-			return out, keys, "", nil, fmt.Errorf("triple: hashes.SeedFromComponents512(%q): %w", innerHash, err)
+			clear(keys[i])
+			for j := 0; j < i; j++ {
+				zeroSeedComponents(out[j], 512)
+				clear(keys[j])
+			}
+			return [8]any{}, [8][]byte{}, "", nil, fmt.Errorf("triple: hashes.SeedFromComponents512(%q): %w", innerHash, err)
 		}
 		out[i] = seed
 	}
@@ -365,6 +463,7 @@ func importInnerBlob128Mixed(cfg *itb.Config, innerBytes []byte, mixedHashes [8]
 	if err := b.Import3Cfg(innerBytes, cfg); err != nil {
 		return out, keys, "", nil, fmt.Errorf("triple: Blob128.Import3Cfg: %w", err)
 	}
+	defer wipeBlob128(&b)
 	if b.LS == nil {
 		return out, keys, "", nil, fmt.Errorf("triple: inner blob missing lockSeed slot")
 	}
@@ -380,8 +479,14 @@ func importInnerBlob128Mixed(cfg *itb.Config, innerBytes []byte, mixedHashes [8]
 			// Components carry all state.
 			seed, err = hashes.SeedFromComponents128(name, nil, rawSeeds[i].Components...)
 			if err != nil {
-				return out, keys, "", nil, fmt.Errorf("triple: hashes.SeedFromComponents128(%q) slot %d: %w", name, i, err)
+				clear(keys[i])
+				for j := 0; j < i; j++ {
+					zeroSeedComponents(out[j], 128)
+					clear(keys[j])
+				}
+				return [8]any{}, [8][]byte{}, "", nil, fmt.Errorf("triple: hashes.SeedFromComponents128(%q) slot %d: %w", name, i, err)
 			}
+			clear(keys[i])
 			keys[i] = nil
 		}
 		out[i] = seed
@@ -398,17 +503,23 @@ func importInnerBlob256Mixed(cfg *itb.Config, innerBytes []byte, mixedHashes [8]
 	if err := b.Import3Cfg(innerBytes, cfg); err != nil {
 		return out, keys, "", nil, fmt.Errorf("triple: Blob256.Import3Cfg: %w", err)
 	}
+	defer wipeBlob256(&b)
 	if b.LS == nil {
 		return out, keys, "", nil, fmt.Errorf("triple: inner blob missing lockSeed slot")
 	}
-	rawKeys := [8][32]byte{b.KeyN, b.KeyL, b.KeyD1, b.KeyD2, b.KeyD3, b.KeyS1, b.KeyS2, b.KeyS3}
+	rawKeys := [8][]byte{b.KeyN[:], b.KeyL[:], b.KeyD1[:], b.KeyD2[:], b.KeyD3[:], b.KeyS1[:], b.KeyS2[:], b.KeyS3[:]}
 	rawSeeds := [8]*itb.Seed256{b.NS, b.LS, b.DS1, b.DS2, b.DS3, b.SS1, b.SS2, b.SS3}
 	for i := 0; i < 8; i++ {
 		name := mixedHashes[i]
-		keys[i] = append([]byte(nil), rawKeys[i][:]...)
+		keys[i] = append([]byte(nil), rawKeys[i]...)
 		seed, err := hashes.SeedFromComponents256(name, keys[i], rawSeeds[i].Components...)
 		if err != nil {
-			return out, keys, "", nil, fmt.Errorf("triple: hashes.SeedFromComponents256(%q) slot %d: %w", name, i, err)
+			clear(keys[i])
+			for j := 0; j < i; j++ {
+				zeroSeedComponents(out[j], 256)
+				clear(keys[j])
+			}
+			return [8]any{}, [8][]byte{}, "", nil, fmt.Errorf("triple: hashes.SeedFromComponents256(%q) slot %d: %w", name, i, err)
 		}
 		out[i] = seed
 	}
@@ -424,17 +535,23 @@ func importInnerBlob512Mixed(cfg *itb.Config, innerBytes []byte, mixedHashes [8]
 	if err := b.Import3Cfg(innerBytes, cfg); err != nil {
 		return out, keys, "", nil, fmt.Errorf("triple: Blob512.Import3Cfg: %w", err)
 	}
+	defer wipeBlob512(&b)
 	if b.LS == nil {
 		return out, keys, "", nil, fmt.Errorf("triple: inner blob missing lockSeed slot")
 	}
-	rawKeys := [8][64]byte{b.KeyN, b.KeyL, b.KeyD1, b.KeyD2, b.KeyD3, b.KeyS1, b.KeyS2, b.KeyS3}
+	rawKeys := [8][]byte{b.KeyN[:], b.KeyL[:], b.KeyD1[:], b.KeyD2[:], b.KeyD3[:], b.KeyS1[:], b.KeyS2[:], b.KeyS3[:]}
 	rawSeeds := [8]*itb.Seed512{b.NS, b.LS, b.DS1, b.DS2, b.DS3, b.SS1, b.SS2, b.SS3}
 	for i := 0; i < 8; i++ {
 		name := mixedHashes[i]
-		keys[i] = append([]byte(nil), rawKeys[i][:]...)
+		keys[i] = append([]byte(nil), rawKeys[i]...)
 		seed, err := hashes.SeedFromComponents512(name, keys[i], rawSeeds[i].Components...)
 		if err != nil {
-			return out, keys, "", nil, fmt.Errorf("triple: hashes.SeedFromComponents512(%q) slot %d: %w", name, i, err)
+			clear(keys[i])
+			for j := 0; j < i; j++ {
+				zeroSeedComponents(out[j], 512)
+				clear(keys[j])
+			}
+			return [8]any{}, [8][]byte{}, "", nil, fmt.Errorf("triple: hashes.SeedFromComponents512(%q) slot %d: %w", name, i, err)
 		}
 		out[i] = seed
 	}

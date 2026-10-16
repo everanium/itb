@@ -346,7 +346,9 @@ func DecryptStream3xCfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, 
 		if decErr != nil {
 			return decErr
 		}
-		if _, werr := dst.Write(pt); werr != nil {
+		_, werr := dst.Write(pt)
+		secureWipe(pt)
+		if werr != nil {
 			return werr
 		}
 	}
@@ -408,6 +410,11 @@ func EncryptStreamAuth3xCfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSee
 	stageUsed := 0
 	defer func() { releaseStage(stagePtr, stage, stageUsed) }()
 	var pending []byte
+	defer func() {
+		if pending != nil {
+			secureWipe(pending)
+		}
+	}()
 	var cumulative uint64
 
 	for {
@@ -434,6 +441,7 @@ func EncryptStreamAuth3xCfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSee
 				return werr
 			}
 			cumulative += pixels
+			secureWipe(pending)
 		}
 		held := make([]byte, n)
 		copy(held, stage[:n])
@@ -506,9 +514,12 @@ func DecryptStreamAuth3xCfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSee
 		}
 		pixels, pixErr := chunkPixelCountCfg(cfg, chunk)
 		if pixErr != nil {
+			secureWipe(plain)
 			return pixErr
 		}
-		if _, werr := dst.Write(plain); werr != nil {
+		_, werr := dst.Write(plain)
+		secureWipe(plain)
+		if werr != nil {
 			return werr
 		}
 		cumulative += pixels

@@ -77,5 +77,6 @@ func runDecrypt(blobPath string, opts decryptOpts) error {
 	if err != nil {
 		return classifyCryptoError("decrypt", err)
 	}
+	defer clear(plain)
 	return writeOutputBytes("decrypt", opts.outputPath, plain)
 }

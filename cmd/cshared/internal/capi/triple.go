@@ -38,6 +38,7 @@ func TripleInit(profile string, opts string, blobOut []byte) (id TripleHandleID,
 		s := mapTripleError(err)
 		return 0, 0, s
 	}
+	defer clear(blob)
 	if len(blob) > len(blobOut) {
 		// Pipeline already exists but the caller's blob buffer is
 		// too small — close the Pipeline before returning so the
@@ -201,6 +202,7 @@ func TripleRekey(id TripleHandleID, permMaster, wrapMaster []byte, blobOut []byt
 		s := mapTripleError(err)
 		return 0, s
 	}
+	defer clear(blob)
 	if len(blob) > len(blobOut) {
 		setLastErr(StatusBufferTooSmall)
 		return len(blob), StatusBufferTooSmall
@@ -313,6 +315,7 @@ func TripleDecryptStream(id TripleHandleID, wireSrc, plainDst []byte) (n int, st
 		s := mapTripleError(err)
 		return 0, s
 	}
+	defer clear(plain)
 	if len(plain) > len(plainDst) {
 		setLastErr(StatusBufferTooSmall)
 		return len(plain), StatusBufferTooSmall
@@ -362,6 +365,7 @@ func TripleDecryptMessage(id TripleHandleID, wire, plainDst []byte) (n int, st S
 		s := mapTripleError(err)
 		return 0, s
 	}
+	defer clear(plain)
 	if len(plain) > len(plainDst) {
 		setLastErr(StatusBufferTooSmall)
 		return len(plain), StatusBufferTooSmall

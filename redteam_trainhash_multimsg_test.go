@@ -913,10 +913,10 @@ func tcSolveNoiseSeedFromBins(allObs []tcNoiseObs, numWorkers int) []tcNoiseSeed
 							mk2 := &m2Tab[b3k^s3_2]
 							mk3 := &m3Tab[b3k^s3_3]
 							mk4 := &m4Tab[b3k^s3_4]
-							if ((mk0[0]&mk1[0]&mk2[0]&mk3[0]&mk4[0]) |
-								(mk0[1]&mk1[1]&mk2[1]&mk3[1]&mk4[1]) |
-								(mk0[2]&mk1[2]&mk2[2]&mk3[2]&mk4[2]) |
-								(mk0[3]&mk1[3]&mk2[3]&mk3[3]&mk4[3])) == 0 {
+							if ((mk0[0] & mk1[0] & mk2[0] & mk3[0] & mk4[0]) |
+								(mk0[1] & mk1[1] & mk2[1] & mk3[1] & mk4[1]) |
+								(mk0[2] & mk1[2] & mk2[2] & mk3[2] & mk4[2]) |
+								(mk0[3] & mk1[3] & mk2[3] & mk3[3] & mk4[3])) == 0 {
 								continue
 							}
 							cand := [4]byte{b0k, b1k, b2k, b3k}

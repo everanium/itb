@@ -73,6 +73,7 @@ func runEncrypt(blobPath string, opts encryptOpts) error {
 	if err != nil {
 		return err
 	}
+	defer clear(plain)
 	wire, err := pipe.EncryptMessage(plain)
 	if err != nil {
 		return classifyCryptoError("encrypt", err)

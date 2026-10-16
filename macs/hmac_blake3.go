@@ -40,7 +40,10 @@ func HMACBLAKE3(key []byte) (itb.MACFunc, error) {
 		// The clone carries the BLAKE3 key; zero it.
 		*h = blake3.Hasher{}
 		runtime.KeepAlive(h)
-		return append([]byte(nil), out[:]...)
+		ret := append([]byte(nil), out[:]...)
+		clear(out[:])
+		runtime.KeepAlive(&out)
+		return ret
 	}, nil
 }
 
@@ -67,6 +70,9 @@ func HMACBLAKE3Incremental(key []byte) (itb.MACIncrementalFunc, error) {
 		// The clone carries the BLAKE3 key; zero it.
 		*h = blake3.Hasher{}
 		runtime.KeepAlive(h)
-		return append([]byte(nil), out[:]...)
+		ret := append([]byte(nil), out[:]...)
+		clear(out[:])
+		runtime.KeepAlive(&out)
+		return ret
 	}, nil
 }

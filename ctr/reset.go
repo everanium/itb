@@ -4,6 +4,7 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"fmt"
+	"io"
 
 	"github.com/everanium/itb/hashes"
 	"golang.org/x/crypto/chacha20"
@@ -70,6 +71,9 @@ func NewResettableAt(name string, key, nonce []byte, byteOffset int) (Resettable
 		return ks, nil
 	}
 	if err := ks.ResetCounter(byteOffset); err != nil {
+		if c, ok := ks.(io.Closer); ok {
+			_ = c.Close()
+		}
 		return nil, err
 	}
 	return ks, nil
@@ -113,8 +117,17 @@ func (a *aesResettable) ResetCounter(byteOffset int) error {
 	}
 	blockOff := uint64(byteOffset / aes.BlockSize)
 	intra := byteOffset % aes.BlockSize
-	a.stream = cipher.NewCTR(a.block, ivAt(a.nonce[:], blockOff))
+	iv := ivAt(a.nonce[:], blockOff)
+	a.stream = cipher.NewCTR(a.block, iv)
+	clear(iv)
 	discard(a.stream, intra)
+	return nil
+}
+
+func (a *aesResettable) Close() error {
+	clear(a.nonce[:])
+	a.block = nil
+	a.stream = nil
 	return nil
 }
 
@@ -144,6 +157,8 @@ func newChaCha20Resettable(key, nonce []byte) (*chaCha20Resettable, error) {
 	nonceCopy := append([]byte(nil), nonce...)
 	c, err := chacha20.NewUnauthenticatedCipher(keyCopy, nonceCopy)
 	if err != nil {
+		clear(keyCopy)
+		clear(nonceCopy)
 		return nil, err
 	}
 	return &chaCha20Resettable{
@@ -184,8 +199,21 @@ func (c *chaCha20Resettable) ResetCounter(byteOffset int) error {
 		return err
 	}
 	fresh.SetCounter(uint32(blockOff))
+	if c.cipher != nil {
+		*c.cipher = chacha20.Cipher{}
+	}
 	c.cipher = fresh
 	discard(c.cipher, byteOffset%blockSize)
+	return nil
+}
+
+func (c *chaCha20Resettable) Close() error {
+	if c.cipher != nil {
+		*c.cipher = chacha20.Cipher{}
+		c.cipher = nil
+	}
+	clear(c.key)
+	clear(c.nonce)
 	return nil
 }
 

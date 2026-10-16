@@ -377,8 +377,12 @@ func (s *streamSpool) read(dst []byte, wait bool) (n int, drained bool) {
 		}
 	}
 	n = copy(dst, s.buf)
+	clear(s.buf[:n])
 	s.buf = s.buf[n:]
 	drained = len(s.buf) == 0
+	if drained {
+		s.buf = s.buf[:0]
+	}
 	return n, drained
 }
 
@@ -400,9 +404,7 @@ func (s *streamSpool) close() {
 // after StreamFree.
 func (s *streamSpool) wipe() {
 	s.mu.Lock()
-	for i := range s.buf {
-		s.buf[i] = 0
-	}
+	clear(s.buf[:cap(s.buf)])
 	s.buf = nil
 	s.mu.Unlock()
 }

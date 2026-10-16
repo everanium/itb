@@ -2,6 +2,7 @@ package ctr
 
 import (
 	"crypto/rand"
+	"io"
 
 	"github.com/everanium/itb/hashes"
 	"github.com/everanium/itb/internal/drbg"
@@ -43,6 +44,9 @@ func init() {
 				return err
 			}
 			ks.XORKeyStream(dst, dst)
+			if c, ok := ks.(io.Closer); ok {
+				_ = c.Close()
+			}
 			clear(seed)
 			return nil
 		}

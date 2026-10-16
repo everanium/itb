@@ -74,7 +74,8 @@
 //     per-slot keystream state (each palette entry gets its own
 //     KDF-derived subkey per [github.com/everanium/itb/kdf.Derive]).
 //     The resulting [Cipherset] is passed to the [Schedule] encryption
-//     and decryption methods.
+//     and decryption methods; call [Cipherset.Close] once retired to
+//     zero its derived subkeys in place.
 //
 // Every encrypt entry point draws a fresh CSPRNG nonce ([NonceSize]
 // bytes) per invocation and emits it as the wire prefix; decrypt entry

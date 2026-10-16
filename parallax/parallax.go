@@ -152,11 +152,27 @@ func (s *Schedule) PaletteSize() int {
 // Cipherset carries per-slot subkeys derived from the master under the
 // schedule's palette and the dedicated scheduling subkey used to expand
 // the per-message schedule seed. The subkeys are opaque; the only way to
-// consume a Cipherset is via Schedule.Encrypt / Schedule.Decrypt.
+// consume a Cipherset is via Schedule.Encrypt / Schedule.Decrypt. Call
+// [Cipherset.Close] when the cipherset is no longer needed to zeroize
+// the derived subkeys in place.
 type Cipherset struct {
 	schedule       *Schedule
 	subkeys        [][]byte
 	scheduleSubkey []byte
+}
+
+// Close zeroes the derived per-slot subkeys and the scheduling subkey
+// in place. Calling Close on a nil or already-closed Cipherset is a
+// no-op and returns nil.
+func (cs *Cipherset) Close() error {
+	if cs == nil {
+		return nil
+	}
+	for _, k := range cs.subkeys {
+		clear(k)
+	}
+	clear(cs.scheduleSubkey)
+	return nil
 }
 
 // NewSchedule validates the palette and segment size and returns a
@@ -263,11 +279,19 @@ func NewCipherset(master []byte, schedule *Schedule) (*Cipherset, error) {
 	for i, name := range schedule.palette {
 		keySize, err := ctr.KeySize(name)
 		if err != nil {
+			for j := 0; j < i; j++ {
+				clear(subkeys[j])
+			}
+			clear(scheduleSubkey)
 			return nil, fmt.Errorf("parallax: slot %d cipher %q: %w", i, name, err)
 		}
 		label := fmt.Sprintf("%s:%d", name, i+1)
 		subkey, err := kdf.Derive(anchor, master, label, keySize)
 		if err != nil {
+			for j := 0; j < i; j++ {
+				clear(subkeys[j])
+			}
+			clear(scheduleSubkey)
 			return nil, fmt.Errorf("parallax: slot %d subkey derivation: %w", i, err)
 		}
 		subkeys[i] = subkey
@@ -334,6 +358,7 @@ func (s *Schedule) Decrypt(ciphertext []byte, cs *Cipherset) ([]byte, error) {
 	}
 	out := make([]byte, len(body))
 	if err := transformInto(s, cs, ciphertext[:NonceSize], out, body); err != nil {
+		clear(out)
 		return nil, err
 	}
 	return out, nil
@@ -468,6 +493,7 @@ func transformInto(s *Schedule, cs *Cipherset, nonce, dst, src []byte) error {
 	if err != nil {
 		return err
 	}
+	defer clear(pi)
 	segSize := s.SegmentSize()
 	return runWorkers(s, cs, pi, nonce, dst, src, segSize)
 }

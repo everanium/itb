@@ -119,3 +119,12 @@ func (c *prfHashCTR) XORKeyStream(dst, src []byte) {
 		c.keystrmN -= rem
 	}
 }
+
+func (c *prfHashCTR) Close() error {
+	clear(c.input)
+	clear(c.keystrm)
+	c.prf = nil
+	c.counter = 0
+	c.keystrmN = 0
+	return nil
+}

@@ -3,6 +3,7 @@ package parallax
 import (
 	"bytes"
 	"crypto/rand"
+	"io"
 	mrand "math/rand/v2"
 	"testing"
 
@@ -377,5 +378,89 @@ func TestNewCiphersetRejectsOversizedMaster(t *testing.T) {
 	}
 	if _, err := NewCipherset(exact, schedule); err != nil {
 		t.Fatalf("NewCipherset rejected exact-cap master: %v", err)
+	}
+}
+
+func TestCiphersetClose(t *testing.T) {
+	// Nil receiver must be a safe no-op.
+	var nilCS *Cipherset
+	if err := nilCS.Close(); err != nil {
+		t.Fatalf("nil Cipherset.Close: %v", err)
+	}
+
+	palette := []string{hashes.CipherAreion512, hashes.CipherAES128CTR, hashes.CipherChaCha20}
+	schedule := mustSchedule(t, palette, DefaultSegmentSize)
+	cs := mustCipherset(t, mustMaster(t), schedule)
+
+	// Capture aliases and lengths before Close.
+	schedKeyAlias := cs.scheduleSubkey
+	schedKeyLen := len(cs.scheduleSubkey)
+	slotAliases := make([][]byte, len(cs.subkeys))
+	slotLens := make([]int, len(cs.subkeys))
+	for i, k := range cs.subkeys {
+		slotAliases[i] = k
+		slotLens[i] = len(k)
+	}
+
+	if err := cs.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	// Idempotent second Close.
+	if err := cs.Close(); err != nil {
+		t.Fatalf("second Close: %v", err)
+	}
+
+	// Slice headers must remain intact for read-only concurrent callers.
+	if len(cs.scheduleSubkey) != schedKeyLen {
+		t.Fatalf("scheduleSubkey len changed: got %d, want %d", len(cs.scheduleSubkey), schedKeyLen)
+	}
+	if len(cs.subkeys) != len(slotAliases) {
+		t.Fatalf("subkeys len changed: got %d, want %d", len(cs.subkeys), len(slotAliases))
+	}
+	for _, b := range schedKeyAlias {
+		if b != 0 {
+			t.Fatalf("scheduleSubkey not zeroed: %x", schedKeyAlias)
+		}
+	}
+	for i, alias := range slotAliases {
+		if len(cs.subkeys[i]) != slotLens[i] {
+			t.Fatalf("subkeys[%d] len changed: got %d, want %d", i, len(cs.subkeys[i]), slotLens[i])
+		}
+		for _, b := range alias {
+			if b != 0 {
+				t.Fatalf("subkeys[%d] not zeroed: %x", i, alias)
+			}
+		}
+	}
+}
+
+func TestStreamReadersReadAfterCloseAndError(t *testing.T) {
+	palette := []string{hashes.CipherAreion512, hashes.CipherAES128CTR, hashes.CipherChaCha20}
+	schedule := mustSchedule(t, palette, DefaultSegmentSize)
+	cs := mustCipherset(t, mustMaster(t), schedule)
+
+	// 1. EncryptReader: Read after Close must return (0, io.EOF) without panicking.
+	er, err := schedule.NewEncryptReader(cs, bytes.NewReader([]byte("hello world")))
+	if err != nil {
+		t.Fatalf("NewEncryptReader: %v", err)
+	}
+	if err := er.Close(); err != nil {
+		t.Fatalf("er.Close: %v", err)
+	}
+	buf := make([]byte, 32)
+	if n, err := er.Read(buf); n != 0 || err != io.EOF {
+		t.Fatalf("EncryptReader.Read after Close = (%d, %v), want (0, io.EOF)", n, err)
+	}
+
+	// 2. DecryptReader: Read after Close and after frame error must return (0, io.EOF).
+	dr, err := schedule.NewDecryptReader(cs, bytes.NewReader([]byte{0x01, 0x02}))
+	if err != nil {
+		t.Fatalf("NewDecryptReader: %v", err)
+	}
+	if _, err := dr.Read(buf); err == nil {
+		t.Fatal("DecryptReader.Read on truncated prefix: expected error")
+	}
+	if n, err := dr.Read(buf); n != 0 || err != io.EOF {
+		t.Fatalf("DecryptReader.Read after error = (%d, %v), want (0, io.EOF)", n, err)
 	}
 }

@@ -78,6 +78,17 @@ func (c *prfHashCTRBatch) XORKeyStream(dst, src []byte) {
 	}
 }
 
+func (c *prfHashCTRBatch) Close() error {
+	for lane := 0; lane < 4; lane++ {
+		clear(c.inStore[lane][:])
+	}
+	clear(c.keystrm)
+	c.batch = nil
+	c.counter = 0
+	c.keystrmN = 0
+	return nil
+}
+
 // tryNewPrfHashCTRBatch returns a batched keystream when name has a SIMD batch
 // path, or (nil, false, nil) when it does not (caller falls back to the
 // single-block prfHashCTR). Key / nonce lengths are validated by the caller.

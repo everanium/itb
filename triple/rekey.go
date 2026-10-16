@@ -60,14 +60,22 @@ func (p *Pipeline) Rekey(permMaster, wrapMaster []byte) ([]byte, error) {
 	}
 
 	freshPerm := append([]byte(nil), permMaster...)
+	defer clear(freshPerm)
 	freshWrap := append([]byte(nil), wrapMaster...)
+	defer clear(freshWrap)
 
+	var (
+		sched   *parallax.Schedule
+		cs      *parallax.Cipherset
+		derived []byte
+	)
 	if p.resolved.Parallax {
 		// Rebuild Schedule + Cipherset from the fresh perm master.
 		// Reuse the profile-resolved palette + segment size + chunk
 		// size so the receiver's replay observes the same per-stream
 		// shape.
-		sched, err := parallax.NewSchedule(p.resolved.ParallaxPalette, p.resolved.ParallaxSegmentSize)
+		var err error
+		sched, err = parallax.NewSchedule(p.resolved.ParallaxPalette, p.resolved.ParallaxSegmentSize)
 		if err != nil {
 			return nil, fmt.Errorf("triple: Rekey parallax.NewSchedule: %w", err)
 		}
@@ -76,19 +84,45 @@ func (p *Pipeline) Rekey(permMaster, wrapMaster []byte) ([]byte, error) {
 				return nil, fmt.Errorf("triple: Rekey parallax.SetChunkSize: %w", serr)
 			}
 		}
-		cs, err := parallax.NewCipherset(freshPerm, sched)
+		cs, err = parallax.NewCipherset(freshPerm, sched)
 		if err != nil {
 			return nil, fmt.Errorf("triple: Rekey parallax.NewCipherset: %w", err)
 		}
-		p.parallaxSched = sched
-		p.parallaxCS = cs
 	}
 
 	if p.resolved.Wrapper {
-		derived, err := wrapper.DeriveKey(p.wrapperCipher, freshWrap)
+		var err error
+		derived, err = wrapper.DeriveKey(p.wrapperCipher, freshWrap)
 		if err != nil {
+			_ = cs.Close()
 			return nil, fmt.Errorf("triple: Rekey wrapper.DeriveKey: %w", err)
 		}
+	}
+
+	// Re-export the wrap-layer with the fresh masters. The inner
+	// blob bytes carry the unchanged cfg + seeds + MAC material,
+	// exactly as they were at [Init] time.
+	innerBlob, err := exportInnerBlob(p.width, p.cfg, p.seeds, p.prfKeys, p.macKey, p.macName)
+	if err != nil {
+		_ = cs.Close()
+		clear(derived)
+		return nil, err
+	}
+	defer clear(innerBlob)
+
+	wrapBytes, err := marshalWrap(p.resolved, innerBlob, freshPerm, freshWrap)
+	if err != nil {
+		_ = cs.Close()
+		clear(derived)
+		return nil, fmt.Errorf("triple: Rekey %w", err)
+	}
+
+	if p.resolved.Parallax {
+		_ = p.parallaxCS.Close()
+		p.parallaxSched = sched
+		p.parallaxCS = cs
+	}
+	if p.resolved.Wrapper {
 		// Zero the previous wrapper key before dropping the
 		// reference — it is a per-master derived secret and must
 		// not remain in memory past the rotation.
@@ -98,18 +132,6 @@ func (p *Pipeline) Rekey(permMaster, wrapMaster []byte) ([]byte, error) {
 		p.wrapperKey = derived
 	}
 
-	// Re-export the wrap-layer with the fresh masters. The inner
-	// blob bytes carry the unchanged cfg + seeds + MAC material,
-	// exactly as they were at [Init] time.
-	innerBlob, err := exportInnerBlob(p.width, p.cfg, p.seeds, p.prfKeys, p.macKey, p.macName)
-	if err != nil {
-		return nil, err
-	}
-
-	wrapBytes, err := marshalWrap(p.resolved, innerBlob, freshPerm, freshWrap)
-	if err != nil {
-		return nil, fmt.Errorf("triple: Rekey %w", err)
-	}
 	// Retain the fresh blob for Save; the previous copy is key
 	// material and is zeroed before the reference drops.
 	clear(p.blob)

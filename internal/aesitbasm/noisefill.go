@@ -2,6 +2,7 @@ package aesitbasm
 
 import (
 	"encoding/binary"
+	"runtime"
 
 	aes "github.com/everanium/itb/third/goaes"
 )
@@ -133,6 +134,7 @@ func noiseFillGeneric(s *NoiseSchedule, dst []byte, lo, hi uint64) {
 		}
 	}
 	clear(blk[:])
+	runtime.KeepAlive(&blk)
 }
 
 // noiseBlockHW evaluates one filler block through the folded schedule.

@@ -1,6 +1,7 @@
 package wrapper
 
 import (
+	"io"
 	"runtime"
 	"sync"
 
@@ -64,6 +65,9 @@ func xorParallelAt(name string, key, nonce []byte, base int, dst, src []byte) er
 			return err
 		}
 		ks.XORKeyStream(dst[:n], src)
+		if c, ok := ks.(io.Closer); ok {
+			_ = c.Close()
+		}
 		return nil
 	}
 
@@ -88,6 +92,9 @@ func xorParallelAt(name string, key, nonce []byte, base int, dst, src []byte) er
 				return
 			}
 			ks.XORKeyStream(dst[start:end], src[start:end])
+			if c, ok := ks.(io.Closer); ok {
+				_ = c.Close()
+			}
 		}(w, start, end)
 	}
 	wg.Wait()

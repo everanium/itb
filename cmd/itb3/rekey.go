@@ -81,6 +81,8 @@ func runRekey(blobPath string, opts rekeyOpts) error {
 	if err != nil {
 		return runtimeErr("rekey", "%v", err)
 	}
+	defer clear(permMaster)
+	defer clear(wrapMaster)
 	fresh, err := pipe.Rekey(permMaster, wrapMaster)
 	if err != nil {
 		return classifyCryptoError("rekey", err)
@@ -111,6 +113,8 @@ func freshMasters(parallaxOn, wrapperOn bool) (perm []byte, wrap []byte, err err
 	if wrapperOn {
 		wrap = make([]byte, 32)
 		if _, err = rand.Read(wrap); err != nil {
+			clear(perm)
+			clear(wrap)
 			return nil, nil, fmt.Errorf("crypto/rand: %w", err)
 		}
 	}

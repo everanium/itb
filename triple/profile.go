@@ -580,7 +580,10 @@ func resolveProfile(prof Profile, opts Opts) Profile {
 	if opts.ChunkSize > 0 {
 		out.ChunkSize = opts.ChunkSize
 	}
-	if opts.InnerHash != "" {
+	if opts.InnerHash != "" && !isMixedProfile(out) {
+		// Only respect InnerHash override when the profile uses
+		// single-primitive dispatch in the first place — mixed
+		// profiles ignore the field.
 		out.InnerHash = opts.InnerHash
 	}
 	if opts.KeyBits > 0 {

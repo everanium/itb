@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"runtime"
 
 	"github.com/everanium/itb"
 	"github.com/everanium/itb/macs"
@@ -77,9 +78,11 @@ func marshalWrap(prof Profile, inner, permMaster, wrapMaster []byte) ([]byte, er
 	}
 	if rec.Parallax {
 		wrap.PermMaster = append([]byte(nil), permMaster...)
+		defer clear(wrap.PermMaster)
 	}
 	if rec.Wrapper {
 		wrap.WrapMaster = append([]byte(nil), wrapMaster...)
+		defer clear(wrap.WrapMaster)
 	}
 	out, err := json.Marshal(wrap)
 	if err != nil {
@@ -156,6 +159,8 @@ func Init(profile string, opts Opts) (*Pipeline, []byte, error) {
 	if err != nil {
 		return nil, nil, err
 	}
+	defer clear(permMaster)
+	defer clear(wrapMaster)
 
 	// 8-seed allocation. Mixed-primitive profiles route through the
 	// per-slot allocator; single-primitive profiles use the
@@ -177,6 +182,28 @@ func Init(profile string, opts Opts) (*Pipeline, []byte, error) {
 	// may select a primitive of a different width than the profile
 	// default, and the allocator reports the width actually in force.
 	resolved.Width = width
+
+	var (
+		sched      *parallax.Schedule
+		cs         *parallax.Cipherset
+		wrapperKey []byte
+		macKey     []byte
+		macFunc    itb.MACFunc
+		ok         bool
+	)
+	defer func() {
+		if !ok {
+			for _, s := range seeds {
+				zeroSeedComponents(s, width)
+			}
+			for _, k := range prfKeys {
+				clear(k)
+			}
+			_ = cs.Close()
+			clear(wrapperKey)
+			clear(macKey)
+		}
+	}()
 
 	// Per-instance Config snapshot. The worker cap is clamped into
 	// the Config envelope here and lives only on the Pipeline; it is
@@ -215,10 +242,6 @@ func Init(profile string, opts Opts) (*Pipeline, []byte, error) {
 	cfg.DRBG = resolved.DRBG
 
 	// Parallax build.
-	var (
-		sched *parallax.Schedule
-		cs    *parallax.Cipherset
-	)
 	if resolved.Parallax {
 		sched, err = parallax.NewSchedule(resolved.ParallaxPalette, resolved.ParallaxSegmentSize)
 		if err != nil {
@@ -236,7 +259,6 @@ func Init(profile string, opts Opts) (*Pipeline, []byte, error) {
 	}
 
 	// Wrapper build.
-	var wrapperKey []byte
 	if resolved.Wrapper {
 		wrapperKey, err = wrapper.DeriveKey(resolved.OuterCipher, wrapMaster)
 		if err != nil {
@@ -245,13 +267,9 @@ func Init(profile string, opts Opts) (*Pipeline, []byte, error) {
 	}
 
 	// MAC build.
-	var (
-		macKey  []byte
-		macFunc itb.MACFunc
-	)
 	if resolved.MacName != "" {
-		spec, ok := macs.Find(resolved.MacName)
-		if !ok {
+		spec, found := macs.Find(resolved.MacName)
+		if !found {
 			return nil, nil, fmt.Errorf("triple: unknown MAC %q", resolved.MacName)
 		}
 		macKey = make([]byte, spec.KeySize)
@@ -284,6 +302,7 @@ func Init(profile string, opts Opts) (*Pipeline, []byte, error) {
 	if err != nil {
 		return nil, nil, err
 	}
+	defer clear(innerBlob)
 
 	// Wrap-layer JSON from the resolved record and the resolved
 	// masters. The Pipeline retains one copy for Save; the caller
@@ -308,6 +327,7 @@ func Init(profile string, opts Opts) (*Pipeline, []byte, error) {
 		macFunc:       macFunc,
 		macName:       resolved.MacName,
 	}
+	ok = true
 	return p, wrapBytes, nil
 }
 
@@ -346,11 +366,15 @@ func prepareMasters(resolved Profile, opts Opts) (permMaster, wrapMaster []byte,
 		} else {
 			wrapMaster = make([]byte, wrapMasterSize)
 			if _, err = rand.Read(wrapMaster); err != nil {
+				clear(permMaster)
+				clear(wrapMaster)
 				return nil, nil, fmt.Errorf("triple: crypto/rand: %w", err)
 			}
 		}
 	}
 	if permMaster != nil && wrapMaster != nil && bytes.Equal(permMaster, wrapMaster) {
+		clear(permMaster)
+		clear(wrapMaster)
 		return nil, nil, ErrIdenticalMasters
 	}
 	return permMaster, wrapMaster, nil
@@ -382,9 +406,11 @@ func exportInnerBlob128(cfg *itb.Config, seeds [8]any, prfKeys [8][]byte, macKey
 	// opts alongside the other entries of the Triple constellation
 	// packed into the blob's core fields.
 	opts.KeyL = append([]byte(nil), prfKeys[1]...)
+	defer clear(opts.KeyL)
 	opts.LS = seeds[1].(*itb.Seed128)
 	if len(macKey) > 0 {
 		opts.MACKey = append([]byte(nil), macKey...)
+		defer clear(opts.MACKey)
 		opts.MACName = macName
 	}
 	return b.Export3Cfg(
@@ -415,6 +441,15 @@ func exportInnerBlob256(cfg *itb.Config, seeds [8]any, prfKeys [8][]byte, macKey
 		opts.MACKey = append([]byte(nil), macKey...)
 		opts.MACName = macName
 	}
+	defer func() {
+		for i := range keys {
+			clear(keys[i][:])
+		}
+		clear(opts.KeyL[:])
+		clear(opts.MACKey)
+		runtime.KeepAlive(&keys)
+		runtime.KeepAlive(&opts.KeyL)
+	}()
 	return b.Export3Cfg(
 		cfg,
 		keys[0], keys[2], keys[3], keys[4],
@@ -442,6 +477,15 @@ func exportInnerBlob512(cfg *itb.Config, seeds [8]any, prfKeys [8][]byte, macKey
 		opts.MACKey = append([]byte(nil), macKey...)
 		opts.MACName = macName
 	}
+	defer func() {
+		for i := range keys {
+			clear(keys[i][:])
+		}
+		clear(opts.KeyL[:])
+		clear(opts.MACKey)
+		runtime.KeepAlive(&keys)
+		runtime.KeepAlive(&opts.KeyL)
+	}()
 	return b.Export3Cfg(
 		cfg,
 		keys[0], keys[2], keys[3], keys[4],

@@ -19,9 +19,11 @@ func TestPipelineCloseZeroisesState(t *testing.T) {
 		t.Fatalf("Init: %v", err)
 	}
 
-	// Capture references to the underlying slices BEFORE Close, so
-	// the post-Close in-place wipe is observed through the aliased
-	// buffers rather than the Pipeline's own (post-Close) nils.
+	// Capture references to the underlying slices and seed structs BEFORE
+	// Close, so the post-Close in-place wipe and closure stubbing are
+	// observed through the aliased handles rather than the Pipeline's
+	// own (post-Close) nils.
+	seedHandles := pipe.seeds
 	seedComps := make([][]uint64, 8)
 	for i, s := range pipe.seeds {
 		seedComps[i] = seedComponentsHandle(s, pipe.width)
@@ -37,7 +39,9 @@ func TestPipelineCloseZeroisesState(t *testing.T) {
 		t.Fatalf("Close: %v", err)
 	}
 
-	// Seed Components must be all zero.
+	// Seed Components must be all zero, and per-seed closures must be
+	// scrubbed (Hash replaced with non-nil zero-returning stub;
+	// BatchHash, FusedChain, BatchFusedChain nilled).
 	for i, comps := range seedComps {
 		if comps == nil {
 			continue
@@ -46,6 +50,19 @@ func TestPipelineCloseZeroisesState(t *testing.T) {
 			if v != 0 {
 				t.Fatalf("seed[%d].Components[%d] = %d, want 0", i, j, v)
 			}
+		}
+		s512, ok := seedHandles[i].(*itb.Seed512)
+		if !ok || s512 == nil {
+			t.Fatalf("seed[%d] unexpected type %T", i, seedHandles[i])
+		}
+		if s512.Hash == nil {
+			t.Fatalf("seed[%d].Hash is nil after Close (want zero-returning stub)", i)
+		}
+		if out := s512.Hash([]byte("probe"), [8]uint64{}); out != ([8]uint64{}) {
+			t.Fatalf("seed[%d].Hash stub returned %x, want zero [8]uint64", i, out)
+		}
+		if s512.BatchHash != nil || s512.FusedChain != nil || s512.BatchFusedChain != nil {
+			t.Fatalf("seed[%d] batch/fused closures not nilled after Close", i)
 		}
 	}
 	// PRF keys must be all zero (nil for siphash24 profiles).
@@ -61,9 +78,63 @@ func TestPipelineCloseZeroisesState(t *testing.T) {
 	if wrapperKeyAlias != nil && !allZero(wrapperKeyAlias) {
 		t.Fatalf("wrapperKey not zeroed: %x", wrapperKeyAlias)
 	}
-	// MAC key must be zeroed.
+	// MAC key must be zeroed, and MAC closures replaced with non-nil
+	// zero-returning stubs.
 	if macKeyAlias != nil && !allZero(macKeyAlias) {
 		t.Fatalf("macKey not zeroed: %x", macKeyAlias)
+	}
+	if pipe.macFunc == nil {
+		t.Fatal("pipe.macFunc is nil after Close (want zero-returning stub)")
+	}
+	if tag := pipe.macFunc([]byte("probe")); len(tag) != 32 || !allZero(tag) {
+		t.Fatalf("pipe.macFunc stub returned %x, want 32 zero bytes", tag)
+	}
+	if pipe.cfg.MACIncremental == nil {
+		t.Fatal("pipe.cfg.MACIncremental is nil after Close (want zero-returning stub)")
+	}
+	if sum := pipe.cfg.MACIncremental([]byte("probe")); len(sum) != 32 || !allZero(sum) {
+		t.Fatalf("pipe.cfg.MACIncremental stub returned %x, want 32 zero bytes", sum)
+	}
+	if pipe.parallaxCS != nil {
+		t.Fatal("pipe.parallaxCS not nilled after Close")
+	}
+}
+
+// TestPipelineRekeyZeroisesOldState verifies Rekey wipes the retired
+// wrapperKey in place on success and preserves the live Pipeline state
+// when validation fails before swap.
+func TestPipelineRekeyZeroisesOldState(t *testing.T) {
+	pipe, _, err := Init(ProfileStreamingAEADTripleMACV1, Opts{})
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	defer pipe.Close()
+
+	oldWrapperKey := pipe.wrapperKey
+	msg := []byte("rekey lifecycle check")
+	ctBefore, err := pipe.EncryptMessage(msg)
+	if err != nil {
+		t.Fatalf("EncryptMessage before failed Rekey: %v", err)
+	}
+
+	// Failed Rekey (short permMaster) must leave live state untouched.
+	if _, err := pipe.Rekey([]byte("short"), freshBytes(t, 32)); err == nil {
+		t.Fatal("Rekey with short permMaster succeeded, want error")
+	}
+	if allZero(oldWrapperKey) {
+		t.Fatal("failed Rekey prematurely zeroed old wrapperKey")
+	}
+	ptBefore, err := pipe.DecryptMessage(ctBefore)
+	if err != nil || !bytes.Equal(ptBefore, msg) {
+		t.Fatalf("DecryptMessage after failed Rekey: err=%v, got=%q", err, ptBefore)
+	}
+
+	// Successful Rekey must wipe the retired wrapperKey in place.
+	if _, err := pipe.Rekey(freshBytes(t, 32), freshBytes(t, 32)); err != nil {
+		t.Fatalf("Rekey: %v", err)
+	}
+	if !allZero(oldWrapperKey) {
+		t.Fatalf("old wrapperKey not zeroed after successful Rekey: %x", oldWrapperKey)
 	}
 }
 

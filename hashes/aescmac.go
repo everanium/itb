@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"fmt"
+	"runtime"
 	"unsafe"
 
 	"github.com/everanium/itb"
@@ -88,7 +89,11 @@ func AESCMACWithKey(aesKey [16]byte) itb.HashFunc128 {
 			absorbXOR(b1[:end-off], data[off:end])
 			aesEncryptNoescape(block, &b1)
 		}
-		return binary.LittleEndian.Uint64(b1[:8]), binary.LittleEndian.Uint64(b1[8:])
+		lo := binary.LittleEndian.Uint64(b1[:8])
+		hi := binary.LittleEndian.Uint64(b1[8:])
+		clear(b1[:])
+		runtime.KeepAlive(&b1)
+		return lo, hi
 	}
 }
 
@@ -203,6 +208,8 @@ func aesCMACFusedChainHash(key []byte) (itb.FusedChainHashFunc128, itb.BatchFuse
 	var k [16]byte
 	copy(k[:], key)
 	s := aescmacasm.NewSchedule(k)
+	clear(k[:])
+	runtime.KeepAlive(&k)
 	single := func(components []uint64, data []byte) (uint64, uint64, bool) {
 		var out [2]uint64
 		switch len(data) {
@@ -296,7 +303,10 @@ func aesCMACFusedChainHash128x8(key []byte) (itb.BatchFusedChainHashFunc128x8, e
 	}
 	var k [16]byte
 	copy(k[:], key)
-	return aesCMACFusedChainHash8(aescmacasm.NewSchedule(k)), nil
+	sched := aescmacasm.NewSchedule(k)
+	clear(k[:])
+	runtime.KeepAlive(&k)
+	return aesCMACFusedChainHash8(sched), nil
 }
 
 // aesCMACInterlockFillBatch16 is the [Spec.InterlockFillBatch16] factory
@@ -315,6 +325,8 @@ func aesCMACInterlockFillBatch16(key []byte) (itb.InterlockFillFunc16, error) {
 	var k [16]byte
 	copy(k[:], key)
 	s := aescmacasm.NewSchedule(k)
+	clear(k[:])
+	runtime.KeepAlive(&k)
 	return func(components []uint64, groupIdxBase uint64, v uint32, out *[16][2]uint64) {
 		aescmacasm.FusedChain13x16(s, components, groupIdxBase, v, out)
 	}, nil

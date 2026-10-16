@@ -47,7 +47,11 @@ func allocEightSeeds(innerHash string, keyBits int) ([8]any, [8][]byte, int, err
 	for i := 0; i < 8; i++ {
 		seed, key, err := allocOneSeed(innerHash, keyBits, width)
 		if err != nil {
-			return seeds, prfKeys, 0, err
+			for j := 0; j < i; j++ {
+				zeroSeedComponents(seeds[j], width)
+				clear(prfKeys[j])
+			}
+			return [8]any{}, [8][]byte{}, 0, err
 		}
 		seeds[i] = seed
 		prfKeys[i] = key
@@ -80,19 +84,35 @@ func allocEightSeedsMixed(mixedHashes [8]string, keyBits, width int) ([8]any, [8
 	for i := 0; i < 8; i++ {
 		name := mixedHashes[i]
 		if name == "" {
-			return seeds, prfKeys, 0, fmt.Errorf("triple: mixedHashes[%d] is empty", i)
+			for j := 0; j < i; j++ {
+				zeroSeedComponents(seeds[j], width)
+				clear(prfKeys[j])
+			}
+			return [8]any{}, [8][]byte{}, 0, fmt.Errorf("triple: mixedHashes[%d] is empty", i)
 		}
 		spec, ok := hashes.Find(name)
 		if !ok {
-			return seeds, prfKeys, 0, fmt.Errorf("triple: mixedHashes[%d] = %q not in hashes.Registry", i, name)
+			for j := 0; j < i; j++ {
+				zeroSeedComponents(seeds[j], width)
+				clear(prfKeys[j])
+			}
+			return [8]any{}, [8][]byte{}, 0, fmt.Errorf("triple: mixedHashes[%d] = %q not in hashes.Registry", i, name)
 		}
 		if int(spec.Width) != width {
-			return seeds, prfKeys, 0, fmt.Errorf("triple: mixedHashes[%d] = %q width %d, profile width %d",
+			for j := 0; j < i; j++ {
+				zeroSeedComponents(seeds[j], width)
+				clear(prfKeys[j])
+			}
+			return [8]any{}, [8][]byte{}, 0, fmt.Errorf("triple: mixedHashes[%d] = %q width %d, profile width %d",
 				i, name, int(spec.Width), width)
 		}
 		seed, key, err := allocOneSeed(name, keyBits, width)
 		if err != nil {
-			return seeds, prfKeys, 0, err
+			for j := 0; j < i; j++ {
+				zeroSeedComponents(seeds[j], width)
+				clear(prfKeys[j])
+			}
+			return [8]any{}, [8][]byte{}, 0, err
 		}
 		seeds[i] = seed
 		prfKeys[i] = key
@@ -133,21 +153,43 @@ func allocOneSeed(primitive string, keyBits, width int) (seed any, prfKey []byte
 }
 
 // zeroSeedComponents clears the Components slice of a typed seed
-// pointer for the given width. Called by [Pipeline.Close] to wipe
-// keying material before releasing the Pipeline handle.
+// pointer for the given width and replaces its hash closures so any
+// closure-captured PRF key schedule is released to GC while keeping
+// the seed struct and Hash field non-nil. Called by [Pipeline.Close]
+// to wipe keying material before releasing the Pipeline handle.
 func zeroSeedComponents(handle any, width int) {
 	switch width {
 	case 128:
-		if s, ok := handle.(*itb.Seed128); ok {
+		if s, ok := handle.(*itb.Seed128); ok && s != nil {
 			clear(s.Components)
+			s.BatchHash = nil
+			s.FusedChain = nil
+			s.BatchFusedChain = nil
+			s.SetBatchFusedChain8(nil)
+			s.SetInterlockBatch16(nil)
+			s.Hash = func([]byte, uint64, uint64) (uint64, uint64) { return 0, 0 }
 		}
 	case 256:
-		if s, ok := handle.(*itb.Seed256); ok {
+		if s, ok := handle.(*itb.Seed256); ok && s != nil {
 			clear(s.Components)
+			s.BatchHash = nil
+			s.FusedChain = nil
+			s.BatchFusedChain = nil
+			s.SetBatchFusedChain8(nil)
+			s.SetInterlockBatch16(nil)
+			s.SetInterlockBatch32(nil)
+			s.Hash = func([]byte, [4]uint64) [4]uint64 { return [4]uint64{} }
 		}
 	case 512:
-		if s, ok := handle.(*itb.Seed512); ok {
+		if s, ok := handle.(*itb.Seed512); ok && s != nil {
 			clear(s.Components)
+			s.BatchHash = nil
+			s.FusedChain = nil
+			s.BatchFusedChain = nil
+			s.SetBatchFusedChain8(nil)
+			s.SetInterlockBatch16(nil)
+			s.SetInterlockBatch32(nil)
+			s.Hash = func([]byte, [8]uint64) [8]uint64 { return [8]uint64{} }
 		}
 	}
 }

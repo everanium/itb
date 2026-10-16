@@ -194,7 +194,7 @@ Implemented: Inside (full capacity) — every shipped MAC Authenticated Low-Leve
 | Spectre v1 / v2 / v4, Downfall, etc. | Secret-dependent memory access gadget | No known gadget in ITB data path | Register-only ops; no `table[secret_index]` |
 | MDS, Zenbleed (stale data) | CPU buffer residue | Seeds may remain in buffers | Not ITB-specific; identical for all ciphers |
 | Rowhammer, RAMBleed | DRAM bit flips / reads | Memory corruption / leakage | Not ITB-specific; ECC memory recommended |
-| Heap memory exposure | Memory dump, debugger, Meltdown | Seeds, cached hash keys in heap | Not ITB-specific; explicit Seed.Destroy(), secureWipe on pooled/intermediate buffers and SoEM22 states, wipeInterlockWorker48 on per-worker Rank Barrier scratch/masks, and KDF/MAC/DRBG state zeroization |
+| Heap memory exposure | Memory dump, debugger, Meltdown | Seeds, cached hash keys in heap | Not ITB-specific; explicit `Pipeline.Close()` and `Cipherset.Close()`, `secureWipe` on pooled/intermediate buffers and SoEM22 states, `wipeInterlockWorker48` on per-worker Rank Barrier scratch/masks, and KDF/MAC/DRBG/keystream/wrapper state zeroization |
 
 For detailed per-CVE analysis of 20+ hardware attacks (Spectre variants, Downfall, Hertzbleed, MDS, Zenbleed, Rowhammer), see [HWTHREATS.md](HWTHREATS.md).
 

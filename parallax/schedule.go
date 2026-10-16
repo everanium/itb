@@ -3,6 +3,8 @@ package parallax
 import (
 	"encoding/binary"
 	"fmt"
+	"io"
+	"runtime"
 
 	"github.com/everanium/itb/ctr"
 )
@@ -27,6 +29,9 @@ func buildScheduleSeed(s *Schedule, cs *Cipherset, nonce []byte) ([scheduleSeedS
 	}
 	var seed [scheduleSeedSize]byte
 	ks.XORKeyStream(seed[:], seed[:])
+	if c, ok := ks.(io.Closer); ok {
+		_ = c.Close()
+	}
 	return seed, nil
 }
 
@@ -40,7 +45,10 @@ func buildPermutation(s *Schedule, cs *Cipherset, nonce []byte) ([]int, error) {
 	if err != nil {
 		return nil, err
 	}
-	return fisherYates(seed[:], len(s.palette)), nil
+	perm := fisherYates(seed[:], len(s.palette))
+	clear(seed[:])
+	runtime.KeepAlive(&seed)
+	return perm, nil
 }
 
 // fisherYates returns a permutation of {0, …, n-1} from the 16-byte

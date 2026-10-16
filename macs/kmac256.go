@@ -79,7 +79,10 @@ func KMAC256WithCustomization(key, customization []byte) (itb.MACFunc, error) {
 			// The clone carries the keyed sponge state; zero it.
 			*h = keccakasm.CShake256{}
 			runtime.KeepAlive(h)
-			return append([]byte(nil), out[:]...)
+			ret := append([]byte(nil), out[:]...)
+			clear(out[:])
+			runtime.KeepAlive(&out)
+			return ret
 		}, nil
 	}
 
@@ -101,7 +104,11 @@ func KMAC256WithCustomization(key, customization []byte) (itb.MACFunc, error) {
 		_, _ = h.Write(suffix)
 		var out [32]byte
 		_, _ = h.Read(out[:])
-		return append([]byte(nil), out[:]...)
+		h.Reset()
+		ret := append([]byte(nil), out[:]...)
+		clear(out[:])
+		runtime.KeepAlive(&out)
+		return ret
 	}, nil
 }
 
@@ -148,7 +155,10 @@ func KMAC256IncrementalWithCustomization(key, customization []byte) (itb.MACIncr
 			// The clone carries the keyed sponge state; zero it.
 			*h = keccakasm.CShake256{}
 			runtime.KeepAlive(h)
-			return append([]byte(nil), out[:]...)
+			ret := append([]byte(nil), out[:]...)
+			clear(out[:])
+			runtime.KeepAlive(&out)
+			return ret
 		}, nil
 	}
 
@@ -166,7 +176,11 @@ func KMAC256IncrementalWithCustomization(key, customization []byte) (itb.MACIncr
 		_, _ = h.Write(suffix)
 		var out [32]byte
 		_, _ = h.Read(out[:])
-		return append([]byte(nil), out[:]...)
+		h.Reset()
+		ret := append([]byte(nil), out[:]...)
+		clear(out[:])
+		runtime.KeepAlive(&out)
+		return ret
 	}, nil
 }
 

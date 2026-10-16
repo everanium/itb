@@ -91,6 +91,7 @@ func DecryptAuthenticated3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, d
 		return nil, err
 	}
 	if !finalFlag {
+		secureWipe(plain)
 		return nil, ErrStreamTruncated
 	}
 	return plain, nil

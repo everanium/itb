@@ -145,6 +145,7 @@ func Unwrap(name string, key, wire []byte) ([]byte, error) {
 	body := wire[nlen:]
 	out := make([]byte, len(body))
 	if err := xorParallel(name, key, nonce, out, body); err != nil {
+		clear(out)
 		return nil, err
 	}
 	return out, nil
@@ -213,6 +214,7 @@ type keystreamWriter struct {
 	off          int       // cumulative bytes XORed so far
 	scratch      []byte    // reused across Writes; grows to the largest emission seen
 	noncePending bool      // true until the first non-empty Write batches the nonce out
+	closed       bool
 }
 
 // Write XORs p under the wrapper's outer cipher keystream and forwards
@@ -248,6 +250,9 @@ func (kw *keystreamWriter) Write(p []byte) (int, error) {
 			if err != nil {
 				return 0, err
 			}
+			if c, ok := kw.ks.(io.Closer); ok {
+				_ = c.Close()
+			}
 			kw.ks = ks
 		} else {
 			kw.ks.XORKeyStream(tail, p)
@@ -271,6 +276,9 @@ func (kw *keystreamWriter) Write(p []byte) (int, error) {
 		if err != nil {
 			return 0, err
 		}
+		if c, ok := kw.ks.(io.Closer); ok {
+			_ = c.Close()
+		}
 		kw.ks = ks
 	} else {
 		kw.ks.XORKeyStream(out, p)
@@ -279,25 +287,51 @@ func (kw *keystreamWriter) Write(p []byte) (int, error) {
 	return kw.w.Write(out)
 }
 
+func (kw *keystreamWriter) Close() error {
+	if kw.closed {
+		return nil
+	}
+	kw.closed = true
+	clear(kw.key)
+	clear(kw.nonce)
+	clear(kw.scratch[:cap(kw.scratch)])
+	if c, ok := kw.ks.(io.Closer); ok {
+		_ = c.Close()
+	}
+	kw.ks = nil
+	return nil
+}
+
 type keystreamReader struct {
-	r     io.Reader
-	name  string
-	key   []byte
-	nonce []byte
-	ks    Keystream
-	off   int
+	r      io.Reader
+	name   string
+	key    []byte
+	nonce  []byte
+	ks     Keystream
+	off    int
+	closed bool
 }
 
 func (kr *keystreamReader) Read(p []byte) (int, error) {
+	if kr.closed {
+		return 0, io.EOF
+	}
 	n, err := kr.r.Read(p)
 	if n > 0 {
 		if n >= parallelThreshold {
 			if e := xorParallelAt(kr.name, kr.key, kr.nonce, kr.off, p[:n], p[:n]); e != nil {
+				clear(p[:n])
+				_ = kr.Close()
 				return 0, e
 			}
 			ks, e := MakeKeystreamAt(kr.name, kr.key, kr.nonce, kr.off+n)
 			if e != nil {
+				clear(p[:n])
+				_ = kr.Close()
 				return 0, e
+			}
+			if c, ok := kr.ks.(io.Closer); ok {
+				_ = c.Close()
 			}
 			kr.ks = ks
 		} else {
@@ -305,7 +339,24 @@ func (kr *keystreamReader) Read(p []byte) (int, error) {
 		}
 		kr.off += n
 	}
+	if err != nil {
+		_ = kr.Close()
+	}
 	return n, err
+}
+
+func (kr *keystreamReader) Close() error {
+	if kr.closed {
+		return nil
+	}
+	kr.closed = true
+	clear(kr.key)
+	clear(kr.nonce)
+	if c, ok := kr.ks.(io.Closer); ok {
+		_ = c.Close()
+	}
+	kr.ks = nil
+	return nil
 }
 
 // NewWrapWriter returns an io.Writer that XOR-encrypts every byte
@@ -331,13 +382,14 @@ func NewWrapWriter(name string, key []byte, dst io.Writer) (io.Writer, error) {
 	}
 	ks, err := MakeKeystream(name, key, nonce)
 	if err != nil {
+		clear(nonce)
 		return nil, err
 	}
 	return &keystreamWriter{
 		w:            dst,
 		name:         name,
 		key:          append([]byte(nil), key...),
-		nonce:        append([]byte(nil), nonce...),
+		nonce:        nonce,
 		ks:           ks,
 		noncePending: true,
 	}, nil
@@ -371,10 +423,12 @@ func NewUnwrapReader(name string, key []byte, src io.Reader) (io.Reader, error) 
 		return emptyUnwrapReader{}, nil
 	}
 	if err != nil {
+		clear(nonce)
 		return nil, err
 	}
 	ks, err := MakeKeystream(name, key, nonce)
 	if err != nil {
+		clear(nonce)
 		return nil, err
 	}
 	return &keystreamReader{

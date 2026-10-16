@@ -53,6 +53,9 @@ func (p *Pipeline) EncryptStream(plainSrc io.Reader, wireDst io.Writer) error {
 	if err != nil {
 		return err
 	}
+	if p.isClosed() {
+		return ErrClosed
+	}
 
 	innerSrc, innerDst, closeFn, err := buildEncryptChain(p, plainSrc, wireDst)
 	if err != nil {
@@ -81,6 +84,9 @@ func (p *Pipeline) EncryptStream(plainSrc io.Reader, wireDst io.Writer) error {
 		)
 	}
 	if err := joinCloseError(cipherErr, closeFn()); err != nil {
+		if c, ok := innerDst.(io.Closer); ok {
+			_ = c.Close()
+		}
 		return err
 	}
 	// Public entry points reject empty input with ErrEmptyInput
@@ -118,6 +124,9 @@ func (p *Pipeline) DecryptStream(wireSrc io.Reader, plainDst io.Writer) error {
 	wireSrc, err := rejectEmptySource(wireSrc)
 	if err != nil {
 		return err
+	}
+	if p.isClosed() {
+		return ErrClosed
 	}
 
 	innerSrc, innerDst, closeFn, err := buildDecryptChain(p, wireSrc, plainDst)

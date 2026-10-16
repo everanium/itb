@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"runtime"
 	"strconv"
 )
 
@@ -198,6 +199,7 @@ func componentsFromStrings(strs []string) ([]uint64, error) {
 	for i, s := range strs {
 		v, err := strconv.ParseUint(s, 10, 64)
 		if err != nil {
+			clear(out)
 			return nil, ErrBlobMalformed
 		}
 		out[i] = v
@@ -211,9 +213,11 @@ func hexToFixed64(s string) ([64]byte, error) {
 	var out [64]byte
 	decoded, err := hex.DecodeString(s)
 	if err != nil || len(decoded) != 64 {
+		clear(decoded)
 		return out, ErrBlobMalformed
 	}
 	copy(out[:], decoded)
+	clear(decoded)
 	return out, nil
 }
 
@@ -221,9 +225,11 @@ func hexToFixed32(s string) ([32]byte, error) {
 	var out [32]byte
 	decoded, err := hex.DecodeString(s)
 	if err != nil || len(decoded) != 32 {
+		clear(decoded)
 		return out, ErrBlobMalformed
 	}
 	copy(out[:], decoded)
+	clear(decoded)
 	return out, nil
 }
 
@@ -615,59 +621,96 @@ func (b *Blob512) Import3Cfg(data []byte, cfg *Config) error {
 		return ErrBlobMalformed
 	}
 
-	keyN, err := hexToFixed64(blob.KeyN)
+	var (
+		keyN, keyD1, keyD2, keyD3, keyS1, keyS2, keyS3, keyL [64]byte
+		ns, ds1, ds2, ds3, ss1, ss2, ss3, ls                 []uint64
+		macKey                                               []byte
+		ok                                                   bool
+		err                                                  error
+	)
+	defer func() {
+		clear(keyN[:])
+		clear(keyD1[:])
+		clear(keyD2[:])
+		clear(keyD3[:])
+		clear(keyS1[:])
+		clear(keyS2[:])
+		clear(keyS3[:])
+		clear(keyL[:])
+		runtime.KeepAlive(&keyN)
+		runtime.KeepAlive(&keyD1)
+		runtime.KeepAlive(&keyD2)
+		runtime.KeepAlive(&keyD3)
+		runtime.KeepAlive(&keyS1)
+		runtime.KeepAlive(&keyS2)
+		runtime.KeepAlive(&keyS3)
+		runtime.KeepAlive(&keyL)
+		if !ok {
+			clear(ns)
+			clear(ds1)
+			clear(ds2)
+			clear(ds3)
+			clear(ss1)
+			clear(ss2)
+			clear(ss3)
+			clear(ls)
+			clear(macKey)
+		}
+	}()
+
+	keyN, err = hexToFixed64(blob.KeyN)
 	if err != nil {
 		return err
 	}
-	keyD1, err := hexToFixed64(blob.KeyD1)
+	keyD1, err = hexToFixed64(blob.KeyD1)
 	if err != nil {
 		return err
 	}
-	keyD2, err := hexToFixed64(blob.KeyD2)
+	keyD2, err = hexToFixed64(blob.KeyD2)
 	if err != nil {
 		return err
 	}
-	keyD3, err := hexToFixed64(blob.KeyD3)
+	keyD3, err = hexToFixed64(blob.KeyD3)
 	if err != nil {
 		return err
 	}
-	keyS1, err := hexToFixed64(blob.KeyS1)
+	keyS1, err = hexToFixed64(blob.KeyS1)
 	if err != nil {
 		return err
 	}
-	keyS2, err := hexToFixed64(blob.KeyS2)
+	keyS2, err = hexToFixed64(blob.KeyS2)
 	if err != nil {
 		return err
 	}
-	keyS3, err := hexToFixed64(blob.KeyS3)
+	keyS3, err = hexToFixed64(blob.KeyS3)
 	if err != nil {
 		return err
 	}
-	ns, err := componentsFromStrings(blob.NS)
+	ns, err = componentsFromStrings(blob.NS)
 	if err != nil {
 		return err
 	}
-	ds1, err := componentsFromStrings(blob.DS1)
+	ds1, err = componentsFromStrings(blob.DS1)
 	if err != nil {
 		return err
 	}
-	ds2, err := componentsFromStrings(blob.DS2)
+	ds2, err = componentsFromStrings(blob.DS2)
 	if err != nil {
 		return err
 	}
-	ds3, err := componentsFromStrings(blob.DS3)
+	ds3, err = componentsFromStrings(blob.DS3)
 	if err != nil {
 		return err
 	}
-	ss1, err := componentsFromStrings(blob.SS1)
+	ss1, err = componentsFromStrings(blob.SS1)
 	if err != nil {
 		return err
 	}
-	ss2, err := componentsFromStrings(blob.SS2)
+	ss2, err = componentsFromStrings(blob.SS2)
 	if err != nil {
 		return err
 	}
-	ss3, err := componentsFromStrings(blob.SS3)
+	ss3, err = componentsFromStrings(blob.SS3)
 	if err != nil {
 		return err
 	}
@@ -678,8 +721,6 @@ func (b *Blob512) Import3Cfg(data []byte, cfg *Config) error {
 		}
 	}
 
-	var keyL [64]byte
-	var ls []uint64
 	hasLS := blob.KeyL != "" || len(blob.LS) > 0
 	if hasLS {
 		keyL, err = hexToFixed64(blob.KeyL)
@@ -695,7 +736,6 @@ func (b *Blob512) Import3Cfg(data []byte, cfg *Config) error {
 		}
 	}
 
-	var macKey []byte
 	if blob.MACKey != "" {
 		if len(blob.MACKey) > maxMACKeyHexLen {
 			return ErrBlobMalformed
@@ -734,6 +774,7 @@ func (b *Blob512) Import3Cfg(data []byte, cfg *Config) error {
 		b.KeyL = keyL
 		b.LS = &Seed512{Components: ls}
 	}
+	ok = true
 	return nil
 }
 
@@ -853,59 +894,96 @@ func (b *Blob256) Import3Cfg(data []byte, cfg *Config) error {
 		return ErrBlobMalformed
 	}
 
-	keyN, err := hexToFixed32(blob.KeyN)
+	var (
+		keyN, keyD1, keyD2, keyD3, keyS1, keyS2, keyS3, keyL [32]byte
+		ns, ds1, ds2, ds3, ss1, ss2, ss3, ls                 []uint64
+		macKey                                               []byte
+		ok                                                   bool
+		err                                                  error
+	)
+	defer func() {
+		clear(keyN[:])
+		clear(keyD1[:])
+		clear(keyD2[:])
+		clear(keyD3[:])
+		clear(keyS1[:])
+		clear(keyS2[:])
+		clear(keyS3[:])
+		clear(keyL[:])
+		runtime.KeepAlive(&keyN)
+		runtime.KeepAlive(&keyD1)
+		runtime.KeepAlive(&keyD2)
+		runtime.KeepAlive(&keyD3)
+		runtime.KeepAlive(&keyS1)
+		runtime.KeepAlive(&keyS2)
+		runtime.KeepAlive(&keyS3)
+		runtime.KeepAlive(&keyL)
+		if !ok {
+			clear(ns)
+			clear(ds1)
+			clear(ds2)
+			clear(ds3)
+			clear(ss1)
+			clear(ss2)
+			clear(ss3)
+			clear(ls)
+			clear(macKey)
+		}
+	}()
+
+	keyN, err = hexToFixed32(blob.KeyN)
 	if err != nil {
 		return err
 	}
-	keyD1, err := hexToFixed32(blob.KeyD1)
+	keyD1, err = hexToFixed32(blob.KeyD1)
 	if err != nil {
 		return err
 	}
-	keyD2, err := hexToFixed32(blob.KeyD2)
+	keyD2, err = hexToFixed32(blob.KeyD2)
 	if err != nil {
 		return err
 	}
-	keyD3, err := hexToFixed32(blob.KeyD3)
+	keyD3, err = hexToFixed32(blob.KeyD3)
 	if err != nil {
 		return err
 	}
-	keyS1, err := hexToFixed32(blob.KeyS1)
+	keyS1, err = hexToFixed32(blob.KeyS1)
 	if err != nil {
 		return err
 	}
-	keyS2, err := hexToFixed32(blob.KeyS2)
+	keyS2, err = hexToFixed32(blob.KeyS2)
 	if err != nil {
 		return err
 	}
-	keyS3, err := hexToFixed32(blob.KeyS3)
+	keyS3, err = hexToFixed32(blob.KeyS3)
 	if err != nil {
 		return err
 	}
-	ns, err := componentsFromStrings(blob.NS)
+	ns, err = componentsFromStrings(blob.NS)
 	if err != nil {
 		return err
 	}
-	ds1, err := componentsFromStrings(blob.DS1)
+	ds1, err = componentsFromStrings(blob.DS1)
 	if err != nil {
 		return err
 	}
-	ds2, err := componentsFromStrings(blob.DS2)
+	ds2, err = componentsFromStrings(blob.DS2)
 	if err != nil {
 		return err
 	}
-	ds3, err := componentsFromStrings(blob.DS3)
+	ds3, err = componentsFromStrings(blob.DS3)
 	if err != nil {
 		return err
 	}
-	ss1, err := componentsFromStrings(blob.SS1)
+	ss1, err = componentsFromStrings(blob.SS1)
 	if err != nil {
 		return err
 	}
-	ss2, err := componentsFromStrings(blob.SS2)
+	ss2, err = componentsFromStrings(blob.SS2)
 	if err != nil {
 		return err
 	}
-	ss3, err := componentsFromStrings(blob.SS3)
+	ss3, err = componentsFromStrings(blob.SS3)
 	if err != nil {
 		return err
 	}
@@ -916,8 +994,6 @@ func (b *Blob256) Import3Cfg(data []byte, cfg *Config) error {
 		}
 	}
 
-	var keyL [32]byte
-	var ls []uint64
 	hasLS := blob.KeyL != "" || len(blob.LS) > 0
 	if hasLS {
 		keyL, err = hexToFixed32(blob.KeyL)
@@ -933,7 +1009,6 @@ func (b *Blob256) Import3Cfg(data []byte, cfg *Config) error {
 		}
 	}
 
-	var macKey []byte
 	if blob.MACKey != "" {
 		if len(blob.MACKey) > maxMACKeyHexLen {
 			return ErrBlobMalformed
@@ -972,6 +1047,7 @@ func (b *Blob256) Import3Cfg(data []byte, cfg *Config) error {
 		b.KeyL = keyL
 		b.LS = &Seed256{Components: ls}
 	}
+	ok = true
 	return nil
 }
 
@@ -1095,59 +1171,88 @@ func (b *Blob128) Import3Cfg(data []byte, cfg *Config) error {
 		return ErrBlobMalformed
 	}
 
-	keyN, err := hexToBytes(blob.KeyN)
+	var (
+		keyN, keyD1, keyD2, keyD3, keyS1, keyS2, keyS3, keyL []byte
+		ns, ds1, ds2, ds3, ss1, ss2, ss3, ls                 []uint64
+		macKey                                               []byte
+		ok                                                   bool
+		err                                                  error
+	)
+	defer func() {
+		if !ok {
+			clear(keyN)
+			clear(keyD1)
+			clear(keyD2)
+			clear(keyD3)
+			clear(keyS1)
+			clear(keyS2)
+			clear(keyS3)
+			clear(keyL)
+			clear(ns)
+			clear(ds1)
+			clear(ds2)
+			clear(ds3)
+			clear(ss1)
+			clear(ss2)
+			clear(ss3)
+			clear(ls)
+			clear(macKey)
+		}
+	}()
+
+	keyN, err = hexToBytes(blob.KeyN)
 	if err != nil {
 		return err
 	}
-	keyD1, err := hexToBytes(blob.KeyD1)
+	keyD1, err = hexToBytes(blob.KeyD1)
 	if err != nil {
 		return err
 	}
-	keyD2, err := hexToBytes(blob.KeyD2)
+	keyD2, err = hexToBytes(blob.KeyD2)
 	if err != nil {
 		return err
 	}
-	keyD3, err := hexToBytes(blob.KeyD3)
+	keyD3, err = hexToBytes(blob.KeyD3)
 	if err != nil {
 		return err
 	}
-	keyS1, err := hexToBytes(blob.KeyS1)
+	keyS1, err = hexToBytes(blob.KeyS1)
 	if err != nil {
 		return err
 	}
-	keyS2, err := hexToBytes(blob.KeyS2)
+	keyS2, err = hexToBytes(blob.KeyS2)
 	if err != nil {
 		return err
 	}
-	keyS3, err := hexToBytes(blob.KeyS3)
+	keyS3, err = hexToBytes(blob.KeyS3)
 	if err != nil {
 		return err
 	}
-	ns, err := componentsFromStrings(blob.NS)
+	ns, err = componentsFromStrings(blob.NS)
 	if err != nil {
 		return err
 	}
-	ds1, err := componentsFromStrings(blob.DS1)
+	ds1, err = componentsFromStrings(blob.DS1)
 	if err != nil {
 		return err
 	}
-	ds2, err := componentsFromStrings(blob.DS2)
+	ds2, err = componentsFromStrings(blob.DS2)
 	if err != nil {
 		return err
 	}
-	ds3, err := componentsFromStrings(blob.DS3)
+	ds3, err = componentsFromStrings(blob.DS3)
 	if err != nil {
 		return err
 	}
-	ss1, err := componentsFromStrings(blob.SS1)
+	ss1, err = componentsFromStrings(blob.SS1)
 	if err != nil {
 		return err
 	}
-	ss2, err := componentsFromStrings(blob.SS2)
+	ss2, err = componentsFromStrings(blob.SS2)
 	if err != nil {
 		return err
 	}
-	ss3, err := componentsFromStrings(blob.SS3)
+	ss3, err = componentsFromStrings(blob.SS3)
 	if err != nil {
 		return err
 	}
@@ -1158,8 +1263,6 @@ func (b *Blob128) Import3Cfg(data []byte, cfg *Config) error {
 		}
 	}
 
-	var keyL []byte
-	var ls []uint64
 	hasLS := blob.KeyL != "" || len(blob.LS) > 0
 	if hasLS {
 		keyL, err = hexToBytes(blob.KeyL)
@@ -1175,7 +1278,6 @@ func (b *Blob128) Import3Cfg(data []byte, cfg *Config) error {
 		}
 	}
 
-	var macKey []byte
 	if blob.MACKey != "" {
 		if len(blob.MACKey) > maxMACKeyHexLen {
 			return ErrBlobMalformed
@@ -1214,5 +1316,6 @@ func (b *Blob128) Import3Cfg(data []byte, cfg *Config) error {
 		b.KeyL = keyL
 		b.LS = &Seed128{Components: ls}
 	}
+	ok = true
 	return nil
 }

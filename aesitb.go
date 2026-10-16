@@ -34,6 +34,7 @@ package itb
 import (
 	"crypto/rand"
 	"encoding/binary"
+	"runtime"
 
 	aes "github.com/everanium/itb/third/goaes"
 )
@@ -106,7 +107,11 @@ func aesITB128GenericHash(fixedKey [16]byte) HashFunc128 {
 
 		aes.RoundHW((*aes.Block)(&state), (*aes.Block)(&aesITBRoundConstants[blk&7]))
 		aes.RoundHW((*aes.Block)(&state), (*aes.Block)(&aesITBRoundConstants[(blk+1)&7]))
-		return binary.LittleEndian.Uint64(state[:8]), binary.LittleEndian.Uint64(state[8:])
+		lo := binary.LittleEndian.Uint64(state[:8])
+		hi := binary.LittleEndian.Uint64(state[8:])
+		clear(state[:])
+		runtime.KeepAlive(&state)
+		return lo, hi
 	}
 }
 

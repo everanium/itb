@@ -90,12 +90,28 @@ func New(name string, key, nonce []byte) (Keystream, error) {
 		if err != nil {
 			return nil, err
 		}
-		return c, nil
+		return &chaCha20CTR{c: c}, nil
 	case hashes.CipherAreion256, hashes.CipherAreion512, hashes.CipherBLAKE2b256, hashes.CipherBLAKE2b512, hashes.CipherBLAKE2s, hashes.CipherBLAKE3:
 		return newPrfHashCTR(name, key, nonce)
 	default:
 		return nil, fmt.Errorf("ctr: unknown cipher %q", name)
 	}
+}
+
+type chaCha20CTR struct {
+	c *chacha20.Cipher
+}
+
+func (w *chaCha20CTR) XORKeyStream(dst, src []byte) {
+	w.c.XORKeyStream(dst, src)
+}
+
+func (w *chaCha20CTR) Close() error {
+	if w.c != nil {
+		*w.c = chacha20.Cipher{}
+		w.c = nil
+	}
+	return nil
 }
 
 // SipHash-2-4 in CTR mode.
@@ -134,6 +150,11 @@ func newSipHashCTR(key, nonce []byte) (Keystream, error) {
 		nonceLo: binary.LittleEndian.Uint64(nonce[8:]),
 	}
 	return c, nil
+}
+
+func (c *sipCTR) Close() error {
+	*c = sipCTR{}
+	return nil
 }
 
 func (c *sipCTR) refill() {

@@ -229,3 +229,47 @@ func TestOptsMixedHashesWinsOverInnerHash(t *testing.T) {
 		t.Fatalf("round-trip mismatch")
 	}
 }
+
+// TestOptsInnerHashIgnoredOnMixedProfile confirms that passing
+// Opts.InnerHash against a mixed profile leaves the profile's
+// MixedHashes intact and keeps InnerHash empty in the exported blob
+// recipe so Load and Inspect succeed (mirroring how No MAC profiles
+// ignore Opts.MacName).
+func TestOptsInnerHashIgnoredOnMixedProfile(t *testing.T) {
+	for _, profName := range shippedMixedProfiles {
+		t.Run(profName, func(t *testing.T) {
+			sender, blob, err := Init(profName, Opts{InnerHash: "areion512"})
+			if err != nil {
+				t.Fatalf("Init(%s, InnerHash=areion512): %v", profName, err)
+			}
+			defer sender.Close()
+
+			rec, err := Inspect(blob)
+			if err != nil {
+				t.Fatalf("Inspect(%s): %v", profName, err)
+			}
+			if rec.InnerHash != "" {
+				t.Fatalf("Inspect(%s): InnerHash=%q, want empty", profName, rec.InnerHash)
+			}
+
+			receiver, err := Load(blob)
+			if err != nil {
+				t.Fatalf("Load(%s): %v", profName, err)
+			}
+			defer receiver.Close()
+
+			plain := []byte("mixed profile with Opts.InnerHash round-trip")
+			wire, err := sender.EncryptMessage(plain)
+			if err != nil {
+				t.Fatalf("EncryptMessage: %v", err)
+			}
+			got, err := receiver.DecryptMessage(wire)
+			if err != nil {
+				t.Fatalf("DecryptMessage: %v", err)
+			}
+			if !bytes.Equal(got, plain) {
+				t.Fatalf("round-trip mismatch")
+			}
+		})
+	}
+}
