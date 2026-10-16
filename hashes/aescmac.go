@@ -302,7 +302,7 @@ func aesCMACFusedChainHash128x8(key []byte) (itb.BatchFusedChainHashFunc128x8, e
 // aesCMACInterlockFillBatch16 is the [Spec.InterlockFillBatch16] factory
 // of the aescmac entry. Returns the batch-16 Interlocked Barrier fill
 // kernel that synthesizes 16 consecutive 13-byte fill buffers (domain
-// tag 0x03, group index at bytes [1:9], zero padding) and runs the whole
+// tag 0x03, group index at bytes [1:9], the per-message interlock-nonce fold v at bytes [9:13]) and runs the whole
 // AES-CMAC ChainHash cascade over the supplied components on every lane
 // inside one hashes/internal/aescmacasm kernel call (tier avx512,
 // vaesavx2, vex, aesni, neon, or the scalar reference) — the batch-16

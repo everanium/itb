@@ -23,7 +23,7 @@
 
 **Coordinated disclosure.** Findings against the construction — cryptanalytic attacks, theoretical weaknesses, implementational flaws — are most welcome and prepared for academic publication. A 90-day coordinated disclosure window is the default; faster public disclosure may be appropriate when a fix lands quickly or the finding is already public via parallel discovery. The ITB construction was published to invite scrutiny, not to claim closed-form security — cryptanalytic findings under the author's own attribution are explicitly encouraged.
 
-**Out of scope.** Hardware-level attacks (DPA/SPA, Spectre, Meltdown, Rowhammer, cache timing, fault injection), supply-chain attacks against dependencies, attacks against the host OS / language runtime / hardware platform itself. See the Disclaimer above.
+**Out of scope.** Hardware-level attacks (DPA/SPA, Spectre, Meltdown, Rowhammer, cache timing, fault injection), supply-chain attacks against dependencies, attacks against the host OS / language runtime / hardware platform itself. See the Security notice above and [SCIENCE.md § 7](SCIENCE.md#scope-and-maturity-disclaimer).
 
 ## 1. ITB Composition Modes
 
@@ -43,7 +43,7 @@
 
 **[1]** MAC + Silent Drop assumes the attacker is unaware of MAC presence. If the attacker knows a MAC is inside (insider knowledge), the encrypted MAC tag serves as a local verification oracle during brute-force: candidate keys are verified by decrypting and checking `MAC(payload)` without recipient interaction. Search cost remains P × 2^(2·keyBits) (identical to Core ITB — no CCA leak, noiseSeed not revealed; both seeds must be searched jointly). Without insider knowledge: no verification predicate → plausible deniability. Grover bound: √P × 2^keyBits.
 
-**[2]** Software-level property under the random-container model; no guarantees against hardware-level attacks (see Disclaimer). Information-theoretic absorption under passive observation applies to the Pixel Barrier (`P(v | h) = 1/256`, [Proof 1](PROOFS.md#proof-1-information-theoretic-barrier)); the Rank Barrier's per-chunk mask permutation is PRF-conditional and keyed by lockSeed ([Proof 11](PROOFS.md#proof-11-48-bit-rank-barrier-mask-space-interlocked-barrier)). Both run together as an indivisible composition ([SCIENCE.md § 1.2](SCIENCE.md#12-interlocked-barrier-architecture)).
+**[2]** Software-level property under the random-container model; no guarantees against hardware-level attacks (see Security notice above and [SCIENCE.md § 7](SCIENCE.md#scope-and-maturity-disclaimer)). Information-theoretic absorption under passive observation applies to the Pixel Barrier (`P(v | h) = 1/256`, [Proof 1](PROOFS.md#proof-1-information-theoretic-barrier)); the Rank Barrier's per-chunk mask permutation is PRF-conditional and keyed by lockSeed ([Proof 11](PROOFS.md#proof-11-48-bit-rank-barrier-mask-space-interlocked-barrier)). Both run together as an indivisible composition ([SCIENCE.md § 1.2](SCIENCE.md#12-interlocked-barrier-architecture)).
 
 **[3]** CCA eliminates noise bits (12.5 %), but CSPRNG-seeded DRBG fill bytes remain encrypted in data bit positions by dataSeed, indistinguishable from plaintext ([Proof 10](PROOFS.md#proof-10-guaranteed-drbg-residue-no-perfect-fill)).
 
@@ -83,7 +83,7 @@ The always-on Interlocked Barrier ([SCIENCE.md § 1.2](SCIENCE.md#12-interlocked
 | Padding oracle | N/A (no padding) | N/A (no padding) | N/A (no padding) | N/A (no padding) |
 | Quantum structural (Simon, BHT) | Conjectured mitigated | Conjectured mitigated | Conjectured mitigated | Conjectured mitigated |
 
-**[1]** Software-level property under the random-container model; no guarantees against hardware-level attacks (see Disclaimer).
+**[1]** Software-level property under the random-container model; no guarantees against hardware-level attacks (see Security notice above and [SCIENCE.md § 7](SCIENCE.md#scope-and-maturity-disclaimer)).
 
 **[2]** Full KPA resistance is 4-factor under the PRF assumption (Theorem 4a): (1) PRF non-invertibility (candidate verification requires key), (2) startPixel isolation (P offsets per region, untransmitted), (3) per-pixel encoding ambiguity (56^P without CCA; under CCA Reveal, noise positions leak, leaving 7^P rotation ambiguity), and (4) Rank Barrier per-chunk mask permutation (≈ 2^70.20 balanced partitions, Theorem 11; anti-collapse preserved by gcd(A, B) = 66,861 two-step reduction, Theorem 12). Byte-splitting (gcd(7, 8) = 1) acts as an auxiliary 5th factor specifically under Partial KPA (each channel mixes bits from 2 adjacent bytes; unknown adjacent bytes prevent channel candidate formulation). Under Full KPA, brute-force targets seeds directly so byte-splitting adds no additional factor. In Crib KPA, the Rank Barrier removes fixed byte-position anchors. See [SCIENCE.md § 2.6](SCIENCE.md#26-multi-factor-full-kpa-resistance-theorem-4a), [§ 2.10](SCIENCE.md#210-byte-splitting-property), [§ 2.16](SCIENCE.md#216-gcda-b-anti-collapse-trap-theorem-12), and [Proof 4a](PROOFS.md#proof-4a-multi-factor-full-kpa-resistance).
 
@@ -93,7 +93,7 @@ The always-on Interlocked Barrier ([SCIENCE.md § 1.2](SCIENCE.md#12-interlocked
 
 **[5]** Core ITB and MAC + Silent Drop (no oracle): the attacker must jointly search noiseSeed and dataSeed — without dataSeed, noiseSeed output is indistinguishable from random, so independent attack on noiseSeed is impossible without knowledge of dataSeed ([Proof 3](PROOFS.md#proof-3-8-seed-isolation)). Joint search space: 2^(2·keyBits). startSeed contributes only P (startPixel candidates, enumerated per region as [0, region_width)), not 2^keyBits. Total: P × 2^(2·keyBits) classical, √P × 2^keyBits Grover. At 1024-bit keys under the default per-region container (Mode 1, P = 1225): classical ~2^2058, Grover ~2^1029 (under per-container Mode 2, P = 441: classical ~2^2057, Grover ~2^1028).
 
-**[6]** MAC + Reveal: CCA reveals noisePos but not startPixel (startPixel determined by independent startSeed + nonce, not transmitted, per region enumerated as [0, region_width)). Total: P × 2^keyBits classical, √P × 2^(keyBits/2) Grover. At 1024-bit keys under the default per-region container (Mode 1, P = 1225 = 3 × per-region floor 365, square-rounded to 35 × 35 with DefaultBarrierFill = 1): classical ~2^1034, Grover ~2^517 (under per-container Mode 2, P = 441: classical ~2^1033, Grover ~2^516). With invertible primitive under KPA: the always-on Interlocked Barrier's per-chunk mask permutation (Rank Barrier, keyed by lockSeed independent of noiseSeed) forecloses the SAT anchor even under the maximum-peek attacker regime — Bitwuzla does not recover the true `dataSeed_i` lo lane on the naive-crib anchor with FNV-1a on every seed role (see [REDTEAM.md § FNV-1a lo-lane SAT](REDTEAM.md#fnv-1a-lo-lane-sat--architecturally-foreclosed)). Full multi-factor obstacle enumeration in [SCIENCE.md § 2.6](SCIENCE.md#26-multi-factor-full-kpa-resistance-theorem-4a).
+**[6]** MAC + Reveal: CCA reveals noisePos but not startPixel (startPixel determined by independent startSeed + nonce, not transmitted, per region enumerated as [0, region_width)). Total: P × 2^keyBits classical, √P × 2^(keyBits/2) Grover. At 1024-bit keys under the default per-region container (Mode 1, P = 1225 = 3 × per-region floor 365, square-rounded to 35 × 35 with DefaultBarrierFill = 1): classical ~2^1034, Grover ~2^517 (under per-container Mode 2, P = 441: classical ~2^1033, Grover ~2^516). See `[3]` above and [SCIENCE.md § 2.6](SCIENCE.md#26-multi-factor-full-kpa-resistance-theorem-4a).
 
 **[7]** The always-on Interlocked Barrier removes the demask entry point on colliding messages: the per-chunk PRF-keyed 48-bit mask triple is applied before COBS framing, so two-time-pad XOR yields lane-compressed bits `l₀(P₁) ‖ l₁(P₁) ‖ l₂(P₁) ⊕ l₀(P₂) ‖ l₁(P₂) ‖ l₂(P₂)` interpretable only with `lockSeed` and PRF-opaque under the PRF assumption. Empirically, plaintext recovery is null under every attacker-realistic dual-slot, main-only, or interlock-only collision probe at tested sample sizes ([REDTEAM.md § Nonce reuse](REDTEAM.md#nonce-reuse-lab-only)). Under single-slot partial collisions (main-only or interlock-only), the uncollided fresh axis closes confidentiality a fortiori. See [SCIENCE.md § 1.2](SCIENCE.md#12-interlocked-barrier-architecture), [§ 2.14 Nonce Uniqueness](SCIENCE.md#214-nonce-uniqueness), [§ 2.15](SCIENCE.md#215-48-bit-rank-barrier-mask-space-theorem-11), and [PROOFS.md § Nonce Uniqueness](PROOFS.md#nonce-uniqueness).
 
@@ -117,7 +117,7 @@ The always-on Interlocked Barrier ([SCIENCE.md § 1.2](SCIENCE.md#12-interlocked
 | dataSeed (rotation + XOR) | 59 | **0** (independent seed) | **59 (100 %)** |
 | **Total** | **62** | **3 (4.8 %)** | **59 (95.2 %)** |
 
-**[1]** CCA reveals noise bit positions, but does not eliminate all ambiguity: CSPRNG-seeded DRBG fill bytes in data positions remain encrypted by dataSeed, indistinguishable from plaintext ([Proof 10](PROOFS.md#proof-10-guaranteed-drbg-residue-no-perfect-fill)).
+**[1]** CCA reveals noise bit positions, leaving DRBG fill encrypted in data positions ([Proof 10](PROOFS.md#proof-10-guaranteed-drbg-residue-no-perfect-fill); see [§ 1 [3]](#1-itb-composition-modes)).
 
 ### Barrier Strength (1024-bit key)
 
@@ -143,7 +143,7 @@ Every entry point applies the CCA-resistant `MinPixels` floor uniformly, so the 
 
 The Landauer row bounds the cost of blind enumeration of the noise-barrier space; it does not bound structural attacks that do not enumerate.
 
-Under CCA (MAC + Reveal) the noise positions are revealed but DRBG fill in data positions persists as residual ambiguity ([Proof 10](PROOFS.md#proof-10-guaranteed-drbg-residue-no-perfect-fill)); the noise-barrier headline is stated at the unified `MinPixels` floor. For the noise-barrier bound derivation, see [Proof 5](PROOFS.md#proof-5-noise-barrier-bound); for the per-chunk mask-space derivation, see [Proof 11](PROOFS.md#proof-11-48-bit-rank-barrier-mask-space-interlocked-barrier); for the gcd anti-collapse trap derivation, see [Proof 12](PROOFS.md#proof-12-gcda-b-anti-collapse-trap).
+The noise-barrier headline is stated at the unified `MinPixels` floor. For the noise-barrier bound derivation, see [Proof 5](PROOFS.md#proof-5-noise-barrier-bound); for the per-chunk mask-space derivation, see [Proof 11](PROOFS.md#proof-11-48-bit-rank-barrier-mask-space-interlocked-barrier); for the gcd anti-collapse trap derivation, see [Proof 12](PROOFS.md#proof-12-gcda-b-anti-collapse-trap).
 
 ### Practical Value of 4.8 % CCA Leak
 
@@ -194,7 +194,7 @@ Implemented: Inside (full capacity) — every shipped MAC Authenticated Low-Leve
 | Spectre v1 / v2 / v4, Downfall, etc. | Secret-dependent memory access gadget | No known gadget in ITB data path | Register-only ops; no `table[secret_index]` |
 | MDS, Zenbleed (stale data) | CPU buffer residue | Seeds may remain in buffers | Not ITB-specific; identical for all ciphers |
 | Rowhammer, RAMBleed | DRAM bit flips / reads | Memory corruption / leakage | Not ITB-specific; ECC memory recommended |
-| Heap memory exposure | Memory dump, debugger, Meltdown | Seeds, cached hash keys in heap | Not ITB-specific; secureWipe on intermediate buffers |
+| Heap memory exposure | Memory dump, debugger, Meltdown | Seeds, cached hash keys in heap | Not ITB-specific; explicit Seed.Destroy(), secureWipe on pooled/intermediate buffers and SoEM22 states, wipeInterlockWorker48 on per-worker Rank Barrier scratch/masks, and KDF/MAC/DRBG state zeroization |
 
 For detailed per-CVE analysis of 20+ hardware attacks (Spectre variants, Downfall, Hertzbleed, MDS, Zenbleed, Rowhammer), see [HWTHREATS.md](HWTHREATS.md).
 
@@ -224,12 +224,12 @@ For key-size and primitive-requirement comparisons vs AES / ChaCha20 / Threefish
 
 ## 9. Threat models NOT closed by the barrier
 
-Framed as «outside the barrier's threat model» where that is the honest description, and as «conditional» where the barrier's closure depends on a precondition. None of these is a claim that the barrier is weak — they are the boundary of what the barrier addresses. The full cryptographer verdict enumerating these classes appears in the pre-flight review; the summary sentence from that verdict is preserved here verbatim:
+The classes below define the boundary of what the Interlocked Barrier addresses — either sitting outside its threat model or holding conditionally on a usage or primitive precondition:
 
 > Closure of the KPA / CPA families is conditional on a secure PRF and fresh nonces; total inversion or a reused nonce is outside what the barrier closes.
 
 - **Total or systematic PRF inversion.** The barrier is explicitly PRF-conditional. Total inversion of the configured primitive lets the attacker resolve the per-chunk masks, the startPixels, and the seed components algorithmically, collapsing every architectural obstacle. Systematic partial PRF inversion is raised in cost but not eliminated. Outside the barrier's power to close.
-- **Nonce reuse.** Closure of the CPA / KPA families is conditional on fresh per-message nonces on both nonce slots — the main nonce that feeds the per-pixel and per-region derivations and the independent interlock nonce that feeds the barrier's per-chunk mask draws. Under joint collision of both, the barrier's per-chunk masks repeat; the shipped API generates each of the two nonces internally per call, which prevents caller-side reuse, but that is an API-discipline property, not a construction-level guarantee. Simultaneous collision on both slots requires a CSPRNG hardware fault. Empirically the lab-forced dual-slot collision recovers zero plaintext bytes at the tested sample sizes (see [REDTEAM.md § Nonce reuse](REDTEAM.md#nonce-reuse-lab-only)) — the structural closure argument is conditional; the empirical outcome is null.
+- **Nonce reuse.** Closure of the CPA / KPA families is conditional on fresh per-message nonces on both the main nonce and interlock nonce slots (`§ 3 [7]`). The shipped API draws both internally per call from `crypto/rand` (so simultaneous collision requires a CSPRNG hardware fault), which is an API-discipline property rather than a construction-level guarantee. Empirically, lab-forced dual-slot collision recovers zero plaintext bytes at the tested sample sizes (see [REDTEAM.md § Nonce reuse](REDTEAM.md#nonce-reuse-lab-only)).
 - **Upstream key-management / related-seed supply.** The 8-seed API draws independent CSPRNG components and rejects both pointer and byte-level `Components` collisions, so related-seed differentials do not arise through the shipped surface. A defective upstream KDF that supplies correlated seeds is outside the construction's control. Threat-model boundary, not a barrier property.
 - **Physical side channels** (timing, power, EM, cache, speculative execution). Out of scope by construction — leakage is a property of the execution environment, not the algorithm. The barrier's own kernels are written to a constant-time discipline (mask-merge only, no secret-dependent branches or memory accesses; the deterministic reduction avoids rejection sampling precisely to stay branch-free), but a deployment-level side-channel evaluation is per-CPU, per-compiler, and orthogonal to the algorithm-level claims. See [HWTHREATS.md](HWTHREATS.md) for the per-instruction inventory.
 - **Key-material compromise.** If the seeds or the derived state leak through any channel, confidentiality is lost by definition. The barrier assumes secret seeds.

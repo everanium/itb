@@ -75,8 +75,10 @@ upstream when needed.
       + patches/portable.patch
 
 Each patch is the exact diff applied; `git apply` them in this order on the
-subset base to reproduce this directory. `soem22.patch` touches only
-`areion*.go`, `areion_amd64.s`, `areion_arm64.s` and `areion_test.go`.
+subset base to reproduce the patch baseline. `soem22.patch` touches only
+`areion*.go`, `areion_amd64.s`, `areion_arm64.s` and `areion_test.go`; on top
+of `soem22.patch`, `areion.go` additionally includes explicit stack-state
+zeroization (`clear` + `runtime.KeepAlive` on temporary round states).
 
 `portable.patch` makes the package build and run correctly on every
 architecture, with no change to any output:
@@ -90,7 +92,7 @@ architecture, with no change to any output:
 - `AddRoundKey` and `XorBlock` / `XorBlock2` / `XorBlock4` dereferenced
   byte-array blocks as `uint64` words, and the key expansion did the same
   with `uint32` words. Byte arrays carry no alignment, and targets without
-  unaligned access must not see such a dereference. The XORs now load and
+  unaligned access must not see such a dereference. The XORs load and
   store through `encoding/binary`; the key expansion keeps native byte order
   through `binary.NativeEndian`, so its layout is unchanged.
 

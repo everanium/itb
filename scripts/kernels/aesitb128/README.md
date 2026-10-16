@@ -1,7 +1,7 @@
 ## ITB AES-ITB-128 Kernels Generator
 
-One deterministic generator emits every AES-ITB-128 assembly kernel under
-`internal/aesitbasm/`. It takes no input beyond its own source, reads
+One deterministic generator emits every AES-ITB-128 fused ChainHash
+cascade kernel under `internal/aesitbasm/`. It takes no input beyond its own source, reads
 no numeric tables of its own (round constants, the PKCS#7 pad vectors, the
 batch-16 absorb block and lane-offset table are read from the Go side —
 `·RC`, `·pad4Tail`, `·pad13Tail`, `·absorb13Block`, `·laneIdxZ`), and must
@@ -21,8 +21,8 @@ After any generator change, run the `--check` form and confirm
 ## Fused ChainHash cascade kernels — `gen_fused_kernels.py`
 
 The fused-cascade kernels that evaluate the whole `Seed128.ChainHash128`
-cascade in one call (see `internal/aesitbasm/aesitbasm_fused.go`): 35
-files, `aesitb_fusedchain128_<shape>x4_<tier>_amd64.s` (tiers aesni / vex /
+cascade in one call (see `internal/aesitbasm/aesitbasm_fused.go`): four
+per-pixel nonce-buffer shapes, `aesitb_fusedchain128_<shape>x4_<tier>_amd64.s` (tiers aesni / vex /
 vaesavx2 / avx512), `aesitb_fusedchain128_<shape>x1_<tier>_amd64.s` (tiers
 aesni / vex), `aesitb_fusedchain128_<shape>x{1,4}_neon_arm64.s`, and — at
 the three nonce-buf shapes 20 / 36 / 68 only —
@@ -84,9 +84,10 @@ serialises consecutive kernel calls and costs more than the kernel itself:
   store.
 
 The 13-byte Interlocked Barrier fill block is written byte-oriented (a
-1-byte domain tag followed by an 8-byte group index) and read as an 8-, a
-4- and a 1-byte insert; its stores sit far enough ahead of the kernel's
-tail loads that the load shape there is not on the critical path.
+1-byte domain tag, an 8-byte little-endian group index, and the 4-byte
+little-endian interlock-nonce fold) and read as an 8-, a 4- and a 1-byte
+insert; its stores sit far enough ahead of the kernel's tail loads that
+the load shape there is not on the critical path.
 
 Every wide kernel ends with `VZEROUPPER` before `RET`; the Go ABI wrapper
 executes a legacy-SSE instruction after the return, and a dirty upper
@@ -99,7 +100,7 @@ Every kernel implements the construction documented in
 there by the in-package parity tests (`go test ./internal/aesitbasm/`,
 every tier by direct call plus `ITB_FORCE_HASH_TIER` /
 `ITB_FORCE_INTERLOCK_PRF_FILL_TIER` probes), by the root
-`aesitb_test.go`, and by the cross-tier wire-parity tests. The generators change how a kernel reads its
+`aesitb_test.go`, and by the cross-tier wire-parity tests. The generator changes how a kernel reads its
 inputs and where it stages them, never what it computes.
 
 Independently of any reference, every kernel is held to the

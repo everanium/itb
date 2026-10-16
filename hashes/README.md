@@ -386,7 +386,7 @@ _ = keyBytes // persist alongside seed.Components for cross-process restore
 _ = seed
 ```
 
-**Fused-hook fields on the Spec are user-settable.** Beyond `Make{N}Pair`, `hashes.Spec` exposes optional fast-path fields — `FusedChainHash{N}` and `FusedChainHash{N}x8` (four- / eight-lane ChainAbsorb cascades for `hashes.NewSeed{N}` construction speed), `InterlockFillBatch16x{W}` and `InterlockFillBatch32x{W}` (batched Interlocked Barrier fill kernels on the per-chunk hot path). The factory above declares none of them, and the seed built from the closures alone produces and decrypts the same wire — the hooks are performance paths only. A registered primitive that ships alongside a hand-tuned AVX-512 / VAES / SHA-NI kernel populates these fields at Register time; the shipped registry entries all do this, which is what buys tier-1 throughput on their target microarchitectures. Users who care about throughput on a custom primitive follow the same pattern: write the batched kernel, stash the callback in the Spec at Register time.
+**Fused-hook fields on the Spec are user-settable.** Beyond `Make{N}Pair`, `hashes.Spec` exposes optional fast-path fields — `FusedChainHash{N}` and `FusedChainHash{N}x8` (single-, four-, and eight-lane fused `ChainHash` cascade evaluators invoked on the per-pixel / per-chunk runtime hot path), `InterlockFillBatch16` (at width 128) and `InterlockFillBatch16x{256,512}` / `InterlockFillBatch32x{256,512}` (batched Rank Barrier fill kernels on the per-chunk hot path). The factory above declares none of them, and the seed built from the closures alone produces and decrypts the same wire — the hooks are performance paths only. A registered primitive that ships alongside a hand-tuned AVX-512 / VAES / SHA-NI kernel populates these fields at Register time; the shipped registry entries all do this, which is what buys tier-1 throughput on their target microarchitectures. Users who care about throughput on a custom primitive follow the same pattern: write the batched kernel, stash the callback in the Spec at Register time.
 
 The shipped `Registry` itself is immutable — user entries live in a separate mutex-guarded slice — so the FFI iteration surface (`ITB_Triple_HashNames`) is unaffected by runtime registrations. `hashes.Register` is a Go-native API only. Bindings are Triple-only and do not expose custom-primitive plug; a binding caller who needs a custom PRF wires the Go-native surface directly.
 
@@ -493,7 +493,7 @@ closure (no key tuple element):
 | `AESCMAC(...key)`             | `AESCMACWithKey(key)`           |
 | `ChaCha20(...key)`            | `ChaCha20WithKey(key)`          |
 
-Each `*WithKey` constructor accepts a fixed-size array matching the primitive's native key width. `SipHash24Pair()` is not in the table — it is keyed by seed components alone with no fixed-key element (`SipHash24Pair()` takes no argument and returns a 2-tuple without a key), so both the variadic and WithKey forms would be no-ops.
+Each `*WithKey` constructor accepts a fixed-size array matching the primitive's native key width. `SipHash24` / `SipHash24Pair()` is not in the table because the seed components themselves are the entire SipHash key (`SipHash24Pair()` takes no argument and returns a 2-tuple without a key; serializing the seed components is sufficient, so both the variadic and `WithKey` forms would be no-ops).
 
 The variadic short form delegates to `WithKey` (Go inliner removes
 the wrapper at compile time), so semantics are identical. Either
@@ -505,7 +505,3 @@ reads cleanly at the call site — the two are interchangeable:
 - **`WithKey`** when the call site is unambiguously explicit-key
   (restore path with the key already in scope) and the bare key
   return value would be redundant noise.
-
-`SipHash24` has no `WithKey` because the seed components themselves
-are the entire SipHash key; serializing the seed components is
-sufficient.

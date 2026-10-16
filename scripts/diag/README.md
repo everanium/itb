@@ -12,7 +12,7 @@ target CPU without side effects.
 
 ## tier_diag.sh
 
-Runs a short single-thread bench at natural dispatch and then under
+Runs a short message bench at natural dispatch and then under
 every documented forced-tier value, one axis at a time:
 
 - `ITB_FORCE_INTERLOCK_TIER` ∈ {`avx512`, `avx512x8`, `avx2`, `sve2`, `sve`, `neon`, `scalar`}
@@ -71,19 +71,19 @@ INTERLOCK_TIER=natural bash scripts/diag/hash_diag.sh      # observe natural dis
 
 The bench profile is fixed: `singlemsg-triple-nomac-v1` with
 `GOMEMLIMIT=4GiB GOGC=100` so the numbers stay comparable across
-runs. Change these only if you understand the profile matters.
+runs. Altering the profile invalidates cross-run comparisons.
 
 ## Typical investigation flow
 
-1. Suspect a CPU-specific regression? Run `tier_diag.sh` on the
-   host. Compare `natural` vs each forced arm — a large gap
-   (natural much slower than one of the forced tiers) localises the
+1. When a CPU-specific regression is suspected, running `tier_diag.sh` on
+   the host compares `natural` against each forced arm — a large gap
+   (`natural` much slower than one of the forced tiers) localises the
    problem to that axis.
-2. Once localised, run `hash_diag.sh` under the identified healthy
-   arm (e.g. `INTERLOCK_TIER=avx2`) to check whether the other axes
+2. Once localised, running `hash_diag.sh` under the identified healthy
+   arm (e.g. `INTERLOCK_TIER=avx2`) checks whether the other axes
    have any secondary regressions across the per-hash × per-nonce-width
-   surface, or whether they are uniformly healthy on this silicon.
-3. If confirmed narrow (one tier axis, one CPU family), rewrite or
-   adjust the offending kernel so the affected silicon runs the standard
-   path with bit-exact parity.
+   surface, or whether they are uniformly healthy on that silicon.
+3. When confirmed narrow (one tier axis, one CPU family), the offending
+   kernel is rewritten or adjusted so the affected silicon runs the
+   standard path with bit-exact parity.
 

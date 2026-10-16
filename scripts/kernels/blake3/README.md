@@ -74,7 +74,7 @@ with the seed-word rebuild and the fold as embedded-broadcast memory
 operands. No sixteen-lane fill kernel exists: sixteen lanes would be the
 ZMM form of the same plan, and the cell is waived — the batch-16 hook is
 the widest fill rung of width 256. The avx2 tier has 16 registers at either width:
-`X0..X14` hold `v[0..14]`, `X15` is the rotate temp, `v[15]` lives in a
+`X0..X14` (`Y0..Y14` at the eight-lane YMM width) hold `v[0..14]`, `X15` is the rotate temp, `v[15]` lives in a
 frame slot with `v[12]` spilled around the two G functions that touch
 `v[15]`, and the message words are frame slots read as memory operands;
 every four-lane frame fits the NOSPLIT budget. The eight-lane kernels of

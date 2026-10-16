@@ -72,9 +72,7 @@ The subkey is the leftmost `outLen` bytes of the concatenated PRF outputs `K(1) 
 
 The keyed mode here is the upstream **standard keyed PRF** (RFC 7693 keyed BLAKE2 / BLAKE3 keyed mode); it is **not** the ITB per-pixel registry hash wrapper of the same name, which derives its key differently. The 32-byte master keys the hash directly.
 
-**Per-block PRF input.** Identical to the SP 800-108 layout: for each block index `i = 1, 2, ...` the PRF is evaluated over `[i]_32be || Label || 0x00 || Context || [L]_32be`, with empty Context and `[L]_32be` the requested output length in bits. The subkey is the leftmost `outLen` bytes of `K(1) || K(2) || ...`.
-
-**Output is NOT cross-length prefix-consistent.** As with every SP 800-108 construction here, the output length `L` is bound into every block input, so changing `outLen` under the same master and label changes the entire output. Slicing a longer derivation does **not** equal deriving the shorter length directly.
+**Per-block PRF input and prefix-inconsistency.** Identical to the SP 800-108 r1 layout above (`[i]_32be || Label || 0x00 || Context || [L]_32be` with empty Context and `[L]_32be = outLen * 8`); because `[L]_32be` is bound into every block input, the output is **not** cross-length prefix-consistent.
 
 **Security claim.** SP 800-108 Counter Mode is a NIST-standard KDF; the keyed BLAKE PRF is sound under the standard PRF assumption on keyed BLAKE2 / BLAKE3. The mode is NIST-standard but the BLAKE PRF is **not** NIST-approved, so the construction is sound under the keyed-BLAKE PRF security argument without claiming NIST conformance.
 
@@ -85,11 +83,9 @@ The keyed mode here is the upstream **standard keyed PRF** (RFC 7693 keyed BLAKE
 - **`aescmac`** — PRF = AES-CMAC (RFC 4493) over AES-128. The 16-byte master is the AES-128 key; the CMAC subkeys `K1`, `K2` are derived once per RFC 4493 §2.3 via GF(2^128) doubling with the reduction constant `0x87`. Each PRF call returns a 16-byte tag.
 - **`siphash24`** — PRF = SipHash-2-4 with 128-bit output. The 16-byte master is the SipHash key, split into the little-endian halves `(k0, k1)`. Each PRF call returns the 16-byte `(lo, hi)` SipHash-128 tag in little-endian order.
 
-**Per-block PRF input.** Identical to the SP 800-108 layout: for each block index `i = 1, 2, ...` the PRF is evaluated over `[i]_32be || Label || 0x00 || Context || [L]_32be`. Only the leading 4 counter bytes change between blocks; the suffix `Label || 0x00 || [L]_32be` is built once and reused per block. The subkey is the leftmost `outLen` bytes of the concatenated PRF outputs `K(1) || K(2) || ...`.
+**Per-block PRF input and prefix-inconsistency.** Identical to the SP 800-108 r1 layout above (`[i]_32be || Label || 0x00 || Context || [L]_32be`): only the leading 4 counter bytes change between blocks while the suffix `Label || 0x00 || [L]_32be` is built once and reused per block, and the bound `[L]_32be` suffix makes the output **not** cross-length prefix-consistent (deriving 64 bytes and truncating to 32 does **not** equal deriving 32 bytes directly).
 
 **Key-separation property.** Distinct labels produce distinct PRF inputs at every block index, so subkeys derived under different labels are independent. The label is public; only distinctness is required.
-
-**Output is NOT cross-length prefix-consistent.** Because the output length `L` is bound into **every** block input (the `[L]_32be` suffix), changing `outLen` under the same master and label changes every PRF block input and therefore the entire output. Deriving 64 bytes and then truncating to 32 does **not** equal deriving 32 bytes directly. A consumer that needs a 32-byte key must call `Derive` with `outLen = 32`; slicing a longer derivation yields different bytes.
 
 **Security claim.** SP 800-108 Counter Mode is a NIST-standard KDF; with PRF = AES-CMAC over AES-128 the construction is NIST-standard end to end, PRF-secure under the standard PRP assumption on AES-128. With PRF = SipHash-2-4 the SP 800-108 mode is unchanged, but SipHash-as-PRF is **not** NIST-approved; the construction is sound under SipHash-2-4's own PRF security argument, without claiming NIST conformance.
 

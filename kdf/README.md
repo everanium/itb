@@ -31,15 +31,15 @@ Derivations are **deterministic** in `(name, master, label, outLen)`: the same f
 
 | Registry name | Construction | Key size | Notes |
 |---|---|---|---|
-| `areion256` | NIST SP 800-108 KDF in Counter Mode, PRF = registry Areion-SoEM-256 keyed hash | 32 bytes | `label` is the SP 800-108 Label field; any length. Output is **not** cross-length prefix-consistent. |
-| `areion512` | NIST SP 800-108 KDF in Counter Mode, PRF = registry Areion-SoEM-512 keyed hash | 32 bytes | `master` is stretched 32 → 64 via the `areion256` PRF to form the 64-byte family key. `label` any length. Output is **not** cross-length prefix-consistent. |
-| `blake2b256` | NIST SP 800-108 KDF in Counter Mode, PRF = native keyed BLAKE2b-256 (RFC 7693) | 32 bytes | `label` is the SP 800-108 Label field; any length. Output is **not** cross-length prefix-consistent. |
-| `blake2b512` | NIST SP 800-108 KDF in Counter Mode, PRF = native keyed BLAKE2b-512 (RFC 7693) | 32 bytes | `label` is the SP 800-108 Label field; any length. Output is **not** cross-length prefix-consistent. |
-| `blake2s` | NIST SP 800-108 KDF in Counter Mode, PRF = native keyed BLAKE2s-256 (RFC 7693) | 32 bytes | `label` is the SP 800-108 Label field; any length. Output is **not** cross-length prefix-consistent. |
-| `blake3` | NIST SP 800-108 KDF in Counter Mode, PRF = native keyed BLAKE3 | 32 bytes | `label` is the SP 800-108 Label field; any length. Output is **not** cross-length prefix-consistent. |
-| `aescmac` | NIST SP 800-108 KDF in Counter Mode, PRF = AES-CMAC (RFC 4493) over AES-128 | 16 bytes | `label` is the SP 800-108 Label field; any length. Output is **not** cross-length prefix-consistent. |
-| `siphash24` | NIST SP 800-108 KDF in Counter Mode, PRF = SipHash-2-4 with 128-bit output | 16 bytes | `master` is the `(k0, k1)` SipHash key (little-endian halves). `label` any length. Output is **not** cross-length prefix-consistent. |
-| `chacha20` | XChaCha20 keystream KDF — `label` right-zero-padded to the 24-byte nonce | 32 bytes | `label` must be at most 24 bytes; longer is an error. Output **is** cross-length prefix-consistent. |
+| `areion256` | NIST SP 800-108 KDF in Counter Mode, PRF = registry Areion-SoEM-256 keyed hash | 32 bytes | `label` is the SP 800-108 Label field; any length. |
+| `areion512` | NIST SP 800-108 KDF in Counter Mode, PRF = registry Areion-SoEM-512 keyed hash | 32 bytes | `master` is stretched 32 → 64 via the `areion256` PRF to form the 64-byte family key. `label` any length. |
+| `blake2b256` | NIST SP 800-108 KDF in Counter Mode, PRF = native keyed BLAKE2b-256 (RFC 7693) | 32 bytes | `label` is the SP 800-108 Label field; any length. |
+| `blake2b512` | NIST SP 800-108 KDF in Counter Mode, PRF = native keyed BLAKE2b-512 (RFC 7693) | 32 bytes | `label` is the SP 800-108 Label field; any length. |
+| `blake2s` | NIST SP 800-108 KDF in Counter Mode, PRF = native keyed BLAKE2s-256 (RFC 7693) | 32 bytes | `label` is the SP 800-108 Label field; any length. |
+| `blake3` | NIST SP 800-108 KDF in Counter Mode, PRF = native keyed BLAKE3 | 32 bytes | `label` is the SP 800-108 Label field; any length. |
+| `aescmac` | NIST SP 800-108 KDF in Counter Mode, PRF = AES-CMAC (RFC 4493) over AES-128 | 16 bytes | `label` is the SP 800-108 Label field; any length. |
+| `siphash24` | NIST SP 800-108 KDF in Counter Mode, PRF = SipHash-2-4 with 128-bit output | 16 bytes | `master` is the `(k0, k1)` SipHash key (little-endian halves). `label` any length. |
+| `chacha20` | XChaCha20 keystream KDF — `label` right-zero-padded to the 24-byte nonce | 32 bytes | `label` must be at most 24 bytes; longer is an error. |
 
 Every PRF-grade and stream registry primitive is supported; `Derive` returns an error for any unsupported or unknown name.
 

@@ -165,10 +165,7 @@ on the shipped Triple + always-on Interlocked Barrier container.
 
 ## Compatible with a non-shipped encoder layout only
 
-These scripts run only against corpora generated under the one-region,
-barrier-off, 3-seed layout described above. Kept in tree as templates
-for future Python probe sequences and as attribution sources for the
-ported Go tests.
+These scripts target the non-shipped one-region, barrier-off, 3-seed layout described in the top-level compatibility note above.
 
 ### Broken-primitive attack scripts
 
@@ -217,21 +214,47 @@ Python environment; the re-verification tracks above consume their
 emitted records:
 
 - `redteam_broken_test.go` — FNV-1a and CRC128 broken-primitive
-  re-verification (Full KPA / Partial KPA / Nonce-Reuse / mixed-algebra
+  re-verification (Full KPA / Partial KPA / nonce reuse / mixed-algebra
   / related-seed differential) under Triple + Interlocked Barrier.
   Some logic is ported from `scripts/redteam/itb/theory/_common/attack_common.py`
   and `scripts/redteam/itb/theory/crc128/crib_crc128_kpa.py`; the port
   attribution lives at the top of the Go file.
 - `redteam_broken_fnv1a_sat_test.go` — FNV-1a probes F1..F6, including
   the corpus emitter `itb/fnv1a_sat/sat_probe.py` consumes.
-- `redteam_cpa_broken_test.go` — fresh-nonce CPA matrix.
+- `redteam_nonce_reuse_test.go` / `redteam_nonce_reuse_dualnonce_test.go` —
+  focused nonce-reuse and dual-nonce (main nonce vs container-carried
+  interlock nonce) re-verification probes (`itb/nonce_reuse/`).
+- `redteam_related_nonce_test.go` / `redteam_related_nonce_dualnonce_test.go` —
+  1-bit related-nonce differential diffusion probes across single and
+  dual-nonce axes (`itb/related_nonce/`).
+- `redteam_related_seed_test.go` — 1-bit related-seed differential
+  diffusion probes across all 8 seed roles (`itb/related_seed/`).
+- `redteam_cpa_broken_test.go` — fresh-nonce CPA matrix (`itb/cpa_broken/`).
 - `redteam_near_identical_fresh_test.go` — fresh-nonce cross-message
-  near-identical pair matrix.
+  near-identical pair matrix (`itb/near_identical_fresh/`).
+- `redteam_noisepos_cca_test.go` — noise-position observations under
+  MAC + Reveal (CCA) on authenticated wires.
+- `redteam_interlock_nonce_recovery_test.go` — attacker-side interlock-nonce
+  handling across the three interlocked container lanes.
+- `redteam_jokehash_test.go` / `redteam_jokehash_fullkpa_test.go` —
+  below-spec `jokeHash` walkthrough and Full KPA recovery probes.
+- `redteam_nullhash_test.go` / `redteam_nullhash_attack_test.go` /
+  `redteam_nullhash_multi_expose_test.go` — below-floor `nullHash`
+  single- and multi-message exposure and Full KPA brute-force recovery
+  probes.
+- `redteam_quadhash_single_test.go` / `redteam_quadhash_multimsg_test.go` —
+  single- and multi-message equivalent-seed recovery solvers for the
+  non-bijective squaring T-function `quadHash`.
+- `redteam_trainhash_multimsg_test.go` — multi-message 25% Crib KPA solver
+  for the bijective affine T-function `trainHash`.
 - `redteam_kl_test.go` — the large-container corpus emitter the
   `itb/theory/_common/kl/` probes consume.
 - `redteam_prf_blake3_test.go` — PRF-grade primitive re-verification
   (BLAKE3 as the representative), 4-probe minimum + CPA + equivalence
   claim against the broken-primitive verdict.
+- `redteam_wire_test.go` / `redteam_output_dir_test.go` — shared wire
+  parser, corpus-layout, and output-directory helpers for the `redteam`
+  test suite.
 - `harness_test.go` (root package) — construction-level creative probes:
   mask-space uniformity, lane decorrelation, cumulative-bias floor.
 - `triple/harness_wire_test.go` — wire-shaped probes: mode ambiguity,

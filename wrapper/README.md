@@ -51,7 +51,7 @@ func XORParallel(name string, key, nonce, dst, src []byte) error
 func XORParallelAt(name string, key, nonce []byte, base int, dst, src []byte) error
 ```
 
-- **`Keystream`** is the outer cipher's CTR-mode keystream interface, aliased directly from `ctr.Keystream`. The contract matches `crypto/cipher.Stream`: `XORKeyStream(dst, src)` xors one keystream segment over `src` into `dst` and advances the internal counter.
+- **`Keystream`** is the outer cipher's CTR-mode keystream interface, aliased directly from `ctr.Keystream`. The contract matches `crypto/cipher.Stream`: `XORKeyStream(dst, src)` XORs one keystream segment over `src` into `dst` and advances the internal counter.
 - **`CipherNames`** enumerates the outer cipher palette in canonical primitive order as a snapshot of the shipped `hashes.Registry` names (`hashes.KeystreamNames()`); it is the iteration source for cross-cipher tests and benchmarks. Each entry is named by a `hashes.Cipher*` constant; `hashes.CipherAES128CTR = "aescmac"` is the registry alias for AES-128 in CTR mode (identical to the underlying cipher behind the `aescmac` MAC entry).
 - **`ParallelThreshold`** is the byte cap below which `Wrap` / `Unwrap` / `WrapInPlace` / `UnwrapInPlace` keep the body XOR in the caller's goroutine. Above it the work is split across up to `min(32, GOMAXPROCS, chunks)` worker goroutines, each seeking its own keystream to the chunk's byte offset via `ctr.NewAt`. Exposed as a read-only constant for out-of-package tests and benchmarks.
 - **`KeySize` / `NonceSize`** report the per-cipher key and nonce widths in bytes; both delegate to [`ctr`](../ctr/), which is the single source of truth for the registered cipher sizing.
@@ -183,7 +183,7 @@ Callers driving the Low-Level `EncryptStreamAuth3xNNNCfg` / `Encrypt3xNNNCfg` en
 
 ## Verification matrix
 
-Every wrap shape × cipher combination round-trips against random plaintext (1 KiB for Single Message, 64 KiB for streaming) with sha256 byte-equality inside the wrapper's test suite. The wire-byte delta between cipher columns is exactly the per-stream nonce-size delta (16 bytes for PRF-counter / AES-CTR vs 12 bytes for ChaCha20); the User-Driven Loop variants additionally include 4 bytes of keystream-XORed length prefix per chunk.
+Every wrap shape × cipher combination round-trips against random plaintext (1 KiB for Single Message, 64 KiB for streaming) with SHA-256 byte-equality inside the wrapper's test suite. The wire-byte delta between cipher columns is exactly the per-stream nonce-size delta (16 bytes for PRF-counter / AES-CTR vs 12 bytes for ChaCha20); the User-Driven Loop variants additionally include 4 bytes of keystream-XORed length prefix per chunk.
 
 ## Performance
 
@@ -191,11 +191,9 @@ Bench numbers across the wrapper only round-trip and the Full ITB + wrapper (Sin
 
 ## Notes on outer cipher key management
 
-The wrapper itself does not address outer key distribution; the examples generate a fresh CSPRNG outer key per run for self-test purposes. In a real deployment the outer key is shared out-of-band (or derived via a separate key-exchange step) and is independent of the ITB seed material. The ITB state blob already carries the inner cipher's keying material; the outer key is the additional piece both endpoints need.
-
-The outer key MAY be reused across many streams provided each stream uses a fresh CSPRNG nonce — this is the standard CTR mode safety contract. The wrapper helpers always generate a fresh nonce internally, so caller-side discipline is reduced to "do not reuse the same `(key, nonce)` across distinct streams" — a contract the helper enforces by construction.
+The wrapper itself does not address outer key distribution; the examples generate a fresh CSPRNG outer key per run for self-test purposes. In a real deployment the outer key is shared out-of-band or derived via `DeriveKey` from a shared master (see [Public API](#public-api)) and is independent of the ITB seed material. Because each wrap call or streaming session generates its own fresh CSPRNG nonce (see [Wire format](#wire-format)), the same outer key MAY be reused across sessions without reusing `(key, nonce)`.
 
 ## What this is not
 
-- Not an integrity layer. The outer cipher is unauthenticated by design — adding a MAC at this layer would defeat the format-deniability goal (the resulting wire would pattern-match an AEAD construction's tag-bearing format, not a generic stream cipher). Use the ITB AEAD path when integrity is required.
+- Not an integrity layer — adding a MAC at the outer cipher layer would expose a tag-bearing AEAD wire signature rather than a generic stream-cipher payload (see [Threat model](#threat-model)).
 - Not a substitute for ITB's content-deniability. ITB still provides the unconditional content-deniability; the wrap adds format-deniability on top.

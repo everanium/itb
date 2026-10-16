@@ -6,14 +6,7 @@
 
 **No bespoke cryptography.** ITB composes established, standardized primitives rather than introducing new cryptographic designs. Security properties and regulatory status are inherited from the underlying primitives; see [README.md](../README.md) for jurisdictional certification details.
 
-The parallax layer splits a plaintext into fixed-size segments and XORs each segment under one counter-mode keystream chosen from a user-configured palette by a per-message keyed schedule. The keystream construction for every palette slot is delegated to the [`ctr`](../ctr/) package; per-slot subkeys are derived through the anchor `palette[0]` under [`kdf`](../kdf/). The wire formats are:
-
-- **Single Message wire** — `nonce(16) ‖ ciphertext_body`. Body length matches plaintext length exactly.
-- **Streaming wire** — concatenation of per-chunk frames `u32_LE(body_len) ‖ nonce(16) ‖ encrypted_body(body_len)`, one frame per chunk. The chunk size is fixed for the stream's lifetime at construction time.
-
-Parallax is **Non-AEAD** by design. The streaming length prefix is unauthenticated; a single-bit modification to any prefix desynchronises every subsequent frame on the stream. Callers compose parallax under ITB's authenticated transport (Single Message or Streaming AEAD) when wire integrity is required.
-
-The body XOR is dispatched across up to `min(GOMAXPROCS, 32)` worker goroutines, each owning its slice of the segment list. A serial fast path runs in the caller's goroutine for payloads below the per-package `parallelThreshold` to avoid amortising per-worker keystream-setup cost over too few segments.
+Throughput benchmarks for the `parallax` horizontal-multiplexing layer (fixed-size segment XOR under a per-message keyed schedule over [`ctr`](../ctr/) keystreams derived via [`kdf`](../kdf/), dispatched across up to `min(GOMAXPROCS, 32)` workers above `parallelThreshold`; see [README.md](./README.md) for the wire formats, threat model, and API).
 
 ## Platform
 
@@ -58,7 +51,7 @@ Each row uses a homogeneous palette of N=9 copies of the named primitive across 
 
 Throughput amortises sharply between S=17 and S=251 (2–9×) and a further 1.5–3× through S=4093 for most primitives, then plateaus. SipHash-2-4 is essentially flat above S=251 — its per-segment fixed cost is already negligible at small widths. All four BLAKE variants dip at S=65521 (cache-fit boundary) — the smaller-state BLAKE2b-256 and BLAKE2s more sharply (−34 %, −27 %), the wider-state BLAKE2b-512 and BLAKE3 less but measurably (−23 %, −14 %).
 
-EncryptInPlace tracks Encrypt closely across the matrix — mean signed delta ≈ −3 %, p90 |delta| ≈ 17 % — reflecting that the in-place wire build plus the slice-copy-back accounts for the same byte movement as the allocate-and-return path. The in-place variant retains caller-owned buffer lifetime without trading away throughput.
+`EncryptInPlace` tracks `Encrypt` closely across the matrix — mean signed delta ≈ −3 %, p90 |delta| ≈ 17 % — reflecting that the in-place wire build plus the slice-copy-back accounts for the same byte movement as the allocate-and-return path. The in-place variant retains caller-owned buffer lifetime without trading away throughput.
 
 ## Plaintext-size sweep (Single Message, S=4093, N=9, Encrypt)
 
@@ -80,7 +73,7 @@ The 1 KiB row sits below the parallel threshold — per-segment dispatch and wor
 
 ## Streaming throughput across chunk size (N=3 homogeneous, plaintext = chunk × 4, EncryptWriter)
 
-Streaming emits one frame per chunk; each frame is one `EncryptInPlace` call's output. Throughput tracks the per-chunk cost amortised by per-stream framing overhead. The plaintext is pinned at chunkSize × 4 so each sub-bench encrypts four chunks per iteration regardless of chunk width. Source: `BenchmarkParallaxChunkedStream` (default 1/4/16/64 MiB sweep) plus `BenchmarkParallaxStream` driven by `PARALLAX_CHUNK_SIZE` for the 64 KiB / 256 KiB columns.
+Streaming emits one frame per chunk; each frame is one `EncryptInto` call's output. Throughput tracks the per-chunk cost amortised by per-stream framing overhead. The plaintext is pinned at chunkSize × 4 so each sub-bench encrypts four chunks per iteration regardless of chunk width. Source: `BenchmarkParallaxChunkedStream` (default 1/4/16/64 MiB sweep) plus `BenchmarkParallaxStream` driven by `PARALLAX_CHUNK_SIZE` for the 64 KiB / 256 KiB columns.
 
 | Primitive | 64 KiB | 256 KiB | 1 MiB | 4 MiB | 16 MiB | 64 MiB |
 |---|---:|---:|---:|---:|---:|---:|
@@ -94,7 +87,7 @@ Streaming emits one frame per chunk; each frame is one `EncryptInPlace` call's o
 | SipHash-2-4 | 556 | 1114 | 1806 | 2475 | 2812 | **2835** |
 | ChaCha20 | 513 | 1066 | 1664 | 2362 | 2722 | **2764** |
 
-Per-chunk framing dominates below ~1 MiB. At chunkSize = 64 KiB every primitive sits 3–6× below its 4 MiB rate; the inflection sits at 256 KiB, and amortisation is largely complete by 1 MiB. AES-128-CTR retains the highest absolute number across the small-chunk band because its per-block cost is already dwarfed by per-chunk `EncryptInPlace` setup; BLAKE2b-256 collapses to 171 MB/s at 64 KiB because the smallest hash output and lowest per-chunk throughput pair poorly with the framing tax. Above 1 MiB chunks the streaming row approaches the Single Message rate at the matching primitive.
+Per-chunk framing dominates below ~1 MiB. At chunkSize = 64 KiB every primitive sits 3–6× below its 4 MiB rate; the inflection sits at 256 KiB, and amortisation is largely complete by 1 MiB. AES-128-CTR retains the highest absolute number across the small-chunk band because its per-block cost is already dwarfed by per-chunk `EncryptInto` setup; BLAKE2b-256 collapses to 171 MB/s at 64 KiB because the smallest hash output and lowest per-chunk throughput pair poorly with the framing tax. Above 1 MiB chunks the streaming row approaches the Single Message rate at the matching primitive.
 
 ## Stream-shape comparison (4 MiB plaintext, chunk 16 MiB)
 
@@ -174,6 +167,3 @@ Each per-worker keystream is built once at offset 0 and the per-segment hot loop
 ## Notes
 
 - The serial fast path runs when the plaintext is below `parallelThreshold = 8 KiB`. Below this threshold the per-worker keystream-setup cost cannot be amortised; serial dispatch in the caller's goroutine wins.
-- The streaming chunk size (`SetChunkSize`, default 16 MiB) controls the wire-frame body width on the chunked streaming surface only. The Single Message API does not consume the chunk size; segment width is the only S-axis knob for `Encrypt` / `Decrypt` / `EncryptInPlace` / `DecryptInPlace`.
-- The default segment size 4093 lands within ~10 % of the per-primitive optimum for most of the registry: AES-128-CTR continues to climb to its peak at S=65521 (largest segment); BLAKE2b-256 dips ~34 % at S=65521 vs its S=16381 peak; the remaining primitives peak at or adjacent to S=4093. The default is a stable choice across mixed palettes where no single primitive dominates the schedule.
-- Worker-scaling shape is per-primitive, not per-package. The bandwidth-limited primitives (AES-128-CTR) plateau early; the compute-bound primitives (BLAKE2b-512) keep climbing through P=16 because the parallel path lifts the per-core compute bottleneck before the bandwidth ceiling becomes the constraint.

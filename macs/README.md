@@ -144,7 +144,7 @@ Callers who want the 8-seed constellation, MAC, parallax layer, and outer cipher
 
 ## Curated primitive selection
 
-ITB's MAC-Inside-Encrypt places the tag inside the encrypted container under the Interlocked Barrier, requiring only PRF security from the underlying MAC; see [CONSTRUCTIONS.md](CONSTRUCTIONS.md#design-rationale-and-prf-sufficiency) for design rationale.
+ITB's MAC-Inside-Encrypt appends the tag to the post-Rank Barrier lane payload before Pixel Barrier dispersal, requiring only PRF security from the underlying MAC; see [CONSTRUCTIONS.md](CONSTRUCTIONS.md#design-rationale-and-prf-sufficiency) for design rationale.
 
 A curated primitive set keeps the choice tractable:
 

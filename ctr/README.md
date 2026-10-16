@@ -46,9 +46,7 @@ type ResettableKeystream interface {
 
 ## Supported primitives
 
-Every PRF-grade primitive in the registry is supported in counter mode. For the complete matrix of construction shapes, block sizes, key/nonce sizes, and collision bounds, see [CONSTRUCTIONS.md § Table of constructions](CONSTRUCTIONS.md#table-of-constructions).
-
-Every outer-cipher-eligible / PRF-grade registry primitive is supported; every entry point (`New`, `NewAt`, `KeySize`, `NonceSize`) returns an error for any name outside of supported primitives. `NewAt(name, key, nonce, byteOffset)` returns a keystream positioned at `byteOffset` of the `New` stream, so one logical stream can be XORed in parallel — each worker seeks to its chunk offset and emits a byte-identical disjoint range.
+Every outer-cipher-eligible / PRF-grade registry primitive is supported in counter mode; every entry point (`New`, `NewAt`, `NewResettable`, `NewResettableAt`, `KeySize`, `NonceSize`) returns an error for any unsupported or unknown name. For the complete matrix of construction shapes, block sizes, key/nonce sizes, and collision bounds, see [CONSTRUCTIONS.md § Table of constructions](CONSTRUCTIONS.md#table-of-constructions).
 
 ## Usage
 

@@ -1,7 +1,7 @@
 ## ITB Command-Line Utility
 
 `itb3` is the CLI wrapper for the ITB Triple Ouroboros
-construction. It wraps the shipped [`github.com/everanium/itb/triple`]
+construction. It wraps the shipped `github.com/everanium/itb/triple`
 Go surface so a caller who only needs to create a session configuration blob,
 encrypt / decrypt payloads, rotate outer masters, or inspect a stored
 blob does not have to write Go.
@@ -84,11 +84,10 @@ inherits the compile-in default), `wrapper` / `wrapper_cipher`,
 - `genblob --drbg <name>` selects the primitive that fills the
   container carrier noise and the lane residue on the encrypt path
   (`itb3 drbgs` lists the accepted names); the choice is written into
-  the blob's recipe, so every Pipeline reopened from the blob encrypts
-  under it. Omitted, the auto tier applies (AES-256-CTR where the host has
-  hardware AES, ChaCha20 otherwise). A build older than the recipe
-  key refuses a blob that states a choice; a blob without the key
-  loads everywhere.
+  the blob's recipe under the optional `drbg` key, so every Pipeline
+  reopened from the blob encrypts under it. When `--drbg` is omitted,
+  the `drbg` recipe key is absent and the auto tier applies
+  (AES-256-CTR where the host has hardware AES, ChaCha20 otherwise).
 - `-o` writes the blob to disk with mode `0600`; every read path
   loads it via `triple.LoadF`. The blob carries the resolved
   `triple.Profile` record — the shipped-catalogue prefix reserved for
@@ -102,4 +101,4 @@ inherits the compile-in default), `wrapper` / `wrapper_cipher`,
 
 See the library docs at
 [`github.com/everanium/itb`](https://github.com/everanium/itb) for the
-full triple / wrapper / parallax API.
+full `triple` / `wrapper` / `parallax` API.
