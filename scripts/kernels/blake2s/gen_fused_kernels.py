@@ -55,42 +55,43 @@ key, hashed by BLAKE2s-256. The 13- and 20-byte shapes are one BLAKE2s
 compression (a 64-byte input); the 36- and 68-byte shapes span two blocks
 (t = 64 then t = 68 / 100, final). The message words are the key words
 (broadcast from the key pointer), the seed-injected words and the
-data-only words; the data words are staged once per call from the lane
-pointers into the frame, and each cascade round rebuilds the seed-injected
-words as D ⊕ component ⊕ h from the staged data dword, the component
-dword broadcast — each 64-bit component and output word straddles two
-32-bit message words, low half first — and the previous round's output:
-one VPTERNLOGD per word on the EVEX tier. The compression state is
-re-initialised each round from a per-kernel table holding IV, the
-parameter block, t and the final flag.
+data-only words; zero-padded message words are elided from the G steps,
+and seed words beyond the input length omit the data-slot XOR. The data
+words are staged once per call from the lane pointers into the frame,
+and each cascade round rebuilds the seed-injected words as
+D ⊕ component ⊕ h (or component ⊕ h when D is zero) from the staged data
+dword, the component dword broadcast — each 64-bit component and output
+word straddles two 32-bit message words, low half first — and the
+previous round's output. The compression state is re-initialised each
+round from a per-kernel table holding IV, the parameter block, t and the
+final flag.
 
 Register plans:
     avx512 x4   X0..X15 the compression state v[0..15], X16..X31 the
-                message words m[0..15]; the fold h = h0 ⊕ v ⊕ v' and the
-                seed-word rebuild are VPTERNLOGD with embedded-broadcast
-                memory operands, so no scratch register is needed
+                message words m[0..15] (and, in the two-block cells,
+                X24..X31 the saved chaining value H[0..7] across block 1);
+                the fold h = h0 ⊕ v ⊕ v' and the seed-word rebuild are
+                VPTERNLOGD / VPXORD with embedded-broadcast memory
+                operands, so no scratch register is needed
     avx512 x8   the same plan on YMM registers (eight lanes): Y0..Y15 the
-                state, Y16..Y31 the message words, 32 of 32 with the
-                seed-word rebuild and the fold as VPTERNLOGD
-                embedded-broadcast memory operands; the shape-68 kernel
-                (800-byte frame) carries the stack check
+                state, Y16..Y31 the message words and saved chaining
+                value; every frame fits the NOSPLIT budget
     avx2 x4     X0..X14 v[0..14], X15 the rotate temp, v[15] in a frame
                 slot with v[12] spilled around the two G functions that
-                touch v[15]; the message words are frame slots read as
-                memory operands; ror16 / ror8 = VPSHUFB with byte masks,
-                ror12 / ror7 = shift-shift-or; every frame fits the
-                NOSPLIT budget
+                touch v[15]; the non-zero message words are frame slots
+                read as memory operands; ror16 / ror8 = VPSHUFB with byte
+                masks, ror12 / ror7 = shift-shift-or; every frame fits
+                the NOSPLIT budget
     avx2 x8     the same plan on YMM registers (eight dword lanes, one
                 per pixel): Y0..Y14 v[0..14], Y15 the rotate temp, v[15]
                 and the v[12] spill as 32-byte frame slots, the message
-                words and byte masks as 32-byte memory operands — 16 of
-                16 with the one spill of the four-lane plan and no other;
-                every eight-lane frame carries the stack check
+                words and byte masks as 32-byte memory operands
     neon x4     V0..V15 v[0..15] (four dword lanes per register, one
                 pass); the key words resident in V20..V27 (VLD1R from the
-                key pointer once per call), the other message words in
-                the frame, loaded pairwise into V16 / V17; V18 the rotate
-                alternate (VSHL + VSRI —
+                key pointer once per call), V28..V31 holding seed[0..3]
+                in block 0 (and block 1's first four data words at shape
+                68), the remaining four seed words in frame slots loaded
+                into V16 / V17; V18 the rotate alternate (VSHL + VSRI —
                 the rotated word lands in the alternate register and the
                 register roles swap; ror16 = VREV32 on 16-bit elements,
                 ror8 = VTBL against the byte mask in V19, both in place);
@@ -102,10 +103,10 @@ Register plans:
                 it through one memory operand each — in a frame slot
                 (15 of 15 usable registers), 32-bit operations
                 throughout; the message words, the group counter, the
-                component / key / output pointers in the frame; the
-                fold's h0 constants pass through the just-folded v[8+i]
-                register; R9 / R10 / R11 / R12 are the loop-top temps
-                while only h = v[0..7] is live
+                component / output pointers in the frame; the fold's h0
+                constants pass through the just-folded v[8+i] register;
+                R9 / R10 are the loop-top temps while only h = v[0..7] is
+                live
     gpr arm64   v[0..15] in R8..R17, R19..R24 (W-form operations); R0
                 key, R1 components, R2 group counter, R4 output, R7 frame
                 base, R5 / R6 the message-word loads of every G (the key
@@ -113,12 +114,12 @@ Register plans:
                 the state-init table
 
 Frame contents: the staged data words (public) and, on the tiers whose
-register file cannot hold the message words, the key words and the
+register file cannot hold all message words, the key words and the
 seed-injected words, plus the state words a plan spills (the avx2
 v[15] / v[12] slots, the gpr amd64 v[11] slot) and the chaining value
-of the two-block cells. Every slot that held a key word, a
-seed-injected word or state is overwritten with zeros before the kernel
-returns; the neon and gpr arm64 kernels never store a key word.
+of the two-block cells (on the non-EVEX tiers). Every slot or register
+that held a key word, a seed-injected word or state is overwritten with
+zeros before the kernel returns.
 """
 import os
 import sys
@@ -219,20 +220,14 @@ class Frame:
 
 
 def secret_message_words(blocks):
-    """Message words that carry a key word or a seed-injected word in some
-    block: their frame slots hold secret-derived values."""
-    return sorted({w for block in blocks for w, e in enumerate(block["words"]) if e[0] in ("key", "seed")})
+    """Message words of block 0 that carry a key word or a seed-injected
+    word: their frame slots hold secret-derived values."""
+    return sorted({w for w, e in enumerate(blocks[0]["words"]) if e[0] in ("key", "seed")})
 
 
 def seed_message_words(blocks):
-    """Message words that carry a seed-injected word in some block."""
-    return sorted({w for block in blocks for w, e in enumerate(block["words"]) if e[0] == "seed"})
-
-
-def key_only_words(blocks):
-    """Message words that are key words in every block: kernels that read
-    the key from the key pointer or a register need no frame slot for them."""
-    return {w for w in range(16) if all(block["words"][w][0] == "key" for block in blocks)}
+    """Message words of block 0 that carry a seed-injected word."""
+    return sorted({w for w, e in enumerate(blocks[0]["words"]) if e[0] == "seed"})
 
 
 def wipe_amd64(offsets, width, zero):
@@ -247,6 +242,8 @@ def wipe_amd64(offsets, width, zero):
 def wipe_arm64(offsets, width, base="R7"):
     """Zero stores over frame slots of the given byte width (4 or 16)
     through the frame base register; 16-byte slots go through F16 = 0."""
+    if not offsets:
+        return []
     if width == 4:
         return [f"\tMOVW ZR, {o}({base})" for o in offsets]
     return ["\tVEOR V16.B16, V16.B16, V16.B16"] + [f"\tFMOVQ F16, {o}({base})" for o in offsets]
@@ -268,42 +265,42 @@ LANE_REGS = ["R8", "R9", "R10", "R11"]
 
 
 def stage_amd64(blocks, frame, lane_bytes=16):
-    """Stage the per-lane data words of every block into the frame (one
-    slot of 4 bytes per lane per word): the D slots of the seed words
-    (zero when the word carries no data) and the data-only words."""
+    """Stage the per-lane non-zero data words of every block into the frame
+    (one slot of 4 bytes per lane per word): the non-zero D slots of the
+    seed words and the data-only words."""
     lines = []
     for b, block in enumerate(blocks):
         for w, e in enumerate(block["words"]):
             if e[0] == "seed":
+                if e[3] == 0:
+                    continue
                 key, d0, size = ("D", e[1]), e[2], e[3]
             elif e[0] == "data":
                 key, d0, size = ("T", b, w), e[1], e[2]
             else:
                 continue
-            base = frame.alloc(key, lane_bytes)
+            base = frame.slots[key] if key in frame.slots else frame.alloc(key, lane_bytes)
             for l, r in enumerate(LANE_REGS):
-                if size == 0:
-                    lines.append(f"\tMOVL $0, {base + 4 * l}(SP)")
-                else:
-                    lines += load_word_amd64(r, d0, size)
-                    lines.append(f"\tMOVL R12, {base + 4 * l}(SP)")
+                lines += load_word_amd64(r, d0, size)
+                lines.append(f"\tMOVL R12, {base + 4 * l}(SP)")
     return lines
 
 
 def stage_amd64_x8(blocks, frame):
-    """Stage the per-lane data words of eight lanes (32-byte slots):
+    """Stage the per-lane non-zero data words of eight lanes (32-byte slots):
     lanes 0..3 then 4..7, each group loading its four lane pointers into
     R8..R11 (dead after its stores)."""
     lines = []
     keys = []
     for b, block in enumerate(blocks):
         for w, e in enumerate(block["words"]):
-            if e[0] == "seed":
+            if e[0] == "seed" and e[3] > 0:
                 keys.append((("D", e[1]), e[2], e[3]))
             elif e[0] == "data":
                 keys.append((("T", b, w), e[1], e[2]))
     for key, _, _ in keys:
-        frame.alloc(key, 32)
+        if key not in frame.slots:
+            frame.alloc(key, 32)
     for g in range(2):
         lines.append("\tMOVQ dataPtrs+24(FP), DX")
         for i, r in enumerate(LANE_REGS):
@@ -312,18 +309,15 @@ def stage_amd64_x8(blocks, frame):
             base = frame.slots[key]
             for l, r in enumerate(LANE_REGS):
                 o = base + 4 * (4 * g + l)
-                if size == 0:
-                    lines.append(f"\tMOVL $0, {o}(SP)")
-                else:
-                    lines += load_word_amd64(r, d0, size)
-                    lines.append(f"\tMOVL R12, {o}(SP)")
+                lines += load_word_amd64(r, d0, size)
+                lines.append(f"\tMOVL R12, {o}(SP)")
     lines.append("\tMOVQ out+32(FP), DX")
     return lines
 
 
 # NOSPLIT_FRAME_MAX is the largest frame the kernels declare with
 # NOSPLIT; the wider frames carry the stack-growth prologue instead.
-NOSPLIT_FRAME_MAX = 736
+NOSPLIT_FRAME_MAX = 728
 
 
 def text_flags(frame):
@@ -376,9 +370,8 @@ def tables(blocks, x8=False):
 
 # ------------------------------------------------------- EVEX family --
 
-def evex_macros(p):
-    """The G function and the round on the register prefix p (X or Y)."""
-    g = "\n".join([
+EVEX_G_DEFS = {
+    "BLAKE2S_G": [
         "#define BLAKE2S_G(a, b, c, d, mx, my) \\",
         "\tVPADDD b, a, a; \\",
         "\tVPADDD mx, a, a; \\",
@@ -394,16 +387,94 @@ def evex_macros(p):
         "\tVPADDD d, c, c; \\",
         "\tVPXORD c, b, b; \\",
         "\tVPRORD $7, b, b",
-    ])
-    rows = []
-    for gi, (a, b, c, d) in enumerate(G_ORDER):
-        rows.append(f"\tBLAKE2S_G({p}{a}, {p}{b}, {p}{c}, {p}{d}, s{2 * gi}, s{2 * gi + 1})")
-    r = "#define BLAKE2S_ROUND(" + ", ".join(f"s{i}" for i in range(16)) + ") \\\n" + "; \\\n".join(rows)
-    return g + "\n\n" + r + "\n"
+    ],
+    "BLAKE2S_GX": [
+        "#define BLAKE2S_GX(a, b, c, d, mx) \\",
+        "\tVPADDD b, a, a; \\",
+        "\tVPADDD mx, a, a; \\",
+        "\tVPXORD a, d, d; \\",
+        "\tVPRORD $16, d, d; \\",
+        "\tVPADDD d, c, c; \\",
+        "\tVPXORD c, b, b; \\",
+        "\tVPRORD $12, b, b; \\",
+        "\tVPADDD b, a, a; \\",
+        "\tVPXORD a, d, d; \\",
+        "\tVPRORD $8, d, d; \\",
+        "\tVPADDD d, c, c; \\",
+        "\tVPXORD c, b, b; \\",
+        "\tVPRORD $7, b, b",
+    ],
+    "BLAKE2S_GY": [
+        "#define BLAKE2S_GY(a, b, c, d, my) \\",
+        "\tVPADDD b, a, a; \\",
+        "\tVPXORD a, d, d; \\",
+        "\tVPRORD $16, d, d; \\",
+        "\tVPADDD d, c, c; \\",
+        "\tVPXORD c, b, b; \\",
+        "\tVPRORD $12, b, b; \\",
+        "\tVPADDD b, a, a; \\",
+        "\tVPADDD my, a, a; \\",
+        "\tVPXORD a, d, d; \\",
+        "\tVPRORD $8, d, d; \\",
+        "\tVPADDD d, c, c; \\",
+        "\tVPXORD c, b, b; \\",
+        "\tVPRORD $7, b, b",
+    ],
+    "BLAKE2S_GZ": [
+        "#define BLAKE2S_GZ(a, b, c, d) \\",
+        "\tVPADDD b, a, a; \\",
+        "\tVPXORD a, d, d; \\",
+        "\tVPRORD $16, d, d; \\",
+        "\tVPADDD d, c, c; \\",
+        "\tVPXORD c, b, b; \\",
+        "\tVPRORD $12, b, b; \\",
+        "\tVPADDD b, a, a; \\",
+        "\tVPXORD a, d, d; \\",
+        "\tVPRORD $8, d, d; \\",
+        "\tVPADDD d, c, c; \\",
+        "\tVPXORD c, b, b; \\",
+        "\tVPRORD $7, b, b",
+    ],
+}
 
 
-def evex_rounds(p):
-    return [f"\tBLAKE2S_ROUND({', '.join(f'{p}{16 + s}' for s in sigma)})" for sigma in ROUNDS]
+def evex_rounds(p, mops, used):
+    """Emit the 10 rounds of one block given mops[0..15] (each a register /
+    memory operand string or None for an elided zero word)."""
+    if all(mops[w] is not None for w in range(16)):
+        used.add("BLAKE2S_G")
+        used.add("BLAKE2S_ROUND")
+        return [f"\tBLAKE2S_ROUND({', '.join(mops[s] for s in sigma)})" for sigma in ROUNDS]
+    out = []
+    for sigma in ROUNDS:
+        for gi, (a, b, c, d) in enumerate(G_ORDER):
+            mx, my = mops[sigma[2 * gi]], mops[sigma[2 * gi + 1]]
+            ra, rb, rc, rd = f"{p}{a}", f"{p}{b}", f"{p}{c}", f"{p}{d}"
+            if mx is not None and my is not None:
+                used.add("BLAKE2S_G")
+                out.append(f"\tBLAKE2S_G({ra}, {rb}, {rc}, {rd}, {mx}, {my})")
+            elif mx is not None:
+                used.add("BLAKE2S_GX")
+                out.append(f"\tBLAKE2S_GX({ra}, {rb}, {rc}, {rd}, {mx})")
+            elif my is not None:
+                used.add("BLAKE2S_GY")
+                out.append(f"\tBLAKE2S_GY({ra}, {rb}, {rc}, {rd}, {my})")
+            else:
+                used.add("BLAKE2S_GZ")
+                out.append(f"\tBLAKE2S_GZ({ra}, {rb}, {rc}, {rd})")
+    return out
+
+
+def evex_macros(p, used):
+    parts = []
+    for name in ("BLAKE2S_G", "BLAKE2S_GX", "BLAKE2S_GY", "BLAKE2S_GZ"):
+        if name in used:
+            parts.append("\n".join(EVEX_G_DEFS[name]))
+    if "BLAKE2S_ROUND" in used:
+        rows = [f"\tBLAKE2S_G({p}{a}, {p}{b}, {p}{c}, {p}{d}, s{2 * gi}, s{2 * gi + 1})"
+                for gi, (a, b, c, d) in enumerate(G_ORDER)]
+        parts.append("#define BLAKE2S_ROUND(" + ", ".join(f"s{i}" for i in range(16)) + ") \\\n" + "; \\\n".join(rows))
+    return "\n\n".join(parts) + "\n"
 
 
 def evex_kernel(n, x8=False, fill=False):
@@ -419,12 +490,8 @@ def evex_kernel(n, x8=False, fill=False):
     if fill:
         # Synthesised fill blocks: D0 = (idx << 8) | 0x03, D1 = idx >> 24,
         # D2 = (idx >> 56) | (v << 8), D3 = v >> 24, the remaining
-        # seed-injected words zero. The qword lane arithmetic runs on ZMM
-        # and VPMOVQD narrows each lane to its dword; the interlock-nonce
-        # fold v is shifted in R12 and broadcast to the dword lanes once
-        # per call (idx >> 56 occupies bits 0..7 of D2 and v << 8 bits
-        # 8..31, so the OR is exact).
-        d = [frame.alloc(("D", k), lane_bytes) for k in range(8)]
+        # seed-injected words identically zero (no frame slots allocated).
+        d = [frame.alloc(("D", k), lane_bytes) for k in range(4)]
         build += [
             "\tVPBROADCASTQ groupIdxBase+24(FP), Z0",
             "\tVPADDQ laneIdx<>(SB), Z0, Z0",
@@ -448,37 +515,41 @@ def evex_kernel(n, x8=False, fill=False):
             "\tSHRL $24, R12",
             "\tVPBROADCASTD R12, Y1",
             f"\tVMOVDQU32 Y1, {d[3]}(SP)",
-            "\tVPXORD Y2, Y2, Y2",
         ]
-        build += [f"\tVMOVDQU32 Y2, {d[k]}(SP)" for k in range(4, 8)]
     elif x8:
         build += stage_amd64_x8(blocks, frame)
     else:
         build += stage_amd64(blocks, frame, lane_bytes)
-    if nb > 1:
-        for i in range(8):
-            frame.alloc(("H", i), lane_bytes)
     mov = "VMOVDQU32"
 
     def m(w):
         return f"{p}{16 + w}"
 
-    def load_words(b, with_key):
-        """Set the round-invariant message registers of block b."""
-        out = []
-        for w, e in enumerate(blocks[b]["words"]):
-            if e[0] == "key":
-                if with_key:
-                    out.append(f"\tVPBROADCASTD {4 * e[1]}(AX), {m(w)}")
-            elif e[0] == "data":
-                out.append(f"\t{mov} {frame.slots[('T', b, w)]}(SP), {m(w)}")
-            elif e[0] == "zero":
-                out.append(f"\tVPXORD {m(w)}, {m(w)}, {m(w)}")
-        return out
+    # At shapes 13, 20 and 36, m(0..7) hold key[0..7] for the whole call
+    # (at shape 36 block 1 reads its single data word T[1,0] from its stack
+    # slot while m(8..15) hold H[0..7]). At shape 68 block 1 loads T[1,0..7]
+    # into m(0..7) and reads T[1,8] from its stack slot while m(8..15) hold
+    # H[0..7], so key[0..7] are broadcast before block 0 inside the loop.
+    hoist_key = n != 68
+    key_loads = [f"\tVPBROADCASTD {4 * e[1]}(AX), {m(w)}"
+                 for w, e in enumerate(blocks[0]["words"]) if e[0] == "key"]
+
+    used_macros = set()
+    block_rounds = []
+    for b, block in enumerate(blocks):
+        mops = []
+        for w, e in enumerate(block["words"]):
+            if e[0] == "zero":
+                mops.append(None)
+            elif b > 0 and (n == 36 or w >= 8):
+                mops.append(f"{frame.slots[('T', b, w)]}(SP)")
+            else:
+                mops.append(m(w))
+        block_rounds.append(evex_rounds(p, mops, used_macros))
 
     lines = []
     lines.append(header(AMD, n, lanes, "AVX-512 " + ("YMM (eight lanes)" if x8 else "XMM (four lanes)"), fill=fill))
-    lines.append(evex_macros(p))
+    lines.append(evex_macros(p, used_macros))
     if fill:
         kind, argsize = "groupIdxBase uint64, out *[8][4]uint64, v uint32", 44
     else:
@@ -490,34 +561,40 @@ def evex_kernel(n, x8=False, fill=False):
     lines.append("")
     lines += build
     lines.append("")
-    if nb == 1:
-        lines += load_words(0, True)
+    if hoist_key:
+        lines += key_loads
     for i in range(WORDS):
         lines.append(f"\tVPXORD {p}{i}, {p}{i}, {p}{i}")
     lines.append("")
     lines.append("loop:")
     # Seed-injected words of block 0: D ⊕ component dword ⊕ h dword.
     for w, e in seed_words(blocks[0]):
-        k = e[1]
-        lines.append(f"\t{mov} {frame.slots[('D', k)]}(SP), {m(w)}")
-        lines.append(f"\tVPTERNLOGD.BCST $0x96, {4 * k}(BX), {p}{k}, {m(w)}")
-    if nb > 1:
-        lines += load_words(0, True)
+        k, size = e[1], e[3]
+        if size == 0:
+            lines.append(f"\tVPXORD.BCST {4 * k}(BX), {p}{k}, {m(w)}")
+        else:
+            lines.append(f"\t{mov} {frame.slots[('D', k)]}(SP), {m(w)}")
+            lines.append(f"\tVPTERNLOGD.BCST $0x96, {4 * k}(BX), {p}{k}, {m(w)}")
+    if not hoist_key:
+        lines += key_loads
     for b, block in enumerate(blocks):
         lines.append("")
         if b > 0:
+            # Save chaining value H[0..7] into dead seed registers m(8..15).
             for i in range(8):
-                lines.append(f"\t{mov} {p}{i}, {frame.slots[('H', i)]}(SP)")
-            lines += load_words(b, False)
+                lines.append(f"\tVMOVDQA32 {p}{i}, {m(8 + i)}")
+            if n == 68:
+                for w in range(8):
+                    lines.append(f"\t{mov} {frame.slots[('T', b, w)]}(SP), {m(w)}")
         for k in range(0 if b == 0 else 8, 16):
             lines.append(f"\tVPBROADCASTD tab{b}<>+{4 * k}(SB), {p}{k}")
         lines.append("")
-        lines += evex_rounds(p)
+        lines += block_rounds[b]
         lines.append("")
         last = b == nb - 1
         for i in range(8):
             if nb > 1 and last:
-                lines.append(f"\tVPTERNLOGD $0x96, {frame.slots[('H', i)]}(SP), {p}{8 + i}, {p}{i}")
+                lines.append(f"\tVPTERNLOGD $0x96, {p}{8 + i}, {m(8 + i)}, {p}{i}")
             else:
                 lines.append(f"\tVPTERNLOGD.BCST $0x96, tab{b}<>+{4 * i}(SB), {p}{8 + i}, {p}{i}")
     lines.append("")
@@ -535,10 +612,8 @@ def evex_kernel(n, x8=False, fill=False):
         else:
             for l in range(4):
                 lines.append(f"\tVPEXTRD ${l}, X{i}, {32 * l + 4 * i}(DX)")
-    if nb > 1:
-        # The saved chaining value is key-dependent: zero its slots.
-        lines.append(f"\tVPXORD {p}16, {p}16, {p}16")
-        lines += wipe_amd64([frame.slots[("H", i)] for i in range(8)], lane_bytes, f"{p}16")
+    for w in range(16):
+        lines.append(f"\tVPXORD X{16 + w}, X{16 + w}, X{16 + w}")
     lines.append("\tVZEROUPPER")
     lines.append("\tRET")
     lines.append("")
@@ -548,16 +623,8 @@ def evex_kernel(n, x8=False, fill=False):
 
 # -------------------------------------------------------- AVX2 family --
 
-def avx2_macros(p, lane_bytes):
-    """The G function, the frame-slot offsets and the round on the
-    register prefix p (X at four lanes, Y at eight): the message words
-    M(0..15) and the v[15] / v[12] slots are lane_bytes wide."""
-    return f"""#define RORD(x, n, ln, t) \\
-\tVPSRLD n, x, t; \\
-\tVPSLLD ln, x, x; \\
-\tVPOR t, x, x
-
-#define GA(a, b, c, d, mx, my, t) \\
+AVX2_G_DEFS = {
+    "GA": """#define GA(a, b, c, d, mx, my, t) \\
 \tVPADDD b, a, a; \\
 \tVPADDD mx(SP), a, a; \\
 \tVPXOR a, d, d; \\
@@ -571,13 +638,102 @@ def avx2_macros(p, lane_bytes):
 \tVPSHUFB ror8<>(SB), d, d; \\
 \tVPADDD d, c, c; \\
 \tVPXOR c, b, b; \\
-\tRORD(b, $7, $25, t)
+\tRORD(b, $7, $25, t)""",
+    "GAX": """#define GAX(a, b, c, d, mx, t) \\
+\tVPADDD b, a, a; \\
+\tVPADDD mx(SP), a, a; \\
+\tVPXOR a, d, d; \\
+\tVPSHUFB ror16<>(SB), d, d; \\
+\tVPADDD d, c, c; \\
+\tVPXOR c, b, b; \\
+\tRORD(b, $12, $20, t); \\
+\tVPADDD b, a, a; \\
+\tVPXOR a, d, d; \\
+\tVPSHUFB ror8<>(SB), d, d; \\
+\tVPADDD d, c, c; \\
+\tVPXOR c, b, b; \\
+\tRORD(b, $7, $25, t)""",
+    "GAY": """#define GAY(a, b, c, d, my, t) \\
+\tVPADDD b, a, a; \\
+\tVPXOR a, d, d; \\
+\tVPSHUFB ror16<>(SB), d, d; \\
+\tVPADDD d, c, c; \\
+\tVPXOR c, b, b; \\
+\tRORD(b, $12, $20, t); \\
+\tVPADDD b, a, a; \\
+\tVPADDD my(SP), a, a; \\
+\tVPXOR a, d, d; \\
+\tVPSHUFB ror8<>(SB), d, d; \\
+\tVPADDD d, c, c; \\
+\tVPXOR c, b, b; \\
+\tRORD(b, $7, $25, t)""",
+    "GAZ": """#define GAZ(a, b, c, d, t) \\
+\tVPADDD b, a, a; \\
+\tVPXOR a, d, d; \\
+\tVPSHUFB ror16<>(SB), d, d; \\
+\tVPADDD d, c, c; \\
+\tVPXOR c, b, b; \\
+\tRORD(b, $12, $20, t); \\
+\tVPADDD b, a, a; \\
+\tVPXOR a, d, d; \\
+\tVPSHUFB ror8<>(SB), d, d; \\
+\tVPADDD d, c, c; \\
+\tVPXOR c, b, b; \\
+\tRORD(b, $7, $25, t)""",
+}
 
-#define M(i)   (i*{lane_bytes})
-#define V15    {16 * lane_bytes}
-#define V12    {17 * lane_bytes}
 
-#define ROUND(s0,s1,s2,s3,s4,s5,s6,s7,s8,s9,s10,s11,s12,s13,s14,s15) \\
+def avx2_g_call(p, a, b, c, d, mx, my, t, used):
+    rd = f"{p}15" if d == 15 else f"{p}{d}"
+    if mx is not None and my is not None:
+        used.add("GA")
+        return f"\tGA({p}{a}, {p}{b}, {p}{c}, {rd}, {mx}, {my}, {t})"
+    if mx is not None:
+        used.add("GAX")
+        return f"\tGAX({p}{a}, {p}{b}, {p}{c}, {rd}, {mx}, {t})"
+    if my is not None:
+        used.add("GAY")
+        return f"\tGAY({p}{a}, {p}{b}, {p}{c}, {rd}, {my}, {t})"
+    used.add("GAZ")
+    return f"\tGAZ({p}{a}, {p}{b}, {p}{c}, {rd}, {t})"
+
+
+def avx2_rounds(p, mops, used):
+    if all(mops[w] == f"M({w})" for w in range(16)):
+        used.add("GA")
+        used.add("ROUND")
+        return [f"\tROUND({','.join(str(s) for s in sigma)})" for sigma in ROUNDS]
+    out = []
+    for sigma in ROUNDS:
+        for gi in range(3):
+            a, b, c, d = G_ORDER[gi]
+            out.append(avx2_g_call(p, a, b, c, d, mops[sigma[2 * gi]], mops[sigma[2 * gi + 1]], f"{p}15", used))
+        out.append(f"\tVMOVDQU {p}12, V12(SP)")
+        out.append(f"\tVMOVDQU V15(SP), {p}15")
+        for gi in (3, 4):
+            a, b, c, d = G_ORDER[gi]
+            out.append(avx2_g_call(p, a, b, c, d, mops[sigma[2 * gi]], mops[sigma[2 * gi + 1]], f"{p}12", used))
+        out.append(f"\tVMOVDQU {p}15, V15(SP)")
+        out.append(f"\tVMOVDQU V12(SP), {p}12")
+        for gi in range(5, 8):
+            a, b, c, d = G_ORDER[gi]
+            out.append(avx2_g_call(p, a, b, c, d, mops[sigma[2 * gi]], mops[sigma[2 * gi + 1]], f"{p}15", used))
+    return out
+
+
+def avx2_macros(p, lane_bytes, used):
+    """The G function, the frame-slot offsets and the round on the
+    register prefix p (X at four lanes, Y at eight): the message words
+    M(0..15) and the v[15] / v[12] slots are lane_bytes wide."""
+    parts = [
+        "#define RORD(x, n, ln, t) \\\n\tVPSRLD n, x, t; \\\n\tVPSLLD ln, x, x; \\\n\tVPOR t, x, x"
+    ]
+    for name in ("GA", "GAX", "GAY", "GAZ"):
+        if name in used:
+            parts.append(AVX2_G_DEFS[name])
+    parts.append(f"#define M(i)   (i*{lane_bytes})\n#define V15    {16 * lane_bytes}\n#define V12    {17 * lane_bytes}")
+    if "ROUND" in used:
+        parts.append(f"""#define ROUND(s0,s1,s2,s3,s4,s5,s6,s7,s8,s9,s10,s11,s12,s13,s14,s15) \\
 \tGA({p}0, {p}4, {p}8,  {p}12, M(s0),  M(s1),  {p}15); \\
 \tGA({p}1, {p}5, {p}9,  {p}13, M(s2),  M(s3),  {p}15); \\
 \tGA({p}2, {p}6, {p}10, {p}14, M(s4),  M(s5),  {p}15); \\
@@ -589,8 +745,8 @@ def avx2_macros(p, lane_bytes):
 \tVMOVDQU V12(SP), {p}12; \\
 \tGA({p}1, {p}6, {p}11, {p}12, M(s10), M(s11), {p}15); \\
 \tGA({p}2, {p}7, {p}8,  {p}13, M(s12), M(s13), {p}15); \\
-\tGA({p}3, {p}4, {p}9,  {p}14, M(s14), M(s15), {p}15)
-"""
+\tGA({p}3, {p}4, {p}9,  {p}14, M(s14), M(s15), {p}15)""")
+    return "\n\n".join(parts) + "\n"
 
 
 def avx2_tables(lane_bytes):
@@ -622,15 +778,8 @@ def avx2_fill_build(frame):
     """Synthesise the data dwords of the eight 13-byte fill blocks on YMM
     registers — D0 = (idx << 8) | 0x03, D1 = idx >> 24,
     D2 = (idx >> 56) | (v << 8), D3 = v >> 24, the remaining
-    seed-injected words zero: the lane indices as qwords (lanes 0..3 in
-    Y1, 4..7 in Y2), each index word as a qword shift of the index,
-    narrowed to the dword lanes by VPSHUFD + VPERMQ per register half and
-    joined by VINSERTI128 into one 32-byte slot store; the interlock-nonce
-    fold v loaded once into R8, moved to X5 and broadcast to the dword
-    lanes (Y5), shifted to v << 8 (Y6, ORed into D2 before its store —
-    idx >> 56 occupies bits 0..7, so the OR is exact) and v >> 24 (Y5,
-    stored as D3)."""
-    d = [frame.alloc(("D", k), 32) for k in range(8)]
+    seed-injected words identically zero (no frame slots allocated)."""
+    d = [frame.alloc(("D", k), 32) for k in range(4)]
     lines = [
         "\tVPBROADCASTQ groupIdxBase+24(FP), Y0",
         "\tVPADDQ laneIdx<>+0(SB), Y0, Y1",
@@ -653,13 +802,7 @@ def avx2_fill_build(frame):
     lines += ["\tVPSRLQ $24, Y1, Y3", "\tVPSRLQ $24, Y2, Y4"] + pack(d[1])
     lines += ["\tVPSRLQ $56, Y1, Y3", "\tVPSRLQ $56, Y2, Y4"] + pack(d[2], fold="Y6")
     lines.append(f"\tVMOVDQU Y5, {d[3]}(SP)")
-    lines.append("\tVPXOR Y3, Y3, Y3")
-    lines += [f"\tVMOVDQU Y3, {d[k]}(SP)" for k in range(4, 8)]
     return lines
-
-
-def avx2_rounds():
-    return [f"\tROUND({','.join(str(s) for s in sigma)})" for sigma in ROUNDS]
 
 
 def avx2_kernel(n, x8=False, fill=False):
@@ -686,25 +829,31 @@ def avx2_kernel(n, x8=False, fill=False):
     def slot(w):
         return f"M({w})"
 
-    def load_words(b, with_key):
-        out = []
-        for w, e in enumerate(blocks[b]["words"]):
-            if e[0] == "key":
-                if with_key:
-                    out.append(f"\tVPBROADCASTD {4 * e[1]}(AX), {p}15")
-                    out.append(f"\tVMOVDQU {p}15, {slot(w)}(SP)")
-            elif e[0] == "data":
-                out.append(f"\tVMOVDQU {frame.slots[('T', b, w)]}(SP), {p}15")
-                out.append(f"\tVMOVDQU {p}15, {slot(w)}(SP)")
-            elif e[0] == "zero":
-                out.append(f"\tVPXOR {p}15, {p}15, {p}15")
-                out.append(f"\tVMOVDQU {p}15, {slot(w)}(SP)")
-        return out
+    # Key words of block 0 live in M(0..7) and are never overwritten by
+    # block 1 (which reads its data words from their own T slots).
+    pre_loop = []
+    for w, e in enumerate(blocks[0]["words"]):
+        if e[0] == "key":
+            pre_loop.append(f"\tVPBROADCASTD {4 * e[1]}(AX), {p}15")
+            pre_loop.append(f"\tVMOVDQU {p}15, {slot(w)}(SP)")
+
+    used_macros = set()
+    block_rounds = []
+    for b, block in enumerate(blocks):
+        mops = []
+        for w, e in enumerate(block["words"]):
+            if e[0] == "zero":
+                mops.append(None)
+            elif b > 0:
+                mops.append(str(frame.slots[("T", b, w)]))
+            else:
+                mops.append(slot(w))
+        block_rounds.append(avx2_rounds(p, mops, used_macros))
 
     tmp2 = f"{p}8"  # free between the fold and the state init
     lines = []
     lines.append(header(AMD, n, lanes, "AVX2 " + ("YMM (eight lanes)" if x8 else "XMM (four lanes)"), fill=fill))
-    lines.append(avx2_macros(p, lane_bytes))
+    lines.append(avx2_macros(p, lane_bytes, used_macros))
     if fill:
         kind, argsize = "groupIdxBase uint64, out *[8][4]uint64, v uint32", 44
     else:
@@ -716,33 +865,34 @@ def avx2_kernel(n, x8=False, fill=False):
     lines.append("")
     lines += build
     lines.append("")
-    if nb == 1:
-        lines += load_words(0, True)
+    lines += pre_loop
     for i in range(WORDS):
         lines.append(f"\tVPXOR {p}{i}, {p}{i}, {p}{i}")
     lines.append("")
     lines.append("loop:")
     for w, e in seed_words(blocks[0]):
-        k = e[1]
-        lines.append(f"\tVMOVDQU {frame.slots[('D', k)]}(SP), {p}15")
-        lines.append(f"\tVPXOR {p}{k}, {p}15, {p}15")
-        lines.append(f"\tVPBROADCASTD {4 * k}(BX), {tmp2}")
-        lines.append(f"\tVPXOR {tmp2}, {p}15, {p}15")
-        lines.append(f"\tVMOVDQU {p}15, {slot(w)}(SP)")
-    if nb > 1:
-        lines += load_words(0, True)
+        k, size = e[1], e[3]
+        if size == 0:
+            lines.append(f"\tVPBROADCASTD {4 * k}(BX), {p}15")
+            lines.append(f"\tVPXOR {p}{k}, {p}15, {p}15")
+            lines.append(f"\tVMOVDQU {p}15, {slot(w)}(SP)")
+        else:
+            lines.append(f"\tVMOVDQU {frame.slots[('D', k)]}(SP), {p}15")
+            lines.append(f"\tVPXOR {p}{k}, {p}15, {p}15")
+            lines.append(f"\tVPBROADCASTD {4 * k}(BX), {tmp2}")
+            lines.append(f"\tVPXOR {tmp2}, {p}15, {p}15")
+            lines.append(f"\tVMOVDQU {p}15, {slot(w)}(SP)")
     for b, block in enumerate(blocks):
         lines.append("")
         if b > 0:
             for i in range(8):
                 lines.append(f"\tVMOVDQU {p}{i}, {frame.slots[('H', i)]}(SP)")
-            lines += load_words(b, False)
         for k in range(0 if b == 0 else 8, 15):
             lines.append(f"\tVPBROADCASTD tab{b}<>+{4 * k}(SB), {p}{k}")
         lines.append(f"\tVPBROADCASTD tab{b}<>+60(SB), {p}15")
         lines.append(f"\tVMOVDQU {p}15, V15(SP)")
         lines.append("")
-        lines += avx2_rounds()
+        lines += block_rounds[b]
         lines.append("")
         last = b == nb - 1
         for i in range(8):
@@ -803,12 +953,15 @@ def load_word_arm64(r, d0, size, dst="R12"):
 
 
 def stage_arm64(blocks, frame, base="R7"):
-    """Stage the per-lane data words as in stage_amd64 (four lanes, 4 bytes
-    each, so one 16-byte slot per word) through the frame base register."""
+    """Stage the per-lane non-zero data words as in stage_amd64 (four lanes,
+    4 bytes each, so one 16-byte slot per word) through the frame base
+    register."""
     lines = []
     for b, block in enumerate(blocks):
         for w, e in enumerate(block["words"]):
             if e[0] == "seed":
+                if e[3] == 0:
+                    continue
                 key, d0, size = ("D", e[1]), e[2], e[3]
             elif e[0] == "data":
                 key, d0, size = ("T", b, w), e[1], e[2]
@@ -816,11 +969,8 @@ def stage_arm64(blocks, frame, base="R7"):
                 continue
             off = frame.alloc(key, 16)
             for l, r in enumerate(ARM_LANE_REGS):
-                if size == 0:
-                    lines.append(f"\tMOVW ZR, {off + 4 * l}({base})")
-                else:
-                    lines += load_word_arm64(r, d0, size)
-                    lines.append(f"\tMOVW R12, {off + 4 * l}({base})")
+                lines += load_word_arm64(r, d0, size)
+                lines.append(f"\tMOVW R12, {off + 4 * l}({base})")
     return lines
 
 
@@ -873,19 +1023,20 @@ class NeonRegs:
 
 def neon_g(regs, a, b, c, d, mx, my):
     """One G function; mx / my are the two message words: a frame offset
-    (loaded into V16 / V17) or the name of the vector register a key word
-    is resident in."""
+    (loaded into V16 / V17), the name of the vector register a word is
+    resident in, or None for an elided zero word."""
     out = []
     ops = []
     for m, tmp in ((mx, 16), (my, 17)):
-        if isinstance(m, str):
+        if m is None or isinstance(m, str):
             ops.append(m)
         else:
             out.append(f"\tFMOVQ {m}(R7), F{tmp}")
             ops.append(f"V{tmp}")
     v = regs.v
     out.append(f"\tVADD {v[b]}.S4, {v[a]}.S4, {v[a]}.S4")
-    out.append(f"\tVADD {ops[0]}.S4, {v[a]}.S4, {v[a]}.S4")
+    if ops[0] is not None:
+        out.append(f"\tVADD {ops[0]}.S4, {v[a]}.S4, {v[a]}.S4")
     out.append(f"\tVEOR {v[a]}.B16, {v[d]}.B16, {v[d]}.B16")
     out += regs.rot(d, 16)
     v = regs.v
@@ -894,7 +1045,8 @@ def neon_g(regs, a, b, c, d, mx, my):
     out += regs.rot(b, 12)
     v = regs.v
     out.append(f"\tVADD {v[b]}.S4, {v[a]}.S4, {v[a]}.S4")
-    out.append(f"\tVADD {ops[1]}.S4, {v[a]}.S4, {v[a]}.S4")
+    if ops[1] is not None:
+        out.append(f"\tVADD {ops[1]}.S4, {v[a]}.S4, {v[a]}.S4")
     out.append(f"\tVEOR {v[a]}.B16, {v[d]}.B16, {v[d]}.B16")
     out += regs.rot(d, 8)
     v = regs.v
@@ -913,16 +1065,15 @@ GLOBL ror8<>(SB), RODATA|NOPTR, $16
 def neon_kernel(n):
     """NEON x4 kernel: four dword lanes per 128-bit register, one pass. The
     key words are loaded once per call straight from the key pointer into
-    V20..V27 (VLD1R) and read from there by every G; the other message
-    words are frame slots; the state lives in V0..V15 with V18 as the
-    rotate alternate, V19 the ror8 byte mask and V16 / V17 the word
-    loads. The seed-word and chaining-value slots are zeroed before
-    return."""
+    V20..V27 (VLD1R); V28..V31 hold seed[0..3] in block 0 (and block 1's
+    first four data words at shape 68), while only seed[4..7] (w = 12..15)
+    require frame message slots. All secret registers and slots are zeroed
+    before return."""
     blocks = layout(n)
     nb = len(blocks)
     frame = Frame()
-    key_only = key_only_words(blocks)
-    m_off = [None if w in key_only else frame.alloc(("M", w), 16) for w in range(16)]
+    m_reg_b0 = {w: f"V{20 + w}" for w in range(12)}  # V20..V27 key[0..7], V28..V31 seed[0..3]
+    m_off = [frame.alloc(("M", w), 16) if w >= 12 else None for w in range(16)]
     build = stage_arm64(blocks, frame)
     h_off = [frame.alloc(("H", i), 16) for i in range(8)] if nb > 1 else []
     out_lines = []
@@ -952,44 +1103,61 @@ def neon_kernel(n):
     for l in build:
         emit(l)
     emit("")
-    # Round-invariant words of block 0 (the key words stay in V20..V27).
-    for w, e in enumerate(blocks[0]["words"]):
-        if e[0] == "data":
-            emit(f"\tFMOVQ {frame.slots[('T', 0, w)]}(R7), F16")
-            emit(f"\tFMOVQ F16, {m_off[w]}(R7)")
-        elif e[0] == "zero":
-            emit(f"\tMOVD ZR, {m_off[w]}(R7)")
-            emit(f"\tMOVD ZR, {m_off[w] + 8}(R7)")
     for i in range(WORDS):
         emit(f"\tVEOR V{i}.B16, V{i}.B16, V{i}.B16")
     emit("")
     emit("loop:")
     # Seed-injected words: D ⊕ component dword ⊕ h dword (h in V0..V7).
     for w, e in seed_words(blocks[0]):
-        k = e[1]
-        emit(f"\tFMOVQ {frame.slots[('D', k)]}(R7), F16")
-        emit(f"\tMOVWU {4 * k}(R1), R12")
-        emit("\tVDUP R12, V17.S4")
-        emit("\tVEOR V16.B16, V17.B16, V16.B16")
-        emit(f"\tVEOR V{k}.B16, V16.B16, V16.B16")
-        emit(f"\tFMOVQ F16, {m_off[w]}(R7)")
+        k, size = e[1], e[3]
+        if w in m_reg_b0:
+            vr = m_reg_b0[w]
+            fr = f"F{vr[1:]}"
+            if size == 0:
+                emit(f"\tMOVWU {4 * k}(R1), R12")
+                emit(f"\tVDUP R12, {vr}.S4")
+                emit(f"\tVEOR V{k}.B16, {vr}.B16, {vr}.B16")
+            else:
+                emit(f"\tFMOVQ {frame.slots[('D', k)]}(R7), {fr}")
+                emit(f"\tMOVWU {4 * k}(R1), R12")
+                emit("\tVDUP R12, V17.S4")
+                emit(f"\tVEOR V17.B16, {vr}.B16, {vr}.B16")
+                emit(f"\tVEOR V{k}.B16, {vr}.B16, {vr}.B16")
+        else:
+            if size == 0:
+                emit(f"\tMOVWU {4 * k}(R1), R12")
+                emit("\tVDUP R12, V16.S4")
+                emit(f"\tVEOR V{k}.B16, V16.B16, V16.B16")
+                emit(f"\tFMOVQ F16, {m_off[w]}(R7)")
+            else:
+                emit(f"\tFMOVQ {frame.slots[('D', k)]}(R7), F16")
+                emit(f"\tMOVWU {4 * k}(R1), R12")
+                emit("\tVDUP R12, V17.S4")
+                emit("\tVEOR V16.B16, V17.B16, V16.B16")
+                emit(f"\tVEOR V{k}.B16, V16.B16, V16.B16")
+                emit(f"\tFMOVQ F16, {m_off[w]}(R7)")
     for b, block in enumerate(blocks):
         regs = NeonRegs()
 
-        def mop(w, block=block):
+        def mop(w, b=b, block=block):
             e = block["words"][w]
-            return f"V{20 + e[1]}" if e[0] == "key" else m_off[w]
+            if e[0] == "zero":
+                return None
+            if b > 0:
+                if n == 36:
+                    return "V16"
+                return f"V{28 + w}" if w < 4 else frame.slots[("T", b, w)]
+            return m_reg_b0[w] if w in m_reg_b0 else m_off[w]
+
         emit("")
         if b > 0:
             for i in range(8):
                 emit(f"\tFMOVQ F{i}, {h_off[i]}(R7)")
-            for w, e in enumerate(block["words"]):
-                if e[0] == "data":
-                    emit(f"\tFMOVQ {frame.slots[('T', b, w)]}(R7), F16")
-                    emit(f"\tFMOVQ F16, {m_off[w]}(R7)")
-                elif e[0] == "zero":
-                    emit(f"\tMOVD ZR, {m_off[w]}(R7)")
-                    emit(f"\tMOVD ZR, {m_off[w] + 8}(R7)")
+            if n == 36:
+                emit(f"\tFMOVQ {frame.slots[('T', b, 0)]}(R7), F16")
+            else:
+                for w in range(4):
+                    emit(f"\tFMOVQ {frame.slots[('T', b, w)]}(R7), F{28 + w}")
         emit(f"\tMOVD $tab{b}<>(SB), R6")
         for k in range(0 if b == 0 else 8, 16):
             emit(f"\tMOVWU {4 * k}(R6), R12")
@@ -1024,9 +1192,13 @@ def neon_kernel(n):
             emit(f"\tVMOV V{i}.S[{l}], R12")
             emit(f"\tMOVW R12, {32 * l + 4 * i}(R3)")
     emit("")
-    # Zero the slots that held seed-injected words or the chaining value.
-    for l in wipe_arm64([m_off[w] for w in seed_message_words(blocks)] + h_off, 16):
+    # Zero the slots and registers that held key words, seed-injected words
+    # or the chaining value.
+    wipe = [m_off[w] for w in seed_message_words(blocks) if m_off[w] is not None] + h_off
+    for l in wipe_arm64(wipe, 16):
         emit(l)
+    for r in range(20, 32):
+        emit(f"\tVEOR V{r}.B16, V{r}.B16, V{r}.B16")
     emit("\tRET")
     emit("")
     for l in tables(blocks):
@@ -1075,12 +1247,11 @@ def gpr_kernel_amd64(n):
     cnt = frame.alloc("cnt", 8)
     cmp = frame.alloc("comps", 8)
     outp = frame.alloc("out", 8)
-    keyp = frame.alloc("key", 8)
     d_off = {}
     t_off = {}
     for b, block in enumerate(blocks):
         for w, e in enumerate(block["words"]):
-            if e[0] == "seed":
+            if e[0] == "seed" and e[3] > 0:
                 d_off[e[1]] = (frame.alloc(("D", e[1]), 4), e[2], e[3])
             elif e[0] == "data":
                 t_off[(b, w)] = (frame.alloc(("T", b, w), 4), e[1], e[2])
@@ -1096,63 +1267,61 @@ def gpr_kernel_amd64(n):
     L.append(f"TEXT ·{fn}(SB), NOSPLIT, ${frame.aligned}-40")
     L += ["\tMOVQ fixedKey+0(FP), AX", "\tMOVQ comps+8(FP), BX", "\tMOVQ nGroups+16(FP), CX",
           "\tMOVQ data+24(FP), DX", "\tMOVQ out+32(FP), DI",
-          f"\tMOVQ BX, {cmp}(SP)", f"\tMOVQ CX, {cnt}(SP)", f"\tMOVQ DI, {outp}(SP)", f"\tMOVQ AX, {keyp}(SP)", ""]
-    # Stage the data words (D slots of the seed words, T slots of the
-    # data-only words) and the key words of block 0 into their m slots.
+          f"\tMOVQ BX, {cmp}(SP)", f"\tMOVQ CX, {cnt}(SP)", f"\tMOVQ DI, {outp}(SP)", ""]
+    # Stage the non-zero D slots of the seed words, the T slots of the
+    # data-only words, and the key words of block 0 once before the loop.
     for k in sorted(d_off):
         off, d0, size = d_off[k]
-        if size == 0:
-            L.append(f"\tMOVL $0, {off}(SP)")
-        else:
-            L += load_word_amd64("DX", d0, size) + [f"\tMOVL R12, {off}(SP)"]
+        L += load_word_amd64("DX", d0, size) + [f"\tMOVL R12, {off}(SP)"]
     for (b, w), (off, d0, size) in sorted(t_off.items()):
         L += load_word_amd64("DX", d0, size) + [f"\tMOVL R12, {off}(SP)"]
-
-    def load_words(b, with_key, key="AX"):
-        out = []
-        for w, e in enumerate(blocks[b]["words"]):
-            if e[0] == "key":
-                if with_key:
-                    out += [f"\tMOVL {4 * e[1]}({key}), R12", f"\tMOVL R12, {m_off[w]}(SP)"]
-            elif e[0] == "data":
-                out += [f"\tMOVL {t_off[(b, w)][0]}(SP), R12", f"\tMOVL R12, {m_off[w]}(SP)"]
-            elif e[0] == "zero":
-                out.append(f"\tMOVL $0, {m_off[w]}(SP)")
-        return out
-
-    L += load_words(0, True)
+    for w, e in enumerate(blocks[0]["words"]):
+        if e[0] == "key":
+            L += [f"\tMOVL {4 * e[1]}(AX), R12", f"\tMOVL R12, {m_off[w]}(SP)"]
     L += [f"\tXORL {R[i]}, {R[i]}" for i in range(8)]
     L += ["", "loop:"]
     # Seed-injected words: D ⊕ component dword ⊕ h dword (h in v[0..7]).
     L.append(f"\tMOVQ {cmp}(SP), R9")
     for w, e in seed_words(blocks[0]):
-        k = e[1]
-        L += [f"\tMOVL {d_off[k][0]}(SP), R10", f"\tXORL {4 * k}(R9), R10", f"\tXORL {R[k]}, R10",
-              f"\tMOVL R10, {m_off[w]}(SP)"]
+        k, size = e[1], e[3]
+        if size == 0:
+            L += [f"\tMOVL {4 * k}(R9), R10", f"\tXORL {R[k]}, R10", f"\tMOVL R10, {m_off[w]}(SP)"]
+        else:
+            L += [f"\tMOVL {d_off[k][0]}(SP), R10", f"\tXORL {4 * k}(R9), R10", f"\tXORL {R[k]}, R10",
+                  f"\tMOVL R10, {m_off[w]}(SP)"]
     L += ["\tADDQ $32, R9", f"\tMOVQ R9, {cmp}(SP)"]
-    if nb > 1:
-        # Block 1 overwrote the message slots: restore block 0's
-        # round-invariant words (the key pointer through v[10]'s
-        # register, dead at the loop top).
-        L += [f"\tMOVQ {keyp}(SP), R11"] + load_words(0, True, key="R11")
     for b, block in enumerate(blocks):
         tab = init_table(block)
         L.append("")
         if b > 0:
             L += [f"\tMOVL {R[i]}, {h_off[i]}(SP)" for i in range(8)]
-            L += load_words(b, False)
         for k in range(0 if b == 0 else 8, 16):
             if R[k] is None:
                 L += [f"\tMOVL $0x{tab[k]:08x}, R12", f"\tMOVL R12, {spill}(SP)"]
             else:
                 L.append(f"\tMOVL $0x{tab[k]:08x}, {R[k]}")
         L.append("")
+
+        def mop(w, b=b, block=block):
+            e = block["words"][w]
+            if e[0] == "zero":
+                return None
+            if b > 0:
+                return f"{t_off[(b, w)][0]}(SP)"
+            return f"{m_off[w]}(SP)"
+
         for sigma in ROUNDS:
             for gi, (a, bb, c, d) in enumerate(G_ORDER):
-                mx, my = f"{m_off[sigma[2 * gi]]}(SP)", f"{m_off[sigma[2 * gi + 1]]}(SP)"
-                L += [f"\tADDL {v(bb)}, {v(a)}", f"\tADDL {mx}, {v(a)}", f"\tXORL {v(a)}, {v(d)}", f"\tRORL $16, {v(d)}",
+                mx, my = mop(sigma[2 * gi]), mop(sigma[2 * gi + 1])
+                L.append(f"\tADDL {v(bb)}, {v(a)}")
+                if mx is not None:
+                    L.append(f"\tADDL {mx}, {v(a)}")
+                L += [f"\tXORL {v(a)}, {v(d)}", f"\tRORL $16, {v(d)}",
                       f"\tADDL {v(d)}, {v(c)}", f"\tXORL {v(c)}, {v(bb)}", f"\tRORL $12, {v(bb)}",
-                      f"\tADDL {v(bb)}, {v(a)}", f"\tADDL {my}, {v(a)}", f"\tXORL {v(a)}, {v(d)}", f"\tRORL $8, {v(d)}",
+                      f"\tADDL {v(bb)}, {v(a)}"]
+                if my is not None:
+                    L.append(f"\tADDL {my}, {v(a)}")
+                L += [f"\tXORL {v(a)}, {v(d)}", f"\tRORL $8, {v(d)}",
                       f"\tADDL {v(d)}, {v(c)}", f"\tXORL {v(c)}, {v(bb)}", f"\tRORL $7, {v(bb)}"]
         L.append("")
         last = b == nb - 1
@@ -1177,13 +1346,12 @@ def gpr_kernel_arm64(n):
     blocks = layout(n)
     nb = len(blocks)
     frame = Frame()
-    key_only = key_only_words(blocks)
-    m_off = [None if w in key_only else frame.alloc(("M", w), 4) for w in range(16)]
+    m_off = [frame.alloc(("M", w), 4) if blocks[0]["words"][w][0] == "seed" else None for w in range(16)]
     d_off = {}
     t_off = {}
     for b, block in enumerate(blocks):
         for w, e in enumerate(block["words"]):
-            if e[0] == "seed":
+            if e[0] == "seed" and e[3] > 0:
                 d_off[e[1]] = (frame.alloc(("D", e[1]), 4), e[2], e[3])
             elif e[0] == "data":
                 t_off[(b, w)] = (frame.alloc(("T", b, w), 4), e[1], e[2])
@@ -1198,43 +1366,34 @@ def gpr_kernel_arm64(n):
           "\tMOVD data+24(FP), R3", "\tMOVD out+32(FP), R4", f"\tMOVD $frame-{frame.aligned}(SP), R7", ""]
     for k in sorted(d_off):
         off, d0, size = d_off[k]
-        if size == 0:
-            L.append(f"\tMOVW ZR, {off}(R7)")
-        else:
-            L += load_word_arm64("R3", d0, size, "R5") + [f"\tMOVW R5, {off}(R7)"]
+        L += load_word_arm64("R3", d0, size, "R5") + [f"\tMOVW R5, {off}(R7)"]
     for (b, w), (off, d0, size) in sorted(t_off.items()):
         L += load_word_arm64("R3", d0, size, "R5") + [f"\tMOVW R5, {off}(R7)"]
 
-    def load_words(b):
-        """Round-invariant message words of block b; the key words are
-        read through R0 by every G and have no slot."""
-        out = []
-        for w, e in enumerate(blocks[b]["words"]):
-            if e[0] == "data":
-                out += [f"\tMOVWU {t_off[(b, w)][0]}(R7), R5", f"\tMOVW R5, {m_off[w]}(R7)"]
-            elif e[0] == "zero":
-                out.append(f"\tMOVW ZR, {m_off[w]}(R7)")
-        return out
-
     def mload(b, w, dst):
         e = blocks[b]["words"][w]
+        if e[0] == "zero":
+            return None
         if e[0] == "key":
             return f"\tMOVWU {4 * e[1]}(R0), {dst}"
+        if b > 0:
+            return f"\tMOVWU {t_off[(b, w)][0]}(R7), {dst}"
         return f"\tMOVWU {m_off[w]}(R7), {dst}"
 
-    L += load_words(0)
     L += [f"\tMOVW $0, {R[i]}" for i in range(8)]
     L += ["", "loop:"]
     for w, e in seed_words(blocks[0]):
-        k = e[1]
-        L += [f"\tMOVWU {d_off[k][0]}(R7), R5", f"\tMOVWU {4 * k}(R1), R6", "\tEORW R6, R5, R5",
-              f"\tEORW {R[k]}, R5, R5", f"\tMOVW R5, {m_off[w]}(R7)"]
+        k, size = e[1], e[3]
+        if size == 0:
+            L += [f"\tMOVWU {4 * k}(R1), R5", f"\tEORW {R[k]}, R5, R5", f"\tMOVW R5, {m_off[w]}(R7)"]
+        else:
+            L += [f"\tMOVWU {d_off[k][0]}(R7), R5", f"\tMOVWU {4 * k}(R1), R6", "\tEORW R6, R5, R5",
+                  f"\tEORW {R[k]}, R5, R5", f"\tMOVW R5, {m_off[w]}(R7)"]
     L.append("\tADD $32, R1, R1")
     for b, block in enumerate(blocks):
         L.append("")
         if b > 0:
             L += [f"\tMOVW {R[i]}, {h_off[i]}(R7)" for i in range(8)]
-            L += load_words(b)
         L.append(f"\tMOVD $tab{b}<>(SB), R25")
         for k in range(0 if b == 0 else 8, 16):
             L.append(f"\tMOVWU {4 * k}(R25), {R[k]}")
@@ -1242,10 +1401,21 @@ def gpr_kernel_arm64(n):
         for sigma in ROUNDS:
             for gi, (a, bb, c, d) in enumerate(G_ORDER):
                 va, vb, vc, vd = R[a], R[bb], R[c], R[d]
-                L += [mload(b, sigma[2 * gi], "R5"), mload(b, sigma[2 * gi + 1], "R6"),
-                      f"\tADDW {vb}, {va}, {va}", f"\tADDW R5, {va}, {va}", f"\tEORW {va}, {vd}, {vd}", f"\tRORW $16, {vd}, {vd}",
+                lx = mload(b, sigma[2 * gi], "R5")
+                ly = mload(b, sigma[2 * gi + 1], "R6")
+                if lx is not None:
+                    L.append(lx)
+                if ly is not None:
+                    L.append(ly)
+                L.append(f"\tADDW {vb}, {va}, {va}")
+                if lx is not None:
+                    L.append(f"\tADDW R5, {va}, {va}")
+                L += [f"\tEORW {va}, {vd}, {vd}", f"\tRORW $16, {vd}, {vd}",
                       f"\tADDW {vd}, {vc}, {vc}", f"\tEORW {vc}, {vb}, {vb}", f"\tRORW $12, {vb}, {vb}",
-                      f"\tADDW {vb}, {va}, {va}", f"\tADDW R6, {va}, {va}", f"\tEORW {va}, {vd}, {vd}", f"\tRORW $8, {vd}, {vd}",
+                      f"\tADDW {vb}, {va}, {va}"]
+                if ly is not None:
+                    L.append(f"\tADDW R6, {va}, {va}")
+                L += [f"\tEORW {va}, {vd}, {vd}", f"\tRORW $8, {vd}, {vd}",
                       f"\tADDW {vd}, {vc}, {vc}", f"\tEORW {vc}, {vb}, {vb}", f"\tRORW $7, {vb}, {vb}"]
         L.append("")
         last = b == nb - 1

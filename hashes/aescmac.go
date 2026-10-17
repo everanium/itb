@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"unsafe"
 
+	"github.com/everanium/areion"
 	"github.com/everanium/itb"
 	"github.com/everanium/itb/hashes/internal/aescmacasm"
 	"github.com/everanium/itb/internal/forcetier"
@@ -175,15 +176,54 @@ func AESCMACPair(key ...[16]byte) (itb.HashFunc128, itb.BatchHashFunc128, [16]by
 // across processes (encrypt today, decrypt tomorrow).
 //
 // The single arm is identical to AESCMACWithKey(aesKey); the batched
-// arm evaluates the four lanes through it under their per-lane seeds
-// and is bit-exact with four single calls on every input.
+// arm evaluates equal-length 4-lane batches via areion.AES128Encrypt4Blocks
+// (falling back to four single calls on ragged lane lengths) and is
+// bit-exact with four single calls on every input.
 func AESCMACPairWithKey(aesKey [16]byte) (itb.HashFunc128, itb.BatchHashFunc128) {
 	single := AESCMACWithKey(aesKey)
+	var rk [11][16]byte
+	areion.ExpandKey128(&aesKey, &rk)
 	batched := func(data *[4][]byte, seeds [4][2]uint64) [4][2]uint64 {
 		var out [4][2]uint64
-		for lane := 0; lane < 4; lane++ {
-			out[lane][0], out[lane][1] = single(data[lane], seeds[lane][0], seeds[lane][1])
+		n := len(data[0])
+		if len(data[1]) != n || len(data[2]) != n || len(data[3]) != n {
+			for lane := 0; lane < 4; lane++ {
+				out[lane][0], out[lane][1] = single(data[lane], seeds[lane][0], seeds[lane][1])
+			}
+			return out
 		}
+		lenTag := uint64(n)
+		var states areion.Block4
+		firstBlockLen := n
+		if firstBlockLen > 16 {
+			firstBlockLen = 16
+		}
+		for lane := 0; lane < 4; lane++ {
+			off := lane * 16
+			binary.LittleEndian.PutUint64(states[off:], seeds[lane][0]^lenTag)
+			binary.LittleEndian.PutUint64(states[off+8:], seeds[lane][1]^lenTag)
+			absorbXOR(states[off:off+firstBlockLen], data[lane][:firstBlockLen])
+		}
+		areion.AES128Encrypt4Blocks(&rk, &states, &states)
+		for off := 16; off < n; off += 16 {
+			end := off + 16
+			if end > n {
+				end = n
+			}
+			chunkLen := end - off
+			for lane := 0; lane < 4; lane++ {
+				lOff := lane * 16
+				absorbXOR(states[lOff:lOff+chunkLen], data[lane][off:end])
+			}
+			areion.AES128Encrypt4Blocks(&rk, &states, &states)
+		}
+		for lane := 0; lane < 4; lane++ {
+			lOff := lane * 16
+			out[lane][0] = binary.LittleEndian.Uint64(states[lOff : lOff+8])
+			out[lane][1] = binary.LittleEndian.Uint64(states[lOff+8 : lOff+16])
+		}
+		clear(states[:])
+		runtime.KeepAlive(&states)
 		return out
 	}
 	return single, batched

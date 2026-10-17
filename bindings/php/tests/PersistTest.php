@@ -31,6 +31,39 @@ final class PersistTest extends TestCase
         $receiver->free();
     }
 
+    public function testCreateKeysDeterminismAndErrors(): void
+    {
+        $masters = [];
+        for ($i = 0; $i < 8; $i++) {
+            $masters[] = \str_repeat(\chr(0x11 * ($i + 1)), 32);
+        }
+        $p1 = Itb::createKeys(self::PROFILE, $masters);
+        $p2 = Itb::initKeys(self::PROFILE, $masters);
+        $this->assertSame($p1->save(), $p2->save());
+        $wire = $p1->encryptMessage('deterministic createKeys');
+        $this->assertSame('deterministic createKeys', $p2->decryptMessage($wire));
+        $p1->free();
+        $p2->free();
+
+        $dupMasters = $masters;
+        $dupMasters[1] = $dupMasters[0];
+        try {
+            Itb::createKeys(self::PROFILE, $dupMasters);
+            $this->fail('expected ItbException');
+        } catch (ItbException $e) {
+            $this->assertSame(Status::BAD_INPUT, $e->getStatus());
+        }
+
+        $shortMasters = $masters;
+        $shortMasters[0] = \str_repeat("\x11", 8);
+        try {
+            Itb::createKeys(self::PROFILE, $shortMasters);
+            $this->fail('expected ItbException');
+        } catch (ItbException $e) {
+            $this->assertSame(Status::BAD_INPUT, $e->getStatus());
+        }
+    }
+
     public function testSaveFLoadFRoundTrip(): void
     {
         $dir = \sys_get_temp_dir() . '/itb-php-persist-' . \bin2hex(\random_bytes(4));

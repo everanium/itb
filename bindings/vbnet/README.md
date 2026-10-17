@@ -19,7 +19,7 @@ own `Status` enum, `Byte()` signatures throughout, and chaining
 profile-name remains an opaque string passed through to Go for
 validation; no ITB construction logic lives on the .NET side.
 
-The public surface is one `Pipeline` type (Init / Load / Save / Rekey /
+The public surface is one `Pipeline` type (Init / InitKeys / Load / Save / Rekey /
 Close, Single Message encrypt / decrypt, one-shot and incremental
 stream sessions with `System.IO.Stream` pumps), an `Opts` builder,
 the C# layer's `Everanium.Itb3.Profile` record with the registry entries
@@ -102,6 +102,8 @@ Using sender As Pipeline = Pipeline.Init("singlemsg-triple-mac-v1", opts)
     End Using
 End Using
 ```
+
+`Pipeline.InitKeys` constructs a `Pipeline` deterministically from eight caller-supplied master keys (one per seed slot `0..7`) via per-slot KDF, so two peers holding the same eight master keys derive identical `Pipeline` instances without exchanging a session blob. The eight master keys must come from independent entropy or key-agreement sources — never derive all eight keys from a single secret or a single KDF parent key.
 
 `Pipeline.Rekey` rotates the parallax + wrapper masters mid-session
 (the eight ITB seeds and MAC key are fixed for the session lifetime

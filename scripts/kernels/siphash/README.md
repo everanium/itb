@@ -48,10 +48,11 @@ amortise is the lane gather and word packing (once per call, with the
 length tag folded into the tail word) and the `(lo, hi)` carry, which
 never leaves the registers. Rotates are `VPROLQ` on the EVEX tier,
 `VPSHUFD` / `VPSHUFB` / shift-or on the AVX2 tier (whose words are staged
-in the frame and read back as `VPXOR` memory operands), `ROLQ` / `ROR`
-in the GPR kernels, and `VSHL` + `VSRI` into an alternate register
-(`VREV64` for the rotate by 32) on NEON. The module docstring of the
-generator lists the register plan of every tier.
+in the frame, with words 0 and 1 held in `Y4` and `Y6` on the four-lane
+kernel and any further words read back as `VPXOR` memory operands),
+`ROLQ` / `ROR` in the GPR kernels, and `VSHL` + `VSRI` into an alternate
+register (`VREV64` for the rotate by 32) on NEON. The module docstring
+of the generator lists the register plan of every tier.
 
 ## Batch-16 Interlocked Barrier fill kernel — `gen_fused_kernels.py`
 

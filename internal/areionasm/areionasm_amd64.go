@@ -1,10 +1,10 @@
 //go:build amd64 && !purego && !noitbasm
 
-// Package areionasm holds the AVX-512 + VAES, AVX2 + VAES and legacy-SSE
-// AES-NI assembly implementation of the 4-way batched Areion family for
-// the parent `itb` package. It lives in an internal subpackage because
-// `itb` uses CGO (Go's build system does not allow Go assembly files
-// in CGO-using packages).
+// Package areionasm holds the AVX-512 + VAES, AVX2 + VAES, 3-operand VEX
+// XMM (AVX + AES-NI), and legacy-SSE AES-NI assembly implementation of
+// the 4-way batched Areion family for the parent `itb` package. It lives
+// in an internal subpackage because `itb` uses CGO (Go's build system
+// does not allow Go assembly files in CGO-using packages).
 //
 // The SoEM round function is SoEM22: F(m) = P1(m ⊕ k1) ⊕ P2(m ⊕ k2) ⊕
 // k1 ⊕ k2, with P1 the Areion permutation under the round constants of
@@ -16,17 +16,20 @@
 //   - Areion256Permutex4 / Areion512Permutex4 (P1) and Areion256Permute2x4
 //     / Areion512Permute2x4 (P2) — per-half AVX-512 + VAES permutations;
 //     the fast-known-good reference for parity tests.
-//   - the Avx2 and AesNi forms of the same four — AVX2 + VAES for hosts
-//     with VAES but no AVX-512 (some Alder Lake / Raptor Lake E-core
-//     configurations, certain Zen 3 SKUs); legacy-SSE AES-NI XMM for
-//     hosts without VAES.
+//   - the Avx2, Vex and AesNi forms of the same four — AVX2 + VAES for
+//     hosts with VAES but no AVX-512 (some Alder Lake / Raptor Lake E-core
+//     configurations, certain Zen 3 SKUs); 3-operand VEX XMM for hosts
+//     with AVX + AES-NI; legacy-SSE AES-NI XMM for hosts without AVX.
 //   - Areion256SoEMPermutex4Interleaved /
 //     Areion512SoEMPermutex4Interleaved — fused kernels that interleave
 //     the P1 and P2 permutations on independent ZMM dependency chains
 //     and fold the SoEM output XOR (and Areion512's final cyclic
-//     rotation) into the writeback; Areion256SoEMPermutex4AesNi /
-//     Areion512SoEMPermutex4AesNi — the XMM AES-NI fused kernels of the
-//     same contract. The whitening k1 ⊕ k2 is the caller's.
+//     rotation) into the writeback; Areion256SoEMPermutex4VaesAvx2 /
+//     Areion512SoEMPermutex4VaesAvx2 — the YMM VAES + AVX2 fused kernels;
+//     Areion256SoEMPermutex4Vex / Areion512SoEMPermutex4Vex — the VEX
+//     XMM fused kernels; Areion256SoEMPermutex4AesNi /
+//     Areion512SoEMPermutex4AesNi — the legacy-SSE XMM AES-NI fused
+//     kernels of the same contract. The whitening k1 ⊕ k2 is the caller's.
 //   - the fused ChainHash cascade kernels of areionasm_fused.go
 //     (areion_fusedchain{256,512}_*.s) — the whole component cascade
 //     per lane per call, reached through the hooks the hashes package
@@ -39,7 +42,7 @@
 package areionasm
 
 import (
-	"github.com/everanium/itb/third/goaes"
+	"github.com/everanium/areion"
 
 	"github.com/everanium/itb/internal/cpuid"
 )
@@ -97,33 +100,39 @@ func init() {
 // P2. The exported wrappers below bind the table.
 
 //go:noescape
-func areion256Permutex4RC(x0, x1 *aes.Block4, rc *[15 * 64]byte)
+func areion256Permutex4RC(x0, x1 *areion.Block4, rc *[15 * 64]byte)
 
 //go:noescape
-func areion512Permutex4RC(x0, x1, x2, x3 *aes.Block4, rc *[15 * 64]byte)
+func areion512Permutex4RC(x0, x1, x2, x3 *areion.Block4, rc *[15 * 64]byte)
 
 //go:noescape
-func areion256Permutex4Avx2RC(x0, x1 *aes.Block4, rc *[15 * 64]byte)
+func areion256Permutex4Avx2RC(x0, x1 *areion.Block4, rc *[15 * 64]byte)
 
 //go:noescape
-func areion512Permutex4Avx2RC(x0, x1, x2, x3 *aes.Block4, rc *[15 * 64]byte)
+func areion512Permutex4Avx2RC(x0, x1, x2, x3 *areion.Block4, rc *[15 * 64]byte)
 
 //go:noescape
-func areion256Permutex4AesNiRC(x0, x1 *aes.Block4, rc *[15 * 64]byte)
+func areion256Permutex4VexRC(x0, x1 *areion.Block4, rc *[15 * 64]byte)
 
 //go:noescape
-func areion512Permutex4AesNiRC(x0, x1, x2, x3 *aes.Block4, rc *[15 * 64]byte)
+func areion512Permutex4VexRC(x0, x1, x2, x3 *areion.Block4, rc *[15 * 64]byte)
+
+//go:noescape
+func areion256Permutex4AesNiRC(x0, x1 *areion.Block4, rc *[15 * 64]byte)
+
+//go:noescape
+func areion512Permutex4AesNiRC(x0, x1, x2, x3 *areion.Block4, rc *[15 * 64]byte)
 
 // Areion256Permutex4 applies the 10-round Areion256 permutation P1 to
 // four independent states packed in SoA layout: `*x0` holds the four
 // lanes' first 16-byte AES blocks (Block4 = 64 bytes), `*x1` holds the
 // second 16-byte blocks. Implemented in `areion_amd64.s` using AVX-512
 // + VAES instructions on ZMM registers.
-func Areion256Permutex4(x0, x1 *aes.Block4) { areion256Permutex4RC(x0, x1, &AreionRC4x) }
+func Areion256Permutex4(x0, x1 *areion.Block4) { areion256Permutex4RC(x0, x1, &AreionRC4x) }
 
 // Areion256Permute2x4 is Areion256Permutex4 under the second constant
 // table: the P2 permutation of SoEM22.
-func Areion256Permute2x4(x0, x1 *aes.Block4) { areion256Permutex4RC(x0, x1, &AreionRC4x2) }
+func Areion256Permute2x4(x0, x1 *areion.Block4) { areion256Permutex4RC(x0, x1, &AreionRC4x2) }
 
 // Areion512Permutex4 applies the 15-round Areion512 permutation P1 to
 // four independent states packed in SoA layout: each `*xN` holds the
@@ -131,13 +140,13 @@ func Areion256Permute2x4(x0, x1 *aes.Block4) { areion256Permutex4RC(x0, x1, &Are
 // final cyclic state rotation `(x0,x1,x2,x3) → (x3,x0,x1,x2)`
 // documented in the Areion paper / `areion512PermuteSoftwareRC`.
 // Implemented in `areion_amd64.s`.
-func Areion512Permutex4(x0, x1, x2, x3 *aes.Block4) {
+func Areion512Permutex4(x0, x1, x2, x3 *areion.Block4) {
 	areion512Permutex4RC(x0, x1, x2, x3, &AreionRC4x)
 }
 
 // Areion512Permute2x4 is Areion512Permutex4 under the second constant
 // table: the P2 permutation of SoEM22.
-func Areion512Permute2x4(x0, x1, x2, x3 *aes.Block4) {
+func Areion512Permute2x4(x0, x1, x2, x3 *areion.Block4) {
 	areion512Permutex4RC(x0, x1, x2, x3, &AreionRC4x2)
 }
 
@@ -149,11 +158,11 @@ func Areion512Permute2x4(x0, x1, x2, x3 *aes.Block4) {
 // internal VAESENC instructions operate on YMM registers (2 AES blocks
 // per call) instead of ZMM (4 blocks per call), so each Areion round
 // body runs twice — once for lanes 0-1 and once for lanes 2-3.
-func Areion256Permutex4Avx2(x0, x1 *aes.Block4) { areion256Permutex4Avx2RC(x0, x1, &AreionRC4x) }
+func Areion256Permutex4Avx2(x0, x1 *areion.Block4) { areion256Permutex4Avx2RC(x0, x1, &AreionRC4x) }
 
 // Areion256Permute2x4Avx2 is Areion256Permutex4Avx2 under the second
 // constant table (P2).
-func Areion256Permute2x4Avx2(x0, x1 *aes.Block4) { areion256Permutex4Avx2RC(x0, x1, &AreionRC4x2) }
+func Areion256Permute2x4Avx2(x0, x1 *areion.Block4) { areion256Permutex4Avx2RC(x0, x1, &AreionRC4x2) }
 
 // Areion512Permutex4Avx2 is the AVX2 + VAES counterpart for the 512-bit
 // permutation. Same constraints as Areion256Permutex4Avx2 — VAES on
@@ -161,14 +170,34 @@ func Areion256Permute2x4Avx2(x0, x1 *aes.Block4) { areion256Permutex4Avx2RC(x0, 
 // of the 15 rounds runs twice (one body per lane pair), plus the final
 // cyclic state rotation. Bit-exact parity invariant identical to the
 // AVX-512 path.
-func Areion512Permutex4Avx2(x0, x1, x2, x3 *aes.Block4) {
+func Areion512Permutex4Avx2(x0, x1, x2, x3 *areion.Block4) {
 	areion512Permutex4Avx2RC(x0, x1, x2, x3, &AreionRC4x)
 }
 
 // Areion512Permute2x4Avx2 is Areion512Permutex4Avx2 under the second
 // constant table (P2).
-func Areion512Permute2x4Avx2(x0, x1, x2, x3 *aes.Block4) {
+func Areion512Permute2x4Avx2(x0, x1, x2, x3 *areion.Block4) {
 	areion512Permutex4Avx2RC(x0, x1, x2, x3, &AreionRC4x2)
+}
+
+// Areion256Permutex4Vex is the 3-operand VEX XMM (AVX + AES-NI) variant
+// of Areion256Permutex4 for hosts with AVX and AES-NI but without VAES.
+func Areion256Permutex4Vex(x0, x1 *areion.Block4) { areion256Permutex4VexRC(x0, x1, &AreionRC4x) }
+
+// Areion256Permute2x4Vex is Areion256Permutex4Vex under the second
+// constant table (P2).
+func Areion256Permute2x4Vex(x0, x1 *areion.Block4) { areion256Permutex4VexRC(x0, x1, &AreionRC4x2) }
+
+// Areion512Permutex4Vex is the 3-operand VEX XMM (AVX + AES-NI)
+// counterpart for the 512-bit permutation.
+func Areion512Permutex4Vex(x0, x1, x2, x3 *areion.Block4) {
+	areion512Permutex4VexRC(x0, x1, x2, x3, &AreionRC4x)
+}
+
+// Areion512Permute2x4Vex is Areion512Permutex4Vex under the second
+// constant table (P2).
+func Areion512Permute2x4Vex(x0, x1, x2, x3 *areion.Block4) {
+	areion512Permutex4VexRC(x0, x1, x2, x3, &AreionRC4x2)
 }
 
 // Areion256Permutex4AesNi is the legacy-SSE AES-NI XMM variant of
@@ -177,48 +206,51 @@ func Areion512Permute2x4Avx2(x0, x1, x2, x3 *aes.Block4) {
 // scripts/kernels/areion/gen_fused_kernels.py into
 // areion_soem_aesni_amd64.s from the same round body as the AES-NI
 // cascade kernels.
-func Areion256Permutex4AesNi(x0, x1 *aes.Block4) { areion256Permutex4AesNiRC(x0, x1, &AreionRC4x) }
+func Areion256Permutex4AesNi(x0, x1 *areion.Block4) { areion256Permutex4AesNiRC(x0, x1, &AreionRC4x) }
 
 // Areion256Permute2x4AesNi is Areion256Permutex4AesNi under the second
 // constant table (P2).
-func Areion256Permute2x4AesNi(x0, x1 *aes.Block4) { areion256Permutex4AesNiRC(x0, x1, &AreionRC4x2) }
+func Areion256Permute2x4AesNi(x0, x1 *areion.Block4) { areion256Permutex4AesNiRC(x0, x1, &AreionRC4x2) }
 
 // Areion512Permutex4AesNi is the legacy-SSE AES-NI XMM counterpart for
 // the 512-bit permutation: two lanes per pass, two passes, final cyclic
 // rotation included.
-func Areion512Permutex4AesNi(x0, x1, x2, x3 *aes.Block4) {
+func Areion512Permutex4AesNi(x0, x1, x2, x3 *areion.Block4) {
 	areion512Permutex4AesNiRC(x0, x1, x2, x3, &AreionRC4x)
 }
 
 // Areion512Permute2x4AesNi is Areion512Permutex4AesNi under the second
 // constant table (P2).
-func Areion512Permute2x4AesNi(x0, x1, x2, x3 *aes.Block4) {
+func Areion512Permute2x4AesNi(x0, x1, x2, x3 *areion.Block4) {
 	areion512Permutex4AesNiRC(x0, x1, x2, x3, &AreionRC4x2)
 }
 
 // HasVAESAVX512 caches whether the runtime CPU supports VAES + AVX-512.
-// Resolved once at init time from the upstream `aes` package's
-// CPUID-driven detection. Both flags must be set for the AVX-512 path
-// to be selected.
 var HasVAESAVX512 = cpuid.VAESZMM
 
 // HasVAESAVX2NoAVX512 is true for x86-64 CPUs that have VAES + AVX2 but
-// lack AVX-512. The runtime dispatcher in the parent itb package picks
-// this path when HasVAESAVX512 is false but VAES is still available, so
-// the YMM assembly variants run instead of falling all the way back to
-// the portable Go path.
+// lack AVX-512.
 var HasVAESAVX2NoAVX512 = cpuid.VAESYMM && !cpuid.AVX512F
 
-// HasAESNIBatched is true for x86-64 CPUs with AES-NI but no VAES
-// (Skylake / Cascade Lake, Zen 1 / Zen 2, and every older AES-NI
-// host). The dispatcher then runs the batched SoEM through the XMM
-// AES-NI fused kernels instead of the portable Go permutation. At most
-// one of HasVAESAVX512 / HasVAESAVX2NoAVX512 / HasAESNIBatched is true.
-var HasAESNIBatched = cpuid.AESNI && !cpuid.VAESYMM && !cpuid.VAESZMM
+// HasAVXAESNIBatched is true for x86-64 CPUs with AVX2 + AES-NI but no
+// VAES (Skylake / Cascade Lake, Zen 1 / Zen 2), selecting the 3-operand
+// VEX XMM fused kernels.
+var HasAVXAESNIBatched = cpuid.AESNI && cpuid.AVX2 && !cpuid.VAESYMM && !cpuid.VAESZMM
 
-// HasARMAESBatched is always false on amd64 builds — this is the ARM
-// Crypto Extension batched flag set by areionasm_arm64.go on arm64
-// hosts. Declared here so the parent itb package's gates compile
-// uniformly across architectures without per-arch build tag fences
-// inside the gate expression.
+// HasAESNIBatched is true for x86-64 CPUs with legacy-SSE AES-NI only
+// (without AVX2 or VAES). At most one of HasVAESAVX512 /
+// HasVAESAVX2NoAVX512 / HasAVXAESNIBatched / HasAESNIBatched is true.
+var HasAESNIBatched = cpuid.AESNI && !cpuid.AVX2 && !cpuid.VAESYMM && !cpuid.VAESZMM
+
+// HasARMAESBatched is always false on amd64 builds.
 var HasARMAESBatched = false
+
+// Areion256SoEMPermutex4NEON is unavailable on amd64 builds.
+func Areion256SoEMPermutex4NEON(s1b0, s1b1, s2b0, s2b1 *areion.Block4) {
+	panic("areionasm: Areion256SoEMPermutex4NEON unavailable on amd64 build")
+}
+
+// Areion512SoEMPermutex4NEON is unavailable on amd64 builds.
+func Areion512SoEMPermutex4NEON(a1, b1, c1, d1, a2, b2, c2, d2 *areion.Block4) {
+	panic("areionasm: Areion512SoEMPermutex4NEON unavailable on amd64 build")
+}

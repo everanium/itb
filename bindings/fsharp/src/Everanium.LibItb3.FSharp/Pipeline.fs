@@ -43,6 +43,15 @@ module Pipeline =
     let init (profile: string) (opts: Opts) : Result<Pipeline, ItbError> =
         ItbError.attempt (fun () -> Everanium.Itb3.Pipeline.Init(profile, Opts.toNative opts))
 
+    /// Deterministically constructs a Pipeline from eight caller-supplied
+    /// master keys (one per canonical seed slot 0..7) against the named
+    /// profile and options. The eight master keys must come from
+    /// independent entropy or key-agreement sources; never derive all
+    /// eight keys from a single secret or a single KDF parent key.
+    let initKeys (profile: string) (opts: Opts) (masters: byte array array) : Result<Pipeline, ItbError> =
+        ItbError.attempt (fun () -> Everanium.Itb3.Pipeline.InitKeys(profile, Opts.toNative opts, masters))
+
+
     /// Reconstructs a Pipeline from a blob produced by <c>save</c> or
     /// <c>rekey</c>, using the blob-embedded masters. The blob's
     /// embedded profile record is the sole structural source. See

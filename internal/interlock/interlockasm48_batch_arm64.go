@@ -27,7 +27,7 @@ func pext16(x, mask uint64) uint16 {
 	var r uint64
 	for i := uint(0); i < 16; i++ {
 		b := uint(bits.TrailingZeros64(mask))
-		r |= ((x >> b) & 1) << i
+		r |= ((x >> (b & 63)) & 1) << i
 		mask &= mask - 1
 	}
 	return uint16(r)
@@ -40,7 +40,7 @@ func pdep16(v uint16, mask uint64) uint64 {
 	x := uint64(v)
 	for i := uint(0); i < 16; i++ {
 		b := uint(bits.TrailingZeros64(mask))
-		r |= ((x >> i) & 1) << b
+		r |= ((x >> i) & 1) << (b & 63)
 		mask &= mask - 1
 	}
 	return r
@@ -60,9 +60,9 @@ func chunk48LockBatchGo(src []byte, masks [][3]uint64, p0, p1, p2 []byte) {
 		x := uint64(s[0]) | uint64(s[1])<<8 | uint64(s[2])<<16 |
 			uint64(s[3])<<24 | uint64(s[4])<<32 | uint64(s[5])<<40
 		m := &masks[j]
-		binary.LittleEndian.PutUint16(p0[2*j:], pext16(x, m[0]))
-		binary.LittleEndian.PutUint16(p1[2*j:], pext16(x, m[1]))
-		binary.LittleEndian.PutUint16(p2[2*j:], pext16(x, m[2]))
+		binary.LittleEndian.PutUint16(p0[2*j:2*j+2:2*j+2], pext16(x, m[0]))
+		binary.LittleEndian.PutUint16(p1[2*j:2*j+2:2*j+2], pext16(x, m[1]))
+		binary.LittleEndian.PutUint16(p2[2*j:2*j+2:2*j+2], pext16(x, m[2]))
 	}
 }
 
@@ -77,9 +77,9 @@ func unchunk48LockBatchGo(p0, p1, p2 []byte, masks [][3]uint64, dst []byte) {
 	p0, p1, p2 = p0[:2*n], p1[:2*n], p2[:2*n]
 	for j := 0; j < n; j++ {
 		m := &masks[j]
-		x := pdep16(binary.LittleEndian.Uint16(p0[2*j:]), m[0]) |
-			pdep16(binary.LittleEndian.Uint16(p1[2*j:]), m[1]) |
-			pdep16(binary.LittleEndian.Uint16(p2[2*j:]), m[2])
+		x := pdep16(binary.LittleEndian.Uint16(p0[2*j:2*j+2:2*j+2]), m[0]) |
+			pdep16(binary.LittleEndian.Uint16(p1[2*j:2*j+2:2*j+2]), m[1]) |
+			pdep16(binary.LittleEndian.Uint16(p2[2*j:2*j+2:2*j+2]), m[2])
 		d := dst[6*j : 6*j+6 : 6*j+6]
 		d[0] = byte(x)
 		d[1] = byte(x >> 8)

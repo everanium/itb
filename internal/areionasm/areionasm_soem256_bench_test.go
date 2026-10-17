@@ -5,7 +5,7 @@ package areionasm
 import (
 	"testing"
 
-	"github.com/everanium/itb/third/goaes"
+	"github.com/everanium/areion"
 )
 
 // BenchmarkAreion256SoEM_TwoCallsPlusXor measures the baseline cost
@@ -15,7 +15,7 @@ func BenchmarkAreion256SoEM_TwoCallsPlusXor(b *testing.B) {
 	if !HasVAESAVX512 {
 		b.Skip("requires VAES + AVX-512")
 	}
-	var s1b0, s1b1, s2b0, s2b1 aes.Block4
+	var s1b0, s1b1, s2b0, s2b1 areion.Block4
 	for i := 0; i < 64; i++ {
 		s1b0[i] = byte(i)
 		s1b1[i] = byte(i + 64)
@@ -42,7 +42,7 @@ func BenchmarkAreion256SoEM_FusedKernel(b *testing.B) {
 	if !HasVAESAVX512 {
 		b.Skip("requires VAES + AVX-512")
 	}
-	var s1b0, s1b1, s2b0, s2b1 aes.Block4
+	var s1b0, s1b1, s2b0, s2b1 areion.Block4
 	for i := 0; i < 64; i++ {
 		s1b0[i] = byte(i)
 		s1b1[i] = byte(i + 64)

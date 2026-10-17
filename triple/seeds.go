@@ -1,10 +1,13 @@
 package triple
 
 import (
+	"encoding/binary"
 	"fmt"
+	"slices"
 
 	"github.com/everanium/itb"
 	"github.com/everanium/itb/hashes"
+	"github.com/everanium/itb/kdf"
 )
 
 // allocEightSeeds builds the 8-seed Interlocked Barrier Triple bundle
@@ -150,6 +153,225 @@ func allocOneSeed(primitive string, keyBits, width int) (seed any, prfKey []byte
 		return s, key, nil
 	}
 	return nil, nil, fmt.Errorf("triple: unsupported primitive width %d", width)
+}
+
+// kdfPrimitiveForSlot maps a slot's hash primitive name to the
+// corresponding [kdf.Derive] construction name. aesitb128 (ClassNPRF)
+// maps to aescmac (RFC 4493 10-round AES-128 PRF in SP 800-108 Counter
+// Mode); custom runtime-registered primitives map to the canonical
+// KDF construction of matching width.
+func kdfPrimitiveForSlot(slotPrim string, width int) string {
+	switch slotPrim {
+	case hashes.CipherAreion256,
+		hashes.CipherAreion512,
+		hashes.CipherBLAKE2b256,
+		hashes.CipherBLAKE2b512,
+		hashes.CipherBLAKE2s,
+		hashes.CipherBLAKE3,
+		hashes.CipherAES128CTR,
+		hashes.CipherSipHash24,
+		hashes.CipherChaCha20:
+		return slotPrim
+	case hashes.CipherAESITB128:
+		return hashes.CipherAES128CTR
+	default:
+		switch width {
+		case 128:
+			return hashes.CipherAES128CTR
+		case 256:
+			return hashes.CipherBLAKE2b256
+		case 512:
+			return hashes.CipherBLAKE2b512
+		default:
+			return slotPrim
+		}
+	}
+}
+
+// kdfKeyMinLen returns the minimum master-key length in bytes required
+// (and consumed) by [kdf.Derive] for kdfPrim.
+func kdfKeyMinLen(kdfPrim string) int {
+	switch kdfPrim {
+	case hashes.CipherAES128CTR, hashes.CipherSipHash24:
+		return 16
+	default:
+		return 32
+	}
+}
+
+// resolveSlotPrimitives resolves the per-slot primitive names, their
+// corresponding [kdf.Derive] construction names, and the common native
+// width for a resolved [Profile].
+func resolveSlotPrimitives(resolved Profile) (slotPrims, kdfPrims [8]string, width int, err error) {
+	if isMixedProfile(resolved) {
+		width = resolved.Width
+		if width != 128 && width != 256 && width != 512 {
+			return slotPrims, kdfPrims, 0, fmt.Errorf("triple: unsupported primitive width %d", width)
+		}
+		if resolved.KeyBits <= 0 || resolved.KeyBits%width != 0 {
+			return slotPrims, kdfPrims, 0, fmt.Errorf("triple: key_bits=%d not divisible by width=%d",
+				resolved.KeyBits, width)
+		}
+		for i := 0; i < 8; i++ {
+			name := resolved.MixedHashes[i]
+			if name == "" {
+				return slotPrims, kdfPrims, 0, fmt.Errorf("triple: mixedHashes[%d] is empty", i)
+			}
+			spec, ok := hashes.Find(name)
+			if !ok {
+				return slotPrims, kdfPrims, 0, fmt.Errorf("triple: mixedHashes[%d] = %q not in hashes.Registry", i, name)
+			}
+			if int(spec.Width) != width {
+				return slotPrims, kdfPrims, 0, fmt.Errorf("triple: mixedHashes[%d] = %q width %d, profile width %d",
+					i, name, int(spec.Width), width)
+			}
+			slotPrims[i] = name
+			kdfPrims[i] = kdfPrimitiveForSlot(name, width)
+		}
+		return slotPrims, kdfPrims, width, nil
+	}
+
+	spec, ok := hashes.Find(resolved.InnerHash)
+	if !ok {
+		return slotPrims, kdfPrims, 0, fmt.Errorf("triple: unknown inner hash primitive %q", resolved.InnerHash)
+	}
+	width = int(spec.Width)
+	if resolved.KeyBits <= 0 || resolved.KeyBits%width != 0 {
+		return slotPrims, kdfPrims, 0, fmt.Errorf("triple: key_bits=%d not divisible by primitive %q width=%d",
+			resolved.KeyBits, resolved.InnerHash, width)
+	}
+	kp := kdfPrimitiveForSlot(resolved.InnerHash, width)
+	for i := 0; i < 8; i++ {
+		slotPrims[i] = resolved.InnerHash
+		kdfPrims[i] = kp
+	}
+	return slotPrims, kdfPrims, width, nil
+}
+
+// deriveEightSeeds deterministically derives the 8-seed Interlocked
+// Barrier Triple constellation and per-slot fixed PRF keys from
+// masters[0..7] using the per-slot KDF constructions kdfPrims[0..7].
+func deriveEightSeeds(slotPrims, kdfPrims [8]string, keyBits, width int, masters [8][]byte) ([8]any, [8][]byte, error) {
+	var seeds [8]any
+	var prfKeys [8][]byte
+
+	for i := 0; i < 8; i++ {
+		seed, key, err := deriveOneSeed(i, slotPrims[i], kdfPrims[i], keyBits, width, masters[i])
+		if err != nil {
+			for j := 0; j < i; j++ {
+				zeroSeedComponents(seeds[j], width)
+				clear(prfKeys[j])
+			}
+			return [8]any{}, [8][]byte{}, err
+		}
+		seeds[i] = seed
+		prfKeys[i] = key
+	}
+	if err := checkEightSeeds(seeds, width); err != nil {
+		for j := 0; j < 8; j++ {
+			zeroSeedComponents(seeds[j], width)
+			clear(prfKeys[j])
+		}
+		return [8]any{}, [8][]byte{}, err
+	}
+	return seeds, prfKeys, nil
+}
+
+// deriveOneSeed derives one typed seed and its fixed PRF key for slot
+// slotIdx from master via [kdf.Derive] and wires all SIMD / fused
+// ChainHash / interlock-batch hooks via
+// [hashes.SeedFromComponents128] / [hashes.SeedFromComponents256] /
+// [hashes.SeedFromComponents512].
+func deriveOneSeed(slotIdx int, slotPrim, kdfPrim string, keyBits, width int, master []byte) (seed any, prfKey []byte, err error) {
+	if slotPrim != hashes.CipherSipHash24 {
+		prfKey, err = kdf.Derive(kdfPrim, master, fmt.Sprintf("prfkey:%d", slotIdx), width/8)
+		if err != nil {
+			return nil, nil, fmt.Errorf("triple: InitKeys: slot %d prfkey kdf: %w", slotIdx, err)
+		}
+	}
+	compBytes, err := kdf.Derive(kdfPrim, master, fmt.Sprintf("comps:%d", slotIdx), keyBits/8)
+	if err != nil {
+		clear(prfKey)
+		return nil, nil, fmt.Errorf("triple: InitKeys: slot %d comps kdf: %w", slotIdx, err)
+	}
+	numWords := keyBits / 64
+	comps := make([]uint64, numWords)
+	for w := 0; w < numWords; w++ {
+		comps[w] = binary.LittleEndian.Uint64(compBytes[w*8:])
+	}
+	clear(compBytes)
+	defer clear(comps)
+
+	switch width {
+	case 128:
+		s, serr := hashes.SeedFromComponents128(slotPrim, prfKey, comps...)
+		if serr != nil && prfKey != nil {
+			// Keyless custom 128-bit primitives reject a fixed-key
+			// argument; retry with nil key, matching importInnerBlob128.
+			s, serr = hashes.SeedFromComponents128(slotPrim, nil, comps...)
+			if serr == nil {
+				clear(prfKey)
+				prfKey = nil
+			}
+		}
+		if serr != nil {
+			clear(prfKey)
+			return nil, nil, fmt.Errorf("triple: hashes.SeedFromComponents128(%q): %w", slotPrim, serr)
+		}
+		return s, prfKey, nil
+	case 256:
+		s, serr := hashes.SeedFromComponents256(slotPrim, prfKey, comps...)
+		if serr != nil && prfKey != nil {
+			s, serr = hashes.SeedFromComponents256(slotPrim, nil, comps...)
+			if serr == nil {
+				clear(prfKey)
+				prfKey = nil
+			}
+		}
+		if serr != nil {
+			clear(prfKey)
+			return nil, nil, fmt.Errorf("triple: hashes.SeedFromComponents256(%q): %w", slotPrim, serr)
+		}
+		return s, prfKey, nil
+	case 512:
+		s, serr := hashes.SeedFromComponents512(slotPrim, prfKey, comps...)
+		if serr != nil && prfKey != nil {
+			s, serr = hashes.SeedFromComponents512(slotPrim, nil, comps...)
+			if serr == nil {
+				clear(prfKey)
+				prfKey = nil
+			}
+		}
+		if serr != nil {
+			clear(prfKey)
+			return nil, nil, fmt.Errorf("triple: hashes.SeedFromComponents512(%q): %w", slotPrim, serr)
+		}
+		return s, prfKey, nil
+	}
+	clear(prfKey)
+	return nil, nil, fmt.Errorf("triple: unsupported primitive width %d", width)
+}
+
+// checkEightSeeds verifies pairwise component distinctness across all
+// 8 derived seeds at InitKeys time.
+func checkEightSeeds(seeds [8]any, width int) error {
+	for i := 0; i < 8; i++ {
+		for j := i + 1; j < 8; j++ {
+			var eq bool
+			switch width {
+			case 128:
+				eq = slices.Equal(seeds[i].(*itb.Seed128).Components, seeds[j].(*itb.Seed128).Components)
+			case 256:
+				eq = slices.Equal(seeds[i].(*itb.Seed256).Components, seeds[j].(*itb.Seed256).Components)
+			case 512:
+				eq = slices.Equal(seeds[i].(*itb.Seed512).Components, seeds[j].(*itb.Seed512).Components)
+			}
+			if eq {
+				return fmt.Errorf("triple: InitKeys: derived seeds[%d] and seeds[%d] have identical components", i, j)
+			}
+		}
+	}
+	return nil
 }
 
 // zeroSeedComponents clears the Components slice of a typed seed

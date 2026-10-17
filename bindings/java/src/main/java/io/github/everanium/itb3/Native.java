@@ -63,6 +63,11 @@ final class Native {
     static native int tripleInit(ByteBuffer profile, ByteBuffer opts,
             ByteBuffer blobOut, long blobCap, long[] blobLen, long[] outHandle);
 
+    static native int tripleInitKeys(ByteBuffer profile, ByteBuffer opts,
+            ByteBuffer mastersFlat, long mastersFlatLen,
+            ByteBuffer masterLens, long mastersCount,
+            ByteBuffer blobOut, long blobCap, long[] blobLen, long[] outHandle);
+
     static native int tripleLoad(ByteBuffer blob, long blobLen,
             ByteBuffer permMaster, long permLen,
             ByteBuffer wrapMaster, long wrapLen, long mastersCount, long[] outHandle);

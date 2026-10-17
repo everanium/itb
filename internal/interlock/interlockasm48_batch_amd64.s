@@ -60,6 +60,9 @@ lockLoop:
 	JNZ     lockLoop
 
 lockDone:
+	XORQ AX, AX
+	XORQ BX, BX
+	XORQ R11, R11
 	RET
 
 // func unchunk48LockBatch(n int, masks *[3]uint64, p0, p1, p2 *byte, dst *byte)
@@ -108,4 +111,7 @@ unlockLoop:
 	JNZ     unlockLoop
 
 unlockDone:
+	XORQ AX, AX
+	XORQ R11, R11
+	XORQ R12, R12
 	RET

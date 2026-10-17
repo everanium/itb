@@ -66,8 +66,8 @@ func init() {
 // Combinatorial constants used by the reduction and unrank steps. All
 // three are constants of the construction, computed above at init.
 const (
-	interlockA48 uint64 = 2254848913647 // C(48, 16)
-	interlockB48 uint64 = 601080390     // C(32, 16)
+	interlockA48 = 2254848913647 // C(48, 16)
+	interlockB48 = 601080390     // C(32, 16)
 )
 
 // unrankCombination48 converts a rank in [0, C(n, k)) into a 64-bit mask
@@ -485,6 +485,14 @@ func fillLockMasksTriple48(prf *[8]uint64, count int, masks *[lockBatchFactor48M
 			masks[j][1] = out[1][j]
 			masks[j][2] = out[2][j]
 		}
+		clear(idx0[:])
+		clear(idx1[:])
+		clear(out[0][:])
+		clear(out[1][:])
+		clear(out[2][:])
+		runtime.KeepAlive(&idx0)
+		runtime.KeepAlive(&idx1)
+		runtime.KeepAlive(&out)
 		return
 	}
 	if interlock.HasAVX2RankMask {
@@ -501,6 +509,14 @@ func fillLockMasksTriple48(prf *[8]uint64, count int, masks *[lockBatchFactor48M
 			masks[j][1] = out[1][j]
 			masks[j][2] = out[2][j]
 		}
+		clear(idx0[:])
+		clear(idx1[:])
+		clear(out[0][:])
+		clear(out[1][:])
+		clear(out[2][:])
+		runtime.KeepAlive(&idx0)
+		runtime.KeepAlive(&idx1)
+		runtime.KeepAlive(&out)
 		return
 	}
 	if interlock.HasNEONInterlock {
@@ -517,6 +533,14 @@ func fillLockMasksTriple48(prf *[8]uint64, count int, masks *[lockBatchFactor48M
 			masks[j][1] = out[1][j]
 			masks[j][2] = out[2][j]
 		}
+		clear(idx0[:])
+		clear(idx1[:])
+		clear(out[0][:])
+		clear(out[1][:])
+		clear(out[2][:])
+		runtime.KeepAlive(&idx0)
+		runtime.KeepAlive(&idx1)
+		runtime.KeepAlive(&out)
 		return
 	}
 	for j := 0; j < count; j++ {
@@ -557,6 +581,14 @@ func fillLockMasksTriple48Super(prf *[2 * superChunks48]uint64, count int, masks
 			masks[j][1] = out[1][j]
 			masks[j][2] = out[2][j]
 		}
+		clear(idx0[:])
+		clear(idx1[:])
+		clear(out[0][:])
+		clear(out[1][:])
+		clear(out[2][:])
+		runtime.KeepAlive(&idx0)
+		runtime.KeepAlive(&idx1)
+		runtime.KeepAlive(&out)
 		return
 	}
 	if interlock.HasAVX2RankMask {
@@ -573,6 +605,14 @@ func fillLockMasksTriple48Super(prf *[2 * superChunks48]uint64, count int, masks
 			masks[j][1] = out[1][j]
 			masks[j][2] = out[2][j]
 		}
+		clear(idx0[:])
+		clear(idx1[:])
+		clear(out[0][:])
+		clear(out[1][:])
+		clear(out[2][:])
+		runtime.KeepAlive(&idx0)
+		runtime.KeepAlive(&idx1)
+		runtime.KeepAlive(&out)
 		return
 	}
 	if interlock.HasNEONInterlock {
@@ -589,6 +629,14 @@ func fillLockMasksTriple48Super(prf *[2 * superChunks48]uint64, count int, masks
 			masks[j][1] = out[1][j]
 			masks[j][2] = out[2][j]
 		}
+		clear(idx0[:])
+		clear(idx1[:])
+		clear(out[0][:])
+		clear(out[1][:])
+		clear(out[2][:])
+		runtime.KeepAlive(&idx0)
+		runtime.KeepAlive(&idx1)
+		runtime.KeepAlive(&out)
 		return
 	}
 	for j := 0; j < count; j++ {
@@ -622,6 +670,14 @@ func fillLockMasksTriple48Super16(prf *[32]uint64, masks *[16][3]uint64) {
 			masks[j][1] = out[1][j]
 			masks[j][2] = out[2][j]
 		}
+		clear(idx0[:])
+		clear(idx1[:])
+		clear(out[0][:])
+		clear(out[1][:])
+		clear(out[2][:])
+		runtime.KeepAlive(&idx0)
+		runtime.KeepAlive(&idx1)
+		runtime.KeepAlive(&out)
 		return
 	}
 	fillLockMasksTriple48Super((*[2 * superChunks48]uint64)(prf[0:2*superChunks48]), superChunks48, (*[superChunks48][3]uint64)(masks[0:superChunks48]))
@@ -1112,6 +1168,7 @@ func wipeInterlockWorker48(ws *interlockWorkerScratch48, masks *[superChunks48][
 	*ws = interlockWorkerScratch48{}
 	clear(masks[:])
 	clear(masks16[:])
+	runtime.KeepAlive(ws)
 	runtime.KeepAlive(masks)
 	runtime.KeepAlive(masks16)
 }

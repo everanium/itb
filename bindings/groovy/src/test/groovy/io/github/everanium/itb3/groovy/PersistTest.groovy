@@ -209,4 +209,33 @@ class PersistTest {
         }
         assertEquals('csprng', Pipeline.profileOf(drbg: 'csprng').drbg())
     }
+
+    @Test
+    void initKeysDeterminismAndValidation() {
+        List<byte[]> masters = (0..<8).collect { int i ->
+            byte[] k = new byte[32]
+            Arrays.fill(k, (byte) (0x11 * (i + 1)))
+            k
+        }
+        Pipeline.withPipelineKeys('singlemsg-triple-mac-v1', masters) { Pipeline p1 ->
+            Pipeline.withPipelineKeys('singlemsg-triple-mac-v1', masters) { Pipeline p2 ->
+                assertArrayEquals(p1.save(), p2.save())
+                assertArrayEquals(PLAIN, p2.decryptMessage(p1.encryptMessage(PLAIN)))
+            }
+        }
+
+        List<byte[]> dup = masters.collect { byte[] k -> Arrays.copyOf(k, k.length) }
+        dup[1] = Arrays.copyOf(dup[0], dup[0].length)
+        def eDup = assertThrows(ItbException) {
+            Pipeline.initKeys('singlemsg-triple-mac-v1', dup)
+        }
+        assertEquals(Status.BAD_INPUT, eDup.status)
+
+        List<byte[]> shortKeys = masters.collect { byte[] k -> Arrays.copyOf(k, k.length) }
+        shortKeys[0] = new byte[8]
+        def eShort = assertThrows(ItbException) {
+            Pipeline.initKeys('singlemsg-triple-mac-v1', shortKeys)
+        }
+        assertEquals(Status.BAD_INPUT, eShort.status)
+    }
 }

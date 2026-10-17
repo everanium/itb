@@ -70,13 +70,18 @@ round's output, which sits in the state registers 0..3 and 12..15 the
 last block left behind.
 
 Register plans:
-    avx512 x4   X0..X15 the block state v[0..15], X16..X23 the key words
-                of the cascade round; the constants are embedded-broadcast
-                memory operands, the key-word rebuild is a VPBROADCASTD
-                and one VPTERNLOGD per word against the output words in
-                place — 24 of 32, no scratch register
-    avx512 x8   the same plan on YMM registers (eight lanes), 24 of 32;
-                every frame fits the NOSPLIT budget
+    avx512 x4   X0..X15 the block state v[0..15], X16..X19 sigma[0..3]
+                pre-broadcast once per call, X20..X31 up to twelve staged
+                slot words (every slot word at shapes 13 / 20 / 36, the
+                first three blocks at shape 68); the key words are rebuilt
+                at the top of every cascade round straight into X4..X11 —
+                the b and c rows, dead between rounds — by a VPBROADCASTD
+                and one VPTERNLOGD.BCST per word against the output words
+                — up to 32 of 32, no scratch register
+    avx512 x8   the same plan on YMM registers (eight lanes), up to 32 of
+                32 (the 13x8 fill kernel synthesises its four slot words
+                straight into Y20..Y23 with a zero-byte frame); every
+                frame fits the NOSPLIT budget
     avx2 x4     X0..X14 v[0..14], X15 the rotate temp, v[15] in a frame
                 slot with v[12] spilled around the two quarter rounds that
                 touch v[15]; the key words are rebuilt at the top of every
@@ -92,14 +97,19 @@ Register plans:
                 and byte masks as 32-byte memory operands — 16 of 16 with
                 the one spill of the four-lane plan and no other
     neon x4     V0..V15 v[0..15] (four dword lanes per register, one
-                pass), V16..V23 the key words, V24 the rotate alternate
-                (VSHL + VSRI — the rotated word lands in the alternate
-                register and the register roles swap; rol16 = VREV32 on
-                16-bit elements, rol8 = VTBL against the byte mask in
-                V25, both in place), V26 the temp; the block state is
-                restored to its canonical registers after every block and
-                the output words are extracted lane by lane straight from
-                the state registers
+                pass), V28..V31 sigma[0..3] pre-duplicated once per call,
+                V16..V23 and V26..V27 up to ten staged slot words (every
+                slot word at shapes 13 / 20, the ten data-carrying words
+                at shape 36, the first ten words at shape 68), V24 the
+                rotate alternate (VSHL + VSRI — the rotated word lands in
+                the alternate register and the register roles swap;
+                rol16 = VREV32 on 16-bit elements, rol8 = VTBL against the
+                byte mask in V25, both in place); the key words are
+                rebuilt at the top of every cascade round straight into
+                V4..V11 (the fixed-key and component dwords XORed in R12
+                before VDUP), the block state is restored to its canonical
+                registers after every block and the output words are
+                extracted lane by lane straight from the state registers
     gpr amd64   v[0..15] in AX, BX, CX, DX, SI, DI, BP, R8..R11, R12..R15
                 with v[11] — a c word, whose two quarter-round steps read
                 or update it through one memory operand each — in a frame
@@ -107,12 +117,16 @@ Register plans:
                 key words are rebuilt at the top of every cascade round
                 straight into the b-row registers and the v[11] slot (the
                 output word each one consumes frees its register as the
-                temp of the next); the slot words, the group counter and
-                the component / key / output pointers in the frame
+                temp of the next); the non-constant slot words in the
+                frame, the constant tail words as immediates, and the
+                group counter and component / key / output pointers in the
+                caller argument area
     gpr arm64   v[0..15] in R8..R17, R19..R24 (W-form operations); R0
                 key, R1 components, R2 group counter, R4 output, R7 frame
                 base, R5 / R6 the temps, R25 the constant table; the key
-                words are rebuilt straight into the b-row registers
+                words are rebuilt straight into the b-row registers, the
+                non-constant slot words in the frame and the constant tail
+                words as immediates
 
 The key words K ⊕ component ⊕ h exist only in registers on every tier
 (and, on gpr amd64, in the v[11] state slot); the frame slots that hold
@@ -325,16 +339,16 @@ def evex_macros(p):
 def evex_kernel(n, x8=False, fill=False):
     p = "Y" if x8 else "X"
     lanes = 8 if x8 else 4
-    lane_bytes = 4 * lanes
     frame = Frame()
     build = []
+    mov = "VMOVDQU32"
+    m = nblocks(n)
     if fill:
         # One slot block: [0x03 | LE64(idx) | LE32(v) | 0x00 0x00 | tag],
         # v the interlock-nonce fold. Word 2 is (idx >> 56) | (v << 8),
         # word 3 is (v >> 24) | (tag << 24); the fold is loaded into R13
         # and broadcast once (Y2), shifted into Y3 / Y2 before the words
-        # are built.
-        s = [[frame.alloc(("S", 0, w), lane_bytes) for w in range(4)]]
+        # are built straight into Y20..Y23.
         tag = TAG_FINAL | 13
         build += [
             "\tVPBROADCASTQ groupIdxBase+24(FP), Z0",
@@ -348,27 +362,23 @@ def evex_kernel(n, x8=False, fill=False):
             "\tMOVQ $3, R12",
             "\tVPBROADCASTQ R12, Z4",
             "\tVPORQ Z4, Z1, Z1",
-            "\tVPMOVQD Z1, Y1",
-            f"\tVMOVDQU32 Y1, {s[0][0]}(SP)",
+            "\tVPMOVQD Z1, Y20",
             "\tVPSRLQ $24, Z0, Z1",
-            "\tVPMOVQD Z1, Y1",
-            f"\tVMOVDQU32 Y1, {s[0][1]}(SP)",
+            "\tVPMOVQD Z1, Y21",
             "\tVPSRLQ $56, Z0, Z1",
-            "\tVPMOVQD Z1, Y1",
-            "\tVPORD Y3, Y1, Y1",
-            f"\tVMOVDQU32 Y1, {s[0][2]}(SP)",
+            "\tVPMOVQD Z1, Y22",
+            "\tVPORD Y3, Y22, Y22",
             f"\tMOVQ $0x{tag << 24:08x}, R12",
-            "\tVPBROADCASTD R12, Y1",
-            "\tVPORD Y2, Y1, Y1",
-            f"\tVMOVDQU32 Y1, {s[0][3]}(SP)",
+            "\tVPBROADCASTD R12, Y23",
+            "\tVPORD Y2, Y23, Y23",
         ]
     else:
         build += stage_amd64(n, frame, lanes)
-    mov = "VMOVDQU32"
-    m = nblocks(n)
-
-    def key(j):
-        return f"{p}{16 + j}"
+        for b in range(min(m, 3)):
+            for w in range(4):
+                build.append(f"\t{mov} {frame.slots[('S', b, w)]}(SP), {p}{20 + 4 * b + w}")
+    for i in range(4):
+        build.append(f"\tVPBROADCASTD sigma<>+{4 * i}(SB), {p}{16 + i}")
 
     def hreg(i):
         return f"{p}{OUT_WORDS[i]}"
@@ -387,22 +397,25 @@ def evex_kernel(n, x8=False, fill=False):
         lines.append(f"\tVPXORD {hreg(i)}, {hreg(i)}, {hreg(i)}")
     lines.append("")
     lines.append("loop:")
-    # Key words: K ⊕ component dword ⊕ h dword (h in the output words).
+    # Key words: K ⊕ component dword ⊕ h dword (h in the output words),
+    # built straight into the block-0 state words v[4..11] (dead between
+    # rounds).
     for j in range(8):
-        lines.append(f"\tVPBROADCASTD {4 * j}(AX), {key(j)}")
-        lines.append(f"\tVPTERNLOGD.BCST $0x96, {4 * j}(BX), {hreg(j)}, {key(j)}")
+        lines.append(f"\tVPBROADCASTD {4 * j}(AX), {p}{4 + j}")
+        lines.append(f"\tVPTERNLOGD.BCST $0x96, {4 * j}(BX), {hreg(j)}, {p}{4 + j}")
     for b in range(m):
         lines.append("")
-        if b == 0:
-            for j in range(8):
-                lines.append(f"\tVMOVDQA32 {key(j)}, {p}{4 + j}")
-        else:
+        if b > 0:
             for j in range(8):
                 lines.append(f"\tVMOVDQA32 {hreg(j)}, {p}{4 + j}")
         for i in range(4):
-            lines.append(f"\tVPBROADCASTD sigma<>+{4 * i}(SB), {p}{i}")
-        for w in range(4):
-            lines.append(f"\t{mov} {frame.slots[('S', b, w)]}(SP), {p}{12 + w}")
+            lines.append(f"\tVMOVDQA32 {p}{16 + i}, {p}{i}")
+        if b < 3:
+            for w in range(4):
+                lines.append(f"\tVMOVDQA32 {p}{20 + 4 * b + w}, {p}{12 + w}")
+        else:
+            for w in range(4):
+                lines.append(f"\t{mov} {frame.slots[('S', b, w)]}(SP), {p}{12 + w}")
         lines.append("")
         lines += ["\tCHACHA_DR"] * DOUBLE_ROUNDS
     lines.append("")
@@ -626,7 +639,7 @@ def avx2_kernel(n, x8=False, fill=False):
 ARM_LANE_REGS = ["R8", "R9", "R10", "R11"]
 
 
-def load_slot_word_arm64(r, d0, size, tag, dst="R12", scratch="R13"):
+def load_slot_word_arm64(r, d0, size, tag, dst="R12", scratch="R13", tag_in_scratch=False):
     out = []
     if size == 4:
         out.append(f"\tMOVWU {d0}({r}), {dst}")
@@ -644,7 +657,8 @@ def load_slot_word_arm64(r, d0, size, tag, dst="R12", scratch="R13"):
     else:
         raise ValueError((size, tag))
     if tag:
-        out.append(f"\tMOVW $0x{tag << 24:08x}, {scratch}")
+        if not tag_in_scratch:
+            out.append(f"\tMOVW $0x{tag << 24:08x}, {scratch}")
         out.append(f"\tORRW {scratch}, {dst}, {dst}")
     return out
 
@@ -655,12 +669,20 @@ def stage_arm64(n, frame, base="R7"):
     lines = []
     for b, words in enumerate(blocks):
         for w, (d0, size, tag) in enumerate(words):
-            for l, r in enumerate(ARM_LANE_REGS):
-                o = s[b][w] + 4 * l
-                if size == 0 and not tag:
-                    lines.append(f"\tMOVW ZR, {o}({base})")
-                else:
-                    lines += load_slot_word_arm64(r, d0, size, tag)
+            if size == 0 and not tag:
+                for l in range(len(ARM_LANE_REGS)):
+                    lines.append(f"\tMOVW ZR, {s[b][w] + 4 * l}({base})")
+            elif size == 0 and tag:
+                lines.append(f"\tMOVW $0x{tag << 24:08x}, R12")
+                for l in range(len(ARM_LANE_REGS)):
+                    lines.append(f"\tMOVW R12, {s[b][w] + 4 * l}({base})")
+            else:
+                tag_ready = bool(tag and size != 3)
+                if tag_ready:
+                    lines.append(f"\tMOVW $0x{tag << 24:08x}, R13")
+                for l, r in enumerate(ARM_LANE_REGS):
+                    o = s[b][w] + 4 * l
+                    lines += load_slot_word_arm64(r, d0, size, tag, tag_in_scratch=tag_ready)
                     lines.append(f"\tMOVW R12, {o}({base})")
     return lines
 
@@ -732,7 +754,20 @@ GLOBL rol8<>(SB), RODATA|NOPTR, $16
 def neon_kernel(n):
     frame = Frame()
     build = stage_arm64(n, frame)
-    m = nblocks(n)
+    blocks = slot_words(n)
+    m = len(blocks)
+    slot_vregs = [16, 17, 18, 19, 20, 21, 22, 23, 26, 27]
+    cached_slots = {}
+    for b, words in enumerate(blocks):
+        for w, (d0, size, tag) in enumerate(words):
+            idx = 4 * b + w
+            if idx < len(slot_vregs) and not (size == 0 and not tag):
+                vreg = slot_vregs[idx]
+                cached_slots[(b, w)] = vreg
+                build.append(f"\tFMOVQ {frame.slots[('S', b, w)]}(R7), F{vreg}")
+    for i in range(4):
+        build.append(f"\tMOVWU {4 * i}(R25), R12")
+        build.append(f"\tVDUP R12, V{28 + i}.S4")
     L = []
     emit = L.append
     emit(header(ARM, n, 4, "NEON (four lanes)"))
@@ -758,27 +793,30 @@ def neon_kernel(n):
         emit(f"\tVEOR V{i}.B16, V{i}.B16, V{i}.B16")
     emit("")
     emit("loop:")
-    # Key words: K ⊕ component dword ⊕ h dword (h in the output words).
+    # Key words: K ⊕ component dword ⊕ h dword (h in the output words),
+    # built straight into the block-0 state words v[4..11] (dead between
+    # rounds).
     for j in range(8):
         emit(f"\tMOVWU {4 * j}(R0), R12")
         emit(f"\tMOVWU {4 * j}(R1), R13")
         emit("\tEORW R13, R12, R12")
-        emit(f"\tVDUP R12, V{16 + j}.S4")
-        emit(f"\tVEOR V{OUT_WORDS[j]}.B16, V{16 + j}.B16, V{16 + j}.B16")
+        emit(f"\tVDUP R12, V{4 + j}.S4")
+        emit(f"\tVEOR V{OUT_WORDS[j]}.B16, V{4 + j}.B16, V{4 + j}.B16")
     for b in range(m):
         regs = NeonRegs()
         emit("")
-        if b == 0:
-            for j in range(8):
-                emit(f"\tVMOV V{16 + j}.B16, V{4 + j}.B16")
-        else:
+        if b > 0:
             for j in range(8):
                 emit(f"\tVMOV V{OUT_WORDS[j]}.B16, V{4 + j}.B16")
         for i in range(4):
-            emit(f"\tMOVWU {4 * i}(R25), R12")
-            emit(f"\tVDUP R12, V{i}.S4")
-        for w in range(4):
-            emit(f"\tFMOVQ {frame.slots[('S', b, w)]}(R7), F{12 + w}")
+            emit(f"\tVMOV V{28 + i}.B16, V{i}.B16")
+        for w, (d0, size, tag) in enumerate(blocks[b]):
+            if size == 0 and not tag:
+                emit(f"\tVEOR V{12 + w}.B16, V{12 + w}.B16, V{12 + w}.B16")
+            elif (b, w) in cached_slots:
+                emit(f"\tVMOV V{cached_slots[(b, w)]}.B16, V{12 + w}.B16")
+            else:
+                emit(f"\tFMOVQ {frame.slots[('S', b, w)]}(R7), F{12 + w}")
         emit("")
         for _ in range(DOUBLE_ROUNDS):
             for a, bb, c, d in QR_ORDER:
@@ -828,14 +866,12 @@ def gpr_kernel_amd64(n):
     frame = Frame()
     blocks = slot_words(n)
     m = len(blocks)
-    s_off = [[frame.alloc(("S", b, w), 4) for w in range(4)] for b in range(m)]
+    s_off = {}
+    for b, words in enumerate(blocks):
+        for w, (d0, size, tag) in enumerate(words):
+            if size > 0:
+                s_off[(b, w)] = frame.alloc(("S", b, w), 4)
     spill = frame.alloc("v11", 4)
-    if frame.size % 8:
-        frame.alloc("pad", 4)
-    cnt = frame.alloc("cnt", 8)
-    cmp = frame.alloc("comps", 8)
-    outp = frame.alloc("out", 8)
-    keyp = frame.alloc("key", 8)
     R = GPR_REGS_AMD64
 
     def v(i):
@@ -845,15 +881,11 @@ def gpr_kernel_amd64(n):
     fn = f"chacha20FusedChain{n}x1GprAsm"
     L.append(f"// func {fn}(fixedKey *[32]byte, comps *uint64, nGroups int, data *byte, out *[4]uint64)")
     L.append(f"TEXT ·{fn}(SB), NOSPLIT, ${frame.aligned}-40")
-    L += ["\tMOVQ fixedKey+0(FP), AX", "\tMOVQ comps+8(FP), BX", "\tMOVQ nGroups+16(FP), CX",
-          "\tMOVQ data+24(FP), DX", "\tMOVQ out+32(FP), DI",
-          f"\tMOVQ BX, {cmp}(SP)", f"\tMOVQ CX, {cnt}(SP)", f"\tMOVQ DI, {outp}(SP)", f"\tMOVQ AX, {keyp}(SP)", ""]
+    L += ["\tMOVQ data+24(FP), DX", ""]
     for b, words in enumerate(blocks):
         for w, (d0, size, tag) in enumerate(words):
-            if size == 0 and not tag:
-                L.append(f"\tMOVL $0, {s_off[b][w]}(SP)")
-            else:
-                L += load_slot_word_amd64("DX", d0, size, tag) + [f"\tMOVL R12, {s_off[b][w]}(SP)"]
+            if size > 0:
+                L += load_slot_word_amd64("DX", d0, size, tag) + [f"\tMOVL R12, {s_off[(b, w)]}(SP)"]
     for i in OUT_WORDS:
         L.append(f"\tXORL {R[i]}, {R[i]}")
     L += ["", "loop:"]
@@ -862,7 +894,7 @@ def gpr_kernel_amd64(n):
     # the component / key pointers, so the words of v[8] and v[10] are
     # built in AX / BX — h[0] / h[1], free once words 0 / 1 have consumed
     # them — and moved in last; word 7 goes to the v[11] slot through AX.
-    L += [f"\tMOVQ {cmp}(SP), R9", f"\tMOVQ {keyp}(SP), R11"]
+    L += ["\tMOVQ comps+8(FP), R9", "\tMOVQ fixedKey+0(FP), R11"]
 
     def kword(j, dst):
         return [f"\tMOVL {4 * j}(R11), {dst}", f"\tXORL {4 * j}(R9), {dst}", f"\tXORL {R[OUT_WORDS[j]]}, {dst}"]
@@ -871,7 +903,7 @@ def gpr_kernel_amd64(n):
         L += kword(j, R[4 + j])
     L += kword(7, "AX") + [f"\tMOVL AX, {spill}(SP)"]
     L += kword(4, "AX") + kword(6, "BX")
-    L += ["\tADDQ $32, R9", f"\tMOVQ R9, {cmp}(SP)", f"\tMOVL AX, {R[8]}", f"\tMOVL BX, {R[10]}"]
+    L += ["\tADDQ $32, R9", "\tMOVQ R9, comps+8(FP)", f"\tMOVL AX, {R[8]}", f"\tMOVL BX, {R[10]}"]
     for b in range(m):
         L.append("")
         if b > 0:
@@ -882,8 +914,13 @@ def gpr_kernel_amd64(n):
                     L.append(f"\tMOVL {R[OUT_WORDS[j]]}, {R[4 + j]}")
         for i in range(4):
             L.append(f"\tMOVL $0x{SIGMA[i]:08x}, {R[i]}")
-        for w in range(4):
-            L.append(f"\tMOVL {s_off[b][w]}(SP), {R[12 + w]}")
+        for w, (d0, size, tag) in enumerate(blocks[b]):
+            if size == 0 and not tag:
+                L.append(f"\tXORL {R[12 + w]}, {R[12 + w]}")
+            elif size == 0 and tag:
+                L.append(f"\tMOVL $0x{tag << 24:08x}, {R[12 + w]}")
+            else:
+                L.append(f"\tMOVL {s_off[(b, w)]}(SP), {R[12 + w]}")
         L.append("")
         for _ in range(DOUBLE_ROUNDS):
             for a, bb, c, d in QR_ORDER:
@@ -891,7 +928,7 @@ def gpr_kernel_amd64(n):
                       f"\tADDL {v(d)}, {v(c)}", f"\tXORL {v(c)}, {v(bb)}", f"\tROLL $12, {v(bb)}",
                       f"\tADDL {v(bb)}, {v(a)}", f"\tXORL {v(a)}, {v(d)}", f"\tROLL $8, {v(d)}",
                       f"\tADDL {v(d)}, {v(c)}", f"\tXORL {v(c)}, {v(bb)}", f"\tROLL $7, {v(bb)}"]
-    L += ["", f"\tDECQ {cnt}(SP)", "\tJNZ loop", "", f"\tMOVQ {outp}(SP), R9"]
+    L += ["", "\tDECQ nGroups+16(FP)", "\tJNZ loop", "", "\tMOVQ out+32(FP), R9"]
     for i in range(WORDS):
         L.append(f"\tMOVL {R[OUT_WORDS[i]]}, {4 * i}(R9)")
     # The v[11] slot held a key word and state: zero it.
@@ -903,7 +940,11 @@ def gpr_kernel_arm64(n):
     frame = Frame()
     blocks = slot_words(n)
     m = len(blocks)
-    s_off = [[frame.alloc(("S", b, w), 4) for w in range(4)] for b in range(m)]
+    s_off = {}
+    for b, words in enumerate(blocks):
+        for w, (d0, size, tag) in enumerate(words):
+            if size > 0:
+                s_off[(b, w)] = frame.alloc(("S", b, w), 4)
     R = GPR_REGS_ARM64
     L = [gpr_header(ARM, n, "ARM64 general-purpose-register")]
     fn = f"chacha20FusedChain{n}x1GprAsm"
@@ -914,10 +955,8 @@ def gpr_kernel_arm64(n):
           "\tMOVD $sigma<>(SB), R25", ""]
     for b, words in enumerate(blocks):
         for w, (d0, size, tag) in enumerate(words):
-            if size == 0 and not tag:
-                L.append(f"\tMOVW ZR, {s_off[b][w]}(R7)")
-            else:
-                L += load_slot_word_arm64("R3", d0, size, tag, "R5", "R6") + [f"\tMOVW R5, {s_off[b][w]}(R7)"]
+            if size > 0:
+                L += load_slot_word_arm64("R3", d0, size, tag, "R5", "R6") + [f"\tMOVW R5, {s_off[(b, w)]}(R7)"]
     for i in OUT_WORDS:
         L.append(f"\tMOVW ZR, {R[i]}")
     L += ["", "loop:"]
@@ -934,8 +973,13 @@ def gpr_kernel_arm64(n):
                 L.append(f"\tMOVWU {R[OUT_WORDS[j]]}, {R[4 + j]}")
         for i in range(4):
             L.append(f"\tMOVWU {4 * i}(R25), {R[i]}")
-        for w in range(4):
-            L.append(f"\tMOVWU {s_off[b][w]}(R7), {R[12 + w]}")
+        for w, (d0, size, tag) in enumerate(blocks[b]):
+            if size == 0 and not tag:
+                L.append(f"\tMOVW ZR, {R[12 + w]}")
+            elif size == 0 and tag:
+                L.append(f"\tMOVW $0x{tag << 24:08x}, {R[12 + w]}")
+            else:
+                L.append(f"\tMOVWU {s_off[(b, w)]}(R7), {R[12 + w]}")
         L.append("")
         for _ in range(DOUBLE_ROUNDS):
             for a, bb, c, d in QR_ORDER:

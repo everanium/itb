@@ -200,4 +200,29 @@ class PersistTest {
             }
         }
     }
+
+    @Test
+    fun initKeysDeterminismAndValidation() {
+        val masters = Array(8) { i -> ByteArray(32) { (0x11 * (i + 1)).toByte() } }
+        Pipeline.initKeys("singlemsg-triple-mac-v1", masters).use { p1 ->
+            Pipeline.initKeys("singlemsg-triple-mac-v1", masters).use { p2 ->
+                assertContentEquals(p1.save(), p2.save())
+                assertContentEquals(plain, p2.decryptMessage(p1.encryptMessage(plain)))
+            }
+        }
+
+        val dup = Array(8) { i -> masters[i].copyOf() }
+        dup[1] = dup[0].copyOf()
+        val exDup = assertFailsWith<ItbException> {
+            Pipeline.initKeys("singlemsg-triple-mac-v1", dup)
+        }
+        assertEquals(Status.BadInput, exDup.status)
+
+        val shortKeys = Array(8) { i -> masters[i].copyOf() }
+        shortKeys[0] = ByteArray(8) { 0x11 }
+        val exShort = assertFailsWith<ItbException> {
+            Pipeline.initKeys("singlemsg-triple-mac-v1", shortKeys)
+        }
+        assertEquals(Status.BadInput, exShort.status)
+    }
 }

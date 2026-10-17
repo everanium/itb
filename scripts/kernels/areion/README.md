@@ -1,14 +1,14 @@
 ## ITB Areion-SoEM Kernels Generator
 
 One deterministic generator emits every Areion-SoEM fused ChainHash
-cascade kernel under `internal/areionasm/`, and the legacy-SSE AES-NI
-general-purpose kernels (`areion_soem_aesni_amd64.s`: the four-lane
-permutation under a caller-supplied constant table and the fused SoEM
-kernel of the root package's batched API). It takes no input beyond its
-own source (the round constants of both Areion permutations are read from
-the Go side — `·AreionRC4x` / `·AreionRC4x2` on amd64, `·AreionRCTable` /
-`·AreionRCTable2` on arm64), and must reproduce the committed `.s` files
-byte for byte. The generator accepts `--check`, which
+cascade kernel under `internal/areionasm/`, and the VEX / legacy-SSE
+AES-NI general-purpose kernels (`areion_soem_{vex,aesni}_amd64.s`: the
+four-lane permutation under a caller-supplied constant table and the
+fused SoEM kernel of the root package's batched API). It takes no input
+beyond its own source (the round constants of both Areion permutations
+are read from the Go side — `·AreionRC4x` / `·AreionRC4x2` on amd64,
+`·AreionRCTable` / `·AreionRCTable2` on arm64), and must reproduce the
+committed `.s` files byte for byte. The generator accepts `--check`, which
 regenerates in memory, compares against the committed files without
 writing, and exits non-zero on any drift.
 
@@ -28,8 +28,9 @@ The kernels evaluate the whole `Seed256.ChainHash256` /
 `Seed512.ChainHash512` cascade in one call (see
 `internal/areionasm/areionasm_fused.go`):
 `areion_fusedchain{256,512}_<shape>x4_<tier>_amd64.s` (tiers avx512 /
-vaesavx2 / aesni), `areion_fusedchain{256,512}_<shape>x1_aesni_amd64.s`
-(the single-lane kernel of every amd64 tier),
+vaesavx2 / vex / aesni),
+`areion_fusedchain{256,512}_<shape>x1_{vex,aesni}_amd64.s` (the
+single-lane kernels of the amd64 tiers),
 `areion_fusedchain{256,512}_<shape>x{1,4}_neon_arm64.s`, and the wide
 kernels: `areion_fusedchain{256,512}_{20,36,68}x8_avx512_amd64.s`, the
 eight-lane per-pixel kernels — two four-lane ZMM groups whose cascade
@@ -65,11 +66,10 @@ across rounds and are staged once per call; the four-lane ZMM kernels
 keep them and both keys in registers, the wide ZMM kernels read the
 blocks and the round constants as memory operands and carry the
 feed-forward state in the permutation registers between chunks, the YMM
-tier reads the blocks back as memory operands (and, at width 512, keeps
-k2 in the frame), the XMM and NEON tiers reload the blocks from the frame
-per chunk (the eight-lane NEON fill kernels stage `k1 ⊕ k2` in the frame
-as well). The module docstring
-of the generator lists the register plan of every tier.
+tier reads the blocks back as memory operands, and the XMM and NEON
+tiers reload the blocks from the frame per chunk. Both subkeys (`k1` and
+`k2`) and the whitening (`k1 ⊕ k2`) stay in registers on every tier. The
+module docstring of the generator lists the register plan of every tier.
 
 ## Store-to-load forwarding discipline (amd64)
 
@@ -81,17 +81,12 @@ back with. Every wide kernel ends with `VZEROUPPER` before `RET`.
 
 ## Frame hygiene
 
-The frame holds the staged message blocks (public) and, on the tiers
-whose register file cannot hold them, the seed-derived SoEM subkey
-`k2 = component ⊕ h` (the YMM width-512 kernels, the XMM four-lane
-kernels at width 256 and the XMM kernels at width 512) or the whitening
-`k1 ⊕ k2` (the eight-lane NEON fill kernels). Those slots are
-overwritten with zeros, at the width they were written with, after the
-last read and before the kernel returns. The in-package
-`TestFusedKernelsLeaveNoSecretInFrame*` tests run every kernel under a
-stack-residue probe and require that no fixed-key word, no `k2` word
-and no `k1 ⊕ k2` word is left in the stack once the kernel has
-returned.
+No key or key-derived value (`k1`, `k2`, or `k1 ⊕ k2`) is ever written to
+the stack frame on any tier; the frame holds the staged public message
+blocks only. The in-package `TestFusedKernelsLeaveNoSecretInFrame*` tests
+run every kernel under a stack-residue probe and require that no
+fixed-key word, no `k2` word and no `k1 ⊕ k2` word is left in the stack
+once the kernel has returned.
 
 ## Correctness invariant
 

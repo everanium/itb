@@ -8,7 +8,6 @@ import (
 	"github.com/everanium/areion"
 	"github.com/everanium/itb/internal/areionasm"
 	"github.com/everanium/itb/internal/cpuid"
-	"github.com/everanium/itb/third/goaes"
 )
 
 // TestAreionSoEM256x4Parity verifies that for arbitrary inputs, the
@@ -328,7 +327,11 @@ func BenchmarkAreionSoEM512x4_Batched(b *testing.B) {
 // the noitbasm / purego tags and under ITB_FORCE_HASH_TIER=scalar, where
 // the areionasm entry points are panic stubs or deliberately disarmed).
 func aesNiKernelsLinked() bool {
-	return cpuid.AESNI && (areionasm.HasVAESAVX512 || areionasm.HasVAESAVX2NoAVX512 || areionasm.HasAESNIBatched)
+	return cpuid.AESNI && (areionasm.HasVAESAVX512 || areionasm.HasVAESAVX2NoAVX512 || areionasm.HasAVXAESNIBatched || areionasm.HasAESNIBatched)
+}
+
+func vexKernelsLinked() bool {
+	return cpuid.AESNI && cpuid.AVX2 && (areionasm.HasVAESAVX512 || areionasm.HasVAESAVX2NoAVX512 || areionasm.HasAVXAESNIBatched || areionasm.HasAESNIBatched)
 }
 
 func areionRCOf(second bool) *[15][16]byte {
@@ -365,6 +368,37 @@ func areion512Permutex4Avx2Direct(states *[4][64]byte, second bool) {
 		areionasm.Areion512Permute2x4Avx2(&x0, &x1, &x2, &x3)
 	} else {
 		areionasm.Areion512Permutex4Avx2(&x0, &x1, &x2, &x3)
+	}
+	unpack512x4SoA(&x0, &x1, &x2, &x3, states)
+}
+
+// areion256Permutex4VexDirect invokes the 3-operand VEX XMM AES-NI
+// assembly variant directly.
+func areion256Permutex4VexDirect(states *[4][32]byte, second bool) {
+	if runtime.GOARCH != "amd64" {
+		areion256Permutex4Default(states, areionRCOf(second))
+		return
+	}
+	x0, x1 := pack256x4SoA(states)
+	if second {
+		areionasm.Areion256Permute2x4Vex(&x0, &x1)
+	} else {
+		areionasm.Areion256Permutex4Vex(&x0, &x1)
+	}
+	unpack256x4SoA(&x0, &x1, states)
+}
+
+// areion512Permutex4VexDirect is the 512-bit VEX AES-NI counterpart.
+func areion512Permutex4VexDirect(states *[4][64]byte, second bool) {
+	if runtime.GOARCH != "amd64" {
+		areion512Permutex4Default(states, areionRCOf(second))
+		return
+	}
+	x0, x1, x2, x3 := pack512x4SoA(states)
+	if second {
+		areionasm.Areion512Permute2x4Vex(&x0, &x1, &x2, &x3)
+	} else {
+		areionasm.Areion512Permutex4Vex(&x0, &x1, &x2, &x3)
 	}
 	unpack512x4SoA(&x0, &x1, &x2, &x3, states)
 }
@@ -494,9 +528,10 @@ func checkSoEM512Tier(t *testing.T, name string, perm func(*[4][64]byte, bool)) 
 }
 
 // TestAreionSoEM256x4Avx2ParityDirect verifies that the AVX2+VAES
-// assembly variants (P1 and P2) compose to bit-exact identical output
-// to the serial areion.SoEM256 reference, independent of which path
-// runtime dispatch would select. Skipped on non-amd64 builds.
+// assembly variants (P1 and P2) and the fused YMM SoEM kernel produce
+// bit-exact identical output to the serial areion.SoEM256 reference,
+// independent of which path runtime dispatch would select. Skipped on
+// non-amd64 builds.
 func TestAreionSoEM256x4Avx2ParityDirect(t *testing.T) {
 	if runtime.GOARCH != "amd64" {
 		t.Skip("AVX2 parity test only runs on amd64")
@@ -505,10 +540,39 @@ func TestAreionSoEM256x4Avx2ParityDirect(t *testing.T) {
 		t.Skip("AVX2 parity test requires VAES (Intel Ice Lake+ or AMD Zen 3+)")
 	}
 	checkSoEM256Tier(t, "AVX2", areion256Permutex4Avx2Direct)
+	for trial := 0; trial < 64; trial++ {
+		var keys [4][64]byte
+		var inputs [4][32]byte
+		for i := 0; i < 4; i++ {
+			rand.Read(keys[i][:])
+			rand.Read(inputs[i][:])
+		}
+		var s1b0, s1b1, s2b0, s2b1 areion.Block4
+		for lane := 0; lane < 4; lane++ {
+			for j := 0; j < 16; j++ {
+				s1b0[lane*16+j] = inputs[lane][j] ^ keys[lane][j]
+				s1b1[lane*16+j] = inputs[lane][16+j] ^ keys[lane][16+j]
+				s2b0[lane*16+j] = inputs[lane][j] ^ keys[lane][32+j]
+				s2b1[lane*16+j] = inputs[lane][16+j] ^ keys[lane][48+j]
+			}
+		}
+		areionasm.Areion256SoEMPermutex4VaesAvx2(&s1b0, &s1b1, &s2b0, &s2b1)
+		for lane := 0; lane < 4; lane++ {
+			var got [32]byte
+			for j := 0; j < 16; j++ {
+				got[j] = s1b0[lane*16+j] ^ keys[lane][j] ^ keys[lane][32+j]
+				got[16+j] = s1b1[lane*16+j] ^ keys[lane][16+j] ^ keys[lane][48+j]
+			}
+			if want := areion.SoEM256(&keys[lane], &inputs[lane]); got != want {
+				t.Fatalf("trial %d lane %d: AVX2 fused SoEM-256 != serial\ngot:  %x\nwant: %x", trial, lane, got, want)
+			}
+		}
+	}
 }
 
-// TestAreionSoEM512x4Avx2ParityDirect validates the AVX2 path against
-// the serial 512-bit reference. Mirrors the 256-bit Avx2 parity test.
+// TestAreionSoEM512x4Avx2ParityDirect validates the AVX2 path and the
+// fused YMM SoEM-512 kernel against the serial 512-bit reference.
+// Mirrors the 256-bit Avx2 parity test.
 func TestAreionSoEM512x4Avx2ParityDirect(t *testing.T) {
 	if runtime.GOARCH != "amd64" {
 		t.Skip("AVX2 parity test only runs on amd64")
@@ -517,6 +581,116 @@ func TestAreionSoEM512x4Avx2ParityDirect(t *testing.T) {
 		t.Skip("AVX2 parity test requires VAES (Intel Ice Lake+ or AMD Zen 3+)")
 	}
 	checkSoEM512Tier(t, "AVX2", areion512Permutex4Avx2Direct)
+	for trial := 0; trial < 64; trial++ {
+		var keys [4][128]byte
+		var inputs [4][64]byte
+		for i := 0; i < 4; i++ {
+			rand.Read(keys[i][:])
+			rand.Read(inputs[i][:])
+		}
+		var s1, s2 [4]areion.Block4
+		for lane := 0; lane < 4; lane++ {
+			for b := 0; b < 4; b++ {
+				for j := 0; j < 16; j++ {
+					s1[b][lane*16+j] = inputs[lane][16*b+j] ^ keys[lane][16*b+j]
+					s2[b][lane*16+j] = inputs[lane][16*b+j] ^ keys[lane][64+16*b+j]
+				}
+			}
+		}
+		areionasm.Areion512SoEMPermutex4VaesAvx2(&s1[0], &s1[1], &s1[2], &s1[3], &s2[0], &s2[1], &s2[2], &s2[3])
+		for lane := 0; lane < 4; lane++ {
+			var got [64]byte
+			for b := 0; b < 4; b++ {
+				for j := 0; j < 16; j++ {
+					got[16*b+j] = s1[b][lane*16+j] ^ keys[lane][16*b+j] ^ keys[lane][64+16*b+j]
+				}
+			}
+			if want := areion.SoEM512(&keys[lane], &inputs[lane]); got != want {
+				t.Fatalf("trial %d lane %d: AVX2 fused SoEM-512 != serial\ngot:  %x\nwant: %x", trial, lane, got, want)
+			}
+		}
+	}
+}
+
+// TestAreionSoEM256x4VexParityDirect verifies the 3-operand VEX XMM
+// AES-NI permutation variants (P1 and P2) and the VEX XMM fused SoEM
+// kernel against the serial reference on any amd64 host with AVX + AES-NI.
+func TestAreionSoEM256x4VexParityDirect(t *testing.T) {
+	if runtime.GOARCH != "amd64" {
+		t.Skip("VEX parity test only runs on amd64")
+	}
+	if !vexKernelsLinked() {
+		t.Skip("VEX parity test requires AVX + AES-NI and the assembly build")
+	}
+	checkSoEM256Tier(t, "VEX permute", areion256Permutex4VexDirect)
+	for trial := 0; trial < 64; trial++ {
+		var keys [4][64]byte
+		var inputs [4][32]byte
+		for i := 0; i < 4; i++ {
+			rand.Read(keys[i][:])
+			rand.Read(inputs[i][:])
+		}
+		var s1b0, s1b1, s2b0, s2b1 areion.Block4
+		for lane := 0; lane < 4; lane++ {
+			for j := 0; j < 16; j++ {
+				s1b0[lane*16+j] = inputs[lane][j] ^ keys[lane][j]
+				s1b1[lane*16+j] = inputs[lane][16+j] ^ keys[lane][16+j]
+				s2b0[lane*16+j] = inputs[lane][j] ^ keys[lane][32+j]
+				s2b1[lane*16+j] = inputs[lane][16+j] ^ keys[lane][48+j]
+			}
+		}
+		areionasm.Areion256SoEMPermutex4Vex(&s1b0, &s1b1, &s2b0, &s2b1)
+		for lane := 0; lane < 4; lane++ {
+			var got [32]byte
+			for j := 0; j < 16; j++ {
+				got[j] = s1b0[lane*16+j] ^ keys[lane][j] ^ keys[lane][32+j]
+				got[16+j] = s1b1[lane*16+j] ^ keys[lane][16+j] ^ keys[lane][48+j]
+			}
+			if want := areion.SoEM256(&keys[lane], &inputs[lane]); got != want {
+				t.Fatalf("trial %d lane %d: VEX fused SoEM-256 != serial\ngot:  %x\nwant: %x", trial, lane, got, want)
+			}
+		}
+	}
+}
+
+// TestAreionSoEM512x4VexParityDirect is the 512-bit VEX counterpart.
+func TestAreionSoEM512x4VexParityDirect(t *testing.T) {
+	if runtime.GOARCH != "amd64" {
+		t.Skip("VEX parity test only runs on amd64")
+	}
+	if !vexKernelsLinked() {
+		t.Skip("VEX parity test requires AVX + AES-NI and the assembly build")
+	}
+	checkSoEM512Tier(t, "VEX permute", areion512Permutex4VexDirect)
+	for trial := 0; trial < 64; trial++ {
+		var keys [4][128]byte
+		var inputs [4][64]byte
+		for i := 0; i < 4; i++ {
+			rand.Read(keys[i][:])
+			rand.Read(inputs[i][:])
+		}
+		var s1, s2 [4]areion.Block4
+		for lane := 0; lane < 4; lane++ {
+			for b := 0; b < 4; b++ {
+				for j := 0; j < 16; j++ {
+					s1[b][lane*16+j] = inputs[lane][16*b+j] ^ keys[lane][16*b+j]
+					s2[b][lane*16+j] = inputs[lane][16*b+j] ^ keys[lane][64+16*b+j]
+				}
+			}
+		}
+		areionasm.Areion512SoEMPermutex4Vex(&s1[0], &s1[1], &s1[2], &s1[3], &s2[0], &s2[1], &s2[2], &s2[3])
+		for lane := 0; lane < 4; lane++ {
+			var got [64]byte
+			for b := 0; b < 4; b++ {
+				for j := 0; j < 16; j++ {
+					got[16*b+j] = s1[b][lane*16+j] ^ keys[lane][16*b+j] ^ keys[lane][64+16*b+j]
+				}
+			}
+			if want := areion.SoEM512(&keys[lane], &inputs[lane]); got != want {
+				t.Fatalf("trial %d lane %d: VEX fused SoEM-512 != serial\ngot:  %x\nwant: %x", trial, lane, got, want)
+			}
+		}
+	}
 }
 
 // TestAreionSoEM256x4AesNiParityDirect verifies the legacy-SSE AES-NI
@@ -538,7 +712,7 @@ func TestAreionSoEM256x4AesNiParityDirect(t *testing.T) {
 			rand.Read(keys[i][:])
 			rand.Read(inputs[i][:])
 		}
-		var s1b0, s1b1, s2b0, s2b1 aes.Block4
+		var s1b0, s1b1, s2b0, s2b1 areion.Block4
 		for lane := 0; lane < 4; lane++ {
 			for j := 0; j < 16; j++ {
 				s1b0[lane*16+j] = inputs[lane][j] ^ keys[lane][j]
@@ -577,7 +751,7 @@ func TestAreionSoEM512x4AesNiParityDirect(t *testing.T) {
 			rand.Read(keys[i][:])
 			rand.Read(inputs[i][:])
 		}
-		var s1, s2 [4]aes.Block4
+		var s1, s2 [4]areion.Block4
 		for lane := 0; lane < 4; lane++ {
 			for b := 0; b < 4; b++ {
 				for j := 0; j < 16; j++ {
@@ -632,10 +806,10 @@ func BenchmarkAreionSoEM256x4_BatchedAvx2(b *testing.B) {
 	rand.Read(keys[3][:])
 	rand.Read(inputs[3][:])
 	// The two SoA half-states are built once; each iteration copies them
-	// and runs the two YMM permutation kernels the AVX2 dispatcher arm
-	// calls, so the timed loop measures the kernels rather than the
-	// test-side AoS / SoA packing.
-	var t1b0, t1b1, t2b0, t2b1 aes.Block4
+	// and runs the fused YMM kernel the AVX2 dispatcher arm calls, so
+	// the timed loop measures the kernel rather than the test-side
+	// AoS / SoA packing.
+	var t1b0, t1b1, t2b0, t2b1 areion.Block4
 	for lane := 0; lane < 4; lane++ {
 		for j := 0; j < 16; j++ {
 			t1b0[lane*16+j] = inputs[lane][j] ^ keys[lane][j]
@@ -649,9 +823,8 @@ func BenchmarkAreionSoEM256x4_BatchedAvx2(b *testing.B) {
 	var sink byte
 	for i := 0; i < b.N; i++ {
 		s1b0, s1b1, s2b0, s2b1 := t1b0, t1b1, t2b0, t2b1
-		areionasm.Areion256Permutex4Avx2(&s1b0, &s1b1)
-		areionasm.Areion256Permute2x4Avx2(&s2b0, &s2b1)
-		sink ^= s1b0[0] ^ s2b1[0]
+		areionasm.Areion256SoEMPermutex4VaesAvx2(&s1b0, &s1b1, &s2b0, &s2b1)
+		sink ^= s1b0[0] ^ s1b1[0]
 	}
 	_ = sink
 }
@@ -673,9 +846,9 @@ func BenchmarkAreionSoEM512x4_BatchedAvx2(b *testing.B) {
 	rand.Read(inputs[2][:])
 	rand.Read(keys[3][:])
 	rand.Read(inputs[3][:])
-	// Mirrors the 256-bit form: SoA half-states built once, the two YMM
-	// permutation kernels timed.
-	var t1, t2 [4]aes.Block4
+	// Mirrors the 256-bit form: SoA half-states built once, the fused
+	// YMM kernel timed.
+	var t1, t2 [4]areion.Block4
 	for lane := 0; lane < 4; lane++ {
 		for blk := 0; blk < 4; blk++ {
 			for j := 0; j < 16; j++ {
@@ -689,9 +862,72 @@ func BenchmarkAreionSoEM512x4_BatchedAvx2(b *testing.B) {
 	var sink byte
 	for i := 0; i < b.N; i++ {
 		s1, s2 := t1, t2
-		areionasm.Areion512Permutex4Avx2(&s1[0], &s1[1], &s1[2], &s1[3])
-		areionasm.Areion512Permute2x4Avx2(&s2[0], &s2[1], &s2[2], &s2[3])
-		sink ^= s1[0][0] ^ s2[3][0]
+		areionasm.Areion512SoEMPermutex4VaesAvx2(&s1[0], &s1[1], &s1[2], &s1[3], &s2[0], &s2[1], &s2[2], &s2[3])
+		sink ^= s1[0][0]
+	}
+	_ = sink
+}
+
+// BenchmarkAreionSoEM256x4_BatchedVex measures the 3-operand VEX XMM
+// (AVX + AES-NI) fused SoEM kernel through the batched composition,
+// independent of runtime dispatch.
+func BenchmarkAreionSoEM256x4_BatchedVex(b *testing.B) {
+	if runtime.GOARCH != "amd64" || !vexKernelsLinked() {
+		b.Skip("VEX benchmark requires amd64 with AVX + AES-NI and the assembly build")
+	}
+	var keys [4][64]byte
+	var inputs [4][32]byte
+	for i := 0; i < 4; i++ {
+		rand.Read(keys[i][:])
+		rand.Read(inputs[i][:])
+	}
+	var t1b0, t1b1, t2b0, t2b1 areion.Block4
+	for lane := 0; lane < 4; lane++ {
+		for j := 0; j < 16; j++ {
+			t1b0[lane*16+j] = inputs[lane][j] ^ keys[lane][j]
+			t1b1[lane*16+j] = inputs[lane][16+j] ^ keys[lane][16+j]
+			t2b0[lane*16+j] = inputs[lane][j] ^ keys[lane][32+j]
+			t2b1[lane*16+j] = inputs[lane][16+j] ^ keys[lane][48+j]
+		}
+	}
+	b.SetBytes(4 * 32)
+	b.ResetTimer()
+	var sink byte
+	for i := 0; i < b.N; i++ {
+		s1b0, s1b1, s2b0, s2b1 := t1b0, t1b1, t2b0, t2b1
+		areionasm.Areion256SoEMPermutex4Vex(&s1b0, &s1b1, &s2b0, &s2b1)
+		sink ^= s1b0[0] ^ s1b1[0]
+	}
+	_ = sink
+}
+
+// BenchmarkAreionSoEM512x4_BatchedVex is the 512-bit VEX counterpart.
+func BenchmarkAreionSoEM512x4_BatchedVex(b *testing.B) {
+	if runtime.GOARCH != "amd64" || !vexKernelsLinked() {
+		b.Skip("VEX benchmark requires amd64 with AVX + AES-NI and the assembly build")
+	}
+	var keys [4][128]byte
+	var inputs [4][64]byte
+	for i := 0; i < 4; i++ {
+		rand.Read(keys[i][:])
+		rand.Read(inputs[i][:])
+	}
+	var t1, t2 [4]areion.Block4
+	for lane := 0; lane < 4; lane++ {
+		for blk := 0; blk < 4; blk++ {
+			for j := 0; j < 16; j++ {
+				t1[blk][lane*16+j] = inputs[lane][16*blk+j] ^ keys[lane][16*blk+j]
+				t2[blk][lane*16+j] = inputs[lane][16*blk+j] ^ keys[lane][64+16*blk+j]
+			}
+		}
+	}
+	b.SetBytes(4 * 64)
+	b.ResetTimer()
+	var sink byte
+	for i := 0; i < b.N; i++ {
+		s1, s2 := t1, t2
+		areionasm.Areion512SoEMPermutex4Vex(&s1[0], &s1[1], &s1[2], &s1[3], &s2[0], &s2[1], &s2[2], &s2[3])
+		sink ^= s1[0][0]
 	}
 	_ = sink
 }
@@ -712,7 +948,7 @@ func BenchmarkAreionSoEM256x4_BatchedAesNi(b *testing.B) {
 	// The SoA states are built once; each iteration copies them (the
 	// kernel overwrites the state1 buffers), so the timed loop measures
 	// the kernel rather than a per-byte state assembly.
-	var t1b0, t1b1, t2b0, t2b1 aes.Block4
+	var t1b0, t1b1, t2b0, t2b1 areion.Block4
 	for lane := 0; lane < 4; lane++ {
 		for j := 0; j < 16; j++ {
 			t1b0[lane*16+j] = inputs[lane][j] ^ keys[lane][j]
@@ -746,7 +982,7 @@ func BenchmarkAreionSoEM512x4_BatchedAesNi(b *testing.B) {
 	// The SoA states are built once; each iteration copies them (the
 	// kernel overwrites the state1 buffers), so the timed loop measures
 	// the kernel rather than a per-byte state assembly.
-	var t1, t2 [4]aes.Block4
+	var t1, t2 [4]areion.Block4
 	for lane := 0; lane < 4; lane++ {
 		for blk := 0; blk < 4; blk++ {
 			for j := 0; j < 16; j++ {
@@ -797,7 +1033,7 @@ func TestAreionSoEM512x4PureGoParityDirect(t *testing.T) {
 	})
 }
 
-// ─── Cross-path parity (AVX-512 vs AVX2 vs AES-NI vs Pure Go) ──────────
+// ─── Cross-path parity (AVX-512 vs AVX2 vs VEX vs AES-NI vs Pure Go) ───
 
 // areion256Permutex4Avx512Direct invokes the AVX-512 + VAES assembly
 // variant directly, bypassing runtime dispatch. Mirrors the structure
@@ -834,8 +1070,8 @@ func areion512Permutex4Avx512Direct(states *[4][64]byte, second bool) {
 	unpack512x4SoA(&x0, &x1, &x2, &x3, states)
 }
 
-// TestAreion256Permutex4CrossPath verifies that the four implementation
-// paths (AVX-512 ZMM, AVX2+VAES YMM, AES-NI XMM, portable Go fallback)
+// TestAreion256Permutex4CrossPath verifies that the five implementation
+// paths (AVX-512 ZMM, AVX2+VAES YMM, VEX XMM, AES-NI XMM, portable Go fallback)
 // produce bit-exact identical output on the same input, under both
 // constant tables. Stronger guarantee than any single-path-vs-serial
 // test: catches drift between paths that could otherwise survive if one
@@ -843,7 +1079,7 @@ func areion512Permutex4Avx512Direct(states *[4][64]byte, second bool) {
 // invariant relied on by ITB's BatchHashFunc256 contract.
 //
 // Skipped if the host lacks AVX-512 (because the AVX-512 ASM cannot be
-// invoked safely there). On AVX-512 + VAES hardware all four paths run
+// invoked safely there). On AVX-512 + VAES hardware all five paths run
 // on the same input.
 func TestAreion256Permutex4CrossPath(t *testing.T) {
 	if runtime.GOARCH != "amd64" {
@@ -872,6 +1108,8 @@ func TestAreion256Permutex4CrossPath(t *testing.T) {
 			areion256Permutex4Default(&c, areionRCOf(second))
 			d := initial
 			areion256Permutex4AesNiDirect(&d, second)
+			e := initial
+			areion256Permutex4VexDirect(&e, second)
 
 			if a != b {
 				t.Fatalf("P2=%v trial %d: AVX-512 vs AVX2 divergence\n"+
@@ -884,6 +1122,10 @@ func TestAreion256Permutex4CrossPath(t *testing.T) {
 			if c != d {
 				t.Fatalf("P2=%v trial %d: Pure Go vs AES-NI divergence\n"+
 					"purego: %x\naesni:  %x", second, trial, c, d)
+			}
+			if d != e {
+				t.Fatalf("P2=%v trial %d: AES-NI vs VEX divergence\n"+
+					"aesni:  %x\nvex:    %x", second, trial, d, e)
 			}
 		}
 	}
@@ -917,6 +1159,8 @@ func TestAreion512Permutex4CrossPath(t *testing.T) {
 			areion512Permutex4Default(&c, areionRCOf(second))
 			d := initial
 			areion512Permutex4AesNiDirect(&d, second)
+			e := initial
+			areion512Permutex4VexDirect(&e, second)
 
 			if a != b {
 				t.Fatalf("P2=%v trial %d: AVX-512 vs AVX2 divergence\n"+
@@ -929,6 +1173,10 @@ func TestAreion512Permutex4CrossPath(t *testing.T) {
 			if c != d {
 				t.Fatalf("P2=%v trial %d: Pure Go vs AES-NI divergence\n"+
 					"purego: %x\naesni:  %x", second, trial, c, d)
+			}
+			if d != e {
+				t.Fatalf("P2=%v trial %d: AES-NI vs VEX divergence\n"+
+					"aesni:  %x\nvex:    %x", second, trial, d, e)
 			}
 		}
 	}

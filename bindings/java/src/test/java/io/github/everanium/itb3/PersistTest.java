@@ -207,4 +207,35 @@ class PersistTest {
             }
         }
     }
+
+    @Test
+    void initKeysDeterminismAndValidation() {
+        byte[][] masters = new byte[8][32];
+        for (int i = 0; i < 8; i++) {
+            java.util.Arrays.fill(masters[i], (byte) (0x11 * (i + 1)));
+        }
+        try (Pipeline p1 = Pipeline.initKeys("singlemsg-triple-mac-v1", masters);
+                Pipeline p2 = Pipeline.initKeys("singlemsg-triple-mac-v1", masters)) {
+            assertArrayEquals(p1.save(), p2.save());
+            assertArrayEquals(PLAIN, p2.decryptMessage(p1.encryptMessage(PLAIN)));
+        }
+
+        byte[][] dup = new byte[8][32];
+        for (int i = 0; i < 8; i++) {
+            dup[i] = masters[i].clone();
+        }
+        dup[1] = dup[0].clone();
+        ItbException eDup = assertThrows(ItbException.class,
+                () -> Pipeline.initKeys("singlemsg-triple-mac-v1", dup));
+        assertEquals(Status.BAD_INPUT, eDup.status());
+
+        byte[][] shortKeys = new byte[8][];
+        for (int i = 0; i < 8; i++) {
+            shortKeys[i] = masters[i].clone();
+        }
+        shortKeys[0] = new byte[8];
+        ItbException eShort = assertThrows(ItbException.class,
+                () -> Pipeline.initKeys("singlemsg-triple-mac-v1", shortKeys));
+        assertEquals(Status.BAD_INPUT, eShort.status());
+    }
 }

@@ -44,6 +44,45 @@ final class Pipeline implements AutoCloseable {
         ItbException.relay { new Pipeline(JPipeline.init(profile, opts.toJava())) }
     }
 
+    /** Deterministically constructs a Pipeline from eight caller-supplied
+     * master keys (one per canonical seed slot 0..7) against the named
+     * profile and options. The eight master keys must come from
+     * independent entropy or key-agreement sources; never derive all eight
+     * keys from a single secret or a single KDF parent key. */
+    static Pipeline initKeys(String profile, List<byte[]> masters) {
+        initKeys(profile, new Opts(), masters)
+    }
+
+    /** Deterministically constructs a Pipeline from eight caller-supplied
+     * master keys (one per canonical seed slot 0..7) against the named
+     * profile and options. The eight master keys must come from
+     * independent entropy or key-agreement sources; never derive all eight
+     * keys from a single secret or a single KDF parent key. */
+    static Pipeline initKeys(String profile, Opts opts, List<byte[]> masters) {
+        byte[][] arr = masters == null ? (byte[][]) null : masters.toArray(new byte[0][])
+        initKeys(profile, opts, arr)
+    }
+
+    /** Deterministically constructs a Pipeline from eight caller-supplied
+     * master keys (one per canonical seed slot 0..7) against the named
+     * profile and options. The eight master keys must come from
+     * independent entropy or key-agreement sources; never derive all eight
+     * keys from a single secret or a single KDF parent key. */
+    static Pipeline initKeys(String profile, byte[][] masters) {
+        initKeys(profile, new Opts(), masters)
+    }
+
+    /** Deterministically constructs a Pipeline from eight caller-supplied
+     * master keys (one per canonical seed slot 0..7) against the named
+     * profile and options. The eight master keys must come from
+     * independent entropy or key-agreement sources; never derive all eight
+     * keys from a single secret or a single KDF parent key. */
+    static Pipeline initKeys(String profile, Opts opts, byte[][] masters) {
+        ItbException.relay {
+            new Pipeline(JPipeline.initKeys(profile, (opts ?: new Opts()).toJava(), masters))
+        }
+    }
+
     /** Reconstructs a Pipeline from a blob produced by {@link #save}
      * or {@link #rekey}, using the blob-embedded masters. The blob's
      * embedded profile record is the sole structural source. See
@@ -159,6 +198,32 @@ final class Pipeline implements AutoCloseable {
             @ClosureParams(value = SimpleType, options = 'io.github.everanium.itb3.groovy.Pipeline')
             Closure<T> body) {
         Pipeline pipe = init(profile, opts)
+        try {
+            body.call(pipe)
+        } finally {
+            pipe.close()
+        }
+    }
+
+    /** Scopes a deterministic Pipeline constructed via {@link #initKeys}
+     * inside {@code body}: initKeys, run the closure with the Pipeline
+     * as its argument, close on the way out. Returns the closure's value. */
+    static <T> T withPipelineKeys(String profile, List<byte[]> masters, Opts opts = new Opts(),
+            @ClosureParams(value = SimpleType, options = 'io.github.everanium.itb3.groovy.Pipeline')
+            Closure<T> body) {
+        Pipeline pipe = initKeys(profile, opts, masters)
+        try {
+            body.call(pipe)
+        } finally {
+            pipe.close()
+        }
+    }
+
+    /** {@link #withPipelineKeys} overload accepting {@code byte[][]}. */
+    static <T> T withPipelineKeys(String profile, byte[][] masters, Opts opts = new Opts(),
+            @ClosureParams(value = SimpleType, options = 'io.github.everanium.itb3.groovy.Pipeline')
+            Closure<T> body) {
+        Pipeline pipe = initKeys(profile, opts, masters)
         try {
             body.call(pipe)
         } finally {

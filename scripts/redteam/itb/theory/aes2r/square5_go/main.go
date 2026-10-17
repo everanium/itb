@@ -45,7 +45,7 @@
 // --model realistic is the shorthand for both. In lo mode the lab-grant cell
 // is run on the same seeds in the same invocation as the positive control.
 //
-// --hw routes the AES rounds through go-aes RoundHW / FinalRoundHW (AES-NI;
+// --hw routes the AES rounds through areion RoundHW / FinalRoundHW (AES-NI;
 // pinned against the software rounds by the self-test); it changes throughput
 // only.
 package main
@@ -63,7 +63,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	aes "github.com/everanium/itb/third/goaes"
+	"github.com/everanium/areion"
 )
 
 const lanes = 4
@@ -243,7 +243,7 @@ func encKey(block, key [16]byte, nr int) [16]byte {
 	return encRK(block, keyExpand(key, nr), nr)
 }
 
-// useHW routes encRKFast through the go-aes AES-NI round primitives. Set once
+// useHW routes encRKFast through the areion AES-NI round primitives. Set once
 // in main from --hw after the self-test pins HW == SW.
 var useHW bool
 
@@ -275,8 +275,8 @@ func keyExpandInto(key [16]byte, nr int, rks *[maxNR + 1][16]byte) {
 }
 
 // encRKFast is encRK over a fixed round-key array, with the AES-NI round path
-// when useHW is set (RoundHW = SubBytes, ShiftRows, MixColumns, AddRoundKey;
-// FinalRoundHW omits MixColumns — the standard AES round semantics encRK
+// when useHW is set (AES128Round = SubBytes, ShiftRows, MixColumns, AddRoundKey;
+// AES128FinalRound omits MixColumns — the standard AES round semantics encRK
 // implements in software).
 func encRKFast(block [16]byte, rks *[maxNR + 1][16]byte, nr int) [16]byte {
 	s := block
@@ -284,11 +284,11 @@ func encRKFast(block [16]byte, rks *[maxNR + 1][16]byte, nr int) [16]byte {
 		s[i] ^= rks[0][i]
 	}
 	if useHW {
-		b := (*aes.Block)(&s)
+		b := (*areion.Block)(&s)
 		for r := 1; r < nr; r++ {
-			aes.RoundHW(b, (*aes.Block)(&rks[r]))
+			areion.AES128Round(b, (*areion.Block)(&rks[r]))
 		}
-		aes.FinalRoundHW(b, (*aes.Block)(&rks[nr]))
+		areion.AES128FinalRound(b, (*areion.Block)(&rks[nr]))
 		return s
 	}
 	for r := 1; r < nr; r++ {
@@ -374,7 +374,7 @@ func selfTest() error {
 			if got := encRKFast(b, &rks, nr); got != ref {
 				return fmt.Errorf("encRKFast (software) mismatch at nr=%d", nr)
 			}
-			if aes.UseHardwareAcceleration() {
+			if areion.UseHardwareAcceleration() {
 				useHW = true
 				if got := encRKFast(b, &rks, nr); got != ref {
 					return fmt.Errorf("encRKFast (AES-NI) mismatch at nr=%d", nr)
@@ -694,7 +694,7 @@ func main() {
 	observable := flag.String("observable", "full", "attacker observable: full (16-byte ct, lab grant) | lo (ct[8:16] = the aes2r lo lane, state columns 2, 3)")
 	nonceModel := flag.String("nonce", "chosen", "who picks the non-active data bytes: chosen (lab grant) | idx-only (active set confined to bytes 0..3, the rest a random constant per set)")
 	model := flag.String("model", "", "shorthand: realistic = --observable lo --nonce idx-only; lab = --observable full --nonce chosen")
-	hw := flag.Bool("hw", aes.UseHardwareAcceleration(), "AES-NI round path (go-aes RoundHW / FinalRoundHW); throughput only")
+	hw := flag.Bool("hw", areion.UseHardwareAcceleration(), "AES-NI round path (areion AES128Round / AES128FinalRound); throughput only")
 	labControl := flag.Bool("lab-control", true, "in lo / idx-only mode also run the lab-grant cell on the same seeds as the positive control")
 	flag.Parse()
 
@@ -744,7 +744,7 @@ func main() {
 			}
 		}
 	}
-	if *hw && !aes.UseHardwareAcceleration() {
+	if *hw && !areion.UseHardwareAcceleration() {
 		fmt.Fprintln(os.Stderr, "--hw: no AES-NI on this host; using the software rounds")
 		*hw = false
 	}

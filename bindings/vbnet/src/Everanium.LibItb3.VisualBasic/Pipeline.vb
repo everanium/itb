@@ -49,6 +49,29 @@ Public NotInheritable Class Pipeline
     End Function
 
     ''' <summary>
+    ''' Deterministically constructs a Pipeline from eight caller-supplied
+    ''' master keys (one per canonical seed slot 0..7) against the named
+    ''' profile and options. The eight master keys must come from
+    ''' independent entropy or key-agreement sources; never derive all
+    ''' eight keys from a single secret or a single KDF parent key.
+    ''' </summary>
+    Public Shared Function InitKeys(profile As String, masters As Byte()(), Optional opts As Opts = Nothing) As Pipeline
+        Return InitKeys(profile, opts, masters)
+    End Function
+
+    ''' <summary>
+    ''' Deterministically constructs a Pipeline from eight caller-supplied
+    ''' master keys (one per canonical seed slot 0..7) against the named
+    ''' profile and options. The eight master keys must come from
+    ''' independent entropy or key-agreement sources; never derive all
+    ''' eight keys from a single secret or a single KDF parent key.
+    ''' </summary>
+    Public Shared Function InitKeys(profile As String, opts As Opts, masters As Byte()()) As Pipeline
+        Return Guarded(Function() New Pipeline(Global.Everanium.Itb3.Pipeline.InitKeys(profile, InnerOpts(opts), masters)))
+    End Function
+
+
+    ''' <summary>
     ''' Reconstructs a Pipeline from a blob produced by
     ''' <see cref="Save"/> or <see cref="Rekey"/>. The blob's embedded
     ''' profile record is the sole structural source. Omitting

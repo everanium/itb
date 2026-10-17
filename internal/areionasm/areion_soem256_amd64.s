@@ -28,7 +28,7 @@
 
 #include "textflag.h"
 
-// func Areion256SoEMPermutex4Interleaved(s1b0, s1b1, s2b0, s2b1 *aes.Block4)
+// func Areion256SoEMPermutex4Interleaved(s1b0, s1b1, s2b0, s2b1 *areion.Block4)
 //
 // Runs the 10-round Areion256 permutation P1 on (s1b0, s1b1) and P2
 // on (s2b0, s2b1) interleaved, XORs the two outputs together, and
@@ -36,16 +36,14 @@
 //
 // Per round (10 rounds total, alternating x0/x1 roles; rc = P1's
 // constant, rc2 = P2's):
-//   even r:  t1 = s1_x0;  t2 = s2_x0
-//            t1 = RoundNoKey(t1) ⊕ rc[r];  t2 = RoundNoKey(t2) ⊕ rc2[r]
-//            t1 = RoundNoKey(t1) ⊕ s1_x1;  t2 = RoundNoKey(t2) ⊕ s2_x1
-//            s1_x0 = FinalRoundNoKey(s1_x0); s2_x0 = FinalRoundNoKey(s2_x0)
-//            s1_x1 = t1;  s2_x1 = t2
+//   even r:  t1 = RoundNoKey(s1_x0) ⊕ rc[r];  t2 = RoundNoKey(s2_x0) ⊕ rc2[r]
+//            s1_x0 = FinalRoundNoKey(s1_x0);  s2_x0 = FinalRoundNoKey(s2_x0)
+//            s1_x1 = RoundNoKey(t1) ⊕ s1_x1;  s2_x1 = RoundNoKey(t2) ⊕ s2_x1
 //   odd r:   symmetric with x0/x1 roles swapped
 //
 // The `RoundNoKey + XOR(rc)` and `RoundNoKey + XOR(other_half)` fuses
-// follow the same `VAESENC k, s, s` identity as the upstream
-// per-half kernel — `AESENC(s, k) = MixColumns(ShiftRows(SubBytes(s))) XOR k`.
+// follow the 3-operand `VAESENC k, s, dst` identity —
+// `AESENC(s, k) = MixColumns(ShiftRows(SubBytes(s))) XOR k`.
 TEXT ·Areion256SoEMPermutex4Interleaved(SB), NOSPLIT, $0-32
 	MOVQ s1b0+0(FP),  AX
 	MOVQ s1b1+8(FP),  BX
@@ -74,125 +72,85 @@ TEXT ·Areion256SoEMPermutex4Interleaved(SB), NOSPLIT, $0-32
 	VMOVDQU64 ·AreionRC4x+512(SB), Z24  // rc[8]
 	VMOVDQU64 ·AreionRC4x+576(SB), Z25  // rc[9]
 
-	// ===== Round 0 (even): t = s_x0; ...; s_x0 = FinalRoundNoKey(s_x0); s_x1 = t
-	VMOVDQA64   Z0, Z2          // t1 = s1_x0
-	VMOVDQA64   Z4, Z6          // t2 = s2_x0
-	VAESENC     Z16, Z2, Z2     // t1 = RoundNoKey(t1) ⊕ rc[0]
-	VAESENC     ·AreionRC4x2+0(SB), Z6, Z6  // t2 = RoundNoKey(t2) ⊕ rc2[0]
-	VAESENC     Z1, Z2, Z2      // t1 = RoundNoKey(t1) ⊕ s1_x1
-	VAESENC     Z5, Z6, Z6      // t2 = RoundNoKey(t2) ⊕ s2_x1
-	VAESENCLAST Z3, Z0, Z0      // s1_x0 = FinalRoundNoKey(s1_x0)
-	VAESENCLAST Z3, Z4, Z4      // s2_x0 = FinalRoundNoKey(s2_x0)
-	VMOVDQA64   Z2, Z1          // s1_x1 = t1
-	VMOVDQA64   Z6, Z5          // s2_x1 = t2
+	// ===== Round 0 (even)
+	VAESENC     Z16, Z0, Z2
+	VAESENC     ·AreionRC4x2+0(SB), Z4, Z6
+	VAESENCLAST Z3, Z0, Z0
+	VAESENCLAST Z3, Z4, Z4
+	VAESENC     Z1, Z2, Z1
+	VAESENC     Z5, Z6, Z5
 
-	// ===== Round 1 (odd): t = s_x1; ...; s_x1 = FinalRoundNoKey(s_x1); s_x0 = t
-	VMOVDQA64   Z1, Z2
-	VMOVDQA64   Z5, Z6
-	VAESENC     Z17, Z2, Z2     // rc[1]
-	VAESENC     ·AreionRC4x2+64(SB), Z6, Z6  // rc2[1]
-	VAESENC     Z0, Z2, Z2
-	VAESENC     Z4, Z6, Z6
+	// ===== Round 1 (odd)
+	VAESENC     Z17, Z1, Z2
+	VAESENC     ·AreionRC4x2+64(SB), Z5, Z6
 	VAESENCLAST Z3, Z1, Z1
 	VAESENCLAST Z3, Z5, Z5
-	VMOVDQA64   Z2, Z0
-	VMOVDQA64   Z6, Z4
+	VAESENC     Z0, Z2, Z0
+	VAESENC     Z4, Z6, Z4
 
 	// ===== Round 2 (even)
-	VMOVDQA64   Z0, Z2
-	VMOVDQA64   Z4, Z6
-	VAESENC     Z18, Z2, Z2     // rc[2]
-	VAESENC     ·AreionRC4x2+128(SB), Z6, Z6  // rc2[2]
-	VAESENC     Z1, Z2, Z2
-	VAESENC     Z5, Z6, Z6
+	VAESENC     Z18, Z0, Z2
+	VAESENC     ·AreionRC4x2+128(SB), Z4, Z6
 	VAESENCLAST Z3, Z0, Z0
 	VAESENCLAST Z3, Z4, Z4
-	VMOVDQA64   Z2, Z1
-	VMOVDQA64   Z6, Z5
+	VAESENC     Z1, Z2, Z1
+	VAESENC     Z5, Z6, Z5
 
 	// ===== Round 3 (odd)
-	VMOVDQA64   Z1, Z2
-	VMOVDQA64   Z5, Z6
-	VAESENC     Z19, Z2, Z2     // rc[3]
-	VAESENC     ·AreionRC4x2+192(SB), Z6, Z6  // rc2[3]
-	VAESENC     Z0, Z2, Z2
-	VAESENC     Z4, Z6, Z6
+	VAESENC     Z19, Z1, Z2
+	VAESENC     ·AreionRC4x2+192(SB), Z5, Z6
 	VAESENCLAST Z3, Z1, Z1
 	VAESENCLAST Z3, Z5, Z5
-	VMOVDQA64   Z2, Z0
-	VMOVDQA64   Z6, Z4
+	VAESENC     Z0, Z2, Z0
+	VAESENC     Z4, Z6, Z4
 
 	// ===== Round 4 (even)
-	VMOVDQA64   Z0, Z2
-	VMOVDQA64   Z4, Z6
-	VAESENC     Z20, Z2, Z2     // rc[4]
-	VAESENC     ·AreionRC4x2+256(SB), Z6, Z6  // rc2[4]
-	VAESENC     Z1, Z2, Z2
-	VAESENC     Z5, Z6, Z6
+	VAESENC     Z20, Z0, Z2
+	VAESENC     ·AreionRC4x2+256(SB), Z4, Z6
 	VAESENCLAST Z3, Z0, Z0
 	VAESENCLAST Z3, Z4, Z4
-	VMOVDQA64   Z2, Z1
-	VMOVDQA64   Z6, Z5
+	VAESENC     Z1, Z2, Z1
+	VAESENC     Z5, Z6, Z5
 
 	// ===== Round 5 (odd)
-	VMOVDQA64   Z1, Z2
-	VMOVDQA64   Z5, Z6
-	VAESENC     Z21, Z2, Z2     // rc[5]
-	VAESENC     ·AreionRC4x2+320(SB), Z6, Z6  // rc2[5]
-	VAESENC     Z0, Z2, Z2
-	VAESENC     Z4, Z6, Z6
+	VAESENC     Z21, Z1, Z2
+	VAESENC     ·AreionRC4x2+320(SB), Z5, Z6
 	VAESENCLAST Z3, Z1, Z1
 	VAESENCLAST Z3, Z5, Z5
-	VMOVDQA64   Z2, Z0
-	VMOVDQA64   Z6, Z4
+	VAESENC     Z0, Z2, Z0
+	VAESENC     Z4, Z6, Z4
 
 	// ===== Round 6 (even)
-	VMOVDQA64   Z0, Z2
-	VMOVDQA64   Z4, Z6
-	VAESENC     Z22, Z2, Z2     // rc[6]
-	VAESENC     ·AreionRC4x2+384(SB), Z6, Z6  // rc2[6]
-	VAESENC     Z1, Z2, Z2
-	VAESENC     Z5, Z6, Z6
+	VAESENC     Z22, Z0, Z2
+	VAESENC     ·AreionRC4x2+384(SB), Z4, Z6
 	VAESENCLAST Z3, Z0, Z0
 	VAESENCLAST Z3, Z4, Z4
-	VMOVDQA64   Z2, Z1
-	VMOVDQA64   Z6, Z5
+	VAESENC     Z1, Z2, Z1
+	VAESENC     Z5, Z6, Z5
 
 	// ===== Round 7 (odd)
-	VMOVDQA64   Z1, Z2
-	VMOVDQA64   Z5, Z6
-	VAESENC     Z23, Z2, Z2     // rc[7]
-	VAESENC     ·AreionRC4x2+448(SB), Z6, Z6  // rc2[7]
-	VAESENC     Z0, Z2, Z2
-	VAESENC     Z4, Z6, Z6
+	VAESENC     Z23, Z1, Z2
+	VAESENC     ·AreionRC4x2+448(SB), Z5, Z6
 	VAESENCLAST Z3, Z1, Z1
 	VAESENCLAST Z3, Z5, Z5
-	VMOVDQA64   Z2, Z0
-	VMOVDQA64   Z6, Z4
+	VAESENC     Z0, Z2, Z0
+	VAESENC     Z4, Z6, Z4
 
 	// ===== Round 8 (even)
-	VMOVDQA64   Z0, Z2
-	VMOVDQA64   Z4, Z6
-	VAESENC     Z24, Z2, Z2     // rc[8]
-	VAESENC     ·AreionRC4x2+512(SB), Z6, Z6  // rc2[8]
-	VAESENC     Z1, Z2, Z2
-	VAESENC     Z5, Z6, Z6
+	VAESENC     Z24, Z0, Z2
+	VAESENC     ·AreionRC4x2+512(SB), Z4, Z6
 	VAESENCLAST Z3, Z0, Z0
 	VAESENCLAST Z3, Z4, Z4
-	VMOVDQA64   Z2, Z1
-	VMOVDQA64   Z6, Z5
+	VAESENC     Z1, Z2, Z1
+	VAESENC     Z5, Z6, Z5
 
 	// ===== Round 9 (odd)
-	VMOVDQA64   Z1, Z2
-	VMOVDQA64   Z5, Z6
-	VAESENC     Z25, Z2, Z2     // rc[9]
-	VAESENC     ·AreionRC4x2+576(SB), Z6, Z6  // rc2[9]
-	VAESENC     Z0, Z2, Z2
-	VAESENC     Z4, Z6, Z6
+	VAESENC     Z25, Z1, Z2
+	VAESENC     ·AreionRC4x2+576(SB), Z5, Z6
 	VAESENCLAST Z3, Z1, Z1
 	VAESENCLAST Z3, Z5, Z5
-	VMOVDQA64   Z2, Z0
-	VMOVDQA64   Z6, Z4
+	VAESENC     Z0, Z2, Z0
+	VAESENC     Z4, Z6, Z4
 
 	// Output: P1(state1) ⊕ P2(state2), written back to (s1b0, s1b1).
 	VPXORD Z4, Z0, Z0           // s1_x0 = s1_x0' ⊕ s2_x0'
@@ -201,5 +159,192 @@ TEXT ·Areion256SoEMPermutex4Interleaved(SB), NOSPLIT, $0-32
 	VMOVDQU64 Z0, (AX)
 	VMOVDQU64 Z1, (BX)
 
+	VPXORD Z0, Z0, Z0
+	VPXORD Z1, Z1, Z1
+	VPXORD Z2, Z2, Z2
+	VPXORD Z4, Z4, Z4
+	VPXORD Z5, Z5, Z5
+	VPXORD Z6, Z6, Z6
 	VZEROUPPER
 	RET
+
+// func Areion256SoEMPermutex4VaesAvx2(s1b0, s1b1, s2b0, s2b1 *areion.Block4)
+TEXT ·Areion256SoEMPermutex4VaesAvx2(SB), NOSPLIT, $0-32
+	MOVQ s1b0+0(FP), AX
+	MOVQ s1b1+8(FP), BX
+	MOVQ s2b0+16(FP), CX
+	MOVQ s2b1+24(FP), DX
+	VMOVDQU 0(AX), Y0
+	VMOVDQU 32(AX), Y1
+	VMOVDQU 0(BX), Y2
+	VMOVDQU 32(BX), Y3
+	VMOVDQU 0(CX), Y4
+	VMOVDQU 32(CX), Y5
+	VMOVDQU 0(DX), Y6
+	VMOVDQU 32(DX), Y7
+	VPXOR Y15, Y15, Y15
+	VMOVDQU ·AreionRC4x+0(SB), Y12
+	VMOVDQU ·AreionRC4x2+0(SB), Y13
+	VAESENC Y12, Y0, Y8
+	VAESENC Y12, Y1, Y9
+	VAESENC Y13, Y4, Y10
+	VAESENC Y13, Y5, Y11
+	VAESENCLAST Y15, Y0, Y0
+	VAESENCLAST Y15, Y1, Y1
+	VAESENCLAST Y15, Y4, Y4
+	VAESENCLAST Y15, Y5, Y5
+	VAESENC Y2, Y8, Y2
+	VAESENC Y3, Y9, Y3
+	VAESENC Y6, Y10, Y6
+	VAESENC Y7, Y11, Y7
+	VMOVDQU ·AreionRC4x+64(SB), Y12
+	VMOVDQU ·AreionRC4x2+64(SB), Y13
+	VAESENC Y12, Y2, Y8
+	VAESENC Y12, Y3, Y9
+	VAESENC Y13, Y6, Y10
+	VAESENC Y13, Y7, Y11
+	VAESENCLAST Y15, Y2, Y2
+	VAESENCLAST Y15, Y3, Y3
+	VAESENCLAST Y15, Y6, Y6
+	VAESENCLAST Y15, Y7, Y7
+	VAESENC Y0, Y8, Y0
+	VAESENC Y1, Y9, Y1
+	VAESENC Y4, Y10, Y4
+	VAESENC Y5, Y11, Y5
+	VMOVDQU ·AreionRC4x+128(SB), Y12
+	VMOVDQU ·AreionRC4x2+128(SB), Y13
+	VAESENC Y12, Y0, Y8
+	VAESENC Y12, Y1, Y9
+	VAESENC Y13, Y4, Y10
+	VAESENC Y13, Y5, Y11
+	VAESENCLAST Y15, Y0, Y0
+	VAESENCLAST Y15, Y1, Y1
+	VAESENCLAST Y15, Y4, Y4
+	VAESENCLAST Y15, Y5, Y5
+	VAESENC Y2, Y8, Y2
+	VAESENC Y3, Y9, Y3
+	VAESENC Y6, Y10, Y6
+	VAESENC Y7, Y11, Y7
+	VMOVDQU ·AreionRC4x+192(SB), Y12
+	VMOVDQU ·AreionRC4x2+192(SB), Y13
+	VAESENC Y12, Y2, Y8
+	VAESENC Y12, Y3, Y9
+	VAESENC Y13, Y6, Y10
+	VAESENC Y13, Y7, Y11
+	VAESENCLAST Y15, Y2, Y2
+	VAESENCLAST Y15, Y3, Y3
+	VAESENCLAST Y15, Y6, Y6
+	VAESENCLAST Y15, Y7, Y7
+	VAESENC Y0, Y8, Y0
+	VAESENC Y1, Y9, Y1
+	VAESENC Y4, Y10, Y4
+	VAESENC Y5, Y11, Y5
+	VMOVDQU ·AreionRC4x+256(SB), Y12
+	VMOVDQU ·AreionRC4x2+256(SB), Y13
+	VAESENC Y12, Y0, Y8
+	VAESENC Y12, Y1, Y9
+	VAESENC Y13, Y4, Y10
+	VAESENC Y13, Y5, Y11
+	VAESENCLAST Y15, Y0, Y0
+	VAESENCLAST Y15, Y1, Y1
+	VAESENCLAST Y15, Y4, Y4
+	VAESENCLAST Y15, Y5, Y5
+	VAESENC Y2, Y8, Y2
+	VAESENC Y3, Y9, Y3
+	VAESENC Y6, Y10, Y6
+	VAESENC Y7, Y11, Y7
+	VMOVDQU ·AreionRC4x+320(SB), Y12
+	VMOVDQU ·AreionRC4x2+320(SB), Y13
+	VAESENC Y12, Y2, Y8
+	VAESENC Y12, Y3, Y9
+	VAESENC Y13, Y6, Y10
+	VAESENC Y13, Y7, Y11
+	VAESENCLAST Y15, Y2, Y2
+	VAESENCLAST Y15, Y3, Y3
+	VAESENCLAST Y15, Y6, Y6
+	VAESENCLAST Y15, Y7, Y7
+	VAESENC Y0, Y8, Y0
+	VAESENC Y1, Y9, Y1
+	VAESENC Y4, Y10, Y4
+	VAESENC Y5, Y11, Y5
+	VMOVDQU ·AreionRC4x+384(SB), Y12
+	VMOVDQU ·AreionRC4x2+384(SB), Y13
+	VAESENC Y12, Y0, Y8
+	VAESENC Y12, Y1, Y9
+	VAESENC Y13, Y4, Y10
+	VAESENC Y13, Y5, Y11
+	VAESENCLAST Y15, Y0, Y0
+	VAESENCLAST Y15, Y1, Y1
+	VAESENCLAST Y15, Y4, Y4
+	VAESENCLAST Y15, Y5, Y5
+	VAESENC Y2, Y8, Y2
+	VAESENC Y3, Y9, Y3
+	VAESENC Y6, Y10, Y6
+	VAESENC Y7, Y11, Y7
+	VMOVDQU ·AreionRC4x+448(SB), Y12
+	VMOVDQU ·AreionRC4x2+448(SB), Y13
+	VAESENC Y12, Y2, Y8
+	VAESENC Y12, Y3, Y9
+	VAESENC Y13, Y6, Y10
+	VAESENC Y13, Y7, Y11
+	VAESENCLAST Y15, Y2, Y2
+	VAESENCLAST Y15, Y3, Y3
+	VAESENCLAST Y15, Y6, Y6
+	VAESENCLAST Y15, Y7, Y7
+	VAESENC Y0, Y8, Y0
+	VAESENC Y1, Y9, Y1
+	VAESENC Y4, Y10, Y4
+	VAESENC Y5, Y11, Y5
+	VMOVDQU ·AreionRC4x+512(SB), Y12
+	VMOVDQU ·AreionRC4x2+512(SB), Y13
+	VAESENC Y12, Y0, Y8
+	VAESENC Y12, Y1, Y9
+	VAESENC Y13, Y4, Y10
+	VAESENC Y13, Y5, Y11
+	VAESENCLAST Y15, Y0, Y0
+	VAESENCLAST Y15, Y1, Y1
+	VAESENCLAST Y15, Y4, Y4
+	VAESENCLAST Y15, Y5, Y5
+	VAESENC Y2, Y8, Y2
+	VAESENC Y3, Y9, Y3
+	VAESENC Y6, Y10, Y6
+	VAESENC Y7, Y11, Y7
+	VMOVDQU ·AreionRC4x+576(SB), Y12
+	VMOVDQU ·AreionRC4x2+576(SB), Y13
+	VAESENC Y12, Y2, Y8
+	VAESENC Y12, Y3, Y9
+	VAESENC Y13, Y6, Y10
+	VAESENC Y13, Y7, Y11
+	VAESENCLAST Y15, Y2, Y2
+	VAESENCLAST Y15, Y3, Y3
+	VAESENCLAST Y15, Y6, Y6
+	VAESENCLAST Y15, Y7, Y7
+	VAESENC Y0, Y8, Y0
+	VAESENC Y1, Y9, Y1
+	VAESENC Y4, Y10, Y4
+	VAESENC Y5, Y11, Y5
+	VPXOR Y4, Y0, Y0
+	VPXOR Y5, Y1, Y1
+	VPXOR Y6, Y2, Y2
+	VPXOR Y7, Y3, Y3
+	VMOVDQU Y0, 0(AX)
+	VMOVDQU Y1, 32(AX)
+	VMOVDQU Y2, 0(BX)
+	VMOVDQU Y3, 32(BX)
+	VPXORD X0, X0, X0
+	VPXORD X1, X1, X1
+	VPXORD X2, X2, X2
+	VPXORD X3, X3, X3
+	VPXORD X4, X4, X4
+	VPXORD X5, X5, X5
+	VPXORD X6, X6, X6
+	VPXORD X7, X7, X7
+	VPXORD X8, X8, X8
+	VPXORD X9, X9, X9
+	VPXORD X10, X10, X10
+	VPXORD X11, X11, X11
+	VPXORD X12, X12, X12
+	VPXORD X13, X13, X13
+	VZEROUPPER
+	RET
+

@@ -37,8 +37,9 @@ single-lane entry points of every tier run
 general-purpose-register kernels: the ChaCha20 block state in 32-bit
 general-purpose registers (amd64 keeps fifteen of the sixteen words in
 registers and one c word in a frame slot, which its quarter-round steps
-reach through memory operands; arm64 keeps all sixteen), the key words
-and the slot words as frame slots, the rotates as `ROLL` / `RORW`.
+reach through memory operands; arm64 keeps all sixteen), the
+non-constant slot words in the frame, the constant tail words as
+immediates, the rotates as `ROLL` / `RORW`.
 
 Per cascade round the kernel derives the ChaCha20 key per lane as the
 32-byte fixed key XOR the seed — the seed of the round being the
@@ -54,7 +55,8 @@ block. The last key is the round's output, left in the state registers
 0..3 and 12..15, and the next round rebuilds its key words from the
 fixed key dword, the component dword broadcast and those output words —
 a `VPBROADCASTD` and one `VPTERNLOGD` per word on the EVEX tier, two
-broadcasts and two `VPXOR` on the AVX2 tier, a `VDUP` and two `VEOR` on
+broadcasts and two `VPXOR` on the AVX2 tier, a `VDUP` and one `VEOR`
+(with the fixed-key and component dwords XORed in scalar GPR first) on
 NEON. The slot words of every block are staged once per call into the
 frame (the S words). Every 64-bit component and output word straddles
 two 32-bit key words, low half first. The 13-byte fill block and the
@@ -65,11 +67,15 @@ register plan of every tier.
 ## Register budget
 
 The 32-bit-lane block state of ChaCha20 fills 16 registers at one dword
-lane per pixel and the eight key words of the cascade round fill eight
-more, with the constants as embedded-broadcast memory operands: the
-avx512 tier keeps both sets in XMM registers at four lanes and in YMM
-registers at eight lanes (the eight-pixel stride of the width-256
-pipeline and the fill kernel), 24 of 32 in both forms. The output of a
+lane per pixel: the avx512 tier keeps the block state in `X0..X15` at
+four lanes and in `Y0..Y15` at eight lanes (the eight-pixel stride of
+the width-256 pipeline and the fill kernel), pre-broadcasts
+`sigma[0..3]` into `16..19` once per call, holds up to twelve staged
+slot words in `20..31` (every slot word at shapes 13 / 20 / 36, the
+first three blocks at shape 68; the 13x8 fill kernel synthesises its
+four slot words straight into `Y20..Y23`), and rebuilds the eight key
+words of every cascade round straight into `4..11` (the b and c rows,
+dead between rounds), up to 32 of 32 in both forms. The output of a
 block is the key of the next, so no accumulator exists. No sixteen-lane
 fill kernel exists: sixteen lanes would be the ZMM form of the same
 plan, and the cell is waived — the batch-16 hook is the widest fill
@@ -84,8 +90,10 @@ plan on YMM registers — eight dword lanes per register, one per pixel,
 the frame slots and memory operands 32 bytes wide — so they carry the
 one spill of the four-lane plan and no other. The NEON tier holds the
 four dword lanes of every state word in one register — one pass — with
-the key words in eight more registers, one alternate register for the
-shift-insert rotates and one byte mask for the rotate by 8.
+`sigma[0..3]` pre-duplicated in `V28..V31`, up to ten staged slot words
+in `V16..V23` and `V26..V27`, the key words rebuilt straight into
+`V4..V11`, one alternate register for the shift-insert rotates and one
+byte mask for the rotate by 8.
 
 ## Store-to-load forwarding discipline (amd64)
 
@@ -99,11 +107,11 @@ lane. Every wide kernel ends with `VZEROUPPER` before `RET`.
 ## Frame hygiene
 
 The key words `K ⊕ component ⊕ h` of every cascade round exist only in
-registers: the avx512 and NEON tiers hold them in eight registers of
-their own, the avx2 and gpr arm64 tiers build them straight into the b
-and c rows of the block state, and the gpr amd64 tier builds them into
-the b-row registers and its `v[11]` state slot, each output word freeing
-its register as the temp of the next key word. The frame otherwise holds
+registers: the avx512, avx2, NEON and gpr arm64 tiers build them
+straight into the b and c rows of the block state, and the gpr amd64
+tier builds them into the b-row registers and its `v[11]` state slot,
+each output word freeing its register as the temp of the next key word.
+The frame otherwise holds
 the staged slot words (public) and the state words a plan spills (the
 avx2 `v[15]` / `v[12]` slots, the gpr amd64 `v[11]` slot); those state
 slots are overwritten with zeros before the kernel returns. The NEON

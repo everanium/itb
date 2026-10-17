@@ -18,11 +18,12 @@
 //
 // Row lookup: both batches read the same packed row for position p
 // (slot 0 = C(p, 16), slot i = C(p, i) for i = 1..15), loaded once into
-// a two-ZMM window. C(p, krem) is selected with VPERMI2Q, which
-// overwrites its index operand and preserves both table operands, from
-// a copy of each batch's krem; the permute consumes the low 4 bits of
-// the index, so krem = 16 wraps to slot 0 = C(p, 16) and krem = 0 also
-// reads slot 0.
+// a two-ZMM window. Batch a selects C(p, krem) with VPERMI2Q (overwriting
+// a copy of its krem while preserving the two table registers for batch
+// b); batch b then selects C(p, krem) directly with VPERMT2Q (overwriting
+// the first table register and preserving batch b's krem in-place). The
+// permutes consume the low 4 bits of the index, so krem = 16 wraps to
+// slot 0 = C(p, 16) and krem = 0 also reads slot 0.
 //
 // The krem != 0 predicate (VPTESTMQ) is load-bearing and must stay:
 // krem = 16 is a legal state at row 15 (rank 0 selects the bottom 16
@@ -41,19 +42,20 @@
 //
 // Register plan:
 //   a.m0  rank Z0  krem Z1  mask Z2  c Z7   predicate K2
-//   b.m0  rank Z8  krem Z9  mask Z10 c Z11  predicate K1
+//   b.m0  rank Z8  krem Z9  mask Z10 c Z3   predicate K1
 //   a.m1  rank Z16 krem Z17 mask Z18 c Z22  predicate K5
-//   b.m1  rank Z24 krem Z25 mask Z26 c Z29  predicate K4
+//   b.m1  rank Z24 krem Z25 mask Z26 c Z20  predicate K4
 //   rows  Z3/Z4 (m0 row window), Z20/Z21 (m1 row window)
 //   bits  Z5 (m0 position bit), Z19 (m1 position bit); Z6 = 1; Z27 = domain
 //   R12 / R13 row pointers (public); R10 loop counter
 //
-// Frame: 4 pointer args = 32 bytes; 256 bytes of locals spill the
-// remaining / m1Local lane vectors of both batches for the PDEPQ remap.
+// Frame: 4 pointer args = 32 bytes, no locals; m1Local and remaining
+// lane vectors of both batches are parked in out[1] and out[2] and
+// overwritten in place by the PDEPQ remap.
 //   idx0 +0(FP)  idx1 +8(FP)  crow +16(FP)  out +24(FP)
 // out layout: out[0][0..15] = m0, out[1][0..15] = m1, out[2][0..15] = m2
 // (batch a in lanes 0..7, batch b in lanes 8..15).
-TEXT ·rankToMaskTripleUnrank48x16AVX512(SB), NOSPLIT, $256-32
+TEXT ·rankToMaskTripleUnrank48x16AVX512(SB), NOSPLIT, $0-32
 	MOVQ idx0+0(FP), AX
 	MOVQ idx1+8(FP), BX
 	MOVQ crow+16(FP), R14
@@ -87,29 +89,27 @@ jointLoop:
 	VMOVDQU64 (R13), Z20            // m1 row: slots 0..7
 	VMOVDQU64 64(R13), Z21          // m1 row: slots 8..15
 	VMOVDQA64 Z1, Z7
-	VMOVDQA64 Z9, Z11
 	VMOVDQA64 Z17, Z22
-	VMOVDQA64 Z25, Z29
 	VPERMI2Q Z4, Z3, Z7             // a.m0: c = C(p0, krem)
-	VPERMI2Q Z4, Z3, Z11            // b.m0: c
+	VPERMT2Q Z4, Z9, Z3             // b.m0: c in Z3 (Z9 preserved)
 	VPERMI2Q Z21, Z20, Z22          // a.m1: c = C(p1, krem)
-	VPERMI2Q Z21, Z20, Z29          // b.m1: c
+	VPERMT2Q Z21, Z25, Z20          // b.m1: c in Z20 (Z25 preserved)
 	VPTESTMQ Z1, Z1, K2             // krem != 0 (see header)
 	VPTESTMQ Z9, Z9, K1
 	VPTESTMQ Z17, Z17, K5
 	VPTESTMQ Z25, Z25, K4
 	VPCMPUQ $5, Z7, Z0, K2, K2      // pick = (rank >= c) & (krem != 0)
-	VPCMPUQ $5, Z11, Z8, K1, K1
+	VPCMPUQ $5, Z3, Z8, K1, K1
 	VPCMPUQ $5, Z22, Z16, K5, K5
-	VPCMPUQ $5, Z29, Z24, K4, K4
+	VPCMPUQ $5, Z20, Z24, K4, K4
 	VPORQ Z5, Z2, K2, Z2            // mask |= bit
 	VPORQ Z5, Z10, K1, Z10
 	VPORQ Z19, Z18, K5, Z18
 	VPORQ Z19, Z26, K4, Z26
 	VPSUBQ Z7, Z0, K2, Z0           // rank -= c
-	VPSUBQ Z11, Z8, K1, Z8
+	VPSUBQ Z3, Z8, K1, Z8
 	VPSUBQ Z22, Z16, K5, Z16
-	VPSUBQ Z29, Z24, K4, Z24
+	VPSUBQ Z20, Z24, K4, Z24
 	VPSUBQ Z6, Z1, K2, Z1           // krem -= 1
 	VPSUBQ Z6, Z9, K1, Z9
 	VPSUBQ Z6, Z17, K5, Z17
@@ -127,17 +127,16 @@ m0Solo:
 	VMOVDQU64 (R12), Z3
 	VMOVDQU64 64(R12), Z4
 	VMOVDQA64 Z1, Z7
-	VMOVDQA64 Z9, Z11
 	VPERMI2Q Z4, Z3, Z7
-	VPERMI2Q Z4, Z3, Z11
+	VPERMT2Q Z4, Z9, Z3
 	VPTESTMQ Z1, Z1, K2
 	VPTESTMQ Z9, Z9, K1
 	VPCMPUQ $5, Z7, Z0, K2, K2
-	VPCMPUQ $5, Z11, Z8, K1, K1
+	VPCMPUQ $5, Z3, Z8, K1, K1
 	VPORQ Z5, Z2, K2, Z2
 	VPORQ Z5, Z10, K1, Z10
 	VPSUBQ Z7, Z0, K2, Z0
-	VPSUBQ Z11, Z8, K1, Z8
+	VPSUBQ Z3, Z8, K1, Z8
 	VPSUBQ Z6, Z1, K2, Z1
 	VPSUBQ Z6, Z9, K1, Z9
 	VPSRLQ $1, Z5, Z5
@@ -152,39 +151,70 @@ m0Solo:
 	VPANDNQ Z27, Z10, Z8            // b remaining
 	VMOVDQU64 Z2, (DI)              // out[0][0..7]  = a.m0
 	VMOVDQU64 Z10, 64(DI)           // out[0][8..15] = b.m0
-	VMOVDQU64 Z0, rema-256(SP)
-	VMOVDQU64 Z18, mla-192(SP)
-	VMOVDQU64 Z8, remb-128(SP)
-	VMOVDQU64 Z26, mlb-64(SP)
+	VMOVDQU64 Z18, 128(DI)          // park mla in out[1][0..7]
+	VMOVDQU64 Z26, 192(DI)          // park mlb in out[1][8..15]
+	VMOVDQU64 Z0, 256(DI)           // park rema in out[2][0..7]
+	VMOVDQU64 Z8, 320(DI)           // park remb in out[2][8..15]
 
-// REMAP: one lane — R8 = remaining, R9 = m1Local; m1 = PDEP(m1Local,
-// remaining) to out[1][lane]; m2 = remaining ^ m1 to out[2][lane].
-#define REMAP(remoff, mloff, m1off, m2off) \
-	MOVQ remoff(SP), R8; \
-	MOVQ mloff(SP), R9; \
+// REMAP: one lane — R8 = remaining (from out[2][lane]), R9 = m1Local
+// (from out[1][lane]); m1 = PDEP(m1Local, remaining) to out[1][lane];
+// m2 = remaining ^ m1 to out[2][lane].
+#define REMAP(m1off, m2off) \
+	MOVQ m2off(DI), R8; \
+	MOVQ m1off(DI), R9; \
 	PDEPQ R8, R9, R10; \
 	XORQ R10, R8; \
 	MOVQ R10, m1off(DI); \
 	MOVQ R8, m2off(DI)
 
 	// batch a: out[1][j] at 128+8j, out[2][j] at 256+8j
-	REMAP(rema-256, mla-192, 128, 256)
-	REMAP(rema-248, mla-184, 136, 264)
-	REMAP(rema-240, mla-176, 144, 272)
-	REMAP(rema-232, mla-168, 152, 280)
-	REMAP(rema-224, mla-160, 160, 288)
-	REMAP(rema-216, mla-152, 168, 296)
-	REMAP(rema-208, mla-144, 176, 304)
-	REMAP(rema-200, mla-136, 184, 312)
+	REMAP(128, 256)
+	REMAP(136, 264)
+	REMAP(144, 272)
+	REMAP(152, 280)
+	REMAP(160, 288)
+	REMAP(168, 296)
+	REMAP(176, 304)
+	REMAP(184, 312)
 	// batch b: out[1][8+j] at 192+8j, out[2][8+j] at 320+8j
-	REMAP(remb-128, mlb-64, 192, 320)
-	REMAP(remb-120, mlb-56, 200, 328)
-	REMAP(remb-112, mlb-48, 208, 336)
-	REMAP(remb-104, mlb-40, 216, 344)
-	REMAP(remb-96, mlb-32, 224, 352)
-	REMAP(remb-88, mlb-24, 232, 360)
-	REMAP(remb-80, mlb-16, 240, 368)
-	REMAP(remb-72, mlb-8, 248, 376)
+	REMAP(192, 320)
+	REMAP(200, 328)
+	REMAP(208, 336)
+	REMAP(216, 344)
+	REMAP(224, 352)
+	REMAP(232, 360)
+	REMAP(240, 368)
+	REMAP(248, 376)
 
+	VPXORD Z0, Z0, Z0
+	VPXORD Z1, Z1, Z1
+	VPXORD Z2, Z2, Z2
+	VPXORD Z3, Z3, Z3
+	VPXORD Z4, Z4, Z4
+	VPXORD Z5, Z5, Z5
+	VPXORD Z6, Z6, Z6
+	VPXORD Z7, Z7, Z7
+	VPXORD Z8, Z8, Z8
+	VPXORD Z9, Z9, Z9
+	VPXORD Z10, Z10, Z10
+	VPXORD Z16, Z16, Z16
+	VPXORD Z17, Z17, Z17
+	VPXORD Z18, Z18, Z18
+	VPXORD Z19, Z19, Z19
+	VPXORD Z20, Z20, Z20
+	VPXORD Z21, Z21, Z21
+	VPXORD Z22, Z22, Z22
+	VPXORD Z24, Z24, Z24
+	VPXORD Z25, Z25, Z25
+	VPXORD Z26, Z26, Z26
+	VPXORD Z27, Z27, Z27
+	VPXORD Z28, Z28, Z28
+	KXORW K1, K1, K1
+	KXORW K2, K2, K2
+	KXORW K4, K4, K4
+	KXORW K5, K5, K5
+	XORQ R8, R8
+	XORQ R9, R9
+	XORQ R10, R10
 	VZEROUPPER
 	RET

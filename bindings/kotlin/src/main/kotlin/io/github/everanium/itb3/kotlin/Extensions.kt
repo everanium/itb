@@ -12,6 +12,18 @@ inline fun <R> withPipeline(profile: String, opts: Opts? = null, block: (Pipelin
     Pipeline.init(profile, opts).use(block)
 
 /**
+ * Deterministically constructs a Pipeline against [profile] from
+ * eight caller-supplied master keys [masters], runs [block] with it,
+ * and closes it on the way out.
+ */
+inline fun <R> withPipelineKeys(
+    profile: String,
+    masters: Array<ByteArray>,
+    opts: Opts? = null,
+    block: (Pipeline) -> R,
+): R = Pipeline.initKeys(profile, masters, opts).use(block)
+
+/**
  * Opens an incremental encrypt session, runs [block] with it, and
  * closes the session on the way out.
  */

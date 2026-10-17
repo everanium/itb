@@ -18,7 +18,7 @@ and `suspend` variants of the blocking entry points on
 profile-name remains an opaque string passed through to Go for
 validation; no ITB construction logic lives on the JVM side.
 
-The public surface is one `Pipeline` type (init / load / save / rekey /
+The public surface is one `Pipeline` type (init / initKeys / load / save / rekey /
 close / destroy, Single Message encrypt / decrypt, one-shot and
 incremental stream sessions with `java.io` stream pumps), an `Opts`
 builder, a `Profile` record with the registry entries
@@ -99,6 +99,8 @@ Pipeline.init("singlemsg-triple-mac-v1", cfg).use { sender ->
     }
 }
 ```
+
+`Pipeline.initKeys` constructs a `Pipeline` deterministically from eight caller-supplied master keys (one per seed slot `0..7`) via per-slot KDF, so two peers holding the same eight master keys derive identical `Pipeline` instances without exchanging a session blob. The eight master keys must come from independent entropy or key-agreement sources — never derive all eight keys from a single secret or a single KDF parent key.
 
 `Pipeline.rekey` rotates the parallax + wrapper masters mid-session
 (the eight ITB seeds and MAC key are fixed for the session lifetime

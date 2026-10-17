@@ -99,7 +99,7 @@ func TestFusedWideDispatcherTiersAmd64(t *testing.T) {
 				}
 				setTier(tier)
 				FusedHasVAESAVX512X8, FusedHasAESNIX8 = arm, arm
-				if FusedX8Active() != (arm && (tier.zmm || tier.ymm || tier.xmm)) {
+				if FusedX8Active() != (arm && (tier.zmm || tier.ymm || tier.vex || tier.xmm)) {
 					t.Fatalf("FusedX8Active=%v under tier %s arm=%v", FusedX8Active(), tier.name, arm)
 				}
 				checkWideDispatchers(t, tier.name)

@@ -5,7 +5,7 @@ import (
 	"encoding/binary"
 	"testing"
 
-	aes "github.com/everanium/itb/third/goaes"
+	"github.com/everanium/areion"
 )
 
 // Shapes lists every per-lane input length the kernels are specialised for.
@@ -169,7 +169,7 @@ func roundHWChainAbsorb(key *[16]byte, data []byte, seed0, seed1 uint64) (uint64
 		for i := 0; i < 16; i++ {
 			state[i] ^= data[off+i]
 		}
-		aes.RoundHW((*aes.Block)(&state), (*aes.Block)(&RC[blk&7]))
+		areion.AES128Round((*areion.Block)(&state), (*areion.Block)(&RC[blk&7]))
 		blk++
 	}
 	rem := n - full
@@ -180,10 +180,10 @@ func roundHWChainAbsorb(key *[16]byte, data []byte, seed0, seed1 uint64) (uint64
 	for i := rem; i < 16; i++ {
 		state[i] ^= pad
 	}
-	aes.RoundHW((*aes.Block)(&state), (*aes.Block)(&RC[blk&7]))
+	areion.AES128Round((*areion.Block)(&state), (*areion.Block)(&RC[blk&7]))
 	blk++
-	aes.RoundHW((*aes.Block)(&state), (*aes.Block)(&RC[blk&7]))
-	aes.RoundHW((*aes.Block)(&state), (*aes.Block)(&RC[(blk+1)&7]))
+	areion.AES128Round((*areion.Block)(&state), (*areion.Block)(&RC[blk&7]))
+	areion.AES128Round((*areion.Block)(&state), (*areion.Block)(&RC[(blk+1)&7]))
 	return binary.LittleEndian.Uint64(state[:8]), binary.LittleEndian.Uint64(state[8:])
 }
 

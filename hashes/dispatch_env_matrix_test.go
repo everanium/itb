@@ -62,9 +62,12 @@ func matrixFamilies() []matrixFamily {
 			"HasAVXAESNIX16": &aesitbasm.HasAVXAESNIX16, "HasAESNIX16": &aesitbasm.HasAESNIX16,
 			"FusedHasVAESAVX512X8": &aesitbasm.FusedHasVAESAVX512X8, "FusedHasAESNIX8": &aesitbasm.FusedHasAESNIX8}},
 		{"areionasm", "areion", map[string]*bool{
-			"HasVAESAVX512": &areionasm.HasVAESAVX512, "HasVAESAVX2NoAVX512": &areionasm.HasVAESAVX2NoAVX512, "HasARMAESBatched": &areionasm.HasARMAESBatched,
-			"FusedHasVAESAVX512": &areionasm.FusedHasVAESAVX512, "FusedHasVAESAVX2": &areionasm.FusedHasVAESAVX2, "FusedHasAESNI": &areionasm.FusedHasAESNI,
-			"HasVAESAVX512X16": &areionasm.HasVAESAVX512X16, "HasVAESAVX2X16": &areionasm.HasVAESAVX2X16, "HasAESNIX16": &areionasm.HasAESNIX16,
+			"HasVAESAVX512": &areionasm.HasVAESAVX512, "HasVAESAVX2NoAVX512": &areionasm.HasVAESAVX2NoAVX512,
+			"HasAVXAESNIBatched": &areionasm.HasAVXAESNIBatched, "HasAESNIBatched": &areionasm.HasAESNIBatched, "HasARMAESBatched": &areionasm.HasARMAESBatched,
+			"FusedHasVAESAVX512": &areionasm.FusedHasVAESAVX512, "FusedHasVAESAVX2": &areionasm.FusedHasVAESAVX2,
+			"FusedHasAVXAESNI": &areionasm.FusedHasAVXAESNI, "FusedHasAESNI": &areionasm.FusedHasAESNI,
+			"HasVAESAVX512X16": &areionasm.HasVAESAVX512X16, "HasVAESAVX2X16": &areionasm.HasVAESAVX2X16,
+			"HasAVXAESNIX16": &areionasm.HasAVXAESNIX16, "HasAESNIX16": &areionasm.HasAESNIX16,
 			"FusedHasVAESAVX512X8": &areionasm.FusedHasVAESAVX512X8, "FusedHasAESNIX8": &areionasm.FusedHasAESNIX8}},
 		gpr("blake2basm", &blake2basm.FusedHasAVX512, &blake2basm.FusedHasAVX2, &blake2basm.FusedHasGPR, &blake2basm.HasAVX512X16, &blake2basm.HasAVX2X16, &blake2basm.HasGPRX16, &blake2basm.FusedHasAVX512X8, &blake2basm.FusedHasAVX2X8),
 		gpr("blake2sasm", &blake2sasm.FusedHasAVX512, &blake2sasm.FusedHasAVX2, &blake2sasm.FusedHasGPR, &blake2sasm.HasAVX512X16, &blake2sasm.HasAVX2X16, &blake2sasm.HasGPRX16, &blake2sasm.FusedHasAVX512X8, &blake2sasm.FusedHasAVX2X8),
@@ -210,15 +213,17 @@ func expectHashTier(class, token string) matrixExpect {
 	case "areion":
 		switch token {
 		case "avx512":
-			return need(hostVAES512, on("HasVAESAVX512=1", "HasVAESAVX2NoAVX512=0", "HasARMAESBatched=0", "FusedHasVAESAVX512=1", "FusedHasVAESAVX2=0", "FusedHasAESNI=0", "HasVAESAVX512X16=1", "HasVAESAVX2X16=0", "HasAESNIX16=0"))
+			return need(hostVAES512, on("HasVAESAVX512=1", "HasVAESAVX2NoAVX512=0", "HasAVXAESNIBatched=0", "HasAESNIBatched=0", "HasARMAESBatched=0", "FusedHasVAESAVX512=1", "FusedHasVAESAVX2=0", "FusedHasAVXAESNI=0", "FusedHasAESNI=0", "HasVAESAVX512X16=1", "HasVAESAVX2X16=0", "HasAVXAESNIX16=0", "HasAESNIX16=0"))
 		case "vaesavx2":
-			return need(hostVAES2, on("HasVAESAVX512=0", "HasVAESAVX2NoAVX512=1", "HasARMAESBatched=0", "FusedHasVAESAVX512=0", "FusedHasVAESAVX2=1", "FusedHasAESNI=0", "HasVAESAVX512X16=0", "HasVAESAVX2X16=1", "HasAESNIX16=0"))
+			return need(hostVAES2, on("HasVAESAVX512=0", "HasVAESAVX2NoAVX512=1", "HasAVXAESNIBatched=0", "HasAESNIBatched=0", "HasARMAESBatched=0", "FusedHasVAESAVX512=0", "FusedHasVAESAVX2=1", "FusedHasAVXAESNI=0", "FusedHasAESNI=0", "HasVAESAVX512X16=0", "HasVAESAVX2X16=1", "HasAVXAESNIX16=0", "HasAESNIX16=0"))
 		case "avx2":
-			return need(hostVAES2, on("HasVAESAVX512=0", "HasVAESAVX2NoAVX512=1", "HasARMAESBatched=0", "FusedHasVAESAVX512=0", "FusedHasVAESAVX2=0", "FusedHasAESNI=0", "HasVAESAVX512X16=0", "HasVAESAVX2X16=0", "HasAESNIX16=0"))
-		case "vex", "aesni":
-			return need(hostAESNI, on("HasVAESAVX512=0", "HasVAESAVX2NoAVX512=0", "HasARMAESBatched=0", "FusedHasVAESAVX512=0", "FusedHasVAESAVX2=0", "FusedHasAESNI=1", "HasVAESAVX512X16=0", "HasVAESAVX2X16=0", "HasAESNIX16=1"))
+			return need(hostVAES2, on("HasVAESAVX512=0", "HasVAESAVX2NoAVX512=1", "HasAVXAESNIBatched=0", "HasAESNIBatched=0", "HasARMAESBatched=0", "FusedHasVAESAVX512=0", "FusedHasVAESAVX2=0", "FusedHasAVXAESNI=0", "FusedHasAESNI=0", "HasVAESAVX512X16=0", "HasVAESAVX2X16=0", "HasAVXAESNIX16=0", "HasAESNIX16=0"))
+		case "vex":
+			return need(hostAESNI2, on("HasVAESAVX512=0", "HasVAESAVX2NoAVX512=0", "HasAVXAESNIBatched=1", "HasAESNIBatched=0", "HasARMAESBatched=0", "FusedHasVAESAVX512=0", "FusedHasVAESAVX2=0", "FusedHasAVXAESNI=1", "FusedHasAESNI=0", "HasVAESAVX512X16=0", "HasVAESAVX2X16=0", "HasAVXAESNIX16=1", "HasAESNIX16=0"))
+		case "aesni":
+			return need(hostAESNI, on("HasVAESAVX512=0", "HasVAESAVX2NoAVX512=0", "HasAVXAESNIBatched=0", "HasAESNIBatched=1", "HasARMAESBatched=0", "FusedHasVAESAVX512=0", "FusedHasVAESAVX2=0", "FusedHasAVXAESNI=0", "FusedHasAESNI=1", "HasVAESAVX512X16=0", "HasVAESAVX2X16=0", "HasAVXAESNIX16=0", "HasAESNIX16=1"))
 		case "scalar":
-			return on("HasVAESAVX512=0", "HasVAESAVX2NoAVX512=0", "HasARMAESBatched=0", "FusedHasVAESAVX512=0", "FusedHasVAESAVX2=0", "FusedHasAESNI=0", "HasVAESAVX512X16=0", "HasVAESAVX2X16=0", "HasAESNIX16=0")
+			return on("HasVAESAVX512=0", "HasVAESAVX2NoAVX512=0", "HasAVXAESNIBatched=0", "HasAESNIBatched=0", "HasARMAESBatched=0", "FusedHasVAESAVX512=0", "FusedHasVAESAVX2=0", "FusedHasAVXAESNI=0", "FusedHasAESNI=0", "HasVAESAVX512X16=0", "HasVAESAVX2X16=0", "HasAVXAESNIX16=0", "HasAESNIX16=0")
 		}
 	case "gpr":
 		switch token {
@@ -266,19 +271,21 @@ func expectFillTier(class, token string) matrixExpect {
 	case "areion":
 		switch token {
 		case "avx512":
-			return need(hostVAES512, on("HasVAESAVX512X16=1", "HasVAESAVX2X16=0", "HasAESNIX16=0"))
+			return need(hostVAES512, on("HasVAESAVX512X16=1", "HasVAESAVX2X16=0", "HasAVXAESNIX16=0", "HasAESNIX16=0"))
 		case "vaesavx2":
-			return need(hostVAES2, on("HasVAESAVX512X16=0", "HasVAESAVX2X16=1", "HasAESNIX16=0"))
+			return need(hostVAES2, on("HasVAESAVX512X16=0", "HasVAESAVX2X16=1", "HasAVXAESNIX16=0", "HasAESNIX16=0"))
 		case "avx2":
 			// The arms-only probe of areionasm: the fill flags clear so the
 			// fill runs through the arms (a stderr note names the choice).
-			return on("HasVAESAVX512X16=0", "HasVAESAVX2X16=0", "HasAESNIX16=0")
-		case "vex", "aesni":
-			return need(hostAESNI, on("HasVAESAVX512X16=0", "HasVAESAVX2X16=0", "HasAESNIX16=1"))
+			return on("HasVAESAVX512X16=0", "HasVAESAVX2X16=0", "HasAVXAESNIX16=0", "HasAESNIX16=0")
+		case "vex":
+			return need(hostAESNI2, on("HasVAESAVX512X16=0", "HasVAESAVX2X16=0", "HasAVXAESNIX16=1", "HasAESNIX16=0"))
+		case "aesni":
+			return need(hostAESNI, on("HasVAESAVX512X16=0", "HasVAESAVX2X16=0", "HasAVXAESNIX16=0", "HasAESNIX16=1"))
 		case "neon":
 			return autoNote
 		case "scalar":
-			return on("HasVAESAVX512X16=0", "HasVAESAVX2X16=0", "HasAESNIX16=0")
+			return on("HasVAESAVX512X16=0", "HasVAESAVX2X16=0", "HasAVXAESNIX16=0", "HasAESNIX16=0")
 		}
 	case "gpr":
 		switch token {

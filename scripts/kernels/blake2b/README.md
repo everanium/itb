@@ -76,17 +76,18 @@ makes it a no-gain cell, and the generator carries no emitter for it.
 The avx2 tier has 16 YMM registers: `Y0..Y14` hold `v[0..14]`, `Y15` is
 the ror63 temp, `v[15]` lives in a frame slot with `v[12]` spilled
 around the two G functions that touch `v[15]`, and the message words are
-frame slots read as memory operands; the frame exceeds the NOSPLIT
-budget, so these kernels carry the stack check. No eight-lane AVX2
+frame slots read as memory operands; only the `512_36x4` and `512_68x4`
+frames exceed the NOSPLIT budget and carry the stack check. No eight-lane AVX2
 kernel exists: one qword lane per pixel makes eight lanes two YMM
 registers per state word, 32 registers of state on a sixteen-register
 file, so half of every G function's words would pass through memory on
 its critical path; the eight-lane arm of the avx2 tier is two four-lane
 calls on the lane halves, which keeps the pixel pipeline's eight-pixel
 stride engaged at the four-lane kernel's per-lane cost. The NEON tier runs two
-lanes per pass over the same 16-register state with the key words
-resident in registers and the other words loaded pairwise from the
-frame.
+lanes per pass over the same 16-register state (`V0..V15`) with `V16..V18`
+holding the rotate masks and scratch register, and the key and seed words
+resident in `V19..V31` (with two overflow seed words in the frame at
+width 512 and data words loaded from the frame).
 
 ## Store-to-load forwarding discipline (amd64)
 
@@ -99,16 +100,19 @@ ends with `VZEROUPPER` before `RET`.
 ## Frame hygiene
 
 A kernel stores to its frame only what its register plan cannot hold.
-The staged data words are public. The message slots of the key words and
-the seed-injected words (avx2 and gpr amd64; the seed-injected words
-also on neon and gpr arm64), the state words a plan spills (the avx2
-`v[15]` / `v[12]` slots, the gpr amd64 `v[11]` slot) and the saved
-chaining value of the two-block cell (width 512 at the 68-byte shape,
-every tier) are secret-derived, and every one of those slots is
-overwritten with zeros, at the slot's own width, after the last read
-and before the kernel returns. The neon kernels hold the key words in
-registers loaded once per call straight from the key pointer (`VLD1R`),
-and the gpr arm64 kernels read them through the key pointer in every G,
+The staged data words are public. The message slots of the key words
+(avx2 and gpr amd64) and the seed-injected words (avx2, gpr amd64 and
+gpr arm64, plus the two overflow seed words at width 512 on neon), the
+state words a plan spills (the avx2 `v[15]` / `v[12]` slots, the gpr
+amd64 `v[11]` slot) and the saved chaining value of the two-block cell
+(width 512 at the 68-byte shape on avx2, neon and both gpr tiers; the
+avx512 tier keeps the chaining value in `Y24..Y31` / `Z24..Z31`) are
+secret-derived, and every one of those slots is overwritten with zeros,
+at the slot's own width, after the last read and before the kernel
+returns. The neon kernels hold the key words in registers loaded once
+per call straight from the key pointer (`VLD1R`), and the gpr arm64
+kernels read the key words through `(R0)` in every G while storing the
+rebuilt seed words in `M(w)` frame slots (`R19..R27` hold `v[7..15]`),
 so neither ever stores a key word. The in-package
 `TestFusedKernelsLeaveNoSecretInFrame*` tests run every kernel under a
 stack-residue probe and require that no key word and no seed-injected

@@ -38,6 +38,8 @@
   ^io.github.everanium.itb3.Pipeline [pipe]
   (:impl pipe))
 
+(def ^:private ^Class byte-array-class (Class/forName "[B"))
+
 (defn ^java.lang.AutoCloseable init
   "Constructs a fresh Pipeline against the named profile. Profile
   names and opts keys are opaque strings validated by the Go side;
@@ -48,6 +50,21 @@
   ([profile opts-map]
    (->Pipeline
     (itb-call (io.github.everanium.itb3.Pipeline/init ^String profile (opts/build opts-map))))))
+
+(defn ^java.lang.AutoCloseable init-keys
+  "Deterministically constructs a Pipeline from eight caller-supplied
+  master keys (one per canonical seed slot 0..7) against the named
+  profile and options. The eight master keys must come from
+  independent entropy or key-agreement sources; never derive all
+  eight keys from a single secret or a single KDF parent key."
+  ([profile masters] (init-keys profile nil masters))
+  ([profile opts-map masters]
+   (let [^"[[B" arr (when (some? masters)
+                      (into-array byte-array-class masters))]
+     (->Pipeline
+      (itb-call (io.github.everanium.itb3.Pipeline/initKeys
+                 ^String profile (opts/build opts-map) arr))))))
+
 
 (defn ^java.lang.AutoCloseable load
   "Reconstructs a Pipeline from a blob produced by `save` or

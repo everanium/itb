@@ -66,7 +66,7 @@ import (
 // Library version exposed via ITB_Version. Bumped per ABI-relevant
 // release. The value is informational; binding code may key feature
 // detection off it.
-const libitb3Version = "0.7.2"
+const libitb3Version = "0.7.3"
 
 func main() {} // required for buildmode=c-shared
 
@@ -402,6 +402,78 @@ func ITB_Triple_Init(
 		*outHandle = C.uintptr_t(id)
 	} else {
 		*outHandle = 0
+	}
+	return C.int(st)
+}
+
+// Constructs a fresh Pipeline handle deterministically from eight
+// caller-supplied master keys against the named profile and writes the
+// exported blob bytes into blob_out.
+//
+// masters_flat points to the concatenation of the eight master keys
+// (total length masters_flat_len bytes), master_lens points to an
+// array of masters_count per-slot byte lengths, and masters_count must
+// equal 8. Any other masters_count, a NULL pointer when required, or a
+// masters_flat_len that does not equal the sum of master_lens[0..7]
+// returns ITB_ERR_BAD_INPUT.
+//
+// Security note: the eight master keys must come from independent
+// entropy or key-agreement sources; never derive all eight keys from a
+// single secret or a single KDF parent key.
+//
+//export ITB_Triple_InitKeys
+func ITB_Triple_InitKeys(
+	profile *C.char, opts *C.char,
+	mastersFlat unsafe.Pointer, mastersFlatLen C.size_t,
+	masterLens *C.size_t, mastersCount C.size_t,
+	blobOut unsafe.Pointer, blobCap C.size_t, blobLen *C.size_t,
+	outHandle *C.uintptr_t,
+) C.int {
+	if profile == nil || blobLen == nil || outHandle == nil {
+		return C.int(capi.StatusBadInput)
+	}
+	*outHandle = 0
+	*blobLen = 0
+	if !validateLen(mastersFlatLen, blobCap) {
+		return C.int(capi.StatusBadInput)
+	}
+	if mastersCount != 8 {
+		_, _, st := capi.TripleInitKeys("", "", nil, nil)
+		return C.int(st)
+	}
+	if masterLens == nil {
+		return C.int(capi.StatusBadInput)
+	}
+	cLens := unsafe.Slice(masterLens, 8)
+	var sum C.size_t
+	for i := 0; i < 8; i++ {
+		if !validateLen(cLens[i]) || sum+cLens[i] < sum {
+			return C.int(capi.StatusBadInput)
+		}
+		sum += cLens[i]
+	}
+	if sum != mastersFlatLen || (sum > 0 && mastersFlat == nil) {
+		return C.int(capi.StatusBadInput)
+	}
+	flat := goBytesView(mastersFlat, mastersFlatLen)
+	masters := make([][]byte, 8)
+	off := 0
+	for i := 0; i < 8; i++ {
+		ln := int(cLens[i])
+		if ln > 0 {
+			masters[i] = flat[off : off+ln : off+ln]
+			off += ln
+		}
+	}
+	var optsStr string
+	if opts != nil {
+		optsStr = C.GoString(opts)
+	}
+	dst := goBytesViewMut(blobOut, blobCap)
+	id, n, st := capi.TripleInitKeys(C.GoString(profile), optsStr, masters, dst)
+	*blobLen = C.size_t(n)
+	if st == capi.StatusOK {
+		*outHandle = C.uintptr_t(id)
 	}
 	return C.int(st)
 }

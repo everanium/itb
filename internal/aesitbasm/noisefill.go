@@ -4,7 +4,7 @@ import (
 	"encoding/binary"
 	"runtime"
 
-	aes "github.com/everanium/itb/third/goaes"
+	"github.com/everanium/areion"
 )
 
 // AES-ITB noise filler.
@@ -117,9 +117,9 @@ func NoiseFill(s *NoiseSchedule, dst []byte, lo, hi uint64) {
 	noiseFillGeneric(s, dst, lo, hi)
 }
 
-// noiseFillGeneric is the single-block Go path over go-aes's hardware
-// round (aes.RoundHW — the AES-NI / ARMv8-AES single round where the
-// host has one, go-aes's software round otherwise). It serves the tail
+// noiseFillGeneric is the single-block Go path over areion's hardware
+// round (areion.AES128Round — the AES-NI / ARMv8-AES single round where the
+// host has one, software round otherwise). It serves the tail
 // of every kernel run and the whole fill on builds or hosts without an
 // assembly tier.
 func noiseFillGeneric(s *NoiseSchedule, dst []byte, lo, hi uint64) {
@@ -143,6 +143,6 @@ func noiseBlockHW(s *NoiseSchedule, out *[16]byte, lo, hi uint64) {
 	binary.LittleEndian.PutUint64(out[:8], binary.LittleEndian.Uint64(out[:8])^lo)
 	binary.LittleEndian.PutUint64(out[8:], binary.LittleEndian.Uint64(out[8:])^hi)
 	for r := range s.RK {
-		aes.RoundHW((*aes.Block)(out), (*aes.Block)(&s.RK[r]))
+		areion.AES128Round((*areion.Block)(out), (*areion.Block)(&s.RK[r]))
 	}
 }

@@ -30,7 +30,7 @@ let ``smoke round trip through the itb computation expression`` () =
 [<Fact>]
 let ``library version string is non-empty`` () =
     Assert.False(System.String.IsNullOrEmpty(Runtime.version ()))
-    Assert.Equal("0.7.2", Runtime.BindingVersion)
+    Assert.Equal("0.7.3", Runtime.BindingVersion)
 
 [<Fact>]
 let ``auto DRBG tier is a fill cipher`` () =

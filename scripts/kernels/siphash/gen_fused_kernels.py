@@ -64,10 +64,11 @@ Register plans:
                 Z22/Z23 pair broadcasts, Z24..Z27 k0/k1, Z28..Z31 scratch
                 (Z31 the fold-carrying tag (13 << 56) | (v << 8) during
                 the synthesis)
-    avx2 x4     Y0..Y3 state, Y4/Y6 k0/k1, Y5 rotate scratch, Y7/Y8 lo/hi,
-                Y9..Y14 constants, Y15 pair broadcast; the words are staged
-                once into the frame as 32-byte slots and read back as VPXOR
-                memory operands
+    avx2 x4     Y0..Y3 state, Y4/Y6 words 0/1, Y5 rotate scratch, Y7/Y8
+                lo/hi, Y9..Y14 constants, Y15 pair broadcast and k0/k1; the
+                words are staged once into the frame as 32-byte slots, with
+                words 0/1 loaded into Y4/Y6 ahead of the loop and any
+                further words read back as VPXOR memory operands
     avx2 x8     two four-lane groups: Y0..Y3 / Y4..Y7 state, Y8/Y9 and
                 Y10/Y11 lo/hi, Y12/Y13 rotate scratch, Y14 pair broadcast;
                 the six constants live in RODATA (sipc<>) and the words —
@@ -77,15 +78,19 @@ Register plans:
                 68 — in the frame, both read as VPXOR memory operands — 15
                 of 16 registers, no spill (16 lanes would need 16
                 registers of state alone)
-    gpr x1      R8..R11 state, R12/R13 lo/hi, AX/SI k0/k1, R14 the tail
-                word, word 0 in the frame, R15 scratch
+    gpr x1      R8..R11 state, R12/R13 lo/hi, AX word 0, SI/DI words 1/2
+                (and DX word 3 at shape 36), R14 the tail word, R15 k0/k1
+                and scratch (zero-byte frame at every shape)
     neon x4     lanes (0,1) and (2,3) in two register halves: V0/V1 v0,
                 V2/V3 v1 (alternate V16/V17), V4/V5 v2, V6/V7 v3 (alternate
-                V18/V19); V8..V11 lo/hi, V12..V15 k0/k1, V20..V25 constants,
-                V26/V27 pair broadcasts, V28/V29 the current word; the words
-                are staged once into the frame and walked with VLD1.P. The
-                64-bit rotates run as VSHL + VSRI into the alternate register
-                (rotate by 32 as VREV64 on 32-bit elements).
+                V18/V19); V8..V11 lo/hi, V20..V25 constants, V16..V19 pair
+                broadcasts and k0/k1 at the loop top, V12..V15 and V26..V31
+                up to five pre-loaded message words (every word at shapes
+                13 / 20 / 36; words 0..3 in V12..V15, V26/V27, V30/V31 and
+                the remaining words walked into V28/V29 with VLD1.P at
+                shape 68). The 64-bit rotates run as VSHL + VSRI into the
+                alternate register (rotate by 32 as VREV64 on 32-bit
+                elements).
     neon x8     four lane pairs: V0..V3 v0, V4..V7 v1 (alternate V16..V19),
                 V8..V11 v2, V12..V15 v3 (alternate V20..V23), V24..V27 lo,
                 V28..V31 hi; the constants stay in R19..R24 and are VDUP'd
@@ -366,15 +371,17 @@ def avx2_x4(shape):
         if w == nw - 1:
             L += [f"\tMOVQ ${tag(shape):#x}, R12", "\tVMOVQ R12, X5", "\tVPBROADCASTQ X5, Y5", "\tVPXOR Y5, Y4, Y4"]
         L.append(f"\tVMOVDQU Y4, {32 * w}(SP)")
-    L.append("")
+    L += ["\tVMOVDQU 0(SP), Y4", "\tVMOVDQU 32(SP), Y6", ""]
     for i, c in enumerate(CONSTS):
         L += [f"\tMOVQ ${c:#x}, R12", f"\tVMOVQ R12, X{9 + i}", f"\tVPBROADCASTQ X{9 + i}, Y{9 + i}"]
     L += ["\tVPXOR Y7, Y7, Y7", "\tVPXOR Y8, Y8, Y8", "", "loop:",
-          "\tVPBROADCASTQ 0(BX), Y15", "\tVPXOR Y7, Y15, Y4",
-          "\tVPBROADCASTQ 8(BX), Y15", "\tVPXOR Y8, Y15, Y6",
-          "\tVPXOR Y9, Y4, Y0", "\tVPXOR Y10, Y6, Y1", "\tVPXOR Y11, Y4, Y2", "\tVPXOR Y12, Y6, Y3"]
+          "\tVPBROADCASTQ 0(BX), Y15", "\tVPXOR Y7, Y15, Y15",
+          "\tVPXOR Y9, Y15, Y0", "\tVPXOR Y11, Y15, Y2",
+          "\tVPBROADCASTQ 8(BX), Y15", "\tVPXOR Y8, Y15, Y15",
+          "\tVPXOR Y10, Y15, Y1", "\tVPXOR Y12, Y15, Y3"]
     for w in range(nw):
-        L += [f"\tVPXOR {32 * w}(SP), Y3, Y3", "\tSIP_ROUND", "\tSIP_ROUND", f"\tVPXOR {32 * w}(SP), Y0, Y0"]
+        m = "Y4" if w == 0 else ("Y6" if w == 1 else f"{32 * w}(SP)")
+        L += [f"\tVPXOR {m}, Y3, Y3", "\tSIP_ROUND", "\tSIP_ROUND", f"\tVPXOR {m}, Y0, Y0"]
     L += ["\tVPXOR Y13, Y2, Y2"] + ["\tSIP_ROUND"] * 4
     L += ["\tVPXOR Y1, Y0, Y7", "\tVPXOR Y3, Y7, Y7", "\tVPXOR Y2, Y7, Y7", "\tVPXOR Y14, Y1, Y1"] + ["\tSIP_ROUND"] * 4
     L += ["\tVPXOR Y1, Y0, Y8", "\tVPXOR Y3, Y8, Y8", "\tVPXOR Y2, Y8, Y8",
@@ -579,20 +586,34 @@ GPR_ROUND_AMD64 = ["\tADDQ R9, R8", "\tROLQ $13, R9", "\tXORQ R8, R9", "\tROLQ $
 def gpr_x1_amd64(shape):
     nw = words(shape)
     L = [f"// func sipHash24FusedChain{shape}x1GprAsm(comps *uint64, nPairs int, data *byte, out *[2]uint64)",
-         f"TEXT ·sipHash24FusedChain{shape}x1GprAsm(SB), NOSPLIT, $8-32",
-         "\tMOVQ comps+0(FP), BX", "\tMOVQ nPairs+8(FP), CX", "\tMOVQ data+16(FP), DX", "\tMOVQ out+24(FP), DI", ""]
-    L += gpr_word(shape, 0, "DX", "R14", "R15") + ["\tMOVQ R14, 0(SP)"]
+         f"TEXT ·sipHash24FusedChain{shape}x1GprAsm(SB), NOSPLIT, $0-32",
+         "\tMOVQ comps+0(FP), BX", "\tMOVQ nPairs+8(FP), CX", "\tMOVQ data+16(FP), DX", ""]
+    L += gpr_word(shape, 0, "DX", "AX", "R15")
+    if nw >= 3:
+        L += gpr_word(shape, 1, "DX", "SI", "R15")
+    if nw >= 5:
+        L += gpr_word(shape, 2, "DX", "DI", "R15")
     L += gpr_word(shape, nw - 1, "DX", "R14", "R15") + [f"\tMOVQ ${tag(shape):#x}, R15", "\tORQ R15, R14"]
+    if nw == 5:
+        L += gpr_word(shape, 3, "DX", "DX", "R15")
     L += ["\tXORQ R12, R12", "\tXORQ R13, R13", "", "loop:",
-          "\tMOVQ 0(BX), AX", "\tXORQ R12, AX", "\tMOVQ 8(BX), SI", "\tXORQ R13, SI",
-          f"\tMOVQ ${C0:#x}, R8", "\tXORQ AX, R8", f"\tMOVQ ${C1EE:#x}, R9", "\tXORQ SI, R9",
-          f"\tMOVQ ${C2:#x}, R10", "\tXORQ AX, R10", f"\tMOVQ ${C3:#x}, R11", "\tXORQ SI, R11"]
+          "\tMOVQ 0(BX), R15", "\tXORQ R12, R15",
+          f"\tMOVQ ${C0:#x}, R8", "\tXORQ R15, R8",
+          f"\tMOVQ ${C2:#x}, R10", "\tXORQ R15, R10",
+          "\tMOVQ 8(BX), R15", "\tXORQ R13, R15",
+          f"\tMOVQ ${C1EE:#x}, R9", "\tXORQ R15, R9",
+          f"\tMOVQ ${C3:#x}, R11", "\tXORQ R15, R11"]
     for w in range(nw):
-        if w == nw - 1:
+        if w == 0:
+            m = "AX"
+        elif w == nw - 1:
             m = "R14"
-        elif w == 0:
-            L.append("\tMOVQ 0(SP), R15")
-            m = "R15"
+        elif w == 1:
+            m = "SI"
+        elif w == 2:
+            m = "DI"
+        elif w == 3 and nw == 5:
+            m = "DX"
         else:
             L.append(f"\tMOVQ {8 * w}(DX), R15")
             m = "R15"
@@ -601,7 +622,7 @@ def gpr_x1_amd64(shape):
     L += ["\tMOVQ R8, R12", "\tXORQ R9, R12", "\tXORQ R10, R12", "\tXORQ R11, R12", "\tXORQ $0xdd, R9"] + GPR_ROUND_AMD64 * 4
     L += ["\tMOVQ R8, R13", "\tXORQ R9, R13", "\tXORQ R10, R13", "\tXORQ R11, R13",
           "\tADDQ $16, BX", "\tDECQ CX", "\tJNZ loop", "",
-          "\tMOVQ R12, 0(DI)", "\tMOVQ R13, 8(DI)", "\tRET"]
+          "\tMOVQ out+24(FP), DI", "\tMOVQ R12, 0(DI)", "\tMOVQ R13, 8(DI)", "\tRET"]
     return "\n".join(L) + "\n"
 
 
@@ -654,6 +675,8 @@ def neon_x4(shape):
     nw = words(shape)
     frame = 32 * nw
     regs = ["R8", "R9", "R10", "R11"]
+    word_pairs = [("V12", "V13"), ("V14", "V15"), ("V26", "V27"), ("V30", "V31"), ("V28", "V29")]
+    cached = nw if nw <= 5 else 4
     L = [f"// func sipHash24FusedChain{shape}x4NeonAsm(comps *uint64, nPairs int, dataPtrs *[4]*byte, out *[4][2]uint64)",
          f"TEXT ·sipHash24FusedChain{shape}x4NeonAsm(SB), NOSPLIT, ${frame}-32",
          "\tMOVD comps+0(FP), R6", "\tMOVD nPairs+8(FP), R7", "\tMOVD dataPtrs+16(FP), R2", "\tMOVD out+24(FP), R3",
@@ -667,24 +690,33 @@ def neon_x4(shape):
                 L.append("\tORR R14, R12, R12")
             L.append(f"\tVMOV R12, V{28 + l // 2}.D[{l % 2}]")
         L.append("\tVST1.P [V28.D2, V29.D2], 32(R4)")
+    L.append(f"\tMOVD $words-{frame}(SP), R4")
+    for w in range(cached):
+        lo_v, hi_v = word_pairs[w]
+        L.append(f"\tVLD1.P 32(R4), [{lo_v}.D2, {hi_v}.D2]")
     L.append("")
     for i, c in enumerate(CONSTS):
         L += [f"\tMOVD ${c:#x}, R12", f"\tVDUP R12, V{20 + i}.D2"]
     L += ["\tVEOR V8.B16, V8.B16, V8.B16", "\tVEOR V9.B16, V9.B16, V9.B16",
           "\tVEOR V10.B16, V10.B16, V10.B16", "\tVEOR V11.B16, V11.B16, V11.B16", "", "loop:",
-          "\tMOVD 0(R6), R12", "\tVDUP R12, V26.D2", "\tMOVD 8(R6), R12", "\tVDUP R12, V27.D2", "\tADD $16, R6, R6",
-          "\tVEOR V26.B16, V8.B16, V12.B16; VEOR V26.B16, V9.B16, V13.B16",
-          "\tVEOR V27.B16, V10.B16, V14.B16; VEOR V27.B16, V11.B16, V15.B16",
-          "\tVEOR V20.B16, V12.B16, V0.B16; VEOR V20.B16, V13.B16, V1.B16",
-          "\tVEOR V21.B16, V14.B16, V2.B16; VEOR V21.B16, V15.B16, V3.B16",
-          "\tVEOR V22.B16, V12.B16, V4.B16; VEOR V22.B16, V13.B16, V5.B16",
-          "\tVEOR V23.B16, V14.B16, V6.B16; VEOR V23.B16, V15.B16, V7.B16",
-          f"\tMOVD $words-{frame}(SP), R4"]
+          "\tMOVD 0(R6), R12", "\tVDUP R12, V16.D2", "\tMOVD 8(R6), R12", "\tVDUP R12, V17.D2", "\tADD $16, R6, R6",
+          "\tVEOR V16.B16, V8.B16, V18.B16; VEOR V16.B16, V9.B16, V19.B16",
+          "\tVEOR V20.B16, V18.B16, V0.B16; VEOR V20.B16, V19.B16, V1.B16",
+          "\tVEOR V22.B16, V18.B16, V4.B16; VEOR V22.B16, V19.B16, V5.B16",
+          "\tVEOR V17.B16, V10.B16, V18.B16; VEOR V17.B16, V11.B16, V19.B16",
+          "\tVEOR V21.B16, V18.B16, V2.B16; VEOR V21.B16, V19.B16, V3.B16",
+          "\tVEOR V23.B16, V18.B16, V6.B16; VEOR V23.B16, V19.B16, V7.B16"]
+    if nw > cached:
+        L.append(f"\tMOVD $words-{frame - 32 * cached}(SP), R4")
     for w in range(nw):
-        L += ["\tVLD1.P 32(R4), [V28.D2, V29.D2]",
-              "\tVEOR V28.B16, V6.B16, V6.B16; VEOR V29.B16, V7.B16, V7.B16"]
+        if w < cached:
+            lo_v, hi_v = word_pairs[w]
+        else:
+            L.append("\tVLD1.P 32(R4), [V28.D2, V29.D2]")
+            lo_v, hi_v = "V28", "V29"
+        L.append(f"\tVEOR {lo_v}.B16, V6.B16, V6.B16; VEOR {hi_v}.B16, V7.B16, V7.B16")
         L += neon_round() + neon_round()
-        L.append("\tVEOR V28.B16, V0.B16, V0.B16; VEOR V29.B16, V1.B16, V1.B16")
+        L.append(f"\tVEOR {lo_v}.B16, V0.B16, V0.B16; VEOR {hi_v}.B16, V1.B16, V1.B16")
     L.append("\tVEOR V24.B16, V4.B16, V4.B16; VEOR V24.B16, V5.B16, V5.B16")
     for _ in range(4):
         L += neon_round()

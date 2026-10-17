@@ -81,10 +81,14 @@ every four-lane frame fits the NOSPLIT budget. The eight-lane kernels of
 the avx2 tier are the same plan on YMM registers — eight dword lanes per
 register, one per pixel, the frame slots and memory operands 32 bytes
 wide — so they carry the one spill of the four-lane plan and no other;
-every eight-lane frame carries the stack check. The NEON tier holds the four dword
-lanes of every state word in one register — one pass — with the words
-loaded pairwise from the frame, one alternate register for the
-shift-insert rotates and one byte mask for the rotate by 8.
+only the two-block 68-byte eight-lane frame exceeds the NOSPLIT budget
+and carries the stack check. The NEON tier holds the four dword
+lanes of every state word in one register — one pass — with `V17..V19`
+as rotate scratch registers and `V16` as the byte mask for the rotate by
+8: at the one-block shapes (`13`, `20`, `36`) the non-zero message words
+(`m[0..8]`) stay resident in `V20..V28`, and at the 68-byte shape
+`T[0, 8..15]` stay in `V20..V27`, `T[1, 0]` stays in `V28`, and
+`seed[0..2]` stay in `V29..V31` while `seed[3..7]` use frame slots.
 
 ## Store-to-load forwarding discipline (amd64)
 
@@ -99,11 +103,14 @@ ends with `VZEROUPPER` before `RET`.
 A kernel stores to its frame only what its register plan cannot hold.
 The key is the chaining value and goes from the key pointer straight
 into the state registers on every tier. The staged data words are
-public. The message slots of the seed-injected words (avx2, neon and
-both gpr tiers) and the state words a plan spills (the avx2 `v[15]` /
-`v[12]` slots, the gpr amd64 `v[11]` slot) are secret-derived, and every
-one of those slots is overwritten with zeros, at the slot's own width,
-after the last read and before the kernel returns. The in-package
+public. The message slots of the seed-injected words (avx2, gpr amd64
+and gpr arm64, plus `seed[3..7]` at the 68-byte shape on neon) and the
+state words a plan spills (the avx2 `v[15]` / `v[12]` slots, the gpr
+amd64 `v[11]` slot) are secret-derived, and every one of those slots is
+overwritten with zeros, at the slot's own width, after the last read and
+before the kernel returns. The avx512 kernels and the one-block (`13`,
+`20`, `36`) neon kernels build every seed-injected word directly in
+registers and never store a seed-injected word to the frame. The in-package
 `TestFusedKernelsLeaveNoSecretInFrame*` tests run every kernel under a
 stack-residue probe and require that no key dword and no seed-injected
 dword is left in the stack once the kernel has returned.

@@ -13,6 +13,7 @@ var (
 
 	FusedHasVAESAVX512 = false
 	FusedHasVAESAVX2   = false
+	FusedHasAVXAESNI   = false
 	FusedHasAESNI      = false
 )
 
@@ -24,6 +25,7 @@ var (
 	HasARMAESX16     = cpuid.ARMAES
 	HasVAESAVX512X16 = false
 	HasVAESAVX2X16   = false
+	HasAVXAESNIX16   = false
 	HasAESNIX16      = false
 )
 

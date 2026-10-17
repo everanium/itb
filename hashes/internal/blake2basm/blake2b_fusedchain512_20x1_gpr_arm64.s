@@ -10,13 +10,13 @@
 #include "textflag.h"
 
 // func blake2b512FusedChain20x1GprAsm(fixedKey *[64]byte, comps *uint64, nGroups int, data *byte, out *[8]uint64)
-TEXT ·blake2b512FusedChain20x1GprAsm(SB), NOSPLIT, $128-40
+TEXT ·blake2b512FusedChain20x1GprAsm(SB), NOSPLIT, $96-40
 	MOVD fixedKey+0(FP), R0
 	MOVD comps+8(FP), R1
 	MOVD nGroups+16(FP), R2
 	MOVD data+24(FP), R3
 	MOVD out+32(FP), R4
-	MOVD $frame-128(SP), R7
+	MOVD $frame-96(SP), R7
 
 	MOVWU 0(R3), R5
 	MOVWU 4(R3), R6
@@ -26,11 +26,6 @@ TEXT ·blake2b512FusedChain20x1GprAsm(SB), NOSPLIT, $128-40
 	MOVD R5, 72(R7)
 	MOVWU 16(R3), R5
 	MOVD R5, 80(R7)
-	MOVD ZR, 88(R7)
-	MOVD ZR, 96(R7)
-	MOVD ZR, 104(R7)
-	MOVD ZR, 112(R7)
-	MOVD ZR, 120(R7)
 	MOVD $0, R8
 	MOVD $0, R9
 	MOVD $0, R10
@@ -56,29 +51,19 @@ loop:
 	EOR R6, R5, R5
 	EOR R10, R5, R5
 	MOVD R5, 16(R7)
-	MOVD 88(R7), R5
-	MOVD 24(R1), R6
-	EOR R6, R5, R5
+	MOVD 24(R1), R5
 	EOR R11, R5, R5
 	MOVD R5, 24(R7)
-	MOVD 96(R7), R5
-	MOVD 32(R1), R6
-	EOR R6, R5, R5
+	MOVD 32(R1), R5
 	EOR R12, R5, R5
 	MOVD R5, 32(R7)
-	MOVD 104(R7), R5
-	MOVD 40(R1), R6
-	EOR R6, R5, R5
+	MOVD 40(R1), R5
 	EOR R13, R5, R5
 	MOVD R5, 40(R7)
-	MOVD 112(R7), R5
-	MOVD 48(R1), R6
-	EOR R6, R5, R5
+	MOVD 48(R1), R5
 	EOR R14, R5, R5
 	MOVD R5, 48(R7)
-	MOVD 120(R7), R5
-	MOVD 56(R1), R6
-	EOR R6, R5, R5
+	MOVD 56(R1), R5
 	EOR R15, R5, R5
 	MOVD R5, 56(R7)
 	ADD $64, R1, R1

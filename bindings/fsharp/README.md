@@ -14,7 +14,7 @@ Every hash-name / MAC-name / cipher-name / profile-name is an opaque
 string passed through to Go for validation; the binding carries no
 ITB construction logic.
 
-The public surface wraps the C# `Pipeline` / `Opts` in F# idiom:
+The public surface wraps the C# `Pipeline` (`init` / `initKeys` / `load` / `save` / `rekey` / `closeSession`) and `Opts` in F# idiom:
 every fallible call returns `Result<_, ItbError>`, `Status` is a
 discriminated union (unnamed codes surface as `Unknown` with the raw
 code preserved), `Opts` is an immutable pipeable value, and
@@ -105,6 +105,8 @@ let result =
         return ()
     }
 ```
+
+`Pipeline.initKeys` constructs a `Pipeline` deterministically from eight caller-supplied master keys (one per seed slot `0..7`) via per-slot KDF, so two peers holding the same eight master keys derive identical `Pipeline` instances without exchanging a session blob. The eight master keys must come from independent entropy or key-agreement sources — never derive all eight keys from a single secret or a single KDF parent key.
 
 `Pipeline.rekey` rotates the parallax + wrapper masters mid-session
 (the eight ITB seeds and MAC key are fixed for the session lifetime

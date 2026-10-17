@@ -28,6 +28,7 @@ int ITB_PoolStats(int64_t* out, size_t capElems, size_t* outLen);
 
 /* Triple Pipeline lifecycle. */
 int ITB_Triple_Init(const char* profile, const char* opts, char* blobOut, size_t blobCap, size_t* blobLen, uintptr_t* outHandle);
+int ITB_Triple_InitKeys(const char* profile, const char* opts, const char* mastersFlat, size_t mastersFlatLen, const size_t* masterLens, size_t mastersCount, char* blobOut, size_t blobCap, size_t* blobLen, uintptr_t* outHandle);
 int ITB_Triple_Load(const char* blob, size_t blobLen, const char* permMaster, size_t permMasterLen, const char* wrapMaster, size_t wrapMasterLen, size_t mastersCount, uintptr_t* outHandle);
 int ITB_Triple_LoadF(const char* path, const char* permMaster, size_t permMasterLen, const char* wrapMaster, size_t wrapMasterLen, size_t mastersCount, uintptr_t* outHandle);
 int ITB_Triple_Save(uintptr_t handle, char* blobOut, size_t blobCap, size_t* blobLen);

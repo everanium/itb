@@ -4,6 +4,7 @@
   clamping."
   (:require [clojure.test :refer [deftest is]]
             [io.github.everanium.itb3.clojure.core :as itb]
+            [io.github.everanium.itb3.clojure.error :as err]
             [io.github.everanium.itb3.clojure.profile :as profile])
   (:import [java.nio.file Files]
            [java.util Arrays]))
@@ -135,3 +136,26 @@
         (with-open [receiver (itb/load (itb/save sender))]
           (is (= "csprng" (:drbg (itb/inspect (itb/save sender)))))
           (is (round-trips? sender receiver)))))))
+
+(deftest init-keys-determinism-and-validation
+  (let [masters (vec (for [i (range 8)]
+                       (byte-array 32 (unchecked-byte (* 0x11 (inc i))))))]
+    (with-open [p1 (itb/init-keys "singlemsg-triple-mac-v1" masters)
+                p2 (itb/init-keys "singlemsg-triple-mac-v1" nil masters)]
+      (is (Arrays/equals ^bytes (itb/save p1) ^bytes (itb/save p2)))
+      (is (round-trips? p1 p2)))
+    (let [dup (assoc masters 1 (nth masters 0))]
+      (is (= :bad-input
+             (try
+               (with-open [_ (itb/init-keys "singlemsg-triple-mac-v1" dup)]
+                 :ok)
+               (catch clojure.lang.ExceptionInfo e
+                 (err/error-status e))))))
+    (let [short-keys (assoc masters 0 (byte-array 8 (byte 0x11)))]
+      (is (= :bad-input
+             (try
+               (with-open [_ (itb/init-keys "singlemsg-triple-mac-v1" short-keys)]
+                 :ok)
+               (catch clojure.lang.ExceptionInfo e
+                 (err/error-status e))))))))
+

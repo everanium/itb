@@ -10,20 +10,17 @@ import "math/bits"
 //	idx0      = q mod A           A = C(48, 16), a 42-bit divisor
 //
 // Two formulations are kept, both bit-exact and pinned against each
-// other by the package tests: [splitRank48Div] runs the limb-by-limb
-// [math/bits.Div64] schoolbook and is the arm taken where Div64 is a
-// hardware 128-by-64 divide (amd64: DIVQ); [splitRank48Recip] replaces
-// every division by a constant-divisor reciprocal multiply and is the
-// arm taken where Div64 is a software routine (arm64 and every other
-// architecture). The per-architecture [splitRank48] selects between
-// them at build time (interlock48_rank_split_amd64.go /
-// interlock48_rank_split_other.go).
-
+// other by the package tests: [splitRank48Recip] replaces every
+// division by a constant-divisor reciprocal multiply (compile-time
+// reciprocal constants, constant-time fixed-latency integer multiply);
+// [splitRank48Div] runs the limb-by-limb [math/bits.Div64] schoolbook
+// as the reference the reciprocal arm is pinned against.
+//
 // splitRank48Recip is the reciprocal-multiply formulation.
 //
 // Constant-time: every step is a fixed sequence of multiplies, shifts,
-// subtractions and arithmetic selects — no data-dependent branch and
-// no data-dependent memory access.
+// subtractions and arithmetic selects — no data-dependent branch, no
+// variable-latency hardware divide, and no data-dependent memory access.
 func splitRank48Recip(lane0, lane1 uint64) (idx0 uint64, idx1 uint32) {
 	// Step 1: (lane1:lane0) / B, limb by limb. The high limb reduces on
 	// its own; the low limb is fed in two 32-bit halves so every partial
@@ -53,17 +50,10 @@ func splitRank48Recip(lane0, lane1 uint64) (idx0 uint64, idx1 uint32) {
 const (
 	interlockB48Shift = 29 // 2^29 < B < 2^30
 	interlockA48Shift = 41 // 2^41 < A < 2^42
-)
 
-var (
-	interlockB48Recip uint64 // floor(2^93 / B)
-	interlockA48Recip uint64 // floor(2^105 / A)
+	interlockB48Recip uint64 = (1 << (64 + interlockB48Shift)) / interlockB48 // floor(2^93 / B)
+	interlockA48Recip uint64 = (1 << (64 + interlockA48Shift)) / interlockA48 // floor(2^105 / A)
 )
-
-func init() {
-	interlockB48Recip, _ = bits.Div64(1<<interlockB48Shift, 0, interlockB48)
-	interlockA48Recip, _ = bits.Div64(1<<interlockA48Shift, 0, interlockA48)
-}
 
 // divB returns (n / B, n mod B) for any 64-bit n.
 func divB(n uint64) (q, r uint64) {
@@ -86,8 +76,8 @@ func modA(n uint64) uint64 {
 }
 
 // splitRank48Div is the limb-by-limb [math/bits.Div64] formulation of
-// the same reduction: the production arm where Div64 is a hardware
-// divide, and the reference the reciprocal arm is pinned against.
+// the same reduction, kept as the reference the reciprocal arm is
+// pinned against.
 func splitRank48Div(lane0, lane1 uint64) (idx0 uint64, idx1 uint32) {
 	qHi, r1 := bits.Div64(0, lane1, interlockB48)
 	qLo, r := bits.Div64(r1, lane0, interlockB48)

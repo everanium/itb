@@ -52,6 +52,41 @@ func TripleInit(profile string, opts string, blobOut []byte) (id TripleHandleID,
 	return TripleHandleID(cgo.NewHandle(h)), len(blob), StatusOK
 }
 
+// TripleInitKeys constructs a fresh Triple Ouroboros [triple.Pipeline]
+// deterministically from eight caller-supplied master keys against the
+// named profile and URL-query-encoded opts string, returning a stable
+// handle and the exported blob bytes.
+//
+// The masters slice must contain exactly eight byte slices (one per
+// canonical seed slot 0..7); any other arity returns StatusBadInput.
+func TripleInitKeys(profile string, opts string, masters [][]byte, blobOut []byte) (id TripleHandleID, n int, st Status) {
+	defer recoverPanic(&st, StatusInternal)
+
+	if len(masters) != 8 {
+		return 0, 0, tripleErr(StatusBadInput, "triple: InitKeys requires 8 master keys")
+	}
+	parsed, err := parseTripleOpts(opts)
+	if err != nil {
+		return 0, 0, tripleErr(StatusBadInput, err.Error())
+	}
+	var m8 [8][]byte
+	copy(m8[:], masters)
+	pipe, blob, err := triple.InitKeys(profile, parsed, m8)
+	if err != nil {
+		s := mapTripleError(err)
+		return 0, 0, s
+	}
+	defer clear(blob)
+	if len(blob) > len(blobOut) {
+		_ = pipe.Close()
+		setLastErr(StatusBufferTooSmall)
+		return 0, len(blob), StatusBufferTooSmall
+	}
+	copy(blobOut, blob)
+	h := &TripleHandle{pipe: pipe}
+	return TripleHandleID(cgo.NewHandle(h)), len(blob), StatusOK
+}
+
 // TripleLoad reconstructs a [triple.Pipeline] from a blob produced by
 // [TripleInit], [TripleSave], or [TripleRekey] and returns a stable
 // handle. The blob is self-describing — no profile name, no opts.
@@ -398,9 +433,9 @@ func mapTripleError(err error) Status {
 		return tripleErr(StatusTripleClosed, msg)
 	case err == triple.ErrUnknownProfile:
 		return tripleErr(StatusUnknownProfile, msg)
-	case err == triple.ErrIdenticalMasters,
-		err == triple.ErrMissingMasters,
-		err == triple.ErrMastersArity,
+	case errors.Is(err, triple.ErrIdenticalMasters),
+		errors.Is(err, triple.ErrMissingMasters),
+		errors.Is(err, triple.ErrMastersArity),
 		err == triple.ErrBlobVersion,
 		err == triple.ErrBlobMalformed:
 		return tripleErr(StatusBadInput, msg)
@@ -451,6 +486,10 @@ func mapTripleError(err error) Status {
 	// TripleRegister boundary) or via per-call TripleInit; route them
 	// uniformly here.
 	if strings.Contains(msg, "mixedHashes") {
+		return tripleErr(StatusBadInput, msg)
+	}
+	// InitKeys master-key length validation errors.
+	if strings.Contains(msg, "InitKeys:") {
 		return tripleErr(StatusBadInput, msg)
 	}
 	// An unresolvable MAC name is the caller's input, not a library

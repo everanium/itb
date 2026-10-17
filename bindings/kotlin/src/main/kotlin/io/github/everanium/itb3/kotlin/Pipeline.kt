@@ -154,6 +154,26 @@ class Pipeline internal constructor(internal val impl: JPipeline) : AutoCloseabl
             Pipeline(itbCall { JPipeline.init(profile, opts?.impl ?: JOpts()) })
 
         /**
+         * Deterministically constructs a Pipeline from eight caller-supplied
+         * master keys (one per canonical seed slot 0..7) against the named
+         * profile and options. The eight master keys must come from
+         * independent entropy or key-agreement sources; never derive all eight
+         * keys from a single secret or a single KDF parent key.
+         */
+        fun initKeys(profile: String, masters: Array<ByteArray>, opts: Opts? = null): Pipeline =
+            Pipeline(itbCall { JPipeline.initKeys(profile, opts?.impl ?: JOpts(), masters) })
+
+        /**
+         * Deterministically constructs a Pipeline from eight caller-supplied
+         * master keys (one per canonical seed slot 0..7) against the named
+         * profile and options. The eight master keys must come from
+         * independent entropy or key-agreement sources; never derive all eight
+         * keys from a single secret or a single KDF parent key.
+         */
+        fun initKeys(profile: String, opts: Opts?, masters: Array<ByteArray>): Pipeline =
+            Pipeline(itbCall { JPipeline.initKeys(profile, opts?.impl ?: JOpts(), masters) })
+
+        /**
          * Reconstructs a Pipeline from a blob produced by [save] or
          * [rekey]. The blob's embedded profile record is the sole
          * structural source. Omitting [permMaster] / [wrapMaster]

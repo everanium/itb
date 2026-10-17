@@ -36,8 +36,8 @@ func init() {
 //	avx2     — arms-only probe on VAES + AVX2 silicon: the YMM batched
 //	           permutation with the fused cascade and batch-16 fill
 //	           off, so the arms alone are reachable end to end
-//	vex      — no VEX-encoded XMM arm exists for Areion; the token
-//	           selects the AES-NI XMM kernels with a stderr note
+//	vex      — 3-operand VEX XMM (AVX + AES-NI): fused cascade and
+//	           batch-16 fill; the VEX XMM batched permutation of the arms
 //	aesni    — XMM AES-NI fused cascade and batch-16 fill; the batched
 //	           arm runs the single-lane XMM cascade kernel per lane at
 //	           the kernel shapes and the XMM fused SoEM kernel at every
@@ -52,53 +52,57 @@ func applyHashTier() {
 			forcetier.Warnf("areionasm: avx512 tier needs VAES+AVX-512; keeping auto-dispatch")
 			return
 		}
-		HasVAESAVX512, HasVAESAVX2NoAVX512, HasAESNIBatched, HasARMAESBatched = true, false, false, false
-		FusedHasVAESAVX512, FusedHasVAESAVX2, FusedHasAESNI = true, false, false
-		HasVAESAVX512X16, HasVAESAVX2X16, HasAESNIX16 = true, false, false
+		HasVAESAVX512, HasVAESAVX2NoAVX512, HasAVXAESNIBatched, HasAESNIBatched, HasARMAESBatched = true, false, false, false, false
+		FusedHasVAESAVX512, FusedHasVAESAVX2, FusedHasAVXAESNI, FusedHasAESNI = true, false, false, false
+		HasVAESAVX512X16, HasVAESAVX2X16, HasAVXAESNIX16, HasAESNIX16 = true, false, false, false
 	case "vaesavx2":
 		if !cpuid.VAESYMM {
 			forcetier.Warnf("areionasm: vaesavx2 tier needs VAES+AVX2; keeping auto-dispatch")
 			return
 		}
-		HasVAESAVX512, HasVAESAVX2NoAVX512, HasAESNIBatched, HasARMAESBatched = false, true, false, false
-		FusedHasVAESAVX512, FusedHasVAESAVX2, FusedHasAESNI = false, true, false
-		HasVAESAVX512X16, HasVAESAVX2X16, HasAESNIX16 = false, true, false
+		HasVAESAVX512, HasVAESAVX2NoAVX512, HasAVXAESNIBatched, HasAESNIBatched, HasARMAESBatched = false, true, false, false, false
+		FusedHasVAESAVX512, FusedHasVAESAVX2, FusedHasAVXAESNI, FusedHasAESNI = false, true, false, false
+		HasVAESAVX512X16, HasVAESAVX2X16, HasAVXAESNIX16, HasAESNIX16 = false, true, false, false
 	case "avx2":
 		if !cpuid.VAESYMM {
 			forcetier.Warnf("areionasm: avx2 tier needs VAES+AVX2; keeping auto-dispatch")
 			return
 		}
-		HasVAESAVX512, HasVAESAVX2NoAVX512, HasAESNIBatched, HasARMAESBatched = false, true, false, false
-		FusedHasVAESAVX512, FusedHasVAESAVX2, FusedHasAESNI = false, false, false
-		HasVAESAVX512X16, HasVAESAVX2X16, HasAESNIX16 = false, false, false
-	case "vex", "aesni":
-		if !cpuid.AESNI {
-			forcetier.Warnf("areionasm: %s tier needs AES-NI; keeping auto-dispatch", forcetier.HashTier())
+		HasVAESAVX512, HasVAESAVX2NoAVX512, HasAVXAESNIBatched, HasAESNIBatched, HasARMAESBatched = false, true, false, false, false
+		FusedHasVAESAVX512, FusedHasVAESAVX2, FusedHasAVXAESNI, FusedHasAESNI = false, false, false, false
+		HasVAESAVX512X16, HasVAESAVX2X16, HasAVXAESNIX16, HasAESNIX16 = false, false, false, false
+	case "vex":
+		if !cpuid.AESNI || !cpuid.AVX2 {
+			forcetier.Warnf("areionasm: vex tier needs AVX+AES-NI; keeping auto-dispatch")
 			return
 		}
-		if forcetier.HashTier() == "vex" {
-			forcetier.Warnf("areionasm: no vex arm; selecting the AES-NI XMM kernels")
+		HasVAESAVX512, HasVAESAVX2NoAVX512, HasAVXAESNIBatched, HasAESNIBatched, HasARMAESBatched = false, false, true, false, false
+		FusedHasVAESAVX512, FusedHasVAESAVX2, FusedHasAVXAESNI, FusedHasAESNI = false, false, true, false
+		HasVAESAVX512X16, HasVAESAVX2X16, HasAVXAESNIX16, HasAESNIX16 = false, false, true, false
+	case "aesni":
+		if !cpuid.AESNI {
+			forcetier.Warnf("areionasm: aesni tier needs AES-NI; keeping auto-dispatch")
+			return
 		}
-		HasVAESAVX512, HasVAESAVX2NoAVX512, HasAESNIBatched, HasARMAESBatched = false, false, true, false
-		FusedHasVAESAVX512, FusedHasVAESAVX2, FusedHasAESNI = false, false, true
-		HasVAESAVX512X16, HasVAESAVX2X16, HasAESNIX16 = false, false, true
+		HasVAESAVX512, HasVAESAVX2NoAVX512, HasAVXAESNIBatched, HasAESNIBatched, HasARMAESBatched = false, false, false, true, false
+		FusedHasVAESAVX512, FusedHasVAESAVX2, FusedHasAVXAESNI, FusedHasAESNI = false, false, false, true
+		HasVAESAVX512X16, HasVAESAVX2X16, HasAVXAESNIX16, HasAESNIX16 = false, false, false, true
 	case "gpr":
 		forcetier.Warnf("areionasm: no gpr arm; keeping auto-dispatch")
 	case "neon", "sve2", "sve":
 		forcetier.Warnf("areionasm: %s tier is arm64-only; keeping auto-dispatch", forcetier.HashTier())
 	case "scalar":
-		HasVAESAVX512, HasVAESAVX2NoAVX512, HasAESNIBatched, HasARMAESBatched = false, false, false, false
-		FusedHasVAESAVX512, FusedHasVAESAVX2, FusedHasAESNI = false, false, false
-		HasVAESAVX512X16, HasVAESAVX2X16, HasAESNIX16 = false, false, false
+		HasVAESAVX512, HasVAESAVX2NoAVX512, HasAVXAESNIBatched, HasAESNIBatched, HasARMAESBatched = false, false, false, false, false
+		FusedHasVAESAVX512, FusedHasVAESAVX2, FusedHasAVXAESNI, FusedHasAESNI = false, false, false, false
+		HasVAESAVX512X16, HasVAESAVX2X16, HasAVXAESNIX16, HasAESNIX16 = false, false, false, false
 	}
 }
 
 // applyInterlockPRFFillTier applies ITB_FORCE_INTERLOCK_PRF_FILL_TIER to
-// the fill flags (HasVAESAVX512X16, HasVAESAVX2X16, HasAESNIX16 — the
-// batch-16 hooks and the width-512 batch-32 hook), assigned as one
-// consistent set. avx2 and vex have no
-// batch-16 arm of their own: avx2 disarms the fill (the arms-only probe),
-// vex selects the AES-NI XMM arm, each with a stderr note.
+// the fill flags (HasVAESAVX512X16, HasVAESAVX2X16, HasAVXAESNIX16,
+// HasAESNIX16 — the batch-16 hooks and the width-512 batch-32 hook),
+// assigned as one consistent set. avx2 has no batch-16 arm of its own
+// and disarms the fill (the arms-only probe) with a stderr note.
 func applyInterlockPRFFillTier() {
 	switch forcetier.InterlockPRFFillTier() {
 	case "avx512":
@@ -106,30 +110,33 @@ func applyInterlockPRFFillTier() {
 			forcetier.Warnf("areionasm: avx512 batch-16 tier needs VAES+AVX-512; keeping auto-dispatch")
 			return
 		}
-		HasVAESAVX512X16, HasVAESAVX2X16, HasAESNIX16 = true, false, false
+		HasVAESAVX512X16, HasVAESAVX2X16, HasAVXAESNIX16, HasAESNIX16 = true, false, false, false
 	case "vaesavx2":
 		if !cpuid.VAESYMM {
 			forcetier.Warnf("areionasm: vaesavx2 batch-16 tier needs VAES+AVX2; keeping auto-dispatch")
 			return
 		}
-		HasVAESAVX512X16, HasVAESAVX2X16, HasAESNIX16 = false, true, false
+		HasVAESAVX512X16, HasVAESAVX2X16, HasAVXAESNIX16, HasAESNIX16 = false, true, false, false
 	case "avx2":
 		forcetier.Warnf("areionasm: no avx2 batch-16 arm; forcing scalar")
-		HasVAESAVX512X16, HasVAESAVX2X16, HasAESNIX16 = false, false, false
-	case "vex", "aesni":
-		if !cpuid.AESNI {
-			forcetier.Warnf("areionasm: %s batch-16 tier needs AES-NI; keeping auto-dispatch", forcetier.InterlockPRFFillTier())
+		HasVAESAVX512X16, HasVAESAVX2X16, HasAVXAESNIX16, HasAESNIX16 = false, false, false, false
+	case "vex":
+		if !cpuid.AESNI || !cpuid.AVX2 {
+			forcetier.Warnf("areionasm: vex batch-16 tier needs AVX+AES-NI; keeping auto-dispatch")
 			return
 		}
-		if forcetier.InterlockPRFFillTier() == "vex" {
-			forcetier.Warnf("areionasm: no vex batch-16 arm; selecting the AES-NI XMM arm")
+		HasVAESAVX512X16, HasVAESAVX2X16, HasAVXAESNIX16, HasAESNIX16 = false, false, true, false
+	case "aesni":
+		if !cpuid.AESNI {
+			forcetier.Warnf("areionasm: aesni batch-16 tier needs AES-NI; keeping auto-dispatch")
+			return
 		}
-		HasVAESAVX512X16, HasVAESAVX2X16, HasAESNIX16 = false, false, true
+		HasVAESAVX512X16, HasVAESAVX2X16, HasAVXAESNIX16, HasAESNIX16 = false, false, false, true
 	case "gpr":
 		forcetier.Warnf("areionasm: no gpr batch-16 arm; keeping auto-dispatch")
 	case "neon":
 		forcetier.Warnf("areionasm: neon batch-16 tier is arm64-only; keeping auto-dispatch")
 	case "scalar":
-		HasVAESAVX512X16, HasVAESAVX2X16, HasAESNIX16 = false, false, false
+		HasVAESAVX512X16, HasVAESAVX2X16, HasAVXAESNIX16, HasAESNIX16 = false, false, false, false
 	}
 }

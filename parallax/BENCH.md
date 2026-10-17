@@ -39,15 +39,15 @@ Each row uses a homogeneous palette of N=9 copies of the named primitive across 
 
 | Primitive | S=17 | S=251 | S=1031 | S=4093 | S=16381 | S=65521 |
 |---|---:|---:|---:|---:|---:|---:|
-| Areion-SoEM-256 | 355 | 1574 | 2018 | **2062** | 2004 | 1940 |
-| Areion-SoEM-512 | 177 | 1152 | 1932 | **2000** | 1992 | 1986 |
-| BLAKE2b-256 | 388 | 758 | 954 | 902 | **959** | 629 |
-| BLAKE2b-512 | 380 | 1065 | **1399** | 1367 | 1266 | 1058 |
-| BLAKE2s | 400 | 861 | **1031** | 949 | 1011 | 740 |
-| BLAKE3 | 732 | 1459 | **1596** | 1526 | 1581 | 1362 |
-| AES-128-CTR | 163 | 1483 | 2734 | 3508 | 3442 | **3827** |
-| SipHash-2-4 | 1437 | 2284 | 2527 | **2595** | 2536 | 2397 |
-| ChaCha20 | 275 | 1446 | **2386** | 2202 | 2355 | 2308 |
+| Areion-SoEM-256 | 343 | 1624 | 1753 | **2135** | 2088 | 2005 |
+| Areion-SoEM-512 | 183 | 1165 | 1734 | 2003 | **2124** | 2010 |
+| BLAKE2b-256 | 401 | 869 | 877 | 986 | **1039** | 680 |
+| BLAKE2b-512 | 443 | 1271 | 1416 | **1494** | 1458 | 1123 |
+| BLAKE2s | 411 | 942 | 1011 | **1085** | 1064 | 802 |
+| BLAKE3 | 827 | 1587 | 1496 | 1688 | **1767** | 1401 |
+| AES-128-CTR | 159 | 1487 | 2366 | 3899 | 4135 | **4743** |
+| SipHash-2-4 | 1605 | 2564 | 2406 | 2656 | **2694** | 2545 |
+| ChaCha20 | 270 | 1481 | 2136 | **2463** | 2346 | 2313 |
 
 Throughput amortises sharply between S=17 and S=251 (2–9×) and a further 1.5–3× through S=4093 for most primitives, then plateaus. SipHash-2-4 is essentially flat above S=251 — its per-segment fixed cost is already negligible at small widths. All four BLAKE variants dip at S=65521 (cache-fit boundary) — the smaller-state BLAKE2b-256 and BLAKE2s more sharply (−34 %, −27 %), the wider-state BLAKE2b-512 and BLAKE3 less but measurably (−23 %, −14 %).
 
@@ -59,15 +59,15 @@ How throughput scales as the plaintext grows. Sub-bench: `BenchmarkParallaxPerPr
 
 | Primitive | 1 KiB | 64 KiB | 1 MiB | 4 MiB | 16 MiB |
 |---|---:|---:|---:|---:|---:|
-| Areion-SoEM-256 | 197 | 452 | 1148 | 2062 | **2738** |
-| Areion-SoEM-512 | 161 | 427 | 947 | 2000 | **2575** |
-| BLAKE2b-256 | 89 | 171 | 654 | 902 | **1162** |
-| BLAKE2b-512 | 130 | 264 | 823 | 1367 | **1842** |
-| BLAKE2s | 107 | 198 | 749 | 949 | **1294** |
-| BLAKE3 | 41 | 288 | 625 | 1526 | **2058** |
-| AES-128-CTR | 221 | 927 | 1871 | 3508 | **4595** |
-| SipHash-2-4 | 493 | 592 | 1544 | 2595 | **3404** |
-| ChaCha20 | 319 | 542 | 1360 | 2202 | **3266** |
+| Areion-SoEM-256 | 129 | 429 | 968 | 2135 | **2659** |
+| Areion-SoEM-512 | 116 | 411 | 954 | 2003 | **2552** |
+| BLAKE2b-256 | 87 | 170 | 604 | 986 | **1116** |
+| BLAKE2b-512 | 127 | 263 | 762 | 1494 | **1584** |
+| BLAKE2s | 105 | 195 | 720 | 1085 | **1214** |
+| BLAKE3 | 42 | 286 | 667 | 1688 | **2123** |
+| AES-128-CTR | 215 | 904 | 1996 | 3899 | **4316** |
+| SipHash-2-4 | 470 | 592 | 1601 | 2656 | **3398** |
+| ChaCha20 | 303 | 535 | 1431 | 2463 | **2979** |
 
 The 1 KiB row sits below the parallel threshold — per-segment dispatch and worker setup dominate. The 64 KiB row crosses the threshold but lacks the payload to amortise the parallel-path startup cost. From 1 MiB onward each primitive walks toward its steady-state ceiling; the 16 MiB column is the cleanest read on each primitive's intrinsic per-byte cost. SipHash-2-4 dominates the small-plaintext regime — at S=4093 / 1 KiB its per-segment hash-state cost amortises better than any other entry under the serial fast path.
 
@@ -77,17 +77,17 @@ Streaming emits one frame per chunk; each frame is one `EncryptInto` call's outp
 
 | Primitive | 64 KiB | 256 KiB | 1 MiB | 4 MiB | 16 MiB | 64 MiB |
 |---|---:|---:|---:|---:|---:|---:|
-| Areion-SoEM-256 | 463 | 1002 | 1416 | 2134 | **2387** | 2356 |
-| Areion-SoEM-512 | 436 | 895 | 1405 | 2078 | 2317 | **2372** |
-| BLAKE2b-256 | 171 | 479 | 799 | 1041 | 1116 | **1123** |
-| BLAKE2b-512 | 264 | 641 | 1049 | 1514 | 1668 | **1726** |
-| BLAKE2s | 198 | 515 | 855 | 1114 | 1200 | **1225** |
-| BLAKE3 | 327 | 696 | 1158 | **1737** | 1250 | 1517 |
-| AES-128-CTR | 920 | 1745 | 2572 | 2945 | 3015 | **3109** |
-| SipHash-2-4 | 556 | 1114 | 1806 | 2475 | 2812 | **2835** |
-| ChaCha20 | 513 | 1066 | 1664 | 2362 | 2722 | **2764** |
+| Areion-SoEM-256 | 423 | 847 | 1316 | 1999 | 2160 | **2263** |
+| Areion-SoEM-512 | 406 | 794 | 1262 | 1949 | 2135 | **2259** |
+| BLAKE2b-256 | 170 | 450 | 735 | 950 | 1017 | **1073** |
+| BLAKE2b-512 | 260 | 605 | 991 | 1420 | 1519 | **1640** |
+| BLAKE2s | 193 | 493 | 804 | 1016 | **1145** | 1118 |
+| BLAKE3 | 309 | 629 | 1068 | 1665 | 1835 | **1842** |
+| AES-128-CTR | 880 | 1554 | 2522 | **3022** | 2872 | 3002 |
+| SipHash-2-4 | 542 | 1044 | 1751 | 2396 | 2589 | **2824** |
+| ChaCha20 | 486 | 986 | 1575 | 2231 | 2481 | **2674** |
 
-Per-chunk framing dominates below ~1 MiB. At chunkSize = 64 KiB every primitive sits 3–6× below its 4 MiB rate; the inflection sits at 256 KiB, and amortisation is largely complete by 1 MiB. AES-128-CTR retains the highest absolute number across the small-chunk band because its per-block cost is already dwarfed by per-chunk `EncryptInto` setup; BLAKE2b-256 collapses to 171 MB/s at 64 KiB because the smallest hash output and lowest per-chunk throughput pair poorly with the framing tax. Above 1 MiB chunks the streaming row approaches the Single Message rate at the matching primitive.
+Per-chunk framing dominates below ~1 MiB. At chunkSize = 64 KiB every primitive sits 3–6× below its 4 MiB rate; the inflection sits at 256 KiB, and amortisation is largely complete by 1 MiB. AES-128-CTR retains the highest absolute number across the small-chunk band because its per-block cost is already dwarfed by per-chunk `EncryptInto` setup; BLAKE2b-256 collapses to 170 MB/s at 64 KiB because the smallest hash output and lowest per-chunk throughput pair poorly with the framing tax. Above 1 MiB chunks the streaming row approaches the Single Message rate at the matching primitive.
 
 ## Stream-shape comparison (4 MiB plaintext, chunk 16 MiB)
 
@@ -95,15 +95,15 @@ A 4 MiB plaintext at the default 16 MiB chunkSize emits exactly one frame per en
 
 | Primitive | EncryptWriter | EncryptReader | DecryptWriter | DecryptReader | `OneShotEncrypt` |
 |---|---:|---:|---:|---:|---:|
-| Areion-SoEM-256 | 2011 | 2394 | **2516** | 1908 | 2099 |
-| Areion-SoEM-512 | 1824 | 2144 | **2360** | 1768 | 1977 |
-| BLAKE2b-256 | 975 | 1092 | **1110** | 920 | 967 |
-| BLAKE2b-512 | 1416 | 1555 | **1643** | 1353 | 1541 |
-| BLAKE2s | 1080 | **1181** | 1144 | 999 | 1061 |
-| BLAKE3 | 1612 | 1790 | **1890** | 1600 | 1626 |
-| AES-128-CTR | 2716 | 4546 | **5420** | 3351 | 3861 |
-| SipHash-2-4 | 2321 | 2883 | **3021** | 2310 | 2576 |
-| ChaCha20 | 2205 | 2677 | **2864** | 2063 | 2325 |
+| Areion-SoEM-256 | 1858 | 2060 | **2261** | 1829 | 1954 |
+| Areion-SoEM-512 | 1772 | **2141** | 2103 | 1714 | 1841 |
+| BLAKE2b-256 | 910 | 947 | **976** | 881 | 869 |
+| BLAKE2b-512 | 1206 | 1447 | 1467 | 1333 | **1510** |
+| BLAKE2s | 1005 | 1015 | **1059** | 977 | 951 |
+| BLAKE3 | 1531 | 1711 | **1750** | 1427 | 1494 |
+| AES-128-CTR | 2681 | 4131 | **4587** | 3025 | 3652 |
+| SipHash-2-4 | 2087 | 2529 | **2831** | 2230 | 2418 |
+| ChaCha20 | 2057 | **2496** | 2461 | 2051 | 2321 |
 
 DecryptWriter is the fastest streaming shape for most primitives (1.06–1.99× over EncryptWriter); BLAKE2s is the exception where EncryptReader (1181) edges past DecryptWriter (1144). The in-place decrypt path avoids the wire-buffer accumulation the encrypt writer performs. EncryptReader otherwise runs within ~10 % of EncryptWriter. `OneShotEncrypt` typically edges past EncryptWriter (no per-chunk envelope); BLAKE2b-256 and BLAKE2s are the exceptions where EncryptWriter narrowly leads. The gap converges within a few percent for the Areion family and ChaCha20 once the chunk grows past 16 MiB.
 
@@ -113,12 +113,12 @@ Palette width versus throughput, holding everything else at the package default.
 
 | N | Composition shape | MB/s | Allocs/op |
 |---|---|---:|---:|
-| 3 | seeded draws from the registry | 1211 | 817 |
-| 9 — shuffle A | registry permutation (seed 42) | 1541 | 1489 |
-| 9 — shuffle B | registry permutation (seed 1337) | 1587 | 1484 |
-| 24 | seeded draws | 1288 | 2695 |
-| 36 | seeded draws | 1702 | 3530 |
-| 254 | seeded draws near MaxPaletteSize | 1139 | 20220 |
+| 3 | seeded draws from the registry | 1240 | 818 |
+| 9 — shuffle A | registry permutation (seed 42) | 1614 | 1489 |
+| 9 — shuffle B | registry permutation (seed 1337) | 1513 | 1485 |
+| 24 | seeded draws | 1437 | 2696 |
+| 36 | seeded draws | 1719 | 3530 |
+| 254 | seeded draws near MaxPaletteSize | 1100 | 20222 |
 
 The two N=9 shuffles land within a few percent of each other — multiset identity dominates ordering for full-registry shuffles at this segment width. N=254 loses ~26 % vs N=9 because per-slot setup (20 k allocs/op vs 1.5 k) stops amortising against a 4 MiB workload; the allocation budget scales roughly linearly with N. For a long-lived `Cipherset` the per-slot KDF derivation runs once at construction and disappears from per-message accounting; the N=254 row is the single-`NewCipherset` worst case.
 
@@ -128,9 +128,9 @@ Throughput depends much more on which primitives populate the slots than on the 
 
 | Label | Composition | MB/s |
 |---|---|---:|
-| fast-mix | `aescmac, siphash24, chacha20, blake3, aescmac` | **2297** |
-| balanced | `aescmac, chacha20, blake3, blake2s, siphash24` | 1779 |
-| slow-mix | `blake2b256, blake2b512, blake2s, areion256, areion512` | 1337 |
+| fast-mix | `aescmac, siphash24, chacha20, blake3, aescmac` | **2152** |
+| balanced | `aescmac, chacha20, blake3, blake2s, siphash24` | 1741 |
+| slow-mix | `blake2b256, blake2b512, blake2s, areion256, areion512` | 1210 |
 
 fast-mix beats slow-mix by ~72 % at fixed N=5. The choice of which primitives populate the palette is the load-bearing knob, not the count.
 
@@ -140,9 +140,9 @@ The anchor primitive drives the per-slot KDF derivation and the schedule-seed ex
 
 | Anchor | MB/s @ 4 MiB | MB/s @ 16 MiB |
 |---|---:|---:|
-| BLAKE3 | **1398** | 1722 |
-| AES-128-CTR | 1351 | 1732 |
-| ChaCha20 | 1303 | **1744** |
+| BLAKE3 | 1720 | 1914 |
+| AES-128-CTR | 1703 | **1928** |
+| ChaCha20 | **1742** | 1847 |
 
 At 4 MiB the three rows spread within ~7 % of each other; at 16 MiB they converge to within ~1 % — the schedule-seed work is fully amortised once steady-state per-segment work dominates the total.
 
@@ -152,11 +152,11 @@ Source: `BenchmarkParallaxWorkerScaling`. Default mixed palette `{aescmac, chach
 
 | GOMAXPROCS | MB/s | speed-up vs P=1 |
 |---:|---:|---:|
-| 1 | 559 | 1.00× |
-| 2 | 992 | 1.77× |
-| 4 | 1648 | 2.95× |
-| 8 | 2252 | 4.03× |
-| 16 | **2248** | **4.02×** |
+| 1 | 571 | 1.00× |
+| 2 | 1008 | 1.77× |
+| 4 | 1670 | 2.92× |
+| 8 | **2320** | **4.06×** |
+| 16 | 2261 | 3.96× |
 
 Near-linear from P=1 → P=2 (the serial fast path is slower than the parallel path even at P=2 due to per-worker keystream amortisation), then diminishing returns. The bandwidth ceiling lands around 2 GB/s at P=8 on this Rocket Lake target; the SMT step P=8 → P=16 lands within measurement noise. Larger segments lift the ceiling: the same workload at S=16381 reaches 4 GB/s at P=4 (`aescmac`-homogeneous), while S=251 caps near 2.1× scaling because per-segment overhead dominates.
 

@@ -1,11 +1,11 @@
 // 4-way batched Areion-SoEM primitives.
 //
 // AreionSoEM256x4 and AreionSoEM512x4 process four independent
-// (key, input) tuples simultaneously using the vendored
-// `third/goaes` parallel AES-round primitives. On x86-64 CPUs with VAES
+// (key, input) tuples simultaneously using the
+// `github.com/everanium/areion` parallel AES-round primitives. On x86-64 CPUs with VAES
 // the inner loop dispatches to the ZMM / YMM assembly kernels of
 // internal/areionasm (one `vaesenc` per four or two AES blocks); AES-NI
-// hosts without VAES dispatch to the XMM AES-NI kernels; ARM64 with the
+// hosts without VAES dispatch to the XMM VEX / AES-NI kernels; ARM64 with the
 // Crypto Extension dispatches to the NEON kernels; every other build
 // runs the portable Go permutation over Block4.
 //
@@ -37,8 +37,8 @@
 // serial reference is `github.com/everanium/areion` (`areion.SoEM256` /
 // `areion.SoEM512`). The 4-way batched composition here applies each
 // permutation to four independent states in parallel using the
-// `Block4`/`Round4HW`/`FinalRound4HW`/`XorBlock4` primitives of
-// `third/goaes`.
+// `Block4`/`AES128RoundNoKey4`/`AES128FinalRoundNoKey4`/`XorBlock4` primitives of
+// `github.com/everanium/areion`.
 //
 // Layout. Each batched permutation reshapes the four Areion states from
 // the natural array-of-structures layout (one contiguous 32- or 64-byte
@@ -58,7 +58,6 @@ import (
 
 	"github.com/everanium/areion"
 	"github.com/everanium/itb/internal/areionasm"
-	"github.com/everanium/itb/third/goaes"
 )
 
 // Areion round constants of P1 (digits of pi, little-endian) — must
@@ -119,8 +118,8 @@ var areionRC2 = [15][16]byte{
 // rcBlock4 broadcasts one 16-byte round constant into a Block4 (four
 // identical 16-byte copies, one per lane). Result is suitable for
 // `XorBlock4` against a four-lane state.
-func rcBlock4(rc *[16]byte) aes.Block4 {
-	var out aes.Block4
+func rcBlock4(rc *[16]byte) areion.Block4 {
+	var out areion.Block4
 	copy(out[0:16], rc[:])
 	copy(out[16:32], rc[:])
 	copy(out[32:48], rc[:])
@@ -129,32 +128,17 @@ func rcBlock4(rc *[16]byte) aes.Block4 {
 }
 
 // areionZeroKey4 is a four-lane all-zero round key reused for every
-// `Round4HW` / `FinalRound4HW` call inside the Areion permutations.
-// Areion uses no-key AES rounds, but the upstream library only routes
-// the **keyed** `Round4HW` / `FinalRound4HW` to VAES instructions on
-// x86-64 (`vaes_amd64.go:vaesRound4` / `vaesFinalRound4`); the
-// `RoundNoKey4HW` / `FinalRoundNoKey4HW` paths fall back to four
-// sequential single-block AES-NI invocations even when VAES is
-// available. Calling `Round4HW(state, &areionZeroKey4)` instead is
-// mathematically identical to `RoundNoKey4HW(state)` (`AESENC` with the
-// zero round key omits the AddRoundKey contribution) and routes to the
-// VAES single-instruction-per-four-blocks path. Same logic applies to
-// `FinalRound4HW`.
-var areionZeroKey4 aes.Key4
+// `AES128Round4` / `AES128FinalRound4` call inside the Areion permutations.
+var areionZeroKey4 areion.Key4
 
-// roundNoKey4Fast applies one 4-way AES "round-without-key" using the
-// VAES-accelerated keyed path with a constant zero key. Equivalent to
-// `aes.RoundNoKey4HW(state)` byte-for-byte (verified by parity test on
-// every run) but ~4× faster on hardware with VAES + AVX-512 because the
-// upstream `RoundNoKey4HW` does not activate the VAES path.
-func roundNoKey4Fast(state *aes.Block4) {
-	aes.Round4HW(state, &areionZeroKey4)
+// roundNoKey4Fast applies one 4-way AES "round-without-key".
+func roundNoKey4Fast(state *areion.Block4) {
+	areion.AES128Round4(state, &areionZeroKey4)
 }
 
-// finalRoundNoKey4Fast is the VAES-routed counterpart for the final AES
-// round (no MixColumns).
-func finalRoundNoKey4Fast(state *aes.Block4) {
-	aes.FinalRound4HW(state, &areionZeroKey4)
+// finalRoundNoKey4Fast applies the 4-way final AES round (no MixColumns).
+func finalRoundNoKey4Fast(state *areion.Block4) {
+	areion.AES128FinalRound4(state, &areionZeroKey4)
 }
 
 // pack256x4SoA reshapes four Areion256 states from array-of-structures
@@ -162,7 +146,7 @@ func finalRoundNoKey4Fast(state *aes.Block4) {
 // (Block4_0 holds x0 of every lane, Block4_1 holds x1 of every lane).
 // Used at entry of `areion256Permutex4` so all subsequent round work
 // runs in SoA layout.
-func pack256x4SoA(states *[4][32]byte) (b0, b1 aes.Block4) {
+func pack256x4SoA(states *[4][32]byte) (b0, b1 areion.Block4) {
 	// state[i][0:16] -> b0[i*16 : (i+1)*16]
 	// state[i][16:32] -> b1[i*16 : (i+1)*16]
 	for i := 0; i < 4; i++ {
@@ -174,7 +158,7 @@ func pack256x4SoA(states *[4][32]byte) (b0, b1 aes.Block4) {
 
 // unpack256x4SoA reverses `pack256x4SoA`, writing the four lanes back
 // into the AoS layout.
-func unpack256x4SoA(b0, b1 *aes.Block4, states *[4][32]byte) {
+func unpack256x4SoA(b0, b1 *areion.Block4, states *[4][32]byte) {
 	for i := 0; i < 4; i++ {
 		copy(states[i][0:16], b0[i*16:(i+1)*16])
 		copy(states[i][16:32], b1[i*16:(i+1)*16])
@@ -191,14 +175,14 @@ func unpack256x4SoA(b0, b1 *aes.Block4, states *[4][32]byte) {
 //
 // Mirrors the serial round structure in
 // `github.com/everanium/areion` (`areion256PermuteSoftwareRC`) bit-for-bit; the
-// only difference is each operation runs on four lanes via `Round4HW`
-// (with zero key, equivalent to `RoundNoKey4`) / `FinalRound4HW` /
-// `XorBlock4` instead of per-block primitives.
+// only difference is each operation runs on four lanes via
+// `AES128RoundNoKey4` / `AES128FinalRoundNoKey4` / `XorBlock4` instead of
+// per-block primitives.
 func areion256Permutex4Default(states *[4][32]byte, rcs *[15][16]byte) {
-	var x0, x1 aes.Block4
+	var x0, x1 areion.Block4
 	pack256x4SoAInto(states, &x0, &x1)
 
-	var temp aes.Block4
+	var temp areion.Block4
 	for r := 0; r < 10; r++ {
 		rc := rcBlock4(&rcs[r])
 
@@ -208,11 +192,11 @@ func areion256Permutex4Default(states *[4][32]byte, rcs *[15][16]byte) {
 			// RoundNoKey(temp)
 			roundNoKey4Fast(&temp)
 			// temp ^= rc
-			aes.XorBlock4(&temp, &temp, &rc)
+			areion.XorBlock4(&temp, &temp, &rc)
 			// RoundNoKey(temp)
 			roundNoKey4Fast(&temp)
 			// temp ^= x1
-			aes.XorBlock4(&temp, &temp, &x1)
+			areion.XorBlock4(&temp, &temp, &x1)
 			// FinalRoundNoKey(x0)
 			finalRoundNoKey4Fast(&x0)
 			// x1 = temp
@@ -221,9 +205,9 @@ func areion256Permutex4Default(states *[4][32]byte, rcs *[15][16]byte) {
 			// temp = x1
 			temp = x1
 			roundNoKey4Fast(&temp)
-			aes.XorBlock4(&temp, &temp, &rc)
+			areion.XorBlock4(&temp, &temp, &rc)
 			roundNoKey4Fast(&temp)
-			aes.XorBlock4(&temp, &temp, &x0)
+			areion.XorBlock4(&temp, &temp, &x0)
 			finalRoundNoKey4Fast(&x1)
 			// x0 = temp
 			x0 = temp
@@ -273,7 +257,7 @@ func AreionSoEM256x4(keys *[4][64]byte, inputs *[4][32]byte) [4][32]byte {
 	// measurable on slow-path 256-bit / 512-bit ITB nonce workloads
 	// where the closure dispatches 2-3 batched calls per ChainHash
 	// round.
-	var s1b0, s1b1, s2b0, s2b1 aes.Block4
+	var s1b0, s1b1, s2b0, s2b1 areion.Block4
 	for lane := 0; lane < 4; lane++ {
 		k, in, o := &keys[lane], &inputs[lane], lane*16
 		xorBlock16((*[16]byte)(s1b0[o:o+16]), (*[16]byte)(in[0:16]), (*[16]byte)(k[0:16]))
@@ -313,7 +297,7 @@ func AreionSoEM256x4(keys *[4][64]byte, inputs *[4][32]byte) [4][32]byte {
 
 // pack512x4SoA reshapes four Areion512 states from AoS into four Block4
 // SoA buffers, one per AES-block index (x0, x1, x2, x3).
-func pack512x4SoA(states *[4][64]byte) (b0, b1, b2, b3 aes.Block4) {
+func pack512x4SoA(states *[4][64]byte) (b0, b1, b2, b3 areion.Block4) {
 	for i := 0; i < 4; i++ {
 		copy(b0[i*16:(i+1)*16], states[i][0:16])
 		copy(b1[i*16:(i+1)*16], states[i][16:32])
@@ -324,7 +308,7 @@ func pack512x4SoA(states *[4][64]byte) (b0, b1, b2, b3 aes.Block4) {
 }
 
 // unpack512x4SoA reverses `pack512x4SoA`.
-func unpack512x4SoA(b0, b1, b2, b3 *aes.Block4, states *[4][64]byte) {
+func unpack512x4SoA(b0, b1, b2, b3 *areion.Block4, states *[4][64]byte) {
 	for i := 0; i < 4; i++ {
 		copy(states[i][0:16], b0[i*16:(i+1)*16])
 		copy(states[i][16:32], b1[i*16:(i+1)*16])
@@ -342,22 +326,22 @@ func unpack512x4SoA(b0, b1, b2, b3 *aes.Block4, states *[4][64]byte) {
 //	FinalRoundNoKey(a); FinalRoundNoKey(c); c = c ⊕ rc; RoundNoKey(c)
 //
 // All operations replicated four-wide via Block4 primitives.
-func areion512Roundx4(a, b, c, d *aes.Block4, rc *[16]byte) {
+func areion512Roundx4(a, b, c, d *areion.Block4, rc *[16]byte) {
 	rcB4 := rcBlock4(rc)
 
-	var temp1, temp2 aes.Block4
+	var temp1, temp2 areion.Block4
 
 	temp1 = *a
 	roundNoKey4Fast(&temp1)
-	aes.XorBlock4(b, &temp1, b)
+	areion.XorBlock4(b, &temp1, b)
 
 	temp2 = *c
 	roundNoKey4Fast(&temp2)
-	aes.XorBlock4(d, &temp2, d)
+	areion.XorBlock4(d, &temp2, d)
 
 	finalRoundNoKey4Fast(a)
 	finalRoundNoKey4Fast(c)
-	aes.XorBlock4(c, c, &rcB4)
+	areion.XorBlock4(c, c, &rcB4)
 	roundNoKey4Fast(c)
 
 	// temp1 / temp2 hold round states of a whitened input; zero them.
@@ -377,7 +361,7 @@ func areion512Roundx4(a, b, c, d *aes.Block4, rc *[16]byte) {
 // `github.com/everanium/areion` (`areion512PermuteSoftwareRC`) bit-for-bit; same
 // per-round pattern as the serial reference, four lanes wide.
 func areion512Permutex4Default(states *[4][64]byte, rcs *[15][16]byte) {
-	var x0, x1, x2, x3 aes.Block4
+	var x0, x1, x2, x3 areion.Block4
 	pack512x4SoAInto(states, &x0, &x1, &x2, &x3)
 
 	// Main 12 rounds (3 outer iterations of 4 sub-rounds each).
@@ -429,7 +413,7 @@ func AreionSoEM512x4(keys *[4][128]byte, inputs *[4][64]byte) [4][64]byte {
 	// counterpart, scaled to four Block4 buffers per state (b0..b3
 	// holding AES blocks 0..3 of every lane). Skips the AoS pack/
 	// unpack steps the AoS dispatcher would otherwise emit.
-	var s1b0, s1b1, s1b2, s1b3, s2b0, s2b1, s2b2, s2b3 aes.Block4
+	var s1b0, s1b1, s1b2, s1b3, s2b0, s2b1, s2b2, s2b3 areion.Block4
 	for lane := 0; lane < 4; lane++ {
 		k, in, o := &keys[lane], &inputs[lane], lane*16
 		xorBlock16((*[16]byte)(s1b0[o:o+16]), (*[16]byte)(in[0:16]), (*[16]byte)(k[0:16]))
@@ -951,7 +935,7 @@ func xor3Block16(dst, a, b, c *[16]byte) {
 // pack256x4SoAInto is [pack256x4SoA] writing into caller-owned blocks, so
 // the packed state never passes through a by-value result or a compiler
 // temporary that the caller cannot zero.
-func pack256x4SoAInto(states *[4][32]byte, b0, b1 *aes.Block4) {
+func pack256x4SoAInto(states *[4][32]byte, b0, b1 *areion.Block4) {
 	for i := 0; i < 4; i++ {
 		copy(b0[i*16:(i+1)*16], states[i][0:16])
 		copy(b1[i*16:(i+1)*16], states[i][16:32])
@@ -961,7 +945,7 @@ func pack256x4SoAInto(states *[4][32]byte, b0, b1 *aes.Block4) {
 // pack512x4SoAInto is [pack512x4SoA] writing into caller-owned blocks, so
 // the packed state never passes through a by-value result or a compiler
 // temporary that the caller cannot zero.
-func pack512x4SoAInto(states *[4][64]byte, b0, b1, b2, b3 *aes.Block4) {
+func pack512x4SoAInto(states *[4][64]byte, b0, b1, b2, b3 *areion.Block4) {
 	for i := 0; i < 4; i++ {
 		copy(b0[i*16:(i+1)*16], states[i][0:16])
 		copy(b1[i*16:(i+1)*16], states[i][16:32])

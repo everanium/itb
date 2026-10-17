@@ -6,7 +6,7 @@ import (
 	"crypto/rand"
 	"testing"
 
-	"github.com/everanium/itb/third/goaes"
+	"github.com/everanium/areion"
 )
 
 // TestAreion512SoEMPermutex4Interleaved_Parity verifies that the fused
@@ -25,7 +25,7 @@ func TestAreion512SoEMPermutex4Interleaved_Parity(t *testing.T) {
 	}
 
 	for trial := 0; trial < 64; trial++ {
-		var a1, b1, c1, d1, a2, b2, c2, d2 aes.Block4
+		var a1, b1, c1, d1, a2, b2, c2, d2 areion.Block4
 		if _, err := rand.Read(a1[:]); err != nil {
 			t.Fatal(err)
 		}
@@ -89,7 +89,7 @@ func BenchmarkAreion512SoEM_TwoCallsPlusXor(b *testing.B) {
 	if !HasVAESAVX512 {
 		b.Skip("requires VAES + AVX-512")
 	}
-	var a1, b1_, c1, d1, a2, b2_, c2, d2 aes.Block4
+	var a1, b1_, c1, d1, a2, b2_, c2, d2 areion.Block4
 	for i := 0; i < 64; i++ {
 		a1[i] = byte(i)
 		b1_[i] = byte(i + 64)
@@ -118,7 +118,7 @@ func BenchmarkAreion512SoEM_FusedKernel(b *testing.B) {
 	if !HasVAESAVX512 {
 		b.Skip("requires VAES + AVX-512")
 	}
-	var a1, b1_, c1, d1, a2, b2_, c2, d2 aes.Block4
+	var a1, b1_, c1, d1, a2, b2_, c2, d2 areion.Block4
 	for i := 0; i < 64; i++ {
 		a1[i] = byte(i)
 		b1_[i] = byte(i + 64)
@@ -132,5 +132,39 @@ func BenchmarkAreion512SoEM_FusedKernel(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		Areion512SoEMPermutex4Interleaved(&a1, &b1_, &c1, &d1, &a2, &b2_, &c2, &d2)
+	}
+}
+
+func TestAreion512SoEMPermutex4VaesAvx2_Parity(t *testing.T) {
+	if !HasVAESAVX512 && !HasVAESAVX2NoAVX512 {
+		t.Skip("requires VAES + AVX2")
+	}
+
+	for trial := 0; trial < 64; trial++ {
+		var a1, b1, c1, d1, a2, b2, c2, d2 areion.Block4
+		for _, p := range []*areion.Block4{&a1, &b1, &c1, &d1, &a2, &b2, &c2, &d2} {
+			if _, err := rand.Read(p[:]); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		refA1, refB1, refC1, refD1 := a1, b1, c1, d1
+		refA2, refB2, refC2, refD2 := a2, b2, c2, d2
+		Areion512Permutex4Avx2(&refA1, &refB1, &refC1, &refD1)
+		Areion512Permute2x4Avx2(&refA2, &refB2, &refC2, &refD2)
+		for i := 0; i < 64; i++ {
+			refA1[i] ^= refA2[i]
+			refB1[i] ^= refB2[i]
+			refC1[i] ^= refC2[i]
+			refD1[i] ^= refD2[i]
+		}
+
+		gotA1, gotB1, gotC1, gotD1 := a1, b1, c1, d1
+		gotA2, gotB2, gotC2, gotD2 := a2, b2, c2, d2
+		Areion512SoEMPermutex4VaesAvx2(&gotA1, &gotB1, &gotC1, &gotD1, &gotA2, &gotB2, &gotC2, &gotD2)
+
+		if gotA1 != refA1 || gotB1 != refB1 || gotC1 != refC1 || gotD1 != refD1 {
+			t.Fatalf("trial %d: VAES+AVX2 fused SoEM-512 mismatch", trial)
+		}
 	}
 }

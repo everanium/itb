@@ -5,7 +5,7 @@ package itb
 import (
 	"runtime"
 
-	"github.com/everanium/itb/third/goaes"
+	"github.com/everanium/areion"
 )
 
 // On non-amd64 / non-arm64 platforms (or under the `purego` / `noitbasm`
@@ -17,7 +17,7 @@ import (
 // requested constant table (P1, or P2 when second is set), repack. Falls
 // back through the same path the amd64 default branch uses, so
 // behaviour matches across platforms.
-func areion256Permutex4SoA(b0, b1 *aes.Block4, second bool) {
+func areion256Permutex4SoA(b0, b1 *areion.Block4, second bool) {
 	rcs := &areionRC
 	if second {
 		rcs = &areionRC2
@@ -31,7 +31,7 @@ func areion256Permutex4SoA(b0, b1 *aes.Block4, second bool) {
 	runtime.KeepAlive(&states)
 }
 
-func areion512Permutex4SoA(b0, b1, b2, b3 *aes.Block4, second bool) {
+func areion512Permutex4SoA(b0, b1, b2, b3 *areion.Block4, second bool) {
 	rcs := &areionRC
 	if second {
 		rcs = &areionRC2
@@ -51,7 +51,7 @@ func areion512Permutex4SoA(b0, b1, b2, b3 *aes.Block4, second bool) {
 // available AES path inside areion256Permutex4SoA) plus a manual XOR
 // loop. Bit-exact identical to the amd64 fused result by construction;
 // the SoEM22 whitening is the caller's.
-func areionSoEM256Permutex4SoA(s1b0, s1b1, s2b0, s2b1 *aes.Block4) {
+func areionSoEM256Permutex4SoA(s1b0, s1b1, s2b0, s2b1 *areion.Block4) {
 	areion256Permutex4SoA(s1b0, s1b1, false)
 	areion256Permutex4SoA(s2b0, s2b1, true)
 	for i := 0; i < 64; i++ {
@@ -63,7 +63,7 @@ func areionSoEM256Permutex4SoA(s1b0, s1b1, s2b0, s2b1 *aes.Block4) {
 // areionSoEM512Permutex4SoA — non-amd64 fallback for SoEM-512. Same
 // shape as the SoEM-256 fallback, scaled to 4 Block4 buffers per
 // state. Bit-exact identical to the amd64 fused result.
-func areionSoEM512Permutex4SoA(a1, b1, c1, d1, a2, b2, c2, d2 *aes.Block4) {
+func areionSoEM512Permutex4SoA(a1, b1, c1, d1, a2, b2, c2, d2 *areion.Block4) {
 	areion512Permutex4SoA(a1, b1, c1, d1, false)
 	areion512Permutex4SoA(a2, b2, c2, d2, true)
 	for i := 0; i < 64; i++ {

@@ -5,7 +5,7 @@ package itb
 import (
 	"runtime"
 
-	"github.com/everanium/itb/third/goaes"
+	"github.com/everanium/areion"
 
 	"github.com/everanium/itb/internal/areionasm"
 )
@@ -25,22 +25,20 @@ import (
 // On AVX-512 + VAES this dispatches to a single fused kernel
 // (`Areion256SoEMPermutex4Interleaved`) that runs both 10-round
 // permutations interleaved for ILP and computes the output XOR in
-// registers; on AES-NI hosts without VAES to its XMM form
-// (`Areion256SoEMPermutex4AesNi`). On AVX2 + VAES the function runs
-// the two YMM permutation kernels plus a manual XOR loop, and without
-// any tier the portable Go permutations — bit-exact identical result,
-// just no interleave/fuse benefit.
-func areionSoEM256Permutex4SoA(s1b0, s1b1, s2b0, s2b1 *aes.Block4) {
+// registers; on AVX2 + VAES hosts without AVX-512 to its YMM form
+// (`Areion256SoEMPermutex4VaesAvx2`); on AVX + AES-NI hosts without
+// VAES to its 3-operand VEX XMM form (`Areion256SoEMPermutex4Vex`); on
+// legacy AES-NI hosts to `Areion256SoEMPermutex4AesNi`. Without any ASM
+// tier the function runs the portable Go permutations — bit-exact
+// identical result, just no interleave/fuse benefit.
+func areionSoEM256Permutex4SoA(s1b0, s1b1, s2b0, s2b1 *areion.Block4) {
 	switch {
 	case areionasm.HasVAESAVX512:
 		areionasm.Areion256SoEMPermutex4Interleaved(s1b0, s1b1, s2b0, s2b1)
 	case areionasm.HasVAESAVX2NoAVX512:
-		areionasm.Areion256Permutex4Avx2(s1b0, s1b1)
-		areionasm.Areion256Permute2x4Avx2(s2b0, s2b1)
-		for i := 0; i < 64; i++ {
-			s1b0[i] ^= s2b0[i]
-			s1b1[i] ^= s2b1[i]
-		}
+		areionasm.Areion256SoEMPermutex4VaesAvx2(s1b0, s1b1, s2b0, s2b1)
+	case areionasm.HasAVXAESNIBatched:
+		areionasm.Areion256SoEMPermutex4Vex(s1b0, s1b1, s2b0, s2b1)
 	case areionasm.HasAESNIBatched:
 		areionasm.Areion256SoEMPermutex4AesNi(s1b0, s1b1, s2b0, s2b1)
 	default:
@@ -73,23 +71,19 @@ func areionSoEM256Permutex4SoA(s1b0, s1b1, s2b0, s2b1 *aes.Block4) {
 //
 // On AVX-512 + VAES this dispatches to `Areion512SoEMPermutex4Interleaved`,
 // which interleaves both 15-round permutations and folds the final
-// cyclic state rotation into the XOR; on AES-NI hosts without VAES to
-// `Areion512SoEMPermutex4AesNi`. On AVX2 + VAES the function runs the
-// two YMM permutation kernels plus a manual XOR loop, and without any
-// tier the portable Go permutations — bit-exact identical result.
-func areionSoEM512Permutex4SoA(a1, b1, c1, d1, a2, b2, c2, d2 *aes.Block4) {
+// cyclic state rotation into the XOR; on AVX2 + VAES hosts without
+// AVX-512 to `Areion512SoEMPermutex4VaesAvx2`; on AVX + AES-NI hosts
+// without VAES to `Areion512SoEMPermutex4Vex`; on legacy AES-NI hosts
+// to `Areion512SoEMPermutex4AesNi`. Without any ASM tier the function
+// runs the portable Go permutations — bit-exact identical result.
+func areionSoEM512Permutex4SoA(a1, b1, c1, d1, a2, b2, c2, d2 *areion.Block4) {
 	switch {
 	case areionasm.HasVAESAVX512:
 		areionasm.Areion512SoEMPermutex4Interleaved(a1, b1, c1, d1, a2, b2, c2, d2)
 	case areionasm.HasVAESAVX2NoAVX512:
-		areionasm.Areion512Permutex4Avx2(a1, b1, c1, d1)
-		areionasm.Areion512Permute2x4Avx2(a2, b2, c2, d2)
-		for i := 0; i < 64; i++ {
-			a1[i] ^= a2[i]
-			b1[i] ^= b2[i]
-			c1[i] ^= c2[i]
-			d1[i] ^= d2[i]
-		}
+		areionasm.Areion512SoEMPermutex4VaesAvx2(a1, b1, c1, d1, a2, b2, c2, d2)
+	case areionasm.HasAVXAESNIBatched:
+		areionasm.Areion512SoEMPermutex4Vex(a1, b1, c1, d1, a2, b2, c2, d2)
 	case areionasm.HasAESNIBatched:
 		areionasm.Areion512SoEMPermutex4AesNi(a1, b1, c1, d1, a2, b2, c2, d2)
 	default:

@@ -7,6 +7,7 @@ import java.io.OutputStream;
 import java.lang.ref.Cleaner;
 import java.lang.ref.Reference;
 import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 import javax.security.auth.Destroyable;
@@ -76,6 +77,66 @@ public final class Pipeline implements AutoCloseable, Destroyable {
         retryOnce(BLOB_CAP, (buf, cap, len) ->
                 Native.tripleInit(profileC, optsC, buf, cap, len, handle));
         return new Pipeline(handle[0]);
+    }
+
+    /** Deterministically constructs a Pipeline from eight caller-supplied
+     * master keys (one per canonical seed slot 0..7) against the named
+     * profile and options. The eight master keys must come from
+     * independent entropy or key-agreement sources; never derive all eight
+     * keys from a single secret or a single KDF parent key. */
+    public static Pipeline initKeys(String profile, byte[][] masters) {
+        return initKeys(profile, new Opts(), masters);
+    }
+
+    /** Deterministically constructs a Pipeline from eight caller-supplied
+     * master keys (one per canonical seed slot 0..7) against the named
+     * profile and options. The eight master keys must come from
+     * independent entropy or key-agreement sources; never derive all eight
+     * keys from a single secret or a single KDF parent key. */
+    public static Pipeline initKeys(String profile, byte[][] masters, Opts opts) {
+        return initKeys(profile, opts == null ? new Opts() : opts, masters);
+    }
+
+    /** Deterministically constructs a Pipeline from eight caller-supplied
+     * master keys (one per canonical seed slot 0..7) against the named
+     * profile and options. The eight master keys must come from
+     * independent entropy or key-agreement sources; never derive all eight
+     * keys from a single secret or a single KDF parent key. */
+    public static Pipeline initKeys(String profile, Opts opts, byte[][] masters) {
+        ByteBuffer profileC = Native.cstr(profile);
+        ByteBuffer optsC = Native.cstr((opts == null ? new Opts() : opts).build());
+        int count = masters == null ? 0 : masters.length;
+        int total = 0;
+        ByteBuffer lensBuf = count == 0 ? null
+                : ByteBuffer.allocateDirect(count * Long.BYTES).order(ByteOrder.nativeOrder());
+        for (int i = 0; i < count; i++) {
+            int len = (masters[i] == null) ? 0 : masters[i].length;
+            lensBuf.putLong((long) len);
+            total += len;
+        }
+        ByteBuffer flatBuf = total == 0 ? null : ByteBuffer.allocateDirect(total);
+        if (flatBuf != null) {
+            for (int i = 0; i < count; i++) {
+                if (masters[i] != null && masters[i].length > 0) {
+                    flatBuf.put(masters[i]);
+                }
+            }
+        }
+        long[] handle = new long[1];
+        try {
+            final int flatLen = total;
+            final int mastersCount = count;
+            retryOnce(BLOB_CAP, (buf, cap, len) ->
+                    Native.tripleInitKeys(profileC, optsC, flatBuf, flatLen,
+                            lensBuf, mastersCount, buf, cap, len, handle));
+            return new Pipeline(handle[0]);
+        } finally {
+            if (flatBuf != null) {
+                for (int i = 0; i < total; i++) {
+                    flatBuf.put(i, (byte) 0);
+                }
+            }
+        }
     }
 
     /** Reconstructs a Pipeline from a blob produced by {@link #save}

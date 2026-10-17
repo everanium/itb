@@ -8,6 +8,7 @@ import (
 	"runtime"
 
 	"github.com/everanium/itb"
+	"github.com/everanium/itb/kdf"
 	"github.com/everanium/itb/macs"
 	"github.com/everanium/itb/parallax"
 	"github.com/everanium/itb/wrapper"
@@ -47,8 +48,8 @@ const blobWrapVersionV2 = 2
 // fields are cleared and a disabled layer's master is dropped from
 // the wire so a receiver that opens with only one layer active cannot
 // recover the unused master. Every wrap-layer producer ([Init],
-// [Load], [Pipeline.Rekey]) routes through this helper, so the blob
-// always describes the shape and keys the Pipeline runs with.
+// [InitKeys], [Load], [Pipeline.Rekey]) routes through this helper, so
+// the blob always describes the shape and keys the Pipeline runs with.
 func marshalWrap(prof Profile, inner, permMaster, wrapMaster []byte) ([]byte, error) {
 	rec := prof
 	rec.ParallaxPalette = append([]string(nil), prof.ParallaxPalette...)
@@ -130,27 +131,8 @@ const wrapMasterSize = 32
 // zero — the receiver reconstructs the same shape from the record's
 // toggles.
 func Init(profile string, opts Opts) (*Pipeline, []byte, error) {
-	prof, err := Lookup(profile)
+	resolved, err := resolveInitProfile("Init", profile, opts)
 	if err != nil {
-		return nil, nil, err
-	}
-	if opts.TagStubSize != 0 && (opts.TagStubSize < 16 || opts.TagStubSize > 64) {
-		return nil, nil, fmt.Errorf("triple: Init: opts.TagStubSize=%d must be 0 or in [16, 64]", opts.TagStubSize)
-	}
-	if err := validateOptsCommon("Init", opts); err != nil {
-		return nil, nil, err
-	}
-	if err := validateOptsStrings("Init", opts); err != nil {
-		return nil, nil, err
-	}
-	resolved := resolveProfile(prof, opts)
-	if err := validateResolvedKeyBits("Init", resolved); err != nil {
-		return nil, nil, err
-	}
-	if err := validateResolvedChunkSize("Init", resolved); err != nil {
-		return nil, nil, err
-	}
-	if err := validateResolvedDRBG("Init", resolved); err != nil {
 		return nil, nil, err
 	}
 
@@ -183,11 +165,143 @@ func Init(profile string, opts Opts) (*Pipeline, []byte, error) {
 	// default, and the allocator reports the width actually in force.
 	resolved.Width = width
 
+	var macKey []byte
+	if resolved.MacName != "" {
+		spec, found := macs.Find(resolved.MacName)
+		if !found {
+			for _, s := range seeds {
+				zeroSeedComponents(s, width)
+			}
+			for _, k := range prfKeys {
+				clear(k)
+			}
+			return nil, nil, fmt.Errorf("triple: unknown MAC %q", resolved.MacName)
+		}
+		macKey = make([]byte, spec.KeySize)
+		if _, rerr := rand.Read(macKey); rerr != nil {
+			for _, s := range seeds {
+				zeroSeedComponents(s, width)
+			}
+			for _, k := range prfKeys {
+				clear(k)
+			}
+			clear(macKey)
+			return nil, nil, fmt.Errorf("triple: crypto/rand: %w", rerr)
+		}
+	}
+
+	return finishInit(resolved, opts, width, seeds, prfKeys, permMaster, wrapMaster, macKey)
+}
+
+// InitKeys constructs a fresh [Pipeline] deterministically from eight
+// caller-supplied master keys (one per canonical seed slot 0..7)
+// against the named profile and [Opts], returning the Pipeline and its
+// self-describing session blob.
+//
+// Two peers calling InitKeys with identical (profile, opts, masters)
+// obtain bit-identical Pipelines and bit-identical blob bytes without
+// transmitting the session blob over the network. The returned blob is
+// also loadable via [Load] and [LoadF].
+//
+// Security note: the eight master keys in masters[0..7] must come from
+// independent entropy or key-agreement sources; never derive all eight
+// master keys from a single secret or a single KDF parent key. Each
+// slot master must be at least 16 bytes for 128-bit KDF slots
+// ("aescmac", "siphash24") or 32 bytes for 256/512-bit KDF slots, at
+// most [parallax.MaxMasterKeySize] (128) bytes, and pairwise distinct
+// across all 28 pairs (both full slice and KDF-consumed prefix).
+func InitKeys(profile string, opts Opts, masters [8][]byte) (*Pipeline, []byte, error) {
+	resolved, err := resolveInitProfile("InitKeys", profile, opts)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	slotPrims, kdfPrims, width, err := resolveSlotPrimitives(resolved)
+	if err != nil {
+		return nil, nil, err
+	}
+	resolved.Width = width
+
+	if err := validateMasterKeys(kdfPrims, masters); err != nil {
+		return nil, nil, err
+	}
+
+	permMaster, wrapMaster, err := prepareMastersFromKeys(resolved, opts, kdfPrims, masters)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer clear(permMaster)
+	defer clear(wrapMaster)
+
+	seeds, prfKeys, err := deriveEightSeeds(slotPrims, kdfPrims, resolved.KeyBits, width, masters)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var macKey []byte
+	if resolved.MacName != "" {
+		spec, found := macs.Find(resolved.MacName)
+		if !found {
+			for _, s := range seeds {
+				zeroSeedComponents(s, width)
+			}
+			for _, k := range prfKeys {
+				clear(k)
+			}
+			return nil, nil, fmt.Errorf("triple: unknown MAC %q", resolved.MacName)
+		}
+		macKey, err = deriveCombinedKey(kdfPrims, masters, "mac", spec.KeySize)
+		if err != nil {
+			for _, s := range seeds {
+				zeroSeedComponents(s, width)
+			}
+			for _, k := range prfKeys {
+				clear(k)
+			}
+			return nil, nil, err
+		}
+	}
+
+	return finishInit(resolved, opts, width, seeds, prfKeys, permMaster, wrapMaster, macKey)
+}
+
+// resolveInitProfile validates the profile name and [Opts] overrides
+// shared by [Init] and [InitKeys], returning the resolved [Profile].
+func resolveInitProfile(caller, profile string, opts Opts) (Profile, error) {
+	prof, err := Lookup(profile)
+	if err != nil {
+		return Profile{}, err
+	}
+	if opts.TagStubSize != 0 && (opts.TagStubSize < 16 || opts.TagStubSize > 64) {
+		return Profile{}, fmt.Errorf("triple: %s: opts.TagStubSize=%d must be 0 or in [16, 64]", caller, opts.TagStubSize)
+	}
+	if err := validateOptsCommon(caller, opts); err != nil {
+		return Profile{}, err
+	}
+	if err := validateOptsStrings(caller, opts); err != nil {
+		return Profile{}, err
+	}
+	resolved := resolveProfile(prof, opts)
+	if err := validateResolvedKeyBits(caller, resolved); err != nil {
+		return Profile{}, err
+	}
+	if err := validateResolvedChunkSize(caller, resolved); err != nil {
+		return Profile{}, err
+	}
+	if err := validateResolvedDRBG(caller, resolved); err != nil {
+		return Profile{}, err
+	}
+	return resolved, nil
+}
+
+// finishInit assembles the [Pipeline] and wrap-layer blob from the
+// resolved profile, 8 seeds, PRF keys, and layer/MAC keys. Shared by
+// [Init] and [InitKeys]; wipes all passed-in secret material on error.
+func finishInit(resolved Profile, opts Opts, width int, seeds [8]any, prfKeys [8][]byte, permMaster, wrapMaster, macKey []byte) (*Pipeline, []byte, error) {
 	var (
 		sched      *parallax.Schedule
 		cs         *parallax.Cipherset
 		wrapperKey []byte
-		macKey     []byte
 		macFunc    itb.MACFunc
 		ok         bool
 	)
@@ -243,6 +357,7 @@ func Init(profile string, opts Opts) (*Pipeline, []byte, error) {
 
 	// Parallax build.
 	if resolved.Parallax {
+		var err error
 		sched, err = parallax.NewSchedule(resolved.ParallaxPalette, resolved.ParallaxSegmentSize)
 		if err != nil {
 			return nil, nil, fmt.Errorf("triple: parallax.NewSchedule: %w", err)
@@ -260,6 +375,7 @@ func Init(profile string, opts Opts) (*Pipeline, []byte, error) {
 
 	// Wrapper build.
 	if resolved.Wrapper {
+		var err error
 		wrapperKey, err = wrapper.DeriveKey(resolved.OuterCipher, wrapMaster)
 		if err != nil {
 			return nil, nil, fmt.Errorf("triple: wrapper.DeriveKey: %w", err)
@@ -268,14 +384,7 @@ func Init(profile string, opts Opts) (*Pipeline, []byte, error) {
 
 	// MAC build.
 	if resolved.MacName != "" {
-		spec, found := macs.Find(resolved.MacName)
-		if !found {
-			return nil, nil, fmt.Errorf("triple: unknown MAC %q", resolved.MacName)
-		}
-		macKey = make([]byte, spec.KeySize)
-		if _, rerr := rand.Read(macKey); rerr != nil {
-			return nil, nil, fmt.Errorf("triple: crypto/rand: %w", rerr)
-		}
+		var err error
 		macFunc, err = macs.Make(resolved.MacName, macKey)
 		if err != nil {
 			return nil, nil, fmt.Errorf("triple: macs.Make(%q): %w", resolved.MacName, err)
@@ -329,6 +438,100 @@ func Init(profile string, opts Opts) (*Pipeline, []byte, error) {
 	}
 	ok = true
 	return p, wrapBytes, nil
+}
+
+// validateMasterKeys enforces per-slot length bounds and pairwise
+// distinctness (both full-slice equality and KDF-consumed prefix
+// equality) across all 8 master keys passed to [InitKeys].
+func validateMasterKeys(kdfPrims [8]string, masters [8][]byte) error {
+	for i := 0; i < 8; i++ {
+		if len(masters[i]) == 0 {
+			return fmt.Errorf("%w: triple: InitKeys: masters[%d] is empty", ErrMissingMasters, i)
+		}
+		minLen := kdfKeyMinLen(kdfPrims[i])
+		if len(masters[i]) < minLen {
+			return fmt.Errorf("triple: InitKeys: masters[%d] length %d below %s minimum %d",
+				i, len(masters[i]), kdfPrims[i], minLen)
+		}
+		if len(masters[i]) > parallax.MaxMasterKeySize {
+			return fmt.Errorf("triple: InitKeys: masters[%d] length %d exceeds parallax.MaxMasterKeySize=%d",
+				i, len(masters[i]), parallax.MaxMasterKeySize)
+		}
+	}
+	for i := 0; i < 8; i++ {
+		effI := kdfKeyMinLen(kdfPrims[i])
+		for j := i + 1; j < 8; j++ {
+			effJ := kdfKeyMinLen(kdfPrims[j])
+			eff := min(effI, effJ)
+			if bytes.Equal(masters[i], masters[j]) || bytes.Equal(masters[i][:eff], masters[j][:eff]) {
+				return fmt.Errorf("%w: triple: InitKeys: masters[%d] and masters[%d] must be distinct",
+					ErrIdenticalMasters, i, j)
+			}
+		}
+	}
+	return nil
+}
+
+// deriveCombinedKey derives an outLen-byte key coupled to all 8 slot
+// masters by XOR-combining per-slot [kdf.Derive] outputs under
+// domain-separated "<role>:<i>" labels (each <= 8 bytes, within the
+// 24-byte XChaCha20 label limit of kdf.Derive("chacha20")).
+func deriveCombinedKey(kdfPrims [8]string, masters [8][]byte, role string, outLen int) ([]byte, error) {
+	out := make([]byte, outLen)
+	for i := 0; i < 8; i++ {
+		label := fmt.Sprintf("%s:%d", role, i)
+		part, err := kdf.Derive(kdfPrims[i], masters[i], label, outLen)
+		if err != nil {
+			clear(out)
+			return nil, fmt.Errorf("triple: InitKeys: slot %d %s kdf: %w", i, role, err)
+		}
+		for b := range out {
+			out[b] ^= part[b]
+		}
+		clear(part)
+	}
+	return out, nil
+}
+
+// prepareMastersFromKeys resolves permMaster and wrapMaster for
+// [InitKeys], using caller-supplied [Opts.PermMaster] /
+// [Opts.WrapMaster] overrides when present and otherwise deriving
+// 32-byte masters deterministically from all 8 slot masters via
+// [deriveCombinedKey].
+func prepareMastersFromKeys(resolved Profile, opts Opts, kdfPrims [8]string, masters [8][]byte) (permMaster, wrapMaster []byte, err error) {
+	if opts.PermMaster != nil && len(opts.PermMaster) > parallax.MaxMasterKeySize {
+		return nil, nil, fmt.Errorf("triple: opts.PermMaster length %d exceeds parallax.MaxMasterKeySize=%d", len(opts.PermMaster), parallax.MaxMasterKeySize)
+	}
+	if opts.WrapMaster != nil && len(opts.WrapMaster) > wrapper.MaxMasterKeySize {
+		return nil, nil, fmt.Errorf("triple: opts.WrapMaster length %d exceeds wrapper.MaxMasterKeySize=%d", len(opts.WrapMaster), wrapper.MaxMasterKeySize)
+	}
+	if resolved.Parallax {
+		if opts.PermMaster != nil {
+			permMaster = append([]byte(nil), opts.PermMaster...)
+		} else {
+			permMaster, err = deriveCombinedKey(kdfPrims, masters, "perm", parallax.MasterKeySize)
+			if err != nil {
+				return nil, nil, err
+			}
+		}
+	}
+	if resolved.Wrapper {
+		if opts.WrapMaster != nil {
+			wrapMaster = append([]byte(nil), opts.WrapMaster...)
+		} else {
+			wrapMaster, err = deriveCombinedKey(kdfPrims, masters, "wrap", wrapMasterSize)
+			if err != nil {
+				clear(permMaster)
+				return nil, nil, err
+			}
+		}
+	}
+	if permMaster != nil && wrapMaster != nil && bytes.Equal(permMaster, wrapMaster) {
+		clear(permMaster)
+		clear(wrapMaster)
+		return nil, nil, ErrIdenticalMasters
+	}
+	return permMaster, wrapMaster, nil
 }
 
 // prepareMasters resolves the two masters from the profile shape and

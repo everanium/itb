@@ -961,3 +961,70 @@ func TestTripleInitModeCapi(t *testing.T) {
 		}
 	}
 }
+
+func TestTripleInitKeysCapi(t *testing.T) {
+	masters := make([][]byte, 8)
+	for i := 0; i < 8; i++ {
+		m := make([]byte, 32)
+		for b := range m {
+			m[b] = byte((i+1)*29 + b*7 + 3)
+		}
+		masters[i] = m
+	}
+
+	blob1 := make([]byte, 1<<15)
+	id1, n1, st := TripleInitKeys(triple.ProfileSingleMsgTripleMACV1, "", masters, blob1)
+	if st != StatusOK {
+		t.Fatalf("TripleInitKeys #1: %v (%s)", st, LastError())
+	}
+	defer FreeTriple(id1)
+
+	blob2 := make([]byte, 1<<15)
+	id2, n2, st := TripleInitKeys(triple.ProfileSingleMsgTripleMACV1, "", masters, blob2)
+	if st != StatusOK {
+		t.Fatalf("TripleInitKeys #2: %v (%s)", st, LastError())
+	}
+	defer FreeTriple(id2)
+
+	if !bytes.Equal(blob1[:n1], blob2[:n2]) {
+		t.Fatal("TripleInitKeys blobs differ across identical calls")
+	}
+
+	// Probe buffer-too-small
+	_, need, st := TripleInitKeys(triple.ProfileSingleMsgTripleMACV1, "", masters, nil)
+	if st != StatusBufferTooSmall || need != n1 {
+		t.Fatalf("TripleInitKeys probe: st=%v need=%d, want StatusBufferTooSmall/%d", st, need, n1)
+	}
+
+	// Cross-handle round-trip
+	plain := []byte("deterministic capi TripleInitKeys payload")
+	wire := make([]byte, 1<<16)
+	wn, st := TripleEncryptMessage(id1, plain, wire)
+	if st != StatusOK {
+		t.Fatalf("TripleEncryptMessage: %v (%s)", st, LastError())
+	}
+	got := make([]byte, 1<<16)
+	gn, st := TripleDecryptMessage(id2, wire[:wn], got)
+	if st != StatusOK || !bytes.Equal(got[:gn], plain) {
+		t.Fatalf("TripleDecryptMessage: %v (%s)", st, LastError())
+	}
+
+	// Invalid arity -> StatusBadInput
+	if _, _, st := TripleInitKeys(triple.ProfileSingleMsgTripleMACV1, "", masters[:7], blob1); st != StatusBadInput {
+		t.Fatalf("arity 7: got %v, want StatusBadInput", st)
+	}
+
+	// Short key -> StatusBadInput
+	shortMasters := append([][]byte(nil), masters...)
+	shortMasters[2] = shortMasters[2][:15]
+	if _, _, st := TripleInitKeys(triple.ProfileSingleMsgTripleMACV1, "", shortMasters, blob1); st != StatusBadInput {
+		t.Fatalf("short master: got %v, want StatusBadInput (%s)", st, LastError())
+	}
+
+	// Identical keys -> StatusBadInput
+	dupMasters := append([][]byte(nil), masters...)
+	dupMasters[5] = dupMasters[0]
+	if _, _, st := TripleInitKeys(triple.ProfileSingleMsgTripleMACV1, "", dupMasters, blob1); st != StatusBadInput {
+		t.Fatalf("identical masters: got %v, want StatusBadInput (%s)", st, LastError())
+	}
+}

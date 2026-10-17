@@ -143,9 +143,9 @@ GLOBL il48qdomain<>(SB), RODATA|NOPTR, $32
 // trip count 48 per half instead of 48 + 32, with the two loop-carried
 // dependency chains in flight concurrently.
 //
-// Frame: 4 pointer args = 32 bytes; 128 bytes of locals spill the
-// remaining / m1Local lane vectors (both halves, contiguous — same
-// layout as the AVX-512 kernel) for the scalar-PDEPQ remap tail.
+// Frame: 4 pointer args = 32 bytes, no locals; m1Local and remaining
+// lane vectors (both halves, contiguous) are parked in out[1] and
+// out[2] and overwritten in place by the scalar-PDEPQ remap tail.
 //   idx0 +0(FP)  idx1 +8(FP)  crow +16(FP)  out +24(FP)
 //
 // Register split per half: m0 state Y0/Y1/Y2 (rank/krem/mask) + pbit
@@ -153,13 +153,14 @@ GLOBL il48qdomain<>(SB), RODATA|NOPTR, $32
 // R13. Temps Y3..Y7, Y9, Y10 are reused by both blocks — the blocks
 // carry no cross data dependence, and register renaming removes the
 // reuse hazards.
-TEXT ·rankToMaskTripleUnrank48AVX2(SB), NOSPLIT, $128-32
+TEXT ·rankToMaskTripleUnrank48AVX2(SB), NOSPLIT, $0-32
 	MOVQ idx0+0(FP), AX
 	MOVQ idx1+8(FP), BX
 	MOVQ crow+16(FP), R14
 	MOVQ out+24(FP), DI
 
 	XORQ SI, SI                     // half byte offset: 0, then 32
+	VPXOR Y15, Y15, Y15             // Y15 = 0
 
 avx2HalfLoop:
 	// ---- interleaved unrank: m0 (rank = idx0[half], n = 48, k = 16)
@@ -201,7 +202,7 @@ avx2JointLoop:
 	// c = crow[p][krem & 15]: per group g, gather the within-group
 	// qword via VPERMD, keep it only on lanes with hi == g, OR-merge.
 	// Secret krem stays register-resident.
-	VPCMPEQQ il48qrow<>+0(SB), Y4, Y7
+	VPCMPEQQ Y15, Y4, Y7
 	VPERMD (R12), Y3, Y6            // slots 0..3
 	VPAND Y6, Y7, Y5
 	VPCMPEQQ il48qrow<>+32(SB), Y4, Y7
@@ -220,7 +221,7 @@ avx2JointLoop:
 	// pick = (rank >= c) && (krem != 0). Signed VPCMPGTQ is safe:
 	// both operands < 2^42 (see file header).
 	VPCMPGTQ Y0, Y5, Y9             // c > rank  (== !(rank >= c))
-	VPCMPEQQ il48qrow<>+0(SB), Y1, Y10 // krem == 0
+	VPCMPEQQ Y15, Y1, Y10           // krem == 0
 	VPOR Y10, Y9, Y9                // notpick
 	VPANDN Y8, Y9, Y10              // pick ? (1 << p) : 0
 	VPOR Y10, Y2, Y2                // mask |= (1<<p) on picked lanes
@@ -238,7 +239,7 @@ avx2JointLoop:
 	VPSRLQ $2, Y12, Y4
 	VPAND il48qrow<>+96(SB), Y4, Y4
 
-	VPCMPEQQ il48qrow<>+0(SB), Y4, Y7
+	VPCMPEQQ Y15, Y4, Y7
 	VPERMD (R13), Y3, Y6
 	VPAND Y6, Y7, Y5
 	VPCMPEQQ il48qrow<>+32(SB), Y4, Y7
@@ -255,7 +256,7 @@ avx2JointLoop:
 	VPOR Y7, Y5, Y5                 // Y5 = C(p1, krem)
 
 	VPCMPGTQ Y11, Y5, Y9
-	VPCMPEQQ il48qrow<>+0(SB), Y12, Y10
+	VPCMPEQQ Y15, Y12, Y10
 	VPOR Y10, Y9, Y9
 	VPANDN Y14, Y9, Y10
 	VPOR Y10, Y13, Y13
@@ -270,42 +271,45 @@ avx2JointLoop:
 	SUBQ $1, R10
 	JGE avx2JointLoop
 
-	LEAQ ml-64(SP), R11
-	VMOVDQU Y13, (R11)(SI*1)        // spill m1Local lanes (m1 complete)
+	VMOVDQU Y13, 64(DI)(SI*1)       // park m1Local lanes in out[1][half]
+	VMOVDQU il48qrow<>+32(SB), Y11  // Y11 = 1
+	VMOVDQU il48qrow<>+64(SB), Y12  // Y12 = 2
+	VMOVDQU il48qrow<>+96(SB), Y13  // Y13 = 3
+	VMOVDQU il48dadd01<>(SB), Y14   // Y14 = [0, 1] per qword
 	MOVQ $15, R10                   // m0 solo positions 15..0
 
 avx2M0Solo:
-	VPAND il48qrow<>+96(SB), Y1, Y3
+	VPAND Y13, Y1, Y3
 	VPSLLQ $1, Y3, Y3
 	VPSHUFD $0xA0, Y3, Y3
-	VPADDD il48dadd01<>(SB), Y3, Y3
+	VPADDD Y14, Y3, Y3
 	VPSRLQ $2, Y1, Y4
-	VPAND il48qrow<>+96(SB), Y4, Y4
+	VPAND Y13, Y4, Y4
 
-	VPCMPEQQ il48qrow<>+0(SB), Y4, Y7
+	VPCMPEQQ Y15, Y4, Y7
 	VPERMD (R12), Y3, Y6
 	VPAND Y6, Y7, Y5
-	VPCMPEQQ il48qrow<>+32(SB), Y4, Y7
+	VPCMPEQQ Y11, Y4, Y7
 	VPERMD 32(R12), Y3, Y6
 	VPAND Y6, Y7, Y7
 	VPOR Y7, Y5, Y5
-	VPCMPEQQ il48qrow<>+64(SB), Y4, Y7
+	VPCMPEQQ Y12, Y4, Y7
 	VPERMD 64(R12), Y3, Y6
 	VPAND Y6, Y7, Y7
 	VPOR Y7, Y5, Y5
-	VPCMPEQQ il48qrow<>+96(SB), Y4, Y7
+	VPCMPEQQ Y13, Y4, Y7
 	VPERMD 96(R12), Y3, Y6
 	VPAND Y6, Y7, Y7
 	VPOR Y7, Y5, Y5
 
 	VPCMPGTQ Y0, Y5, Y9
-	VPCMPEQQ il48qrow<>+0(SB), Y1, Y10
+	VPCMPEQQ Y15, Y1, Y10
 	VPOR Y10, Y9, Y9
 	VPANDN Y8, Y9, Y10
 	VPOR Y10, Y2, Y2
 	VPANDN Y5, Y9, Y10
 	VPSUBQ Y10, Y0, Y0
-	VPANDN il48qrow<>+32(SB), Y9, Y10
+	VPANDN Y11, Y9, Y10
 	VPSUBQ Y10, Y1, Y1
 	VPSRLQ $1, Y8, Y8
 	SUBQ $128, R12
@@ -314,8 +318,7 @@ avx2M0Solo:
 
 	VMOVDQU Y2, (DI)(SI*1)          // out[0][half] = m0
 	VPANDN il48qdomain<>(SB), Y2, Y3 // remaining = (~m0) & domain
-	LEAQ rem-128(SP), R11
-	VMOVDQU Y3, (R11)(SI*1)         // spill remaining lanes
+	VMOVDQU Y3, 128(DI)(SI*1)       // park remaining lanes in out[2][half]
 
 	ADDQ $32, SI
 	CMPQ SI, $64
@@ -324,64 +327,83 @@ avx2M0Solo:
 	// ---- remap: m1 = PDEP(m1Local, remaining) — 8 scalar PDEPQ ----
 	// Identical to the AVX-512 kernel's tail: per lane j, deposit
 	// m1Local's bits onto the positions m0 leaves free (mask =
-	// remaining), then m2 = remaining ^ m1. Both halves were spilled
-	// contiguously, so the 8-lane walk below matches the AVX-512
-	// kernel's spill layout byte for byte.
-	MOVQ rem-128(SP), R8
-	MOVQ ml-64(SP), R9
+	// remaining), then m2 = remaining ^ m1. Both halves were parked
+	// contiguously in out[1] and out[2], so the 8-lane walk below
+	// matches the AVX-512 kernel's layout byte for byte.
+	MOVQ 128(DI), R8
+	MOVQ 64(DI), R9
 	PDEPQ R8, R9, R10
 	XORQ R10, R8
 	MOVQ R10, 64(DI)                // out[1][0] = m1
 	MOVQ R8, 128(DI)                // out[2][0] = m2
 
-	MOVQ rem-120(SP), R8
-	MOVQ ml-56(SP), R9
+	MOVQ 136(DI), R8
+	MOVQ 72(DI), R9
 	PDEPQ R8, R9, R10
 	XORQ R10, R8
 	MOVQ R10, 72(DI)
 	MOVQ R8, 136(DI)
 
-	MOVQ rem-112(SP), R8
-	MOVQ ml-48(SP), R9
+	MOVQ 144(DI), R8
+	MOVQ 80(DI), R9
 	PDEPQ R8, R9, R10
 	XORQ R10, R8
 	MOVQ R10, 80(DI)
 	MOVQ R8, 144(DI)
 
-	MOVQ rem-104(SP), R8
-	MOVQ ml-40(SP), R9
+	MOVQ 152(DI), R8
+	MOVQ 88(DI), R9
 	PDEPQ R8, R9, R10
 	XORQ R10, R8
 	MOVQ R10, 88(DI)
 	MOVQ R8, 152(DI)
 
-	MOVQ rem-96(SP), R8
-	MOVQ ml-32(SP), R9
+	MOVQ 160(DI), R8
+	MOVQ 96(DI), R9
 	PDEPQ R8, R9, R10
 	XORQ R10, R8
 	MOVQ R10, 96(DI)
 	MOVQ R8, 160(DI)
 
-	MOVQ rem-88(SP), R8
-	MOVQ ml-24(SP), R9
+	MOVQ 168(DI), R8
+	MOVQ 104(DI), R9
 	PDEPQ R8, R9, R10
 	XORQ R10, R8
 	MOVQ R10, 104(DI)
 	MOVQ R8, 168(DI)
 
-	MOVQ rem-80(SP), R8
-	MOVQ ml-16(SP), R9
+	MOVQ 176(DI), R8
+	MOVQ 112(DI), R9
 	PDEPQ R8, R9, R10
 	XORQ R10, R8
 	MOVQ R10, 112(DI)
 	MOVQ R8, 176(DI)
 
-	MOVQ rem-72(SP), R8
-	MOVQ ml-8(SP), R9
+	MOVQ 184(DI), R8
+	MOVQ 120(DI), R9
 	PDEPQ R8, R9, R10
 	XORQ R10, R8
 	MOVQ R10, 120(DI)
 	MOVQ R8, 184(DI)
 
+	VPXOR Y0, Y0, Y0
+	VPXOR Y1, Y1, Y1
+	VPXOR Y2, Y2, Y2
+	VPXOR Y3, Y3, Y3
+	VPXOR Y4, Y4, Y4
+	VPXOR Y5, Y5, Y5
+	VPXOR Y6, Y6, Y6
+	VPXOR Y7, Y7, Y7
+	VPXOR Y8, Y8, Y8
+	VPXOR Y9, Y9, Y9
+	VPXOR Y10, Y10, Y10
+	VPXOR Y11, Y11, Y11
+	VPXOR Y12, Y12, Y12
+	VPXOR Y13, Y13, Y13
+	VPXOR Y14, Y14, Y14
+	VPXOR Y15, Y15, Y15
+	XORQ R8, R8
+	XORQ R9, R9
+	XORQ R10, R10
 	VZEROUPPER
 	RET

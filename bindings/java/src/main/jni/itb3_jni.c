@@ -130,6 +130,23 @@ JNIEXPORT jint JNICALL Java_io_github_everanium_itb3_Native_tripleInit(
     return rc;
 }
 
+JNIEXPORT jint JNICALL Java_io_github_everanium_itb3_Native_tripleInitKeys(
+    JNIEnv *env, jclass cls, jobject profile, jobject opts,
+    jobject mastersFlat, jlong mastersFlatLen,
+    jobject masterLens, jlong mastersCount,
+    jobject blobOut, jlong blobCap, jlongArray blobLen, jlongArray outHandle) {
+    (void)cls;
+    size_t n = 0;
+    uintptr_t handle = 0;
+    int rc = ITB_Triple_InitKeys((char *)addr(env, profile), (char *)addr(env, opts),
+                                 addr(env, mastersFlat), (size_t)mastersFlatLen,
+                                 (size_t *)addr(env, masterLens), (size_t)mastersCount,
+                                 addr(env, blobOut), (size_t)blobCap, &n, &handle);
+    set_long(env, blobLen, n);
+    set_long(env, outHandle, (size_t)handle);
+    return rc;
+}
+
 JNIEXPORT jint JNICALL Java_io_github_everanium_itb3_Native_tripleLoad(
     JNIEnv *env, jclass cls, jobject blob, jlong blobLen,
     jobject permMaster, jlong permLen,

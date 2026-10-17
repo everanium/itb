@@ -243,9 +243,9 @@ arm_env() {
 #     eight-lane fused ChainHash arm of its own (eight-lane kernels, or
 #     two four-lane calls where the register file holds no eight-lane
 #     plan), so each x4 pseudo-arm applies exactly where its tier does.
-#   * vex / vexx4: aesitb128 and aescmac carry VEX XMM fused cascade
-#     kernels (four and eight lanes); areion256 / areion512 map the vex
-#     token to their AES-NI tier; every other primitive is skipped.
+#   * vex / vexx4: aesitb128, areion256, areion512 and aescmac carry VEX
+#     XMM fused cascade kernels (four and eight lanes); every other
+#     primitive is skipped.
 #   * aesni: only the AES-based primitives carry AES-NI XMM fused
 #     cascade kernels (aesitb128 / areion256 / areion512 / aescmac).
 #   * vaesavx2: aesitb128, areion256, areion512 and aescmac carry VAES

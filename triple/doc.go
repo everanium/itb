@@ -4,7 +4,7 @@
 // One [Pipeline] bundles the Interlocked Barrier Triple state,
 // an optional parallax layer, an optional wrapper (outer cipher) layer,
 // and an optional MAC into a single object with a small lifecycle API
-// ([Init] / [Load] / [LoadF] / [Pipeline.Save] / [Pipeline.SaveF] /
+// ([Init] / [InitKeys] / [Load] / [LoadF] / [Pipeline.Save] / [Pipeline.SaveF] /
 // [Pipeline.Rekey] / [Pipeline.Close]) plus the cipher entry points:
 // [Pipeline.EncryptStream] /
 // [Pipeline.DecryptStream] (Reader/Writer),
@@ -13,12 +13,19 @@
 // [Pipeline.EncryptMessage] / [Pipeline.DecryptMessage] (Single
 // Message shape). Callers who need a configuration outside the shipped
 // catalogue install a [Profile] literal at process init via
-// [Register] and reference the registered name at [Init] like any
+// [Register] and reference the registered name at [Init] or [InitKeys] like any
 // shipped profile; [Lookup] and [Profiles] read the catalogue back.
+//
+// [InitKeys] is the deterministic counterpart to [Init]: it derives the
+// eight seed slots, fixed PRF keys, parallax and wrapper masters
+// (unless overridden in [Opts]), and MAC key from eight caller-supplied
+// master keys via per-slot KDF. The eight master keys must come from
+// independent entropy or key-agreement sources; never derive all eight
+// keys from a single secret or a single KDF parent key.
 //
 // # Reopen contract
 //
-// The blob [Init] returns (and [Pipeline.Save] / [Pipeline.Rekey]
+// The blob [Init] and [InitKeys] return (and [Pipeline.Save] / [Pipeline.Rekey]
 // re-emit) is self-describing: its wrap-layer carries the resolved
 // [Profile] record — profile defaults with the [Opts] overrides folded
 // in — alongside the inner Blob{N} state bundle and the two masters.
@@ -151,6 +158,6 @@
 // non-disableable; the Triple 3-region payload split is the only
 // cipher mode. There are no runtime overlay toggles and no
 // engage/disengage knobs — the package exposes one lifecycle
-// (Init/Load/Save/Rekey/Close) plus one cipher pair per shape
+// (Init/InitKeys/Load/Save/Rekey/Close) plus one cipher pair per shape
 // (message, stream).
 package triple

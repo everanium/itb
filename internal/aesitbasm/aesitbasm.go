@@ -56,9 +56,10 @@ package aesitbasm
 
 import (
 	"encoding/binary"
+	"runtime"
 	"unsafe"
 
-	aes "github.com/everanium/itb/third/goaes"
+	"github.com/everanium/areion"
 )
 
 // RC holds the eight AES-ITB round constants, the first eight 128-bit
@@ -116,7 +117,7 @@ var laneIdxZ = [4][8]uint64{
 
 // ChainAbsorb is the pure-Go reference for one lane. It runs over the
 // software AES round so the result does not depend on host AES hardware;
-// every kernel tier and the parent package's RoundHW-based closure are
+// every kernel tier and the parent package's AES128Round-based closure are
 // checked against it.
 func ChainAbsorb(key *[16]byte, data []byte, seed0, seed1 uint64) (uint64, uint64) {
 	var state [16]byte
@@ -130,7 +131,7 @@ func ChainAbsorb(key *[16]byte, data []byte, seed0, seed1 uint64) (uint64, uint6
 		for i := 0; i < 16; i++ {
 			state[i] ^= data[off+i]
 		}
-		aes.Round((*aes.Block)(&state), (*aes.Block)(&RC[blk&7]))
+		areion.Round((*areion.Block)(&state), (*areion.Block)(&RC[blk&7]))
 		blk++
 	}
 	rem := n - full
@@ -141,12 +142,15 @@ func ChainAbsorb(key *[16]byte, data []byte, seed0, seed1 uint64) (uint64, uint6
 	for i := rem; i < 16; i++ {
 		state[i] ^= pad
 	}
-	aes.Round((*aes.Block)(&state), (*aes.Block)(&RC[blk&7]))
+	areion.Round((*areion.Block)(&state), (*areion.Block)(&RC[blk&7]))
 	blk++
 
-	aes.Round((*aes.Block)(&state), (*aes.Block)(&RC[blk&7]))
-	aes.Round((*aes.Block)(&state), (*aes.Block)(&RC[(blk+1)&7]))
-	return binary.LittleEndian.Uint64(state[:8]), binary.LittleEndian.Uint64(state[8:])
+	areion.Round((*areion.Block)(&state), (*areion.Block)(&RC[blk&7]))
+	areion.Round((*areion.Block)(&state), (*areion.Block)(&RC[(blk+1)&7]))
+	out0, out1 := binary.LittleEndian.Uint64(state[:8]), binary.LittleEndian.Uint64(state[8:])
+	clear(state[:])
+	runtime.KeepAlive(&state)
+	return out0, out1
 }
 
 // scalarBatch evaluates the four lanes through ChainAbsorb. dataPtrs[i]

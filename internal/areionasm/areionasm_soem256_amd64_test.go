@@ -6,7 +6,7 @@ import (
 	"crypto/rand"
 	"testing"
 
-	"github.com/everanium/itb/third/goaes"
+	"github.com/everanium/areion"
 )
 
 // TestAreion256SoEMPermutex4Interleaved_Parity verifies that the fused
@@ -27,7 +27,7 @@ func TestAreion256SoEMPermutex4Interleaved_Parity(t *testing.T) {
 
 	for trial := 0; trial < 64; trial++ {
 		// Random SoA inputs for both half-states.
-		var s1b0, s1b1, s2b0, s2b1 aes.Block4
+		var s1b0, s1b1, s2b0, s2b1 areion.Block4
 		if _, err := rand.Read(s1b0[:]); err != nil {
 			t.Fatal(err)
 		}
@@ -42,7 +42,7 @@ func TestAreion256SoEMPermutex4Interleaved_Parity(t *testing.T) {
 		}
 
 		// Reference path: two separate permutes + manual XOR.
-		var refS1b0, refS1b1, refS2b0, refS2b1 aes.Block4
+		var refS1b0, refS1b1, refS2b0, refS2b1 areion.Block4
 		refS1b0 = s1b0
 		refS1b1 = s1b1
 		refS2b0 = s2b0
@@ -81,7 +81,7 @@ func TestAreion256SoEMPermutex4Interleaved_FixedVector(t *testing.T) {
 		t.Skip("requires VAES + AVX-512")
 	}
 
-	var s1b0, s1b1, s2b0, s2b1 aes.Block4
+	var s1b0, s1b1, s2b0, s2b1 areion.Block4
 	for i := 0; i < 64; i++ {
 		s1b0[i] = byte(i)
 		s1b1[i] = byte(i + 64)
@@ -107,5 +107,45 @@ func TestAreion256SoEMPermutex4Interleaved_FixedVector(t *testing.T) {
 	if s1b0 != refS1b0 || s1b1 != refS1b1 {
 		t.Fatalf("fixed-vector mismatch\n  got b0:  %x\n  want b0: %x\n  got b1:  %x\n  want b1: %x",
 			s1b0[:], refS1b0[:], s1b1[:], refS1b1[:])
+	}
+}
+
+func TestAreion256SoEMPermutex4VaesAvx2_Parity(t *testing.T) {
+	if !HasVAESAVX512 && !HasVAESAVX2NoAVX512 {
+		t.Skip("requires VAES + AVX2")
+	}
+
+	for trial := 0; trial < 64; trial++ {
+		var s1b0, s1b1, s2b0, s2b1 areion.Block4
+		if _, err := rand.Read(s1b0[:]); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := rand.Read(s1b1[:]); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := rand.Read(s2b0[:]); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := rand.Read(s2b1[:]); err != nil {
+			t.Fatal(err)
+		}
+
+		refS1b0, refS1b1, refS2b0, refS2b1 := s1b0, s1b1, s2b0, s2b1
+		Areion256Permutex4Avx2(&refS1b0, &refS1b1)
+		Areion256Permute2x4Avx2(&refS2b0, &refS2b1)
+		for i := 0; i < 64; i++ {
+			refS1b0[i] ^= refS2b0[i]
+			refS1b1[i] ^= refS2b1[i]
+		}
+
+		gotS1b0, gotS1b1, gotS2b0, gotS2b1 := s1b0, s1b1, s2b0, s2b1
+		Areion256SoEMPermutex4VaesAvx2(&gotS1b0, &gotS1b1, &gotS2b0, &gotS2b1)
+
+		if gotS1b0 != refS1b0 {
+			t.Fatalf("trial %d: b0 mismatch\n  got:  %x\n  want: %x", trial, gotS1b0[:], refS1b0[:])
+		}
+		if gotS1b1 != refS1b1 {
+			t.Fatalf("trial %d: b1 mismatch\n  got:  %x\n  want: %x", trial, gotS1b1[:], refS1b1[:])
+		}
 	}
 }

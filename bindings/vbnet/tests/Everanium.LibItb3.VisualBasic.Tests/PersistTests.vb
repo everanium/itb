@@ -205,4 +205,36 @@ Public Class PersistTests
             End Using
         End Using
     End Sub
+
+    <Fact>
+    Public Sub InitKeysDeterminismAndValidation()
+        Dim masters(7)() As Byte
+        For i As Integer = 0 To 7
+            Dim k(31) As Byte
+            Array.Fill(k, CByte(&H11 * (i + 1)))
+            masters(i) = k
+        Next
+
+        Using p1 As Pipeline = Pipeline.InitKeys("singlemsg-triple-mac-v1", masters)
+            Using p2 As Pipeline = Pipeline.InitKeys("singlemsg-triple-mac-v1", Nothing, masters)
+                Assert.Equal(Of Byte)(p1.Save(), p2.Save())
+                Assert.Equal(Of Byte)(Plain, p2.DecryptMessage(p1.EncryptMessage(Plain)))
+            End Using
+        End Using
+
+        Dim dup As Byte()() = DirectCast(masters.Clone(), Byte()())
+        dup(1) = dup(0)
+        Dim exDup As ItbException = Assert.Throws(Of ItbException)(
+            Sub() Pipeline.InitKeys("singlemsg-triple-mac-v1", dup))
+        Assert.Equal(Status.BadInput, exDup.Status)
+
+        Dim shortKeys As Byte()() = DirectCast(masters.Clone(), Byte()())
+        Dim shortKey(7) As Byte
+        Array.Fill(shortKey, CByte(&H11))
+        shortKeys(0) = shortKey
+        Dim exShort As ItbException = Assert.Throws(Of ItbException)(
+            Sub() Pipeline.InitKeys("singlemsg-triple-mac-v1", shortKeys))
+        Assert.Equal(Status.BadInput, exShort.Status)
+    End Sub
 End Class
+

@@ -8,11 +8,11 @@ import (
 )
 
 // Fused-cascade tier flags of the Areion-SoEM kernels. At most one flag
-// of the family is true; auto-selection takes the widest VAES tier the
-// host offers — ZMM, then YMM, then the legacy-SSE AES-NI XMM kernels
-// (the single-lane arm of every tier, and the four-lane arm of AES-NI
-// hosts without VAES). The forcetier init keeps this family and the
-// batch-16 fill family consistent with the chain-absorb arm flags.
+// of the family is true; auto-selection takes the widest tier the host
+// offers — ZMM (VAES + AVX-512), then YMM (VAES + AVX2), then 3-operand
+// VEX XMM (AVX2 + AES-NI), then legacy-SSE AES-NI XMM kernels. The
+// forcetier init keeps this family and the batch-16 fill family
+// consistent with the chain-absorb arm flags.
 var (
 	// FusedHasVAESAVX512 selects the ZMM fused kernels (four lanes per
 	// register). Needs VAES + AVX-512.
@@ -22,9 +22,13 @@ var (
 	// pass). Needs VAES + AVX2; yields to the ZMM tier.
 	FusedHasVAESAVX2 = cpuid.VAESYMM && !cpuid.AVX512F
 
-	// FusedHasAESNI selects the XMM AES-NI fused kernels on hosts
-	// without VAES.
-	FusedHasAESNI = cpuid.AESNI && !cpuid.VAESYMM && !cpuid.VAESZMM
+	// FusedHasAVXAESNI selects the 3-operand VEX XMM fused kernels on
+	// hosts with AVX2 + AES-NI but without VAES.
+	FusedHasAVXAESNI = cpuid.AESNI && cpuid.AVX2 && !FusedHasVAESAVX512 && !FusedHasVAESAVX2
+
+	// FusedHasAESNI selects the legacy-SSE XMM AES-NI fused kernels on
+	// hosts without AVX2 or VAES.
+	FusedHasAESNI = cpuid.AESNI && !FusedHasVAESAVX512 && !FusedHasVAESAVX2 && !FusedHasAVXAESNI
 
 	// FusedHasARMAES is always false on amd64 builds.
 	FusedHasARMAES = false
@@ -32,20 +36,24 @@ var (
 
 // Fill tier flags: the tier of the Interlocked Barrier fill hooks
 // (Fused256Fill13x8 / Fused512Fill13x4 / Fused512Fill13x8), overridable
-// on their own through ITB_FORCE_INTERLOCK_PRF_FILL_TIER. The ZMM tier
-// runs the dedicated eight-lane kernels (the width-256 batch-16 hook,
-// the width-512 batch-32 hook); every other arm runs four-lane kernel
-// calls over Go-synthesised fill blocks.
+// on their own through ITB_FORCE_INTERLOCK_PRF_FILL_TIER.
 var (
 	HasVAESAVX512X16 = cpuid.VAESZMM
 	HasVAESAVX2X16   = cpuid.VAESYMM && !cpuid.AVX512F
-	HasAESNIX16      = cpuid.AESNI && !cpuid.VAESYMM && !cpuid.VAESZMM
+	HasAVXAESNIX16   = cpuid.AESNI && cpuid.AVX2 && !HasVAESAVX512X16 && !HasVAESAVX2X16
+	HasAESNIX16      = cpuid.AESNI && !HasVAESAVX512X16 && !HasVAESAVX2X16 && !HasAVXAESNIX16
 	HasARMAESX16     = false
 )
 
 // FusedAvailable reports whether any assembly tier of the fused cascade
 // family is selected.
-func FusedAvailable() bool { return FusedHasVAESAVX512 || FusedHasVAESAVX2 || FusedHasAESNI }
+func FusedAvailable() bool {
+	return FusedHasVAESAVX512 || FusedHasVAESAVX2 || FusedHasAVXAESNI || FusedHasAESNI
+}
+
+func fusedSingleVex() bool {
+	return FusedHasVAESAVX512 || FusedHasVAESAVX2 || FusedHasAVXAESNI
+}
 
 // Fused256Chain13x4 runs the width-256 cascade on four 13-byte lanes.
 func Fused256Chain13x4(fixedKey *[32]byte, components []uint64, dataPtrs *[4]*byte, out *[4][4]uint64) {
@@ -59,6 +67,8 @@ func Fused256Chain13x4(fixedKey *[32]byte, components []uint64, dataPtrs *[4]*by
 		areion256FusedChain13x4Avx512Asm(fixedKey, c, ng, dataPtrs, out)
 	case FusedHasVAESAVX2:
 		areion256FusedChain13x4VaesAvx2Asm(fixedKey, c, ng, dataPtrs, out)
+	case FusedHasAVXAESNI:
+		areion256FusedChain13x4VexAsm(fixedKey, c, ng, dataPtrs, out)
 	case FusedHasAESNI:
 		areion256FusedChain13x4AesNiAsm(fixedKey, c, ng, dataPtrs, out)
 	default:
@@ -66,12 +76,18 @@ func Fused256Chain13x4(fixedKey *[32]byte, components []uint64, dataPtrs *[4]*by
 	}
 }
 
-// Fused256Chain13x1 runs the width-256 cascade on one 13-byte lane
-// through the XMM AES-NI kernel, the single-lane arm of every tier.
+// Fused256Chain13x1 runs the width-256 cascade on one 13-byte lane.
 func Fused256Chain13x1(fixedKey *[32]byte, components []uint64, data *byte, out *[4]uint64) {
-	if FusedAvailable() && validComponents256(components) {
-		areion256FusedChain13x1AesNiAsm(fixedKey, &components[0], len(components)/4, data, out)
-		return
+	if validComponents256(components) {
+		c, ng := &components[0], len(components)/4
+		switch {
+		case fusedSingleVex():
+			areion256FusedChain13x1VexAsm(fixedKey, c, ng, data, out)
+			return
+		case FusedHasAESNI:
+			areion256FusedChain13x1AesNiAsm(fixedKey, c, ng, data, out)
+			return
+		}
 	}
 	*out = ScalarFusedChain256(fixedKey, components, lanePtr(data, 13))
 }
@@ -88,6 +104,8 @@ func Fused256Chain20x4(fixedKey *[32]byte, components []uint64, dataPtrs *[4]*by
 		areion256FusedChain20x4Avx512Asm(fixedKey, c, ng, dataPtrs, out)
 	case FusedHasVAESAVX2:
 		areion256FusedChain20x4VaesAvx2Asm(fixedKey, c, ng, dataPtrs, out)
+	case FusedHasAVXAESNI:
+		areion256FusedChain20x4VexAsm(fixedKey, c, ng, dataPtrs, out)
 	case FusedHasAESNI:
 		areion256FusedChain20x4AesNiAsm(fixedKey, c, ng, dataPtrs, out)
 	default:
@@ -95,12 +113,18 @@ func Fused256Chain20x4(fixedKey *[32]byte, components []uint64, dataPtrs *[4]*by
 	}
 }
 
-// Fused256Chain20x1 runs the width-256 cascade on one 20-byte lane
-// through the XMM AES-NI kernel, the single-lane arm of every tier.
+// Fused256Chain20x1 runs the width-256 cascade on one 20-byte lane.
 func Fused256Chain20x1(fixedKey *[32]byte, components []uint64, data *byte, out *[4]uint64) {
-	if FusedAvailable() && validComponents256(components) {
-		areion256FusedChain20x1AesNiAsm(fixedKey, &components[0], len(components)/4, data, out)
-		return
+	if validComponents256(components) {
+		c, ng := &components[0], len(components)/4
+		switch {
+		case fusedSingleVex():
+			areion256FusedChain20x1VexAsm(fixedKey, c, ng, data, out)
+			return
+		case FusedHasAESNI:
+			areion256FusedChain20x1AesNiAsm(fixedKey, c, ng, data, out)
+			return
+		}
 	}
 	*out = ScalarFusedChain256(fixedKey, components, lanePtr(data, 20))
 }
@@ -117,6 +141,8 @@ func Fused256Chain36x4(fixedKey *[32]byte, components []uint64, dataPtrs *[4]*by
 		areion256FusedChain36x4Avx512Asm(fixedKey, c, ng, dataPtrs, out)
 	case FusedHasVAESAVX2:
 		areion256FusedChain36x4VaesAvx2Asm(fixedKey, c, ng, dataPtrs, out)
+	case FusedHasAVXAESNI:
+		areion256FusedChain36x4VexAsm(fixedKey, c, ng, dataPtrs, out)
 	case FusedHasAESNI:
 		areion256FusedChain36x4AesNiAsm(fixedKey, c, ng, dataPtrs, out)
 	default:
@@ -124,12 +150,18 @@ func Fused256Chain36x4(fixedKey *[32]byte, components []uint64, dataPtrs *[4]*by
 	}
 }
 
-// Fused256Chain36x1 runs the width-256 cascade on one 36-byte lane
-// through the XMM AES-NI kernel, the single-lane arm of every tier.
+// Fused256Chain36x1 runs the width-256 cascade on one 36-byte lane.
 func Fused256Chain36x1(fixedKey *[32]byte, components []uint64, data *byte, out *[4]uint64) {
-	if FusedAvailable() && validComponents256(components) {
-		areion256FusedChain36x1AesNiAsm(fixedKey, &components[0], len(components)/4, data, out)
-		return
+	if validComponents256(components) {
+		c, ng := &components[0], len(components)/4
+		switch {
+		case fusedSingleVex():
+			areion256FusedChain36x1VexAsm(fixedKey, c, ng, data, out)
+			return
+		case FusedHasAESNI:
+			areion256FusedChain36x1AesNiAsm(fixedKey, c, ng, data, out)
+			return
+		}
 	}
 	*out = ScalarFusedChain256(fixedKey, components, lanePtr(data, 36))
 }
@@ -146,6 +178,8 @@ func Fused256Chain68x4(fixedKey *[32]byte, components []uint64, dataPtrs *[4]*by
 		areion256FusedChain68x4Avx512Asm(fixedKey, c, ng, dataPtrs, out)
 	case FusedHasVAESAVX2:
 		areion256FusedChain68x4VaesAvx2Asm(fixedKey, c, ng, dataPtrs, out)
+	case FusedHasAVXAESNI:
+		areion256FusedChain68x4VexAsm(fixedKey, c, ng, dataPtrs, out)
 	case FusedHasAESNI:
 		areion256FusedChain68x4AesNiAsm(fixedKey, c, ng, dataPtrs, out)
 	default:
@@ -153,12 +187,18 @@ func Fused256Chain68x4(fixedKey *[32]byte, components []uint64, dataPtrs *[4]*by
 	}
 }
 
-// Fused256Chain68x1 runs the width-256 cascade on one 68-byte lane
-// through the XMM AES-NI kernel, the single-lane arm of every tier.
+// Fused256Chain68x1 runs the width-256 cascade on one 68-byte lane.
 func Fused256Chain68x1(fixedKey *[32]byte, components []uint64, data *byte, out *[4]uint64) {
-	if FusedAvailable() && validComponents256(components) {
-		areion256FusedChain68x1AesNiAsm(fixedKey, &components[0], len(components)/4, data, out)
-		return
+	if validComponents256(components) {
+		c, ng := &components[0], len(components)/4
+		switch {
+		case fusedSingleVex():
+			areion256FusedChain68x1VexAsm(fixedKey, c, ng, data, out)
+			return
+		case FusedHasAESNI:
+			areion256FusedChain68x1AesNiAsm(fixedKey, c, ng, data, out)
+			return
+		}
 	}
 	*out = ScalarFusedChain256(fixedKey, components, lanePtr(data, 68))
 }
@@ -175,6 +215,8 @@ func Fused512Chain13x4(fixedKey *[64]byte, components []uint64, dataPtrs *[4]*by
 		areion512FusedChain13x4Avx512Asm(fixedKey, c, ng, dataPtrs, out)
 	case FusedHasVAESAVX2:
 		areion512FusedChain13x4VaesAvx2Asm(fixedKey, c, ng, dataPtrs, out)
+	case FusedHasAVXAESNI:
+		areion512FusedChain13x4VexAsm(fixedKey, c, ng, dataPtrs, out)
 	case FusedHasAESNI:
 		areion512FusedChain13x4AesNiAsm(fixedKey, c, ng, dataPtrs, out)
 	default:
@@ -182,12 +224,18 @@ func Fused512Chain13x4(fixedKey *[64]byte, components []uint64, dataPtrs *[4]*by
 	}
 }
 
-// Fused512Chain13x1 runs the width-512 cascade on one 13-byte lane
-// through the XMM AES-NI kernel, the single-lane arm of every tier.
+// Fused512Chain13x1 runs the width-512 cascade on one 13-byte lane.
 func Fused512Chain13x1(fixedKey *[64]byte, components []uint64, data *byte, out *[8]uint64) {
-	if FusedAvailable() && validComponents512(components) {
-		areion512FusedChain13x1AesNiAsm(fixedKey, &components[0], len(components)/8, data, out)
-		return
+	if validComponents512(components) {
+		c, ng := &components[0], len(components)/8
+		switch {
+		case fusedSingleVex():
+			areion512FusedChain13x1VexAsm(fixedKey, c, ng, data, out)
+			return
+		case FusedHasAESNI:
+			areion512FusedChain13x1AesNiAsm(fixedKey, c, ng, data, out)
+			return
+		}
 	}
 	*out = ScalarFusedChain512(fixedKey, components, lanePtr(data, 13))
 }
@@ -204,6 +252,8 @@ func Fused512Chain20x4(fixedKey *[64]byte, components []uint64, dataPtrs *[4]*by
 		areion512FusedChain20x4Avx512Asm(fixedKey, c, ng, dataPtrs, out)
 	case FusedHasVAESAVX2:
 		areion512FusedChain20x4VaesAvx2Asm(fixedKey, c, ng, dataPtrs, out)
+	case FusedHasAVXAESNI:
+		areion512FusedChain20x4VexAsm(fixedKey, c, ng, dataPtrs, out)
 	case FusedHasAESNI:
 		areion512FusedChain20x4AesNiAsm(fixedKey, c, ng, dataPtrs, out)
 	default:
@@ -211,12 +261,18 @@ func Fused512Chain20x4(fixedKey *[64]byte, components []uint64, dataPtrs *[4]*by
 	}
 }
 
-// Fused512Chain20x1 runs the width-512 cascade on one 20-byte lane
-// through the XMM AES-NI kernel, the single-lane arm of every tier.
+// Fused512Chain20x1 runs the width-512 cascade on one 20-byte lane.
 func Fused512Chain20x1(fixedKey *[64]byte, components []uint64, data *byte, out *[8]uint64) {
-	if FusedAvailable() && validComponents512(components) {
-		areion512FusedChain20x1AesNiAsm(fixedKey, &components[0], len(components)/8, data, out)
-		return
+	if validComponents512(components) {
+		c, ng := &components[0], len(components)/8
+		switch {
+		case fusedSingleVex():
+			areion512FusedChain20x1VexAsm(fixedKey, c, ng, data, out)
+			return
+		case FusedHasAESNI:
+			areion512FusedChain20x1AesNiAsm(fixedKey, c, ng, data, out)
+			return
+		}
 	}
 	*out = ScalarFusedChain512(fixedKey, components, lanePtr(data, 20))
 }
@@ -233,6 +289,8 @@ func Fused512Chain36x4(fixedKey *[64]byte, components []uint64, dataPtrs *[4]*by
 		areion512FusedChain36x4Avx512Asm(fixedKey, c, ng, dataPtrs, out)
 	case FusedHasVAESAVX2:
 		areion512FusedChain36x4VaesAvx2Asm(fixedKey, c, ng, dataPtrs, out)
+	case FusedHasAVXAESNI:
+		areion512FusedChain36x4VexAsm(fixedKey, c, ng, dataPtrs, out)
 	case FusedHasAESNI:
 		areion512FusedChain36x4AesNiAsm(fixedKey, c, ng, dataPtrs, out)
 	default:
@@ -240,12 +298,18 @@ func Fused512Chain36x4(fixedKey *[64]byte, components []uint64, dataPtrs *[4]*by
 	}
 }
 
-// Fused512Chain36x1 runs the width-512 cascade on one 36-byte lane
-// through the XMM AES-NI kernel, the single-lane arm of every tier.
+// Fused512Chain36x1 runs the width-512 cascade on one 36-byte lane.
 func Fused512Chain36x1(fixedKey *[64]byte, components []uint64, data *byte, out *[8]uint64) {
-	if FusedAvailable() && validComponents512(components) {
-		areion512FusedChain36x1AesNiAsm(fixedKey, &components[0], len(components)/8, data, out)
-		return
+	if validComponents512(components) {
+		c, ng := &components[0], len(components)/8
+		switch {
+		case fusedSingleVex():
+			areion512FusedChain36x1VexAsm(fixedKey, c, ng, data, out)
+			return
+		case FusedHasAESNI:
+			areion512FusedChain36x1AesNiAsm(fixedKey, c, ng, data, out)
+			return
+		}
 	}
 	*out = ScalarFusedChain512(fixedKey, components, lanePtr(data, 36))
 }
@@ -262,6 +326,8 @@ func Fused512Chain68x4(fixedKey *[64]byte, components []uint64, dataPtrs *[4]*by
 		areion512FusedChain68x4Avx512Asm(fixedKey, c, ng, dataPtrs, out)
 	case FusedHasVAESAVX2:
 		areion512FusedChain68x4VaesAvx2Asm(fixedKey, c, ng, dataPtrs, out)
+	case FusedHasAVXAESNI:
+		areion512FusedChain68x4VexAsm(fixedKey, c, ng, dataPtrs, out)
 	case FusedHasAESNI:
 		areion512FusedChain68x4AesNiAsm(fixedKey, c, ng, dataPtrs, out)
 	default:
@@ -269,12 +335,18 @@ func Fused512Chain68x4(fixedKey *[64]byte, components []uint64, dataPtrs *[4]*by
 	}
 }
 
-// Fused512Chain68x1 runs the width-512 cascade on one 68-byte lane
-// through the XMM AES-NI kernel, the single-lane arm of every tier.
+// Fused512Chain68x1 runs the width-512 cascade on one 68-byte lane.
 func Fused512Chain68x1(fixedKey *[64]byte, components []uint64, data *byte, out *[8]uint64) {
-	if FusedAvailable() && validComponents512(components) {
-		areion512FusedChain68x1AesNiAsm(fixedKey, &components[0], len(components)/8, data, out)
-		return
+	if validComponents512(components) {
+		c, ng := &components[0], len(components)/8
+		switch {
+		case fusedSingleVex():
+			areion512FusedChain68x1VexAsm(fixedKey, c, ng, data, out)
+			return
+		case FusedHasAESNI:
+			areion512FusedChain68x1AesNiAsm(fixedKey, c, ng, data, out)
+			return
+		}
 	}
 	*out = ScalarFusedChain512(fixedKey, components, lanePtr(data, 68))
 }
@@ -282,11 +354,7 @@ func Fused512Chain68x1(fixedKey *[64]byte, components []uint64, data *byte, out 
 // Fused256Fill13x8 is the batch-16 Interlocked Barrier fill hook of
 // width 256: lane i (0..7) runs the cascade over the fill block
 // [0x03 | LE64(groupIdxBase+i) | LE32(v)] of group groupIdxBase+i, v
-// being the per-message interlock-nonce fold. The ZMM tier synthesises
-// the blocks in-register and runs two interleaved four-lane groups; the
-// YMM and XMM tiers run two four-lane kernel calls over Go-synthesised
-// blocks. The dispatch follows the batch-16 flags so
-// ITB_FORCE_INTERLOCK_PRF_FILL_TIER selects the arm.
+// being the per-message interlock-nonce fold.
 func Fused256Fill13x8(fixedKey *[32]byte, components []uint64, groupIdxBase uint64, v uint32, out *[8][4]uint64) {
 	if !validComponents256(components) {
 		scalarFill256X8(fixedKey, components, groupIdxBase, v, out)
@@ -301,6 +369,12 @@ func Fused256Fill13x8(fixedKey *[32]byte, components []uint64, groupIdxBase uint
 		for h := 0; h < 2; h++ {
 			ptrs := fillPtrs4(&blocks, groupIdxBase+uint64(4*h), v)
 			areion256FusedChain13x4VaesAvx2Asm(fixedKey, c, ng, &ptrs, (*[4][4]uint64)(out[4*h:4*h+4]))
+		}
+	case HasAVXAESNIX16:
+		var blocks [4][13]byte
+		for h := 0; h < 2; h++ {
+			ptrs := fillPtrs4(&blocks, groupIdxBase+uint64(4*h), v)
+			areion256FusedChain13x4VexAsm(fixedKey, c, ng, &ptrs, (*[4][4]uint64)(out[4*h:4*h+4]))
 		}
 	case HasAESNIX16:
 		var blocks [4][13]byte
@@ -330,6 +404,8 @@ func Fused512Fill13x4(fixedKey *[64]byte, components []uint64, groupIdxBase uint
 		areion512FusedChain13x4Avx512Asm(fixedKey, c, ng, &ptrs, out)
 	case HasVAESAVX2X16:
 		areion512FusedChain13x4VaesAvx2Asm(fixedKey, c, ng, &ptrs, out)
+	case HasAVXAESNIX16:
+		areion512FusedChain13x4VexAsm(fixedKey, c, ng, &ptrs, out)
 	case HasAESNIX16:
 		areion512FusedChain13x4AesNiAsm(fixedKey, c, ng, &ptrs, out)
 	default:
@@ -342,131 +418,147 @@ func Fused512Fill13x4(fixedKey *[64]byte, components []uint64, groupIdxBase uint
 //go:noescape
 func areion256FusedChain13x4Avx512Asm(fixedKey *[32]byte, comps *uint64, nGroups int, dataPtrs *[4]*byte, out *[4][4]uint64)
 
-//
 //go:noescape
 func areion256FusedChain13x4VaesAvx2Asm(fixedKey *[32]byte, comps *uint64, nGroups int, dataPtrs *[4]*byte, out *[4][4]uint64)
 
-//
+//go:noescape
+func areion256FusedChain13x4VexAsm(fixedKey *[32]byte, comps *uint64, nGroups int, dataPtrs *[4]*byte, out *[4][4]uint64)
+
 //go:noescape
 func areion256FusedChain13x4AesNiAsm(fixedKey *[32]byte, comps *uint64, nGroups int, dataPtrs *[4]*byte, out *[4][4]uint64)
 
-//
+//go:noescape
+func areion256FusedChain13x1VexAsm(fixedKey *[32]byte, comps *uint64, nGroups int, data *byte, out *[4]uint64)
+
 //go:noescape
 func areion256FusedChain13x1AesNiAsm(fixedKey *[32]byte, comps *uint64, nGroups int, data *byte, out *[4]uint64)
 
-//
 //go:noescape
 func areion256FusedChain20x4Avx512Asm(fixedKey *[32]byte, comps *uint64, nGroups int, dataPtrs *[4]*byte, out *[4][4]uint64)
 
-//
 //go:noescape
 func areion256FusedChain20x4VaesAvx2Asm(fixedKey *[32]byte, comps *uint64, nGroups int, dataPtrs *[4]*byte, out *[4][4]uint64)
 
-//
+//go:noescape
+func areion256FusedChain20x4VexAsm(fixedKey *[32]byte, comps *uint64, nGroups int, dataPtrs *[4]*byte, out *[4][4]uint64)
+
 //go:noescape
 func areion256FusedChain20x4AesNiAsm(fixedKey *[32]byte, comps *uint64, nGroups int, dataPtrs *[4]*byte, out *[4][4]uint64)
 
-//
+//go:noescape
+func areion256FusedChain20x1VexAsm(fixedKey *[32]byte, comps *uint64, nGroups int, data *byte, out *[4]uint64)
+
 //go:noescape
 func areion256FusedChain20x1AesNiAsm(fixedKey *[32]byte, comps *uint64, nGroups int, data *byte, out *[4]uint64)
 
-//
 //go:noescape
 func areion256FusedChain36x4Avx512Asm(fixedKey *[32]byte, comps *uint64, nGroups int, dataPtrs *[4]*byte, out *[4][4]uint64)
 
-//
 //go:noescape
 func areion256FusedChain36x4VaesAvx2Asm(fixedKey *[32]byte, comps *uint64, nGroups int, dataPtrs *[4]*byte, out *[4][4]uint64)
 
-//
+//go:noescape
+func areion256FusedChain36x4VexAsm(fixedKey *[32]byte, comps *uint64, nGroups int, dataPtrs *[4]*byte, out *[4][4]uint64)
+
 //go:noescape
 func areion256FusedChain36x4AesNiAsm(fixedKey *[32]byte, comps *uint64, nGroups int, dataPtrs *[4]*byte, out *[4][4]uint64)
 
-//
+//go:noescape
+func areion256FusedChain36x1VexAsm(fixedKey *[32]byte, comps *uint64, nGroups int, data *byte, out *[4]uint64)
+
 //go:noescape
 func areion256FusedChain36x1AesNiAsm(fixedKey *[32]byte, comps *uint64, nGroups int, data *byte, out *[4]uint64)
 
-//
 //go:noescape
 func areion256FusedChain68x4Avx512Asm(fixedKey *[32]byte, comps *uint64, nGroups int, dataPtrs *[4]*byte, out *[4][4]uint64)
 
-//
 //go:noescape
 func areion256FusedChain68x4VaesAvx2Asm(fixedKey *[32]byte, comps *uint64, nGroups int, dataPtrs *[4]*byte, out *[4][4]uint64)
 
-//
+//go:noescape
+func areion256FusedChain68x4VexAsm(fixedKey *[32]byte, comps *uint64, nGroups int, dataPtrs *[4]*byte, out *[4][4]uint64)
+
 //go:noescape
 func areion256FusedChain68x4AesNiAsm(fixedKey *[32]byte, comps *uint64, nGroups int, dataPtrs *[4]*byte, out *[4][4]uint64)
 
-//
+//go:noescape
+func areion256FusedChain68x1VexAsm(fixedKey *[32]byte, comps *uint64, nGroups int, data *byte, out *[4]uint64)
+
 //go:noescape
 func areion256FusedChain68x1AesNiAsm(fixedKey *[32]byte, comps *uint64, nGroups int, data *byte, out *[4]uint64)
 
-//
 //go:noescape
 func areion512FusedChain13x4Avx512Asm(fixedKey *[64]byte, comps *uint64, nGroups int, dataPtrs *[4]*byte, out *[4][8]uint64)
 
-//
 //go:noescape
 func areion512FusedChain13x4VaesAvx2Asm(fixedKey *[64]byte, comps *uint64, nGroups int, dataPtrs *[4]*byte, out *[4][8]uint64)
 
-//
+//go:noescape
+func areion512FusedChain13x4VexAsm(fixedKey *[64]byte, comps *uint64, nGroups int, dataPtrs *[4]*byte, out *[4][8]uint64)
+
 //go:noescape
 func areion512FusedChain13x4AesNiAsm(fixedKey *[64]byte, comps *uint64, nGroups int, dataPtrs *[4]*byte, out *[4][8]uint64)
 
-//
+//go:noescape
+func areion512FusedChain13x1VexAsm(fixedKey *[64]byte, comps *uint64, nGroups int, data *byte, out *[8]uint64)
+
 //go:noescape
 func areion512FusedChain13x1AesNiAsm(fixedKey *[64]byte, comps *uint64, nGroups int, data *byte, out *[8]uint64)
 
-//
 //go:noescape
 func areion512FusedChain20x4Avx512Asm(fixedKey *[64]byte, comps *uint64, nGroups int, dataPtrs *[4]*byte, out *[4][8]uint64)
 
-//
 //go:noescape
 func areion512FusedChain20x4VaesAvx2Asm(fixedKey *[64]byte, comps *uint64, nGroups int, dataPtrs *[4]*byte, out *[4][8]uint64)
 
-//
+//go:noescape
+func areion512FusedChain20x4VexAsm(fixedKey *[64]byte, comps *uint64, nGroups int, dataPtrs *[4]*byte, out *[4][8]uint64)
+
 //go:noescape
 func areion512FusedChain20x4AesNiAsm(fixedKey *[64]byte, comps *uint64, nGroups int, dataPtrs *[4]*byte, out *[4][8]uint64)
 
-//
+//go:noescape
+func areion512FusedChain20x1VexAsm(fixedKey *[64]byte, comps *uint64, nGroups int, data *byte, out *[8]uint64)
+
 //go:noescape
 func areion512FusedChain20x1AesNiAsm(fixedKey *[64]byte, comps *uint64, nGroups int, data *byte, out *[8]uint64)
 
-//
 //go:noescape
 func areion512FusedChain36x4Avx512Asm(fixedKey *[64]byte, comps *uint64, nGroups int, dataPtrs *[4]*byte, out *[4][8]uint64)
 
-//
 //go:noescape
 func areion512FusedChain36x4VaesAvx2Asm(fixedKey *[64]byte, comps *uint64, nGroups int, dataPtrs *[4]*byte, out *[4][8]uint64)
 
-//
+//go:noescape
+func areion512FusedChain36x4VexAsm(fixedKey *[64]byte, comps *uint64, nGroups int, dataPtrs *[4]*byte, out *[4][8]uint64)
+
 //go:noescape
 func areion512FusedChain36x4AesNiAsm(fixedKey *[64]byte, comps *uint64, nGroups int, dataPtrs *[4]*byte, out *[4][8]uint64)
 
-//
+//go:noescape
+func areion512FusedChain36x1VexAsm(fixedKey *[64]byte, comps *uint64, nGroups int, data *byte, out *[8]uint64)
+
 //go:noescape
 func areion512FusedChain36x1AesNiAsm(fixedKey *[64]byte, comps *uint64, nGroups int, data *byte, out *[8]uint64)
 
-//
 //go:noescape
 func areion512FusedChain68x4Avx512Asm(fixedKey *[64]byte, comps *uint64, nGroups int, dataPtrs *[4]*byte, out *[4][8]uint64)
 
-//
 //go:noescape
 func areion512FusedChain68x4VaesAvx2Asm(fixedKey *[64]byte, comps *uint64, nGroups int, dataPtrs *[4]*byte, out *[4][8]uint64)
 
-//
+//go:noescape
+func areion512FusedChain68x4VexAsm(fixedKey *[64]byte, comps *uint64, nGroups int, dataPtrs *[4]*byte, out *[4][8]uint64)
+
 //go:noescape
 func areion512FusedChain68x4AesNiAsm(fixedKey *[64]byte, comps *uint64, nGroups int, dataPtrs *[4]*byte, out *[4][8]uint64)
 
-//
+//go:noescape
+func areion512FusedChain68x1VexAsm(fixedKey *[64]byte, comps *uint64, nGroups int, data *byte, out *[8]uint64)
+
 //go:noescape
 func areion512FusedChain68x1AesNiAsm(fixedKey *[64]byte, comps *uint64, nGroups int, data *byte, out *[8]uint64)
 
-//
 //go:noescape
 func areion256FusedChain13x8Avx512Asm(fixedKey *[32]byte, comps *uint64, nGroups int, groupIdxBase uint64, out *[8][4]uint64, v uint32)
 
@@ -474,41 +566,18 @@ func areion256FusedChain13x8Avx512Asm(fixedKey *[32]byte, comps *uint64, nGroups
 // (Fused{256,512}Chain{20,36,68}x8: two four-lane groups with
 // interleaved round streams). Needs VAES + AVX-512; cleared at init by
 // ITB_FORCE_CHAINHASH_X4 so a parity or benchmark run can pin the
-// four-lane kernels on a host that would otherwise select x8. The flag
-// is a package variable so the in-package tests and the parent
-// package's wire-parity tests can toggle the arm within one process.
-//
-// The eight-lane arm is selected only together with the ZMM fused tier
-// (see [FusedX8Active]); it does not add a tier of its own to the
-// exclusive fused flag set above.
+// four-lane kernels on a host that would otherwise select x8.
 var FusedHasVAESAVX512X8 = cpuid.VAESZMM && !forcetier.ChainHashX4()
 
-// FusedHasAESNIX8 arms the eight-lane per-pixel arm of the VAES YMM and
-// AES-NI XMM tiers: two calls of the tier's four-lane kernel on the lane
-// halves. No eight-lane kernel exists on either tier — the SoEM
-// construction holds two 128-bit states and two temporaries per lane
-// pair, six registers, so four lane pairs exceed a sixteen-register
-// file before the zero, the key halves and the chaining state — and the
-// two four-lane calls are the eight-lane plan of these tiers, so the
-// pixel pipeline takes the eight-pixel stride on them for this family
-// as it does for every other. Needs AES-NI; cleared at init by
-// ITB_FORCE_CHAINHASH_X4 exactly as [FusedHasVAESAVX512X8] is, and
-// selected only together with one of those two fused tiers.
+// FusedHasAESNIX8 arms the eight-lane per-pixel arm of the VAES YMM,
+// VEX XMM and AES-NI XMM tiers: two calls of the tier's four-lane
+// kernel on the lane halves.
 var FusedHasAESNIX8 = cpuid.AESNI && !forcetier.ChainHashX4()
 
 // FusedX8Active reports whether an eight-lane per-pixel arm is the
-// selected arm: [FusedHasVAESAVX512X8] together with
-// [FusedHasVAESAVX512], or [FusedHasAESNIX8] together with
-// [FusedHasVAESAVX2] or [FusedHasAESNI], so ITB_FORCE_HASH_TIER — which
-// reassigns the fused tier flags as one set — steers the eight-lane arm
-// with the rest of the family. The eight-lane dispatchers run the ZMM
-// kernels under the first arm and two four-lane calls of the selected
-// tier under any other flag state. The parent package's attach step
-// consults this predicate, so a seed built on a host or tier without an
-// arm carries no eight-lane hook and its pixel loop keeps the four-lane
-// stride.
+// selected arm.
 func FusedX8Active() bool {
-	return (FusedHasVAESAVX512X8 && FusedHasVAESAVX512) || (FusedHasAESNIX8 && (FusedHasVAESAVX2 || FusedHasAESNI))
+	return (FusedHasVAESAVX512X8 && FusedHasVAESAVX512) || (FusedHasAESNIX8 && (FusedHasVAESAVX2 || FusedHasAVXAESNI || FusedHasAESNI))
 }
 
 // Fused256Chain20x8 runs the width-256 cascade on eight 20-byte lanes.
@@ -574,10 +643,7 @@ func Fused512Chain68x8(fixedKey *[64]byte, components []uint64, dataPtrs *[8]*by
 // Fused512Fill13x8 is the batch-32 Interlocked Barrier fill hook of
 // width 512: lane i (0..7) runs the cascade over the fill block
 // [0x03 | LE64(groupIdxBase+i) | LE32(v)] of group groupIdxBase+i, v
-// being the per-message interlock-nonce fold. The ZMM tier synthesises
-// the blocks in-register and runs two interleaved four-lane groups; the
-// YMM and XMM tiers run two four-lane kernel calls over Go-synthesised
-// blocks.
+// being the per-message interlock-nonce fold.
 func Fused512Fill13x8(fixedKey *[64]byte, components []uint64, groupIdxBase uint64, v uint32, out *[8][8]uint64) {
 	if !validComponents512(components) {
 		scalarFill512X8(fixedKey, components, groupIdxBase, v, out)
@@ -592,6 +658,12 @@ func Fused512Fill13x8(fixedKey *[64]byte, components []uint64, groupIdxBase uint
 		for h := 0; h < 2; h++ {
 			ptrs := fillPtrs4(&blocks, groupIdxBase+uint64(4*h), v)
 			areion512FusedChain13x4VaesAvx2Asm(fixedKey, c, ng, &ptrs, out8x512Half(out, h))
+		}
+	case HasAVXAESNIX16:
+		var blocks [4][13]byte
+		for h := 0; h < 2; h++ {
+			ptrs := fillPtrs4(&blocks, groupIdxBase+uint64(4*h), v)
+			areion512FusedChain13x4VexAsm(fixedKey, c, ng, &ptrs, out8x512Half(out, h))
 		}
 	case HasAESNIX16:
 		var blocks [4][13]byte

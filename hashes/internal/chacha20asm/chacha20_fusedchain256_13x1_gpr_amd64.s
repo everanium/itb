@@ -9,16 +9,8 @@
 #include "textflag.h"
 
 // func chacha20FusedChain13x1GprAsm(fixedKey *[32]byte, comps *uint64, nGroups int, data *byte, out *[4]uint64)
-TEXT ·chacha20FusedChain13x1GprAsm(SB), NOSPLIT, $64-40
-	MOVQ fixedKey+0(FP), AX
-	MOVQ comps+8(FP), BX
-	MOVQ nGroups+16(FP), CX
+TEXT ·chacha20FusedChain13x1GprAsm(SB), NOSPLIT, $32-40
 	MOVQ data+24(FP), DX
-	MOVQ out+32(FP), DI
-	MOVQ BX, 32(SP)
-	MOVQ CX, 24(SP)
-	MOVQ DI, 40(SP)
-	MOVQ AX, 48(SP)
 
 	MOVL 0(DX), R12
 	MOVL R12, 0(SP)
@@ -39,8 +31,8 @@ TEXT ·chacha20FusedChain13x1GprAsm(SB), NOSPLIT, $64-40
 	XORL R15, R15
 
 loop:
-	MOVQ 32(SP), R9
-	MOVQ 48(SP), R11
+	MOVQ comps+8(FP), R9
+	MOVQ fixedKey+0(FP), R11
 	MOVL 0(R11), SI
 	XORL 0(R9), SI
 	XORL AX, SI
@@ -67,7 +59,7 @@ loop:
 	XORL 24(R9), BX
 	XORL R14, BX
 	ADDQ $32, R9
-	MOVQ R9, 32(SP)
+	MOVQ R9, comps+8(FP)
 	MOVL AX, R9
 	MOVL BX, R11
 
@@ -1041,10 +1033,10 @@ loop:
 	XORL R10, SI
 	ROLL $7, SI
 
-	DECQ 24(SP)
+	DECQ nGroups+16(FP)
 	JNZ loop
 
-	MOVQ 40(SP), R9
+	MOVQ out+32(FP), R9
 	MOVL AX, 0(R9)
 	MOVL BX, 4(R9)
 	MOVL CX, 8(R9)

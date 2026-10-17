@@ -2,7 +2,7 @@
 
 package areionasm
 
-import "github.com/everanium/itb/third/goaes"
+import "github.com/everanium/areion"
 
 // Areion256SoEMPermutex4Interleaved runs the two permutations of the
 // Areion-SoEM-256 4-way batched PRF in a single fused VAES kernel.
@@ -28,7 +28,24 @@ import "github.com/everanium/itb/third/goaes"
 //   - per-round dependency stalls (interleaved VAESENC pairs hide latency)
 //
 //go:noescape
-func Areion256SoEMPermutex4Interleaved(s1b0, s1b1, s2b0, s2b1 *aes.Block4)
+func Areion256SoEMPermutex4Interleaved(s1b0, s1b1, s2b0, s2b1 *areion.Block4)
+
+// Areion256SoEMPermutex4VaesAvx2 is the 256-bit YMM VAES + AVX2 form of
+// Areion256SoEMPermutex4Interleaved for hosts with VAES and AVX2 but
+// without AVX-512 (e.g., Intel Alder Lake / Raptor Lake, AMD Zen 3+ with
+// AVX-512 disabled). Keeps all 4 lanes of both P1 and P2 in Y0..Y15 across
+// the 10 rounds and folds the P1 ⊕ P2 output XOR in registers.
+//
+//go:noescape
+func Areion256SoEMPermutex4VaesAvx2(s1b0, s1b1, s2b0, s2b1 *areion.Block4)
+
+// Areion256SoEMPermutex4Vex is the 3-operand VEX XMM (AVX + AES-NI) form
+// of Areion256SoEMPermutex4Interleaved for hosts with AVX and AES-NI but
+// without VAES. Emitted by scripts/kernels/areion/gen_fused_kernels.py
+// into areion_soem_vex_amd64.s.
+//
+//go:noescape
+func Areion256SoEMPermutex4Vex(s1b0, s1b1, s2b0, s2b1 *areion.Block4)
 
 // Areion256SoEMPermutex4AesNi is the legacy-SSE AES-NI XMM form of
 // Areion256SoEMPermutex4Interleaved for hosts without VAES: two lanes per
@@ -38,4 +55,4 @@ func Areion256SoEMPermutex4Interleaved(s1b0, s1b1, s2b0, s2b1 *aes.Block4)
 // into areion_soem_aesni_amd64.s.
 //
 //go:noescape
-func Areion256SoEMPermutex4AesNi(s1b0, s1b1, s2b0, s2b1 *aes.Block4)
+func Areion256SoEMPermutex4AesNi(s1b0, s1b1, s2b0, s2b1 *areion.Block4)

@@ -32,6 +32,15 @@ func TestInputEntropyKernelsAmd64(t *testing.T) {
 			}
 		})
 	}
+	t.Run("vex-x1", func(t *testing.T) {
+		if !cpuid.AESNI || !cpuid.AVX2 {
+			t.Skip("requires AVX+AES-NI")
+		}
+		for _, n := range Shapes {
+			audit256X1(t, "vex", n, kernels256x1Vex[n])
+			audit512X1(t, "vex", n, kernels512x1Vex[n])
+		}
+	})
 	t.Run("aesni-x1", func(t *testing.T) {
 		if !cpuid.AESNI {
 			t.Skip("requires AES-NI")

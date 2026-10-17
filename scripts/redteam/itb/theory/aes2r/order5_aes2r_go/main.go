@@ -16,7 +16,7 @@
 //
 // so at r >= 2 every call carries a fresh data-dependent key and its own key
 // expansion — the cost per text is dominated by NR+1 round keys per call, not
-// by the rounds. The rounds run through go-aes RoundHW / FinalRoundHW (AES-NI)
+// by the rounds. The rounds run through areion RoundHW / FinalRoundHW (AES-NI)
 // when the host has it, pinned against the software rounds and the FIPS-197
 // KAT by the startup self-test.
 //
@@ -62,7 +62,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	aes "github.com/everanium/itb/third/goaes"
+	"github.com/everanium/areion"
 )
 
 const (
@@ -175,7 +175,7 @@ func keyExpandInto(key [16]byte, nr int, rks *[maxNR + 1][16]byte) {
 	}
 }
 
-// useHW routes encRK through the go-aes AES-NI round primitives.
+// useHW routes encRK through the areion AES-NI round primitives.
 var useHW bool
 
 // encRK runs nr standard AES rounds (final round without MixColumns).
@@ -185,11 +185,11 @@ func encRK(block [16]byte, rks *[maxNR + 1][16]byte, nr int) [16]byte {
 		s[i] ^= rks[0][i]
 	}
 	if useHW {
-		b := (*aes.Block)(&s)
+		b := (*areion.Block)(&s)
 		for r := 1; r < nr; r++ {
-			aes.RoundHW(b, (*aes.Block)(&rks[r]))
+			areion.AES128Round(b, (*areion.Block)(&rks[r]))
 		}
-		aes.FinalRoundHW(b, (*aes.Block)(&rks[nr]))
+		areion.AES128FinalRound(b, (*areion.Block)(&rks[nr]))
 		return s
 	}
 	for r := 1; r < nr; r++ {
@@ -249,7 +249,7 @@ func selfTest() error {
 	if got := encRK(pt, &rks, 10); got != want {
 		return fmt.Errorf("FIPS-197 KAT mismatch (software): %x", got)
 	}
-	if aes.UseHardwareAcceleration() {
+	if areion.UseHardwareAcceleration() {
 		useHW = true
 		if got := encRK(pt, &rks, 10); got != want {
 			return fmt.Errorf("FIPS-197 KAT mismatch (AES-NI): %x", got)
@@ -557,7 +557,7 @@ func main() {
 	resume := flag.String("resume", "", "resume file (JSON): finished sub-cubes are skipped and merged")
 	maxSeconds := flag.Float64("max-seconds", 0, "stop handing out new sub-cubes after this budget (0 = no limit)")
 	reportOnly := flag.Bool("report-only", false, "print the merged table from --resume without sweeping")
-	hw := flag.Bool("hw", aes.UseHardwareAcceleration(), "AES-NI round path")
+	hw := flag.Bool("hw", areion.UseHardwareAcceleration(), "AES-NI round path")
 	heartbeat := flag.Duration("heartbeat", time.Minute, "progress line interval")
 	flag.Parse()
 
@@ -580,7 +580,7 @@ func main() {
 	if *workers < 1 {
 		*workers = 1
 	}
-	if *hw && !aes.UseHardwareAcceleration() {
+	if *hw && !areion.UseHardwareAcceleration() {
 		fmt.Fprintln(os.Stderr, "--hw: no AES-NI on this host; using the software rounds")
 		*hw = false
 	}
@@ -640,7 +640,7 @@ func main() {
 	total := uint64(1) << cfg.log2Texts
 	fmt.Printf("order-%d integral through ChainHash<aes2r NR=%d>: 2^%d texts, active bytes %v, depths 1..%d, %d workers, 2^%d sub-cubes of 2^%d texts, aes-ni=%v\n",
 		activeCnt, cfg.nr, cfg.log2Texts, cfg.active[:activeCnt], cfg.rounds, cfg.workers, cfg.log2Texts-cfg.log2Sub, cfg.log2Sub, useHW)
-	fmt.Printf("self-test OK (FIPS-197 KAT software%s + lane packing)\n", map[bool]string{true: " + AES-NI parity", false: ""}[aes.UseHardwareAcceleration()])
+	fmt.Printf("self-test OK (FIPS-197 KAT software%s + lane packing)\n", map[bool]string{true: " + AES-NI parity", false: ""}[areion.UseHardwareAcceleration()])
 	fmt.Printf("fixed_bytes=%x comps=%s\n", cfg.fixed[:], fmtComps(cfg.comps))
 	if cfg.log2Texts < uint(8*activeCnt) {
 		fmt.Printf("NOTE: smoke configuration — the sums below are not an order-%d Λ-set integral\n", activeCnt)

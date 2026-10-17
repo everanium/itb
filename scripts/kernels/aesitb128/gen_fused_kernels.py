@@ -362,7 +362,7 @@ def zmm_fused(shape):
     for j in range(3):
         L.append(f"\tVBROADCASTI32X4 ·RC+{16 * (nb - 1 + j)}(SB), Z{2 + j}")
     L += ["\tVPXORD Z0, Z0, Z0", "", "loop:",
-          "\tVBROADCASTI32X4 0(BX), Z14", "\tVPXORD Z14, Z0, Z0", "\tVPXORD Z15, Z0, Z0"]
+          "\tVBROADCASTI32X4 0(BX), Z14", "\tVPTERNLOGQ $0x96, Z14, Z15, Z0"]
     for b in range(1, nb):
         L.append(f"\tVAESENC Z{15 + b}, Z0, Z0")
     for j in range(3):

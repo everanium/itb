@@ -2,7 +2,7 @@
 
 package areionasm
 
-import "github.com/everanium/itb/third/goaes"
+import "github.com/everanium/areion"
 
 // Areion512SoEMPermutex4Interleaved is the non-amd64 / purego fallback
 // for the fused 512-bit kernel. Mirrors the Areion-SoEM-256 fallback
@@ -12,8 +12,8 @@ import "github.com/everanium/itb/third/goaes"
 // cleanly across platforms. The parent itb package's production
 // dispatch never reaches it on these builds — non-amd64/non-arm64 hosts
 // route through the portable Go fallback path, and arm64 hosts use the
-// parent package's own per-half fold (`areion_arm64.go`).
-func Areion512SoEMPermutex4Interleaved(a1, b1, c1, d1, a2, b2, c2, d2 *aes.Block4) {
+// fused NEON kernel (`areion_arm64.go`).
+func Areion512SoEMPermutex4Interleaved(a1, b1, c1, d1, a2, b2, c2, d2 *areion.Block4) {
 	Areion512Permutex4(a1, b1, c1, d1)
 	Areion512Permute2x4(a2, b2, c2, d2)
 	for i := 0; i < 64; i++ {
@@ -24,8 +24,20 @@ func Areion512SoEMPermutex4Interleaved(a1, b1, c1, d1, a2, b2, c2, d2 *aes.Block
 	}
 }
 
+// Areion512SoEMPermutex4VaesAvx2 is amd64-only; the same callable stub as
+// Areion512SoEMPermutex4Interleaved on every other build.
+func Areion512SoEMPermutex4VaesAvx2(a1, b1, c1, d1, a2, b2, c2, d2 *areion.Block4) {
+	Areion512SoEMPermutex4Interleaved(a1, b1, c1, d1, a2, b2, c2, d2)
+}
+
+// Areion512SoEMPermutex4Vex is amd64-only; the same callable stub as
+// Areion512SoEMPermutex4Interleaved on every other build.
+func Areion512SoEMPermutex4Vex(a1, b1, c1, d1, a2, b2, c2, d2 *areion.Block4) {
+	Areion512SoEMPermutex4Interleaved(a1, b1, c1, d1, a2, b2, c2, d2)
+}
+
 // Areion512SoEMPermutex4AesNi is amd64-only; the same callable stub as
 // Areion512SoEMPermutex4Interleaved on every other build.
-func Areion512SoEMPermutex4AesNi(a1, b1, c1, d1, a2, b2, c2, d2 *aes.Block4) {
+func Areion512SoEMPermutex4AesNi(a1, b1, c1, d1, a2, b2, c2, d2 *areion.Block4) {
 	Areion512SoEMPermutex4Interleaved(a1, b1, c1, d1, a2, b2, c2, d2)
 }

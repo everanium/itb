@@ -7,7 +7,7 @@
 // this case; nothing here is exercised.
 package areionasm
 
-import "github.com/everanium/itb/third/goaes"
+import "github.com/everanium/areion"
 
 var (
 	// AreionRC4x / AreionRC4x2 are unused on these builds; declared for
@@ -18,6 +18,8 @@ var (
 	HasVAESAVX512 = false
 	// HasVAESAVX2NoAVX512 is always false on these builds.
 	HasVAESAVX2NoAVX512 = false
+	// HasAVXAESNIBatched is always false on these builds.
+	HasAVXAESNIBatched = false
 	// HasAESNIBatched is always false on these builds.
 	HasAESNIBatched = false
 	// HasARMAESBatched is always false on these builds (the arm64
@@ -29,50 +31,74 @@ var (
 // parent package's dispatch routes to the portable Go fallback when
 // HasVAESAVX512 is false. Kept as a callable stub so the import
 // resolves cleanly.
-func Areion256Permutex4(x0, x1 *aes.Block4) {
+func Areion256Permutex4(x0, x1 *areion.Block4) {
 	panic("areionasm: Areion256Permutex4 unavailable on this build")
 }
 
-func Areion256Permute2x4(x0, x1 *aes.Block4) {
+func Areion256Permute2x4(x0, x1 *areion.Block4) {
 	panic("areionasm: Areion256Permute2x4 unavailable on this build")
 }
 
-func Areion256Permutex4Avx2(x0, x1 *aes.Block4) {
+func Areion256Permutex4Avx2(x0, x1 *areion.Block4) {
 	panic("areionasm: Areion256Permutex4Avx2 unavailable on this build")
 }
 
-func Areion256Permute2x4Avx2(x0, x1 *aes.Block4) {
+func Areion256Permute2x4Avx2(x0, x1 *areion.Block4) {
 	panic("areionasm: Areion256Permute2x4Avx2 unavailable on this build")
 }
 
-func Areion256Permutex4AesNi(x0, x1 *aes.Block4) {
+func Areion256Permutex4Vex(x0, x1 *areion.Block4) {
+	panic("areionasm: Areion256Permutex4Vex unavailable on this build")
+}
+
+func Areion256Permute2x4Vex(x0, x1 *areion.Block4) {
+	panic("areionasm: Areion256Permute2x4Vex unavailable on this build")
+}
+
+func Areion256Permutex4AesNi(x0, x1 *areion.Block4) {
 	panic("areionasm: Areion256Permutex4AesNi unavailable on this build")
 }
 
-func Areion256Permute2x4AesNi(x0, x1 *aes.Block4) {
+func Areion256Permute2x4AesNi(x0, x1 *areion.Block4) {
 	panic("areionasm: Areion256Permute2x4AesNi unavailable on this build")
 }
 
-func Areion512Permutex4Avx2(x0, x1, x2, x3 *aes.Block4) {
+func Areion512Permutex4Avx2(x0, x1, x2, x3 *areion.Block4) {
 	panic("areionasm: Areion512Permutex4Avx2 unavailable on this build")
 }
 
-func Areion512Permute2x4Avx2(x0, x1, x2, x3 *aes.Block4) {
+func Areion512Permute2x4Avx2(x0, x1, x2, x3 *areion.Block4) {
 	panic("areionasm: Areion512Permute2x4Avx2 unavailable on this build")
 }
 
-func Areion512Permutex4AesNi(x0, x1, x2, x3 *aes.Block4) {
+func Areion512Permutex4Vex(x0, x1, x2, x3 *areion.Block4) {
+	panic("areionasm: Areion512Permutex4Vex unavailable on this build")
+}
+
+func Areion512Permute2x4Vex(x0, x1, x2, x3 *areion.Block4) {
+	panic("areionasm: Areion512Permute2x4Vex unavailable on this build")
+}
+
+func Areion512Permutex4AesNi(x0, x1, x2, x3 *areion.Block4) {
 	panic("areionasm: Areion512Permutex4AesNi unavailable on this build")
 }
 
-func Areion512Permute2x4AesNi(x0, x1, x2, x3 *aes.Block4) {
+func Areion512Permute2x4AesNi(x0, x1, x2, x3 *areion.Block4) {
 	panic("areionasm: Areion512Permute2x4AesNi unavailable on this build")
 }
 
-func Areion512Permutex4(x0, x1, x2, x3 *aes.Block4) {
+func Areion512Permutex4(x0, x1, x2, x3 *areion.Block4) {
 	panic("areionasm: Areion512Permutex4 unavailable on this build")
 }
 
-func Areion512Permute2x4(x0, x1, x2, x3 *aes.Block4) {
+func Areion512Permute2x4(x0, x1, x2, x3 *areion.Block4) {
 	panic("areionasm: Areion512Permute2x4 unavailable on this build")
+}
+
+func Areion256SoEMPermutex4NEON(s1b0, s1b1, s2b0, s2b1 *areion.Block4) {
+	panic("areionasm: Areion256SoEMPermutex4NEON unavailable on this build")
+}
+
+func Areion512SoEMPermutex4NEON(a1, b1, c1, d1, a2, b2, c2, d2 *areion.Block4) {
+	panic("areionasm: Areion512SoEMPermutex4NEON unavailable on this build")
 }

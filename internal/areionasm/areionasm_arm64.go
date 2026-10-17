@@ -21,7 +21,7 @@
 package areionasm
 
 import (
-	"github.com/everanium/itb/third/goaes"
+	"github.com/everanium/areion"
 
 	"github.com/everanium/itb/internal/cpuid"
 )
@@ -36,6 +36,8 @@ var (
 	HasVAESAVX512 = false
 	// HasVAESAVX2NoAVX512 is always false on arm64 builds.
 	HasVAESAVX2NoAVX512 = false
+	// HasAVXAESNIBatched is always false on arm64 builds.
+	HasAVXAESNIBatched = false
 	// HasAESNIBatched is always false on arm64 builds.
 	HasAESNIBatched = false
 	// HasARMAESBatched is true when the runtime ARM CPU exposes the
@@ -51,21 +53,21 @@ var (
 // for P2. The exported wrappers below bind the table.
 
 //go:noescape
-func areion256Permutex4RC(x0, x1 *aes.Block4, rc *[15][16]byte)
+func areion256Permutex4RC(x0, x1 *areion.Block4, rc *[15][16]byte)
 
 //go:noescape
-func areion512Permutex4RC(x0, x1, x2, x3 *aes.Block4, rc *[15][16]byte)
+func areion512Permutex4RC(x0, x1, x2, x3 *areion.Block4, rc *[15][16]byte)
 
 // Areion256Permutex4 applies the 10-round Areion256 permutation P1 to
 // four independent states packed in SoA layout: `*x0` holds the four
 // lanes' first 16-byte AES blocks (Block4 = 64 bytes), `*x1` holds the
 // second 16-byte blocks. Implemented in `areion_arm64.s` using ARM
 // Crypto Extension (AESE / AESMC) instructions on NEON registers.
-func Areion256Permutex4(x0, x1 *aes.Block4) { areion256Permutex4RC(x0, x1, &AreionRCTable) }
+func Areion256Permutex4(x0, x1 *areion.Block4) { areion256Permutex4RC(x0, x1, &AreionRCTable) }
 
 // Areion256Permute2x4 is Areion256Permutex4 under the second constant
 // table: the P2 permutation of SoEM22.
-func Areion256Permute2x4(x0, x1 *aes.Block4) { areion256Permutex4RC(x0, x1, &AreionRCTable2) }
+func Areion256Permute2x4(x0, x1 *areion.Block4) { areion256Permutex4RC(x0, x1, &AreionRCTable2) }
 
 // Areion512Permutex4 applies the 15-round Areion512 permutation P1 to
 // four independent states packed in SoA layout: each `*xN` holds the
@@ -73,58 +75,95 @@ func Areion256Permute2x4(x0, x1 *aes.Block4) { areion256Permutex4RC(x0, x1, &Are
 // final cyclic state rotation `(x0,x1,x2,x3) → (x3,x0,x1,x2)`
 // documented in the Areion paper / `areion512PermuteSoftwareRC`.
 // Implemented in `areion_arm64.s`.
-func Areion512Permutex4(x0, x1, x2, x3 *aes.Block4) {
+func Areion512Permutex4(x0, x1, x2, x3 *areion.Block4) {
 	areion512Permutex4RC(x0, x1, x2, x3, &AreionRCTable)
 }
 
 // Areion512Permute2x4 is Areion512Permutex4 under the second constant
 // table: the P2 permutation of SoEM22.
-func Areion512Permute2x4(x0, x1, x2, x3 *aes.Block4) {
+func Areion512Permute2x4(x0, x1, x2, x3 *areion.Block4) {
 	areion512Permutex4RC(x0, x1, x2, x3, &AreionRCTable2)
 }
 
-// The Avx2 and AesNi entry points are amd64-only; on arm64 they remain
+// Areion256SoEMPermutex4NEON runs the two permutations P1 and P2 of the
+// Areion-SoEM-256 4-way batched PRF interleaved in a single NEON + AES
+// Crypto Extension kernel, XORs the outputs in registers, and writes the
+// result back into (s1b0, s1b1).
+//
+//go:noescape
+func Areion256SoEMPermutex4NEON(s1b0, s1b1, s2b0, s2b1 *areion.Block4)
+
+// Areion512SoEMPermutex4NEON runs the two permutations P1 and P2 of the
+// Areion-SoEM-512 4-way batched PRF interleaved in two 2-lane passes in a
+// single NEON + AES Crypto Extension kernel, folds the cyclic state
+// rotation and P1 ⊕ P2 output XOR in registers, and writes the result
+// back into (a1, b1, c1, d1).
+//
+//go:noescape
+func Areion512SoEMPermutex4NEON(a1, b1, c1, d1, a2, b2, c2, d2 *areion.Block4)
+
+// The Avx2, Vex and AesNi entry points are amd64-only; on arm64 they remain
 // unreachable panic stubs so the cross-platform import of this package
 // resolves cleanly. The arm64 dispatcher in the parent itb package never
-// reaches these symbols (it routes via `Areion{256,512}Permute{,2}x4`
-// directly).
+// reaches these symbols (it routes via `Areion{256,512}SoEMPermutex4NEON`
+// and `Areion{256,512}Permute{,2}x4` directly).
 
 // Areion256Permutex4Avx2 is unavailable on arm64 builds.
-func Areion256Permutex4Avx2(x0, x1 *aes.Block4) {
+func Areion256Permutex4Avx2(x0, x1 *areion.Block4) {
 	panic("areionasm: Areion256Permutex4Avx2 unavailable on arm64 build")
 }
 
 // Areion256Permute2x4Avx2 is unavailable on arm64 builds.
-func Areion256Permute2x4Avx2(x0, x1 *aes.Block4) {
+func Areion256Permute2x4Avx2(x0, x1 *areion.Block4) {
 	panic("areionasm: Areion256Permute2x4Avx2 unavailable on arm64 build")
 }
 
 // Areion512Permutex4Avx2 is unavailable on arm64 builds.
-func Areion512Permutex4Avx2(x0, x1, x2, x3 *aes.Block4) {
+func Areion512Permutex4Avx2(x0, x1, x2, x3 *areion.Block4) {
 	panic("areionasm: Areion512Permutex4Avx2 unavailable on arm64 build")
 }
 
 // Areion512Permute2x4Avx2 is unavailable on arm64 builds.
-func Areion512Permute2x4Avx2(x0, x1, x2, x3 *aes.Block4) {
+func Areion512Permute2x4Avx2(x0, x1, x2, x3 *areion.Block4) {
 	panic("areionasm: Areion512Permute2x4Avx2 unavailable on arm64 build")
 }
 
+// Areion256Permutex4Vex is unavailable on arm64 builds.
+func Areion256Permutex4Vex(x0, x1 *areion.Block4) {
+	panic("areionasm: Areion256Permutex4Vex unavailable on arm64 build")
+}
+
+// Areion256Permute2x4Vex is unavailable on arm64 builds.
+func Areion256Permute2x4Vex(x0, x1 *areion.Block4) {
+	panic("areionasm: Areion256Permute2x4Vex unavailable on arm64 build")
+}
+
+// Areion512Permutex4Vex is unavailable on arm64 builds.
+func Areion512Permutex4Vex(x0, x1, x2, x3 *areion.Block4) {
+	panic("areionasm: Areion512Permutex4Vex unavailable on arm64 build")
+}
+
+// Areion512Permute2x4Vex is unavailable on arm64 builds.
+func Areion512Permute2x4Vex(x0, x1, x2, x3 *areion.Block4) {
+	panic("areionasm: Areion512Permute2x4Vex unavailable on arm64 build")
+}
+
 // Areion256Permutex4AesNi is unavailable on arm64 builds.
-func Areion256Permutex4AesNi(x0, x1 *aes.Block4) {
+func Areion256Permutex4AesNi(x0, x1 *areion.Block4) {
 	panic("areionasm: Areion256Permutex4AesNi unavailable on arm64 build")
 }
 
 // Areion256Permute2x4AesNi is unavailable on arm64 builds.
-func Areion256Permute2x4AesNi(x0, x1 *aes.Block4) {
+func Areion256Permute2x4AesNi(x0, x1 *areion.Block4) {
 	panic("areionasm: Areion256Permute2x4AesNi unavailable on arm64 build")
 }
 
 // Areion512Permutex4AesNi is unavailable on arm64 builds.
-func Areion512Permutex4AesNi(x0, x1, x2, x3 *aes.Block4) {
+func Areion512Permutex4AesNi(x0, x1, x2, x3 *areion.Block4) {
 	panic("areionasm: Areion512Permutex4AesNi unavailable on arm64 build")
 }
 
 // Areion512Permute2x4AesNi is unavailable on arm64 builds.
-func Areion512Permute2x4AesNi(x0, x1, x2, x3 *aes.Block4) {
+func Areion512Permute2x4AesNi(x0, x1, x2, x3 *areion.Block4) {
 	panic("areionasm: Areion512Permute2x4AesNi unavailable on arm64 build")
 }

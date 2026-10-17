@@ -7,10 +7,12 @@ package areionasm
 var (
 	FusedHasVAESAVX512 = false
 	FusedHasVAESAVX2   = false
+	FusedHasAVXAESNI   = false
 	FusedHasAESNI      = false
 	FusedHasARMAES     = false
 	HasVAESAVX512X16   = false
 	HasVAESAVX2X16     = false
+	HasAVXAESNIX16     = false
 	HasAESNIX16        = false
 	HasARMAESX16       = false
 )

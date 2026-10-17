@@ -183,3 +183,24 @@ let ``register copy keeps the drbg`` () =
     use receiver = unwrap (Pipeline.load (unwrap (Pipeline.save sender)))
     let wire = unwrap (Pipeline.encryptMessage sender plain)
     Assert.Equal<byte[]>(plain, unwrap (Pipeline.decryptMessage receiver wire))
+
+[<Fact>]
+let ``initKeys determinism and validation`` () =
+    let masters =
+        Array.init 8 (fun i -> Array.create 32 (byte (0x11 * (i + 1))))
+    use p1 = unwrap (Pipeline.initKeys "singlemsg-triple-mac-v1" Opts.empty masters)
+    use p2 = unwrap (Pipeline.initKeys "singlemsg-triple-mac-v1" Opts.empty masters)
+    Assert.Equal<byte[]>(unwrap (Pipeline.save p1), unwrap (Pipeline.save p2))
+    let wire = unwrap (Pipeline.encryptMessage p1 plain)
+    Assert.Equal<byte[]>(plain, unwrap (Pipeline.decryptMessage p2 wire))
+
+    let dup = Array.copy masters
+    dup[1] <- dup[0]
+    let errDup = unwrapError (Pipeline.initKeys "singlemsg-triple-mac-v1" Opts.empty dup)
+    Assert.Equal(Status.BadInput, errDup.Status)
+
+    let shortKeys = Array.copy masters
+    shortKeys[0] <- Array.create 8 0x11uy
+    let errShort = unwrapError (Pipeline.initKeys "singlemsg-triple-mac-v1" Opts.empty shortKeys)
+    Assert.Equal(Status.BadInput, errShort.Status)
+

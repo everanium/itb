@@ -29,7 +29,10 @@
 // user-facing surface. One
 // [github.com/everanium/itb/triple.Init] call allocates the 8 ITB
 // seeds, the optional parallax + wrapper layers, and the optional
-// MAC, and exposes the Single Message and Streaming shapes (AEAD and
+// MAC from crypto/rand (or [github.com/everanium/itb/triple.InitKeys]
+// derives them deterministically from eight independent caller-supplied
+// master keys — never derived from a single KDF parent key), and
+// exposes the Single Message and Streaming shapes (AEAD and
 // Non-AEAD) plus the [github.com/everanium/itb/triple.Load] /
 // [github.com/everanium/itb/triple.Pipeline.Rekey] /
 // [github.com/everanium/itb/triple.Pipeline.Close] lifecycle. See the

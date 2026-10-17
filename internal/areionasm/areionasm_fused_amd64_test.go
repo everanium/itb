@@ -17,12 +17,14 @@ type fusedTier struct {
 	skipMsg string
 	zmm     bool
 	ymm     bool
+	vex     bool
 	xmm     bool
 }
 
 func amd64FusedTiers() []fusedTier {
 	return []fusedTier{
 		{name: "aesni", ok: cpuid.AESNI, skipMsg: "requires AES-NI", xmm: true},
+		{name: "vex", ok: cpuid.AESNI && cpuid.AVX2, skipMsg: "requires AVX+AES-NI", vex: true},
 		{name: "vaesavx2", ok: cpuid.VAESYMM, skipMsg: "requires VAES+AVX2", ymm: true},
 		{name: "avx512", ok: cpuid.VAESZMM, skipMsg: "requires VAES+AVX-512", zmm: true},
 	}
@@ -30,17 +32,17 @@ func amd64FusedTiers() []fusedTier {
 
 func saveFusedFlags(t *testing.T) {
 	t.Helper()
-	a, b, c := FusedHasVAESAVX512, FusedHasVAESAVX2, FusedHasAESNI
-	x, y, z := HasVAESAVX512X16, HasVAESAVX2X16, HasAESNIX16
+	a, b, v, c := FusedHasVAESAVX512, FusedHasVAESAVX2, FusedHasAVXAESNI, FusedHasAESNI
+	x, y, w, z := HasVAESAVX512X16, HasVAESAVX2X16, HasAVXAESNIX16, HasAESNIX16
 	t.Cleanup(func() {
-		FusedHasVAESAVX512, FusedHasVAESAVX2, FusedHasAESNI = a, b, c
-		HasVAESAVX512X16, HasVAESAVX2X16, HasAESNIX16 = x, y, z
+		FusedHasVAESAVX512, FusedHasVAESAVX2, FusedHasAVXAESNI, FusedHasAESNI = a, b, v, c
+		HasVAESAVX512X16, HasVAESAVX2X16, HasAVXAESNIX16, HasAESNIX16 = x, y, w, z
 	})
 }
 
 func setTier(tier fusedTier) {
-	FusedHasVAESAVX512, FusedHasVAESAVX2, FusedHasAESNI = tier.zmm, tier.ymm, tier.xmm
-	HasVAESAVX512X16, HasVAESAVX2X16, HasAESNIX16 = tier.zmm, tier.ymm, tier.xmm
+	FusedHasVAESAVX512, FusedHasVAESAVX2, FusedHasAVXAESNI, FusedHasAESNI = tier.zmm, tier.ymm, tier.vex, tier.xmm
+	HasVAESAVX512X16, HasVAESAVX2X16, HasAVXAESNIX16, HasAESNIX16 = tier.zmm, tier.ymm, tier.vex, tier.xmm
 }
 
 func wrap4_256(f func(*[32]byte, *uint64, int, *[4]*byte, *[4][4]uint64)) x4fn256 {
@@ -59,15 +61,19 @@ func wrap1_512(f func(*[64]byte, *uint64, int, *byte, *[8]uint64)) x1fn512 {
 var kernels256x4 = map[string]map[int]x4fn256{
 	"avx512":   {13: wrap4_256(areion256FusedChain13x4Avx512Asm), 20: wrap4_256(areion256FusedChain20x4Avx512Asm), 36: wrap4_256(areion256FusedChain36x4Avx512Asm), 68: wrap4_256(areion256FusedChain68x4Avx512Asm)},
 	"vaesavx2": {13: wrap4_256(areion256FusedChain13x4VaesAvx2Asm), 20: wrap4_256(areion256FusedChain20x4VaesAvx2Asm), 36: wrap4_256(areion256FusedChain36x4VaesAvx2Asm), 68: wrap4_256(areion256FusedChain68x4VaesAvx2Asm)},
+	"vex":      {13: wrap4_256(areion256FusedChain13x4VexAsm), 20: wrap4_256(areion256FusedChain20x4VexAsm), 36: wrap4_256(areion256FusedChain36x4VexAsm), 68: wrap4_256(areion256FusedChain68x4VexAsm)},
 	"aesni":    {13: wrap4_256(areion256FusedChain13x4AesNiAsm), 20: wrap4_256(areion256FusedChain20x4AesNiAsm), 36: wrap4_256(areion256FusedChain36x4AesNiAsm), 68: wrap4_256(areion256FusedChain68x4AesNiAsm)},
 }
 
 var kernels512x4 = map[string]map[int]x4fn512{
 	"avx512":   {13: wrap4_512(areion512FusedChain13x4Avx512Asm), 20: wrap4_512(areion512FusedChain20x4Avx512Asm), 36: wrap4_512(areion512FusedChain36x4Avx512Asm), 68: wrap4_512(areion512FusedChain68x4Avx512Asm)},
 	"vaesavx2": {13: wrap4_512(areion512FusedChain13x4VaesAvx2Asm), 20: wrap4_512(areion512FusedChain20x4VaesAvx2Asm), 36: wrap4_512(areion512FusedChain36x4VaesAvx2Asm), 68: wrap4_512(areion512FusedChain68x4VaesAvx2Asm)},
+	"vex":      {13: wrap4_512(areion512FusedChain13x4VexAsm), 20: wrap4_512(areion512FusedChain20x4VexAsm), 36: wrap4_512(areion512FusedChain36x4VexAsm), 68: wrap4_512(areion512FusedChain68x4VexAsm)},
 	"aesni":    {13: wrap4_512(areion512FusedChain13x4AesNiAsm), 20: wrap4_512(areion512FusedChain20x4AesNiAsm), 36: wrap4_512(areion512FusedChain36x4AesNiAsm), 68: wrap4_512(areion512FusedChain68x4AesNiAsm)},
 }
 
+var kernels256x1Vex = map[int]x1fn256{13: wrap1_256(areion256FusedChain13x1VexAsm), 20: wrap1_256(areion256FusedChain20x1VexAsm), 36: wrap1_256(areion256FusedChain36x1VexAsm), 68: wrap1_256(areion256FusedChain68x1VexAsm)}
+var kernels512x1Vex = map[int]x1fn512{13: wrap1_512(areion512FusedChain13x1VexAsm), 20: wrap1_512(areion512FusedChain20x1VexAsm), 36: wrap1_512(areion512FusedChain36x1VexAsm), 68: wrap1_512(areion512FusedChain68x1VexAsm)}
 var kernels256x1 = map[int]x1fn256{13: wrap1_256(areion256FusedChain13x1AesNiAsm), 20: wrap1_256(areion256FusedChain20x1AesNiAsm), 36: wrap1_256(areion256FusedChain36x1AesNiAsm), 68: wrap1_256(areion256FusedChain68x1AesNiAsm)}
 var kernels512x1 = map[int]x1fn512{13: wrap1_512(areion512FusedChain13x1AesNiAsm), 20: wrap1_512(areion512FusedChain20x1AesNiAsm), 36: wrap1_512(areion512FusedChain36x1AesNiAsm), 68: wrap1_512(areion512FusedChain68x1AesNiAsm)}
 
@@ -82,6 +88,12 @@ func TestFusedKernelParityAmd64(t *testing.T) {
 			for _, n := range Shapes {
 				t.Run("256x4/"+shapeName(n), func(t *testing.T) { checkX4_256(t, tier.name, n, kernels256x4[tier.name][n]) })
 				t.Run("512x4/"+shapeName(n), func(t *testing.T) { checkX4_512(t, tier.name, n, kernels512x4[tier.name][n]) })
+			}
+			if tier.vex {
+				for _, n := range Shapes {
+					t.Run("256x1/"+shapeName(n), func(t *testing.T) { checkX1_256(t, tier.name, n, kernels256x1Vex[n]) })
+					t.Run("512x1/"+shapeName(n), func(t *testing.T) { checkX1_512(t, tier.name, n, kernels512x1Vex[n]) })
+				}
 			}
 			if tier.xmm {
 				for _, n := range Shapes {
@@ -160,11 +172,11 @@ func TestFusedFlagsExclusiveAmd64(t *testing.T) {
 		}
 		return n
 	}
-	if count(FusedHasVAESAVX512, FusedHasVAESAVX2, FusedHasAESNI) > 1 {
-		t.Fatalf("fused flags not exclusive: zmm=%v ymm=%v xmm=%v", FusedHasVAESAVX512, FusedHasVAESAVX2, FusedHasAESNI)
+	if count(FusedHasVAESAVX512, FusedHasVAESAVX2, FusedHasAVXAESNI, FusedHasAESNI) > 1 {
+		t.Fatalf("fused flags not exclusive: zmm=%v ymm=%v vex=%v xmm=%v", FusedHasVAESAVX512, FusedHasVAESAVX2, FusedHasAVXAESNI, FusedHasAESNI)
 	}
-	if count(HasVAESAVX512X16, HasVAESAVX2X16, HasAESNIX16) > 1 {
-		t.Fatalf("fill flags not exclusive: zmm=%v ymm=%v xmm=%v", HasVAESAVX512X16, HasVAESAVX2X16, HasAESNIX16)
+	if count(HasVAESAVX512X16, HasVAESAVX2X16, HasAVXAESNIX16, HasAESNIX16) > 1 {
+		t.Fatalf("fill flags not exclusive: zmm=%v ymm=%v vex=%v xmm=%v", HasVAESAVX512X16, HasVAESAVX2X16, HasAVXAESNIX16, HasAESNIX16)
 	}
 }
 
@@ -204,8 +216,8 @@ func BenchmarkFusedTier(b *testing.B) {
 // fill tier.
 func BenchmarkFill(b *testing.B) {
 	saveFlags := func() func() {
-		x, y, z := HasVAESAVX512X16, HasVAESAVX2X16, HasAESNIX16
-		return func() { HasVAESAVX512X16, HasVAESAVX2X16, HasAESNIX16 = x, y, z }
+		x, y, w, z := HasVAESAVX512X16, HasVAESAVX2X16, HasAVXAESNIX16, HasAESNIX16
+		return func() { HasVAESAVX512X16, HasVAESAVX2X16, HasAVXAESNIX16, HasAESNIX16 = x, y, w, z }
 	}
 	restore := saveFlags()
 	defer restore()
@@ -213,7 +225,7 @@ func BenchmarkFill(b *testing.B) {
 		if !tier.ok {
 			continue
 		}
-		HasVAESAVX512X16, HasVAESAVX2X16, HasAESNIX16 = tier.zmm, tier.ymm, tier.xmm
+		HasVAESAVX512X16, HasVAESAVX2X16, HasAVXAESNIX16, HasAESNIX16 = tier.zmm, tier.ymm, tier.vex, tier.xmm
 		for _, g := range []int{3, 5, 9} {
 			key256, key512 := randomKey256(), randomKey512()
 			c256, c512 := randomWords(4*g), randomWords(8*g)
@@ -245,6 +257,9 @@ func TestFusedKernelsLeaveNoSecretInFrame(t *testing.T) {
 			continue
 		}
 		checkAreionResidue(t, tier.name, kernels256x4[tier.name], kernels512x4[tier.name], nil, nil)
+	}
+	if cpuid.AESNI && cpuid.AVX2 {
+		checkAreionResidue(t, "vex", nil, nil, kernels256x1Vex, kernels512x1Vex)
 	}
 	if cpuid.AESNI {
 		checkAreionResidue(t, "aesni", nil, nil, kernels256x1, kernels512x1)

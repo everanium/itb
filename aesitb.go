@@ -36,7 +36,7 @@ import (
 	"encoding/binary"
 	"runtime"
 
-	aes "github.com/everanium/itb/third/goaes"
+	"github.com/everanium/areion"
 )
 
 // aesITBRoundConstants are eight pairwise-distinct Nothing-Up-My-Sleeve
@@ -91,7 +91,7 @@ func aesITB128GenericHash(fixedKey [16]byte) HashFunc128 {
 			for i := 0; i < 16; i++ {
 				state[i] ^= data[off+i]
 			}
-			aes.RoundHW((*aes.Block)(&state), (*aes.Block)(&aesITBRoundConstants[blk&7]))
+			areion.AES128Round((*areion.Block)(&state), (*areion.Block)(&aesITBRoundConstants[blk&7]))
 			blk++
 		}
 		rem := n - full
@@ -102,11 +102,11 @@ func aesITB128GenericHash(fixedKey [16]byte) HashFunc128 {
 		for i := rem; i < 16; i++ {
 			state[i] ^= pad
 		}
-		aes.RoundHW((*aes.Block)(&state), (*aes.Block)(&aesITBRoundConstants[blk&7]))
+		areion.AES128Round((*areion.Block)(&state), (*areion.Block)(&aesITBRoundConstants[blk&7]))
 		blk++
 
-		aes.RoundHW((*aes.Block)(&state), (*aes.Block)(&aesITBRoundConstants[blk&7]))
-		aes.RoundHW((*aes.Block)(&state), (*aes.Block)(&aesITBRoundConstants[(blk+1)&7]))
+		areion.AES128Round((*areion.Block)(&state), (*areion.Block)(&aesITBRoundConstants[blk&7]))
+		areion.AES128Round((*areion.Block)(&state), (*areion.Block)(&aesITBRoundConstants[(blk+1)&7]))
 		lo := binary.LittleEndian.Uint64(state[:8])
 		hi := binary.LittleEndian.Uint64(state[8:])
 		clear(state[:])

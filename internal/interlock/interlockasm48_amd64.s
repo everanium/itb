@@ -28,6 +28,9 @@ TEXT ·Chunk48Lock(SB),NOSPLIT,$0-56
 	MOVQ m2+24(FP), BX
 	PEXTQ BX, AX, CX
 	MOVQ CX, l2+48(FP)
+	XORQ AX, AX
+	XORQ BX, BX
+	XORQ CX, CX
 	RET
 
 // func Unchunk48Lock(l0, l1, l2, m0, m1, m2 uint64) (x uint64)
@@ -58,6 +61,10 @@ TEXT ·Unchunk48Lock(SB),NOSPLIT,$0-56
 	PDEPQ BX, AX, R9
 	ORQ R9, R8
 	MOVQ R8, x+48(FP)
+	XORQ AX, AX
+	XORQ BX, BX
+	XORQ R8, R8
+	XORQ R9, R9
 	RET
 
 // func rankToMaskTripleUnrank48AVX512(idx0 *[8]uint64, idx1 *[8]uint32,
@@ -90,10 +97,11 @@ TEXT ·Unchunk48Lock(SB),NOSPLIT,$0-56
 // position bit, the row address) are maintained by EVEX shifts and
 // scalar pointer arithmetic instead.
 //
-// Frame: 4 pointer args = 32 bytes; 128 bytes of locals spill the
-// remaining / m1Local lane vectors for the scalar-PDEPQ remap tail.
+// Frame: 4 pointer args = 32 bytes, no locals; m1Local and remaining
+// are parked in out[1] and out[2] and overwritten in place by the
+// scalar-PDEPQ remap tail.
 //   idx0 +0(FP)  idx1 +8(FP)  crow +16(FP)  out +24(FP)
-TEXT ·rankToMaskTripleUnrank48AVX512(SB), NOSPLIT, $128-32
+TEXT ·rankToMaskTripleUnrank48AVX512(SB), NOSPLIT, $0-32
 	MOVQ idx0+0(FP), AX
 	MOVQ idx1+8(FP), BX
 	MOVQ crow+16(FP), R14
@@ -120,9 +128,9 @@ TEXT ·rankToMaskTripleUnrank48AVX512(SB), NOSPLIT, $128-32
 	// finish positions 15..0. Total trip count 48 instead of 48 + 32.
 	//
 	// Register split: m0 state in Z0/Z1/Z2 (rank/krem/mask), row window
-	// Z3/Z4 (VPERMT2Q leaves c in Z3), bit in Z5, predicates K2/K3,
+	// Z3/Z4 (VPERMT2Q leaves c in Z3), bit in Z5, predicate K2,
 	// row pointer R12; m1 state in Z16/Z17/Z18, rows Z20/Z21 (c in
-	// Z20), bit in Z19, predicates K5/K6, row pointer R13.
+	// Z20), bit in Z19, predicate K5, row pointer R13.
 	VMOVDQU64 (AX), Z0              // Z0 = idx0[0..7]
 	VPMOVZXDQ (BX), Z16             // Z16 = idx1[0..7] zero-extended to qwords
 	VMOVDQA64 Z28, Z1               // Z1 = m0 krem = 16
@@ -144,14 +152,14 @@ jointLoop:
 	VPERMT2Q Z21, Z17, Z20          // m1: c = C(p1, krem)
 	VPTESTMQ Z1, Z1, K2             // m0: krem != 0
 	VPTESTMQ Z17, Z17, K5           // m1: krem != 0
-	VPCMPUQ $5, Z3, Z0, K2, K3      // m0: pick = (rank >= c) & (krem != 0)
-	VPCMPUQ $5, Z20, Z16, K5, K6    // m1: pick
-	VPORQ Z5, Z2, K3, Z2            // m0: mask |= bit
-	VPORQ Z19, Z18, K6, Z18         // m1: mask |= bit
-	VPSUBQ Z3, Z0, K3, Z0           // m0: rank -= c
-	VPSUBQ Z20, Z16, K6, Z16        // m1: rank -= c
-	VPSUBQ Z6, Z1, K3, Z1           // m0: krem -= 1
-	VPSUBQ Z6, Z17, K6, Z17         // m1: krem -= 1
+	VPCMPUQ $5, Z3, Z0, K2, K2      // m0: pick = (rank >= c) & (krem != 0)
+	VPCMPUQ $5, Z20, Z16, K5, K5    // m1: pick
+	VPORQ Z5, Z2, K2, Z2            // m0: mask |= bit
+	VPORQ Z19, Z18, K5, Z18         // m1: mask |= bit
+	VPSUBQ Z3, Z0, K2, Z0           // m0: rank -= c
+	VPSUBQ Z20, Z16, K5, Z16        // m1: rank -= c
+	VPSUBQ Z6, Z1, K2, Z1           // m0: krem -= 1
+	VPSUBQ Z6, Z17, K5, Z17         // m1: krem -= 1
 	VPSRLQ $1, Z5, Z5               // m0: bit >>= 1
 	VPSRLQ $1, Z19, Z19             // m1: bit >>= 1
 	SUBQ $128, R12
@@ -159,7 +167,6 @@ jointLoop:
 	SUBQ $1, R10
 	JGE jointLoop
 
-	VMOVDQA64 Z18, Z11              // Z11 = m1Local (m1 unrank complete)
 	MOVQ $15, R10                   // m0 solo positions 15..0
 
 m0Solo:
@@ -167,16 +174,14 @@ m0Solo:
 	VMOVDQU64 64(R12), Z4
 	VPERMT2Q Z4, Z1, Z3
 	VPTESTMQ Z1, Z1, K2
-	VPCMPUQ $5, Z3, Z0, K2, K3
-	VPORQ Z5, Z2, K3, Z2
-	VPSUBQ Z3, Z0, K3, Z0
-	VPSUBQ Z6, Z1, K3, Z1
+	VPCMPUQ $5, Z3, Z0, K2, K2
+	VPORQ Z5, Z2, K2, Z2
+	VPSUBQ Z3, Z0, K2, Z0
+	VPSUBQ Z6, Z1, K2, Z1
 	VPSRLQ $1, Z5, Z5
 	SUBQ $128, R12
 	SUBQ $1, R10
 	JGE m0Solo
-
-	VMOVDQA64 Z2, Z10               // Z10 = m0
 
 	// ---- remap: m1 = PDEP(m1Local, remaining) — 8 scalar PDEPQ ----
 	//
@@ -184,9 +189,10 @@ m0Solo:
 	// leaves free is exactly BMI2 PDEP with mask = remaining: bit t of
 	// m1Local lands on the t-th set bit of remaining (ascending), the
 	// same walk a bit-serial formulation performs across all 48
-	// positions. The 8 qword lanes are spilled to the stack and each
-	// runs one scalar PDEPQ; m2 = remaining ^ m1 (m1 is a subset of
-	// remaining by construction, so the XOR clears exactly m1's bits).
+	// positions. The 8 qword lanes are parked in out[1] (m1Local) and
+	// out[2] (remaining) and each runs one scalar PDEPQ in place;
+	// m2 = remaining ^ m1 (m1 is a subset of remaining by construction,
+	// so the XOR clears exactly m1's bits).
 	//
 	// Constant-time: PDEP is data-oblivious (fixed latency) on Intel
 	// Haswell+ and AMD Zen 3+ — the microarchitectural floor already
@@ -196,68 +202,88 @@ m0Solo:
 	// relative to the rest of this path.
 	VPTERNLOGQ $0xFF, Z27, Z27, Z27 // Z27 = all-ones
 	VPSRLQ $16, Z27, Z27            // Z27 = 0xFFFF_FFFF_FFFF (48-bit domain)
-	VPANDNQ Z27, Z10, Z0            // Z0 = remaining = (~m0) & domain
-	VMOVDQU64 Z10, (DI)             // out[0] = m0
-	VMOVDQU64 Z0, rem-128(SP)       // spill remaining lanes 0..7
-	VMOVDQU64 Z11, ml-64(SP)        // spill m1Local lanes 0..7
+	VPANDNQ Z27, Z2, Z0             // Z0 = remaining = (~m0) & domain
+	VMOVDQU64 Z2, (DI)              // out[0] = m0
+	VMOVDQU64 Z18, 64(DI)           // park m1Local lanes 0..7 in out[1]
+	VMOVDQU64 Z0, 128(DI)           // park remaining lanes 0..7 in out[2]
 
 	// Per lane j: R8 = remaining[j], R9 = m1Local[j];
 	// R10 = m1 = PDEP(m1Local, remaining); R8 ^= R10 -> m2.
-	MOVQ rem-128(SP), R8
-	MOVQ ml-64(SP), R9
+	MOVQ 128(DI), R8
+	MOVQ 64(DI), R9
 	PDEPQ R8, R9, R10
 	XORQ R10, R8
 	MOVQ R10, 64(DI)                // out[1][0] = m1
 	MOVQ R8, 128(DI)                // out[2][0] = m2
 
-	MOVQ rem-120(SP), R8
-	MOVQ ml-56(SP), R9
+	MOVQ 136(DI), R8
+	MOVQ 72(DI), R9
 	PDEPQ R8, R9, R10
 	XORQ R10, R8
 	MOVQ R10, 72(DI)
 	MOVQ R8, 136(DI)
 
-	MOVQ rem-112(SP), R8
-	MOVQ ml-48(SP), R9
+	MOVQ 144(DI), R8
+	MOVQ 80(DI), R9
 	PDEPQ R8, R9, R10
 	XORQ R10, R8
 	MOVQ R10, 80(DI)
 	MOVQ R8, 144(DI)
 
-	MOVQ rem-104(SP), R8
-	MOVQ ml-40(SP), R9
+	MOVQ 152(DI), R8
+	MOVQ 88(DI), R9
 	PDEPQ R8, R9, R10
 	XORQ R10, R8
 	MOVQ R10, 88(DI)
 	MOVQ R8, 152(DI)
 
-	MOVQ rem-96(SP), R8
-	MOVQ ml-32(SP), R9
+	MOVQ 160(DI), R8
+	MOVQ 96(DI), R9
 	PDEPQ R8, R9, R10
 	XORQ R10, R8
 	MOVQ R10, 96(DI)
 	MOVQ R8, 160(DI)
 
-	MOVQ rem-88(SP), R8
-	MOVQ ml-24(SP), R9
+	MOVQ 168(DI), R8
+	MOVQ 104(DI), R9
 	PDEPQ R8, R9, R10
 	XORQ R10, R8
 	MOVQ R10, 104(DI)
 	MOVQ R8, 168(DI)
 
-	MOVQ rem-80(SP), R8
-	MOVQ ml-16(SP), R9
+	MOVQ 176(DI), R8
+	MOVQ 112(DI), R9
 	PDEPQ R8, R9, R10
 	XORQ R10, R8
 	MOVQ R10, 112(DI)
 	MOVQ R8, 176(DI)
 
-	MOVQ rem-72(SP), R8
-	MOVQ ml-8(SP), R9
+	MOVQ 184(DI), R8
+	MOVQ 120(DI), R9
 	PDEPQ R8, R9, R10
 	XORQ R10, R8
 	MOVQ R10, 120(DI)
 	MOVQ R8, 184(DI)
 
+	VPXORD Z0, Z0, Z0
+	VPXORD Z1, Z1, Z1
+	VPXORD Z2, Z2, Z2
+	VPXORD Z3, Z3, Z3
+	VPXORD Z4, Z4, Z4
+	VPXORD Z5, Z5, Z5
+	VPXORD Z6, Z6, Z6
+	VPXORD Z16, Z16, Z16
+	VPXORD Z17, Z17, Z17
+	VPXORD Z18, Z18, Z18
+	VPXORD Z19, Z19, Z19
+	VPXORD Z20, Z20, Z20
+	VPXORD Z21, Z21, Z21
+	VPXORD Z27, Z27, Z27
+	VPXORD Z28, Z28, Z28
+	KXORW K2, K2, K2
+	KXORW K5, K5, K5
+	XORQ R8, R8
+	XORQ R9, R9
+	XORQ R10, R10
 	VZEROUPPER
 	RET

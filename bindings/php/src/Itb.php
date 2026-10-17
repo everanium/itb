@@ -26,7 +26,7 @@ namespace Everanium\Itb3;
 final class Itb
 {
     /** Binding version. */
-    public const VERSION = '0.7.2';
+    public const VERSION = '0.7.3';
 
     /** Floor capacity for blob output buffers (create / save / rekey). */
     public const BLOB_CAP = 65536;
@@ -56,6 +56,83 @@ final class Itb
             }
         );
         return new Pipeline((int) $handle->cdata);
+    }
+
+    /**
+     * Deterministically constructs a Pipeline from eight caller-supplied
+     * master keys (one per canonical seed slot 0..7) against the named
+     * profile and options. The eight master keys must come from
+     * independent entropy or key-agreement sources; never derive all
+     * eight keys from a single secret or a single KDF parent key.
+     *
+     * @param list<string> $masters
+     * @param array<string, bool|int|float|string> $opts
+     */
+    public static function createKeys(string $profile, array $masters, array $opts = []): Pipeline
+    {
+        $ffi = FFIBridge::get();
+        $optsStr = self::buildOpts($opts);
+        $count = \count($masters);
+        $allocCount = \max($count, 1);
+        $lensBuf = $ffi->new("size_t[$allocCount]");
+        $totalLen = 0;
+        $idx = 0;
+        foreach ($masters as $m) {
+            $n = \strlen($m);
+            $lensBuf[$idx] = $n;
+            $totalLen += $n;
+            $idx++;
+        }
+        $allocLen = \max($totalLen, 1);
+        $flatBuf = $ffi->new("char[$allocLen]");
+        if ($totalLen > 0) {
+            $concat = \implode('', $masters);
+            \FFI::memcpy($flatBuf, $concat, $totalLen);
+        }
+        $handle = $ffi->new('uintptr_t');
+        $handlePtr = \FFI::addr($handle);
+        try {
+            FFIBridge::retryOnce(
+                self::BLOB_CAP,
+                static function ($buf, int $cap, $lenPtr) use (
+                    $ffi,
+                    $profile,
+                    $optsStr,
+                    $flatBuf,
+                    $totalLen,
+                    $lensBuf,
+                    $count,
+                    $handlePtr
+                ): int {
+                    return $ffi->ITB_Triple_InitKeys(
+                        $profile,
+                        $optsStr,
+                        $flatBuf,
+                        $totalLen,
+                        $lensBuf,
+                        $count,
+                        $buf,
+                        $cap,
+                        $lenPtr,
+                        $handlePtr
+                    );
+                }
+            );
+        } finally {
+            \FFI::memset($flatBuf, 0, $allocLen);
+        }
+        return new Pipeline((int) $handle->cdata);
+    }
+
+    /**
+     * Alias for createKeys().
+     *
+     * @param list<string> $masters
+     * @param array<string, bool|int|float|string> $opts
+     */
+    public static function initKeys(string $profile, array $masters, array $opts = []): Pipeline
+    {
+        return self::createKeys($profile, $masters, $opts);
     }
 
     /**

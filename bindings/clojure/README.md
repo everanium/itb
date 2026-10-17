@@ -18,7 +18,7 @@ surface. Every hash-name / MAC-name / cipher-name / profile-name
 remains an opaque string passed through to Go for validation; no
 ITB construction logic lives on the JVM side.
 
-The public surface is the `core` namespace (`init` / `load` / `save` /
+The public surface is the `core` namespace (`init` / `init-keys` / `load` / `save` /
 `rekey!` / `destroy!`, Single Message encrypt / decrypt, one-shot
 and incremental stream sessions with `java.io` stream pumps),
 keyword opts maps rendered by the `opts` namespace,
@@ -98,6 +98,8 @@ carries the resolved shape, so `load` takes no opts:
     (with-open [receiver (itb/load (itb/save sender))]
       ...)))
 ```
+
+`itb/init-keys` constructs a `Pipeline` deterministically from eight caller-supplied master keys (one per seed slot `0..7`) via per-slot KDF, so two peers holding the same eight master keys derive identical `Pipeline` instances without exchanging a session blob. The eight master keys must come from independent entropy or key-agreement sources — never derive all eight keys from a single secret or a single KDF parent key.
 
 `rekey!` rotates the parallax + wrapper masters mid-session (the
 eight ITB seeds and MAC key are fixed for the session lifetime by
