@@ -63,7 +63,7 @@ func FusedChain20x8(s *Schedule, components []uint64, dataPtrs *[8]*byte, out *[
 			return
 		}
 	}
-	fusedChainX8ViaX4(FusedChain20x4, s, components, dataPtrs, out)
+	fusedChainX8ViaX4(20, s, components, dataPtrs, out)
 }
 
 // FusedChain36x8 runs the cascade on eight 36-byte lanes.
@@ -85,7 +85,7 @@ func FusedChain36x8(s *Schedule, components []uint64, dataPtrs *[8]*byte, out *[
 			return
 		}
 	}
-	fusedChainX8ViaX4(FusedChain36x4, s, components, dataPtrs, out)
+	fusedChainX8ViaX4(36, s, components, dataPtrs, out)
 }
 
 // FusedChain68x8 runs the cascade on eight 68-byte lanes.
@@ -107,7 +107,7 @@ func FusedChain68x8(s *Schedule, components []uint64, dataPtrs *[8]*byte, out *[
 			return
 		}
 	}
-	fusedChainX8ViaX4(FusedChain68x4, s, components, dataPtrs, out)
+	fusedChainX8ViaX4(68, s, components, dataPtrs, out)
 }
 
 // Eight-lane fused kernels (aescmac_fusedchain128_<shape>x8_<tier>_amd64.s).

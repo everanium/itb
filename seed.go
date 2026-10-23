@@ -48,6 +48,7 @@ func secureWipe(b []byte) {
 func generateRandomBytes(n int) ([]byte, error) {
 	b := make([]byte, n)
 	if _, err := rand.Read(b); err != nil {
+		secureWipe(b)
 		return nil, fmt.Errorf("itb: crypto/rand: %w", err)
 	}
 	return b, nil

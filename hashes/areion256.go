@@ -6,7 +6,13 @@ import (
 	"github.com/everanium/itb"
 	"github.com/everanium/itb/internal/areionasm"
 	"github.com/everanium/itb/internal/forcetier"
+	"github.com/everanium/itb/internal/wipe"
 )
+
+func areion256PairFromKeyPtr(k *[32]byte) (itb.HashFunc256, itb.BatchHashFunc256) {
+	h, b := wipe.MakeAreion256FromKeyPtr(k)
+	return h, b
+}
 
 // Areion256Pair returns a fresh (single, batched) Areion-SoEM-256 hash
 // pair for itb.Seed256 integration. The two arms share the same
@@ -61,19 +67,18 @@ func areion256FusedChainHash(key []byte) (itb.FusedChainHashFunc256, itb.BatchFu
 	if forcetier.ChainHashSeq() {
 		return nil, nil, nil
 	}
-	var k [32]byte
-	copy(k[:], key)
+	k := (*[32]byte)(key)
 	single := func(components []uint64, data []byte) ([4]uint64, bool) {
 		var out [4]uint64
 		switch len(data) {
 		case 13:
-			areionasm.Fused256Chain13x1(&k, components, &data[0], &out)
+			areionasm.Fused256Chain13x1(k, components, &data[0], &out)
 		case 20:
-			areionasm.Fused256Chain20x1(&k, components, &data[0], &out)
+			areionasm.Fused256Chain20x1(k, components, &data[0], &out)
 		case 36:
-			areionasm.Fused256Chain36x1(&k, components, &data[0], &out)
+			areionasm.Fused256Chain36x1(k, components, &data[0], &out)
 		case 68:
-			areionasm.Fused256Chain68x1(&k, components, &data[0], &out)
+			areionasm.Fused256Chain68x1(k, components, &data[0], &out)
 		default:
 			return out, false
 		}
@@ -93,13 +98,13 @@ func areion256FusedChainHash(key []byte) (itb.FusedChainHashFunc256, itb.BatchFu
 		dataPtrs := [4]*byte{&data[0][0], &data[1][0], &data[2][0], &data[3][0]}
 		switch n {
 		case 13:
-			areionasm.Fused256Chain13x4(&k, components, &dataPtrs, &out)
+			areionasm.Fused256Chain13x4(k, components, &dataPtrs, &out)
 		case 20:
-			areionasm.Fused256Chain20x4(&k, components, &dataPtrs, &out)
+			areionasm.Fused256Chain20x4(k, components, &dataPtrs, &out)
 		case 36:
-			areionasm.Fused256Chain36x4(&k, components, &dataPtrs, &out)
+			areionasm.Fused256Chain36x4(k, components, &dataPtrs, &out)
 		case 68:
-			areionasm.Fused256Chain68x4(&k, components, &dataPtrs, &out)
+			areionasm.Fused256Chain68x4(k, components, &dataPtrs, &out)
 		}
 		return out, true
 	}
@@ -114,10 +119,9 @@ func areion256InterlockFillBatch16(key []byte) (itb.InterlockFillFunc16x256, err
 	if len(key) != 32 {
 		return nil, fmt.Errorf("hashes: %q interlock fill batch-16 needs a 32-byte key, got %d", CipherAreion256, len(key))
 	}
-	var k [32]byte
-	copy(k[:], key)
+	k := (*[32]byte)(key)
 	return func(components []uint64, groupIdxBase uint64, v uint32, out *[8][4]uint64) {
-		areionasm.Fused256Fill13x8(&k, components, groupIdxBase, v, out)
+		areionasm.Fused256Fill13x8(k, components, groupIdxBase, v, out)
 	}, nil
 }
 
@@ -137,8 +141,7 @@ func areion256FusedChainHash8(key []byte) (itb.BatchFusedChainHashFunc256x8, err
 	if forcetier.ChainHashSeq() || !areionasm.FusedX8Active() {
 		return nil, nil
 	}
-	var k [32]byte
-	copy(k[:], key)
+	k := (*[32]byte)(key)
 	return func(components []uint64, data *[8][]byte) ([8][4]uint64, bool) {
 		var out [8][4]uint64
 		n := len(data[0])
@@ -156,11 +159,11 @@ func areion256FusedChainHash8(key []byte) (itb.BatchFusedChainHashFunc256x8, err
 		}
 		switch n {
 		case 20:
-			areionasm.Fused256Chain20x8(&k, components, &dataPtrs, &out)
+			areionasm.Fused256Chain20x8(k, components, &dataPtrs, &out)
 		case 36:
-			areionasm.Fused256Chain36x8(&k, components, &dataPtrs, &out)
+			areionasm.Fused256Chain36x8(k, components, &dataPtrs, &out)
 		case 68:
-			areionasm.Fused256Chain68x8(&k, components, &dataPtrs, &out)
+			areionasm.Fused256Chain68x8(k, components, &dataPtrs, &out)
 		}
 		return out, true
 	}, nil

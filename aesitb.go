@@ -33,10 +33,10 @@ package itb
 
 import (
 	"crypto/rand"
-	"encoding/binary"
 	"runtime"
 
-	"github.com/everanium/areion"
+	"github.com/everanium/itb/internal/aesitbasm"
+	"github.com/everanium/itb/internal/wipe"
 )
 
 // aesITBRoundConstants are eight pairwise-distinct Nothing-Up-My-Sleeve
@@ -79,40 +79,26 @@ var aesITBRoundConstants = [8][16]byte{
 // same block sequence. The result is bit-exact
 // for any given (data, seed0, seed1) tuple.
 func aesITB128GenericHash(fixedKey [16]byte) HashFunc128 {
+	return aesITB128GenericHashFromKeyPtr(&fixedKey)
+}
+
+func aesITB128GenericHashFromKeyPtr(fixedKey *[16]byte) HashFunc128 {
 	return func(data []byte, seed0, seed1 uint64) (uint64, uint64) {
-		var state [16]byte
-		binary.LittleEndian.PutUint64(state[:8], binary.LittleEndian.Uint64(fixedKey[:8])^seed0)
-		binary.LittleEndian.PutUint64(state[8:], binary.LittleEndian.Uint64(fixedKey[8:])^seed1)
-
-		n := len(data)
-		full := n &^ 15
-		blk := 0
-		for off := 0; off < full; off += 16 {
-			for i := 0; i < 16; i++ {
-				state[i] ^= data[off+i]
-			}
-			areion.AES128Round((*areion.Block)(&state), (*areion.Block)(&aesITBRoundConstants[blk&7]))
-			blk++
-		}
-		rem := n - full
-		pad := byte(16 - rem)
-		for i := 0; i < rem; i++ {
-			state[i] ^= data[full+i]
-		}
-		for i := rem; i < 16; i++ {
-			state[i] ^= pad
-		}
-		areion.AES128Round((*areion.Block)(&state), (*areion.Block)(&aesITBRoundConstants[blk&7]))
-		blk++
-
-		areion.AES128Round((*areion.Block)(&state), (*areion.Block)(&aesITBRoundConstants[blk&7]))
-		areion.AES128Round((*areion.Block)(&state), (*areion.Block)(&aesITBRoundConstants[(blk+1)&7]))
-		lo := binary.LittleEndian.Uint64(state[:8])
-		hi := binary.LittleEndian.Uint64(state[8:])
-		clear(state[:])
-		runtime.KeepAlive(&state)
+		lo, hi := evalAESITB128Single(fixedKey, data, seed0, seed1)
+		wipe.CallStack512B()
 		return lo, hi
 	}
+}
+
+//go:noinline
+func evalAESITB128Single(fixedKey *[16]byte, data []byte, seed0, seed1 uint64) (uint64, uint64) {
+	_ = aesITBRoundConstants[0]
+	return aesitbasm.ChainAbsorb(fixedKey, data, seed0, seed1)
+}
+
+//go:noinline
+func evalAESITB128Batch(fixedKey *[16]byte, data *[4][]byte, seeds *[4][2]uint64, out *[4][2]uint64) {
+	aesitbasm.ChainAbsorbBatch(fixedKey, seeds, data, out)
 }
 
 // MakeAESITB128Hash returns a (HashFunc128, BatchHashFunc128, [16]byte)
@@ -130,7 +116,7 @@ func MakeAESITB128Hash(key ...[16]byte) (HashFunc128, BatchHashFunc128, [16]byte
 			panic("itb: crypto/rand failed: " + err.Error())
 		}
 	}
-	h, bh := makeAESITB128HashWithKey(fixedKey)
+	h, bh := makeAESITB128HashFromKeyPtr(&fixedKey)
 	return h, bh, fixedKey
 }
 
@@ -138,18 +124,21 @@ func MakeAESITB128Hash(key ...[16]byte) (HashFunc128, BatchHashFunc128, [16]byte
 // for a caller-provided key. Split out so tests / registry entries can
 // bind a specific key without the CSPRNG draw MakeAESITB128Hash performs.
 func makeAESITB128HashWithKey(fixedKey [16]byte) (HashFunc128, BatchHashFunc128) {
-	h := aesITB128GenericHash(fixedKey)
+	return makeAESITB128HashFromKeyPtr(&fixedKey)
+}
+
+func makeAESITB128HashFromKeyPtr(fixedKey *[16]byte) (HashFunc128, BatchHashFunc128) {
+	h := aesITB128GenericHashFromKeyPtr(fixedKey)
 	// The batched arm evaluates the four lanes through four single-arm
 	// calls of h. Every shipped constructor path attaches the fused
 	// cascade hook (Seed128.BatchFusedChain), which the batched
 	// ChainHash128 entry points consult first, so this closure is the
 	// fallback for seeds built without that hook.
-	bh := func(data *[4][]byte, seeds [4][2]uint64) [4][2]uint64 {
-		var out [4][2]uint64
-		for i := 0; i < 4; i++ {
-			lo, hi := h(data[i], seeds[i][0], seeds[i][1])
-			out[i] = [2]uint64{lo, hi}
-		}
+	bh := func(data *[4][]byte, seeds [4][2]uint64) (out [4][2]uint64) {
+		evalAESITB128Batch(fixedKey, data, &seeds, &out)
+		clear(seeds[:])
+		runtime.KeepAlive(&seeds)
+		wipe.CallStack512B()
 		return out
 	}
 	return h, bh

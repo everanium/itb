@@ -2,6 +2,7 @@ package kdf
 
 import (
 	"fmt"
+	"runtime"
 
 	"github.com/everanium/itb/hashes"
 	"github.com/everanium/itb/internal/hashprf"
@@ -23,9 +24,12 @@ func deriveHashPRF(name string, master []byte, label string, outLen int) ([]byte
 	if len(master) < hashKDFMasterMin {
 		return nil, fmt.Errorf("kdf: %s master must be at least %d bytes, got %d", name, hashKDFMasterMin, len(master))
 	}
-	prf, prfLen, err := hashprf.New(name, master[:hashKDFMasterMin])
+	prf, prfLen, closePRF, err := hashprf.NewRawWithClose(name, master[:hashKDFMasterMin])
 	if err != nil {
 		return nil, fmt.Errorf("kdf: %w", err)
+	}
+	if closePRF != nil {
+		defer closePRF()
 	}
 	wrap := func(in []byte) []byte {
 		out := make([]byte, prfLen)
@@ -45,11 +49,15 @@ func deriveAreion512(master []byte, label string, outLen int) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	prf, prfLen, err := hashprf.New(hashes.CipherAreion512, key64)
+	prf, prfLen, closePRF, err := hashprf.NewRawWithClose(hashes.CipherAreion512, key64)
 	// The PRF keeps its own copy of the stretched key; zero this one.
 	clear(key64)
+	runtime.KeepAlive(key64)
 	if err != nil {
 		return nil, fmt.Errorf("kdf: %w", err)
+	}
+	if closePRF != nil {
+		defer closePRF()
 	}
 	wrap := func(in []byte) []byte {
 		out := make([]byte, prfLen)
@@ -70,9 +78,12 @@ func stretchAreion512Key(master []byte) ([]byte, error) {
 	if len(master) < hashKDFMasterMin {
 		return nil, fmt.Errorf("kdf: %s master must be at least %d bytes, got %d", hashes.CipherAreion512, hashKDFMasterMin, len(master))
 	}
-	prf, prfLen, err := hashprf.New(hashes.CipherAreion256, master[:hashKDFMasterMin])
+	prf, prfLen, closePRF, err := hashprf.NewRawWithClose(hashes.CipherAreion256, master[:hashKDFMasterMin])
 	if err != nil {
 		return nil, fmt.Errorf("kdf: %w", err)
+	}
+	if closePRF != nil {
+		defer closePRF()
 	}
 	wrap := func(in []byte) []byte {
 		out := make([]byte, prfLen)

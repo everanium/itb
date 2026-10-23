@@ -8,7 +8,54 @@ import (
 	"sync"
 
 	"github.com/everanium/itb"
+	"github.com/everanium/itb/internal/wipe"
 )
+
+// hmacSHA256Entry bundles a pre-keyed HMAC-SHA256 hasher with a reusable
+// 32-byte scratch digest buffer and a 64-byte zero block so per-call Sum
+// neither escapes a local [32]byte to the heap nor leaves message or ipad/opad
+// residue inside the pooled sha256.digest block buffers.
+type hmacSHA256Entry struct {
+	h    hash.Hash
+	sum  [32]byte
+	zero [sha256.BlockSize]byte
+}
+
+func newHMACSHA256Entry(key []byte) *hmacSHA256Entry {
+	e := &hmacSHA256Entry{
+		h: hmac.New(sha256.New, key),
+	}
+	scrubHMACSHA256Entry(e)
+	return e
+}
+
+func scrubHMACSHA256Entry(e *hmacSHA256Entry) {
+	e.h.Reset()
+	e.h.Write(e.zero[:1])
+	e.h.Write(e.zero[:sha256.BlockSize-1])
+	e.h.Sum(e.sum[:0])
+	clear(e.sum[:])
+	e.h.Reset()
+	runtime.KeepAlive(e)
+}
+
+//go:noinline
+func evalHMACSHA256(e *hmacSHA256Entry, out, data []byte) {
+	e.h.Write(data)
+	e.h.Sum(e.sum[:0])
+	copy(out, e.sum[:])
+	scrubHMACSHA256Entry(e)
+}
+
+//go:noinline
+func evalHMACSHA256Inc(e *hmacSHA256Entry, out []byte, chunks [][]byte) {
+	for _, c := range chunks {
+		e.h.Write(c)
+	}
+	e.h.Sum(e.sum[:0])
+	copy(out, e.sum[:])
+	scrubHMACSHA256Entry(e)
+}
 
 // HMACSHA256 returns a cached HMAC-SHA256 itb.MACFunc keyed by key.
 // Tag size is 32 bytes regardless of key length. HMAC accepts keys
@@ -33,23 +80,16 @@ func HMACSHA256(key []byte) (itb.MACFunc, error) {
 
 	pool := &sync.Pool{
 		New: func() any {
-			h := hmac.New(sha256.New, keyCopy)
-			return h
+			return newHMACSHA256Entry(keyCopy)
 		},
 	}
 
 	return func(data []byte) []byte {
-		h := pool.Get().(hash.Hash)
-		h.Reset()
-		h.Write(data)
-		var sum [32]byte
-		h.Sum(sum[:0])
-		h.Reset()
-		pool.Put(h)
+		e := pool.Get().(*hmacSHA256Entry)
 		out := make([]byte, 32)
-		copy(out, sum[:])
-		clear(sum[:])
-		runtime.KeepAlive(&sum)
+		evalHMACSHA256(e, out, data)
+		pool.Put(e)
+		wipe.CallStack2K([9][8]uint64{})
 		return out
 	}, nil
 }
@@ -67,25 +107,16 @@ func HMACSHA256Incremental(key []byte) (itb.MACIncrementalFunc, error) {
 
 	pool := &sync.Pool{
 		New: func() any {
-			h := hmac.New(sha256.New, keyCopy)
-			return h
+			return newHMACSHA256Entry(keyCopy)
 		},
 	}
 
 	return func(chunks ...[]byte) []byte {
-		h := pool.Get().(hash.Hash)
-		h.Reset()
-		for _, c := range chunks {
-			h.Write(c)
-		}
-		var sum [32]byte
-		h.Sum(sum[:0])
-		h.Reset()
-		pool.Put(h)
+		e := pool.Get().(*hmacSHA256Entry)
 		out := make([]byte, 32)
-		copy(out, sum[:])
-		clear(sum[:])
-		runtime.KeepAlive(&sum)
+		evalHMACSHA256Inc(e, out, chunks)
+		pool.Put(e)
+		wipe.CallStack2K([9][8]uint64{})
 		return out
 	}, nil
 }

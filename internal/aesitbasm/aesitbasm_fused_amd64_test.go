@@ -135,6 +135,7 @@ func BenchmarkFusedTier(b *testing.B) {
 // the stack once a kernel has returned; the frame holds public blocks
 // only.
 func TestFusedKernelsLeaveNoSecretInFrame(t *testing.T) {
+	checkResidueNegativeControls(t)
 	checkResidueProbeSeesKeyFold(t)
 	for _, tier := range amd64FusedTiers() {
 		if tier.ok {
@@ -151,4 +152,19 @@ func TestFusedKernelsLeaveNoSecretInFrame(t *testing.T) {
 			checkAESITBResidue(t, tier.name, nil, nil, nil, tier.k)
 		}
 	}
+	for _, tier := range amd64NoiseTiers() {
+		if tier.ok {
+			checkNoiseFillResidue(t, tier.name, tier.gran, tier.fn)
+		}
+	}
+}
+
+func dumpSIMDRegs(dst *[88]uint64, avx512 bool)
+func dirtySIMDRegForTest(masked uint64)
+
+func init() {
+	dumpSIMDRegsHook = func(dst *[88]uint64) {
+		dumpSIMDRegs(dst, cpuid.AVX512F)
+	}
+	dirtySIMDRegHook = dirtySIMDRegForTest
 }

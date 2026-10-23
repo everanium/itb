@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/everanium/itb"
+	"github.com/everanium/itb/internal/wipe"
 )
 
 // MaxNameLen caps the length of a custom MAC primitive name in
@@ -168,7 +169,8 @@ func validateRegisterSpec(spec Spec) error {
 // the chunk total per call.
 func synthesizeIncremental(makeMAC func(key []byte) (itb.MACFunc, error)) func(key []byte) (itb.MACIncrementalFunc, error) {
 	return func(key []byte) (itb.MACIncrementalFunc, error) {
-		mac, err := makeMAC(key)
+		clonedKey := append([]byte(nil), key...)
+		mac, err := makeMAC(clonedKey)
 		if err != nil {
 			return nil, err
 		}
@@ -181,7 +183,9 @@ func synthesizeIncremental(makeMAC func(key []byte) (itb.MACFunc, error)) func(k
 			for _, c := range chunks {
 				buf = append(buf, c...)
 			}
-			return mac(buf)
+			tag := mac(buf)
+			wipe.Bytes(buf)
+			return tag
 		}, nil
 	}
 }
@@ -194,6 +198,7 @@ func synthesizeIncremental(makeMAC func(key []byte) (itb.MACFunc, error)) func(k
 // one-shot equivalence on a fixed two-chunk split.
 func smokeValidate(spec Spec) error {
 	key := make([]byte, spec.KeySize)
+	defer wipe.Bytes(key)
 	if _, err := rand.Read(key); err != nil {
 		return fmt.Errorf("macs: Register: smoke key generation: %w", err)
 	}
@@ -212,19 +217,30 @@ func smokeValidate(spec Spec) error {
 		return fmt.Errorf("macs: Register: %q MakeIncrementalMAC returned a nil closure", spec.Name)
 	}
 	tagEmpty := mac([]byte{})
+	defer wipe.Bytes(tagEmpty)
 	if len(tagEmpty) != spec.TagSize {
 		return fmt.Errorf("macs: Register: %q tag length %d over empty input != Spec.TagSize %d",
 			spec.Name, len(tagEmpty), spec.TagSize)
 	}
-	if !bytes.Equal(mac(nil), mac(nil)) {
+	t0 := mac(nil)
+	t1 := mac(nil)
+	defer wipe.Bytes(t0)
+	defer wipe.Bytes(t1)
+	if !bytes.Equal(t0, t1) {
 		return fmt.Errorf("macs: Register: %q is non-deterministic (two calls over the same input disagree)", spec.Name)
 	}
 	msg := []byte("macs: register smoke probe")
-	if got := len(mac(msg)); got != spec.TagSize {
+	tagMsg := mac(msg)
+	defer wipe.Bytes(tagMsg)
+	if got := len(tagMsg); got != spec.TagSize {
 		return fmt.Errorf("macs: Register: %q tag length %d over %d-byte input != Spec.TagSize %d (tag length must be input-independent)",
 			spec.Name, got, len(msg), spec.TagSize)
 	}
-	if !bytes.Equal(inc([]byte("foo"), []byte("bar")), mac([]byte("foobar"))) {
+	tagInc := inc([]byte("foo"), []byte("bar"))
+	tagOne := mac([]byte("foobar"))
+	defer wipe.Bytes(tagInc)
+	defer wipe.Bytes(tagOne)
+	if !bytes.Equal(tagInc, tagOne) {
 		return fmt.Errorf("macs: Register: %q incremental arm diverges from the one-shot arm over a two-chunk split", spec.Name)
 	}
 	return nil

@@ -187,6 +187,7 @@ func encrypt3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dat
 	if err != nil {
 		return nil, err
 	}
+	defer secureWipe(ilNonce)
 
 	// Interlock split, COBS, payload assembly and wire allocation with
 	// overlapped container + payload-tail DRBG fill (see
@@ -195,7 +196,9 @@ func encrypt3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dat
 	// distinguish this No MAC chunk from the paired authenticated chunk
 	// (whose third region carries payload || tag || flag(1)). The
 	// reserved bytes are pure DRBG on the No MAC side.
-	tp, out, container, width, height, err := buildTripleWire3(cfg, data, buildLockBatchPRF48_128Cfg(cfg, lockSeed, ilNonce), nomacTagStubSizeCfg(cfg), true, lead, nonce, ilNonce,
+	bp := buildLockBatchPRF48_128Cfg(cfg, lockSeed, ilNonce)
+	defer bp.wipe()
+	tp, out, container, width, height, err := buildTripleWire3(cfg, data, bp, nomacTagStubSizeCfg(cfg), true, lead, nonce, ilNonce,
 		func(cobsLens [3]int) (int, int) {
 			return containerSize3_128Cfg(cfg, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, cobsLens)
 		})
@@ -362,5 +365,8 @@ func decrypt3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dat
 	// The interlock nonce is carried split across the three lane
 	// prefixes; lanes[i] is what follows fragment i.
 	ilNonce, lanes := recoverInterlockNonce(nonceLen, parts)
-	return interleaveForTriple48LockedCfg(cfg, lanes[0], lanes[1], lanes[2], buildLockBatchPRF48_128Cfg(cfg, lockSeed, ilNonce)), nil
+	defer secureWipe(ilNonce)
+	bp := buildLockBatchPRF48_128Cfg(cfg, lockSeed, ilNonce)
+	defer bp.wipe()
+	return interleaveForTriple48LockedCfg(cfg, lanes[0], lanes[1], lanes[2], bp), nil
 }

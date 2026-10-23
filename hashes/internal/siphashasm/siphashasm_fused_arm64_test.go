@@ -80,3 +80,21 @@ func TestFusedChain13x16DispatcherArm64(t *testing.T) {
 	HasGPRX16 = false
 	checkFusedX16Parity(t, "dispatch-scalar", FusedChain13x16)
 }
+
+func dumpSIMDRegs(dst *[88]uint64, avx512 bool)
+func dirtySIMDRegForTest(masked uint64)
+
+func init() {
+	dumpSIMDRegsHook = func(dst *[88]uint64) {
+		dumpSIMDRegs(dst, false)
+	}
+	dirtySIMDRegHook = dirtySIMDRegForTest
+}
+
+func TestFusedKernelsLeaveNoSecretInFrameArm64(t *testing.T) {
+	checkResidueNegativeControls(t)
+	checkSipHashResidue(t, "neon", neonFusedX4(), gprFusedX1(), nil, func(comps []uint64, base uint64, v uint32, out *[16][2]uint64) {
+		sipHash24FusedChain13x8NeonAsm(&comps[0], len(comps)/2, base, x16Half(out, 0), v)
+		sipHash24FusedChain13x8NeonAsm(&comps[0], len(comps)/2, base+8, x16Half(out, 1), v)
+	})
+}

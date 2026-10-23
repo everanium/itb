@@ -141,6 +141,7 @@ func generateNonceCfg(cfg *Config) ([]byte, error) {
 	}
 	nonce := make([]byte, currentNonceSizeCfg(cfg))
 	if _, err := rand.Read(nonce); err != nil {
+		secureWipe(nonce)
 		return nil, fmt.Errorf("itb: crypto/rand: %w", err)
 	}
 	return nonce, nil
@@ -164,6 +165,7 @@ func generateInterlockNonceCfg(cfg *Config) ([]byte, error) {
 	}
 	nonce := make([]byte, currentNonceSizeCfg(cfg))
 	if _, err := rand.Read(nonce); err != nil {
+		secureWipe(nonce)
 		return nil, fmt.Errorf("itb: crypto/rand: %w", err)
 	}
 	return nonce, nil
@@ -205,14 +207,17 @@ func generateNoncePairCfg(cfg *Config) (mainNonce, ilNonce []byte, err error) {
 	}
 	mainNonce, err = generateNonceCfg(cfg)
 	if err != nil {
+		secureWipe(ilNonce)
 		return nil, nil, err
 	}
 	if testNonceOverride.Load() != nil || testInterlockNonceOverride.Load() != nil {
 		return mainNonce, ilNonce, nil
 	}
 	for slices.Equal(mainNonce, ilNonce) {
+		secureWipe(mainNonce)
 		mainNonce, err = generateNonceCfg(cfg)
 		if err != nil {
+			secureWipe(ilNonce)
 			return nil, nil, err
 		}
 	}

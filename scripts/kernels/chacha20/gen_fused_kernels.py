@@ -432,6 +432,12 @@ def evex_kernel(n, x8=False, fill=False):
         else:
             for l in range(4):
                 lines.append(f"\tVPEXTRD ${l}, {hreg(i)}, {32 * l + 4 * i}(DX)")
+    for r in range(32):
+        lines.append(f"\tVPXORD X{r}, X{r}, X{r}")
+    for off in range(0, frame.aligned, 4 * lanes):
+        lines.append(f"\t{mov} {p}0, {off}(SP)")
+    for reg in ("AX", "BX", "CX", "DX", "R8", "R9", "R10", "R11", "R12", "R13"):
+        lines.append(f"\tXORQ {reg}, {reg}")
     lines.append("\tVZEROUPPER")
     lines.append("\tRET")
     lines.append("")
@@ -620,10 +626,12 @@ def avx2_kernel(n, x8=False, fill=False):
         else:
             for l in range(4):
                 lines.append(f"\tVPEXTRD ${l}, X{OUT_WORDS[i]}, {32 * l + 4 * i}(DX)")
-    # The v[15] / v[12] slots held state words: zero them.
-    lines.append(f"\tVPXOR {p}4, {p}4, {p}4")
-    lines.append(f"\tVMOVDQU {p}4, V15(SP)")
-    lines.append(f"\tVMOVDQU {p}4, V12(SP)")
+    for r in range(16):
+        lines.append(f"\tVPXOR {p}{r}, {p}{r}, {p}{r}")
+    for off in range(0, frame.aligned, lane_bytes):
+        lines.append(f"\tVMOVDQU {p}0, {off}(SP)")
+    for reg in ("AX", "BX", "CX", "DX", "R8", "R9", "R10", "R11", "R12", "R13"):
+        lines.append(f"\tXORQ {reg}, {reg}")
     lines.append("\tVZEROUPPER")
     lines.append("\tRET")
     lines.append("")
@@ -834,6 +842,12 @@ def neon_kernel(n):
         for l in range(4):
             emit(f"\tVMOV V{OUT_WORDS[i]}.S[{l}], R12")
             emit(f"\tMOVW R12, {32 * l + 4 * i}(R3)")
+    for r in range(32):
+        emit(f"\tVEOR V{r}.B16, V{r}.B16, V{r}.B16")
+    for off in range(0, frame.aligned, 16):
+        emit(f"\tFMOVQ F0, {off}(R7)")
+    for reg in ("R0", "R1", "R2", "R3", "R7", "R8", "R9", "R10", "R11", "R12", "R13", "R25"):
+        emit(f"\tMOVD ZR, {reg}")
     emit("")
     emit("\tRET")
     emit("")
@@ -931,8 +945,11 @@ def gpr_kernel_amd64(n):
     L += ["", "\tDECQ nGroups+16(FP)", "\tJNZ loop", "", "\tMOVQ out+32(FP), R9"]
     for i in range(WORDS):
         L.append(f"\tMOVL {R[OUT_WORDS[i]]}, {4 * i}(R9)")
-    # The v[11] slot held a key word and state: zero it.
-    L += [f"\tMOVL $0, {spill}(SP)", "\tRET", ""]
+    for off in range(0, frame.aligned, 8):
+        L.append(f"\tMOVQ $0, {off}(SP)")
+    for reg in ("AX", "BX", "CX", "DX", "SI", "DI", "R8", "R9", "R10", "R11", "R12", "R13", "R14", "R15"):
+        L.append(f"\tXORQ {reg}, {reg}")
+    L += ["\tRET", ""]
     return "\n".join(L)
 
 
@@ -991,6 +1008,10 @@ def gpr_kernel_arm64(n):
     L += ["", "\tSUB $1, R2, R2", "\tCBNZ R2, loop", ""]
     for i in range(WORDS):
         L.append(f"\tMOVW {R[OUT_WORDS[i]]}, {4 * i}(R4)")
+    for off in range(0, frame.aligned, 8):
+        L.append(f"\tMOVD ZR, {off}(R7)")
+    for reg in ("R0", "R1", "R2", "R3", "R4", "R5", "R6", "R7", *GPR_REGS_ARM64, "R25"):
+        L.append(f"\tMOVD ZR, {reg}")
     L += ["\tRET", ""]
     L += const_tables()
     return "\n".join(L)
@@ -1011,6 +1032,8 @@ def render_all():
         files[f"chacha20_fusedchain256_{n}x8_avx2_amd64.s"] = avx2_kernel(n, x8=True) + "\n"
     files["chacha20_fusedchain256_13x8_avx512_amd64.s"] = evex_kernel(13, x8=True, fill=True) + "\n"
     files["chacha20_fusedchain256_13x8_avx2_amd64.s"] = avx2_kernel(13, x8=True, fill=True) + "\n"
+    files["chacha20_fusedchain256_13x4_avx512_amd64.s"] += '\n// func dumpSIMDRegs(dst *[88]uint64, avx512 bool)\nTEXT ·dumpSIMDRegs(SB), NOSPLIT, $0-9\n\tMOVQ dst+0(FP), AX\n\tMOVQ CX, 512(AX)\n\tMOVQ DX, 520(AX)\n\tMOVQ SI, 528(AX)\n\tMOVQ DI, 536(AX)\n\tMOVQ R8, 544(AX)\n\tMOVQ R9, 552(AX)\n\tMOVQ R10, 560(AX)\n\tMOVQ R11, 568(AX)\n\tMOVQ R12, 576(AX)\n\tMOVQ R13, 584(AX)\n\tMOVQ R15, 592(AX)\n\tMOVOU X0, 0(AX)\n\tMOVOU X1, 16(AX)\n\tMOVOU X2, 32(AX)\n\tMOVOU X3, 48(AX)\n\tMOVOU X4, 64(AX)\n\tMOVOU X5, 80(AX)\n\tMOVOU X6, 96(AX)\n\tMOVOU X7, 112(AX)\n\tMOVOU X8, 128(AX)\n\tMOVOU X9, 144(AX)\n\tMOVOU X10, 160(AX)\n\tMOVOU X11, 176(AX)\n\tMOVOU X12, 192(AX)\n\tMOVOU X13, 208(AX)\n\tMOVOU X14, 224(AX)\n\tMOVOU X15, 240(AX)\n\tMOVBLZX avx512+8(FP), CX\n\tTESTQ CX, CX\n\tJZ dumpDone\n\tVMOVDQU64 X16, 256(AX)\n\tVMOVDQU64 X17, 272(AX)\n\tVMOVDQU64 X18, 288(AX)\n\tVMOVDQU64 X19, 304(AX)\n\tVMOVDQU64 X20, 320(AX)\n\tVMOVDQU64 X21, 336(AX)\n\tVMOVDQU64 X22, 352(AX)\n\tVMOVDQU64 X23, 368(AX)\n\tVMOVDQU64 X24, 384(AX)\n\tVMOVDQU64 X25, 400(AX)\n\tVMOVDQU64 X26, 416(AX)\n\tVMOVDQU64 X27, 432(AX)\n\tVMOVDQU64 X28, 448(AX)\n\tVMOVDQU64 X29, 464(AX)\n\tVMOVDQU64 X30, 480(AX)\n\tVMOVDQU64 X31, 496(AX)\ndumpDone:\n\tPXOR X2, X2\n\tXORQ R12, R12\n\tXORQ AX, AX\n\tXORQ CX, CX\n\tRET\n\n// func dirtySIMDRegForTest(masked uint64)\nTEXT ·dirtySIMDRegForTest(SB), NOSPLIT, $0-8\n\tMOVQ masked+0(FP), R12\n\tMOVQ $0x5555555555555555, AX\n\tXORQ AX, R12\n\tMOVQ R12, X2\n\tXORQ AX, AX\n\tRET\n'
+    files["chacha20_fusedchain256_13x4_neon_arm64.s"] += '\n// func dumpSIMDRegs(dst *[88]uint64, avx512 bool)\nTEXT ·dumpSIMDRegs(SB), NOSPLIT, $0-9\n\tMOVD dst+0(FP), R0\n\tMOVD R1, 512(R0)\n\tMOVD R2, 520(R0)\n\tMOVD R3, 528(R0)\n\tMOVD R4, 536(R0)\n\tMOVD R5, 544(R0)\n\tMOVD R6, 552(R0)\n\tMOVD R7, 560(R0)\n\tMOVD R8, 568(R0)\n\tMOVD R9, 576(R0)\n\tMOVD R10, 584(R0)\n\tMOVD R11, 592(R0)\n\tMOVD R12, 600(R0)\n\tMOVD R13, 608(R0)\n\tMOVD R14, 616(R0)\n\tMOVD R15, 624(R0)\n\tMOVD R16, 632(R0)\n\tMOVD R17, 640(R0)\n\tMOVD R19, 648(R0)\n\tMOVD R20, 656(R0)\n\tMOVD R21, 664(R0)\n\tMOVD R22, 672(R0)\n\tMOVD R23, 680(R0)\n\tMOVD R24, 688(R0)\n\tMOVD R25, 696(R0)\n\tVST1.P [V0.B16, V1.B16, V2.B16, V3.B16], 64(R0)\n\tVST1.P [V4.B16, V5.B16, V6.B16, V7.B16], 64(R0)\n\tVST1.P [V8.B16, V9.B16, V10.B16, V11.B16], 64(R0)\n\tVST1.P [V12.B16, V13.B16, V14.B16, V15.B16], 64(R0)\n\tVST1.P [V16.B16, V17.B16, V18.B16, V19.B16], 64(R0)\n\tVST1.P [V20.B16, V21.B16, V22.B16, V23.B16], 64(R0)\n\tVST1.P [V24.B16, V25.B16, V26.B16, V27.B16], 64(R0)\n\tVST1 [V28.B16, V29.B16, V30.B16, V31.B16], (R0)\n\tVEOR V2.B16, V2.B16, V2.B16\n\tMOVD ZR, R12\n\tMOVD ZR, R0\n\tRET\n\n// func dirtySIMDRegForTest(masked uint64)\nTEXT ·dirtySIMDRegForTest(SB), NOSPLIT, $0-8\n\tMOVD masked+0(FP), R12\n\tMOVD $0x5555555555555555, R0\n\tEOR R0, R12, R12\n\tVMOV R12, V2.D[0]\n\tMOVD ZR, R0\n\tRET\n'
     return files
 
 

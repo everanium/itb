@@ -4,7 +4,10 @@ package interlock
 
 import (
 	"math/rand"
+	"runtime"
+	"runtime/debug"
 	"testing"
+	"unsafe"
 )
 
 const (
@@ -169,4 +172,226 @@ func BenchmarkRankToMaskTripleUnrank48NEON(b *testing.B) {
 			}
 		}
 	})
+}
+
+//go:noescape
+func dumpSIMDRegs(dst *[96]uint64, hasAVX512 bool)
+
+//go:noescape
+func dirtySIMDRegForTest(masked uint64)
+
+const (
+	interlockResidueGap      = 1 << 10
+	interlockResiduePad      = 2 << 10
+	interlockResidueWindow   = 16 << 10
+	interlockResidueSentinel = uint64(0x5A5A5A5A5A5A5A5A)
+	interlockSIMDWords       = 96
+	interlockStackWords      = interlockResidueWindow / 8
+	interlockTotalWords      = interlockStackWords + interlockSIMDWords
+)
+
+//go:noinline
+func interlockResidueGrow(i int) byte {
+	var pad [4 * interlockResidueWindow]byte
+	pad[i] = 1
+	return pad[(i+1)%len(pad)]
+}
+
+//go:noinline
+//go:nocheckptr
+func interlockResidueProbe(fn func(), res []uint64, regs *[interlockSIMDWords]uint64) {
+	var anchor uint64
+	top := unsafe.Add(unsafe.Pointer(&anchor), -interlockResidueGap)
+	for i := range res {
+		*(*uint64)(unsafe.Add(top, -8*(i+1))) = interlockResidueSentinel
+	}
+	interlockResidueDeep(fn, 0, regs)
+	for i := range res {
+		res[i] = *(*uint64)(unsafe.Add(top, -8*(i+1)))
+	}
+}
+
+//go:noinline
+func interlockResidueDeep(fn func(), i int, regs *[interlockSIMDWords]uint64) byte {
+	var pad [interlockResiduePad]byte
+	pad[i] = 1
+	dumpSIMDRegs(regs, false)
+	fn()
+	dumpSIMDRegs(regs, false)
+	return pad[(i+7)%len(pad)]
+}
+
+//go:noinline
+func captureInterlockFrameAndRegResidue(call func(), dst *[interlockTotalWords]uint64) int {
+	defer debug.SetGCPercent(debug.SetGCPercent(-1))
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		interlockResidueGrow(0)
+		var simd [interlockSIMDWords]uint64
+		interlockResidueProbe(call, dst[:interlockStackWords], &simd)
+		copy(dst[interlockStackWords:], simd[:])
+	}()
+	<-done
+	written := 0
+	for i := 0; i < interlockStackWords; i++ {
+		if dst[i] != interlockResidueSentinel {
+			written++
+		}
+	}
+	return written
+}
+
+var interlockSink uint64
+
+//go:noinline
+func leakyInterlockFrame(secret uint64, i int) {
+	var frame [64]uint64
+	for j := range frame {
+		frame[j] = secret
+	}
+	interlockSink = frame[(i+1)%len(frame)]
+}
+
+func scanForInterlockWords(window *[interlockTotalWords]uint64, targets []uint64) (uint64, int, bool) {
+	for i, w := range window {
+		if w == 0 || (i < interlockStackWords && w == interlockResidueSentinel) {
+			continue
+		}
+		for _, t := range targets {
+			if t != 0 && w == t {
+				return t, i * 8, true
+			}
+		}
+	}
+	return 0, 0, false
+}
+
+func scanForInterlockWordsInStack(window *[interlockTotalWords]uint64, targets []uint64) (uint64, int, bool) {
+	for i := 0; i < interlockStackWords; i++ {
+		w := window[i]
+		if w == 0 || w == interlockResidueSentinel {
+			continue
+		}
+		for _, t := range targets {
+			if t != 0 && w == t {
+				return t, i * 8, true
+			}
+		}
+	}
+	return 0, 0, false
+}
+
+func scanForInterlockWordsInRegs(window *[interlockTotalWords]uint64, targets []uint64) (uint64, int, bool) {
+	for i := interlockStackWords; i < len(window); i++ {
+		w := window[i]
+		if w == 0 {
+			continue
+		}
+		for _, t := range targets {
+			if t != 0 && w == t {
+				return t, i * 8, true
+			}
+		}
+	}
+	return 0, 0, false
+}
+
+func TestFusedKernelsLeaveNoSecretInFrame(t *testing.T) {
+	res := new([interlockTotalWords]uint64)
+
+	t.Run("NegativeControl_Stack", func(t *testing.T) {
+		const canary = uint64(0xCAFEBABE13579BDF)
+		idx := 3
+		written := captureInterlockFrameAndRegResidue(func() {
+			leakyInterlockFrame(canary, idx)
+		}, res)
+		runtime.KeepAlive(interlockSink)
+		if written == 0 {
+			t.Fatal("negative control failed: no stack words were written inside the probe window")
+		}
+		if _, _, found := scanForInterlockWordsInStack(res, []uint64{canary}); !found {
+			t.Fatal("negative control failed: stack canary written to callee frame was not observed in stack window")
+		}
+	})
+
+	t.Run("NegativeControl_SIMDAndGPR", func(t *testing.T) {
+		const mask = uint64(0x5555555555555555)
+		const secret = uint64(0xFEEDFACECAFEBEEF)
+		masked := secret ^ mask
+		written := captureInterlockFrameAndRegResidue(func() {
+			dirtySIMDRegForTest(masked)
+		}, res)
+		if written == 0 {
+			t.Fatal("negative control failed: no stack words were written inside the probe window")
+		}
+		if _, _, found := scanForInterlockWordsInRegs(res, []uint64{secret}); !found {
+			t.Fatal("negative control failed: register canary left in V2/R12 was not observed by post-RET register dump")
+		}
+	})
+
+	t.Run("RankToMaskTripleUnrank48NEON", func(t *testing.T) {
+		rng := rand.New(rand.NewSource(105))
+		idx0 := new([8]uint64)
+		idx1 := new([8]uint32)
+		out := new([3][8]uint64)
+		for j := 0; j < 8; j++ {
+			idx0[j] = (rng.Uint64() % (neonA - 256)) + 256
+			idx1[j] = uint32((rng.Uint64() % (neonB - 256)) + 256)
+		}
+		if w := captureInterlockFrameAndRegResidue(func() {
+			RankToMaskTripleUnrank48NEON(idx0, idx1, out)
+		}, res); w == 0 {
+			t.Fatal("RankToMaskTripleUnrank48NEON: probe missed stack window")
+		}
+		var targets []uint64
+		for j := 0; j < 8; j++ {
+			targets = append(targets, idx0[j], out[0][j], out[1][j], out[2][j])
+		}
+		if word, off, found := scanForInterlockWords(res, targets); found {
+			t.Fatalf("RankToMaskTripleUnrank48NEON leaked word %#016x at offset %d (window=%d)", word, off, interlockResidueWindow)
+		}
+	})
+
+	if HasSVE2Interlock {
+		t.Run("Chunk48LockBatchSVE2_And_Unchunk48LockBatchSVE2", func(t *testing.T) {
+			rng := rand.New(rand.NewSource(106))
+			const n = 8
+			src := make([]byte, 6*n)
+			dst := make([]byte, 6*n)
+			p0 := make([]byte, 2*n)
+			p1 := make([]byte, 2*n)
+			p2 := make([]byte, 2*n)
+			masks := make([][3]uint64, n)
+			var targets []uint64
+			for j := 0; j < n; j++ {
+				for b := 0; b < 6; b++ {
+					src[6*j+b] = byte(rng.Uint32() | 1)
+				}
+				xw := uint64(src[6*j]) | uint64(src[6*j+1])<<8 | uint64(src[6*j+2])<<16 |
+					uint64(src[6*j+3])<<24 | uint64(src[6*j+4])<<32 | uint64(src[6*j+5])<<40
+				i0 := (rng.Uint64() % (neonA - 256)) + 256
+				i1 := uint32((rng.Uint64() % (neonB - 256)) + 256)
+				m0, m1, m2 := refTriple48(i0, i1)
+				masks[j] = [3]uint64{m0, m1, m2}
+				targets = append(targets, xw, m0, m1, m2)
+			}
+			if w := captureInterlockFrameAndRegResidue(func() {
+				chunk48LockBatchSVE2(n, &src[0], &masks[0], &p0[0], &p1[0], &p2[0])
+			}, res); w == 0 {
+				t.Fatal("chunk48LockBatchSVE2: probe missed stack window")
+			}
+			if word, off, found := scanForInterlockWords(res, targets); found {
+				t.Fatalf("chunk48LockBatchSVE2 leaked word %#016x at offset %d (window=%d)", word, off, interlockResidueWindow)
+			}
+			if w := captureInterlockFrameAndRegResidue(func() {
+				unchunk48LockBatchSVE2(n, &masks[0], &p0[0], &p1[0], &p2[0], &dst[0])
+			}, res); w == 0 {
+				t.Fatal("unchunk48LockBatchSVE2: probe missed stack window")
+			}
+			if word, off, found := scanForInterlockWords(res, targets); found {
+				t.Fatalf("unchunk48LockBatchSVE2 leaked word %#016x at offset %d (window=%d)", word, off, interlockResidueWindow)
+			}
+		})
+	}
 }

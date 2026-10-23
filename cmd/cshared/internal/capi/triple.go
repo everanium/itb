@@ -3,10 +3,12 @@ package capi
 import (
 	"errors"
 	"io/fs"
+	"runtime"
 	"runtime/cgo"
 	"strings"
 
 	itb "github.com/everanium/itb"
+	"github.com/everanium/itb/internal/wipe"
 	"github.com/everanium/itb/triple"
 )
 
@@ -33,12 +35,16 @@ func TripleInit(profile string, opts string, blobOut []byte) (id TripleHandleID,
 	if err != nil {
 		return 0, 0, tripleErr(StatusBadInput, err.Error())
 	}
+	defer func() {
+		wipe.Bytes(parsed.PermMaster)
+		wipe.Bytes(parsed.WrapMaster)
+	}()
 	pipe, blob, err := triple.Init(profile, parsed)
 	if err != nil {
 		s := mapTripleError(err)
 		return 0, 0, s
 	}
-	defer clear(blob)
+	defer wipe.Bytes(blob)
 	if len(blob) > len(blobOut) {
 		// Pipeline already exists but the caller's blob buffer is
 		// too small — close the Pipeline before returning so the
@@ -69,14 +75,22 @@ func TripleInitKeys(profile string, opts string, masters [][]byte, blobOut []byt
 	if err != nil {
 		return 0, 0, tripleErr(StatusBadInput, err.Error())
 	}
+	defer func() {
+		wipe.Bytes(parsed.PermMaster)
+		wipe.Bytes(parsed.WrapMaster)
+	}()
 	var m8 [8][]byte
 	copy(m8[:], masters)
+	defer func() {
+		clear(m8[:])
+		runtime.KeepAlive(&m8)
+	}()
 	pipe, blob, err := triple.InitKeys(profile, parsed, m8)
 	if err != nil {
 		s := mapTripleError(err)
 		return 0, 0, s
 	}
-	defer clear(blob)
+	defer wipe.Bytes(blob)
 	if len(blob) > len(blobOut) {
 		_ = pipe.Close()
 		setLastErr(StatusBufferTooSmall)
@@ -149,7 +163,7 @@ func TripleSave(id TripleHandleID, blobOut []byte) (n int, st Status) {
 		setLastErr(StatusTripleClosed)
 		return 0, StatusTripleClosed
 	}
-	defer clear(blob)
+	defer wipe.Bytes(blob)
 	if len(blob) > len(blobOut) {
 		setLastErr(StatusBufferTooSmall)
 		return len(blob), StatusBufferTooSmall
@@ -215,7 +229,7 @@ func TripleMaxWorkers(id TripleHandleID, n int) (st Status) {
 		setLastErr(StatusTripleClosed)
 		return StatusTripleClosed
 	}
-	clear(blob)
+	wipe.Bytes(blob)
 	h.pipe.MaxWorkers(n)
 	return StatusOK
 }
@@ -237,7 +251,7 @@ func TripleRekey(id TripleHandleID, permMaster, wrapMaster []byte, blobOut []byt
 		s := mapTripleError(err)
 		return 0, s
 	}
-	defer clear(blob)
+	defer wipe.Bytes(blob)
 	if len(blob) > len(blobOut) {
 		setLastErr(StatusBufferTooSmall)
 		return len(blob), StatusBufferTooSmall
@@ -350,7 +364,7 @@ func TripleDecryptStream(id TripleHandleID, wireSrc, plainDst []byte) (n int, st
 		s := mapTripleError(err)
 		return 0, s
 	}
-	defer clear(plain)
+	defer wipe.Bytes(plain)
 	if len(plain) > len(plainDst) {
 		setLastErr(StatusBufferTooSmall)
 		return len(plain), StatusBufferTooSmall
@@ -400,7 +414,7 @@ func TripleDecryptMessage(id TripleHandleID, wire, plainDst []byte) (n int, st S
 		s := mapTripleError(err)
 		return 0, s
 	}
-	defer clear(plain)
+	defer wipe.Bytes(plain)
 	if len(plain) > len(plainDst) {
 		setLastErr(StatusBufferTooSmall)
 		return len(plain), StatusBufferTooSmall

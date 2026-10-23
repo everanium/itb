@@ -52,21 +52,38 @@ func TestFusedDispatcherTiersArm64(t *testing.T) {
 	checkZeroAlloc(t, "scalar")
 }
 
-// TestFusedKernelsLeaveNoSecretInFrameArm64 runs the four- and
-// single-lane NEON kernels and the eight-lane NEON fill kernels under the
-// stack-residue probe: no fixed-key word, no k2 word and no K1 ^ k2 word
-// may be left in the stack once a kernel has returned.
+// TestFusedKernelsLeaveNoSecretInFrameArm64 runs the four-, eight-, and
+// single-lane NEON kernels, the eight-lane NEON fill kernels, and the
+// standalone NEON permutation / SoEM kernels under the stack- and
+// register-residue probe: no fixed-key word, no k2 word, no K1 ^ k2
+// word, and no state word may be left in the stack or NEON registers once
+// a kernel has returned.
 func TestFusedKernelsLeaveNoSecretInFrameArm64(t *testing.T) {
+	checkResidueNegativeControls(t)
 	if !FusedHasARMAES {
 		t.Skip("ARM crypto extension not available")
 	}
 	checkAreionResidue(t, "neon", neon256x4, neon512x4, neon256x1, neon512x1)
-	key256, key512 := randomKey256(), randomKey512()
-	c256, c512 := randomWords(4), randomWords(8)
-	var o256 [8][4]uint64
-	res := stackResidue(func() { neonFill256x8(key256, c256, 0x0123456789ABCDEF, 0x80000001, &o256) })
-	assertNoSecretResidue(t, "neon fill 256x8", res, areionSecrets(key256[:], c256), nil)
-	var o512 [8][8]uint64
-	res = stackResidue(func() { neonFill512x8(key512, c512, 0x0123456789ABCDEF, 0x80000001, &o512) })
-	assertNoSecretResidue(t, "neon fill 512x8", res, areionSecrets(key512[:], c512), nil)
+	checkAreionWideResidue(t, "neon-disp", dispatchers256x8(), dispatchers512x8())
+	checkAreionFillResidue(t, "neon", neonFill256x8, Fused512Fill13x4, neonFill512x8)
+	checkAreionPermute256Residue(t, "Areion256Permutex4", Areion256Permutex4)
+	checkAreionPermute256Residue(t, "Areion256Permute2x4", Areion256Permute2x4)
+	checkAreionPermute512Residue(t, "Areion512Permutex4", Areion512Permutex4)
+	checkAreionPermute512Residue(t, "Areion512Permute2x4", Areion512Permute2x4)
+	checkAreionSoEM256Residue(t, "Areion256SoEMPermutex4NEON", Areion256SoEMPermutex4NEON)
+	checkAreionSoEM512Residue(t, "Areion512SoEMPermutex4NEON", Areion512SoEMPermutex4NEON)
+}
+
+func TestFusedKernelsLeaveNoSecretInFrame(t *testing.T) {
+	TestFusedKernelsLeaveNoSecretInFrameArm64(t)
+}
+
+func dumpSIMDRegs(dst *[88]uint64, avx512 bool)
+func dirtySIMDRegForTest(masked uint64)
+
+func init() {
+	dumpSIMDRegsHook = func(dst *[88]uint64) {
+		dumpSIMDRegs(dst, false)
+	}
+	dirtySIMDRegHook = dirtySIMDRegForTest
 }

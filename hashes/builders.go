@@ -3,9 +3,11 @@ package hashes
 import (
 	"crypto/cipher"
 	"encoding/binary"
+	"runtime"
 	"sync"
 
 	"github.com/everanium/itb"
+	"github.com/everanium/itb/internal/wipe"
 )
 
 // newScratchPool returns a sync.Pool of reusable byte buffers, each
@@ -176,11 +178,14 @@ func BuildCBCMACChainAbsorb128(block cipher.Block) itb.HashFunc128 {
 	pool := newScratchPool(bs)
 	return func(data []byte, seed0, seed1 uint64) (uint64, uint64) {
 		bp := pool.Get().(*[]byte)
-		lo, hi := cbcMACChainAbsorbOne(block, (*bp)[:bs], data, seed0, seed1, 0x01)
+		st := (*bp)[:bs]
+		lo, hi := cbcMACChainAbsorbOne(block, st, data, seed0, seed1, 0x01)
 		// The scratch state is seed- and key-derived; zero it before it
 		// goes back to the pool.
-		clear((*bp)[:bs])
+		clear(st)
+		runtime.KeepAlive(st)
 		pool.Put(bp)
+		wipe.CallStack2K([9][8]uint64{})
 		return lo, hi
 	}
 }
@@ -206,7 +211,11 @@ func BuildCBCMACChainAbsorb256(block cipher.Block) itb.HashFunc256 {
 		// The scratch state is seed- and key-derived; zero it before it
 		// goes back to the pool.
 		clear(st)
+		runtime.KeepAlive(st)
 		pool.Put(bp)
+		clear(seed[:])
+		runtime.KeepAlive(&seed)
+		wipe.CallStack2K([9][8]uint64{})
 		return [4]uint64{lo0, hi0, lo1, hi1}
 	}
 }
@@ -240,7 +249,11 @@ func BuildCBCMACChainAbsorb512(block cipher.Block) itb.HashFunc512 {
 		// The scratch state is seed- and key-derived; zero it before it
 		// goes back to the pool.
 		clear(st)
+		runtime.KeepAlive(st)
 		pool.Put(bp)
+		clear(seed[:])
+		runtime.KeepAlive(&seed)
+		wipe.CallStack2K([9][8]uint64{})
 		return [8]uint64{lo0, hi0, lo1, hi1, lo2, hi2, lo3, hi3}
 	}
 }
@@ -250,6 +263,8 @@ func BuildCBCMACChainAbsorb512(block cipher.Block) itb.HashFunc512 {
 // The domain byte is XOR'd into the high byte of the seed0 word in
 // the initial state to differentiate parallel chains in the 256/512
 // width builders. seed1 is XOR'd with length-tag in the high word.
+//
+//go:noinline
 func cbcMACChainAbsorbOne(block cipher.Block, state []byte, data []byte, seed0, seed1 uint64, domain byte) (uint64, uint64) {
 	bs := len(state)
 	for i := range state {
@@ -331,14 +346,18 @@ func BuildSpongeChainAbsorb128(permute Permute, rate, capacity int, fixedKey []b
 	if len(fixedKey) > capacity {
 		panic("hashes: fixedKey must fit in capacity region")
 	}
+	keyCopy := append([]byte(nil), fixedKey...)
 	pool := newScratchPool(rate + capacity)
 	return func(data []byte, seed0, seed1 uint64) (uint64, uint64) {
 		bp := pool.Get().(*[]byte)
-		lo, hi := spongeChainAbsorbOne(permute, (*bp)[:rate+capacity], rate, capacity, fixedKey, data, seed0, seed1, 0x11)
+		st := (*bp)[:rate+capacity]
+		lo, hi := spongeChainAbsorbOne(permute, st, rate, capacity, keyCopy, data, seed0, seed1, 0x11)
 		// The scratch state is seed- and key-derived; zero it before it
 		// goes back to the pool.
-		clear((*bp)[:rate+capacity])
+		clear(st)
+		runtime.KeepAlive(st)
 		pool.Put(bp)
+		wipe.CallStack2K([9][8]uint64{})
 		return lo, hi
 	}
 }
@@ -357,16 +376,21 @@ func BuildSpongeChainAbsorb256(permute Permute, rate, capacity int, fixedKey []b
 	if len(fixedKey) > capacity {
 		panic("hashes: fixedKey must fit in capacity region")
 	}
+	keyCopy := append([]byte(nil), fixedKey...)
 	pool := newScratchPool(rate + capacity)
 	return func(data []byte, seed [4]uint64) [4]uint64 {
 		bp := pool.Get().(*[]byte)
 		st := (*bp)[:rate+capacity]
-		lo0, hi0 := spongeChainAbsorbOne(permute, st, rate, capacity, fixedKey, data, seed[0], seed[1], 0x12)
-		lo1, hi1 := spongeChainAbsorbOne(permute, st, rate, capacity, fixedKey, data, seed[2], seed[3], 0x13)
+		lo0, hi0 := spongeChainAbsorbOne(permute, st, rate, capacity, keyCopy, data, seed[0], seed[1], 0x12)
+		lo1, hi1 := spongeChainAbsorbOne(permute, st, rate, capacity, keyCopy, data, seed[2], seed[3], 0x13)
 		// The scratch state is seed- and key-derived; zero it before it
 		// goes back to the pool.
 		clear(st)
+		runtime.KeepAlive(st)
 		pool.Put(bp)
+		clear(seed[:])
+		runtime.KeepAlive(&seed)
+		wipe.CallStack2K([9][8]uint64{})
 		return [4]uint64{lo0, hi0, lo1, hi1}
 	}
 }
@@ -385,18 +409,23 @@ func BuildSpongeChainAbsorb512(permute Permute, rate, capacity int, fixedKey []b
 	if len(fixedKey) > capacity {
 		panic("hashes: fixedKey must fit in capacity region")
 	}
+	keyCopy := append([]byte(nil), fixedKey...)
 	pool := newScratchPool(rate + capacity)
 	return func(data []byte, seed [8]uint64) [8]uint64 {
 		bp := pool.Get().(*[]byte)
 		st := (*bp)[:rate+capacity]
-		lo0, hi0 := spongeChainAbsorbOne(permute, st, rate, capacity, fixedKey, data, seed[0], seed[1], 0x14)
-		lo1, hi1 := spongeChainAbsorbOne(permute, st, rate, capacity, fixedKey, data, seed[2], seed[3], 0x15)
-		lo2, hi2 := spongeChainAbsorbOne(permute, st, rate, capacity, fixedKey, data, seed[4], seed[5], 0x16)
-		lo3, hi3 := spongeChainAbsorbOne(permute, st, rate, capacity, fixedKey, data, seed[6], seed[7], 0x17)
+		lo0, hi0 := spongeChainAbsorbOne(permute, st, rate, capacity, keyCopy, data, seed[0], seed[1], 0x14)
+		lo1, hi1 := spongeChainAbsorbOne(permute, st, rate, capacity, keyCopy, data, seed[2], seed[3], 0x15)
+		lo2, hi2 := spongeChainAbsorbOne(permute, st, rate, capacity, keyCopy, data, seed[4], seed[5], 0x16)
+		lo3, hi3 := spongeChainAbsorbOne(permute, st, rate, capacity, keyCopy, data, seed[6], seed[7], 0x17)
 		// The scratch state is seed- and key-derived; zero it before it
 		// goes back to the pool.
 		clear(st)
+		runtime.KeepAlive(st)
 		pool.Put(bp)
+		clear(seed[:])
+		runtime.KeepAlive(&seed)
+		wipe.CallStack2K([9][8]uint64{})
 		return [8]uint64{lo0, hi0, lo1, hi1, lo2, hi2, lo3, hi3}
 	}
 }
@@ -406,6 +435,8 @@ func BuildSpongeChainAbsorb512(permute Permute, rate, capacity int, fixedKey []b
 // pair. fixedKey + seed components occupy the capacity region; the
 // length tag and domain byte initialize the rate region's leading
 // uint64.
+//
+//go:noinline
 func spongeChainAbsorbOne(permute Permute, state []byte, rate, capacity int, fixedKey []byte, data []byte, seed0, seed1 uint64, domain byte) (uint64, uint64) {
 	for i := range state {
 		state[i] = 0
@@ -484,16 +515,24 @@ func BuildARXChainAbsorb128(hashFn Hash256Fn, fixedKey []byte) itb.HashFunc128 {
 	if hashFn == nil {
 		panic("hashes: BuildARXChainAbsorb128 requires non-nil hashFn")
 	}
-	prefixLen := len(fixedKey) + 8 + 8 + 8 + 1
+	keyCopy := append([]byte(nil), fixedKey...)
+	prefixLen := len(keyCopy) + 8 + 8 + 8 + 1
 	pool := newScratchPool(prefixLen + 256)
 	return func(data []byte, seed0, seed1 uint64) (uint64, uint64) {
 		bp, buf := scratchAtLeast(pool, prefixLen+len(data))
-		out := arxAbsorbHash256(hashFn, buf, fixedKey, data, seed0, seed1, 0x21)
+		var out [32]byte
+		arxAbsorbHash256(&out, hashFn, buf, keyCopy, data, seed0, seed1, 0x21)
+		lo := binary.LittleEndian.Uint64(out[0:8])
+		hi := binary.LittleEndian.Uint64(out[8:16])
+		clear(out[:])
+		runtime.KeepAlive(&out)
 		// The scratch holds fixedKey ‖ seed ‖ data; zero it before it
 		// goes back to the pool.
 		clear(buf)
+		runtime.KeepAlive(buf)
 		pool.Put(bp)
-		return binary.LittleEndian.Uint64(out[0:8]), binary.LittleEndian.Uint64(out[8:16])
+		wipe.CallStack2K([9][8]uint64{})
+		return lo, hi
 	}
 }
 
@@ -504,27 +543,38 @@ func BuildARXChainAbsorb256(hashFn Hash256Fn, fixedKey []byte) itb.HashFunc256 {
 	if hashFn == nil {
 		panic("hashes: BuildARXChainAbsorb256 requires non-nil hashFn")
 	}
-	prefixLen := len(fixedKey) + 8 + 8 + 8 + 1
+	keyCopy := append([]byte(nil), fixedKey...)
+	prefixLen := len(keyCopy) + 8 + 8 + 8 + 1
 	pool := newScratchPool(prefixLen + 256)
 	return func(data []byte, seed [4]uint64) [4]uint64 {
 		bp, buf := scratchAtLeast(pool, prefixLen+len(data))
-		out := arxAbsorbHash256(hashFn, buf, fixedKey, data, seed[0], seed[1], 0x22)
+		var out, out2 [32]byte
+		arxAbsorbHash256(&out, hashFn, buf, keyCopy, data, seed[0], seed[1], 0x22)
 		// Second call with different domain + remaining seed components
 		// to fill the second half of the 32-byte output. The two halves
 		// are independent under the random-oracle / PRF assumption on
 		// hashFn. The scratch buffer is fully overwritten on each call,
 		// so it is reused across both passes.
-		out2 := arxAbsorbHash256(hashFn, buf, fixedKey, data, seed[2], seed[3], 0x23)
-		// The scratch holds fixedKey ‖ seed ‖ data; zero it before it
-		// goes back to the pool.
-		clear(buf)
-		pool.Put(bp)
-		return [4]uint64{
+		arxAbsorbHash256(&out2, hashFn, buf, keyCopy, data, seed[2], seed[3], 0x23)
+		res := [4]uint64{
 			binary.LittleEndian.Uint64(out[0:8]),
 			binary.LittleEndian.Uint64(out[8:16]),
 			binary.LittleEndian.Uint64(out2[0:8]),
 			binary.LittleEndian.Uint64(out2[8:16]),
 		}
+		clear(out[:])
+		clear(out2[:])
+		runtime.KeepAlive(&out)
+		runtime.KeepAlive(&out2)
+		// The scratch holds fixedKey ‖ seed ‖ data; zero it before it
+		// goes back to the pool.
+		clear(buf)
+		runtime.KeepAlive(buf)
+		pool.Put(bp)
+		clear(seed[:])
+		runtime.KeepAlive(&seed)
+		wipe.CallStack2K([9][8]uint64{})
+		return res
 	}
 }
 
@@ -539,19 +589,17 @@ func BuildARXChainAbsorb512(hashFn Hash512Fn, fixedKey []byte) itb.HashFunc512 {
 	if hashFn == nil {
 		panic("hashes: BuildARXChainAbsorb512 requires non-nil hashFn")
 	}
-	prefixLen := len(fixedKey) + 8 + 8*8 + 1
+	keyCopy := append([]byte(nil), fixedKey...)
+	prefixLen := len(keyCopy) + 8 + 8*8 + 1
 	pool := newScratchPool(prefixLen + 256)
 	return func(data []byte, seed [8]uint64) [8]uint64 {
 		// Single hash call carries all 8 seed components in the
 		// canonical absorb prefix. The hashFn call returns 64 bytes
 		// which are unpacked directly.
 		bp, buf := scratchAtLeast(pool, prefixLen+len(data))
-		out := arxAbsorbHash512(hashFn, buf, fixedKey, data, seed, 0x24)
-		// The scratch holds fixedKey ‖ seed ‖ data; zero it before it
-		// goes back to the pool.
-		clear(buf)
-		pool.Put(bp)
-		return [8]uint64{
+		var out [64]byte
+		arxAbsorbHash512(&out, hashFn, buf, keyCopy, data, &seed, 0x24)
+		res := [8]uint64{
 			binary.LittleEndian.Uint64(out[0:8]),
 			binary.LittleEndian.Uint64(out[8:16]),
 			binary.LittleEndian.Uint64(out[16:24]),
@@ -561,13 +609,26 @@ func BuildARXChainAbsorb512(hashFn Hash512Fn, fixedKey []byte) itb.HashFunc512 {
 			binary.LittleEndian.Uint64(out[48:56]),
 			binary.LittleEndian.Uint64(out[56:64]),
 		}
+		clear(out[:])
+		runtime.KeepAlive(&out)
+		// The scratch holds fixedKey ‖ seed ‖ data; zero it before it
+		// goes back to the pool.
+		clear(buf)
+		runtime.KeepAlive(buf)
+		pool.Put(bp)
+		clear(seed[:])
+		runtime.KeepAlive(&seed)
+		wipe.CallStack2K([9][8]uint64{})
+		return res
 	}
 }
 
 // arxAbsorbHash256 builds the canonical absorb buffer
 // (fixedKey || lenTag || seed0 || seed1 || domain || data) and feeds
-// it to the supplied 32-byte hash function. Returns the 32-byte digest.
-func arxAbsorbHash256(hashFn Hash256Fn, scratch []byte, fixedKey []byte, data []byte, seed0, seed1 uint64, domain byte) [32]byte {
+// it to the supplied 32-byte hash function, writing the 32-byte digest into dst.
+//
+//go:noinline
+func arxAbsorbHash256(dst *[32]byte, hashFn Hash256Fn, scratch []byte, fixedKey []byte, data []byte, seed0, seed1 uint64, domain byte) {
 	prefixLen := len(fixedKey) + 8 + 8 + 8 + 1 // key + lenTag + seed0 + seed1 + domain
 	buf := scratch[:prefixLen+len(data)]
 	off := 0
@@ -582,13 +643,15 @@ func arxAbsorbHash256(hashFn Hash256Fn, scratch []byte, fixedKey []byte, data []
 	buf[off] = domain
 	off++
 	copy(buf[off:], data)
-	return hashFn(buf)
+	*dst = hashFn(buf)
 }
 
 // arxAbsorbHash512 builds the canonical absorb buffer with all 8 seed
-// components and feeds it to the supplied 64-byte hash function.
-// Returns the 64-byte digest.
-func arxAbsorbHash512(hashFn Hash512Fn, scratch []byte, fixedKey []byte, data []byte, seed [8]uint64, domain byte) [64]byte {
+// components and feeds it to the supplied 64-byte hash function,
+// writing the 64-byte digest into dst.
+//
+//go:noinline
+func arxAbsorbHash512(dst *[64]byte, hashFn Hash512Fn, scratch []byte, fixedKey []byte, data []byte, seed *[8]uint64, domain byte) {
 	prefixLen := len(fixedKey) + 8 + 8*8 + 1 // key + lenTag + 8 seed words + domain
 	buf := scratch[:prefixLen+len(data)]
 	off := 0
@@ -603,7 +666,7 @@ func arxAbsorbHash512(hashFn Hash512Fn, scratch []byte, fixedKey []byte, data []
 	buf[off] = domain
 	off++
 	copy(buf[off:], data)
-	return hashFn(buf)
+	*dst = hashFn(buf)
 }
 
 // ---------------------------------------------------------------------------

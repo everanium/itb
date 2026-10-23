@@ -2,8 +2,10 @@ package ctr
 
 import (
 	"encoding/binary"
+	"runtime"
 
 	"github.com/everanium/itb/internal/hashprf"
+	"github.com/everanium/itb/internal/wipe"
 )
 
 // prfHashCTRBatch is the 4-wide batched counterpart of prfHashCTR. It emits
@@ -16,25 +18,27 @@ import (
 // The keystream buffer holds 4*blockSize bytes; XORKeyStream drains it and
 // refills four blocks at a time. The counter advances by four per refill.
 type prfHashCTRBatch struct {
-	batch     func(dst, in *[4][]byte)
-	blockSize int
-	counter   uint64
-	inStore   [4][hashCTRNonceSize + 8]byte // nonce(16) || LE64(counter) per lane
-	in        [4][]byte                     // slices into inStore
-	out       [4][]byte                     // slices into keystrm (one block each)
-	keystrm   []byte                        // 4*blockSize; lane k at [k*blockSize:]
-	keystrmN  int                           // unconsumed trailing bytes of keystrm
+	batch      func(dst, in *[4][]byte)
+	closeBatch func()
+	blockSize  int
+	counter    uint64
+	inStore    [4][hashCTRNonceSize + 8]byte // nonce(16) || LE64(counter) per lane
+	in         [4][]byte                     // slices into inStore
+	out        [4][]byte                     // slices into keystrm (one block each)
+	keystrm    []byte                        // 4*blockSize; lane k at [k*blockSize:]
+	keystrmN   int                           // unconsumed trailing bytes of keystrm
 }
 
 // newPrfHashCTRBatch validates lengths, builds the batch PRF, and wires the
 // per-lane input / output slice views. It is only reached for primitives whose
 // hashprf.NewBatch reports a batch path (the Areion family).
 func newPrfHashCTRBatch(name string, key, nonce []byte,
-	batch func(dst, in *[4][]byte), blockSize int) (Keystream, error) {
+	batch func(dst, in *[4][]byte), closeBatch func(), blockSize int) (Keystream, error) {
 	c := &prfHashCTRBatch{
-		batch:     batch,
-		blockSize: blockSize,
-		keystrm:   make([]byte, 4*blockSize),
+		batch:      batch,
+		closeBatch: closeBatch,
+		blockSize:  blockSize,
+		keystrm:    make([]byte, 4*blockSize),
 	}
 	for lane := 0; lane < 4; lane++ {
 		copy(c.inStore[lane][:hashCTRNonceSize], nonce)
@@ -70,22 +74,38 @@ func (c *prfHashCTRBatch) XORKeyStream(dst, src []byte) {
 		if take > n-i {
 			take = n - i
 		}
-		for j := 0; j < take; j++ {
+		j := 0
+		for ; j+8 <= take; j += 8 {
+			s := binary.LittleEndian.Uint64(src[i+j : i+j+8])
+			k := binary.LittleEndian.Uint64(c.keystrm[off+j : off+j+8])
+			binary.LittleEndian.PutUint64(dst[i+j:i+j+8], s^k)
+		}
+		for ; j < take; j++ {
 			dst[i+j] = src[i+j] ^ c.keystrm[off+j]
 		}
 		i += take
 		c.keystrmN -= take
 	}
+	if n > 0 {
+		clear(c.keystrm[:len(c.keystrm)-c.keystrmN])
+	}
 }
 
 func (c *prfHashCTRBatch) Close() error {
+	if c.closeBatch != nil {
+		c.closeBatch()
+		c.closeBatch = nil
+	}
 	for lane := 0; lane < 4; lane++ {
 		clear(c.inStore[lane][:])
 	}
 	clear(c.keystrm)
+	runtime.KeepAlive(&c.inStore)
+	runtime.KeepAlive(c.keystrm)
 	c.batch = nil
 	c.counter = 0
 	c.keystrmN = 0
+	wipe.CallStack512B()
 	return nil
 }
 
@@ -93,15 +113,18 @@ func (c *prfHashCTRBatch) Close() error {
 // path, or (nil, false, nil) when it does not (caller falls back to the
 // single-block prfHashCTR). Key / nonce lengths are validated by the caller.
 func tryNewPrfHashCTRBatch(name string, key, nonce []byte) (Keystream, bool, error) {
-	batch, blockSize, ok, err := hashprf.NewBatch(name, key)
+	batch, blockSize, ok, closeBatch, err := hashprf.NewBatchRawWithClose(name, key)
 	if err != nil {
 		return nil, false, err
 	}
 	if !ok {
 		return nil, false, nil
 	}
-	ks, err := newPrfHashCTRBatch(name, key, nonce, batch, blockSize)
+	ks, err := newPrfHashCTRBatch(name, key, nonce, batch, closeBatch, blockSize)
 	if err != nil {
+		if closeBatch != nil {
+			closeBatch()
+		}
 		return nil, false, err
 	}
 	return ks, true, nil

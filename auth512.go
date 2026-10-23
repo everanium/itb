@@ -144,7 +144,7 @@ func encryptStreamAuthenticated3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSe
 		return nil, err
 	}
 
-	tagSize := len(macFunc([]byte{}))
+	tagSize := macTagSize(macFunc)
 	if tagSize == 0 {
 		return nil, fmt.Errorf("itb: macFunc returned empty tag")
 	}
@@ -153,6 +153,7 @@ func encryptStreamAuthenticated3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSe
 	if err != nil {
 		return nil, err
 	}
+	defer secureWipe(ilNonce)
 
 	// Interlock split, COBS, payload assembly and wire allocation with
 	// overlapped container + payload-tail DRBG fill (see
@@ -160,7 +161,9 @@ func encryptStreamAuthenticated3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSe
 	// (flag byte) for container sizing; part0 and part1 are filled to
 	// full capacity, part2 reserves tagSize + 1 (tag slot + flag) that
 	// is written below.
-	tp, out, container, width, height, err := buildTripleWire3(cfg, data, buildLockBatchPRF48_512Cfg(cfg, lockSeed, ilNonce), tagSize+1, false, lead, nonce, ilNonce,
+	bp := buildLockBatchPRF48_512Cfg(cfg, lockSeed, ilNonce)
+	defer bp.wipe()
+	tp, out, container, width, height, err := buildTripleWire3(cfg, data, bp, tagSize+1, false, lead, nonce, ilNonce,
 		func(cobsLens [3]int) (int, int) {
 			return containerSizeAuth3_512Cfg(cfg, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, cobsLens)
 		})
@@ -191,6 +194,7 @@ func encryptStreamAuthenticated3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSe
 	// payload buffer.
 	full2 := tp.bufs[2]
 	copy(full2[len(payloads[2]):], tag)
+	secureWipe(tag)
 	full2[len(payloads[2])+tagSize] = flag
 
 	perThird := configuredWorkerCount(cfg) / 3
@@ -236,7 +240,7 @@ func DecryptStreamAuthenticated3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSe
 		return nil, false, err
 	}
 
-	tagSize := len(macFunc([]byte{}))
+	tagSize := macTagSize(macFunc)
 	if tagSize == 0 {
 		return nil, false, fmt.Errorf("itb: macFunc returned empty tag")
 	}
@@ -340,8 +344,9 @@ func DecryptStreamAuthenticated3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSe
 		expected = macTagCfg(cfg, macFunc,
 			decoded[0], decoded[1], payload2, streamID[:], chunkPrefix, offsetLE[:], []byte{flag})
 	}
-
-	if !constantTimeEqual(tag, expected) {
+	tagOK := constantTimeEqual(tag, expected)
+	secureWipe(expected)
+	if !tagOK {
 		return nil, false, ErrMACFailure
 	}
 
@@ -392,5 +397,8 @@ func DecryptStreamAuthenticated3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSe
 	// The interlock nonce is carried split across the three lane
 	// prefixes; lanes[i] is what follows fragment i.
 	ilNonce, lanes := recoverInterlockNonce(nonceLen, parts)
-	return interleaveForTriple48LockedCfg(cfg, lanes[0], lanes[1], lanes[2], buildLockBatchPRF48_512Cfg(cfg, lockSeed, ilNonce)), finalFlag, nil
+	defer secureWipe(ilNonce)
+	bp := buildLockBatchPRF48_512Cfg(cfg, lockSeed, ilNonce)
+	defer bp.wipe()
+	return interleaveForTriple48LockedCfg(cfg, lanes[0], lanes[1], lanes[2], bp), finalFlag, nil
 }

@@ -6,6 +6,7 @@ import (
 
 	"github.com/everanium/itb/hashes"
 	"github.com/everanium/itb/internal/drbg"
+	"github.com/everanium/itb/internal/wipe"
 )
 
 // The DRBG fill arms of the keystream primitives.
@@ -35,19 +36,18 @@ func init() {
 		}
 		fill := func(dst []byte) error {
 			seed := make([]byte, keySize+nonceSize)
+			defer wipe.Bytes(seed)
 			if _, err := rand.Read(seed); err != nil {
 				return err
 			}
 			ks, err := New(name, seed[:keySize], seed[keySize:])
 			if err != nil {
-				clear(seed)
 				return err
 			}
 			ks.XORKeyStream(dst, dst)
 			if c, ok := ks.(io.Closer); ok {
 				_ = c.Close()
 			}
-			clear(seed)
 			return nil
 		}
 		if err := drbg.Register(name, fill); err != nil {

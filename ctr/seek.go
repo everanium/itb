@@ -1,9 +1,8 @@
 package ctr
 
 import (
-	"crypto/aes"
-	"crypto/cipher"
 	"fmt"
+	"runtime"
 
 	"github.com/everanium/itb/hashes"
 	"github.com/everanium/itb/internal/hashprf"
@@ -25,32 +24,39 @@ func streamBlockSize(name string) (int, error) {
 	}
 }
 
-// ivAt returns the 16-byte AES-CTR IV positioned blockOff blocks past nonce,
-// i.e. nonce interpreted as a big-endian 128-bit counter plus blockOff. This
-// matches crypto/cipher CTR's whole-IV big-endian increment, so the keystream
-// from cipher.NewCTR(block, ivAt(nonce, b)) equals the original stream's block b.
-func ivAt(nonce []byte, blockOff uint64) []byte {
-	iv := make([]byte, 16)
-	copy(iv, nonce)
+// ivAtInto writes into iv the 16-byte AES-CTR IV positioned blockOff blocks
+// past nonce, i.e. nonce interpreted as a big-endian 128-bit counter plus
+// blockOff. This matches crypto/cipher CTR's whole-IV big-endian increment, so
+// the keystream from cipher.NewCTR(block, iv[:]) equals the original stream's
+// block b.
+func ivAtInto(iv *[16]byte, nonce []byte, blockOff uint64) {
+	copy(iv[:], nonce)
 	carry := blockOff
 	for i := 15; i >= 0 && carry > 0; i-- {
 		sum := uint64(iv[i]) + (carry & 0xff)
 		iv[i] = byte(sum)
 		carry = (carry >> 8) + (sum >> 8)
 	}
-	return iv
 }
 
-// discard advances a keystream by n bytes (n < one block) by XORing a scratch
-// buffer through it. Used to skip the intra-block remainder after a whole-block
-// counter jump; n is bounded by the cipher block size, so this is O(1).
+// discard advances a keystream by n bytes by XORing a stack scratch buffer
+// through it and wiping the buffer before return.
 func discard(ks Keystream, n int) {
 	if n <= 0 {
 		return
 	}
-	z := make([]byte, n)
-	ks.XORKeyStream(z, z)
-	clear(z)
+	var zBuf [256]byte
+	for n > 0 {
+		step := n
+		if step > len(zBuf) {
+			step = len(zBuf)
+		}
+		z := zBuf[:step]
+		ks.XORKeyStream(z, z)
+		n -= step
+	}
+	clear(zBuf[:])
+	runtime.KeepAlive(&zBuf)
 }
 
 // NewAt returns a keystream positioned so its first output byte is the byte at
@@ -76,22 +82,13 @@ func NewAt(name string, key, nonce []byte, byteOffset int) (Keystream, error) {
 	intra := byteOffset % bs
 
 	// AES-CTR cannot be re-seeked after construction; build it with an
-	// offset IV instead.
+	// offset IV instead via newAESResettableAt so the returned Keystream
+	// also implements io.Closer.
 	if name == hashes.CipherAES128CTR {
-		if len(key) != 16 {
-			return nil, fmt.Errorf("ctr: aes-128-ctr key must be 16 bytes, got %d", len(key))
-		}
-		if len(nonce) != aes.BlockSize {
-			return nil, fmt.Errorf("ctr: aes-128-ctr nonce must be %d bytes, got %d", aes.BlockSize, len(nonce))
-		}
-		block, err := aes.NewCipher(key)
+		ks, err := newAESResettableAt(key, nonce, byteOffset)
 		if err != nil {
 			return nil, err
 		}
-		iv := ivAt(nonce, blockOff)
-		ks := cipher.NewCTR(block, iv)
-		clear(iv)
-		discard(ks, intra)
 		return ks, nil
 	}
 
@@ -103,11 +100,23 @@ func NewAt(name string, key, nonce []byte, byteOffset int) (Keystream, error) {
 	}
 	switch c := ks.(type) {
 	case *sipCTR:
-		c.counter = blockOff
+		if err := c.ResetCounter(byteOffset); err != nil {
+			_ = c.Close()
+			return nil, err
+		}
+		return c, nil
 	case *prfHashCTR:
-		c.counter = blockOff
+		if err := c.ResetCounter(byteOffset); err != nil {
+			_ = c.Close()
+			return nil, err
+		}
+		return c, nil
 	case *prfHashCTRBatch:
-		c.counter = blockOff
+		if err := c.ResetCounter(byteOffset); err != nil {
+			_ = c.Close()
+			return nil, err
+		}
+		return c, nil
 	case *chaCha20CTR:
 		// ChaCha20's block counter is a uint32 (RFC 8439); a silent
 		// uint32(blockOff) truncation past 2^32 would reuse keystream

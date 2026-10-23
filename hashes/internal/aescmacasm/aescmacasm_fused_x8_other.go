@@ -14,11 +14,11 @@ var (
 func FusedX8Active() bool { return false }
 
 func FusedChain20x8(s *Schedule, components []uint64, dataPtrs *[8]*byte, out *[8][2]uint64) {
-	fusedChainX8ViaX4(FusedChain20x4, s, components, dataPtrs, out)
+	fusedChainX8ViaX4(20, s, components, dataPtrs, out)
 }
 func FusedChain36x8(s *Schedule, components []uint64, dataPtrs *[8]*byte, out *[8][2]uint64) {
-	fusedChainX8ViaX4(FusedChain36x4, s, components, dataPtrs, out)
+	fusedChainX8ViaX4(36, s, components, dataPtrs, out)
 }
 func FusedChain68x8(s *Schedule, components []uint64, dataPtrs *[8]*byte, out *[8][2]uint64) {
-	fusedChainX8ViaX4(FusedChain68x4, s, components, dataPtrs, out)
+	fusedChainX8ViaX4(68, s, components, dataPtrs, out)
 }

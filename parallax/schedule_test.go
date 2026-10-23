@@ -133,12 +133,11 @@ func TestScheduleChangesWithNonce(t *testing.T) {
 	cs := mustCipherset(t, mustMaster(t), schedule)
 	nonceA := []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 	nonceB := []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}
-	seedA, err := buildScheduleSeed(schedule, cs, nonceA)
-	if err != nil {
+	var seedA, seedB [scheduleSeedSize]byte
+	if err := buildScheduleSeed(&seedA, schedule, cs, nonceA); err != nil {
 		t.Fatalf("buildScheduleSeed A: %v", err)
 	}
-	seedB, err := buildScheduleSeed(schedule, cs, nonceB)
-	if err != nil {
+	if err := buildScheduleSeed(&seedB, schedule, cs, nonceB); err != nil {
 		t.Fatalf("buildScheduleSeed B: %v", err)
 	}
 	if seedA == seedB {

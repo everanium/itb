@@ -18,6 +18,7 @@ package blake3asm
 
 import (
 	"encoding/binary"
+	"runtime"
 	"unsafe"
 
 	"github.com/zeebo/blake3"
@@ -59,9 +60,21 @@ import (
 // nonce-buf shapes.
 var Shapes = [4]int{13, 20, 36, 68}
 
+var scalarZeroBlock [128]byte
+
 // absorb256 is the parent package's keyed BLAKE3 hash of one (key,
 // seed, data) triple.
 func absorb256(key *[32]byte, seed *[4]uint64, data []byte) [4]uint64 {
+	h, err := blake3.NewKeyed(key[:])
+	if err != nil {
+		panic(err)
+	}
+	out := absorb256WithHasher(h, seed, data)
+	scrubScalarHasher(h, len(data))
+	return out
+}
+
+func absorb256WithHasher(h *blake3.Hasher, seed *[4]uint64, data []byte) [4]uint64 {
 	const inject = 32
 	payload := len(data)
 	if payload < inject {
@@ -79,17 +92,46 @@ func absorb256(key *[32]byte, seed *[4]uint64, data []byte) [4]uint64 {
 		off := 8 * i
 		binary.LittleEndian.PutUint64(buf[off:], binary.LittleEndian.Uint64(buf[off:])^seed[i])
 	}
-	h, err := blake3.NewKeyed(key[:])
-	if err != nil {
-		panic(err)
-	}
-	h.Write(buf)
+	h.Reset()
+	_, _ = h.Write(buf)
+	clear(buf)
+	runtime.KeepAlive(&stack)
 	var d [32]byte
 	h.Sum(d[:0])
 	var out [4]uint64
 	for i := range out {
 		out[i] = binary.LittleEndian.Uint64(d[8*i:])
 	}
+	clear(d[:])
+	runtime.KeepAlive(&d)
+	return out
+}
+
+func scrubScalarHasher(h *blake3.Hasher, n int) {
+	h.Reset()
+	if n > len(scalarZeroBlock) {
+		n = len(scalarZeroBlock)
+	}
+	if n < 32 {
+		n = 32
+	}
+	_, _ = h.Write(scalarZeroBlock[:n])
+	var d [32]byte
+	h.Sum(d[:0])
+	clear(d[:])
+	h.Reset()
+}
+
+func scalarChainWithHasher(h *blake3.Hasher, components []uint64, data []byte) [4]uint64 {
+	var out, seed [4]uint64
+	for g := 0; g+4 <= len(components); g += 4 {
+		for i := range seed {
+			seed[i] = components[g+i] ^ out[i]
+		}
+		out = absorb256WithHasher(h, &seed, data)
+	}
+	clear(seed[:])
+	runtime.KeepAlive(&seed)
 	return out
 }
 
@@ -97,14 +139,13 @@ func absorb256(key *[32]byte, seed *[4]uint64, data []byte) [4]uint64 {
 // BLAKE3 hash per component group, the previous output folded into the
 // group.
 func ScalarFusedChain256(fixedKey *[32]byte, components []uint64, data []byte) [4]uint64 {
-	var h, seed [4]uint64
-	for g := 0; g+4 <= len(components); g += 4 {
-		for i := range seed {
-			seed[i] = components[g+i] ^ h[i]
-		}
-		h = absorb256(fixedKey, &seed, data)
+	h, err := blake3.NewKeyed(fixedKey[:])
+	if err != nil {
+		panic(err)
 	}
-	return h
+	out := scalarChainWithHasher(h, components, data)
+	scrubScalarHasher(h, len(data))
+	return out
 }
 
 // validComponents256 reports whether the cascade can run: at least one
@@ -134,26 +175,43 @@ func fillPtrs4(blocks *[4][13]byte, groupIdxBase uint64, v uint32) [4]*byte {
 }
 
 func scalarFused256X4(fixedKey *[32]byte, components []uint64, dataPtrs *[4]*byte, n int, out *[4][4]uint64) {
-	for lane := 0; lane < 4; lane++ {
-		out[lane] = ScalarFusedChain256(fixedKey, components, lanePtr(dataPtrs[lane], n))
+	h, err := blake3.NewKeyed(fixedKey[:])
+	if err != nil {
+		panic(err)
 	}
+	for lane := 0; lane < 4; lane++ {
+		out[lane] = scalarChainWithHasher(h, components, lanePtr(dataPtrs[lane], n))
+	}
+	scrubScalarHasher(h, n)
 }
 
 func scalarFused256X8(fixedKey *[32]byte, components []uint64, dataPtrs *[8]*byte, n int, out *[8][4]uint64) {
-	for lane := 0; lane < 8; lane++ {
-		out[lane] = ScalarFusedChain256(fixedKey, components, lanePtr(dataPtrs[lane], n))
+	h, err := blake3.NewKeyed(fixedKey[:])
+	if err != nil {
+		panic(err)
 	}
+	for lane := 0; lane < 8; lane++ {
+		out[lane] = scalarChainWithHasher(h, components, lanePtr(dataPtrs[lane], n))
+	}
+	scrubScalarHasher(h, n)
 }
 
 // scalarFill256X8 is the pure-Go reference of the batch-16 fill hook:
 // lane i runs the cascade over the fill block
 // [0x03 | LE64(groupIdxBase+i) | LE32(v)] of group groupIdxBase+i.
 func scalarFill256X8(fixedKey *[32]byte, components []uint64, groupIdxBase uint64, v uint32, out *[8][4]uint64) {
+	h, err := blake3.NewKeyed(fixedKey[:])
+	if err != nil {
+		panic(err)
+	}
 	var blk [13]byte
 	for i := range out {
 		fillBlock(&blk, groupIdxBase+uint64(i), v)
-		out[i] = ScalarFusedChain256(fixedKey, components, blk[:])
+		out[i] = scalarChainWithHasher(h, components, blk[:])
 	}
+	clear(blk[:])
+	runtime.KeepAlive(&blk)
+	scrubScalarHasher(h, len(blk))
 }
 
 // lanePtr views n bytes at p as a slice for the pure-Go fallbacks.

@@ -3,20 +3,20 @@
 # and language-binding loop harnesses.
 #
 # Builds two arms of tools/loop (default CGO + SIMD assembly and
-# CGO_ENABLED=0 -tags noitbasm pure-Go fallback) and executes a 64-cell
-# stress matrix per arm (128 Go runs by default), plus an optional 16-cell
+# CGO_ENABLED=0 -tags noitbasm pure-Go fallback) and executes a 92-cell
+# stress matrix per arm (184 Go runs by default), plus an optional 20-cell
 # matrix per selected language binding (e.g. --bindings c,ada).
 #
-# Matrix coverage (64 Go cells):
+# Matrix coverage (92 Go cells):
 #   - Group 1 (16 cells): 4 (Parallax=on/off x Wrapper=on/off) x 4 surface/mode
 #     configurations (both AEAD+MAC, multi-chunk stream_one_shot,
 #     singlemsg-triple-nomac-v1, streaming-noaead-triple-v1).
-#   - Group 2 (20 cells): all shipped PRF-grade and lab-free hash primitives x
-#     2 layer regimes (Parallax=on/Wrapper=on and Parallax=off/Wrapper=on)
-#     across all 3 MAC constructions (hmac-blake3, hmac-sha256, kmac256).
-#   - Group 3 (12 cells): key widths (512 / 1024 / 2048), nonce widths
+#   - Group 2 (40 cells): all shipped PRF-grade hash primitives x all 4 layer
+#     regimes (Parallax=on/off x Wrapper=on/off) across all 3 MAC constructions
+#     (hmac-blake3, hmac-sha256, kmac256).
+#   - Group 3 (20 cells): key widths (512 / 1024 / 2048), nonce widths
 #     (128 / 256 / 512), container floor modes (Per-Region Mode 1 and
-#     Per-Container Mode 2), rotating payloads, explicit DRBG overrides,
+#     Per-Container Mode 2), rotating payloads, all explicit DRBG overrides,
 #     and mixed-primitive streaming profiles.
 #   - Group 4 (16 cells): mixed-primitive Single Message and Streaming AEAD /
 #     Non-AEAD profiles, AES-ITB profiles paired with AES-CMAC outer layers,
@@ -166,7 +166,7 @@ declare -a GO_CELLS=(
   "g1_15_p0_w1_noaead_os|--profile streaming-noaead-triple-v1 --shape stream_one_shot --parallax off --wrapper on --hash blake2b256 --chunk-size 256KB --payload-size 1MB --rekey-every 5 --blob-cycle-every 7"
   "g1_16_p0_w0_noaead_os|--profile streaming-noaead-triple-v1 --shape stream_one_shot --parallax off --wrapper off --hash blake2b256 --chunk-size 256KB --payload-size 1MB --rekey-every 5 --blob-cycle-every 7"
 
-  # --- Group 2 (20 cells): All 10 Hash Primitives x (Parallax=on/Wrapper=on and Parallax=off/Wrapper=on) ---
+  # --- Group 2 (40 cells): All 10 Hash Primitives x All 4 (Parallax=on/off x Wrapper=on/off) Regimes ---
   "g2_01_aesitb128_p1w1|--shape both --parallax on --wrapper on --hash aesitb128 --mac hmac-blake3 --payload-size 512KB --rekey-every 5 --blob-cycle-every 7"
   "g2_02_areion256_p1w1|--shape both --parallax on --wrapper on --hash areion256 --mac hmac-blake3 --payload-size 512KB --rekey-every 5 --blob-cycle-every 7"
   "g2_03_areion512_p1w1|--shape both --parallax on --wrapper on --hash areion512 --mac hmac-blake3 --payload-size 512KB --rekey-every 5 --blob-cycle-every 7"
@@ -189,7 +189,29 @@ declare -a GO_CELLS=(
   "g2_19_siphash24_p0w1|--shape both --parallax off --wrapper on --hash siphash24 --mac kmac256 --payload-size 512KB --rekey-every 5 --blob-cycle-every 7"
   "g2_20_chacha20_p0w1|--shape both --parallax off --wrapper on --hash chacha20 --mac hmac-sha256 --payload-size 512KB --rekey-every 5 --blob-cycle-every 7"
 
-  # --- Group 3 (12 cells): MACs, Key/Nonce Widths, Container Modes 1/2, Rotating Payloads, DRBGs & Mixed Profiles ---
+  "g2_21_aesitb128_p1w0|--shape both --parallax on --wrapper off --hash aesitb128 --mac hmac-sha256 --payload-size 512KB --rekey-every 5 --blob-cycle-every 7"
+  "g2_22_areion256_p1w0|--shape both --parallax on --wrapper off --hash areion256 --mac kmac256 --payload-size 512KB --rekey-every 5 --blob-cycle-every 7"
+  "g2_23_areion512_p1w0|--shape both --parallax on --wrapper off --hash areion512 --mac hmac-sha256 --payload-size 512KB --rekey-every 5 --blob-cycle-every 7"
+  "g2_24_blake2b256_p1w0|--shape both --parallax on --wrapper off --hash blake2b256 --mac kmac256 --payload-size 512KB --rekey-every 5 --blob-cycle-every 7"
+  "g2_25_blake2b512_p1w0|--shape both --parallax on --wrapper off --hash blake2b512 --mac kmac256 --payload-size 512KB --rekey-every 5 --blob-cycle-every 7"
+  "g2_26_blake2s_p1w0|--shape both --parallax on --wrapper off --hash blake2s --mac hmac-sha256 --payload-size 512KB --rekey-every 5 --blob-cycle-every 7"
+  "g2_27_blake3_p1w0|--shape both --parallax on --wrapper off --hash blake3 --mac kmac256 --payload-size 512KB --rekey-every 5 --blob-cycle-every 7"
+  "g2_28_aescmac_p1w0|--shape both --parallax on --wrapper off --hash aescmac --mac kmac256 --payload-size 512KB --rekey-every 5 --blob-cycle-every 7"
+  "g2_29_siphash24_p1w0|--shape both --parallax on --wrapper off --hash siphash24 --mac hmac-sha256 --payload-size 512KB --rekey-every 5 --blob-cycle-every 7"
+  "g2_30_chacha20_p1w0|--shape both --parallax on --wrapper off --hash chacha20 --mac kmac256 --payload-size 512KB --rekey-every 5 --blob-cycle-every 7"
+
+  "g2_31_aesitb128_p0w0|--shape both --parallax off --wrapper off --hash aesitb128 --mac hmac-blake3 --payload-size 512KB --rekey-every 5 --blob-cycle-every 7"
+  "g2_32_areion256_p0w0|--shape both --parallax off --wrapper off --hash areion256 --mac hmac-blake3 --payload-size 512KB --rekey-every 5 --blob-cycle-every 7"
+  "g2_33_areion512_p0w0|--shape both --parallax off --wrapper off --hash areion512 --mac hmac-blake3 --payload-size 512KB --rekey-every 5 --blob-cycle-every 7"
+  "g2_34_blake2b256_p0w0|--shape both --parallax off --wrapper off --hash blake2b256 --mac hmac-blake3 --payload-size 512KB --rekey-every 5 --blob-cycle-every 7"
+  "g2_35_blake2b512_p0w0|--shape both --parallax off --wrapper off --hash blake2b512 --mac hmac-blake3 --payload-size 512KB --rekey-every 5 --blob-cycle-every 7"
+  "g2_36_blake2s_p0w0|--shape both --parallax off --wrapper off --hash blake2s --mac hmac-blake3 --payload-size 512KB --rekey-every 5 --blob-cycle-every 7"
+  "g2_37_blake3_p0w0|--shape both --parallax off --wrapper off --hash blake3 --mac hmac-blake3 --payload-size 512KB --rekey-every 5 --blob-cycle-every 7"
+  "g2_38_aescmac_p0w0|--shape both --parallax off --wrapper off --hash aescmac --mac hmac-sha256 --payload-size 512KB --rekey-every 5 --blob-cycle-every 7"
+  "g2_39_siphash24_p0w0|--shape both --parallax off --wrapper off --hash siphash24 --mac hmac-blake3 --payload-size 512KB --rekey-every 5 --blob-cycle-every 7"
+  "g2_40_chacha20_p0w0|--shape both --parallax off --wrapper off --hash chacha20 --mac hmac-blake3 --payload-size 512KB --rekey-every 5 --blob-cycle-every 7"
+
+  # --- Group 3 (20 cells): MACs, Key/Nonce Widths, Container Modes 1/2, Rotating Payloads, All 11 DRBGs & Mixed Profiles ---
   "g3_01_mac_hmac_sha256|--shape both --parallax on --wrapper on --hash areion256 --mac hmac-sha256 --key-bits 512 --nonce-bits 128 --payload-size 512KB --rekey-every 4 --blob-cycle-every 6"
   "g3_02_mac_kmac256|--shape both --parallax on --wrapper on --hash areion512 --mac kmac256 --key-bits 2048 --nonce-bits 512 --payload-size 512KB --rekey-every 4 --blob-cycle-every 6"
   "g3_03_kb1024_nb256|--shape both --parallax on --wrapper off --hash blake2b512 --mac hmac-blake3 --key-bits 1024 --nonce-bits 256 --payload-size 512KB --rekey-every 4 --blob-cycle-every 6"
@@ -200,8 +222,16 @@ declare -a GO_CELLS=(
   "g3_08_drbg_chacha20|--shape both --parallax on --wrapper on --hash chacha20 --mac hmac-blake3 --drbg chacha20 --payload-mode rotating --payload-size 512KB --rekey-every 4 --blob-cycle-every 6"
   "g3_09_drbg_aesitb128|--shape both --parallax on --wrapper on --hash aesitb128 --mac hmac-blake3 --drbg aesitb128 --payload-size 512KB --rekey-every 4 --blob-cycle-every 6"
   "g3_10_drbg_areion256|--shape both --parallax on --wrapper on --hash areion256 --mac hmac-blake3 --drbg areion256 --payload-size 512KB --rekey-every 4 --blob-cycle-every 6"
-  "g3_11_prof_aead_mixed|--profile streaming-aead-triple-mac-mixed-v1 --shape stream --payload-size 1MB --rekey-every 4 --blob-cycle-every 6"
-  "g3_12_prof_noaead_mixed|--profile streaming-noaead-triple-mixed-v1 --shape stream_one_shot --payload-size 1MB --rekey-every 4 --blob-cycle-every 6"
+  "g3_11_drbg_areion512|--shape both --parallax on --wrapper on --hash areion512 --mac hmac-blake3 --drbg areion512 --payload-size 512KB --rekey-every 4 --blob-cycle-every 6"
+  "g3_12_drbg_blake2b256|--shape both --parallax on --wrapper on --hash blake2b256 --mac hmac-blake3 --drbg blake2b256 --payload-size 512KB --rekey-every 4 --blob-cycle-every 6"
+  "g3_13_drbg_blake2b512|--shape both --parallax on --wrapper on --hash blake2b512 --mac hmac-blake3 --drbg blake2b512 --payload-size 512KB --rekey-every 4 --blob-cycle-every 6"
+  "g3_14_drbg_blake2s|--shape both --parallax on --wrapper on --hash blake2s --mac hmac-blake3 --drbg blake2s --payload-size 512KB --rekey-every 4 --blob-cycle-every 6"
+  "g3_15_drbg_blake3|--shape both --parallax on --wrapper on --hash blake3 --mac hmac-blake3 --drbg blake3 --payload-size 512KB --rekey-every 4 --blob-cycle-every 6"
+  "g3_16_drbg_aescmac|--shape both --parallax on --wrapper on --hash aescmac --mac hmac-blake3 --drbg aescmac --payload-size 512KB --rekey-every 4 --blob-cycle-every 6"
+  "g3_17_drbg_siphash24|--shape both --parallax on --wrapper on --hash siphash24 --mac hmac-blake3 --drbg siphash24 --payload-size 512KB --rekey-every 4 --blob-cycle-every 6"
+  "g3_18_drbg_csprng|--shape both --parallax on --wrapper on --hash areion256 --mac hmac-blake3 --drbg csprng --payload-size 512KB --rekey-every 4 --blob-cycle-every 6"
+  "g3_19_prof_aead_mixed|--profile streaming-aead-triple-mac-mixed-v1 --shape stream --payload-size 1MB --rekey-every 4 --blob-cycle-every 6"
+  "g3_20_prof_noaead_mixed|--profile streaming-noaead-triple-mixed-v1 --shape stream_one_shot --payload-size 1MB --rekey-every 4 --blob-cycle-every 6"
 
   # --- Group 4 (16 cells): Mixed SingleMsg/Stream, AES-ITB Profiles, and Multi-Chunk Layer Permutations ---
   "g4_01_mixed_sm_mac|--profile singlemsg-triple-mac-mixed-v1 --parallax on --wrapper on --payload-size 1MB --rekey-every 4 --blob-cycle-every 6"
@@ -226,7 +256,7 @@ declare -a GO_CELLS=(
 )
 
 # ---------------------------------------------------------------------------
-# 16-Cell Binding loop Stress Matrix (per selected binding)
+# 20-Cell Binding loop Stress Matrix (per selected binding)
 # ---------------------------------------------------------------------------
 declare -a BINDING_CELLS=(
   "b01_p1_w1_both|--shape both --parallax on --wrapper on --hash areion512 --mac hmac-blake3 --payload-size 1MB --rekey-every 4 --blob-cycle-every 6"
@@ -248,6 +278,10 @@ declare -a BINDING_CELLS=(
   "b14_chacha20_sha|--shape both --parallax off --wrapper on --hash chacha20 --mac hmac-sha256 --chunk-size 256KB --payload-size 512KB --rekey-every 4 --blob-cycle-every 6"
   "b15_areion256_bm2|--shape both --parallax on --wrapper off --hash areion256 --mac hmac-blake3 --blob-mode 2 --payload-size 512KB --rekey-every 4 --blob-cycle-every 6"
   "b16_blake2s_rot|--shape both --parallax on --wrapper on --hash blake2s --mac hmac-blake3 --payload-mode rotating --drbg aesitb128 --payload-size 512KB --rekey-every 4 --blob-cycle-every 6"
+  "b17_blake2b512_sha|--shape both --parallax on --wrapper on --hash blake2b512 --mac hmac-sha256 --chunk-size 256KB --payload-size 512KB --rekey-every 4 --blob-cycle-every 6"
+  "b18_siphash24_kmac|--shape both --parallax off --wrapper on --hash siphash24 --mac kmac256 --chunk-size 256KB --payload-size 512KB --rekey-every 4 --blob-cycle-every 6"
+  "b19_mixed_nomac|--profile singlemsg-triple-nomac-mixed-v1 --parallax on --wrapper on --payload-size 1MB --rekey-every 4 --blob-cycle-every 6"
+  "b20_mixed_noaead|--profile streaming-noaead-triple-mixed-v1 --shape stream --parallax on --wrapper on --chunk-size 256KB --payload-size 1MB --rekey-every 4 --blob-cycle-every 6"
 )
 
 run_suite() {
@@ -374,14 +408,26 @@ if [[ "${ARM_MODE}" == "noitbasm" || "${ARM_MODE}" == "both" ]]; then
 fi
 
 if [[ -n "${BINDINGS_LIST}" ]]; then
-  export LD_LIBRARY_PATH="${REPO_ROOT}/dist/linux-amd64:${LD_LIBRARY_PATH:-}"
+  HOST_ARCH="amd64"
+  if [[ "$(uname -m)" == "aarch64" || "$(uname -m)" == "arm64" ]]; then
+    HOST_ARCH="arm64"
+  fi
+  SHARED_LIB="${REPO_ROOT}/dist/linux-${HOST_ARCH}/libitb3.so"
+  echo "[build] rebuilding shared library -> ${SHARED_LIB}"
+  (cd "${REPO_ROOT}" && go build -trimpath -buildmode=c-shared -o "${SHARED_LIB}" ./cmd/cshared)
+  export LD_LIBRARY_PATH="${REPO_ROOT}/dist/linux-${HOST_ARCH}:${LD_LIBRARY_PATH:-}"
   IFS=',' read -r -a BINDING_ARR <<<"${BINDINGS_LIST}"
   for b_name in "${BINDING_ARR[@]}"; do
     b_name="${b_name// /}"
     [[ -z "${b_name}" ]] && continue
-    b_bin="${REPO_ROOT}/bindings/${b_name}/loop/loop"
+    echo "[build] rebuilding binding ${b_name} against ${SHARED_LIB}"
+    (cd "${REPO_ROOT}/bindings/${b_name}" && ./build.sh)
+    b_bin="${REPO_ROOT}/bindings/${b_name}/loop/run_loop.sh"
     if [[ ! -x "${b_bin}" ]]; then
-      echo "[build] building binding loop binary for ${b_name} -> ${b_bin}"
+      b_bin="${REPO_ROOT}/bindings/${b_name}/loop/loop"
+    fi
+    if [[ ! -x "${b_bin}" && -f "${REPO_ROOT}/bindings/${b_name}/loop/build.sh" ]]; then
+      echo "[build] building binding loop binary for ${b_name}"
       (cd "${REPO_ROOT}/bindings/${b_name}/loop" && ./build.sh)
     fi
     run_suite "binding_${b_name}" "${b_bin}" "${WORK_DIR}/logs_binding_${b_name}" "${WORK_DIR}/failures_binding_${b_name}.txt" "${BINDING_CELLS[@]}" || OVERALL_FAILED=$((OVERALL_FAILED + $?))

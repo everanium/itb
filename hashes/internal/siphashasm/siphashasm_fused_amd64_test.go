@@ -281,3 +281,33 @@ func TestFusedDispatchersZeroAllocTiers(t *testing.T) {
 	FusedHasGPR, HasGPRX16 = false, false
 	checkDispatchersZeroAlloc(t, "scalar")
 }
+
+func dumpSIMDRegs(dst *[88]uint64, avx512 bool)
+func dirtySIMDRegForTest(masked uint64)
+
+func init() {
+	dumpSIMDRegsHook = func(dst *[88]uint64) {
+		dumpSIMDRegs(dst, cpuid.AVX512F)
+	}
+	dirtySIMDRegHook = dirtySIMDRegForTest
+}
+
+func TestFusedKernelsLeaveNoSecretInFrame(t *testing.T) {
+	checkResidueNegativeControls(t)
+	for _, tier := range amd64FusedTiers() {
+		if tier.ok {
+			checkSipHashResidue(t, tier.name, tier.x4, nil, nil, nil)
+		}
+	}
+	checkSipHashResidue(t, "gpr", nil, gprX1Kernels(), nil, nil)
+	for _, tier := range amd64X8Tiers() {
+		if tier.ok {
+			checkSipHashResidue(t, tier.name, nil, nil, tier.x8, nil)
+		}
+	}
+	for _, tier := range amd64FusedX16Tiers() {
+		if tier.k != nil && tier.ok() {
+			checkSipHashResidue(t, tier.name, nil, nil, nil, tier.k)
+		}
+	}
+}

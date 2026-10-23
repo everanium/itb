@@ -7,6 +7,7 @@ import (
 
 	"github.com/everanium/itb"
 	"github.com/everanium/itb/hashes"
+	"github.com/everanium/itb/internal/wipe"
 	"github.com/everanium/itb/kdf"
 )
 
@@ -52,7 +53,7 @@ func allocEightSeeds(innerHash string, keyBits int) ([8]any, [8][]byte, int, err
 		if err != nil {
 			for j := 0; j < i; j++ {
 				zeroSeedComponents(seeds[j], width)
-				clear(prfKeys[j])
+				wipe.Bytes(prfKeys[j])
 			}
 			return [8]any{}, [8][]byte{}, 0, err
 		}
@@ -89,7 +90,7 @@ func allocEightSeedsMixed(mixedHashes [8]string, keyBits, width int) ([8]any, [8
 		if name == "" {
 			for j := 0; j < i; j++ {
 				zeroSeedComponents(seeds[j], width)
-				clear(prfKeys[j])
+				wipe.Bytes(prfKeys[j])
 			}
 			return [8]any{}, [8][]byte{}, 0, fmt.Errorf("triple: mixedHashes[%d] is empty", i)
 		}
@@ -97,14 +98,14 @@ func allocEightSeedsMixed(mixedHashes [8]string, keyBits, width int) ([8]any, [8
 		if !ok {
 			for j := 0; j < i; j++ {
 				zeroSeedComponents(seeds[j], width)
-				clear(prfKeys[j])
+				wipe.Bytes(prfKeys[j])
 			}
 			return [8]any{}, [8][]byte{}, 0, fmt.Errorf("triple: mixedHashes[%d] = %q not in hashes.Registry", i, name)
 		}
 		if int(spec.Width) != width {
 			for j := 0; j < i; j++ {
 				zeroSeedComponents(seeds[j], width)
-				clear(prfKeys[j])
+				wipe.Bytes(prfKeys[j])
 			}
 			return [8]any{}, [8][]byte{}, 0, fmt.Errorf("triple: mixedHashes[%d] = %q width %d, profile width %d",
 				i, name, int(spec.Width), width)
@@ -113,7 +114,7 @@ func allocEightSeedsMixed(mixedHashes [8]string, keyBits, width int) ([8]any, [8
 		if err != nil {
 			for j := 0; j < i; j++ {
 				zeroSeedComponents(seeds[j], width)
-				clear(prfKeys[j])
+				wipe.Bytes(prfKeys[j])
 			}
 			return [8]any{}, [8][]byte{}, 0, err
 		}
@@ -260,7 +261,7 @@ func deriveEightSeeds(slotPrims, kdfPrims [8]string, keyBits, width int, masters
 		if err != nil {
 			for j := 0; j < i; j++ {
 				zeroSeedComponents(seeds[j], width)
-				clear(prfKeys[j])
+				wipe.Bytes(prfKeys[j])
 			}
 			return [8]any{}, [8][]byte{}, err
 		}
@@ -270,7 +271,7 @@ func deriveEightSeeds(slotPrims, kdfPrims [8]string, keyBits, width int, masters
 	if err := checkEightSeeds(seeds, width); err != nil {
 		for j := 0; j < 8; j++ {
 			zeroSeedComponents(seeds[j], width)
-			clear(prfKeys[j])
+			wipe.Bytes(prfKeys[j])
 		}
 		return [8]any{}, [8][]byte{}, err
 	}
@@ -283,15 +284,17 @@ func deriveEightSeeds(slotPrims, kdfPrims [8]string, keyBits, width int, masters
 // [hashes.SeedFromComponents128] / [hashes.SeedFromComponents256] /
 // [hashes.SeedFromComponents512].
 func deriveOneSeed(slotIdx int, slotPrim, kdfPrim string, keyBits, width int, master []byte) (seed any, prfKey []byte, err error) {
+	var rawKey []byte
 	if slotPrim != hashes.CipherSipHash24 {
-		prfKey, err = kdf.Derive(kdfPrim, master, fmt.Sprintf("prfkey:%d", slotIdx), width/8)
+		rawKey, err = kdf.Derive(kdfPrim, master, fmt.Sprintf("prfkey:%d", slotIdx), width/8)
 		if err != nil {
 			return nil, nil, fmt.Errorf("triple: InitKeys: slot %d prfkey kdf: %w", slotIdx, err)
 		}
 	}
+	defer wipe.Bytes(rawKey)
+
 	compBytes, err := kdf.Derive(kdfPrim, master, fmt.Sprintf("comps:%d", slotIdx), keyBits/8)
 	if err != nil {
-		clear(prfKey)
 		return nil, nil, fmt.Errorf("triple: InitKeys: slot %d comps kdf: %w", slotIdx, err)
 	}
 	numWords := keyBits / 64
@@ -299,56 +302,40 @@ func deriveOneSeed(slotIdx int, slotPrim, kdfPrim string, keyBits, width int, ma
 	for w := 0; w < numWords; w++ {
 		comps[w] = binary.LittleEndian.Uint64(compBytes[w*8:])
 	}
-	clear(compBytes)
-	defer clear(comps)
+	wipe.Bytes(compBytes)
+	defer wipe.Uint64s(comps)
 
 	switch width {
 	case 128:
-		s, serr := hashes.SeedFromComponents128(slotPrim, prfKey, comps...)
-		if serr != nil && prfKey != nil {
+		s, fixedKey, serr := wipe.SeedFromComponents128WithKey(slotPrim, rawKey, comps...)
+		if serr != nil && rawKey != nil {
 			// Keyless custom 128-bit primitives reject a fixed-key
 			// argument; retry with nil key, matching importInnerBlob128.
-			s, serr = hashes.SeedFromComponents128(slotPrim, nil, comps...)
-			if serr == nil {
-				clear(prfKey)
-				prfKey = nil
-			}
+			s, fixedKey, serr = wipe.SeedFromComponents128WithKey(slotPrim, nil, comps...)
 		}
 		if serr != nil {
-			clear(prfKey)
 			return nil, nil, fmt.Errorf("triple: hashes.SeedFromComponents128(%q): %w", slotPrim, serr)
 		}
-		return s, prfKey, nil
+		return s, fixedKey, nil
 	case 256:
-		s, serr := hashes.SeedFromComponents256(slotPrim, prfKey, comps...)
-		if serr != nil && prfKey != nil {
-			s, serr = hashes.SeedFromComponents256(slotPrim, nil, comps...)
-			if serr == nil {
-				clear(prfKey)
-				prfKey = nil
-			}
+		s, fixedKey, serr := wipe.SeedFromComponents256WithKey(slotPrim, rawKey, comps...)
+		if serr != nil && rawKey != nil {
+			s, fixedKey, serr = wipe.SeedFromComponents256WithKey(slotPrim, nil, comps...)
 		}
 		if serr != nil {
-			clear(prfKey)
 			return nil, nil, fmt.Errorf("triple: hashes.SeedFromComponents256(%q): %w", slotPrim, serr)
 		}
-		return s, prfKey, nil
+		return s, fixedKey, nil
 	case 512:
-		s, serr := hashes.SeedFromComponents512(slotPrim, prfKey, comps...)
-		if serr != nil && prfKey != nil {
-			s, serr = hashes.SeedFromComponents512(slotPrim, nil, comps...)
-			if serr == nil {
-				clear(prfKey)
-				prfKey = nil
-			}
+		s, fixedKey, serr := wipe.SeedFromComponents512WithKey(slotPrim, rawKey, comps...)
+		if serr != nil && rawKey != nil {
+			s, fixedKey, serr = wipe.SeedFromComponents512WithKey(slotPrim, nil, comps...)
 		}
 		if serr != nil {
-			clear(prfKey)
 			return nil, nil, fmt.Errorf("triple: hashes.SeedFromComponents512(%q): %w", slotPrim, serr)
 		}
-		return s, prfKey, nil
+		return s, fixedKey, nil
 	}
-	clear(prfKey)
 	return nil, nil, fmt.Errorf("triple: unsupported primitive width %d", width)
 }
 
@@ -383,7 +370,7 @@ func zeroSeedComponents(handle any, width int) {
 	switch width {
 	case 128:
 		if s, ok := handle.(*itb.Seed128); ok && s != nil {
-			clear(s.Components)
+			wipe.Uint64s(s.Components)
 			s.BatchHash = nil
 			s.FusedChain = nil
 			s.BatchFusedChain = nil
@@ -393,7 +380,7 @@ func zeroSeedComponents(handle any, width int) {
 		}
 	case 256:
 		if s, ok := handle.(*itb.Seed256); ok && s != nil {
-			clear(s.Components)
+			wipe.Uint64s(s.Components)
 			s.BatchHash = nil
 			s.FusedChain = nil
 			s.BatchFusedChain = nil
@@ -404,7 +391,7 @@ func zeroSeedComponents(handle any, width int) {
 		}
 	case 512:
 		if s, ok := handle.(*itb.Seed512); ok && s != nil {
-			clear(s.Components)
+			wipe.Uint64s(s.Components)
 			s.BatchHash = nil
 			s.FusedChain = nil
 			s.BatchFusedChain = nil

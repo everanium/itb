@@ -10,6 +10,7 @@ import (
 	"github.com/everanium/itb"
 	"github.com/everanium/itb/hashes"
 	"github.com/everanium/itb/internal/drbg"
+	"github.com/everanium/itb/internal/wipe"
 	"github.com/everanium/itb/macs"
 )
 
@@ -54,6 +55,9 @@ const blobFileMode = 0o600
 // [ErrMastersArity], [ErrBadKeyBits], and the inner Blob{N} import
 // failures (wrapping [itb.ErrBlobMalformed] and friends).
 func Load(blob []byte, masters ...[]byte) (*Pipeline, error) {
+	wipe.CallStack8K([9][8]uint64{})
+	defer wipe.CallStack8K([9][8]uint64{})
+
 	if len(masters) != 0 && len(masters) != 2 {
 		return nil, ErrMastersArity
 	}
@@ -62,9 +66,9 @@ func Load(blob []byte, masters ...[]byte) (*Pipeline, error) {
 		return nil, err
 	}
 	defer func() {
-		clear(wrap.Inner)
-		clear(wrap.PermMaster)
-		clear(wrap.WrapMaster)
+		wipe.Bytes(wrap.Inner)
+		wipe.Bytes(wrap.PermMaster)
+		wipe.Bytes(wrap.WrapMaster)
 	}()
 	if err := checkRecipeProfile(wrap.Profile); err != nil {
 		return nil, err
@@ -80,6 +84,9 @@ func Load(blob []byte, masters ...[]byte) (*Pipeline, error) {
 // errors.Is against [os.ErrNotExist] / [os.ErrPermission] matches;
 // every other error is Load's.
 func LoadF(path string, masters ...[]byte) (*Pipeline, error) {
+	wipe.CallStack8K([9][8]uint64{})
+	defer wipe.CallStack8K([9][8]uint64{})
+
 	if len(masters) != 0 && len(masters) != 2 {
 		return nil, ErrMastersArity
 	}
@@ -95,7 +102,7 @@ func LoadF(path string, masters ...[]byte) (*Pipeline, error) {
 	if err != nil {
 		return nil, fmt.Errorf("triple: LoadF: %w", err)
 	}
-	defer clear(data)
+	defer wipe.Bytes(data)
 	return Load(data, masters...)
 }
 
@@ -113,6 +120,9 @@ func LoadF(path string, masters ...[]byte) (*Pipeline, error) {
 // reports that case as [ErrClosed] and is the recommended persist
 // call.
 func (p *Pipeline) Save() []byte {
+	wipe.CallStack8K([9][8]uint64{})
+	defer wipe.CallStack8K([9][8]uint64{})
+
 	if p.isClosed() || p.blob == nil {
 		return nil
 	}
@@ -137,11 +147,14 @@ func (p *Pipeline) Save() []byte {
 // wrapped via %w so a caller can errors.Is-match against
 // [os.ErrPermission] / [os.ErrNotExist] and friends.
 func (p *Pipeline) SaveF(path string) error {
+	wipe.CallStack8K([9][8]uint64{})
+	defer wipe.CallStack8K([9][8]uint64{})
+
 	blob := p.Save()
 	if blob == nil {
 		return ErrClosed
 	}
-	defer clear(blob)
+	defer wipe.Bytes(blob)
 	if err := os.WriteFile(filepath.Clean(path), blob, blobFileMode); err != nil {
 		return fmt.Errorf("triple: SaveF: %w", err)
 	}
@@ -177,14 +190,17 @@ func (p *Pipeline) SaveF(path string) error {
 // Concurrency: safe for concurrent invocation; touches no shared
 // state.
 func Inspect(blob []byte) (Profile, error) {
+	wipe.CallStack8K([9][8]uint64{})
+	defer wipe.CallStack8K([9][8]uint64{})
+
 	wrap, err := parseBlobWrap(blob)
 	if err != nil {
 		return Profile{}, err
 	}
 	defer func() {
-		clear(wrap.Inner)
-		clear(wrap.PermMaster)
-		clear(wrap.WrapMaster)
+		wipe.Bytes(wrap.Inner)
+		wipe.Bytes(wrap.PermMaster)
+		wipe.Bytes(wrap.WrapMaster)
 	}()
 	prof := wrap.Profile
 	var innerProbe struct {
@@ -233,15 +249,15 @@ func parseBlobWrap(blob []byte) (blobWrapV2, error) {
 	dec := json.NewDecoder(bytes.NewReader(blob))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&wrap); err != nil {
-		clear(wrap.Inner)
-		clear(wrap.PermMaster)
-		clear(wrap.WrapMaster)
+		wipe.Bytes(wrap.Inner)
+		wipe.Bytes(wrap.PermMaster)
+		wipe.Bytes(wrap.WrapMaster)
 		return blobWrapV2{}, ErrBlobMalformed
 	}
 	if dec.More() || wrap.Profile.Mode == "" || len(wrap.Inner) == 0 {
-		clear(wrap.Inner)
-		clear(wrap.PermMaster)
-		clear(wrap.WrapMaster)
+		wipe.Bytes(wrap.Inner)
+		wipe.Bytes(wrap.PermMaster)
+		wipe.Bytes(wrap.WrapMaster)
 		return blobWrapV2{}, ErrBlobMalformed
 	}
 	return wrap, nil

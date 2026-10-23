@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"hash"
+	"runtime"
 	"sync"
 
 	"golang.org/x/crypto/blake2b"
@@ -12,7 +13,98 @@ import (
 	"github.com/everanium/itb"
 	"github.com/everanium/itb/hashes/internal/blake2basm"
 	"github.com/everanium/itb/internal/forcetier"
+	"github.com/everanium/itb/internal/wipe"
 )
+
+//go:noinline
+func evalBLAKE2b512WithKey(pool *sync.Pool, b2key *[64]byte, data []byte, seed *[8]uint64, out *[8]uint64) {
+	const keyLen = 64
+	const seedInjectBytes = 64
+	payloadLen := len(data)
+	if payloadLen < seedInjectBytes {
+		payloadLen = seedInjectBytes
+	}
+	need := keyLen + payloadLen
+	bufPtr := pool.Get().(*[]byte)
+	buf := *bufPtr
+	if cap(buf) < need {
+		buf = make([]byte, need)
+	} else {
+		buf = buf[:need]
+	}
+	for i := keyLen + len(data); i < need; i++ {
+		buf[i] = 0
+	}
+	copy(buf[:keyLen], b2key[:])
+	copy(buf[keyLen:keyLen+len(data)], data)
+	for i := 0; i < 8; i++ {
+		off := keyLen + i*8
+		binary.LittleEndian.PutUint64(buf[off:], binary.LittleEndian.Uint64(buf[off:])^seed[i])
+	}
+	digest := blake2b.Sum512(buf)
+	// The buffer carries the fixed key and the seed-mixed payload;
+	// zero it before it goes back to the pool.
+	clear(buf)
+	runtime.KeepAlive(buf)
+	*bufPtr = buf
+	pool.Put(bufPtr)
+	out[0] = binary.LittleEndian.Uint64(digest[0:])
+	out[1] = binary.LittleEndian.Uint64(digest[8:])
+	out[2] = binary.LittleEndian.Uint64(digest[16:])
+	out[3] = binary.LittleEndian.Uint64(digest[24:])
+	out[4] = binary.LittleEndian.Uint64(digest[32:])
+	out[5] = binary.LittleEndian.Uint64(digest[40:])
+	out[6] = binary.LittleEndian.Uint64(digest[48:])
+	out[7] = binary.LittleEndian.Uint64(digest[56:])
+	clear(digest[:])
+	runtime.KeepAlive(&digest)
+}
+
+//go:noinline
+func evalBLAKE2b512Batch(pool *sync.Pool, b2key *[64]byte, data *[4][]byte, seeds *[4][8]uint64, out *[4][8]uint64) {
+	const keyLen = 64
+	const seedInjectBytes = 64
+	bufPtr := pool.Get().(*[]byte)
+	buf := *bufPtr
+	var digest [64]byte
+	for lane := 0; lane < 4; lane++ {
+		d := data[lane]
+		payloadLen := len(d)
+		if payloadLen < seedInjectBytes {
+			payloadLen = seedInjectBytes
+		}
+		need := keyLen + payloadLen
+		if cap(buf) < need {
+			buf = make([]byte, need)
+		} else {
+			buf = buf[:need]
+		}
+		for i := keyLen + len(d); i < need; i++ {
+			buf[i] = 0
+		}
+		copy(buf[:keyLen], b2key[:])
+		copy(buf[keyLen:keyLen+len(d)], d)
+		for i := 0; i < 8; i++ {
+			off := keyLen + i*8
+			binary.LittleEndian.PutUint64(buf[off:], binary.LittleEndian.Uint64(buf[off:])^seeds[lane][i])
+		}
+		digest = blake2b.Sum512(buf)
+		out[lane][0] = binary.LittleEndian.Uint64(digest[0:])
+		out[lane][1] = binary.LittleEndian.Uint64(digest[8:])
+		out[lane][2] = binary.LittleEndian.Uint64(digest[16:])
+		out[lane][3] = binary.LittleEndian.Uint64(digest[24:])
+		out[lane][4] = binary.LittleEndian.Uint64(digest[32:])
+		out[lane][5] = binary.LittleEndian.Uint64(digest[40:])
+		out[lane][6] = binary.LittleEndian.Uint64(digest[48:])
+		out[lane][7] = binary.LittleEndian.Uint64(digest[56:])
+	}
+	clear(buf[:cap(buf)])
+	runtime.KeepAlive(buf)
+	*bufPtr = buf[:0]
+	pool.Put(bufPtr)
+	clear(digest[:])
+	runtime.KeepAlive(&digest)
+}
 
 // BLAKE2b512 returns a cached BLAKE2b-512 itb.HashFunc512 along with
 // the 64-byte fixed key the closure is bound to. With no argument a
@@ -47,45 +139,12 @@ func BLAKE2b512WithKey(b2key [64]byte) itb.HashFunc512 {
 	pool := &sync.Pool{New: func() any { b := make([]byte, 0, 128); return &b }}
 
 	return func(data []byte, seed [8]uint64) [8]uint64 {
-		const keyLen = 64
-		const seedInjectBytes = 64
-		payloadLen := len(data)
-		if payloadLen < seedInjectBytes {
-			payloadLen = seedInjectBytes
-		}
-		need := keyLen + payloadLen
-		bufPtr := pool.Get().(*[]byte)
-		buf := *bufPtr
-		if cap(buf) < need {
-			buf = make([]byte, need)
-		} else {
-			buf = buf[:need]
-		}
-		for i := keyLen + len(data); i < need; i++ {
-			buf[i] = 0
-		}
-		copy(buf[:keyLen], b2key[:])
-		copy(buf[keyLen:keyLen+len(data)], data)
-		for i := 0; i < 8; i++ {
-			off := keyLen + i*8
-			binary.LittleEndian.PutUint64(buf[off:], binary.LittleEndian.Uint64(buf[off:])^seed[i])
-		}
-		digest := blake2b.Sum512(buf)
-		// The buffer carries the fixed key and the seed-mixed payload;
-		// zero it before it goes back to the pool.
-		clear(buf)
-		*bufPtr = buf
-		pool.Put(bufPtr)
-		return [8]uint64{
-			binary.LittleEndian.Uint64(digest[0:]),
-			binary.LittleEndian.Uint64(digest[8:]),
-			binary.LittleEndian.Uint64(digest[16:]),
-			binary.LittleEndian.Uint64(digest[24:]),
-			binary.LittleEndian.Uint64(digest[32:]),
-			binary.LittleEndian.Uint64(digest[40:]),
-			binary.LittleEndian.Uint64(digest[48:]),
-			binary.LittleEndian.Uint64(digest[56:]),
-		}
+		var res [8]uint64
+		evalBLAKE2b512WithKey(pool, &b2key, data, &seed, &res)
+		clear(seed[:])
+		runtime.KeepAlive(&seed)
+		wipe.CallStack512B()
+		return res
 	}
 }
 
@@ -131,12 +190,25 @@ func BLAKE2b512Pair(key ...[64]byte) (itb.HashFunc512, itb.BatchHashFunc512, [64
 // points consult first, so the batched arm is the fallback for seeds
 // built without those hooks.
 func BLAKE2b512PairWithKey(fixedKey [64]byte) (itb.HashFunc512, itb.BatchHashFunc512) {
-	single := BLAKE2b512WithKey(fixedKey)
+	return blake2b512PairFromKeyPtr(&fixedKey)
+}
+
+func blake2b512PairFromKeyPtr(k *[64]byte) (itb.HashFunc512, itb.BatchHashFunc512) {
+	pool := &sync.Pool{New: func() any { b := make([]byte, 0, 128); return &b }}
+	single := func(data []byte, seed [8]uint64) [8]uint64 {
+		var res [8]uint64
+		evalBLAKE2b512WithKey(pool, k, data, &seed, &res)
+		clear(seed[:])
+		runtime.KeepAlive(&seed)
+		wipe.CallStack512B()
+		return res
+	}
 	batched := func(data *[4][]byte, seeds [4][8]uint64) [4][8]uint64 {
 		var out [4][8]uint64
-		for lane := 0; lane < 4; lane++ {
-			out[lane] = single(data[lane], seeds[lane])
-		}
+		evalBLAKE2b512Batch(pool, k, data, &seeds, &out)
+		clear(seeds[:])
+		runtime.KeepAlive(&seeds)
+		wipe.CallStack512B()
 		return out
 	}
 	return single, batched
@@ -174,19 +246,18 @@ func blake2b512FusedChainHash(key []byte) (itb.FusedChainHashFunc512, itb.BatchF
 	if forcetier.ChainHashSeq() {
 		return nil, nil, nil
 	}
-	var k [64]byte
-	copy(k[:], key)
+	k := (*[64]byte)(key)
 	single := func(components []uint64, data []byte) ([8]uint64, bool) {
 		var out [8]uint64
 		switch len(data) {
 		case 13:
-			blake2basm.Fused512Chain13x1(&k, components, &data[0], &out)
+			blake2basm.Fused512Chain13x1(k, components, &data[0], &out)
 		case 20:
-			blake2basm.Fused512Chain20x1(&k, components, &data[0], &out)
+			blake2basm.Fused512Chain20x1(k, components, &data[0], &out)
 		case 36:
-			blake2basm.Fused512Chain36x1(&k, components, &data[0], &out)
+			blake2basm.Fused512Chain36x1(k, components, &data[0], &out)
 		case 68:
-			blake2basm.Fused512Chain68x1(&k, components, &data[0], &out)
+			blake2basm.Fused512Chain68x1(k, components, &data[0], &out)
 		default:
 			return out, false
 		}
@@ -206,13 +277,13 @@ func blake2b512FusedChainHash(key []byte) (itb.FusedChainHashFunc512, itb.BatchF
 		dataPtrs := [4]*byte{&data[0][0], &data[1][0], &data[2][0], &data[3][0]}
 		switch n {
 		case 13:
-			blake2basm.Fused512Chain13x4(&k, components, &dataPtrs, &out)
+			blake2basm.Fused512Chain13x4(k, components, &dataPtrs, &out)
 		case 20:
-			blake2basm.Fused512Chain20x4(&k, components, &dataPtrs, &out)
+			blake2basm.Fused512Chain20x4(k, components, &dataPtrs, &out)
 		case 36:
-			blake2basm.Fused512Chain36x4(&k, components, &dataPtrs, &out)
+			blake2basm.Fused512Chain36x4(k, components, &dataPtrs, &out)
 		case 68:
-			blake2basm.Fused512Chain68x4(&k, components, &dataPtrs, &out)
+			blake2basm.Fused512Chain68x4(k, components, &dataPtrs, &out)
 		}
 		return out, true
 	}
@@ -227,10 +298,9 @@ func blake2b512InterlockFillBatch16(key []byte) (itb.InterlockFillFunc16x512, er
 	if len(key) != 64 {
 		return nil, fmt.Errorf("hashes: %q interlock fill batch-16 needs a 64-byte key, got %d", CipherBLAKE2b512, len(key))
 	}
-	var k [64]byte
-	copy(k[:], key)
+	k := (*[64]byte)(key)
 	return func(components []uint64, groupIdxBase uint64, v uint32, out *[4][8]uint64) {
-		blake2basm.Fused512Fill13x4(&k, components, groupIdxBase, v, out)
+		blake2basm.Fused512Fill13x4(k, components, groupIdxBase, v, out)
 	}, nil
 }
 
@@ -244,8 +314,7 @@ func blake2b512FusedChainHash8(key []byte) (itb.BatchFusedChainHashFunc512x8, er
 	if forcetier.ChainHashSeq() || !blake2basm.FusedX8Active() {
 		return nil, nil
 	}
-	var k [64]byte
-	copy(k[:], key)
+	k := (*[64]byte)(key)
 	return func(components []uint64, data *[8][]byte) ([8][8]uint64, bool) {
 		var out [8][8]uint64
 		n := len(data[0])
@@ -263,11 +332,11 @@ func blake2b512FusedChainHash8(key []byte) (itb.BatchFusedChainHashFunc512x8, er
 		}
 		switch n {
 		case 20:
-			blake2basm.Fused512Chain20x8(&k, components, &dataPtrs, &out)
+			blake2basm.Fused512Chain20x8(k, components, &dataPtrs, &out)
 		case 36:
-			blake2basm.Fused512Chain36x8(&k, components, &dataPtrs, &out)
+			blake2basm.Fused512Chain36x8(k, components, &dataPtrs, &out)
 		case 68:
-			blake2basm.Fused512Chain68x8(&k, components, &dataPtrs, &out)
+			blake2basm.Fused512Chain68x8(k, components, &dataPtrs, &out)
 		}
 		return out, true
 	}, nil
@@ -282,9 +351,8 @@ func blake2b512InterlockFillBatch32(key []byte) (itb.InterlockFillFunc32x512, er
 	if len(key) != 64 {
 		return nil, fmt.Errorf("hashes: %q interlock fill batch-32 needs a 64-byte key, got %d", CipherBLAKE2b512, len(key))
 	}
-	var k [64]byte
-	copy(k[:], key)
+	k := (*[64]byte)(key)
 	return func(components []uint64, groupIdxBase uint64, v uint32, out *[8][8]uint64) {
-		blake2basm.Fused512Fill13x8(&k, components, groupIdxBase, v, out)
+		blake2basm.Fused512Fill13x8(k, components, groupIdxBase, v, out)
 	}, nil
 }

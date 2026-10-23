@@ -2,6 +2,7 @@ package siphashasm
 
 import (
 	"encoding/binary"
+	"runtime"
 	"unsafe"
 )
 
@@ -72,6 +73,8 @@ func scalarFusedX16(components []uint64, groupIdxBase uint64, v uint32, out *[16
 	for i := range blocks {
 		out[i][0], out[i][1] = ScalarFusedChain(components, blocks[i][:])
 	}
+	clear(blocks[:])
+	runtime.KeepAlive(&blocks)
 }
 
 // x16Quarter returns the lane pointers of quarter q (lanes 4q..4q+3) of

@@ -48,8 +48,19 @@ func TestFusedDispatcherTiersArm64(t *testing.T) {
 // stack-residue probe: no fixed-key dword, no key word and no output
 // dword may be left in the stack once a kernel has returned.
 func TestFusedKernelsLeaveNoSecretInFrameArm64(t *testing.T) {
+	checkResidueNegativeControls(t)
 	if FusedHasNEON {
 		checkChachaResidue(t, "neon", neon256x4, nil, nil)
 	}
 	checkChachaResidue(t, "gpr", nil, kernels256x1, nil)
+}
+
+func dumpSIMDRegs(dst *[88]uint64, avx512 bool)
+func dirtySIMDRegForTest(masked uint64)
+
+func init() {
+	dumpSIMDRegsHook = func(dst *[88]uint64) {
+		dumpSIMDRegs(dst, false)
+	}
+	dirtySIMDRegHook = dirtySIMDRegForTest
 }

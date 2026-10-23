@@ -55,6 +55,7 @@ package main
 import "C"
 
 import (
+	"runtime"
 	"runtime/debug"
 	"unsafe"
 
@@ -66,7 +67,7 @@ import (
 // Library version exposed via ITB_Version. Bumped per ABI-relevant
 // release. The value is informational; binding code may key feature
 // detection off it.
-const libitb3Version = "0.7.3"
+const libitb3Version = "0.7.4"
 
 func main() {} // required for buildmode=c-shared
 
@@ -457,6 +458,10 @@ func ITB_Triple_InitKeys(
 	}
 	flat := goBytesView(mastersFlat, mastersFlatLen)
 	masters := make([][]byte, 8)
+	defer func() {
+		clear(masters)
+		runtime.KeepAlive(masters)
+	}()
 	off := 0
 	for i := 0; i < 8; i++ {
 		ln := int(cLens[i])
@@ -511,6 +516,10 @@ func ITB_Triple_Load(
 	if !ok {
 		return C.int(capi.StatusBadInput)
 	}
+	defer func() {
+		clear(masters)
+		runtime.KeepAlive(masters)
+	}()
 	blobBytes := goBytesView(blob, blobLen)
 	id, st := capi.TripleLoad(blobBytes, masters...)
 	if st == capi.StatusOK {
@@ -545,6 +554,10 @@ func ITB_Triple_LoadF(
 	if !ok {
 		return C.int(capi.StatusBadInput)
 	}
+	defer func() {
+		clear(masters)
+		runtime.KeepAlive(masters)
+	}()
 	id, st := capi.TripleLoadF(C.GoString(path), masters...)
 	if st == capi.StatusOK {
 		*outHandle = C.uintptr_t(id)

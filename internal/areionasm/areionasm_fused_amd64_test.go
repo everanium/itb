@@ -247,21 +247,71 @@ func BenchmarkFill(b *testing.B) {
 	}
 }
 
-// TestFusedKernelsLeaveNoSecretInFrame runs the four-lane kernels of
-// every tier the host can execute and the single-lane kernels under the
-// stack-residue probe: no fixed-key word, no k2 word and no K1 ^ k2 word
-// may be left in the stack once a kernel has returned.
+// TestFusedKernelsLeaveNoSecretInFrame runs the four-lane, eight-lane,
+// single-lane, batch-fill, and standalone permutation / SoEM kernels of
+// every tier the host can execute under the stack- and register-residue
+// probe: no secret key word, k2 word, K1 ^ k2 word, or state word may be
+// left in the stack or SIMD registers once a kernel has returned.
 func TestFusedKernelsLeaveNoSecretInFrame(t *testing.T) {
+	saveFusedFlags(t)
+	x8, x8narrow := FusedHasVAESAVX512X8, FusedHasAESNIX8
+	t.Cleanup(func() { FusedHasVAESAVX512X8, FusedHasAESNIX8 = x8, x8narrow })
+
+	checkResidueNegativeControls(t)
 	for _, tier := range amd64FusedTiers() {
 		if !tier.ok {
 			continue
 		}
 		checkAreionResidue(t, tier.name, kernels256x4[tier.name], kernels512x4[tier.name], nil, nil)
+		setTier(tier)
+		FusedHasVAESAVX512X8, FusedHasAESNIX8 = true, true
+		checkAreionWideResidue(t, tier.name+"-disp", dispatchers256x8(), dispatchers512x8())
+		checkAreionFillResidue(t, tier.name+"-disp", Fused256Fill13x8, Fused512Fill13x4, Fused512Fill13x8)
+	}
+	if cpuid.VAESZMM {
+		checkAreionWideResidue(t, "avx512", kernels256x8, kernels512x8)
+		checkAreionFillResidue(t, "avx512", fill256x8Kernel, nil, fill512x8Kernel)
+		checkAreionPermute256Residue(t, "Areion256Permutex4", Areion256Permutex4)
+		checkAreionPermute256Residue(t, "Areion256Permute2x4", Areion256Permute2x4)
+		checkAreionPermute512Residue(t, "Areion512Permutex4", Areion512Permutex4)
+		checkAreionPermute512Residue(t, "Areion512Permute2x4", Areion512Permute2x4)
+		checkAreionSoEM256Residue(t, "Areion256SoEMPermutex4Interleaved", Areion256SoEMPermutex4Interleaved)
+		checkAreionSoEM512Residue(t, "Areion512SoEMPermutex4Interleaved", Areion512SoEMPermutex4Interleaved)
+	}
+	if cpuid.VAESYMM {
+		checkAreionPermute256Residue(t, "Areion256Permutex4Avx2", Areion256Permutex4Avx2)
+		checkAreionPermute256Residue(t, "Areion256Permute2x4Avx2", Areion256Permute2x4Avx2)
+		checkAreionPermute512Residue(t, "Areion512Permutex4Avx2", Areion512Permutex4Avx2)
+		checkAreionPermute512Residue(t, "Areion512Permute2x4Avx2", Areion512Permute2x4Avx2)
+		checkAreionSoEM256Residue(t, "Areion256SoEMPermutex4VaesAvx2", Areion256SoEMPermutex4VaesAvx2)
+		checkAreionSoEM512Residue(t, "Areion512SoEMPermutex4VaesAvx2", Areion512SoEMPermutex4VaesAvx2)
 	}
 	if cpuid.AESNI && cpuid.AVX2 {
 		checkAreionResidue(t, "vex", nil, nil, kernels256x1Vex, kernels512x1Vex)
+		checkAreionPermute256Residue(t, "Areion256Permutex4Vex", Areion256Permutex4Vex)
+		checkAreionPermute256Residue(t, "Areion256Permute2x4Vex", Areion256Permute2x4Vex)
+		checkAreionPermute512Residue(t, "Areion512Permutex4Vex", Areion512Permutex4Vex)
+		checkAreionPermute512Residue(t, "Areion512Permute2x4Vex", Areion512Permute2x4Vex)
+		checkAreionSoEM256Residue(t, "Areion256SoEMPermutex4Vex", Areion256SoEMPermutex4Vex)
+		checkAreionSoEM512Residue(t, "Areion512SoEMPermutex4Vex", Areion512SoEMPermutex4Vex)
 	}
 	if cpuid.AESNI {
 		checkAreionResidue(t, "aesni", nil, nil, kernels256x1, kernels512x1)
+		checkAreionPermute256Residue(t, "Areion256Permutex4AesNi", Areion256Permutex4AesNi)
+		checkAreionPermute256Residue(t, "Areion256Permute2x4AesNi", Areion256Permute2x4AesNi)
+		checkAreionPermute512Residue(t, "Areion512Permutex4AesNi", Areion512Permutex4AesNi)
+		checkAreionPermute512Residue(t, "Areion512Permute2x4AesNi", Areion512Permute2x4AesNi)
+		checkAreionSoEM256Residue(t, "Areion256SoEMPermutex4AesNi", Areion256SoEMPermutex4AesNi)
+		checkAreionSoEM512Residue(t, "Areion512SoEMPermutex4AesNi", Areion512SoEMPermutex4AesNi)
 	}
+}
+
+func dumpSIMDRegs(dst *[88]uint64, avx512 bool)
+func dirtySIMDRegForTest(masked uint64)
+
+func init() {
+	dumpSIMDRegsHook = func(dst *[88]uint64) {
+		dumpSIMDRegs(dst, cpuid.AVX512F)
+	}
+	dirtySIMDRegHook = dirtySIMDRegForTest
 }

@@ -4,6 +4,8 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"fmt"
+	"runtime"
+	"unsafe"
 )
 
 // HashFunc512 is the pluggable 512-bit hash function interface.
@@ -235,7 +237,7 @@ func (s *Seed512) MinPixelsAuth() int {
 //	h = Hash512(data, [s[0], s[1], ..., s[7]])
 //	h = Hash512(data, [s[8]^h[0], s[9]^h[1], ..., s[15]^h[7]])
 //	...
-func (s *Seed512) ChainHash512(buf []byte) [8]uint64 {
+func (s *Seed512) ChainHash512(buf []byte) (h [8]uint64) {
 	if s.FusedChain != nil {
 		if out, ok := s.FusedChain(s.Components, buf); ok {
 			return out
@@ -243,7 +245,7 @@ func (s *Seed512) ChainHash512(buf []byte) [8]uint64 {
 	}
 	var seed [8]uint64
 	copy(seed[:], s.Components[0:8])
-	h := s.Hash(buf, seed)
+	h = s.Hash(buf, seed)
 	for i := 8; i < len(s.Components); i += 8 {
 		seed[0] = s.Components[i] ^ h[0]
 		seed[1] = s.Components[i+1] ^ h[1]
@@ -255,6 +257,8 @@ func (s *Seed512) ChainHash512(buf []byte) [8]uint64 {
 		seed[7] = s.Components[i+7] ^ h[7]
 		h = s.Hash(buf, seed)
 	}
+	clear(seed[:])
+	runtime.KeepAlive(&seed)
 	return h
 }
 
@@ -266,11 +270,23 @@ func (s *Seed512) blockHash512(buf []byte, blockIdx int) [8]uint64 {
 
 // deriveStartPixel computes seed+nonce-dependent pixel offset.
 func (s *Seed512) deriveStartPixel(nonce []byte, totalPixels int) int {
+	wipePixelCallStack([9][8]uint64{})
+	res := s.deriveStartPixelBody(nonce, totalPixels)
+	wipePixelCallStack([9][8]uint64{})
+	return res
+}
+
+//go:noinline
+func (s *Seed512) deriveStartPixelBody(nonce []byte, totalPixels int) int {
 	buf := make([]byte, 1+len(nonce))
+	defer secureWipe(buf)
 	buf[0] = 0x02
 	copy(buf[1:], nonce)
 	h := s.ChainHash512(buf)
-	return int(h[0] % uint64(totalPixels))
+	res := int(h[0] % uint64(totalPixels))
+	clear(h[:])
+	runtime.KeepAlive(&h)
+	return res
 }
 
 // deriveInterLockSeed returns the full 512-bit ChainHash output derived
@@ -286,8 +302,9 @@ func (s *Seed512) deriveStartPixel(nonce []byte, totalPixels int) int {
 // constellation, keying the 48-bit Interlocked Barrier overlay's
 // per-chunk bit-permutation derivation independently of the noiseSeed
 // material.
-func (s *Seed512) deriveInterLockSeed(nonce []byte) [8]uint64 {
+func (s *Seed512) deriveInterLockSeed(nonce []byte) (h [8]uint64) {
 	buf := make([]byte, 1+len(nonce))
+	defer secureWipe(buf)
 	buf[0] = 0x04
 	copy(buf[1:], nonce)
 	return s.ChainHash512(buf)
@@ -297,7 +314,7 @@ func (s *Seed512) deriveInterLockSeed(nonce []byte) [8]uint64 {
 // s.BatchHash. Output [i] matches serial ChainHash512(data[i])
 // under the same Components. Caller ensures s.BatchHash != nil
 // (processChunk512 checks this before invoking).
-func (s *Seed512) BatchChainHash512(buf *[4][]byte) [4][8]uint64 {
+func (s *Seed512) BatchChainHash512(buf *[4][]byte) (h [4][8]uint64) {
 	if s.BatchFusedChain != nil {
 		if out, ok := s.BatchFusedChain(s.Components, buf); ok {
 			return out
@@ -314,7 +331,7 @@ func (s *Seed512) BatchChainHash512(buf *[4][]byte) [4][8]uint64 {
 		seeds[lane][6] = s.Components[6]
 		seeds[lane][7] = s.Components[7]
 	}
-	h := s.BatchHash(buf, seeds)
+	h = s.BatchHash(buf, seeds)
 
 	for i := 8; i < len(s.Components); i += 8 {
 		c0, c1, c2, c3 := s.Components[i], s.Components[i+1], s.Components[i+2], s.Components[i+3]
@@ -331,6 +348,8 @@ func (s *Seed512) BatchChainHash512(buf *[4][]byte) [4][8]uint64 {
 		}
 		h = s.BatchHash(buf, seeds)
 	}
+	clear(seeds[:])
+	runtime.KeepAlive(&seeds)
 	return h
 }
 
@@ -362,19 +381,20 @@ func (s *Seed512) BatchFusedChain8() BatchFusedChainHashFunc512x8 {
 // eight-lane hook first, otherwise two [Seed512.BatchChainHash512] calls
 // over the lane halves. Output [i] matches serial ChainHash512(buf[i])
 // under the same Components. Caller ensures s.BatchHash != nil.
-func (s *Seed512) batchChainHash512x8(buf *[8][]byte) [8][8]uint64 {
+func (s *Seed512) batchChainHash512x8(buf *[8][]byte) (out [8][8]uint64) {
 	if s.batchFusedChainX8 != nil {
-		if out, ok := s.batchFusedChainX8(s.Components, buf); ok {
-			return out
+		if res, ok := s.batchFusedChainX8(s.Components, buf); ok {
+			return res
 		}
 	}
-	var out [8][8]uint64
 	lo := [4][]byte{buf[0], buf[1], buf[2], buf[3]}
 	hi := [4][]byte{buf[4], buf[5], buf[6], buf[7]}
 	h := s.BatchChainHash512(&lo)
 	copy(out[0:4], h[:])
 	h = s.BatchChainHash512(&hi)
 	copy(out[4:8], h[:])
+	clear(h[:])
+	runtime.KeepAlive(&h)
 	return out
 }
 
@@ -425,7 +445,7 @@ func (s *Seed512) SetInterlockBatch32(fn InterlockFillFunc32x512) {
 // [Seed512.ChainHash512]: the fused hook first, the sequential Hash
 // loop when the hook is absent or declines. components must hold a
 // multiple of eight words, at least eight.
-func (s *Seed512) chainHash512With(components []uint64, buf []byte) [8]uint64 {
+func (s *Seed512) chainHash512With(components []uint64, buf []byte) (h [8]uint64) {
 	if s.FusedChain != nil {
 		if out, ok := s.FusedChain(components, buf); ok {
 			return out
@@ -433,13 +453,15 @@ func (s *Seed512) chainHash512With(components []uint64, buf []byte) [8]uint64 {
 	}
 	var seed [8]uint64
 	copy(seed[:], components[0:8])
-	h := s.Hash(buf, seed)
+	h = s.Hash(buf, seed)
 	for i := 8; i < len(components); i += 8 {
 		for j := 0; j < 8; j++ {
 			seed[j] = components[i+j] ^ h[j]
 		}
 		h = s.Hash(buf, seed)
 	}
+	clear(seed[:])
+	runtime.KeepAlive(&seed)
 	return h
 }
 
@@ -448,7 +470,7 @@ func (s *Seed512) chainHash512With(components []uint64, buf []byte) [8]uint64 {
 // over the supplied slice: the batched fused hook first, the
 // sequential BatchHash loop otherwise. Output [i] matches
 // chainHash512With on buf[i]. Caller ensures s.BatchHash != nil.
-func (s *Seed512) batchChainHash512With(components []uint64, buf *[4][]byte) [4][8]uint64 {
+func (s *Seed512) batchChainHash512With(components []uint64, buf *[4][]byte) (h [4][8]uint64) {
 	if s.BatchFusedChain != nil {
 		if out, ok := s.BatchFusedChain(components, buf); ok {
 			return out
@@ -458,7 +480,7 @@ func (s *Seed512) batchChainHash512With(components []uint64, buf *[4][]byte) [4]
 	for lane := 0; lane < 4; lane++ {
 		copy(seeds[lane][:], components[0:8])
 	}
-	h := s.BatchHash(buf, seeds)
+	h = s.BatchHash(buf, seeds)
 	for i := 8; i < len(components); i += 8 {
 		for lane := 0; lane < 4; lane++ {
 			for j := 0; j < 8; j++ {
@@ -467,5 +489,23 @@ func (s *Seed512) batchChainHash512With(components []uint64, buf *[4][]byte) [4]
 		}
 		h = s.BatchHash(buf, seeds)
 	}
+	clear(seeds[:])
+	runtime.KeepAlive(&seeds)
 	return h
+}
+
+// wipePixelCallStack512 pre-grows the goroutine stack before a *Body call and
+// zeroes the stack frame of processChunk512Body (including compiler register
+// spills and autotmps) plus 10 KiB of the child call stack below SP after the
+// *Body call returns.
+//
+//go:noinline
+func wipePixelCallStack512(argPad [9][8]uint64) {
+	var framePad [1280]uint64
+	clear(framePad[:])
+	runtime.KeepAlive(&framePad)
+	runtime.KeepAlive(&argPad)
+	if fn := pixelWipeObserver.Load(); fn != nil {
+		(*fn)(uintptr(unsafe.Pointer(&framePad)))
+	}
 }

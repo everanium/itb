@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/everanium/itb/ctr"
+	"github.com/everanium/itb/internal/wipe"
 )
 
 // maxWrapWorkers caps the keystream-XOR goroutine count. It is fixed rather
@@ -46,6 +47,19 @@ func xorParallel(name string, key, nonce, dst, src []byte) error {
 	return xorParallelAt(name, key, nonce, 0, dst, src)
 }
 
+//go:noinline
+func xorRangeAt(name string, key, nonce []byte, offset int, dst, src []byte) error {
+	ks, err := ctr.NewAt(name, key, nonce, offset)
+	if err != nil {
+		return err
+	}
+	ks.XORKeyStream(dst, src)
+	if c, ok := ks.(io.Closer); ok {
+		_ = c.Close()
+	}
+	return nil
+}
+
 // xorParallelAt XORs the (name, key, nonce) keystream over src into dst,
 // applying keystream byte base+i to src byte i. For buffers at or above
 // parallelThreshold it splits the work across up to maxWrapWorkers goroutines,
@@ -60,15 +74,10 @@ func xorParallelAt(name string, key, nonce []byte, base int, dst, src []byte) er
 	n := len(src)
 	workers := wrapWorkers(n)
 	if n < parallelThreshold || workers <= 1 {
-		ks, err := ctr.NewAt(name, key, nonce, base)
-		if err != nil {
-			return err
-		}
-		ks.XORKeyStream(dst[:n], src)
-		if c, ok := ks.(io.Closer); ok {
-			_ = c.Close()
-		}
-		return nil
+		wipe.CallStack8K([9][8]uint64{})
+		err := xorRangeAt(name, key, nonce, base, dst[:n], src)
+		wipe.CallStack8K([9][8]uint64{})
+		return err
 	}
 
 	chunk := (n + workers - 1) / workers
@@ -86,15 +95,9 @@ func xorParallelAt(name string, key, nonce []byte, base int, dst, src []byte) er
 		wg.Add(1)
 		go func(w, start, end int) {
 			defer wg.Done()
-			ks, err := ctr.NewAt(name, key, nonce, base+start)
-			if err != nil {
-				errs[w] = err
-				return
-			}
-			ks.XORKeyStream(dst[start:end], src[start:end])
-			if c, ok := ks.(io.Closer); ok {
-				_ = c.Close()
-			}
+			wipe.CallStack8K([9][8]uint64{})
+			errs[w] = xorRangeAt(name, key, nonce, base+start, dst[start:end], src[start:end])
+			wipe.CallStack8K([9][8]uint64{})
 		}(w, start, end)
 	}
 	wg.Wait()

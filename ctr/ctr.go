@@ -2,15 +2,16 @@ package ctr
 
 import (
 	"crypto/aes"
-	"crypto/cipher"
 	"encoding/binary"
 	"fmt"
+	"runtime"
 
-	"github.com/dchest/siphash"
 	"golang.org/x/crypto/chacha20"
 
 	"github.com/everanium/itb/hashes"
 	"github.com/everanium/itb/internal/hashprf"
+	"github.com/everanium/itb/internal/siphash24"
+	"github.com/everanium/itb/internal/wipe"
 )
 
 // Keystream is the minimal interface a counter-mode cipher exposes. The
@@ -66,17 +67,11 @@ func NonceSize(name string) (int, error) {
 func New(name string, key, nonce []byte) (Keystream, error) {
 	switch name {
 	case hashes.CipherAES128CTR:
-		if len(key) != 16 {
-			return nil, fmt.Errorf("ctr: aes-128-ctr key must be 16 bytes, got %d", len(key))
-		}
-		if len(nonce) != aes.BlockSize {
-			return nil, fmt.Errorf("ctr: aes-128-ctr nonce must be %d bytes, got %d", aes.BlockSize, len(nonce))
-		}
-		block, err := aes.NewCipher(key)
+		ks, err := newAESResettable(key, nonce)
 		if err != nil {
 			return nil, err
 		}
-		return cipher.NewCTR(block, nonce), nil
+		return ks, nil
 	case hashes.CipherSipHash24:
 		return newSipHashCTR(key, nonce)
 	case hashes.CipherChaCha20:
@@ -109,6 +104,7 @@ func (w *chaCha20CTR) XORKeyStream(dst, src []byte) {
 func (w *chaCha20CTR) Close() error {
 	if w.c != nil {
 		*w.c = chacha20.Cipher{}
+		runtime.KeepAlive(w.c)
 		w.c = nil
 	}
 	return nil
@@ -154,16 +150,12 @@ func newSipHashCTR(key, nonce []byte) (Keystream, error) {
 
 func (c *sipCTR) Close() error {
 	*c = sipCTR{}
+	runtime.KeepAlive(c)
 	return nil
 }
 
 func (c *sipCTR) refill() {
-	var buf [16]byte
-	binary.LittleEndian.PutUint64(buf[:8], c.nonceHi)
-	binary.LittleEndian.PutUint64(buf[8:], c.nonceLo^c.counter)
-	lo, hi := siphash.Hash128(c.k0, c.k1, buf[:])
-	binary.LittleEndian.PutUint64(c.keystrm[:8], lo)
-	binary.LittleEndian.PutUint64(c.keystrm[8:], hi)
+	siphash24.Block128Into(&c.keystrm, c.k0, c.k1, c.nonceHi, c.nonceLo^c.counter)
 	c.counter++
 	c.keystrmN = 16
 }
@@ -184,24 +176,25 @@ func (c *sipCTR) XORKeyStream(dst, src []byte) {
 		}
 		for j := 0; j < take; j++ {
 			dst[i+j] = src[i+j] ^ c.keystrm[off+j]
+			c.keystrm[off+j] = 0
 		}
 		i += take
 		c.keystrmN -= take
 	}
 
 	// Bulk path: hash one 16-byte input per 16-byte keystream block, XOR
-	// directly via two uint64 — skips the keystrm[16]byte buffer entirely.
-	var nonceBuf [16]byte
-	binary.LittleEndian.PutUint64(nonceBuf[:8], c.nonceHi)
-	for n-i >= 16 {
-		binary.LittleEndian.PutUint64(nonceBuf[8:], c.nonceLo^c.counter)
-		ksLo, ksHi := siphash.Hash128(c.k0, c.k1, nonceBuf[:])
-		srcLo := binary.LittleEndian.Uint64(src[i:])
-		srcHi := binary.LittleEndian.Uint64(src[i+8:])
-		binary.LittleEndian.PutUint64(dst[i:], srcLo^ksLo)
-		binary.LittleEndian.PutUint64(dst[i+8:], srcHi^ksHi)
-		c.counter++
-		i += 16
+	// directly via two uint64 in registers — skips the keystrm[16]byte buffer entirely.
+	if n-i >= 16 {
+		for n-i >= 16 {
+			lo, hi := siphash24.Block128Raw(c.k0, c.k1, c.nonceHi, c.nonceLo^c.counter)
+			srcLo := binary.LittleEndian.Uint64(src[i:])
+			srcHi := binary.LittleEndian.Uint64(src[i+8:])
+			binary.LittleEndian.PutUint64(dst[i:], srcLo^lo)
+			binary.LittleEndian.PutUint64(dst[i+8:], srcHi^hi)
+			c.counter++
+			i += 16
+		}
+		wipe.ClobberRegs()
 	}
 
 	// Tail (<16 bytes): refill keystrm buffer and consume the leading bytes.
@@ -210,6 +203,7 @@ func (c *sipCTR) XORKeyStream(dst, src []byte) {
 		rem := n - i
 		for j := 0; j < rem; j++ {
 			dst[i+j] = src[i+j] ^ c.keystrm[j]
+			c.keystrm[j] = 0
 		}
 		c.keystrmN -= rem
 	}

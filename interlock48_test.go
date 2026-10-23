@@ -1662,8 +1662,6 @@ func TestInterlock48LockedLaneGolden(t *testing.T) {
 // staging, the batched fill scratch and both mask arrays.
 func TestWipeInterlockWorker48(t *testing.T) {
 	ws := new(interlockWorkerScratch48)
-	var masks [superChunks48][3]uint64
-	var masks16 [superGroups48][3]uint64
 	for i := range ws.prf {
 		ws.prf[i] = uint64(i) + 1
 	}
@@ -1671,13 +1669,19 @@ func TestWipeInterlockWorker48(t *testing.T) {
 	ws.scratch.out16[3][1] = 7
 	ws.scratch.out32x512[7][7] = 9
 	ws.scratch.data[0] = ws.scratch.bufs[0][:]
-	for i := range masks {
-		masks[i] = [3]uint64{1, 2, 3}
+	for i := range ws.masks {
+		ws.masks[i] = [3]uint64{1, 2, 3}
 	}
-	for i := range masks16 {
-		masks16[i] = [3]uint64{4, 5, 6}
+	for i := range ws.masks16 {
+		ws.masks16[i] = [3]uint64{4, 5, 6}
 	}
-	wipeInterlockWorker48(ws, &masks, &masks16)
+	ws.idx0_8[0] = 11
+	ws.idx1_8[0] = 12
+	ws.out8[0][0] = 7
+	ws.idx0_16[0] = 21
+	ws.idx1_16[0] = 22
+	ws.out16[0][0] = 10
+	wipeInterlockWorker48(ws)
 	s := &ws.scratch
 	if ws.buf != ([13]byte{}) || ws.prf != ([2 * 8 * lockBatchFactor48Max]uint64{}) ||
 		s.bufs != ([4][13]byte{}) || s.data[0] != nil || s.data[1] != nil || s.data[2] != nil || s.data[3] != nil ||
@@ -1686,7 +1690,9 @@ func TestWipeInterlockWorker48(t *testing.T) {
 		s.out32x512 != ([8][8]uint64{}) {
 		t.Fatal("worker scratch not zero after wipe")
 	}
-	if masks != ([superChunks48][3]uint64{}) || masks16 != ([superGroups48][3]uint64{}) {
+	if ws.masks != ([superChunks48][3]uint64{}) || ws.masks16 != ([superGroups48][3]uint64{}) ||
+		ws.idx0_8 != ([superChunks48]uint64{}) || ws.idx1_8 != ([superChunks48]uint32{}) || ws.out8 != ([3][superChunks48]uint64{}) ||
+		ws.idx0_16 != ([superGroups48]uint64{}) || ws.idx1_16 != ([superGroups48]uint32{}) || ws.out16 != ([3][superGroups48]uint64{}) {
 		t.Fatal("mask arrays not zero after wipe")
 	}
 }

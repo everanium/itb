@@ -40,13 +40,13 @@
 // disables every kernel and routes through the Go reference.
 package siphashasm
 
-import "github.com/dchest/siphash"
+import "github.com/everanium/itb/internal/siphash24"
 
 // ChainAbsorb is the pure-Go reference of one SipHash-2-4-128 round of
 // the ChainHash128 cascade: the digest of data under the key (seed0,
 // seed1), exactly the closure hashes.SipHash24 returns.
 func ChainAbsorb(data []byte, seed0, seed1 uint64) (uint64, uint64) {
-	return siphash.Hash128(seed0, seed1, data)
+	return siphash24.Hash128(seed0, seed1, data)
 }
 
 // laneIdx16 holds the lane offsets 0..15 the batch-16 ZMM kernel adds to

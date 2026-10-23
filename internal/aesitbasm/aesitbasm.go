@@ -58,8 +58,6 @@ import (
 	"encoding/binary"
 	"runtime"
 	"unsafe"
-
-	"github.com/everanium/areion"
 )
 
 // RC holds the eight AES-ITB round constants, the first eight 128-bit
@@ -120,44 +118,82 @@ var laneIdxZ = [4][8]uint64{
 // every kernel tier and the parent package's AES128Round-based closure are
 // checked against it.
 func ChainAbsorb(key *[16]byte, data []byte, seed0, seed1 uint64) (uint64, uint64) {
-	var state [16]byte
-	binary.LittleEndian.PutUint64(state[:8], binary.LittleEndian.Uint64(key[:8])^seed0)
-	binary.LittleEndian.PutUint64(state[8:], binary.LittleEndian.Uint64(key[8:])^seed1)
+	var q, b bsState
+	var block [16]byte
+	bsPackWords1(&q, binary.LittleEndian.Uint64(key[:8])^seed0, binary.LittleEndian.Uint64(key[8:])^seed1)
 
 	n := len(data)
 	full := n &^ 15
-	blk := 0
-	for off := 0; off < full; off += 16 {
-		for i := 0; i < 16; i++ {
-			state[i] ^= data[off+i]
+	numBlocks := full/16 + 1
+	for blk := 0; blk < numBlocks; blk++ {
+		paddedBlock(&block, nil, data, blk, full)
+		bsPack1(&b, &block)
+		for k := 0; k < 8; k++ {
+			q[k] ^= b[k]
 		}
-		areion.Round((*areion.Block)(&state), (*areion.Block)(&RC[blk&7]))
-		blk++
+		bsRound(&q, &bsRC[blk&7])
 	}
-	rem := n - full
-	pad := byte(16 - rem)
-	for i := 0; i < rem; i++ {
-		state[i] ^= data[full+i]
-	}
-	for i := rem; i < 16; i++ {
-		state[i] ^= pad
-	}
-	areion.Round((*areion.Block)(&state), (*areion.Block)(&RC[blk&7]))
-	blk++
-
-	areion.Round((*areion.Block)(&state), (*areion.Block)(&RC[blk&7]))
-	areion.Round((*areion.Block)(&state), (*areion.Block)(&RC[(blk+1)&7]))
-	out0, out1 := binary.LittleEndian.Uint64(state[:8]), binary.LittleEndian.Uint64(state[8:])
-	clear(state[:])
-	runtime.KeepAlive(&state)
+	bsRound(&q, &bsRC[numBlocks&7])
+	bsRound(&q, &bsRC[(numBlocks+1)&7])
+	out0, out1 := bsUnpackWords1(&q)
+	clear(block[:])
+	clear(q[:])
+	clear(b[:])
+	runtime.KeepAlive(&block)
+	runtime.KeepAlive(&q)
+	runtime.KeepAlive(&b)
 	return out0, out1
 }
 
-// scalarBatch evaluates the four lanes through ChainAbsorb. dataPtrs[i]
-// must point at n readable bytes.
+// scalarBatch evaluates the four lanes in parallel through the 4-lane
+// bitsliced AES round. dataPtrs[i] must point at n readable bytes.
 func scalarBatch(key *[16]byte, seeds *[4][2]uint64, dataPtrs *[4]*byte, n int, out *[4][2]uint64) {
+	var initBlocks, laneBlocks [4][16]byte
+	var q, b bsState
+	k0 := binary.LittleEndian.Uint64(key[:8])
+	k1 := binary.LittleEndian.Uint64(key[8:])
 	for lane := 0; lane < 4; lane++ {
-		data := unsafe.Slice(dataPtrs[lane], n)
-		out[lane][0], out[lane][1] = ChainAbsorb(key, data, seeds[lane][0], seeds[lane][1])
+		binary.LittleEndian.PutUint64(initBlocks[lane][:8], k0^seeds[lane][0])
+		binary.LittleEndian.PutUint64(initBlocks[lane][8:], k1^seeds[lane][1])
+	}
+	bsPack4(&q, &initBlocks[0], &initBlocks[1], &initBlocks[2], &initBlocks[3])
+
+	full := n &^ 15
+	numBlocks := full/16 + 1
+	for blk := 0; blk < numBlocks; blk++ {
+		for lane := 0; lane < 4; lane++ {
+			paddedBlock(&laneBlocks[lane], nil, unsafe.Slice(dataPtrs[lane], n), blk, full)
+		}
+		bsPack4(&b, &laneBlocks[0], &laneBlocks[1], &laneBlocks[2], &laneBlocks[3])
+		for k := 0; k < 8; k++ {
+			q[k] ^= b[k]
+		}
+		bsRound(&q, &bsRC[blk&7])
+	}
+	bsRound(&q, &bsRC[numBlocks&7])
+	bsRound(&q, &bsRC[(numBlocks+1)&7])
+	bsUnpackWords4(&q, out)
+	clear(initBlocks[:])
+	clear(laneBlocks[:])
+	clear(q[:])
+	clear(b[:])
+	runtime.KeepAlive(&initBlocks)
+	runtime.KeepAlive(&laneBlocks)
+	runtime.KeepAlive(&q)
+	runtime.KeepAlive(&b)
+}
+
+// ChainAbsorbBatch evaluates four lanes of ChainAbsorb. When all four lanes
+// share the same non-zero byte length, it runs the 4-lane bitsliced path in
+// parallel; otherwise it evaluates each lane through ChainAbsorb.
+func ChainAbsorbBatch(key *[16]byte, seeds *[4][2]uint64, data *[4][]byte, out *[4][2]uint64) {
+	n := len(data[0])
+	if n > 0 && len(data[1]) == n && len(data[2]) == n && len(data[3]) == n {
+		dataPtrs := [4]*byte{&data[0][0], &data[1][0], &data[2][0], &data[3][0]}
+		scalarBatch(key, seeds, &dataPtrs, n, out)
+		return
+	}
+	for lane := 0; lane < 4; lane++ {
+		out[lane][0], out[lane][1] = ChainAbsorb(key, data[lane], seeds[lane][0], seeds[lane][1])
 	}
 }

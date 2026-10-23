@@ -2,6 +2,7 @@ package itb
 
 import (
 	"encoding/binary"
+	"runtime"
 
 	"github.com/everanium/itb/internal/forcetier"
 )
@@ -84,6 +85,14 @@ func interlockNonceFoldWord(v [4]byte) uint32 {
 // and the lockSeed's hash arms — the overlay's PRF keying is fully
 // isolated from the noiseSeed slot's material.
 func buildLockBatchPRF48_128(lockSeed *Seed128, nonce []byte) lockBatchPRF48 {
+	wipePixelCallStack([9][8]uint64{})
+	bp := buildLockBatchPRF48_128Body(lockSeed, nonce)
+	wipePixelCallStack([9][8]uint64{})
+	return bp
+}
+
+//go:noinline
+func buildLockBatchPRF48_128Body(lockSeed *Seed128, nonce []byte) lockBatchPRF48 {
 	lockLo, lockHi := lockSeed.deriveInterLockSeed(nonce)
 	lockComps := make([]uint64, 2+len(lockSeed.Components))
 	lockComps[0], lockComps[1] = lockLo, lockHi
@@ -99,6 +108,8 @@ func buildLockBatchPRF48_128(lockSeed *Seed128, nonce []byte) lockBatchPRF48 {
 			var prf [8]uint64
 			prf[0], prf[1] = lo, hi
 			fillLockMasksTriple48(&prf, lockBatchFactor48_128, masks)
+			clear(prf[:])
+			runtime.KeepAlive(&prf)
 		},
 		fillRanks: func(buf []byte, groupIdx uint64, prf []uint64) {
 			buf[0] = 0x03
@@ -106,6 +117,7 @@ func buildLockBatchPRF48_128(lockSeed *Seed128, nonce []byte) lockBatchPRF48 {
 			binary.LittleEndian.PutUint32(buf[9:13], foldWord)
 			prf[0], prf[1] = lockSeed.chainHash128With(lockComps, buf)
 		},
+		lockComps: lockComps,
 	}
 	if lockSeed.BatchHash != nil && !forcetier.InterlockPRFFillSeq() && !forcetier.InterlockPRFFillX1() {
 		bp.fillRanksX4 = func(s *lockFillScratch48, groupIdx uint64, prf []uint64) {
@@ -120,6 +132,8 @@ func buildLockBatchPRF48_128(lockSeed *Seed128, nonce []byte) lockBatchPRF48 {
 				prf[2*i] = out[i][0]
 				prf[2*i+1] = out[i][1]
 			}
+			clear(out[:])
+			runtime.KeepAlive(&out)
 		}
 	}
 	if bh16 := lockSeed.InterlockFillX16(); bh16 != nil && !forcetier.InterlockPRFFillSeq() && !forcetier.InterlockPRFFillX1() && !forcetier.InterlockPRFFillX4() {
@@ -140,9 +154,19 @@ func buildLockBatchPRF48_128(lockSeed *Seed128, nonce []byte) lockBatchPRF48 {
 // (3 / 5 / 9 at 512 / 1024 / 2048-bit keys). The batch-16 hook, when
 // armed, fills 8 groups (16 chunks) per call.
 func buildLockBatchPRF48_256(lockSeed *Seed256, nonce []byte) lockBatchPRF48 {
+	wipePixelCallStack([9][8]uint64{})
+	bp := buildLockBatchPRF48_256Body(lockSeed, nonce)
+	wipePixelCallStack([9][8]uint64{})
+	return bp
+}
+
+//go:noinline
+func buildLockBatchPRF48_256Body(lockSeed *Seed256, nonce []byte) lockBatchPRF48 {
 	lockKey := lockSeed.deriveInterLockSeed(nonce)
 	lockComps := make([]uint64, 4+len(lockSeed.Components))
 	copy(lockComps[:4], lockKey[:])
+	clear(lockKey[:])
+	runtime.KeepAlive(&lockKey)
 	copy(lockComps[4:], lockSeed.Components)
 	foldWord := interlockNonceFoldWord(interlockNonceFold(nonce))
 	bp := lockBatchPRF48{
@@ -155,6 +179,10 @@ func buildLockBatchPRF48_256(lockSeed *Seed256, nonce []byte) lockBatchPRF48 {
 			var prf [8]uint64
 			copy(prf[:4], out[:])
 			fillLockMasksTriple48(&prf, lockBatchFactor48_256, masks)
+			clear(out[:])
+			clear(prf[:])
+			runtime.KeepAlive(&out)
+			runtime.KeepAlive(&prf)
 		},
 		fillRanks: func(buf []byte, groupIdx uint64, prf []uint64) {
 			buf[0] = 0x03
@@ -162,7 +190,10 @@ func buildLockBatchPRF48_256(lockSeed *Seed256, nonce []byte) lockBatchPRF48 {
 			binary.LittleEndian.PutUint32(buf[9:13], foldWord)
 			out := lockSeed.chainHash256With(lockComps, buf)
 			copy(prf[:4], out[:])
+			clear(out[:])
+			runtime.KeepAlive(&out)
 		},
+		lockComps: lockComps,
 	}
 	if lockSeed.BatchHash != nil && !forcetier.InterlockPRFFillSeq() && !forcetier.InterlockPRFFillX1() {
 		bp.fillRanksX4 = func(s *lockFillScratch48, groupIdx uint64, prf []uint64) {
@@ -176,6 +207,8 @@ func buildLockBatchPRF48_256(lockSeed *Seed256, nonce []byte) lockBatchPRF48 {
 			for i := 0; i < 4; i++ {
 				copy(prf[4*i:4*i+4], out[i][:])
 			}
+			clear(out[:])
+			runtime.KeepAlive(&out)
 		}
 	}
 	if bh16 := lockSeed.InterlockFillX16(); bh16 != nil && !forcetier.InterlockPRFFillSeq() && !forcetier.InterlockPRFFillX1() && !forcetier.InterlockPRFFillX4() {
@@ -204,9 +237,19 @@ func buildLockBatchPRF48_256(lockSeed *Seed256, nonce []byte) lockBatchPRF48 {
 // armed, fills 4 groups (16 chunks) per call; the batch-32 hook 8 groups
 // (32 chunks).
 func buildLockBatchPRF48_512(lockSeed *Seed512, nonce []byte) lockBatchPRF48 {
+	wipePixelCallStack([9][8]uint64{})
+	bp := buildLockBatchPRF48_512Body(lockSeed, nonce)
+	wipePixelCallStack([9][8]uint64{})
+	return bp
+}
+
+//go:noinline
+func buildLockBatchPRF48_512Body(lockSeed *Seed512, nonce []byte) lockBatchPRF48 {
 	lockKey := lockSeed.deriveInterLockSeed(nonce)
 	lockComps := make([]uint64, 8+len(lockSeed.Components))
 	copy(lockComps[:8], lockKey[:])
+	clear(lockKey[:])
+	runtime.KeepAlive(&lockKey)
 	copy(lockComps[8:], lockSeed.Components)
 	foldWord := interlockNonceFoldWord(interlockNonceFold(nonce))
 	bp := lockBatchPRF48{
@@ -217,6 +260,8 @@ func buildLockBatchPRF48_512(lockSeed *Seed512, nonce []byte) lockBatchPRF48 {
 			binary.LittleEndian.PutUint32(buf[9:13], foldWord)
 			out := lockSeed.chainHash512With(lockComps, buf)
 			fillLockMasksTriple48(&out, lockBatchFactor48_512, masks)
+			clear(out[:])
+			runtime.KeepAlive(&out)
 		},
 		fillRanks: func(buf []byte, groupIdx uint64, prf []uint64) {
 			buf[0] = 0x03
@@ -224,7 +269,10 @@ func buildLockBatchPRF48_512(lockSeed *Seed512, nonce []byte) lockBatchPRF48 {
 			binary.LittleEndian.PutUint32(buf[9:13], foldWord)
 			out := lockSeed.chainHash512With(lockComps, buf)
 			copy(prf[:8], out[:])
+			clear(out[:])
+			runtime.KeepAlive(&out)
 		},
+		lockComps: lockComps,
 	}
 	if lockSeed.BatchHash != nil && !forcetier.InterlockPRFFillSeq() && !forcetier.InterlockPRFFillX1() {
 		bp.fillRanksX4 = func(s *lockFillScratch48, groupIdx uint64, prf []uint64) {
@@ -238,6 +286,8 @@ func buildLockBatchPRF48_512(lockSeed *Seed512, nonce []byte) lockBatchPRF48 {
 			for i := 0; i < 4; i++ {
 				copy(prf[8*i:8*i+8], out[i][:])
 			}
+			clear(out[:])
+			runtime.KeepAlive(&out)
 		}
 	}
 	if bh16 := lockSeed.InterlockFillX16(); bh16 != nil && !forcetier.InterlockPRFFillSeq() && !forcetier.InterlockPRFFillX1() && !forcetier.InterlockPRFFillX4() {

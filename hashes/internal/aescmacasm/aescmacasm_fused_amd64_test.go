@@ -179,7 +179,12 @@ func BenchmarkFusedTier(b *testing.B) {
 // execute — x1, x4, x8 and batch-16 — under the stack-residue probe and
 // requires that no round key, no K10 ^ K0 and no K0-folded block is left
 // in the stack once the kernel has returned.
+func TestFusedKernelsLeaveNoSecretInFrame(t *testing.T) {
+	TestFusedKernelsLeaveNoKeyInFrame(t)
+}
+
 func TestFusedKernelsLeaveNoKeyInFrame(t *testing.T) {
+	checkResidueNegativeControls(t)
 	var key [16]byte
 	rand.Read(key[:])
 	s := NewSchedule(key)
@@ -239,4 +244,14 @@ func TestFusedKernelsLeaveNoKeyInFrame(t *testing.T) {
 		k := tier.k
 		run(fmt.Sprintf("%s x16", tier.name), 13, lanes, func() { k(s, comps, base, v, &out) })
 	}
+}
+
+func dumpSIMDRegs(dst *[88]uint64, avx512 bool)
+func dirtySIMDRegForTest(masked uint64)
+
+func init() {
+	dumpSIMDRegsHook = func(dst *[88]uint64) {
+		dumpSIMDRegs(dst, cpuid.AVX512F)
+	}
+	dirtySIMDRegHook = dirtySIMDRegForTest
 }

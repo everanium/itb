@@ -9,7 +9,29 @@ import (
 	"github.com/everanium/itb"
 	"github.com/everanium/itb/hashes/internal/chacha20asm"
 	"github.com/everanium/itb/internal/forcetier"
+	"github.com/everanium/itb/internal/wipe"
 )
+
+//go:noinline
+func evalChaCha20WithKey(fixedKey *[32]byte, data []byte, seed *[4]uint64, out *[4]uint64) {
+	// Per-call key derivation: fixedKey XOR seed components. The
+	// seed never touches the block input words, and the data
+	// never touches the key words: the data reaches the digest
+	// only through the permutation inputs of the chain, keyed by
+	// the per-call key and then by the pseudorandom key each
+	// block produces for the next.
+	var key [32]byte
+	copy(key[:], fixedKey[:])
+	for i := 0; i < 4; i++ {
+		off := i * 8
+		v := binary.LittleEndian.Uint64(key[off:])
+		binary.LittleEndian.PutUint64(key[off:], v^seed[i])
+	}
+	*out = chacha20asm.HChaCha20Chain(&key, data)
+	// Zero the per-call key on the stack once the chain has run.
+	clear(key[:])
+	runtime.KeepAlive(&key)
+}
 
 // ChaCha20 returns a cached ChaCha20 itb.HashFunc256 along with the
 // 32-byte fixed key the closure is bound to. With no argument the
@@ -50,23 +72,11 @@ func ChaCha20(key ...[32]byte) (itb.HashFunc256, [32]byte) {
 // caller-supplied 32-byte fixed key, for serialization paths.
 func ChaCha20WithKey(fixedKey [32]byte) itb.HashFunc256 {
 	return func(data []byte, seed [4]uint64) [4]uint64 {
-		// Per-call key derivation: fixedKey XOR seed components. The
-		// seed never touches the block input words, and the data
-		// never touches the key words: the data reaches the digest
-		// only through the permutation inputs of the chain, keyed by
-		// the per-call key and then by the pseudorandom key each
-		// block produces for the next.
-		var key [32]byte
-		copy(key[:], fixedKey[:])
-		for i := 0; i < 4; i++ {
-			off := i * 8
-			v := binary.LittleEndian.Uint64(key[off:])
-			binary.LittleEndian.PutUint64(key[off:], v^seed[i])
-		}
-		out := chacha20asm.HChaCha20Chain(&key, data)
-		// Zero the per-call key on the stack once the chain has run.
-		clear(key[:])
-		runtime.KeepAlive(&key)
+		var out [4]uint64
+		evalChaCha20WithKey(&fixedKey, data, &seed, &out)
+		clear(seed[:])
+		runtime.KeepAlive(&seed)
+		wipe.CallStack512B()
 		return out
 	}
 }
@@ -112,12 +122,26 @@ func ChaCha20256Pair(key ...[32]byte) (itb.HashFunc256, itb.BatchHashFunc256, [3
 // consult first, so the batched arm is the fallback for seeds built
 // without those hooks.
 func ChaCha20256PairWithKey(fixedKey [32]byte) (itb.HashFunc256, itb.BatchHashFunc256) {
-	single := ChaCha20WithKey(fixedKey)
+	return chacha20256PairFromKeyPtr(&fixedKey)
+}
+
+func chacha20256PairFromKeyPtr(k *[32]byte) (itb.HashFunc256, itb.BatchHashFunc256) {
+	single := func(data []byte, seed [4]uint64) [4]uint64 {
+		var out [4]uint64
+		evalChaCha20WithKey(k, data, &seed, &out)
+		clear(seed[:])
+		runtime.KeepAlive(&seed)
+		wipe.CallStack512B()
+		return out
+	}
 	batched := func(data *[4][]byte, seeds [4][4]uint64) [4][4]uint64 {
 		var out [4][4]uint64
 		for lane := 0; lane < 4; lane++ {
-			out[lane] = single(data[lane], seeds[lane])
+			evalChaCha20WithKey(k, data[lane], &seeds[lane], &out[lane])
 		}
+		clear(seeds[:])
+		runtime.KeepAlive(&seeds)
+		wipe.CallStack512B()
 		return out
 	}
 	return single, batched
@@ -138,19 +162,18 @@ func chacha20FusedChainHash(key []byte) (itb.FusedChainHashFunc256, itb.BatchFus
 	if forcetier.ChainHashSeq() {
 		return nil, nil, nil
 	}
-	var k [32]byte
-	copy(k[:], key)
+	k := (*[32]byte)(key)
 	single := func(components []uint64, data []byte) ([4]uint64, bool) {
 		var out [4]uint64
 		switch len(data) {
 		case 13:
-			chacha20asm.Fused256Chain13x1(&k, components, &data[0], &out)
+			chacha20asm.Fused256Chain13x1(k, components, &data[0], &out)
 		case 20:
-			chacha20asm.Fused256Chain20x1(&k, components, &data[0], &out)
+			chacha20asm.Fused256Chain20x1(k, components, &data[0], &out)
 		case 36:
-			chacha20asm.Fused256Chain36x1(&k, components, &data[0], &out)
+			chacha20asm.Fused256Chain36x1(k, components, &data[0], &out)
 		case 68:
-			chacha20asm.Fused256Chain68x1(&k, components, &data[0], &out)
+			chacha20asm.Fused256Chain68x1(k, components, &data[0], &out)
 		default:
 			return out, false
 		}
@@ -170,13 +193,13 @@ func chacha20FusedChainHash(key []byte) (itb.FusedChainHashFunc256, itb.BatchFus
 		dataPtrs := [4]*byte{&data[0][0], &data[1][0], &data[2][0], &data[3][0]}
 		switch n {
 		case 13:
-			chacha20asm.Fused256Chain13x4(&k, components, &dataPtrs, &out)
+			chacha20asm.Fused256Chain13x4(k, components, &dataPtrs, &out)
 		case 20:
-			chacha20asm.Fused256Chain20x4(&k, components, &dataPtrs, &out)
+			chacha20asm.Fused256Chain20x4(k, components, &dataPtrs, &out)
 		case 36:
-			chacha20asm.Fused256Chain36x4(&k, components, &dataPtrs, &out)
+			chacha20asm.Fused256Chain36x4(k, components, &dataPtrs, &out)
 		case 68:
-			chacha20asm.Fused256Chain68x4(&k, components, &dataPtrs, &out)
+			chacha20asm.Fused256Chain68x4(k, components, &dataPtrs, &out)
 		}
 		return out, true
 	}
@@ -191,10 +214,9 @@ func chacha20InterlockFillBatch16(key []byte) (itb.InterlockFillFunc16x256, erro
 	if len(key) != 32 {
 		return nil, fmt.Errorf("hashes: %q interlock fill batch-16 needs a 32-byte key, got %d", CipherChaCha20, len(key))
 	}
-	var k [32]byte
-	copy(k[:], key)
+	k := (*[32]byte)(key)
 	return func(components []uint64, groupIdxBase uint64, v uint32, out *[8][4]uint64) {
-		chacha20asm.Fused256Fill13x8(&k, components, groupIdxBase, v, out)
+		chacha20asm.Fused256Fill13x8(k, components, groupIdxBase, v, out)
 	}, nil
 }
 
@@ -215,8 +237,7 @@ func chacha20FusedChainHash8(key []byte) (itb.BatchFusedChainHashFunc256x8, erro
 	if forcetier.ChainHashSeq() || !chacha20asm.FusedX8Active() {
 		return nil, nil
 	}
-	var k [32]byte
-	copy(k[:], key)
+	k := (*[32]byte)(key)
 	return func(components []uint64, data *[8][]byte) ([8][4]uint64, bool) {
 		var out [8][4]uint64
 		n := len(data[0])
@@ -234,11 +255,11 @@ func chacha20FusedChainHash8(key []byte) (itb.BatchFusedChainHashFunc256x8, erro
 		}
 		switch n {
 		case 20:
-			chacha20asm.Fused256Chain20x8(&k, components, &dataPtrs, &out)
+			chacha20asm.Fused256Chain20x8(k, components, &dataPtrs, &out)
 		case 36:
-			chacha20asm.Fused256Chain36x8(&k, components, &dataPtrs, &out)
+			chacha20asm.Fused256Chain36x8(k, components, &dataPtrs, &out)
 		case 68:
-			chacha20asm.Fused256Chain68x8(&k, components, &dataPtrs, &out)
+			chacha20asm.Fused256Chain68x8(k, components, &dataPtrs, &out)
 		}
 		return out, true
 	}, nil

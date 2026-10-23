@@ -1,6 +1,23 @@
 package hashes
 
-import "github.com/everanium/itb"
+import (
+	"runtime"
+
+	"github.com/everanium/itb"
+	"github.com/everanium/itb/internal/wipe"
+)
+
+func init() {
+	wipe.SeedFromComponents128WithKey = func(name string, key []byte, components ...uint64) (any, []byte, error) {
+		return seedFromComponents128WithKey(name, key, components...)
+	}
+	wipe.SeedFromComponents256WithKey = func(name string, key []byte, components ...uint64) (any, []byte, error) {
+		return seedFromComponents256WithKey(name, key, components...)
+	}
+	wipe.SeedFromComponents512WithKey = func(name string, key []byte, components ...uint64) (any, []byte, error) {
+		return seedFromComponents512WithKey(name, key, components...)
+	}
+}
 
 // Name-keyed seed constructors, the constructor path of every shipped
 // seed: the Triple package's seed builders and the C ABI seed
@@ -24,25 +41,30 @@ import "github.com/everanium/itb"
 //
 // Errors: an unknown name, a name of another width, a key the primitive
 // rejects, or keyBits the itb constructor rejects.
-func NewSeed128(name string, keyBits int, key ...[]byte) (*itb.Seed128, []byte, error) {
+func NewSeed128(name string, keyBits int, key ...[]byte) (s *itb.Seed128, fixedKey []byte, err error) {
 	single, batched, fixedKey, err := Make128Pair(name, key...)
 	if err != nil {
 		return nil, nil, err
 	}
-	s, err := itb.NewSeed128(keyBits, single)
+	defer func() {
+		if err != nil {
+			clear(fixedKey)
+			runtime.KeepAlive(fixedKey)
+		}
+	}()
+	s, err = itb.NewSeed128(keyBits, single)
 	if err != nil {
-		clear(fixedKey)
 		return nil, nil, err
 	}
 	s.BatchHash = batched
-	if err := attachFused128(s, name, fixedKey); err != nil {
+	if err = attachFused128(s, name, fixedKey); err != nil {
 		clear(s.Components)
-		clear(fixedKey)
+		runtime.KeepAlive(s.Components)
 		return nil, nil, err
 	}
-	if err := attachInterlockBatch16(s, name, fixedKey); err != nil {
+	if err = attachInterlockBatch16(s, name, fixedKey); err != nil {
 		clear(s.Components)
-		clear(fixedKey)
+		runtime.KeepAlive(s.Components)
 		return nil, nil, err
 	}
 	return s, fixedKey, nil
@@ -51,30 +73,35 @@ func NewSeed128(name string, keyBits int, key ...[]byte) (*itb.Seed128, []byte, 
 // NewSeed256 is the width-256 form of [NewSeed128]: the arms of
 // [Make256Pair], the fused cascade, batch-16 and batch-32 hooks of the
 // entry, the fixed key of the arms as the second return value.
-func NewSeed256(name string, keyBits int, key ...[]byte) (*itb.Seed256, []byte, error) {
+func NewSeed256(name string, keyBits int, key ...[]byte) (s *itb.Seed256, fixedKey []byte, err error) {
 	single, batched, fixedKey, err := Make256Pair(name, key...)
 	if err != nil {
 		return nil, nil, err
 	}
-	s, err := itb.NewSeed256(keyBits, single)
+	defer func() {
+		if err != nil {
+			clear(fixedKey)
+			runtime.KeepAlive(fixedKey)
+		}
+	}()
+	s, err = itb.NewSeed256(keyBits, single)
 	if err != nil {
-		clear(fixedKey)
 		return nil, nil, err
 	}
 	s.BatchHash = batched
-	if err := attachFused256(s, name, fixedKey); err != nil {
+	if err = attachFused256(s, name, fixedKey); err != nil {
 		clear(s.Components)
-		clear(fixedKey)
+		runtime.KeepAlive(s.Components)
 		return nil, nil, err
 	}
-	if err := attachInterlockBatch16x256(s, name, fixedKey); err != nil {
+	if err = attachInterlockBatch16x256(s, name, fixedKey); err != nil {
 		clear(s.Components)
-		clear(fixedKey)
+		runtime.KeepAlive(s.Components)
 		return nil, nil, err
 	}
-	if err := attachInterlockBatch32x256(s, name, fixedKey); err != nil {
+	if err = attachInterlockBatch32x256(s, name, fixedKey); err != nil {
 		clear(s.Components)
-		clear(fixedKey)
+		runtime.KeepAlive(s.Components)
 		return nil, nil, err
 	}
 	return s, fixedKey, nil
@@ -83,30 +110,35 @@ func NewSeed256(name string, keyBits int, key ...[]byte) (*itb.Seed256, []byte, 
 // NewSeed512 is the width-512 form of [NewSeed128]: the arms of
 // [Make512Pair], the fused cascade, batch-16 and batch-32 hooks of the
 // entry, the fixed key of the arms as the second return value.
-func NewSeed512(name string, keyBits int, key ...[]byte) (*itb.Seed512, []byte, error) {
+func NewSeed512(name string, keyBits int, key ...[]byte) (s *itb.Seed512, fixedKey []byte, err error) {
 	single, batched, fixedKey, err := Make512Pair(name, key...)
 	if err != nil {
 		return nil, nil, err
 	}
-	s, err := itb.NewSeed512(keyBits, single)
+	defer func() {
+		if err != nil {
+			clear(fixedKey)
+			runtime.KeepAlive(fixedKey)
+		}
+	}()
+	s, err = itb.NewSeed512(keyBits, single)
 	if err != nil {
-		clear(fixedKey)
 		return nil, nil, err
 	}
 	s.BatchHash = batched
-	if err := attachFused512(s, name, fixedKey); err != nil {
+	if err = attachFused512(s, name, fixedKey); err != nil {
 		clear(s.Components)
-		clear(fixedKey)
+		runtime.KeepAlive(s.Components)
 		return nil, nil, err
 	}
-	if err := attachInterlockBatch16x512(s, name, fixedKey); err != nil {
+	if err = attachInterlockBatch16x512(s, name, fixedKey); err != nil {
 		clear(s.Components)
-		clear(fixedKey)
+		runtime.KeepAlive(s.Components)
 		return nil, nil, err
 	}
-	if err := attachInterlockBatch32x512(s, name, fixedKey); err != nil {
+	if err = attachInterlockBatch32x512(s, name, fixedKey); err != nil {
 		clear(s.Components)
-		clear(fixedKey)
+		runtime.KeepAlive(s.Components)
 		return nil, nil, err
 	}
 	return s, fixedKey, nil
@@ -121,90 +153,128 @@ func NewSeed512(name string, keyBits int, key ...[]byte) (*itb.Seed512, []byte, 
 // components, and the entry's factories attach the hooks. A seed
 // restored this way is indistinguishable on the wire from
 // one restored through [itb.SeedFromComponents128] on the arms alone.
-func SeedFromComponents128(name string, key []byte, components ...uint64) (*itb.Seed128, error) {
+func SeedFromComponents128(name string, key []byte, components ...uint64) (s *itb.Seed128, err error) {
+	s, _, err = seedFromComponents128WithKey(name, key, components...)
+	return s, err
+}
+
+func seedFromComponents128WithKey(name string, key []byte, components ...uint64) (s *itb.Seed128, fixedKey []byte, err error) {
 	var keyArg [][]byte
 	if len(key) > 0 {
 		keyArg = [][]byte{key}
 	}
 	single, batched, fixedKey, err := Make128Pair(name, keyArg...)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	defer clear(fixedKey)
-	s, err := itb.SeedFromComponents128(single, components...)
+	defer func() {
+		if err != nil {
+			clear(fixedKey)
+			runtime.KeepAlive(fixedKey)
+		}
+	}()
+	s, err = itb.SeedFromComponents128(single, components...)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	s.BatchHash = batched
-	if err := attachFused128(s, name, fixedKey); err != nil {
+	if err = attachFused128(s, name, fixedKey); err != nil {
 		clear(s.Components)
-		return nil, err
+		runtime.KeepAlive(s.Components)
+		return nil, nil, err
 	}
-	if err := attachInterlockBatch16(s, name, fixedKey); err != nil {
+	if err = attachInterlockBatch16(s, name, fixedKey); err != nil {
 		clear(s.Components)
-		return nil, err
+		runtime.KeepAlive(s.Components)
+		return nil, nil, err
 	}
-	return s, nil
+	return s, fixedKey, nil
 }
 
 // SeedFromComponents256 is the width-256 form of [SeedFromComponents128].
-func SeedFromComponents256(name string, key []byte, components ...uint64) (*itb.Seed256, error) {
+func SeedFromComponents256(name string, key []byte, components ...uint64) (s *itb.Seed256, err error) {
+	s, _, err = seedFromComponents256WithKey(name, key, components...)
+	return s, err
+}
+
+func seedFromComponents256WithKey(name string, key []byte, components ...uint64) (s *itb.Seed256, fixedKey []byte, err error) {
 	var keyArg [][]byte
 	if len(key) > 0 {
 		keyArg = [][]byte{key}
 	}
 	single, batched, fixedKey, err := Make256Pair(name, keyArg...)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	defer clear(fixedKey)
-	s, err := itb.SeedFromComponents256(single, components...)
+	defer func() {
+		if err != nil {
+			clear(fixedKey)
+			runtime.KeepAlive(fixedKey)
+		}
+	}()
+	s, err = itb.SeedFromComponents256(single, components...)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	s.BatchHash = batched
-	if err := attachFused256(s, name, fixedKey); err != nil {
+	if err = attachFused256(s, name, fixedKey); err != nil {
 		clear(s.Components)
-		return nil, err
+		runtime.KeepAlive(s.Components)
+		return nil, nil, err
 	}
-	if err := attachInterlockBatch16x256(s, name, fixedKey); err != nil {
+	if err = attachInterlockBatch16x256(s, name, fixedKey); err != nil {
 		clear(s.Components)
-		return nil, err
+		runtime.KeepAlive(s.Components)
+		return nil, nil, err
 	}
-	if err := attachInterlockBatch32x256(s, name, fixedKey); err != nil {
+	if err = attachInterlockBatch32x256(s, name, fixedKey); err != nil {
 		clear(s.Components)
-		return nil, err
+		runtime.KeepAlive(s.Components)
+		return nil, nil, err
 	}
-	return s, nil
+	return s, fixedKey, nil
 }
 
 // SeedFromComponents512 is the width-512 form of [SeedFromComponents128].
-func SeedFromComponents512(name string, key []byte, components ...uint64) (*itb.Seed512, error) {
+func SeedFromComponents512(name string, key []byte, components ...uint64) (s *itb.Seed512, err error) {
+	s, _, err = seedFromComponents512WithKey(name, key, components...)
+	return s, err
+}
+
+func seedFromComponents512WithKey(name string, key []byte, components ...uint64) (s *itb.Seed512, fixedKey []byte, err error) {
 	var keyArg [][]byte
 	if len(key) > 0 {
 		keyArg = [][]byte{key}
 	}
 	single, batched, fixedKey, err := Make512Pair(name, keyArg...)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	defer clear(fixedKey)
-	s, err := itb.SeedFromComponents512(single, components...)
+	defer func() {
+		if err != nil {
+			clear(fixedKey)
+			runtime.KeepAlive(fixedKey)
+		}
+	}()
+	s, err = itb.SeedFromComponents512(single, components...)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	s.BatchHash = batched
-	if err := attachFused512(s, name, fixedKey); err != nil {
+	if err = attachFused512(s, name, fixedKey); err != nil {
 		clear(s.Components)
-		return nil, err
+		runtime.KeepAlive(s.Components)
+		return nil, nil, err
 	}
-	if err := attachInterlockBatch16x512(s, name, fixedKey); err != nil {
+	if err = attachInterlockBatch16x512(s, name, fixedKey); err != nil {
 		clear(s.Components)
-		return nil, err
+		runtime.KeepAlive(s.Components)
+		return nil, nil, err
 	}
-	if err := attachInterlockBatch32x512(s, name, fixedKey); err != nil {
+	if err = attachInterlockBatch32x512(s, name, fixedKey); err != nil {
 		clear(s.Components)
-		return nil, err
+		runtime.KeepAlive(s.Components)
+		return nil, nil, err
 	}
-	return s, nil
+	return s, fixedKey, nil
 }

@@ -173,12 +173,53 @@ func main() {
 		for l := 0; l < 25; l++ {
 			emit("\tVMOVQ %s, %d(DI)", x(m[l]), l*8)
 		}
+		for r := 0; r < 32; r++ {
+			emit("\tVPXORD %s, %s, %s", x(r), x(r), x(r))
+		}
+		emit("\tXORQ AX, AX")
+		emit("\tXORQ CX, CX")
+		if fused {
+			emit("\tXORQ SI, SI")
+		}
+		emit("\tXORQ DI, DI")
 		emit("\tVZEROUPPER")
 		emit("\tRET")
 	}
 
 	body(false)
 	body(true)
+
+	emit("")
+	emit("// func dumpSIMDRegs(dst *[80]uint64, avx512 bool)")
+	emit("TEXT ·dumpSIMDRegs(SB), NOSPLIT, $0-9")
+	emit("\tMOVQ dst+0(FP), AX")
+	for i, g := range []string{"CX", "DX", "SI", "DI", "R8", "R9", "R10", "R11", "R12", "R13", "R15"} {
+		emit("\tMOVQ %s, %d(AX)", g, 512+8*i)
+	}
+	for r := 0; r < 16; r++ {
+		emit("\tMOVOU X%d, %d(AX)", r, 16*r)
+	}
+	emit("\tMOVBLZX avx512+8(FP), CX")
+	emit("\tTESTQ CX, CX")
+	emit("\tJZ dumpDone")
+	for r := 16; r < 32; r++ {
+		emit("\tVMOVDQU64 X%d, %d(AX)", r, 16*r)
+	}
+	emit("dumpDone:")
+	emit("\tPXOR X2, X2")
+	emit("\tXORQ R12, R12")
+	emit("\tXORQ AX, AX")
+	emit("\tXORQ CX, CX")
+	emit("\tRET")
+	emit("")
+	emit("// func dirtySIMDRegForTest(masked uint64)")
+	emit("TEXT ·dirtySIMDRegForTest(SB), NOSPLIT, $0-8")
+	emit("\tMOVQ masked+0(FP), R12")
+	emit("\tMOVQ $0x5555555555555555, AX")
+	emit("\tXORQ AX, R12")
+	emit("\tMOVQ R12, X2")
+	emit("\tXORQ AX, AX")
+	emit("\tRET")
 
 	fmt.Print(b.String())
 }

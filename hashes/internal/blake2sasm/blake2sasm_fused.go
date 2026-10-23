@@ -15,6 +15,7 @@ package blake2sasm
 
 import (
 	"encoding/binary"
+	"runtime"
 	"unsafe"
 
 	"golang.org/x/crypto/blake2s"
@@ -75,10 +76,14 @@ func absorb256(key *[32]byte, seed *[4]uint64, data []byte) [4]uint64 {
 		binary.LittleEndian.PutUint64(buf[off:], binary.LittleEndian.Uint64(buf[off:])^seed[i])
 	}
 	d := blake2s.Sum256(buf)
+	clear(buf)
+	runtime.KeepAlive(&stack)
 	var out [4]uint64
 	for i := range out {
 		out[i] = binary.LittleEndian.Uint64(d[8*i:])
 	}
+	clear(d[:])
+	runtime.KeepAlive(&d)
 	return out
 }
 
@@ -93,6 +98,8 @@ func ScalarFusedChain256(fixedKey *[32]byte, components []uint64, data []byte) [
 		}
 		h = absorb256(fixedKey, &seed, data)
 	}
+	clear(seed[:])
+	runtime.KeepAlive(&seed)
 	return h
 }
 
@@ -143,6 +150,8 @@ func scalarFill256X8(fixedKey *[32]byte, components []uint64, groupIdxBase uint6
 		fillBlock(&blk, groupIdxBase+uint64(i), v)
 		out[i] = ScalarFusedChain256(fixedKey, components, blk[:])
 	}
+	clear(blk[:])
+	runtime.KeepAlive(&blk)
 }
 
 // lanePtr views n bytes at p as a slice for the pure-Go fallbacks.

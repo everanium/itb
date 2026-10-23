@@ -6,7 +6,13 @@ import (
 	"github.com/everanium/itb"
 	"github.com/everanium/itb/internal/areionasm"
 	"github.com/everanium/itb/internal/forcetier"
+	"github.com/everanium/itb/internal/wipe"
 )
+
+func areion512PairFromKeyPtr(k *[64]byte) (itb.HashFunc512, itb.BatchHashFunc512) {
+	h, b := wipe.MakeAreion512FromKeyPtr(k)
+	return h, b
+}
 
 // Areion512Pair returns a fresh (single, batched) Areion-SoEM-512 hash
 // pair for itb.Seed512 integration. Same construction principle as
@@ -47,19 +53,18 @@ func areion512FusedChainHash(key []byte) (itb.FusedChainHashFunc512, itb.BatchFu
 	if forcetier.ChainHashSeq() {
 		return nil, nil, nil
 	}
-	var k [64]byte
-	copy(k[:], key)
+	k := (*[64]byte)(key)
 	single := func(components []uint64, data []byte) ([8]uint64, bool) {
 		var out [8]uint64
 		switch len(data) {
 		case 13:
-			areionasm.Fused512Chain13x1(&k, components, &data[0], &out)
+			areionasm.Fused512Chain13x1(k, components, &data[0], &out)
 		case 20:
-			areionasm.Fused512Chain20x1(&k, components, &data[0], &out)
+			areionasm.Fused512Chain20x1(k, components, &data[0], &out)
 		case 36:
-			areionasm.Fused512Chain36x1(&k, components, &data[0], &out)
+			areionasm.Fused512Chain36x1(k, components, &data[0], &out)
 		case 68:
-			areionasm.Fused512Chain68x1(&k, components, &data[0], &out)
+			areionasm.Fused512Chain68x1(k, components, &data[0], &out)
 		default:
 			return out, false
 		}
@@ -79,13 +84,13 @@ func areion512FusedChainHash(key []byte) (itb.FusedChainHashFunc512, itb.BatchFu
 		dataPtrs := [4]*byte{&data[0][0], &data[1][0], &data[2][0], &data[3][0]}
 		switch n {
 		case 13:
-			areionasm.Fused512Chain13x4(&k, components, &dataPtrs, &out)
+			areionasm.Fused512Chain13x4(k, components, &dataPtrs, &out)
 		case 20:
-			areionasm.Fused512Chain20x4(&k, components, &dataPtrs, &out)
+			areionasm.Fused512Chain20x4(k, components, &dataPtrs, &out)
 		case 36:
-			areionasm.Fused512Chain36x4(&k, components, &dataPtrs, &out)
+			areionasm.Fused512Chain36x4(k, components, &dataPtrs, &out)
 		case 68:
-			areionasm.Fused512Chain68x4(&k, components, &dataPtrs, &out)
+			areionasm.Fused512Chain68x4(k, components, &dataPtrs, &out)
 		}
 		return out, true
 	}
@@ -100,10 +105,9 @@ func areion512InterlockFillBatch16(key []byte) (itb.InterlockFillFunc16x512, err
 	if len(key) != 64 {
 		return nil, fmt.Errorf("hashes: %q interlock fill batch-16 needs a 64-byte key, got %d", CipherAreion512, len(key))
 	}
-	var k [64]byte
-	copy(k[:], key)
+	k := (*[64]byte)(key)
 	return func(components []uint64, groupIdxBase uint64, v uint32, out *[4][8]uint64) {
-		areionasm.Fused512Fill13x4(&k, components, groupIdxBase, v, out)
+		areionasm.Fused512Fill13x4(k, components, groupIdxBase, v, out)
 	}, nil
 }
 
@@ -117,8 +121,7 @@ func areion512FusedChainHash8(key []byte) (itb.BatchFusedChainHashFunc512x8, err
 	if forcetier.ChainHashSeq() || !areionasm.FusedX8Active() {
 		return nil, nil
 	}
-	var k [64]byte
-	copy(k[:], key)
+	k := (*[64]byte)(key)
 	return func(components []uint64, data *[8][]byte) ([8][8]uint64, bool) {
 		var out [8][8]uint64
 		n := len(data[0])
@@ -136,11 +139,11 @@ func areion512FusedChainHash8(key []byte) (itb.BatchFusedChainHashFunc512x8, err
 		}
 		switch n {
 		case 20:
-			areionasm.Fused512Chain20x8(&k, components, &dataPtrs, &out)
+			areionasm.Fused512Chain20x8(k, components, &dataPtrs, &out)
 		case 36:
-			areionasm.Fused512Chain36x8(&k, components, &dataPtrs, &out)
+			areionasm.Fused512Chain36x8(k, components, &dataPtrs, &out)
 		case 68:
-			areionasm.Fused512Chain68x8(&k, components, &dataPtrs, &out)
+			areionasm.Fused512Chain68x8(k, components, &dataPtrs, &out)
 		}
 		return out, true
 	}, nil
@@ -155,9 +158,8 @@ func areion512InterlockFillBatch32(key []byte) (itb.InterlockFillFunc32x512, err
 	if len(key) != 64 {
 		return nil, fmt.Errorf("hashes: %q interlock fill batch-32 needs a 64-byte key, got %d", CipherAreion512, len(key))
 	}
-	var k [64]byte
-	copy(k[:], key)
+	k := (*[64]byte)(key)
 	return func(components []uint64, groupIdxBase uint64, v uint32, out *[8][8]uint64) {
-		areionasm.Fused512Fill13x8(&k, components, groupIdxBase, v, out)
+		areionasm.Fused512Fill13x8(k, components, groupIdxBase, v, out)
 	}, nil
 }

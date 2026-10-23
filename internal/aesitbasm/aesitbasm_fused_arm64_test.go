@@ -57,7 +57,12 @@ func TestFusedKernelParityNeon(t *testing.T) {
 // probe's negative control: no key, no component pair, no key-folded
 // block and no lane output may be left in the stack once a kernel has
 // returned.
+func TestFusedKernelsLeaveNoSecretInFrame(t *testing.T) {
+	TestFusedKernelsLeaveNoSecretInFrameArm64(t)
+}
+
 func TestFusedKernelsLeaveNoSecretInFrameArm64(t *testing.T) {
+	checkResidueNegativeControls(t)
 	checkResidueProbeSeesKeyFold(t)
 	if !cpuid.ARMAES {
 		t.Skip("requires the ARM crypto extension")
@@ -66,4 +71,15 @@ func TestFusedKernelsLeaveNoSecretInFrameArm64(t *testing.T) {
 		aesITB128FusedChain13x16NeonAsm(key, &comps[0], len(comps)/2, base, out, v)
 	}
 	checkAESITBResidue(t, "neon", neonFusedX4(), neonFusedX1(), nil, x16)
+	checkNoiseFillResidue(t, "neon", 8, noiseFillX8NeonAsm)
+}
+
+func dumpSIMDRegs(dst *[88]uint64, avx512 bool)
+func dirtySIMDRegForTest(masked uint64)
+
+func init() {
+	dumpSIMDRegsHook = func(dst *[88]uint64) {
+		dumpSIMDRegs(dst, false)
+	}
+	dirtySIMDRegHook = dirtySIMDRegForTest
 }

@@ -13,7 +13,73 @@ import (
 	"github.com/everanium/itb"
 	"github.com/everanium/itb/hashes/internal/aescmacasm"
 	"github.com/everanium/itb/internal/forcetier"
+	"github.com/everanium/itb/internal/wipe"
 )
+
+//go:noinline
+func evalAESCMACWithKey(block cipher.Block, data []byte, seed0, seed1 uint64) (uint64, uint64) {
+	lenTag := uint64(len(data))
+	var b1 [16]byte
+	binary.LittleEndian.PutUint64(b1[0:], seed0^lenTag)
+	binary.LittleEndian.PutUint64(b1[8:], seed1^lenTag)
+	firstBlockLen := len(data)
+	if firstBlockLen > 16 {
+		firstBlockLen = 16
+	}
+	absorbXOR(b1[:firstBlockLen], data[:firstBlockLen])
+	aesEncryptNoescape(block, &b1)
+
+	for off := 16; off < len(data); off += 16 {
+		end := off + 16
+		if end > len(data) {
+			end = len(data)
+		}
+		absorbXOR(b1[:end-off], data[off:end])
+		aesEncryptNoescape(block, &b1)
+	}
+	lo := binary.LittleEndian.Uint64(b1[:8])
+	hi := binary.LittleEndian.Uint64(b1[8:])
+	clear(b1[:])
+	runtime.KeepAlive(&b1)
+	return lo, hi
+}
+
+//go:noinline
+func evalAESCMACBatch(rk *[11][16]byte, data *[4][]byte, seeds *[4][2]uint64, out *[4][2]uint64) {
+	n := len(data[0])
+	lenTag := uint64(n)
+	var states areion.Block4
+	firstBlockLen := n
+	if firstBlockLen > 16 {
+		firstBlockLen = 16
+	}
+	for lane := 0; lane < 4; lane++ {
+		off := lane * 16
+		binary.LittleEndian.PutUint64(states[off:], seeds[lane][0]^lenTag)
+		binary.LittleEndian.PutUint64(states[off+8:], seeds[lane][1]^lenTag)
+		absorbXOR(states[off:off+firstBlockLen], data[lane][:firstBlockLen])
+	}
+	areion.AES128Encrypt4Blocks(rk, &states, &states)
+	for off := 16; off < n; off += 16 {
+		end := off + 16
+		if end > n {
+			end = n
+		}
+		chunkLen := end - off
+		for lane := 0; lane < 4; lane++ {
+			lOff := lane * 16
+			absorbXOR(states[lOff:lOff+chunkLen], data[lane][off:end])
+		}
+		areion.AES128Encrypt4Blocks(rk, &states, &states)
+	}
+	for lane := 0; lane < 4; lane++ {
+		lOff := lane * 16
+		out[lane][0] = binary.LittleEndian.Uint64(states[lOff : lOff+8])
+		out[lane][1] = binary.LittleEndian.Uint64(states[lOff+8 : lOff+16])
+	}
+	clear(states[:])
+	runtime.KeepAlive(&states)
+}
 
 // AESCMAC returns a cached itb.HashFunc128 backed by AES along with
 // the 16-byte fixed key the closure is bound to. With no argument the
@@ -55,45 +121,11 @@ func AESCMAC(key ...[16]byte) (itb.HashFunc128, [16]byte) {
 // tomorrow).
 func AESCMACWithKey(aesKey [16]byte) itb.HashFunc128 {
 	block, _ := aes.NewCipher(aesKey[:])
+	clear(aesKey[:])
+	runtime.KeepAlive(&aesKey)
 	return func(data []byte, seed0, seed1 uint64) (uint64, uint64) {
-		// First block: load seed components into b1 unconditionally
-		// so seeds always contribute regardless of len(data), then
-		// XOR the available data bytes (up to 16) on top.
-		//
-		// A 64-bit length tag is XOR'd into both halves of the
-		// seed prefix to disambiguate inputs that differ only by
-		// trailing zero bytes. Without it, empty input, [0x00],
-		// [0x00, 0x00], ... all hash to the same AES_K(seed0||seed1)
-		// because zero data bytes XOR'd into the state are
-		// no-ops. The length tag breaks that collision class.
-		// AES-CMAC's 16-byte state has no dedicated metadata region
-		// (unlike Areion, which keeps state[0..8) for the length tag
-		// and state[8..N) for data), so the tag is folded
-		// symmetrically into both halves rather than stealing a
-		// fixed region from the seed input.
-		lenTag := uint64(len(data))
-		var b1 [16]byte
-		binary.LittleEndian.PutUint64(b1[0:], seed0^lenTag)
-		binary.LittleEndian.PutUint64(b1[8:], seed1^lenTag)
-		firstBlockLen := len(data)
-		if firstBlockLen > 16 {
-			firstBlockLen = 16
-		}
-		absorbXOR(b1[:firstBlockLen], data[:firstBlockLen])
-		aesEncryptNoescape(block, &b1)
-
-		for off := 16; off < len(data); off += 16 {
-			end := off + 16
-			if end > len(data) {
-				end = len(data)
-			}
-			absorbXOR(b1[:end-off], data[off:end])
-			aesEncryptNoescape(block, &b1)
-		}
-		lo := binary.LittleEndian.Uint64(b1[:8])
-		hi := binary.LittleEndian.Uint64(b1[8:])
-		clear(b1[:])
-		runtime.KeepAlive(&b1)
+		lo, hi := evalAESCMACWithKey(block, data, seed0, seed1)
+		wipe.CallStack512B()
 		return lo, hi
 	}
 }
@@ -180,50 +212,29 @@ func AESCMACPair(key ...[16]byte) (itb.HashFunc128, itb.BatchHashFunc128, [16]by
 // (falling back to four single calls on ragged lane lengths) and is
 // bit-exact with four single calls on every input.
 func AESCMACPairWithKey(aesKey [16]byte) (itb.HashFunc128, itb.BatchHashFunc128) {
-	single := AESCMACWithKey(aesKey)
+	block, _ := aes.NewCipher(aesKey[:])
+	single := func(data []byte, seed0, seed1 uint64) (uint64, uint64) {
+		lo, hi := evalAESCMACWithKey(block, data, seed0, seed1)
+		wipe.CallStack512B()
+		return lo, hi
+	}
 	var rk [11][16]byte
 	areion.ExpandKey128(&aesKey, &rk)
+	clear(aesKey[:])
+	runtime.KeepAlive(&aesKey)
 	batched := func(data *[4][]byte, seeds [4][2]uint64) [4][2]uint64 {
 		var out [4][2]uint64
 		n := len(data[0])
 		if len(data[1]) != n || len(data[2]) != n || len(data[3]) != n {
 			for lane := 0; lane < 4; lane++ {
-				out[lane][0], out[lane][1] = single(data[lane], seeds[lane][0], seeds[lane][1])
+				out[lane][0], out[lane][1] = evalAESCMACWithKey(block, data[lane], seeds[lane][0], seeds[lane][1])
 			}
-			return out
+		} else {
+			evalAESCMACBatch(&rk, data, &seeds, &out)
 		}
-		lenTag := uint64(n)
-		var states areion.Block4
-		firstBlockLen := n
-		if firstBlockLen > 16 {
-			firstBlockLen = 16
-		}
-		for lane := 0; lane < 4; lane++ {
-			off := lane * 16
-			binary.LittleEndian.PutUint64(states[off:], seeds[lane][0]^lenTag)
-			binary.LittleEndian.PutUint64(states[off+8:], seeds[lane][1]^lenTag)
-			absorbXOR(states[off:off+firstBlockLen], data[lane][:firstBlockLen])
-		}
-		areion.AES128Encrypt4Blocks(&rk, &states, &states)
-		for off := 16; off < n; off += 16 {
-			end := off + 16
-			if end > n {
-				end = n
-			}
-			chunkLen := end - off
-			for lane := 0; lane < 4; lane++ {
-				lOff := lane * 16
-				absorbXOR(states[lOff:lOff+chunkLen], data[lane][off:end])
-			}
-			areion.AES128Encrypt4Blocks(&rk, &states, &states)
-		}
-		for lane := 0; lane < 4; lane++ {
-			lOff := lane * 16
-			out[lane][0] = binary.LittleEndian.Uint64(states[lOff : lOff+8])
-			out[lane][1] = binary.LittleEndian.Uint64(states[lOff+8 : lOff+16])
-		}
-		clear(states[:])
-		runtime.KeepAlive(&states)
+		clear(seeds[:])
+		runtime.KeepAlive(&seeds)
+		wipe.CallStack512B()
 		return out
 	}
 	return single, batched

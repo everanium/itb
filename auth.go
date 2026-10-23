@@ -43,3 +43,12 @@ func constantTimeEqual(a, b []byte) bool {
 	}
 	return v == 0
 }
+
+// macTagSize returns the byte length of the tag produced by macFunc,
+// wiping the temporary probe tag before returning.
+func macTagSize(macFunc MACFunc) int {
+	probe := macFunc([]byte{})
+	n := len(probe)
+	secureWipe(probe)
+	return n
+}

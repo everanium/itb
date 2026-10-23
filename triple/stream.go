@@ -6,6 +6,7 @@ import (
 	"io"
 
 	"github.com/everanium/itb"
+	"github.com/everanium/itb/internal/wipe"
 	"github.com/everanium/itb/wrapper"
 )
 
@@ -49,10 +50,11 @@ func (p *Pipeline) EncryptStream(plainSrc io.Reader, wireDst io.Writer) error {
 	if !isStreamingMode(p.resolved.Mode) {
 		return ErrProfileNotStreaming
 	}
-	plainSrc, err := rejectEmptySource(plainSrc)
+	plainSrc, cleanup, err := rejectEmptySource(plainSrc)
 	if err != nil {
 		return err
 	}
+	defer cleanup()
 	if p.isClosed() {
 		return ErrClosed
 	}
@@ -121,10 +123,11 @@ func (p *Pipeline) DecryptStream(wireSrc io.Reader, plainDst io.Writer) error {
 	if !isStreamingMode(p.resolved.Mode) {
 		return ErrProfileNotStreaming
 	}
-	wireSrc, err := rejectEmptySource(wireSrc)
+	wireSrc, cleanup, err := rejectEmptySource(wireSrc)
 	if err != nil {
 		return err
 	}
+	defer cleanup()
 	if p.isClosed() {
 		return ErrClosed
 	}
@@ -167,17 +170,19 @@ func isStreamingMode(mode string) bool {
 // [io.EOF] maps to [ErrEmptyInput]; any other read error is returned
 // as-is. On a successful probe the byte is re-chained ahead of the
 // remaining reader via [io.MultiReader], so the returned reader
-// yields exactly the bytes src would have yielded. Shared by
-// [Pipeline.EncryptStream] and [Pipeline.DecryptStream] so both IO
-// entry points enforce the empty-input rejection contract before any
-// chain layer is composed.
-func rejectEmptySource(src io.Reader) (io.Reader, error) {
+// yields exactly the bytes src would have yielded, and the returned
+// cleanup function zeroes the 1-byte probe buffer once the stream has
+// finished consuming it. Shared by [Pipeline.EncryptStream] and
+// [Pipeline.DecryptStream] so both IO entry points enforce the
+// empty-input rejection contract before any chain layer is composed.
+func rejectEmptySource(src io.Reader) (io.Reader, func(), error) {
 	var first [1]byte
 	if _, err := io.ReadFull(src, first[:]); err != nil {
+		wipe.Bytes(first[:])
 		if err == io.EOF {
-			return nil, ErrEmptyInput
+			return nil, nil, ErrEmptyInput
 		}
-		return nil, err
+		return nil, nil, err
 	}
-	return io.MultiReader(bytes.NewReader(first[:]), src), nil
+	return io.MultiReader(bytes.NewReader(first[:]), src), func() { wipe.Bytes(first[:]) }, nil
 }

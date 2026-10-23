@@ -245,6 +245,8 @@ func scalarFill256X8(fixedKey *[32]byte, components []uint64, groupIdxBase uint6
 		fillBlock(&blk, groupIdxBase+uint64(i), v)
 		out[i] = ScalarFusedChain256(fixedKey, components, blk[:])
 	}
+	clear(blk[:])
+	runtime.KeepAlive(&blk)
 }
 
 func scalarFill512X4(fixedKey *[64]byte, components []uint64, groupIdxBase uint64, v uint32, out *[4][8]uint64) {
@@ -253,6 +255,8 @@ func scalarFill512X4(fixedKey *[64]byte, components []uint64, groupIdxBase uint6
 		fillBlock(&blk, groupIdxBase+uint64(i), v)
 		out[i] = ScalarFusedChain512(fixedKey, components, blk[:])
 	}
+	clear(blk[:])
+	runtime.KeepAlive(&blk)
 }
 
 // lanePtr views n bytes at p as a slice for the pure-Go fallbacks.
@@ -285,6 +289,8 @@ func scalarFill512X8(fixedKey *[64]byte, components []uint64, groupIdxBase uint6
 		fillBlock(&blk, groupIdxBase+uint64(i), v)
 		out[i] = ScalarFusedChain512(fixedKey, components, blk[:])
 	}
+	clear(blk[:])
+	runtime.KeepAlive(&blk)
 }
 
 // Half views of the eight-lane argument arrays, for the arms that run

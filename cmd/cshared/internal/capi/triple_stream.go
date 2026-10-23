@@ -5,6 +5,8 @@ import (
 	"io"
 	"runtime/cgo"
 	"sync"
+
+	"github.com/everanium/itb/internal/wipe"
 )
 
 // TripleStreamHandle carries a single incremental Triple encrypt or
@@ -118,6 +120,7 @@ func startTripleStream(h *TripleHandle, encrypt bool) TripleStreamID {
 			// blocking forever after the cipher goroutine returns.
 			if runErr != nil {
 				_ = pr.CloseWithError(runErr)
+				sess.spool.wipe()
 			} else {
 				_ = pr.Close()
 			}
@@ -272,9 +275,11 @@ func TripleStreamRead(id TripleStreamID, dst []byte) (n int, finished bool, st S
 	if sess.err != nil {
 		e := sess.err
 		sess.mu.Unlock()
+		sess.spool.wipe()
+		wipe.Bytes(dst[:got])
 		s := mapTripleError(e)
 		setLastErr(s)
-		return got, false, s
+		return 0, false, s
 	}
 	fin := sess.endCalled && drained && sess.spool.empty() && sess.isDone()
 	sess.mu.Unlock()
@@ -355,6 +360,20 @@ func (s *streamSpool) Write(p []byte) (int, error) {
 		return 0, nil
 	}
 	s.mu.Lock()
+	needed := len(s.buf) + len(p)
+	if needed > cap(s.buf) {
+		newCap := cap(s.buf) * 2
+		if newCap < needed {
+			newCap = needed
+		}
+		if newCap < 4096 {
+			newCap = 4096
+		}
+		next := make([]byte, len(s.buf), newCap)
+		copy(next, s.buf)
+		wipe.Bytes(s.buf[:cap(s.buf)])
+		s.buf = next
+	}
 	s.buf = append(s.buf, p...)
 	s.cond.Broadcast()
 	s.mu.Unlock()
@@ -377,12 +396,15 @@ func (s *streamSpool) read(dst []byte, wait bool) (n int, drained bool) {
 		}
 	}
 	n = copy(dst, s.buf)
-	clear(s.buf[:n])
-	s.buf = s.buf[n:]
-	drained = len(s.buf) == 0
-	if drained {
-		s.buf = s.buf[:0]
+	if n > 0 {
+		rem := len(s.buf) - n
+		if rem > 0 {
+			copy(s.buf, s.buf[n:])
+		}
+		wipe.Bytes(s.buf[rem:])
+		s.buf = s.buf[:rem]
 	}
+	drained = len(s.buf) == 0
 	return n, drained
 }
 
@@ -404,7 +426,7 @@ func (s *streamSpool) close() {
 // after StreamFree.
 func (s *streamSpool) wipe() {
 	s.mu.Lock()
-	clear(s.buf[:cap(s.buf)])
+	wipe.Bytes(s.buf[:cap(s.buf)])
 	s.buf = nil
 	s.mu.Unlock()
 }

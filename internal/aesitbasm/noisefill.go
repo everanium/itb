@@ -117,12 +117,50 @@ func NoiseFill(s *NoiseSchedule, dst []byte, lo, hi uint64) {
 	noiseFillGeneric(s, dst, lo, hi)
 }
 
-// noiseFillGeneric is the single-block Go path over areion's hardware
-// round (areion.AES128Round — the AES-NI / ARMv8-AES single round where the
-// host has one, software round otherwise). It serves the tail
-// of every kernel run and the whole fill on builds or hosts without an
-// assembly tier.
+// noiseFillGeneric is the Go fallback path. Bulk 4-block groups run
+// through the 4-lane bitsliced AES round with the round keys pre-packed
+// once; the trailing < 64-byte tail runs through noiseBlockHW.
 func noiseFillGeneric(s *NoiseSchedule, dst []byte, lo, hi uint64) {
+	if len(dst) >= 64 && ^lo >= 3 {
+		var bsRK [5]bsState
+		for r := range s.RK {
+			bsPackBroadcast(&bsRK[r], &s.RK[r])
+		}
+		var blk4 [4][16]byte
+		var out4 [4][2]uint64
+		var q bsState
+		c0 := binary.LittleEndian.Uint64(s.C[:8])
+		c1 := binary.LittleEndian.Uint64(s.C[8:])
+		for len(dst) >= 64 && ^lo >= 3 {
+			for lane := 0; lane < 4; lane++ {
+				binary.LittleEndian.PutUint64(blk4[lane][:8], c0^(lo+uint64(lane)))
+				binary.LittleEndian.PutUint64(blk4[lane][8:], c1^hi)
+			}
+			bsPack4(&q, &blk4[0], &blk4[1], &blk4[2], &blk4[3])
+			for r := range bsRK {
+				bsRound(&q, &bsRK[r])
+			}
+			bsUnpackWords4(&q, &out4)
+			for lane := 0; lane < 4; lane++ {
+				binary.LittleEndian.PutUint64(dst[16*lane:16*lane+8], out4[lane][0])
+				binary.LittleEndian.PutUint64(dst[16*lane+8:16*lane+16], out4[lane][1])
+			}
+			dst = dst[64:]
+			lo += 4
+			if lo < 4 {
+				hi++
+			}
+		}
+		clear(bsRK[:])
+		clear(blk4[:])
+		clear(out4[:])
+		clear(q[:])
+		runtime.KeepAlive(&bsRK)
+		runtime.KeepAlive(&blk4)
+		runtime.KeepAlive(&out4)
+		runtime.KeepAlive(&q)
+	}
+
 	var blk [16]byte
 	for len(dst) > 0 {
 		noiseBlockHW(s, &blk, lo, hi)

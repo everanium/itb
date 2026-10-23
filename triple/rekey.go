@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 
+	"github.com/everanium/itb/internal/wipe"
 	"github.com/everanium/itb/parallax"
 	"github.com/everanium/itb/wrapper"
 )
@@ -36,6 +37,9 @@ import (
 // against a Pipeline with both layers off is a no-op that still
 // produces a fresh blob (identical to the pre-Rekey blob).
 func (p *Pipeline) Rekey(permMaster, wrapMaster []byte) ([]byte, error) {
+	wipe.CallStack8K([9][8]uint64{})
+	defer wipe.CallStack8K([9][8]uint64{})
+
 	if p.isClosed() {
 		return nil, ErrClosed
 	}
@@ -60,9 +64,11 @@ func (p *Pipeline) Rekey(permMaster, wrapMaster []byte) ([]byte, error) {
 	}
 
 	freshPerm := append([]byte(nil), permMaster...)
-	defer clear(freshPerm)
 	freshWrap := append([]byte(nil), wrapMaster...)
-	defer clear(freshWrap)
+	defer func() {
+		wipe.Bytes(freshPerm)
+		wipe.Bytes(freshWrap)
+	}()
 
 	var (
 		sched   *parallax.Schedule
@@ -105,15 +111,15 @@ func (p *Pipeline) Rekey(permMaster, wrapMaster []byte) ([]byte, error) {
 	innerBlob, err := exportInnerBlob(p.width, p.cfg, p.seeds, p.prfKeys, p.macKey, p.macName)
 	if err != nil {
 		_ = cs.Close()
-		clear(derived)
+		wipe.Bytes(derived)
 		return nil, err
 	}
-	defer clear(innerBlob)
+	defer wipe.Bytes(innerBlob)
 
 	wrapBytes, err := marshalWrap(p.resolved, innerBlob, freshPerm, freshWrap)
 	if err != nil {
 		_ = cs.Close()
-		clear(derived)
+		wipe.Bytes(derived)
 		return nil, fmt.Errorf("triple: Rekey %w", err)
 	}
 
@@ -127,14 +133,14 @@ func (p *Pipeline) Rekey(permMaster, wrapMaster []byte) ([]byte, error) {
 		// reference — it is a per-master derived secret and must
 		// not remain in memory past the rotation.
 		if p.wrapperKey != nil {
-			clear(p.wrapperKey)
+			wipe.Bytes(p.wrapperKey)
 		}
 		p.wrapperKey = derived
 	}
 
 	// Retain the fresh blob for Save; the previous copy is key
 	// material and is zeroed before the reference drops.
-	clear(p.blob)
+	wipe.Bytes(p.blob)
 	p.blob = append([]byte(nil), wrapBytes...)
 	return wrapBytes, nil
 }

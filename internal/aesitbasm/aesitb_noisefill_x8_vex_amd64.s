@@ -85,5 +85,10 @@ loop:
 	JNZ loop
 	// Wipe the block states, the counter and the key-derived schedule
 	// from the whole vector register file before returning.
+	XORQ AX, AX
+	XORQ CX, CX
+	XORQ DX, DX
+	XORQ SI, SI
+	XORQ DI, DI
 	VZEROALL
 	RET

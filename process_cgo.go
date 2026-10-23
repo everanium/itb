@@ -20,10 +20,44 @@ extern void itb_process_pixels(
     int totalBits,
     int encode
 );
+
+extern void itb_process_pixels_batch(
+    const uint64_t *noiseHashes,
+    const uint64_t *dataHashes,
+    uint8_t *container,
+    uint8_t *data,
+    int dataLen,
+    int startPixel,
+    int totalPixels,
+    int startP,
+    int endP,
+    int totalBits,
+    int encode,
+    int wipeOnExit
+);
+
+extern void itb_test_probe_pixels_c_stack(
+    const uint64_t *noiseHashes,
+    const uint64_t *dataHashes,
+    uint8_t *container,
+    uint8_t *data,
+    int dataLen,
+    int startPixel,
+    int totalPixels,
+    int startP,
+    int endP,
+    int totalBits,
+    int encode,
+    int mode,
+    int tier,
+    uint64_t *outWindow,
+    int windowWords
+);
 */
 import "C"
 import (
 	"os"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -169,13 +203,23 @@ func putHashArrays(ha *hashArrays) {
 }
 
 // callC sends the per-pixel noise positions and data hash words to C for
-// pixel bit manipulation.
+// pixel bit manipulation, wiping C stack and SIMD state before returning.
 func callC(noiseHashes, dataHashes []uint64, container, data []byte, startPixel, totalPixels, startP, endP, totalBits int, encode bool) {
+	callCBatch(noiseHashes, dataHashes, container, data, startPixel, totalPixels, startP, endP, totalBits, encode, true)
+}
+
+// callCBatch sends one microbatch of pixels to C, running the C stack and
+// register scrubber when wipeOnExit is true (the final microbatch of a worker).
+func callCBatch(noiseHashes, dataHashes []uint64, container, data []byte, startPixel, totalPixels, startP, endP, totalBits int, encode, wipeOnExit bool) {
 	enc := C.int(0)
 	if encode {
 		enc = 1
 	}
-	C.itb_process_pixels(
+	wipe := C.int(0)
+	if wipeOnExit {
+		wipe = 1
+	}
+	C.itb_process_pixels_batch(
 		(*C.uint64_t)(unsafe.Pointer(&noiseHashes[0])),
 		(*C.uint64_t)(unsafe.Pointer(&dataHashes[0])),
 		(*C.uint8_t)(unsafe.Pointer(&container[0])),
@@ -187,6 +231,31 @@ func callC(noiseHashes, dataHashes []uint64, container, data []byte, startPixel,
 		C.int(endP),
 		C.int(totalBits),
 		enc,
+		wipe,
+	)
+}
+
+func probePixelsCStack(noiseHashes, dataHashes []uint64, container, data []byte, startPixel, totalPixels, startP, endP, totalBits int, encode bool, mode, tier int, window []uint64) {
+	enc := C.int(0)
+	if encode {
+		enc = 1
+	}
+	C.itb_test_probe_pixels_c_stack(
+		(*C.uint64_t)(unsafe.Pointer(&noiseHashes[0])),
+		(*C.uint64_t)(unsafe.Pointer(&dataHashes[0])),
+		(*C.uint8_t)(unsafe.Pointer(&container[0])),
+		(*C.uint8_t)(unsafe.Pointer(&data[0])),
+		C.int(len(data)),
+		C.int(startPixel),
+		C.int(totalPixels),
+		C.int(startP),
+		C.int(endP),
+		C.int(totalBits),
+		enc,
+		C.int(mode),
+		C.int(tier),
+		(*C.uint64_t)(unsafe.Pointer(&window[0])),
+		C.int(len(window)),
 	)
 }
 
@@ -204,10 +273,17 @@ func callC(noiseHashes, dataHashes []uint64, container, data []byte, startPixel,
 //     verbatim. Backward compatible with all existing primitives that
 //     do not provide a BatchHash field.
 func processChunk128(cfg *Config, noiseSeed, dataSeed *Seed128, nonce []byte, container []byte, data []byte, startPixel, totalPixels, startP, endP, totalBits, microBatch int, encode bool, noiseBase int) {
-	n := endP - startP
-	if n <= 0 {
+	if endP <= startP {
 		return
 	}
+	wipePixelCallStack([9][8]uint64{})
+	processChunk128Body(cfg, noiseSeed, dataSeed, nonce, container, data, startPixel, totalPixels, startP, endP, totalBits, microBatch, encode, noiseBase)
+	wipePixelCallStack([9][8]uint64{})
+}
+
+//go:noinline
+func processChunk128Body(cfg *Config, noiseSeed, dataSeed *Seed128, nonce []byte, container []byte, data []byte, startPixel, totalPixels, startP, endP, totalBits, microBatch int, encode bool, noiseBase int) {
+	n := endP - startP
 
 	batchSz := microBatch
 	if batchSz > n {
@@ -231,6 +307,11 @@ func processChunk128(cfg *Config, noiseSeed, dataSeed *Seed128, nonce []byte, co
 	useBatch8 := useBatch8Seeds(noiseSeed, dataSeed)
 	noiseBufs8, dataBufs8 := &ls.noise, &ls.data
 
+	var (
+		noiseHs8, dataHs8 [8][2]uint64
+		noiseHs4, dataHs4 [4][2]uint64
+	)
+
 	for batchStart := startP; batchStart < endP; batchStart += batchSz {
 		batchEnd := batchStart + batchSz
 		if batchEnd > endP {
@@ -244,26 +325,26 @@ func processChunk128(cfg *Config, noiseSeed, dataSeed *Seed128, nonce []byte, co
 				for ; i+8 <= bn; i += 8 {
 					base := batchStart + i
 					pixelIndices := [8]int{base, base + 1, base + 2, base + 3, base + 4, base + 5, base + 6, base + 7}
-					noiseHs := noiseSeed.blockHash128x8(noiseBufs8, noiseIdx8(pixelIndices, noiseBase))
-					dataHs := dataSeed.blockHash128x8(dataBufs8, pixelIndices)
+					noiseHs8 = noiseSeed.blockHash128x8(noiseBufs8, noiseIdx8(pixelIndices, noiseBase))
+					dataHs8 = dataSeed.blockHash128x8(dataBufs8, pixelIndices)
 					for lane := 0; lane < 8; lane++ {
-						ha.noise[i+lane] = uint64(noisePosition(noiseHs[lane][0], noiseHs[lane][1]))
-						ha.data[i+lane] = dataHs[lane][0]
+						ha.noise[i+lane] = uint64(noisePosition(noiseHs8[lane][0], noiseHs8[lane][1]))
+						ha.data[i+lane] = dataHs8[lane][0]
 					}
 				}
 			}
 			for ; i+4 <= bn; i += 4 {
 				pixelIndices := [4]int{batchStart + i, batchStart + i + 1, batchStart + i + 2, batchStart + i + 3}
-				noiseHs := noiseSeed.blockHash128x4(noiseBufs, noiseIdx4(pixelIndices, noiseBase))
-				dataHs := dataSeed.blockHash128x4(dataBufs, pixelIndices)
-				ha.noise[i+0] = uint64(noisePosition(noiseHs[0][0], noiseHs[0][1]))
-				ha.noise[i+1] = uint64(noisePosition(noiseHs[1][0], noiseHs[1][1]))
-				ha.noise[i+2] = uint64(noisePosition(noiseHs[2][0], noiseHs[2][1]))
-				ha.noise[i+3] = uint64(noisePosition(noiseHs[3][0], noiseHs[3][1]))
-				ha.data[i+0] = dataHs[0][0]
-				ha.data[i+1] = dataHs[1][0]
-				ha.data[i+2] = dataHs[2][0]
-				ha.data[i+3] = dataHs[3][0]
+				noiseHs4 = noiseSeed.blockHash128x4(noiseBufs, noiseIdx4(pixelIndices, noiseBase))
+				dataHs4 = dataSeed.blockHash128x4(dataBufs, pixelIndices)
+				ha.noise[i+0] = uint64(noisePosition(noiseHs4[0][0], noiseHs4[0][1]))
+				ha.noise[i+1] = uint64(noisePosition(noiseHs4[1][0], noiseHs4[1][1]))
+				ha.noise[i+2] = uint64(noisePosition(noiseHs4[2][0], noiseHs4[2][1]))
+				ha.noise[i+3] = uint64(noisePosition(noiseHs4[3][0], noiseHs4[3][1]))
+				ha.data[i+0] = dataHs4[0][0]
+				ha.data[i+1] = dataHs4[1][0]
+				ha.data[i+2] = dataHs4[2][0]
+				ha.data[i+3] = dataHs4[3][0]
 			}
 			for ; i < bn; i++ {
 				noiseLo, noiseHi := noiseSeed.blockHash128(noiseBuf, noiseBase+batchStart+i)
@@ -278,9 +359,18 @@ func processChunk128(cfg *Config, noiseSeed, dataSeed *Seed128, nonce []byte, co
 			}
 		}
 
-		callC(ha.noise[:bn], ha.data[:bn], container, data,
-			startPixel, totalPixels, batchStart, batchEnd, totalBits, encode)
+		callCBatch(ha.noise[:bn], ha.data[:bn], container, data,
+			startPixel, totalPixels, batchStart, batchEnd, totalBits, encode, batchEnd >= endP)
 	}
+
+	clear(noiseHs8[:])
+	clear(dataHs8[:])
+	clear(noiseHs4[:])
+	clear(dataHs4[:])
+	runtime.KeepAlive(&noiseHs8)
+	runtime.KeepAlive(&dataHs8)
+	runtime.KeepAlive(&noiseHs4)
+	runtime.KeepAlive(&dataHs4)
 }
 
 // processChunk256 processes pixels using 256-bit hash seeds + C pixel processing.
@@ -297,10 +387,17 @@ func processChunk128(cfg *Config, noiseSeed, dataSeed *Seed128, nonce []byte, co
 //     verbatim. Backward compatible with all existing primitives that
 //     do not provide a BatchHash field.
 func processChunk256(cfg *Config, noiseSeed, dataSeed *Seed256, nonce []byte, container []byte, data []byte, startPixel, totalPixels, startP, endP, totalBits, microBatch int, encode bool, noiseBase int) {
-	n := endP - startP
-	if n <= 0 {
+	if endP <= startP {
 		return
 	}
+	wipePixelCallStack256([9][8]uint64{})
+	processChunk256Body(cfg, noiseSeed, dataSeed, nonce, container, data, startPixel, totalPixels, startP, endP, totalBits, microBatch, encode, noiseBase)
+	wipePixelCallStack256([9][8]uint64{})
+}
+
+//go:noinline
+func processChunk256Body(cfg *Config, noiseSeed, dataSeed *Seed256, nonce []byte, container []byte, data []byte, startPixel, totalPixels, startP, endP, totalBits, microBatch int, encode bool, noiseBase int) {
+	n := endP - startP
 
 	batchSz := microBatch
 	if batchSz > n {
@@ -324,6 +421,12 @@ func processChunk256(cfg *Config, noiseSeed, dataSeed *Seed256, nonce []byte, co
 	useBatch8 := useBatch8Seeds256(noiseSeed, dataSeed)
 	noiseBufs8, dataBufs8 := &ls.noise, &ls.data
 
+	var (
+		noiseHs8, dataHs8 [8][4]uint64
+		noiseHs4, dataHs4 [4][4]uint64
+		noiseH, dataH     [4]uint64
+	)
+
 	for batchStart := startP; batchStart < endP; batchStart += batchSz {
 		batchEnd := batchStart + batchSz
 		if batchEnd > endP {
@@ -337,45 +440,58 @@ func processChunk256(cfg *Config, noiseSeed, dataSeed *Seed256, nonce []byte, co
 				for ; i+8 <= bn; i += 8 {
 					base := batchStart + i
 					pixelIndices := [8]int{base, base + 1, base + 2, base + 3, base + 4, base + 5, base + 6, base + 7}
-					noiseHs := noiseSeed.blockHash256x8(noiseBufs8, noiseIdx8(pixelIndices, noiseBase))
-					dataHs := dataSeed.blockHash256x8(dataBufs8, pixelIndices)
+					noiseHs8 = noiseSeed.blockHash256x8(noiseBufs8, noiseIdx8(pixelIndices, noiseBase))
+					dataHs8 = dataSeed.blockHash256x8(dataBufs8, pixelIndices)
 					for lane := 0; lane < 8; lane++ {
-						ha.noise[i+lane] = uint64(noisePosition(noiseHs[lane][0], noiseHs[lane][1]))
-						ha.data[i+lane] = dataHs[lane][0]
+						ha.noise[i+lane] = uint64(noisePosition(noiseHs8[lane][0], noiseHs8[lane][1]))
+						ha.data[i+lane] = dataHs8[lane][0]
 					}
 				}
 			}
 			for ; i+4 <= bn; i += 4 {
 				pixelIndices := [4]int{batchStart + i, batchStart + i + 1, batchStart + i + 2, batchStart + i + 3}
-				noiseHs := noiseSeed.blockHash256x4(noiseBufs, noiseIdx4(pixelIndices, noiseBase))
-				dataHs := dataSeed.blockHash256x4(dataBufs, pixelIndices)
-				ha.noise[i+0] = uint64(noisePosition(noiseHs[0][0], noiseHs[0][1]))
-				ha.noise[i+1] = uint64(noisePosition(noiseHs[1][0], noiseHs[1][1]))
-				ha.noise[i+2] = uint64(noisePosition(noiseHs[2][0], noiseHs[2][1]))
-				ha.noise[i+3] = uint64(noisePosition(noiseHs[3][0], noiseHs[3][1]))
-				ha.data[i+0] = dataHs[0][0]
-				ha.data[i+1] = dataHs[1][0]
-				ha.data[i+2] = dataHs[2][0]
-				ha.data[i+3] = dataHs[3][0]
+				noiseHs4 = noiseSeed.blockHash256x4(noiseBufs, noiseIdx4(pixelIndices, noiseBase))
+				dataHs4 = dataSeed.blockHash256x4(dataBufs, pixelIndices)
+				ha.noise[i+0] = uint64(noisePosition(noiseHs4[0][0], noiseHs4[0][1]))
+				ha.noise[i+1] = uint64(noisePosition(noiseHs4[1][0], noiseHs4[1][1]))
+				ha.noise[i+2] = uint64(noisePosition(noiseHs4[2][0], noiseHs4[2][1]))
+				ha.noise[i+3] = uint64(noisePosition(noiseHs4[3][0], noiseHs4[3][1]))
+				ha.data[i+0] = dataHs4[0][0]
+				ha.data[i+1] = dataHs4[1][0]
+				ha.data[i+2] = dataHs4[2][0]
+				ha.data[i+3] = dataHs4[3][0]
 			}
 			for ; i < bn; i++ {
-				noiseH := noiseSeed.blockHash256(noiseBuf, noiseBase+batchStart+i)
-				dataH := dataSeed.blockHash256(dataBuf, batchStart+i)
+				noiseH = noiseSeed.blockHash256(noiseBuf, noiseBase+batchStart+i)
+				dataH = dataSeed.blockHash256(dataBuf, batchStart+i)
 				ha.noise[i] = uint64(noisePosition(noiseH[0], noiseH[1]))
 				ha.data[i] = dataH[0]
 			}
 		} else {
 			for i := 0; i < bn; i++ {
-				noiseH := noiseSeed.blockHash256(noiseBuf, noiseBase+batchStart+i)
-				dataH := dataSeed.blockHash256(dataBuf, batchStart+i)
+				noiseH = noiseSeed.blockHash256(noiseBuf, noiseBase+batchStart+i)
+				dataH = dataSeed.blockHash256(dataBuf, batchStart+i)
 				ha.noise[i] = uint64(noisePosition(noiseH[0], noiseH[1]))
 				ha.data[i] = dataH[0]
 			}
 		}
 
-		callC(ha.noise[:bn], ha.data[:bn], container, data,
-			startPixel, totalPixels, batchStart, batchEnd, totalBits, encode)
+		callCBatch(ha.noise[:bn], ha.data[:bn], container, data,
+			startPixel, totalPixels, batchStart, batchEnd, totalBits, encode, batchEnd >= endP)
 	}
+
+	clear(noiseHs8[:])
+	clear(dataHs8[:])
+	clear(noiseHs4[:])
+	clear(dataHs4[:])
+	clear(noiseH[:])
+	clear(dataH[:])
+	runtime.KeepAlive(&noiseHs8)
+	runtime.KeepAlive(&dataHs8)
+	runtime.KeepAlive(&noiseHs4)
+	runtime.KeepAlive(&dataHs4)
+	runtime.KeepAlive(&noiseH)
+	runtime.KeepAlive(&dataH)
 }
 
 // processChunk512 processes pixels using 512-bit hash seeds + C pixel processing.
@@ -384,10 +500,17 @@ func processChunk256(cfg *Config, noiseSeed, dataSeed *Seed256, nonce []byte, co
 // for the per-lane buffer layout and tail-handling rationale (the 512
 // path mirrors that structure with 8-uint64 hash outputs).
 func processChunk512(cfg *Config, noiseSeed, dataSeed *Seed512, nonce []byte, container []byte, data []byte, startPixel, totalPixels, startP, endP, totalBits, microBatch int, encode bool, noiseBase int) {
-	n := endP - startP
-	if n <= 0 {
+	if endP <= startP {
 		return
 	}
+	wipePixelCallStack512([9][8]uint64{})
+	processChunk512Body(cfg, noiseSeed, dataSeed, nonce, container, data, startPixel, totalPixels, startP, endP, totalBits, microBatch, encode, noiseBase)
+	wipePixelCallStack512([9][8]uint64{})
+}
+
+//go:noinline
+func processChunk512Body(cfg *Config, noiseSeed, dataSeed *Seed512, nonce []byte, container []byte, data []byte, startPixel, totalPixels, startP, endP, totalBits, microBatch int, encode bool, noiseBase int) {
+	n := endP - startP
 
 	batchSz := microBatch
 	if batchSz > n {
@@ -410,6 +533,12 @@ func processChunk512(cfg *Config, noiseSeed, dataSeed *Seed512, nonce []byte, co
 	useBatch8 := useBatch8Seeds512(noiseSeed, dataSeed)
 	noiseBufs8, dataBufs8 := &ls.noise, &ls.data
 
+	var (
+		noiseHs8, dataHs8 [8][8]uint64
+		noiseHs4, dataHs4 [4][8]uint64
+		noiseH, dataH     [8]uint64
+	)
+
 	for batchStart := startP; batchStart < endP; batchStart += batchSz {
 		batchEnd := batchStart + batchSz
 		if batchEnd > endP {
@@ -423,43 +552,56 @@ func processChunk512(cfg *Config, noiseSeed, dataSeed *Seed512, nonce []byte, co
 				for ; i+8 <= bn; i += 8 {
 					base := batchStart + i
 					pixelIndices := [8]int{base, base + 1, base + 2, base + 3, base + 4, base + 5, base + 6, base + 7}
-					noiseHs := noiseSeed.blockHash512x8(noiseBufs8, noiseIdx8(pixelIndices, noiseBase))
-					dataHs := dataSeed.blockHash512x8(dataBufs8, pixelIndices)
+					noiseHs8 = noiseSeed.blockHash512x8(noiseBufs8, noiseIdx8(pixelIndices, noiseBase))
+					dataHs8 = dataSeed.blockHash512x8(dataBufs8, pixelIndices)
 					for lane := 0; lane < 8; lane++ {
-						ha.noise[i+lane] = uint64(noisePosition(noiseHs[lane][0], noiseHs[lane][1]))
-						ha.data[i+lane] = dataHs[lane][0]
+						ha.noise[i+lane] = uint64(noisePosition(noiseHs8[lane][0], noiseHs8[lane][1]))
+						ha.data[i+lane] = dataHs8[lane][0]
 					}
 				}
 			}
 			for ; i+4 <= bn; i += 4 {
 				pixelIndices := [4]int{batchStart + i, batchStart + i + 1, batchStart + i + 2, batchStart + i + 3}
-				noiseHs := noiseSeed.blockHash512x4(noiseBufs, noiseIdx4(pixelIndices, noiseBase))
-				dataHs := dataSeed.blockHash512x4(dataBufs, pixelIndices)
-				ha.noise[i+0] = uint64(noisePosition(noiseHs[0][0], noiseHs[0][1]))
-				ha.noise[i+1] = uint64(noisePosition(noiseHs[1][0], noiseHs[1][1]))
-				ha.noise[i+2] = uint64(noisePosition(noiseHs[2][0], noiseHs[2][1]))
-				ha.noise[i+3] = uint64(noisePosition(noiseHs[3][0], noiseHs[3][1]))
-				ha.data[i+0] = dataHs[0][0]
-				ha.data[i+1] = dataHs[1][0]
-				ha.data[i+2] = dataHs[2][0]
-				ha.data[i+3] = dataHs[3][0]
+				noiseHs4 = noiseSeed.blockHash512x4(noiseBufs, noiseIdx4(pixelIndices, noiseBase))
+				dataHs4 = dataSeed.blockHash512x4(dataBufs, pixelIndices)
+				ha.noise[i+0] = uint64(noisePosition(noiseHs4[0][0], noiseHs4[0][1]))
+				ha.noise[i+1] = uint64(noisePosition(noiseHs4[1][0], noiseHs4[1][1]))
+				ha.noise[i+2] = uint64(noisePosition(noiseHs4[2][0], noiseHs4[2][1]))
+				ha.noise[i+3] = uint64(noisePosition(noiseHs4[3][0], noiseHs4[3][1]))
+				ha.data[i+0] = dataHs4[0][0]
+				ha.data[i+1] = dataHs4[1][0]
+				ha.data[i+2] = dataHs4[2][0]
+				ha.data[i+3] = dataHs4[3][0]
 			}
 			for ; i < bn; i++ {
-				noiseH := noiseSeed.blockHash512(noiseBuf, noiseBase+batchStart+i)
-				dataH := dataSeed.blockHash512(dataBuf, batchStart+i)
+				noiseH = noiseSeed.blockHash512(noiseBuf, noiseBase+batchStart+i)
+				dataH = dataSeed.blockHash512(dataBuf, batchStart+i)
 				ha.noise[i] = uint64(noisePosition(noiseH[0], noiseH[1]))
 				ha.data[i] = dataH[0]
 			}
 		} else {
 			for i := 0; i < bn; i++ {
-				noiseH := noiseSeed.blockHash512(noiseBuf, noiseBase+batchStart+i)
-				dataH := dataSeed.blockHash512(dataBuf, batchStart+i)
+				noiseH = noiseSeed.blockHash512(noiseBuf, noiseBase+batchStart+i)
+				dataH = dataSeed.blockHash512(dataBuf, batchStart+i)
 				ha.noise[i] = uint64(noisePosition(noiseH[0], noiseH[1]))
 				ha.data[i] = dataH[0]
 			}
 		}
 
-		callC(ha.noise[:bn], ha.data[:bn], container, data,
-			startPixel, totalPixels, batchStart, batchEnd, totalBits, encode)
+		callCBatch(ha.noise[:bn], ha.data[:bn], container, data,
+			startPixel, totalPixels, batchStart, batchEnd, totalBits, encode, batchEnd >= endP)
 	}
+
+	clear(noiseHs8[:])
+	clear(dataHs8[:])
+	clear(noiseHs4[:])
+	clear(dataHs4[:])
+	clear(noiseH[:])
+	clear(dataH[:])
+	runtime.KeepAlive(&noiseHs8)
+	runtime.KeepAlive(&dataHs8)
+	runtime.KeepAlive(&noiseHs4)
+	runtime.KeepAlive(&dataHs4)
+	runtime.KeepAlive(&noiseH)
+	runtime.KeepAlive(&dataH)
 }

@@ -3,6 +3,7 @@ package kdf
 import (
 	"crypto/cipher"
 	"crypto/subtle"
+	"runtime"
 )
 
 // cmac is a CMAC (RFC 4493) instance over a keyed block cipher. It
@@ -29,6 +30,7 @@ func newCMAC(block cipher.Block) *cmac {
 	// L is the encryption of the zero block under the key; only the
 	// subkeys are kept.
 	clear(l)
+	runtime.KeepAlive(l)
 
 	return &cmac{
 		block: block,
@@ -76,6 +78,7 @@ func (c *cmac) sum(msg []byte) []byte {
 	c.block.Encrypt(x, x)
 	// last carries the final block masked with a subkey; zero it.
 	clear(last)
+	runtime.KeepAlive(last)
 	return x
 }
 

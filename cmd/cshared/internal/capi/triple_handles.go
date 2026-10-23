@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/everanium/itb/internal/wipe"
 	"github.com/everanium/itb/parallax"
 	"github.com/everanium/itb/triple"
 )
@@ -89,11 +90,16 @@ func resolveTriple(id TripleHandleID) (h *TripleHandle, st Status) {
 //     value defers to the profile default.
 //   - parallaxPalette — comma-separated primitive names for the
 //     parallax palette (empty = profile default).
-func parseTripleOpts(query string) (triple.Opts, error) {
-	var opts triple.Opts
+func parseTripleOpts(query string) (opts triple.Opts, err error) {
 	if query == "" {
 		return opts, nil
 	}
+	defer func() {
+		if err != nil {
+			wipe.Bytes(opts.PermMaster)
+			wipe.Bytes(opts.WrapMaster)
+		}
+	}()
 	values, err := url.ParseQuery(query)
 	if err != nil {
 		return opts, fmt.Errorf("parse opts query: %w", err)
@@ -110,16 +116,18 @@ func parseTripleOpts(query string) (triple.Opts, error) {
 			// binding that echoes it back does not trip the unknown
 			// key check.
 		case "pm":
-			b, herr := hex.DecodeString(v)
+			b, herr := decodeHexOpt(v)
 			if herr != nil {
 				return opts, fmt.Errorf("opts pm: %w", herr)
 			}
+			wipe.Bytes(opts.PermMaster)
 			opts.PermMaster = b
 		case "wm":
-			b, herr := hex.DecodeString(v)
+			b, herr := decodeHexOpt(v)
 			if herr != nil {
 				return opts, fmt.Errorf("opts wm: %w", herr)
 			}
+			wipe.Bytes(opts.WrapMaster)
 			opts.WrapMaster = b
 		case "withParallax":
 			b, berr := parseBoolOpt(v)
@@ -251,4 +259,26 @@ func parseBoolOpt(v string) (bool, error) {
 		return false, nil
 	}
 	return false, fmt.Errorf("value %q not in {true, false}", v)
+}
+
+func decodeHexOpt(v string) ([]byte, error) {
+	if len(v)%2 != 0 {
+		return nil, hex.ErrLength
+	}
+	if len(v) == 0 {
+		return nil, nil
+	}
+	src := make([]byte, len(v))
+	copy(src, v)
+	dst := make([]byte, len(v)/2)
+	n, err := hex.Decode(dst, src)
+	wipe.Bytes(src)
+	if err != nil || n != len(dst) {
+		wipe.Bytes(dst)
+		if err != nil {
+			return nil, err
+		}
+		return nil, hex.ErrLength
+	}
+	return dst, nil
 }

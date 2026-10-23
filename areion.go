@@ -58,7 +58,32 @@ import (
 
 	"github.com/everanium/areion"
 	"github.com/everanium/itb/internal/areionasm"
+	"github.com/everanium/itb/internal/wipe"
 )
+
+func init() {
+	wipe.MakeAESITB128FromKeyPtr = func(fixedKey *[16]byte) (
+		func([]byte, uint64, uint64) (uint64, uint64),
+		func(*[4][]byte, [4][2]uint64) [4][2]uint64,
+	) {
+		h, b := makeAESITB128HashFromKeyPtr(fixedKey)
+		return h, b
+	}
+	wipe.MakeAreion256FromKeyPtr = func(fixedKey *[32]byte) (
+		func([]byte, [4]uint64) [4]uint64,
+		func(*[4][]byte, [4][4]uint64) [4][4]uint64,
+	) {
+		h, b := makeAreionSoEM256HashFromKeyPtr(fixedKey)
+		return h, b
+	}
+	wipe.MakeAreion512FromKeyPtr = func(fixedKey *[64]byte) (
+		func([]byte, [8]uint64) [8]uint64,
+		func(*[4][]byte, [4][8]uint64) [4][8]uint64,
+	) {
+		h, b := makeAreionSoEM512HashFromKeyPtr(fixedKey)
+		return h, b
+	}
+}
 
 // Areion round constants of P1 (digits of pi, little-endian) — must
 // match `github.com/everanium/areion` (`roundConstantsP1`). Areion256 uses
@@ -242,7 +267,12 @@ func areion256Permutex4Default(states *[4][32]byte, rcs *[15][16]byte) {
 // Extension) because the four lanes and the two permutations share
 // instruction issue; the portable Go path runs at near-identical cost
 // to four serial calls.
-func AreionSoEM256x4(keys *[4][64]byte, inputs *[4][32]byte) [4][32]byte {
+func AreionSoEM256x4(keys *[4][64]byte, inputs *[4][32]byte) (out [4][32]byte) {
+	areionSoEM256x4Into(keys, inputs, &out)
+	return out
+}
+
+func areionSoEM256x4Into(keys *[4][64]byte, inputs, out *[4][32]byte) {
 	// Build state1 = input ⊕ key[0:32] and state2 = input ⊕ key[32:64]
 	// for every lane, **directly in SoA Block4 layout** so the
 	// downstream kernel runs without a separate pack pass.
@@ -275,7 +305,6 @@ func AreionSoEM256x4(keys *[4][64]byte, inputs *[4][32]byte) [4][32]byte {
 
 	// Unpack from SoA to AoS output and apply the SoEM22 output
 	// whitening k1 ⊕ k2 in the same pass.
-	var out [4][32]byte
 	for lane := 0; lane < 4; lane++ {
 		k, d, o := &keys[lane], &out[lane], lane*16
 		xor3Block16((*[16]byte)(d[0:16]), (*[16]byte)(s1b0[o:o+16]), (*[16]byte)(k[0:16]), (*[16]byte)(k[32:48]))
@@ -292,7 +321,6 @@ func AreionSoEM256x4(keys *[4][64]byte, inputs *[4][32]byte) [4][32]byte {
 	runtime.KeepAlive(&s1b1)
 	runtime.KeepAlive(&s2b0)
 	runtime.KeepAlive(&s2b1)
-	return out
 }
 
 // pack512x4SoA reshapes four Areion512 states from AoS into four Block4
@@ -408,7 +436,12 @@ func areion512Permutex4Default(states *[4][64]byte, rcs *[15][16]byte) {
 // `inputs[i]` is 64 bytes. The result is four independent 64-byte PRF
 // outputs. Bit-exact parity invariant identical to the SoEM-256 case;
 // see `TestAreionSoEM512x4Parity`.
-func AreionSoEM512x4(keys *[4][128]byte, inputs *[4][64]byte) [4][64]byte {
+func AreionSoEM512x4(keys *[4][128]byte, inputs *[4][64]byte) (out [4][64]byte) {
+	areionSoEM512x4Into(keys, inputs, &out)
+	return out
+}
+
+func areionSoEM512x4Into(keys *[4][128]byte, inputs, out *[4][64]byte) {
 	// SoA-direct build of state1, state2 — same shape as the 256-bit
 	// counterpart, scaled to four Block4 buffers per state (b0..b3
 	// holding AES blocks 0..3 of every lane). Skips the AoS pack/
@@ -436,7 +469,6 @@ func AreionSoEM512x4(keys *[4][128]byte, inputs *[4][64]byte) [4][64]byte {
 
 	// Unpack from SoA to AoS output and apply the SoEM22 output
 	// whitening k1 ⊕ k2 in the same pass.
-	var out [4][64]byte
 	for lane := 0; lane < 4; lane++ {
 		k, d, o := &keys[lane], &out[lane], lane*16
 		xor3Block16((*[16]byte)(d[0:16]), (*[16]byte)(s1b0[o:o+16]), (*[16]byte)(k[0:16]), (*[16]byte)(k[64:80]))
@@ -463,7 +495,6 @@ func AreionSoEM512x4(keys *[4][128]byte, inputs *[4][64]byte) [4][64]byte {
 	runtime.KeepAlive(&s2b1)
 	runtime.KeepAlive(&s2b2)
 	runtime.KeepAlive(&s2b3)
-	return out
 }
 
 // ─── Paired (single + batched) Hash factories for ITB integration ──────
@@ -509,7 +540,7 @@ func MakeAreionSoEM256Hash(key ...[32]byte) (HashFunc256, BatchHashFunc256, [32]
 	} else if _, err := rand.Read(fixedKey[:]); err != nil {
 		panic("itb: crypto/rand failed: " + err.Error())
 	}
-	h, b := MakeAreionSoEM256HashWithKey(fixedKey)
+	h, b := makeAreionSoEM256HashFromKeyPtr(&fixedKey)
 	return h, b, fixedKey
 }
 
@@ -519,6 +550,10 @@ func MakeAreionSoEM256Hash(key ...[32]byte) (HashFunc256, BatchHashFunc256, [32]
 // returned (single, batched) pair will reproduce the same per-pixel
 // hashes as the original encrypt-side closure.
 func MakeAreionSoEM256HashWithKey(fixedKey [32]byte) (HashFunc256, BatchHashFunc256) {
+	return makeAreionSoEM256HashFromKeyPtr(&fixedKey)
+}
+
+func makeAreionSoEM256HashFromKeyPtr(fixedKey *[32]byte) (HashFunc256, BatchHashFunc256) {
 	// CBC-MAC-style chained absorb. The 32-byte state holds an
 	// 8-byte length tag in bytes [0..8) (disambiguates inputs of
 	// different lengths) and absorbs the remainder of `data` in
@@ -537,53 +572,12 @@ func MakeAreionSoEM256HashWithKey(fixedKey [32]byte) (HashFunc256, BatchHashFunc
 	// chained rounds. Absorb XOR is done in 8-byte uint64 chunks
 	// (with a byte-tail) so a 16- or 20-byte absorb is 2 uint64
 	// XORs + few tail bytes instead of 16-20 single-byte XORs.
-	const chunkSize = 24
-	single := func(data []byte, seed [4]uint64) [4]uint64 {
-		var key [64]byte
-		copy(key[:32], fixedKey[:])
-		for i := 0; i < 4; i++ {
-			binary.LittleEndian.PutUint64(key[32+i*8:], seed[i])
-		}
-		var state [32]byte
-		binary.LittleEndian.PutUint64(state[:8], uint64(len(data)))
-
-		if len(data) <= chunkSize {
-			// Fast path: single areion.SoEM256 round. state[8:32] is
-			// freshly zero from the `var state [32]byte` declaration,
-			// so absorb-XOR is equivalent to a bulk copy — Go's
-			// `copy` builtin lowers to memmove / SIMD MOVDQU which
-			// is significantly faster than the byte/uint64 XOR
-			// path for short data.
-			copy(state[8:8+len(data)], data)
-			state = areion.SoEM256(&key, &state)
-		} else {
-			// Slow path: CBC-MAC chain for inputs > 24 bytes. The
-			// first round still benefits from copy-instead-of-XOR
-			// (state[8:32] is zero); subsequent rounds must use the
-			// real XOR because state holds the previous AES output.
-			copy(state[8:8+chunkSize], data[0:chunkSize])
-			state = areion.SoEM256(&key, &state)
-			off := chunkSize
-			for off < len(data) {
-				end := off + chunkSize
-				if end > len(data) {
-					end = len(data)
-				}
-				absorbXOR(state[8:8+(end-off)], data[off:end])
-				state = areion.SoEM256(&key, &state)
-				off = end
-			}
-		}
-		// key is the full SoEM key fixedKey ‖ seed; zero it on the stack.
-		secureWipe(key[:])
-		runtime.KeepAlive(&key)
-
-		return [4]uint64{
-			binary.LittleEndian.Uint64(state[0:]),
-			binary.LittleEndian.Uint64(state[8:]),
-			binary.LittleEndian.Uint64(state[16:]),
-			binary.LittleEndian.Uint64(state[24:]),
-		}
+	single := func(data []byte, seed [4]uint64) (out [4]uint64) {
+		evalAreionSoEM256Single(fixedKey, &seed, data, &out)
+		clear(seed[:])
+		runtime.KeepAlive(&seed)
+		wipeAreionCallStack([9][8]uint64{})
+		return out
 	}
 	// The batched arm is returned on every build: on hosts with an
 	// Areion assembly tier the ITB buf shapes run the single-lane
@@ -594,7 +588,7 @@ func MakeAreionSoEM256HashWithKey(fixedKey [32]byte) (HashFunc256, BatchHashFunc
 	// permutation). ITB
 	// feeds equal-length data per batched call (one ChainHash round
 	// across 4 pixels), the contract the batched arm requires.
-	batched := func(data *[4][]byte, seeds [4][4]uint64) [4][4]uint64 {
+	batched := func(data *[4][]byte, seeds [4][4]uint64) (out [4][4]uint64) {
 		commonLen := len(data[0])
 		for lane := 1; lane < 4; lane++ {
 			if len(data[lane]) != commonLen {
@@ -602,79 +596,115 @@ func MakeAreionSoEM256HashWithKey(fixedKey [32]byte) (HashFunc256, BatchHashFunc
 			}
 		}
 
-		if out, ok := areionSoEM256BatchedFused(&fixedKey, &seeds, data, commonLen); ok {
+		if areionSoEM256BatchedFusedInto(fixedKey, &seeds, data, commonLen, &out) {
+			clear(seeds[:])
+			runtime.KeepAlive(&seeds)
 			return out
 		}
 
-		// The fused route above serves the ITB buf shapes (13, 20,
-		// 36, 68 bytes) whenever an Areion assembly tier is active:
-		// each lane runs the single-lane fused cascade kernel with
-		// its own seed as the one component group. Other lengths,
-		// and builds without an Areion assembly tier, take the
-		// general path below.
-
-		// General path: arbitrary equal-length data, or no fused kernel.
-		var keys [4][64]byte
-		var states [4][32]byte
-		for lane := 0; lane < 4; lane++ {
-			copy(keys[lane][:32], fixedKey[:])
-			for i := 0; i < 4; i++ {
-				binary.LittleEndian.PutUint64(keys[lane][32+i*8:], seeds[lane][i])
-			}
-			binary.LittleEndian.PutUint64(states[lane][:8], uint64(len(data[lane])))
-		}
-
-		if commonLen <= chunkSize {
-			// Fast path: single batched AreionSoEM256x4 round.
-			// states[lane][8:32] is freshly zero from declaration,
-			// so absorb-XOR is equivalent to bulk copy — same
-			// optimisation as the single closure.
-			for lane := 0; lane < 4; lane++ {
-				copy(states[lane][8:8+len(data[lane])], data[lane])
-			}
-			states = AreionSoEM256x4(&keys, &states)
-		} else {
-			// First round uses copy (zero initial state); subsequent
-			// rounds use absorb-XOR.
-			for lane := 0; lane < 4; lane++ {
-				laneN := chunkSize
-				if laneN > len(data[lane]) {
-					laneN = len(data[lane])
-				}
-				copy(states[lane][8:8+laneN], data[lane][0:laneN])
-			}
-			states = AreionSoEM256x4(&keys, &states)
-			off := chunkSize
-			for off < commonLen {
-				end := off + chunkSize
-				if end > commonLen {
-					end = commonLen
-				}
-				for lane := 0; lane < 4; lane++ {
-					laneEnd := end
-					if laneEnd > len(data[lane]) {
-						laneEnd = len(data[lane])
-					}
-					absorbXOR(states[lane][8:8+(laneEnd-off)], data[lane][off:laneEnd])
-				}
-				states = AreionSoEM256x4(&keys, &states)
-				off = end
-			}
-		}
-		// keys holds the four SoEM keys fixedKey ‖ seed; zero them.
-		clear(keys[:])
-		runtime.KeepAlive(&keys)
-
-		var out [4][4]uint64
-		for lane := 0; lane < 4; lane++ {
-			out[lane][0] = binary.LittleEndian.Uint64(states[lane][0:])
-			out[lane][1] = binary.LittleEndian.Uint64(states[lane][8:])
-			out[lane][2] = binary.LittleEndian.Uint64(states[lane][16:])
-			out[lane][3] = binary.LittleEndian.Uint64(states[lane][24:])
-		}
+		evalAreionSoEM256Batched(fixedKey, &seeds, data, commonLen, &out)
+		clear(seeds[:])
+		runtime.KeepAlive(&seeds)
+		wipeAreionCallStack([9][8]uint64{})
 		return out
 	}
 	return single, batched
+}
+
+//go:noinline
+func evalAreionSoEM256Single(fixedKey *[32]byte, seed *[4]uint64, data []byte, out *[4]uint64) {
+	const chunkSize = 24
+	var key [64]byte
+	copy(key[:32], fixedKey[:])
+	for i := 0; i < 4; i++ {
+		binary.LittleEndian.PutUint64(key[32+i*8:], seed[i])
+	}
+	var state [32]byte
+	binary.LittleEndian.PutUint64(state[:8], uint64(len(data)))
+
+	if len(data) <= chunkSize {
+		copy(state[8:8+len(data)], data)
+		state = areion.SoEM256(&key, &state)
+	} else {
+		copy(state[8:8+chunkSize], data[0:chunkSize])
+		state = areion.SoEM256(&key, &state)
+		off := chunkSize
+		for off < len(data) {
+			end := off + chunkSize
+			if end > len(data) {
+				end = len(data)
+			}
+			absorbXOR(state[8:8+(end-off)], data[off:end])
+			state = areion.SoEM256(&key, &state)
+			off = end
+		}
+	}
+	secureWipe(key[:])
+	runtime.KeepAlive(&key)
+
+	out[0] = binary.LittleEndian.Uint64(state[0:])
+	out[1] = binary.LittleEndian.Uint64(state[8:])
+	out[2] = binary.LittleEndian.Uint64(state[16:])
+	out[3] = binary.LittleEndian.Uint64(state[24:])
+	clear(state[:])
+	runtime.KeepAlive(&state)
+}
+
+//go:noinline
+func evalAreionSoEM256Batched(fixedKey *[32]byte, seeds *[4][4]uint64, data *[4][]byte, commonLen int, out *[4][4]uint64) {
+	const chunkSize = 24
+	var keys [4][64]byte
+	var states [4][32]byte
+	for lane := 0; lane < 4; lane++ {
+		copy(keys[lane][:32], fixedKey[:])
+		for i := 0; i < 4; i++ {
+			binary.LittleEndian.PutUint64(keys[lane][32+i*8:], seeds[lane][i])
+		}
+		binary.LittleEndian.PutUint64(states[lane][:8], uint64(len(data[lane])))
+	}
+
+	if commonLen <= chunkSize {
+		for lane := 0; lane < 4; lane++ {
+			copy(states[lane][8:8+len(data[lane])], data[lane])
+		}
+		areionSoEM256x4Into(&keys, &states, &states)
+	} else {
+		for lane := 0; lane < 4; lane++ {
+			laneN := chunkSize
+			if laneN > len(data[lane]) {
+				laneN = len(data[lane])
+			}
+			copy(states[lane][8:8+laneN], data[lane][0:laneN])
+		}
+		areionSoEM256x4Into(&keys, &states, &states)
+		off := chunkSize
+		for off < commonLen {
+			end := off + chunkSize
+			if end > commonLen {
+				end = commonLen
+			}
+			for lane := 0; lane < 4; lane++ {
+				laneEnd := end
+				if laneEnd > len(data[lane]) {
+					laneEnd = len(data[lane])
+				}
+				absorbXOR(states[lane][8:8+(laneEnd-off)], data[lane][off:laneEnd])
+			}
+			areionSoEM256x4Into(&keys, &states, &states)
+			off = end
+		}
+	}
+	clear(keys[:])
+	runtime.KeepAlive(&keys)
+
+	for lane := 0; lane < 4; lane++ {
+		out[lane][0] = binary.LittleEndian.Uint64(states[lane][0:])
+		out[lane][1] = binary.LittleEndian.Uint64(states[lane][8:])
+		out[lane][2] = binary.LittleEndian.Uint64(states[lane][16:])
+		out[lane][3] = binary.LittleEndian.Uint64(states[lane][24:])
+	}
+	clear(states[:])
+	runtime.KeepAlive(&states)
 }
 
 // MakeAreionSoEM512Hash returns the 512-bit counterpart of
@@ -691,7 +721,7 @@ func MakeAreionSoEM512Hash(key ...[64]byte) (HashFunc512, BatchHashFunc512, [64]
 	} else if _, err := rand.Read(fixedKey[:]); err != nil {
 		panic("itb: crypto/rand failed: " + err.Error())
 	}
-	h, b := MakeAreionSoEM512HashWithKey(fixedKey)
+	h, b := makeAreionSoEM512HashFromKeyPtr(&fixedKey)
 	return h, b, fixedKey
 }
 
@@ -699,6 +729,10 @@ func MakeAreionSoEM512Hash(key ...[64]byte) (HashFunc512, BatchHashFunc512, [64]
 // MakeAreionSoEM512Hash. Same role as MakeAreionSoEM256HashWithKey
 // scaled to the 64-byte fixed key of Areion-SoEM-512.
 func MakeAreionSoEM512HashWithKey(fixedKey [64]byte) (HashFunc512, BatchHashFunc512) {
+	return makeAreionSoEM512HashFromKeyPtr(&fixedKey)
+}
+
+func makeAreionSoEM512HashFromKeyPtr(fixedKey *[64]byte) (HashFunc512, BatchHashFunc512) {
 	// CBC-MAC-style chained absorb, same shape as the SoEM-256
 	// counterpart, scaled to a 64-byte state and a 56-byte data
 	// chunk per round (8 bytes reserved for the length tag in the
@@ -708,43 +742,11 @@ func MakeAreionSoEM512HashWithKey(fixedKey [64]byte) (HashFunc512, BatchHashFunc
 	//   buf 68 (512-bit nonce):            2 rounds
 	// Absorb XOR is bulk uint64 with a byte tail, identical
 	// optimisation to the SoEM-256 path.
-	const chunkSize = 56
-	single := func(data []byte, seed [8]uint64) [8]uint64 {
-		var key [128]byte
-		copy(key[:64], fixedKey[:])
-		for i := 0; i < 8; i++ {
-			binary.LittleEndian.PutUint64(key[64+i*8:], seed[i])
-		}
-		var state [64]byte
-		binary.LittleEndian.PutUint64(state[:8], uint64(len(data)))
-
-		if len(data) <= chunkSize {
-			// Fast path: state[8:64] is zero — bulk copy beats
-			// absorb-XOR for the first round.
-			copy(state[8:8+len(data)], data)
-			state = areion.SoEM512(&key, &state)
-		} else {
-			copy(state[8:8+chunkSize], data[0:chunkSize])
-			state = areion.SoEM512(&key, &state)
-			off := chunkSize
-			for off < len(data) {
-				end := off + chunkSize
-				if end > len(data) {
-					end = len(data)
-				}
-				absorbXOR(state[8:8+(end-off)], data[off:end])
-				state = areion.SoEM512(&key, &state)
-				off = end
-			}
-		}
-		// key is the full SoEM key fixedKey ‖ seed; zero it on the stack.
-		secureWipe(key[:])
-		runtime.KeepAlive(&key)
-
-		var out [8]uint64
-		for i := range out {
-			out[i] = binary.LittleEndian.Uint64(state[i*8:])
-		}
+	single := func(data []byte, seed [8]uint64) (out [8]uint64) {
+		evalAreionSoEM512Single(fixedKey, &seed, data, &out)
+		clear(seed[:])
+		runtime.KeepAlive(&seed)
+		wipeAreionCallStack([9][8]uint64{})
 		return out
 	}
 	// The batched arm is returned on every build, with the same two
@@ -752,7 +754,7 @@ func MakeAreionSoEM512HashWithKey(fixedKey [64]byte) (HashFunc512, BatchHashFunc
 	// cascade kernel per lane for the ITB buf shapes on hosts with an
 	// Areion assembly tier, the lock-step AreionSoEM512x4 chain
 	// otherwise.
-	batched := func(data *[4][]byte, seeds [4][8]uint64) [4][8]uint64 {
+	batched := func(data *[4][]byte, seeds [4][8]uint64) (out [4][8]uint64) {
 		commonLen := len(data[0])
 		for lane := 1; lane < 4; lane++ {
 			if len(data[lane]) != commonLen {
@@ -760,70 +762,118 @@ func MakeAreionSoEM512HashWithKey(fixedKey [64]byte) (HashFunc512, BatchHashFunc
 			}
 		}
 
-		if out, ok := areionSoEM512BatchedFused(&fixedKey, &seeds, data, commonLen); ok {
+		if areionSoEM512BatchedFusedInto(fixedKey, &seeds, data, commonLen, &out) {
+			clear(seeds[:])
+			runtime.KeepAlive(&seeds)
 			return out
 		}
 
-		// The fused route above mirrors the Areion-SoEM-256 dispatch:
-		// the ITB buf shapes run the single-lane fused cascade kernel
-		// per lane whenever an Areion assembly tier is active.
-
-		// General path.
-		var keys [4][128]byte
-		var states [4][64]byte
-		for lane := 0; lane < 4; lane++ {
-			copy(keys[lane][:64], fixedKey[:])
-			for i := 0; i < 8; i++ {
-				binary.LittleEndian.PutUint64(keys[lane][64+i*8:], seeds[lane][i])
-			}
-			binary.LittleEndian.PutUint64(states[lane][:8], uint64(len(data[lane])))
-		}
-
-		if commonLen <= chunkSize {
-			// Fast path: states[lane][8:64] is zero — bulk copy.
-			for lane := 0; lane < 4; lane++ {
-				copy(states[lane][8:8+len(data[lane])], data[lane])
-			}
-			states = AreionSoEM512x4(&keys, &states)
-		} else {
-			for lane := 0; lane < 4; lane++ {
-				laneN := chunkSize
-				if laneN > len(data[lane]) {
-					laneN = len(data[lane])
-				}
-				copy(states[lane][8:8+laneN], data[lane][0:laneN])
-			}
-			states = AreionSoEM512x4(&keys, &states)
-			off := chunkSize
-			for off < commonLen {
-				end := off + chunkSize
-				if end > commonLen {
-					end = commonLen
-				}
-				for lane := 0; lane < 4; lane++ {
-					laneEnd := end
-					if laneEnd > len(data[lane]) {
-						laneEnd = len(data[lane])
-					}
-					absorbXOR(states[lane][8:8+(laneEnd-off)], data[lane][off:laneEnd])
-				}
-				states = AreionSoEM512x4(&keys, &states)
-				off = end
-			}
-		}
-		// keys holds the four SoEM keys fixedKey ‖ seed; zero them.
-		clear(keys[:])
-		runtime.KeepAlive(&keys)
-
-		var out [4][8]uint64
-		for lane := 0; lane < 4; lane++ {
-			for i := 0; i < 8; i++ {
-				out[lane][i] = binary.LittleEndian.Uint64(states[lane][i*8:])
-			}
-		}
+		evalAreionSoEM512Batched(fixedKey, &seeds, data, commonLen, &out)
+		clear(seeds[:])
+		runtime.KeepAlive(&seeds)
+		wipeAreionCallStack([9][8]uint64{})
 		return out
 	}
 	return single, batched
+}
+
+//go:noinline
+func evalAreionSoEM512Single(fixedKey *[64]byte, seed *[8]uint64, data []byte, out *[8]uint64) {
+	const chunkSize = 56
+	var key [128]byte
+	copy(key[:64], fixedKey[:])
+	for i := 0; i < 8; i++ {
+		binary.LittleEndian.PutUint64(key[64+i*8:], seed[i])
+	}
+	var state [64]byte
+	binary.LittleEndian.PutUint64(state[:8], uint64(len(data)))
+
+	if len(data) <= chunkSize {
+		copy(state[8:8+len(data)], data)
+		state = areion.SoEM512(&key, &state)
+	} else {
+		copy(state[8:8+chunkSize], data[0:chunkSize])
+		state = areion.SoEM512(&key, &state)
+		off := chunkSize
+		for off < len(data) {
+			end := off + chunkSize
+			if end > len(data) {
+				end = len(data)
+			}
+			absorbXOR(state[8:8+(end-off)], data[off:end])
+			state = areion.SoEM512(&key, &state)
+			off = end
+		}
+	}
+	secureWipe(key[:])
+	runtime.KeepAlive(&key)
+
+	for i := range out {
+		out[i] = binary.LittleEndian.Uint64(state[i*8:])
+	}
+	clear(state[:])
+	runtime.KeepAlive(&state)
+}
+
+//go:noinline
+func evalAreionSoEM512Batched(fixedKey *[64]byte, seeds *[4][8]uint64, data *[4][]byte, commonLen int, out *[4][8]uint64) {
+	const chunkSize = 56
+	var keys [4][128]byte
+	var states [4][64]byte
+	for lane := 0; lane < 4; lane++ {
+		copy(keys[lane][:64], fixedKey[:])
+		for i := 0; i < 8; i++ {
+			binary.LittleEndian.PutUint64(keys[lane][64+i*8:], seeds[lane][i])
+		}
+		binary.LittleEndian.PutUint64(states[lane][:8], uint64(len(data[lane])))
+	}
+
+	if commonLen <= chunkSize {
+		for lane := 0; lane < 4; lane++ {
+			copy(states[lane][8:8+len(data[lane])], data[lane])
+		}
+		areionSoEM512x4Into(&keys, &states, &states)
+	} else {
+		for lane := 0; lane < 4; lane++ {
+			laneN := chunkSize
+			if laneN > len(data[lane]) {
+				laneN = len(data[lane])
+			}
+			copy(states[lane][8:8+laneN], data[lane][0:laneN])
+		}
+		areionSoEM512x4Into(&keys, &states, &states)
+		off := chunkSize
+		for off < commonLen {
+			end := off + chunkSize
+			if end > commonLen {
+				end = commonLen
+			}
+			for lane := 0; lane < 4; lane++ {
+				laneEnd := end
+				if laneEnd > len(data[lane]) {
+					laneEnd = len(data[lane])
+				}
+				absorbXOR(states[lane][8:8+(laneEnd-off)], data[lane][off:laneEnd])
+			}
+			areionSoEM512x4Into(&keys, &states, &states)
+			off = end
+		}
+	}
+	clear(keys[:])
+	runtime.KeepAlive(&keys)
+
+	for lane := 0; lane < 4; lane++ {
+		for i := 0; i < 8; i++ {
+			out[lane][i] = binary.LittleEndian.Uint64(states[lane][i*8:])
+		}
+	}
+	clear(states[:])
+	runtime.KeepAlive(&states)
+}
+
+//go:noinline
+func wipeAreionCallStack(argPad [9][8]uint64) {
+	wipe.CallStack2K(argPad)
 }
 
 // absorbXOR XORs src into dst in 8-byte uint64 chunks where
@@ -860,8 +910,13 @@ func absorbXOR(dst, src []byte) {
 // vectors pin). false sends the caller to the four-way permutation
 // path.
 func areionSoEM256BatchedFused(fixedKey *[32]byte, seeds *[4][4]uint64, data *[4][]byte, commonLen int) (out [4][4]uint64, ok bool) {
+	ok = areionSoEM256BatchedFusedInto(fixedKey, seeds, data, commonLen, &out)
+	return out, ok
+}
+
+func areionSoEM256BatchedFusedInto(fixedKey *[32]byte, seeds *[4][4]uint64, data *[4][]byte, commonLen int, out *[4][4]uint64) bool {
 	if !areionasm.FusedAvailable() {
-		return out, false
+		return false
 	}
 	switch commonLen {
 	case 13:
@@ -881,16 +936,21 @@ func areionSoEM256BatchedFused(fixedKey *[32]byte, seeds *[4][4]uint64, data *[4
 			areionasm.Fused256Chain68x1(fixedKey, seeds[lane][:], &data[lane][0], &out[lane])
 		}
 	default:
-		return out, false
+		return false
 	}
-	return out, true
+	return true
 }
 
 // areionSoEM512BatchedFused is the width-512 form of
 // [areionSoEM256BatchedFused].
 func areionSoEM512BatchedFused(fixedKey *[64]byte, seeds *[4][8]uint64, data *[4][]byte, commonLen int) (out [4][8]uint64, ok bool) {
+	ok = areionSoEM512BatchedFusedInto(fixedKey, seeds, data, commonLen, &out)
+	return out, ok
+}
+
+func areionSoEM512BatchedFusedInto(fixedKey *[64]byte, seeds *[4][8]uint64, data *[4][]byte, commonLen int, out *[4][8]uint64) bool {
 	if !areionasm.FusedAvailable() {
-		return out, false
+		return false
 	}
 	switch commonLen {
 	case 13:
@@ -910,9 +970,9 @@ func areionSoEM512BatchedFused(fixedKey *[64]byte, seeds *[4][8]uint64, data *[4
 			areionasm.Fused512Chain68x1(fixedKey, seeds[lane][:], &data[lane][0], &out[lane])
 		}
 	default:
-		return out, false
+		return false
 	}
-	return out, true
+	return true
 }
 
 // xorBlock16 sets dst = a ⊕ b through byte-order-neutral 64-bit loads.

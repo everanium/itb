@@ -225,6 +225,7 @@ func DecryptStreamAuth3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, data
 		}
 		pixels, err := chunkPixelCountCfg(cfg, chunk)
 		if err != nil {
+			secureWipe(plain)
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
 		}
 		if err := emit(plain); err != nil {
@@ -340,6 +341,7 @@ func DecryptStreamAuth3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, data
 		}
 		pixels, err := chunkPixelCountCfg(cfg, chunk)
 		if err != nil {
+			secureWipe(plain)
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
 		}
 		if err := emit(plain); err != nil {
@@ -455,6 +457,7 @@ func DecryptStreamAuth3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, data
 		}
 		pixels, err := chunkPixelCountCfg(cfg, chunk)
 		if err != nil {
+			secureWipe(plain)
 			return fmt.Errorf("itb: chunk at offset %d: %w", off, err)
 		}
 		if err := emit(plain); err != nil {

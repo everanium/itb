@@ -7,6 +7,7 @@ import (
 	"runtime"
 
 	"github.com/everanium/itb/ctr"
+	"github.com/everanium/itb/internal/wipe"
 )
 
 // buildScheduleSeed derives the 16-byte schedule seed by XORing the
@@ -17,22 +18,22 @@ import (
 // byte-for-byte. Callers that need the derived
 // [Fisher-Yates permutation](fisherYates) go through [buildPermutation]
 // which layers Fisher-Yates on top of this seed.
-func buildScheduleSeed(s *Schedule, cs *Cipherset, nonce []byte) ([scheduleSeedSize]byte, error) {
+func buildScheduleSeed(out *[scheduleSeedSize]byte, s *Schedule, cs *Cipherset, nonce []byte) error {
+	*out = [scheduleSeedSize]byte{}
 	anchor := s.palette[0]
 	sliceNonce, err := sliceNonceFor(anchor, nonce)
 	if err != nil {
-		return [scheduleSeedSize]byte{}, err
+		return err
 	}
 	ks, err := ctr.New(anchor, cs.scheduleSubkey, sliceNonce)
 	if err != nil {
-		return [scheduleSeedSize]byte{}, fmt.Errorf("parallax: schedule keystream: %w", err)
+		return fmt.Errorf("parallax: schedule keystream: %w", err)
 	}
-	var seed [scheduleSeedSize]byte
-	ks.XORKeyStream(seed[:], seed[:])
+	ks.XORKeyStream(out[:], out[:])
 	if c, ok := ks.(io.Closer); ok {
 		_ = c.Close()
 	}
-	return seed, nil
+	return nil
 }
 
 // buildPermutation derives the schedule seed via [buildScheduleSeed]
@@ -41,8 +42,18 @@ func buildScheduleSeed(s *Schedule, cs *Cipherset, nonce []byte) ([scheduleSeedS
 // seed (lo, hi); SplitMix64 is a well-known full-period PRNG that
 // yields a uniform unbiased permutation under standard Fisher-Yates.
 func buildPermutation(s *Schedule, cs *Cipherset, nonce []byte) ([]int, error) {
-	seed, err := buildScheduleSeed(s, cs, nonce)
-	if err != nil {
+	wipe.CallStack8K([9][8]uint64{})
+	perm, err := buildPermutationBody(s, cs, nonce)
+	wipe.CallStack8K([9][8]uint64{})
+	return perm, err
+}
+
+//go:noinline
+func buildPermutationBody(s *Schedule, cs *Cipherset, nonce []byte) ([]int, error) {
+	var seed [scheduleSeedSize]byte
+	if err := buildScheduleSeed(&seed, s, cs, nonce); err != nil {
+		clear(seed[:])
+		runtime.KeepAlive(&seed)
 		return nil, err
 	}
 	perm := fisherYates(seed[:], len(s.palette))
@@ -63,9 +74,10 @@ func fisherYates(seed []byte, n int) []int {
 	for i := range perm {
 		perm[i] = i
 	}
-	lo := binary.LittleEndian.Uint64(seed[:8])
-	hi := binary.LittleEndian.Uint64(seed[8:16])
-	state := lo
+	var stateArr [3]uint64
+	stateArr[0] = binary.LittleEndian.Uint64(seed[:8])
+	stateArr[1] = binary.LittleEndian.Uint64(seed[8:16])
+	stateArr[2] = stateArr[0]
 	// Standard inward Fisher-Yates: for i from n-1 down to 1, swap
 	// perm[i] with perm[j] where j is uniform in [0, i].
 	half := n / 2
@@ -73,11 +85,13 @@ func fisherYates(seed []byte, n int) []int {
 		if i == half {
 			// Fold the high half of the seed into the state so the
 			// second half of the shuffle does not depend only on lo.
-			state ^= hi
+			stateArr[2] ^= stateArr[1]
 		}
-		j := int(unbiasedRange(&state, uint64(i+1)))
+		j := int(unbiasedRange(&stateArr[2], uint64(i+1)))
 		perm[i], perm[j] = perm[j], perm[i]
 	}
+	clear(stateArr[:])
+	runtime.KeepAlive(&stateArr)
 	return perm
 }
 

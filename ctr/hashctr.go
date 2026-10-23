@@ -3,8 +3,10 @@ package ctr
 import (
 	"encoding/binary"
 	"fmt"
+	"runtime"
 
 	"github.com/everanium/itb/internal/hashprf"
+	"github.com/everanium/itb/internal/wipe"
 )
 
 // hashCTRNonceSize is the nonce length shared by all hash-based
@@ -33,12 +35,13 @@ func newPrfHashCTR(name string, key, nonce []byte) (Keystream, error) {
 	} else if ok {
 		return ks, nil
 	}
-	prf, blockSize, err := hashprf.New(name, key)
+	prf, blockSize, closePRF, err := hashprf.NewRawWithClose(name, key)
 	if err != nil {
 		return nil, fmt.Errorf("ctr: %w", err)
 	}
 	c := &prfHashCTR{
 		prf:       prf,
+		closePRF:  closePRF,
 		blockSize: blockSize,
 		keystrm:   make([]byte, blockSize),
 		input:     make([]byte, hashCTRNonceSize+8),
@@ -61,6 +64,7 @@ func newPrfHashCTR(name string, key, nonce []byte) (Keystream, error) {
 // and a tail refill consumes the leading bytes of one fresh block.
 type prfHashCTR struct {
 	prf       func(dst, in []byte)
+	closePRF  func()
 	blockSize int
 	counter   uint64
 	input     []byte // nonce(16) || LE64(counter), reused per block
@@ -93,20 +97,29 @@ func (c *prfHashCTR) XORKeyStream(dst, src []byte) {
 		}
 		for j := 0; j < take; j++ {
 			dst[i+j] = src[i+j] ^ c.keystrm[off+j]
+			c.keystrm[off+j] = 0
 		}
 		i += take
 		c.keystrmN -= take
 	}
 
 	// Bulk path: one PRF block per blockSize bytes of output.
+	wroteBulk := false
 	for n-i >= c.blockSize {
 		binary.LittleEndian.PutUint64(c.input[hashCTRNonceSize:], c.counter)
 		c.prf(c.keystrm, c.input)
 		c.counter++
-		for j := 0; j < c.blockSize; j++ {
+		j := 0
+		for ; j+8 <= c.blockSize; j += 8 {
+			s := binary.LittleEndian.Uint64(src[i+j : i+j+8])
+			k := binary.LittleEndian.Uint64(c.keystrm[j : j+8])
+			binary.LittleEndian.PutUint64(dst[i+j:i+j+8], s^k)
+		}
+		for ; j < c.blockSize; j++ {
 			dst[i+j] = src[i+j] ^ c.keystrm[j]
 		}
 		i += c.blockSize
+		wroteBulk = true
 	}
 
 	// Tail (< blockSize bytes): refill the buffer and consume its lead.
@@ -115,16 +128,26 @@ func (c *prfHashCTR) XORKeyStream(dst, src []byte) {
 		rem := n - i
 		for j := 0; j < rem; j++ {
 			dst[i+j] = src[i+j] ^ c.keystrm[j]
+			c.keystrm[j] = 0
 		}
 		c.keystrmN -= rem
+	} else if wroteBulk {
+		clear(c.keystrm)
 	}
 }
 
 func (c *prfHashCTR) Close() error {
+	if c.closePRF != nil {
+		c.closePRF()
+		c.closePRF = nil
+	}
 	clear(c.input)
 	clear(c.keystrm)
+	runtime.KeepAlive(c.input)
+	runtime.KeepAlive(c.keystrm)
 	c.prf = nil
 	c.counter = 0
 	c.keystrmN = 0
+	wipe.CallStack512B()
 	return nil
 }

@@ -4,11 +4,13 @@ import (
 	"crypto/aes"
 	"encoding/binary"
 	"fmt"
+	"runtime"
 
-	"github.com/dchest/siphash"
 	"golang.org/x/crypto/chacha20"
 
 	"github.com/everanium/itb/hashes"
+	"github.com/everanium/itb/internal/siphash24"
+	"github.com/everanium/itb/internal/wipe"
 )
 
 // Key sizes per supported primitive, in bytes.
@@ -49,6 +51,14 @@ const maxOutLen = (1<<32)/8 - 1
 // outLen is the exact number of subkey bytes returned. It must be
 // non-negative.
 func Derive(name string, master []byte, label string, outLen int) ([]byte, error) {
+	wipe.CallStack8K([9][8]uint64{})
+	out, err := deriveBody(name, master, label, outLen)
+	wipe.CallStack8K([9][8]uint64{})
+	return out, err
+}
+
+//go:noinline
+func deriveBody(name string, master []byte, label string, outLen int) ([]byte, error) {
 	if outLen < 0 {
 		return nil, fmt.Errorf("kdf: negative output length %d", outLen)
 	}
@@ -87,10 +97,14 @@ func deriveAESCMAC(master []byte, label string, outLen int) ([]byte, error) {
 		return mac.sum(in)
 	}
 	out := sp800108CounterMode(prf, aes.BlockSize, []byte(label), outLen)
-	// The CMAC subkeys are derived from the master; zero them once the
-	// derivation is done.
+	// The CMAC subkeys and AES round-key schedule are derived from the
+	// master; zero them once the derivation is done.
 	clear(mac.k1)
 	clear(mac.k2)
+	runtime.KeepAlive(mac.k1)
+	runtime.KeepAlive(mac.k2)
+	wipe.StructPtr(block)
+	mac.block = nil
 	return out, nil
 }
 
@@ -101,16 +115,18 @@ func deriveSipHash24(master []byte, label string, outLen int) ([]byte, error) {
 	if len(master) < siphash24KeySize {
 		return nil, fmt.Errorf("kdf: siphash24 master must be at least %d bytes, got %d", siphash24KeySize, len(master))
 	}
-	k0 := binary.LittleEndian.Uint64(master[:8])
-	k1 := binary.LittleEndian.Uint64(master[8:16])
+	var k [2]uint64
+	k[0] = binary.LittleEndian.Uint64(master[:8])
+	k[1] = binary.LittleEndian.Uint64(master[8:16])
 	prf := func(in []byte) []byte {
-		lo, hi := siphash.Hash128(k0, k1, in)
 		out := make([]byte, 16)
-		binary.LittleEndian.PutUint64(out[:8], lo)
-		binary.LittleEndian.PutUint64(out[8:], hi)
+		siphash24.Sum128Into(out, k[0], k[1], in)
 		return out
 	}
-	return sp800108CounterMode(prf, 16, []byte(label), outLen), nil
+	res := sp800108CounterMode(prf, 16, []byte(label), outLen)
+	clear(k[:])
+	runtime.KeepAlive(&k)
+	return res, nil
 }
 
 // deriveChaCha20 implements the XChaCha20 keystream KDF. The 32-byte
@@ -128,6 +144,8 @@ func deriveChaCha20(master []byte, label string, outLen int) ([]byte, error) {
 	var nonce [chacha20NonceSize]byte
 	copy(nonce[:], label)
 	c, err := chacha20.NewUnauthenticatedCipher(master[:chacha20KeySize], nonce[:])
+	clear(nonce[:])
+	runtime.KeepAlive(&nonce)
 	if err != nil {
 		return nil, fmt.Errorf("kdf: chacha20 cipher setup: %w", err)
 	}
@@ -137,6 +155,7 @@ func deriveChaCha20(master []byte, label string, outLen int) ([]byte, error) {
 	// The cipher state carries the derived key words and the unused
 	// keystream tail; zero it.
 	*c = chacha20.Cipher{}
+	runtime.KeepAlive(c)
 	return out, nil
 }
 
@@ -176,6 +195,8 @@ func sp800108CounterMode(prf func([]byte) []byte, prfLen int, label []byte, outL
 
 	in := make([]byte, 4+len(suffix))
 	copy(in[4:], suffix)
+	clear(suffix)
+	runtime.KeepAlive(suffix)
 
 	written := 0
 	for i := uint32(1); written < outLen; i++ {
@@ -184,7 +205,10 @@ func sp800108CounterMode(prf func([]byte) []byte, prfLen int, label []byte, outL
 		n := copy(out[written:], block[:prfLen])
 		// Every prf returns a fresh block; zero it once it is copied out.
 		clear(block)
+		runtime.KeepAlive(block)
 		written += n
 	}
+	clear(in)
+	runtime.KeepAlive(in)
 	return out
 }

@@ -13,7 +13,129 @@ import (
 	"github.com/everanium/itb"
 	"github.com/everanium/itb/hashes/internal/blake3asm"
 	"github.com/everanium/itb/internal/forcetier"
+	"github.com/everanium/itb/internal/wipe"
 )
+
+var blake3ZeroChunk [1024]byte
+
+type blake3HashEntry struct {
+	h      *blake3.Hasher
+	mixed  []byte
+	digest [32]byte
+}
+
+func newBLAKE3HashPool(template *blake3.Hasher) *sync.Pool {
+	return &sync.Pool{
+		New: func() any {
+			return &blake3HashEntry{
+				h:     template.Clone(),
+				mixed: make([]byte, 0, 128),
+			}
+		},
+	}
+}
+
+func scrubBLAKE3Hasher(h, template *blake3.Hasher, nWritten int) {
+	if nWritten <= len(blake3ZeroChunk) {
+		h.Reset()
+		if nWritten > 0 {
+			_, _ = h.Write(blake3ZeroChunk[:nWritten])
+			h.Reset()
+		}
+		return
+	}
+	*h = *template
+}
+
+//go:noinline
+func evalBLAKE3WithKey(pool *sync.Pool, template *blake3.Hasher, data []byte, seed *[4]uint64, out *[4]uint64) {
+	e := pool.Get().(*blake3HashEntry)
+
+	const seedInjectBytes = 32
+	payloadLen := len(data)
+	if payloadLen < seedInjectBytes {
+		payloadLen = seedInjectBytes
+	}
+	mixed := e.mixed
+	if cap(mixed) < payloadLen {
+		mixed = make([]byte, payloadLen)
+	} else {
+		mixed = mixed[:payloadLen]
+	}
+	for i := len(data); i < payloadLen; i++ {
+		mixed[i] = 0
+	}
+	copy(mixed[:len(data)], data)
+	for i := 0; i < 4; i++ {
+		off := i * 8
+		binary.LittleEndian.PutUint64(mixed[off:], binary.LittleEndian.Uint64(mixed[off:])^seed[i])
+	}
+	_, _ = e.h.Write(mixed)
+	// The hasher has copied the seed-mixed payload into its own
+	// block buffer; zero the pooled copy before it is returned.
+	clear(mixed)
+	runtime.KeepAlive(mixed)
+	e.mixed = mixed
+
+	e.h.Sum(e.digest[:0])
+	out[0] = binary.LittleEndian.Uint64(e.digest[0:])
+	out[1] = binary.LittleEndian.Uint64(e.digest[8:])
+	out[2] = binary.LittleEndian.Uint64(e.digest[16:])
+	out[3] = binary.LittleEndian.Uint64(e.digest[24:])
+	scrubBLAKE3Hasher(e.h, template, payloadLen)
+	clear(e.digest[:])
+	runtime.KeepAlive(e)
+	pool.Put(e)
+}
+
+//go:noinline
+func evalBLAKE3Batch(pool *sync.Pool, template *blake3.Hasher, data *[4][]byte, seeds *[4][4]uint64, out *[4][4]uint64) {
+	e := pool.Get().(*blake3HashEntry)
+	const seedInjectBytes = 32
+	mixed := e.mixed
+	maxPayloadLen := 0
+
+	for lane := 0; lane < 4; lane++ {
+		d := data[lane]
+		payloadLen := len(d)
+		if payloadLen < seedInjectBytes {
+			payloadLen = seedInjectBytes
+		}
+		if payloadLen > maxPayloadLen {
+			maxPayloadLen = payloadLen
+		}
+		if cap(mixed) < payloadLen {
+			mixed = make([]byte, payloadLen)
+		} else {
+			mixed = mixed[:payloadLen]
+		}
+		for i := len(d); i < payloadLen; i++ {
+			mixed[i] = 0
+		}
+		copy(mixed[:len(d)], d)
+		for i := 0; i < 4; i++ {
+			off := i * 8
+			binary.LittleEndian.PutUint64(mixed[off:], binary.LittleEndian.Uint64(mixed[off:])^seeds[lane][i])
+		}
+		if lane > 0 {
+			e.h.Reset()
+		}
+		_, _ = e.h.Write(mixed)
+		e.h.Sum(e.digest[:0])
+		out[lane][0] = binary.LittleEndian.Uint64(e.digest[0:])
+		out[lane][1] = binary.LittleEndian.Uint64(e.digest[8:])
+		out[lane][2] = binary.LittleEndian.Uint64(e.digest[16:])
+		out[lane][3] = binary.LittleEndian.Uint64(e.digest[24:])
+	}
+
+	clear(mixed[:cap(mixed)])
+	runtime.KeepAlive(mixed)
+	e.mixed = mixed[:0]
+	scrubBLAKE3Hasher(e.h, template, maxPayloadLen)
+	clear(e.digest[:])
+	runtime.KeepAlive(e)
+	pool.Put(e)
+}
 
 // BLAKE3 returns a cached BLAKE3-256 itb.HashFunc256 along with the
 // 32-byte BLAKE3 key the closure is bound to. With no argument a
@@ -22,11 +144,11 @@ import (
 // key for cross-process persistence.
 //
 // The pre-keyed BLAKE3 hasher template is created once via
-// blake3.NewKeyed; each call clones the template instead of
-// re-keying, sidestepping the data race that Reset() on a shared
-// hasher would cause when ITB's process256 dispatches multiple
-// goroutines on the same seed. A sync.Pool of scratch buffers keeps
-// per-call allocation at zero.
+// blake3.NewKeyed; each call borrows a pooled clone and resets it by
+// copying the template state instead of re-keying or allocating per
+// call, sidestepping the data race that Reset() on a shared hasher
+// would cause when ITB's process256 dispatches multiple goroutines on
+// the same seed.
 //
 // Seed components are mixed into the hashed payload as XOR over the
 // first 32 bytes; the input is zero-padded out to 32 bytes when the
@@ -46,50 +168,17 @@ func BLAKE3(key ...[32]byte) (itb.HashFunc256, [32]byte) {
 // supplied 32-byte BLAKE3 key, for serialization across processes.
 func BLAKE3WithKey(key [32]byte) itb.HashFunc256 {
 	template, _ := blake3.NewKeyed(key[:])
-	pool := &sync.Pool{New: func() any { b := make([]byte, 0, 128); return &b }}
+	clear(key[:])
+	runtime.KeepAlive(&key)
+	pool := newBLAKE3HashPool(template)
 
 	return func(data []byte, seed [4]uint64) [4]uint64 {
-		h := template.Clone()
-
-		const seedInjectBytes = 32
-		payloadLen := len(data)
-		if payloadLen < seedInjectBytes {
-			payloadLen = seedInjectBytes
-		}
-		mixedPtr := pool.Get().(*[]byte)
-		mixed := *mixedPtr
-		if cap(mixed) < payloadLen {
-			mixed = make([]byte, payloadLen)
-		} else {
-			mixed = mixed[:payloadLen]
-		}
-		for i := len(data); i < payloadLen; i++ {
-			mixed[i] = 0
-		}
-		copy(mixed[:len(data)], data)
-		for i := 0; i < 4; i++ {
-			off := i * 8
-			binary.LittleEndian.PutUint64(mixed[off:], binary.LittleEndian.Uint64(mixed[off:])^seed[i])
-		}
-		h.Write(mixed)
-		// The hasher has copied the seed-mixed payload into its own
-		// block buffer; zero the pooled copy before it is returned.
-		clear(mixed)
-		*mixedPtr = mixed
-		pool.Put(mixedPtr)
-
-		var buf [32]byte
-		h.Sum(buf[:0])
-		// The cloned hasher holds the BLAKE3 key and the seed-mixed
-		// payload; overwrite it once the digest has been read out.
-		*h = blake3.Hasher{}
-		runtime.KeepAlive(h)
-		return [4]uint64{
-			binary.LittleEndian.Uint64(buf[0:]),
-			binary.LittleEndian.Uint64(buf[8:]),
-			binary.LittleEndian.Uint64(buf[16:]),
-			binary.LittleEndian.Uint64(buf[24:]),
-		}
+		var res [4]uint64
+		evalBLAKE3WithKey(pool, template, data, &seed, &res)
+		clear(seed[:])
+		runtime.KeepAlive(&seed)
+		wipe.CallStack2K([9][8]uint64{})
+		return res
 	}
 }
 
@@ -134,12 +223,24 @@ func BLAKE3256Pair(key ...[32]byte) (itb.HashFunc256, itb.BatchHashFunc256, [32]
 // first, so the batched arm is the fallback for seeds built without
 // those hooks.
 func BLAKE3256PairWithKey(fixedKey [32]byte) (itb.HashFunc256, itb.BatchHashFunc256) {
-	single := BLAKE3WithKey(fixedKey)
+	template, _ := blake3.NewKeyed(fixedKey[:])
+	clear(fixedKey[:])
+	runtime.KeepAlive(&fixedKey)
+	pool := newBLAKE3HashPool(template)
+	single := func(data []byte, seed [4]uint64) [4]uint64 {
+		var res [4]uint64
+		evalBLAKE3WithKey(pool, template, data, &seed, &res)
+		clear(seed[:])
+		runtime.KeepAlive(&seed)
+		wipe.CallStack2K([9][8]uint64{})
+		return res
+	}
 	batched := func(data *[4][]byte, seeds [4][4]uint64) [4][4]uint64 {
 		var out [4][4]uint64
-		for lane := 0; lane < 4; lane++ {
-			out[lane] = single(data[lane], seeds[lane])
-		}
+		evalBLAKE3Batch(pool, template, data, &seeds, &out)
+		clear(seeds[:])
+		runtime.KeepAlive(&seeds)
+		wipe.CallStack2K([9][8]uint64{})
 		return out
 	}
 	return single, batched
@@ -181,19 +282,18 @@ func blake3FusedChainHash(key []byte) (itb.FusedChainHashFunc256, itb.BatchFused
 	if forcetier.ChainHashSeq() {
 		return nil, nil, nil
 	}
-	var k [32]byte
-	copy(k[:], key)
+	k := (*[32]byte)(key)
 	single := func(components []uint64, data []byte) ([4]uint64, bool) {
 		var out [4]uint64
 		switch len(data) {
 		case 13:
-			blake3asm.Fused256Chain13x1(&k, components, &data[0], &out)
+			blake3asm.Fused256Chain13x1(k, components, &data[0], &out)
 		case 20:
-			blake3asm.Fused256Chain20x1(&k, components, &data[0], &out)
+			blake3asm.Fused256Chain20x1(k, components, &data[0], &out)
 		case 36:
-			blake3asm.Fused256Chain36x1(&k, components, &data[0], &out)
+			blake3asm.Fused256Chain36x1(k, components, &data[0], &out)
 		case 68:
-			blake3asm.Fused256Chain68x1(&k, components, &data[0], &out)
+			blake3asm.Fused256Chain68x1(k, components, &data[0], &out)
 		default:
 			return out, false
 		}
@@ -213,13 +313,13 @@ func blake3FusedChainHash(key []byte) (itb.FusedChainHashFunc256, itb.BatchFused
 		dataPtrs := [4]*byte{&data[0][0], &data[1][0], &data[2][0], &data[3][0]}
 		switch n {
 		case 13:
-			blake3asm.Fused256Chain13x4(&k, components, &dataPtrs, &out)
+			blake3asm.Fused256Chain13x4(k, components, &dataPtrs, &out)
 		case 20:
-			blake3asm.Fused256Chain20x4(&k, components, &dataPtrs, &out)
+			blake3asm.Fused256Chain20x4(k, components, &dataPtrs, &out)
 		case 36:
-			blake3asm.Fused256Chain36x4(&k, components, &dataPtrs, &out)
+			blake3asm.Fused256Chain36x4(k, components, &dataPtrs, &out)
 		case 68:
-			blake3asm.Fused256Chain68x4(&k, components, &dataPtrs, &out)
+			blake3asm.Fused256Chain68x4(k, components, &dataPtrs, &out)
 		}
 		return out, true
 	}
@@ -234,10 +334,9 @@ func blake3InterlockFillBatch16(key []byte) (itb.InterlockFillFunc16x256, error)
 	if len(key) != 32 {
 		return nil, fmt.Errorf("hashes: %q interlock fill batch-16 needs a 32-byte key, got %d", CipherBLAKE3, len(key))
 	}
-	var k [32]byte
-	copy(k[:], key)
+	k := (*[32]byte)(key)
 	return func(components []uint64, groupIdxBase uint64, v uint32, out *[8][4]uint64) {
-		blake3asm.Fused256Fill13x8(&k, components, groupIdxBase, v, out)
+		blake3asm.Fused256Fill13x8(k, components, groupIdxBase, v, out)
 	}, nil
 }
 
@@ -258,8 +357,7 @@ func blake3FusedChainHash8(key []byte) (itb.BatchFusedChainHashFunc256x8, error)
 	if forcetier.ChainHashSeq() || !blake3asm.FusedX8Active() {
 		return nil, nil
 	}
-	var k [32]byte
-	copy(k[:], key)
+	k := (*[32]byte)(key)
 	return func(components []uint64, data *[8][]byte) ([8][4]uint64, bool) {
 		var out [8][4]uint64
 		n := len(data[0])
@@ -277,11 +375,11 @@ func blake3FusedChainHash8(key []byte) (itb.BatchFusedChainHashFunc256x8, error)
 		}
 		switch n {
 		case 20:
-			blake3asm.Fused256Chain20x8(&k, components, &dataPtrs, &out)
+			blake3asm.Fused256Chain20x8(k, components, &dataPtrs, &out)
 		case 36:
-			blake3asm.Fused256Chain36x8(&k, components, &dataPtrs, &out)
+			blake3asm.Fused256Chain36x8(k, components, &dataPtrs, &out)
 		case 68:
-			blake3asm.Fused256Chain68x8(&k, components, &dataPtrs, &out)
+			blake3asm.Fused256Chain68x8(k, components, &dataPtrs, &out)
 		}
 		return out, true
 	}, nil

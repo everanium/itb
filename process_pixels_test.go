@@ -4,6 +4,8 @@ package itb
 
 import (
 	"bytes"
+	"encoding/binary"
+	"fmt"
 	"math/rand"
 	"testing"
 )
@@ -184,5 +186,270 @@ func TestProcessPixelsWrapBoundary(t *testing.T) {
 				t.Fatalf("round-trip mismatch: totalPixels=%d startPixel=%d", totalPixels, startPixel)
 			}
 		}
+	}
+}
+
+// TestProcessPixelsScratchReuseAndSubranges exercises itb_process_pixels
+// across batch-width transitions (8-pixel batch, 4-pixel leftover batch,
+// and 1..3-pixel scalar tail), worker sub-range splits, and wrap-crossing
+// startPixel offsets, verifying byte-for-byte parity with refPixelsScalar
+// on both encode and decode.
+func TestProcessPixelsScratchReuseAndSubranges(t *testing.T) {
+	rng := rand.New(rand.NewSource(0x5eedc0de))
+
+	for _, totalPixels := range []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 15, 16, 17, 23, 31, 32, 33, 41, 64} {
+		dataPixelCounts := []int{totalPixels}
+		if totalPixels > 1 {
+			dataPixelCounts = append(dataPixelCounts, totalPixels-1)
+		}
+		if totalPixels > 4 {
+			dataPixelCounts = append(dataPixelCounts, totalPixels/2)
+		}
+
+		for _, dataPixels := range dataPixelCounts {
+			dataLen := dataPixels * (DataBitsPerPixel / 8)
+			totalBits := dataLen * 8
+
+			starts := []int{0}
+			if totalPixels > 1 {
+				starts = append(starts, totalPixels/2, totalPixels-1)
+			}
+			if totalPixels > 5 {
+				starts = append(starts, totalPixels-3, totalPixels-5)
+			}
+			if totalPixels > 9 {
+				starts = append(starts, totalPixels-7, totalPixels-9)
+			}
+
+			for _, startPixel := range starts {
+				noiseHashes := make([]uint64, dataPixels)
+				dataHashes := make([]uint64, dataPixels)
+				for i := range noiseHashes {
+					noiseHashes[i] = rng.Uint64()
+					dataHashes[i] = rng.Uint64()
+				}
+				baseContainer := make([]byte, totalPixels*Channels)
+				rng.Read(baseContainer)
+				plain := make([]byte, dataLen)
+				rng.Read(plain)
+
+				refCont := append([]byte(nil), baseContainer...)
+				refPixelsScalar(noiseHashes, dataHashes, refCont, plain, startPixel, totalPixels, totalBits, true)
+
+				cCont := append([]byte(nil), baseContainer...)
+				callC(noiseHashes, dataHashes, cCont, plain, startPixel, totalPixels, 0, dataPixels, totalBits, true)
+				if !bytes.Equal(cCont, refCont) {
+					t.Fatalf("encode mismatch: totalPixels=%d dataPixels=%d startPixel=%d", totalPixels, dataPixels, startPixel)
+				}
+
+				if dataPixels >= 3 {
+					split := dataPixels / 2
+					sCont := append([]byte(nil), baseContainer...)
+					callC(noiseHashes[:split], dataHashes[:split], sCont, plain, startPixel, totalPixels, 0, split, totalBits, true)
+					callC(noiseHashes[split:], dataHashes[split:], sCont, plain, startPixel, totalPixels, split, dataPixels, totalBits, true)
+					if !bytes.Equal(sCont, refCont) {
+						t.Fatalf("split encode mismatch: totalPixels=%d dataPixels=%d startPixel=%d", totalPixels, dataPixels, startPixel)
+					}
+				}
+
+				refData := make([]byte, dataLen)
+				refPixelsScalar(noiseHashes, dataHashes, cCont, refData, startPixel, totalPixels, totalBits, false)
+
+				cData := make([]byte, dataLen)
+				callC(noiseHashes, dataHashes, cCont, cData, startPixel, totalPixels, 0, dataPixels, totalBits, false)
+				if !bytes.Equal(cData, refData) {
+					t.Fatalf("decode mismatch: totalPixels=%d dataPixels=%d startPixel=%d", totalPixels, dataPixels, startPixel)
+				}
+				if !bytes.Equal(cData, plain) {
+					t.Fatalf("round-trip mismatch: totalPixels=%d dataPixels=%d startPixel=%d", totalPixels, dataPixels, startPixel)
+				}
+			}
+		}
+	}
+}
+
+const cStackProbeWords = 512
+const cStackSentinel = uint64(0x5A5A5A5A5A5A5A5A)
+
+// TestProcessPixelsCStackZeroization verifies that itb_process_pixels leaves
+// zero secret residue (dataHashes, xorMask, per-channel xors/vals, and
+// extracted/packed plaintext words) on the C stack across every forced SIMD
+// tier (AUTO, A, A_NOGFNI, B, B_NOGFNI, C), both directions (encode and
+// decode), and both consecutive and wrap-crossing container geometries.
+//
+// Negative controls verify:
+//  1. mode=1 (skipping both sc wipe and itb_wipe_c_stack) deterministically
+//     leaves secret words on the C stack for every (tier, encode, wrap) cell.
+//  2. mode=2 (wiping sc only, skipping itb_wipe_c_stack) catches compiler
+//     stack spills outside sc on the C stack.
+func TestProcessPixelsCStackZeroization(t *testing.T) {
+	rng := rand.New(rand.NewSource(0xC57AC01))
+
+	const (
+		nPixels     = 13 // 8 + 4 + 1 exercises 8-pixel ZMM, 4-pixel YMM/C, and 1-pixel tail (avail = 7 < 8)
+		totalPixels = 16
+		dataLen     = nPixels * (DataBitsPerPixel / 8)
+		totalBits   = dataLen * 8
+	)
+
+	noiseHashes := make([]uint64, nPixels)
+	dataHashes := make([]uint64, nPixels)
+	for i := 0; i < nPixels; i++ {
+		noiseHashes[i] = rng.Uint64() | 1
+		dataHashes[i] = rng.Uint64() | 1
+	}
+
+	plain := make([]byte, dataLen)
+	for i := range plain {
+		plain[i] = byte(rng.Intn(254) + 1)
+	}
+
+	secrets := make(map[uint64]string)
+	for p := 0; p < nPixels; p++ {
+		dh := dataHashes[p]
+		xm := dh >> DataRotationBits
+		dr := uint(dh % 7)
+		secrets[dh] = fmt.Sprintf("dataHashes[%d]", p)
+		secrets[xm] = fmt.Sprintf("xorMask[%d]", p)
+
+		var xorsQ, valsRawQ, valsXorQ, valsRotQ uint64
+		bitBase := p * DataBitsPerPixel
+		for ch := 0; ch < Channels; ch++ {
+			xb := byte((xm >> uint(ch*DataBitsPerChannel)) & 0x7F)
+			xorsQ |= uint64(xb) << uint(ch*8)
+
+			bIdx := (bitBase + ch*DataBitsPerChannel) / 8
+			bOff := uint((bitBase + ch*DataBitsPerChannel) % 8)
+			raw16 := uint16(plain[bIdx])
+			if bIdx+1 < len(plain) {
+				raw16 |= uint16(plain[bIdx+1]) << 8
+			}
+			vb := byte((raw16 >> bOff) & 0x7F)
+			valsRawQ |= uint64(vb) << uint(ch*8)
+
+			vx := vb ^ xb
+			valsXorQ |= uint64(vx) << uint(ch*8)
+
+			vr := rotateBits7(vx, dr)
+			valsRotQ |= uint64(vr) << uint(ch*8)
+		}
+		secrets[xorsQ] = fmt.Sprintf("xors[%d]", p)
+		secrets[valsRawQ] = fmt.Sprintf("valsRaw[%d]", p)
+		secrets[valsXorQ] = fmt.Sprintf("valsXor[%d]", p)
+		secrets[valsRotQ] = fmt.Sprintf("valsRot[%d]", p)
+	}
+	for off := 0; off+8 <= len(plain); off++ {
+		w := binary.LittleEndian.Uint64(plain[off : off+8])
+		if w != 0 && w != cStackSentinel {
+			secrets[w] = fmt.Sprintf("plain64[off=%d]", off)
+		}
+	}
+	// Tail 7-byte partial word at pixel 12 (byteIdx = 84, avail = 7).
+	{
+		var tailRaw uint64
+		for i := 0; i < 7; i++ {
+			tailRaw |= uint64(plain[84+i]) << uint(i*8)
+		}
+		secrets[tailRaw] = "plainTail56[pixel=12]"
+	}
+
+	tiers := []struct {
+		id   int
+		name string
+	}{
+		{0, "AUTO"},
+		{1, "A"},
+		{2, "A_NOGFNI"},
+		{3, "B"},
+		{4, "B_NOGFNI"},
+		{5, "C"},
+	}
+
+	startPixels := []struct {
+		sp   int
+		name string
+	}{
+		{0, "consecutive"},
+		{totalPixels - 3, "wrap"},
+	}
+
+	spillHitsMode2 := 0
+	win := make([]uint64, cStackProbeWords)
+
+	for _, tr := range tiers {
+		for _, sp := range startPixels {
+			baseCont := make([]byte, totalPixels*Channels)
+			rng.Read(baseCont)
+
+			// Pre-encode a reference container for the decode tests.
+			encodedCont := append([]byte(nil), baseCont...)
+			refPixelsScalar(noiseHashes, dataHashes, encodedCont, plain, sp.sp, totalPixels, totalBits, true)
+
+			for _, encode := range []bool{true, false} {
+				dir := "decode"
+				if encode {
+					dir = "encode"
+				}
+				caseName := fmt.Sprintf("tier=%s/%s/%s", tr.name, sp.name, dir)
+
+				runProbe := func(mode int) []uint64 {
+					for i := range win {
+						win[i] = 0
+					}
+					if encode {
+						cont := append([]byte(nil), baseCont...)
+						inData := append([]byte(nil), plain...)
+						probePixelsCStack(noiseHashes, dataHashes, cont, inData, sp.sp, totalPixels, 0, nPixels, totalBits, true, mode, tr.id, win)
+					} else {
+						cont := append([]byte(nil), encodedCont...)
+						outData := make([]byte, dataLen)
+						probePixelsCStack(noiseHashes, dataHashes, cont, outData, sp.sp, totalPixels, 0, nPixels, totalBits, false, mode, tr.id, win)
+						if !bytes.Equal(outData, plain) {
+							t.Fatalf("%s (mode=%d): decode output mismatch", caseName, mode)
+						}
+					}
+					return win
+				}
+
+				// Negative control 1 (mode=1): no sc wipe, no C-stack wipe.
+				resNeg := runProbe(1)
+				negHits := 0
+				for _, w := range resNeg {
+					if _, ok := secrets[w]; ok {
+						negHits++
+					}
+				}
+				if negHits == 0 {
+					t.Fatalf("%s: negative control (mode=1) failed to detect unwiped secrets on C stack", caseName)
+				}
+
+				// Negative control 2 (mode=2): sc wiped, C-stack spill wipe skipped.
+				resSpill := runProbe(2)
+				for _, w := range resSpill {
+					if _, ok := secrets[w]; ok {
+						spillHitsMode2++
+					}
+				}
+
+				// Positive assertion (mode=0): full itb_process_pixels.
+				resPos := runProbe(0)
+				written := 0
+				for i, w := range resPos {
+					if w != cStackSentinel {
+						written++
+					}
+					if what, ok := secrets[w]; ok {
+						t.Errorf("%s: secret %s (0x%016x) left on C stack at word %d", caseName, what, w, i)
+					}
+				}
+				if written == 0 {
+					t.Fatalf("%s: C stack probe window did not overlap active frame", caseName)
+				}
+			}
+		}
+	}
+
+	if spillHitsMode2 == 0 {
+		t.Logf("note: mode=2 had 0 spill hits outside sc on this compiler/target")
 	}
 }

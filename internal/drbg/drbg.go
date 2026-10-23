@@ -68,6 +68,7 @@ import (
 
 	"github.com/everanium/itb/aesitb"
 	"github.com/everanium/itb/internal/cpuid"
+	"github.com/everanium/itb/internal/wipe"
 )
 
 // fillFn is the tier-specific fill worker. Every implementation reads
@@ -263,7 +264,7 @@ func Known(name string) bool {
 // draw and expands the keystream over dst.
 func fillAesCTR(dst []byte) error {
 	var seed [48]byte
-	defer clear(seed[:])
+	defer wipe.Bytes(seed[:])
 	if _, err := rand.Read(seed[:]); err != nil {
 		return err
 	}
@@ -273,6 +274,8 @@ func fillAesCTR(dst []byte) error {
 	}
 	stream := cipher.NewCTR(block, seed[32:48])
 	stream.XORKeyStream(dst, dst)
+	wipe.StructPtr(stream)
+	wipe.StructPtr(block)
 	return nil
 }
 
@@ -281,7 +284,7 @@ func fillAesCTR(dst []byte) error {
 // over dst.
 func fillChaCha20(dst []byte) error {
 	var seed [chacha20.KeySize + chacha20.NonceSize]byte
-	defer clear(seed[:])
+	defer wipe.Bytes(seed[:])
 	if _, err := rand.Read(seed[:]); err != nil {
 		return err
 	}
@@ -292,6 +295,6 @@ func fillChaCha20(dst []byte) error {
 	stream.XORKeyStream(dst, dst)
 	// The cipher state carries the key words and the unused keystream
 	// tail; zero it once the fill is done.
-	*stream = chacha20.Cipher{}
+	wipe.StructPtr(stream)
 	return nil
 }

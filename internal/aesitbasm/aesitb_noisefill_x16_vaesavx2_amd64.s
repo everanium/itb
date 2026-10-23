@@ -86,5 +86,10 @@ loop:
 	// VZEROALL wipes every state, the counter and the key-derived
 	// schedule from the register file and leaves the upper halves
 	// clean, which also serves as the VZEROUPPER on exit.
+	XORQ AX, AX
+	XORQ CX, CX
+	XORQ DX, DX
+	XORQ SI, SI
+	XORQ DI, DI
 	VZEROALL
 	RET

@@ -2,6 +2,7 @@ package aesitb
 
 import (
 	"encoding/binary"
+	"runtime"
 )
 
 // sbox is the FIPS-197 § 5.1.1 substitution table.
@@ -105,22 +106,34 @@ func HashGeneric(key [16]byte, data []byte, seed0, seed1 uint64) [16]byte {
 	binary.LittleEndian.PutUint64(seedBlock[:8], seed0)
 	binary.LittleEndian.PutUint64(seedBlock[8:], seed1)
 	state := key
+	clear(key[:])
+	runtime.KeepAlive(&key)
 	addRoundKey(&state, &seedBlock)
+	clear(seedBlock[:])
+	runtime.KeepAlive(&seedBlock)
 
-	padLen := 16 - len(data)%16
-	padded := make([]byte, 0, len(data)+padLen)
-	padded = append(padded, data...)
-	for i := 0; i < padLen; i++ {
-		padded = append(padded, byte(padLen))
-	}
-	b := len(padded) / 16
-	for i := 0; i < b; i++ {
-		var block [16]byte
-		copy(block[:], padded[16*i:16*i+16])
+	full := len(data) &^ 15
+	b := full/16 + 1
+	var block [16]byte
+	for i := 0; i < b-1; i++ {
+		copy(block[:], data[16*i:16*i+16])
 		addRoundKey(&state, &block)
 		aesRound(&state, &rc[i%8])
 	}
+	rem := len(data) - full
+	padLen := byte(16 - rem)
+	copy(block[:rem], data[full:])
+	for i := rem; i < 16; i++ {
+		block[i] = padLen
+	}
+	addRoundKey(&state, &block)
+	aesRound(&state, &rc[(b-1)%8])
+	clear(block[:])
+	runtime.KeepAlive(&block)
 	aesRound(&state, &rc[b%8])
 	aesRound(&state, &rc[(b+1)%8])
-	return state
+	out := state
+	clear(state[:])
+	runtime.KeepAlive(&state)
+	return out
 }

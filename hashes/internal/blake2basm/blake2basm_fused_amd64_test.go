@@ -268,6 +268,7 @@ func BenchmarkFill(b *testing.B) {
 // and no seed-injected word may be left in the stack once a kernel has
 // returned.
 func TestFusedKernelsLeaveNoSecretInFrame(t *testing.T) {
+	checkResidueNegativeControls(t)
 	for _, tier := range amd64FusedTiers() {
 		if !tier.ok {
 			continue
@@ -307,4 +308,14 @@ func TestFusedKernelsLeaveNoSecretInFrame(t *testing.T) {
 	var f512 [8][8]uint64
 	res = stackResidue(func() { fill512x8Kernel(key512, c512, base, v, &f512) })
 	assertNoSecretResidue(t, "avx512 fill512x8", res, blake2bSecrets(key512[:], c512, lanes), nil)
+}
+
+func dumpSIMDRegs(dst *[88]uint64, avx512 bool)
+func dirtySIMDRegForTest(masked uint64)
+
+func init() {
+	dumpSIMDRegsHook = func(dst *[88]uint64) {
+		dumpSIMDRegs(dst, cpuid.AVX512F)
+	}
+	dirtySIMDRegHook = dirtySIMDRegForTest
 }

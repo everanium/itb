@@ -133,6 +133,7 @@ func (tp *triplePayloads) release() {
 // stage (see interlock_nonce.go), so each lane — and each third's COBS
 // bound — carries its own fragment.
 func buildTripleWire3(cfg *Config, data []byte, bp lockBatchPRF48, reserve int, fillReserve bool, lead int, nonce, ilNonce []byte, sizeFn func(cobsLens [3]int) (width, height int)) (tp *triplePayloads, out, container []byte, width, height int, err error) {
+	defer bp.wipe()
 	laneLen := tripleLaneLen(len(data))
 	lens, offs := nonceSplit(len(ilNonce))
 

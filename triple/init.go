@@ -8,6 +8,7 @@ import (
 	"runtime"
 
 	"github.com/everanium/itb"
+	"github.com/everanium/itb/internal/wipe"
 	"github.com/everanium/itb/kdf"
 	"github.com/everanium/itb/macs"
 	"github.com/everanium/itb/parallax"
@@ -79,11 +80,11 @@ func marshalWrap(prof Profile, inner, permMaster, wrapMaster []byte) ([]byte, er
 	}
 	if rec.Parallax {
 		wrap.PermMaster = append([]byte(nil), permMaster...)
-		defer clear(wrap.PermMaster)
+		defer wipe.Bytes(wrap.PermMaster)
 	}
 	if rec.Wrapper {
 		wrap.WrapMaster = append([]byte(nil), wrapMaster...)
-		defer clear(wrap.WrapMaster)
+		defer wipe.Bytes(wrap.WrapMaster)
 	}
 	out, err := json.Marshal(wrap)
 	if err != nil {
@@ -131,6 +132,9 @@ const wrapMasterSize = 32
 // zero — the receiver reconstructs the same shape from the record's
 // toggles.
 func Init(profile string, opts Opts) (*Pipeline, []byte, error) {
+	wipe.CallStack8K([9][8]uint64{})
+	defer wipe.CallStack8K([9][8]uint64{})
+
 	resolved, err := resolveInitProfile("Init", profile, opts)
 	if err != nil {
 		return nil, nil, err
@@ -141,8 +145,10 @@ func Init(profile string, opts Opts) (*Pipeline, []byte, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	defer clear(permMaster)
-	defer clear(wrapMaster)
+	defer func() {
+		wipe.Bytes(permMaster)
+		wipe.Bytes(wrapMaster)
+	}()
 
 	// 8-seed allocation. Mixed-primitive profiles route through the
 	// per-slot allocator; single-primitive profiles use the
@@ -173,7 +179,7 @@ func Init(profile string, opts Opts) (*Pipeline, []byte, error) {
 				zeroSeedComponents(s, width)
 			}
 			for _, k := range prfKeys {
-				clear(k)
+				wipe.Bytes(k)
 			}
 			return nil, nil, fmt.Errorf("triple: unknown MAC %q", resolved.MacName)
 		}
@@ -183,9 +189,9 @@ func Init(profile string, opts Opts) (*Pipeline, []byte, error) {
 				zeroSeedComponents(s, width)
 			}
 			for _, k := range prfKeys {
-				clear(k)
+				wipe.Bytes(k)
 			}
-			clear(macKey)
+			wipe.Bytes(macKey)
 			return nil, nil, fmt.Errorf("triple: crypto/rand: %w", rerr)
 		}
 	}
@@ -211,6 +217,9 @@ func Init(profile string, opts Opts) (*Pipeline, []byte, error) {
 // most [parallax.MaxMasterKeySize] (128) bytes, and pairwise distinct
 // across all 28 pairs (both full slice and KDF-consumed prefix).
 func InitKeys(profile string, opts Opts, masters [8][]byte) (*Pipeline, []byte, error) {
+	wipe.CallStack8K([9][8]uint64{})
+	defer wipe.CallStack8K([9][8]uint64{})
+
 	resolved, err := resolveInitProfile("InitKeys", profile, opts)
 	if err != nil {
 		return nil, nil, err
@@ -230,8 +239,10 @@ func InitKeys(profile string, opts Opts, masters [8][]byte) (*Pipeline, []byte, 
 	if err != nil {
 		return nil, nil, err
 	}
-	defer clear(permMaster)
-	defer clear(wrapMaster)
+	defer func() {
+		wipe.Bytes(permMaster)
+		wipe.Bytes(wrapMaster)
+	}()
 
 	seeds, prfKeys, err := deriveEightSeeds(slotPrims, kdfPrims, resolved.KeyBits, width, masters)
 	if err != nil {
@@ -246,7 +257,7 @@ func InitKeys(profile string, opts Opts, masters [8][]byte) (*Pipeline, []byte, 
 				zeroSeedComponents(s, width)
 			}
 			for _, k := range prfKeys {
-				clear(k)
+				wipe.Bytes(k)
 			}
 			return nil, nil, fmt.Errorf("triple: unknown MAC %q", resolved.MacName)
 		}
@@ -256,7 +267,7 @@ func InitKeys(profile string, opts Opts, masters [8][]byte) (*Pipeline, []byte, 
 				zeroSeedComponents(s, width)
 			}
 			for _, k := range prfKeys {
-				clear(k)
+				wipe.Bytes(k)
 			}
 			return nil, nil, err
 		}
@@ -311,11 +322,11 @@ func finishInit(resolved Profile, opts Opts, width int, seeds [8]any, prfKeys [8
 				zeroSeedComponents(s, width)
 			}
 			for _, k := range prfKeys {
-				clear(k)
+				wipe.Bytes(k)
 			}
 			_ = cs.Close()
-			clear(wrapperKey)
-			clear(macKey)
+			wipe.Bytes(wrapperKey)
+			wipe.Bytes(macKey)
 		}
 	}()
 
@@ -402,7 +413,9 @@ func finishInit(resolved Profile, opts Opts, width int, seeds [8]any, prfKeys [8
 		// shape then stays aligned for any registered TagSize, not only
 		// the shipped 32-byte tags. An explicitly pre-set field wins.
 		if cfg.TagStubSize == 0 {
-			cfg.TagStubSize = len(macFunc([]byte{}))
+			probe := macFunc(nil)
+			cfg.TagStubSize = len(probe)
+			wipe.Bytes(probe)
 		}
 	}
 
@@ -411,7 +424,7 @@ func finishInit(resolved Profile, opts Opts, width int, seeds [8]any, prfKeys [8
 	if err != nil {
 		return nil, nil, err
 	}
-	defer clear(innerBlob)
+	defer wipe.Bytes(innerBlob)
 
 	// Wrap-layer JSON from the resolved record and the resolved
 	// masters. The Pipeline retains one copy for Save; the caller
@@ -482,13 +495,13 @@ func deriveCombinedKey(kdfPrims [8]string, masters [8][]byte, role string, outLe
 		label := fmt.Sprintf("%s:%d", role, i)
 		part, err := kdf.Derive(kdfPrims[i], masters[i], label, outLen)
 		if err != nil {
-			clear(out)
+			wipe.Bytes(out)
 			return nil, fmt.Errorf("triple: InitKeys: slot %d %s kdf: %w", i, role, err)
 		}
 		for b := range out {
 			out[b] ^= part[b]
 		}
-		clear(part)
+		wipe.Bytes(part)
 	}
 	return out, nil
 }
@@ -521,14 +534,14 @@ func prepareMastersFromKeys(resolved Profile, opts Opts, kdfPrims [8]string, mas
 		} else {
 			wrapMaster, err = deriveCombinedKey(kdfPrims, masters, "wrap", wrapMasterSize)
 			if err != nil {
-				clear(permMaster)
+				wipe.Bytes(permMaster)
 				return nil, nil, err
 			}
 		}
 	}
 	if permMaster != nil && wrapMaster != nil && bytes.Equal(permMaster, wrapMaster) {
-		clear(permMaster)
-		clear(wrapMaster)
+		wipe.Bytes(permMaster)
+		wipe.Bytes(wrapMaster)
 		return nil, nil, ErrIdenticalMasters
 	}
 	return permMaster, wrapMaster, nil
@@ -569,15 +582,15 @@ func prepareMasters(resolved Profile, opts Opts) (permMaster, wrapMaster []byte,
 		} else {
 			wrapMaster = make([]byte, wrapMasterSize)
 			if _, err = rand.Read(wrapMaster); err != nil {
-				clear(permMaster)
-				clear(wrapMaster)
+				wipe.Bytes(permMaster)
+				wipe.Bytes(wrapMaster)
 				return nil, nil, fmt.Errorf("triple: crypto/rand: %w", err)
 			}
 		}
 	}
 	if permMaster != nil && wrapMaster != nil && bytes.Equal(permMaster, wrapMaster) {
-		clear(permMaster)
-		clear(wrapMaster)
+		wipe.Bytes(permMaster)
+		wipe.Bytes(wrapMaster)
 		return nil, nil, ErrIdenticalMasters
 	}
 	return permMaster, wrapMaster, nil
@@ -603,17 +616,19 @@ func exportInnerBlob(width int, cfg *itb.Config, seeds [8]any, prfKeys [8][]byte
 // [itb.Blob128.Export3Cfg]. Slot mapping mirrors the canonical
 // 8-seed order in [allocEightSeeds].
 func exportInnerBlob128(cfg *itb.Config, seeds [8]any, prfKeys [8][]byte, macKey []byte, macName string) ([]byte, error) {
+	wipe.CallStack8K([9][8]uint64{})
+	defer wipe.CallStack8K([9][8]uint64{})
 	var b itb.Blob128
 	var opts itb.Blob128Opts
 	// The lockSeed slot rides as the dedicated LockSeed in the Blob
 	// opts alongside the other entries of the Triple constellation
 	// packed into the blob's core fields.
 	opts.KeyL = append([]byte(nil), prfKeys[1]...)
-	defer clear(opts.KeyL)
+	defer wipe.Bytes(opts.KeyL)
 	opts.LS = seeds[1].(*itb.Seed128)
 	if len(macKey) > 0 {
 		opts.MACKey = append([]byte(nil), macKey...)
-		defer clear(opts.MACKey)
+		defer wipe.Bytes(opts.MACKey)
 		opts.MACName = macName
 	}
 	return b.Export3Cfg(
@@ -632,6 +647,13 @@ func exportInnerBlob128(cfg *itb.Config, seeds [8]any, prfKeys [8][]byte, macKey
 // arrays for every hash-key slot; per-slot copy avoids passing an
 // aliased slice header past the boundary.
 func exportInnerBlob256(cfg *itb.Config, seeds [8]any, prfKeys [8][]byte, macKey []byte, macName string) ([]byte, error) {
+	wipe.CallStack12K([9][8]uint64{})
+	defer wipe.CallStack12K([9][8]uint64{})
+	return exportInnerBlob256Body(cfg, seeds, prfKeys, macKey, macName)
+}
+
+//go:noinline
+func exportInnerBlob256Body(cfg *itb.Config, seeds [8]any, prfKeys [8][]byte, macKey []byte, macName string) ([]byte, error) {
 	var b itb.Blob256
 	var opts itb.Blob256Opts
 	var keys [8][32]byte
@@ -649,7 +671,7 @@ func exportInnerBlob256(cfg *itb.Config, seeds [8]any, prfKeys [8][]byte, macKey
 			clear(keys[i][:])
 		}
 		clear(opts.KeyL[:])
-		clear(opts.MACKey)
+		wipe.Bytes(opts.MACKey)
 		runtime.KeepAlive(&keys)
 		runtime.KeepAlive(&opts.KeyL)
 	}()
@@ -668,6 +690,13 @@ func exportInnerBlob256(cfg *itb.Config, seeds [8]any, prfKeys [8][]byte, macKey
 // [itb.Blob512.Export3Cfg]. Follows the same pattern as
 // [exportInnerBlob256] with [64]byte fixed arrays.
 func exportInnerBlob512(cfg *itb.Config, seeds [8]any, prfKeys [8][]byte, macKey []byte, macName string) ([]byte, error) {
+	wipe.CallStack12K([9][8]uint64{})
+	defer wipe.CallStack12K([9][8]uint64{})
+	return exportInnerBlob512Body(cfg, seeds, prfKeys, macKey, macName)
+}
+
+//go:noinline
+func exportInnerBlob512Body(cfg *itb.Config, seeds [8]any, prfKeys [8][]byte, macKey []byte, macName string) ([]byte, error) {
 	var b itb.Blob512
 	var opts itb.Blob512Opts
 	var keys [8][64]byte
@@ -685,7 +714,7 @@ func exportInnerBlob512(cfg *itb.Config, seeds [8]any, prfKeys [8][]byte, macKey
 			clear(keys[i][:])
 		}
 		clear(opts.KeyL[:])
-		clear(opts.MACKey)
+		wipe.Bytes(opts.MACKey)
 		runtime.KeepAlive(&keys)
 		runtime.KeepAlive(&opts.KeyL)
 	}()

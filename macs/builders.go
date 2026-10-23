@@ -4,10 +4,12 @@ import (
 	"crypto/hmac"
 	"fmt"
 	"hash"
+	"runtime"
 	"sync"
 
 	"github.com/everanium/itb"
 	"github.com/everanium/itb/hashes"
+	"github.com/everanium/itb/internal/wipe"
 )
 
 // HMACSpec parameterises [BuildHMAC]. Only Name is required; zero
@@ -90,7 +92,9 @@ func BuildHMAC(hashName string, spec HMACSpec) (Spec, error) {
 		return Spec{}, fmt.Errorf("macs: BuildHMAC: primitive %q has no unkeyed hash.Hash form (populate hashes.Spec.HashHash, or register a hand-rolled Spec via macs.Register)", hashName)
 	}
 	newHash := hspec.HashHash
-	size := newHash().Size()
+	probe := newHash()
+	size := probe.Size()
+	wipe.StructPtr(probe)
 	out := Spec{
 		Name:        spec.Name,
 		KeySize:     spec.KeySize,
@@ -177,17 +181,21 @@ func BuildKeyedHash(hashName string, spec KeyedHashSpec) (Spec, error) {
 			hashName, out.KeySize)
 	}
 	size := probe.Size()
+	wipe.StructPtr(probe)
 	if out.MinKeyBytes == 0 {
-		if _, err := newKeyed(make([]byte, 16)); err == nil {
+		if p16, err := newKeyed(make([]byte, 16)); err == nil {
+			wipe.StructPtr(p16)
 			out.MinKeyBytes = 16
 		} else {
 			out.MinKeyBytes = out.KeySize
 		}
 	} else if out.MinKeyBytes != out.KeySize {
-		if _, err := newKeyed(make([]byte, out.MinKeyBytes)); err != nil {
+		pMin, err := newKeyed(make([]byte, out.MinKeyBytes))
+		if err != nil {
 			return Spec{}, fmt.Errorf("macs: BuildKeyedHash: %s rejects a %d-byte key (MinKeyBytes): %w",
 				hashName, out.MinKeyBytes, err)
 		}
+		wipe.StructPtr(pMin)
 	}
 	if out.TagSize == 0 {
 		out.TagSize = size
@@ -200,47 +208,102 @@ func BuildKeyedHash(hashName string, spec KeyedHashSpec) (Spec, error) {
 	return out, nil
 }
 
+type pooledMACEntry struct {
+	h    hash.Hash
+	sum  []byte
+	zero [128]byte
+}
+
+func scrubPooledMACEntry(e *pooledMACEntry, nWritten int) {
+	e.h.Reset()
+	bs := e.h.BlockSize()
+	if bs <= 0 || bs > len(e.zero) {
+		bs = len(e.zero)
+	}
+	target := bs
+	if nWritten+bs > target {
+		target = nWritten + bs
+	}
+	if target > 8192 {
+		target = 8192
+	}
+	if target > 1 {
+		e.h.Write(e.zero[:1])
+		rem := target - 1
+		for rem > 0 {
+			n := len(e.zero)
+			if rem < n {
+				n = rem
+			}
+			e.h.Write(e.zero[:n])
+			rem -= n
+		}
+	} else {
+		e.h.Write(e.zero[:target])
+	}
+	e.h.Sum(e.sum[:0])
+	clear(e.sum[:cap(e.sum)])
+	e.h.Reset()
+	runtime.KeepAlive(e)
+}
+
+//go:noinline
+func evalPooledMAC(e *pooledMACEntry, out, data []byte) {
+	e.h.Write(data)
+	tag := e.h.Sum(e.sum[:0])
+	copy(out, tag)
+	scrubPooledMACEntry(e, len(data))
+}
+
+//go:noinline
+func evalPooledMACInc(e *pooledMACEntry, out []byte, chunks [][]byte) {
+	total := 0
+	for _, c := range chunks {
+		e.h.Write(c)
+		total += len(c)
+	}
+	tag := e.h.Sum(e.sum[:0])
+	copy(out, tag)
+	scrubPooledMACEntry(e, total)
+}
+
 // pooledFactoryPair derives both Spec factory arms from a single
 // pre-keyed hash.Hash constructor. Each built closure owns a
 // sync.Pool of pre-keyed hasher instances: a call takes one, resets
 // it to its keyed initial state, absorbs the input, finalises into a
-// fresh tagSize-byte slice, and returns the hasher to the pool — no
-// per-call key-derivation cost, parallel-safe by pool discipline.
-// Both arms sharing one constructor makes cross-arm equivalence hold
-// by construction.
+// fresh tagSize-byte slice, scrubs internal block buffers, and returns
+// the hasher to the pool — no per-call key-derivation cost, parallel-safe
+// by pool discipline. Both arms sharing one constructor makes cross-arm
+// equivalence hold by construction.
 func pooledFactoryPair(name string, tagSize int, newKeyed func(key []byte) (hash.Hash, error)) (
 	func(key []byte) (itb.MACFunc, error),
 	func(key []byte) (itb.MACIncrementalFunc, error),
 ) {
 	makeMAC := func(key []byte) (itb.MACFunc, error) {
-		pool, err := newKeyedPool(name, key, newKeyed)
+		pool, err := newKeyedPool(name, tagSize, key, newKeyed)
 		if err != nil {
 			return nil, err
 		}
 		return func(data []byte) []byte {
-			h := pool.Get().(hash.Hash)
-			h.Reset()
-			h.Write(data)
-			out := h.Sum(make([]byte, 0, tagSize))
-			h.Reset()
-			pool.Put(h)
+			e := pool.Get().(*pooledMACEntry)
+			out := make([]byte, tagSize)
+			evalPooledMAC(e, out, data)
+			pool.Put(e)
+			wipe.CallStack2K([9][8]uint64{})
 			return out
 		}, nil
 	}
 	makeIncremental := func(key []byte) (itb.MACIncrementalFunc, error) {
-		pool, err := newKeyedPool(name, key, newKeyed)
+		pool, err := newKeyedPool(name, tagSize, key, newKeyed)
 		if err != nil {
 			return nil, err
 		}
 		return func(chunks ...[]byte) []byte {
-			h := pool.Get().(hash.Hash)
-			h.Reset()
-			for _, c := range chunks {
-				h.Write(c)
-			}
-			out := h.Sum(make([]byte, 0, tagSize))
-			h.Reset()
-			pool.Put(h)
+			e := pool.Get().(*pooledMACEntry)
+			out := make([]byte, tagSize)
+			evalPooledMACInc(e, out, chunks)
+			pool.Put(e)
+			wipe.CallStack2K([9][8]uint64{})
 			return out
 		}, nil
 	}
@@ -251,16 +314,28 @@ func pooledFactoryPair(name string, tagSize int, newKeyed func(key []byte) (hash
 // building one instance, then returns a sync.Pool seeded with it.
 // Construction is deterministic in the key, so pool refills cannot
 // fail once the eager build succeeded.
-func newKeyedPool(name string, key []byte, newKeyed func(key []byte) (hash.Hash, error)) (*sync.Pool, error) {
+func newKeyedPool(name string, tagSize int, key []byte, newKeyed func(key []byte) (hash.Hash, error)) (*sync.Pool, error) {
 	keyCopy := append([]byte(nil), key...)
-	first, err := newKeyed(keyCopy)
+	firstH, err := newKeyed(keyCopy)
 	if err != nil {
+		clear(keyCopy)
+		runtime.KeepAlive(keyCopy)
 		return nil, fmt.Errorf("macs: %s: %w", name, err)
 	}
+	first := &pooledMACEntry{
+		h:   firstH,
+		sum: make([]byte, tagSize),
+	}
+	scrubPooledMACEntry(first, 0)
 	pool := &sync.Pool{
 		New: func() any {
 			h, _ := newKeyed(keyCopy)
-			return h
+			e := &pooledMACEntry{
+				h:   h,
+				sum: make([]byte, tagSize),
+			}
+			scrubPooledMACEntry(e, 0)
+			return e
 		},
 	}
 	pool.Put(first)

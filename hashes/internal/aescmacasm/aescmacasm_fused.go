@@ -2,6 +2,7 @@ package aescmacasm
 
 import (
 	"encoding/binary"
+	"runtime"
 	"unsafe"
 )
 
@@ -61,11 +62,13 @@ func validComponents(components []uint64) bool {
 // the cascade is the plain chain-absorb of each fill block under that
 // pair.
 func scalarFusedX16(s *Schedule, components []uint64, groupIdxBase uint64, v uint32, out *[16][2]uint64) {
+	var buf [13]byte
 	for i := 0; i < 16; i++ {
-		var buf [13]byte
 		buf[0] = 0x03
 		binary.LittleEndian.PutUint64(buf[1:9], groupIdxBase+uint64(i))
 		binary.LittleEndian.PutUint32(buf[9:13], v)
 		out[i][0], out[i][1] = ScalarFusedChain(s, components, buf[:])
 	}
+	clear(buf[:])
+	runtime.KeepAlive(&buf)
 }

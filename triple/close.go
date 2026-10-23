@@ -1,5 +1,7 @@
 package triple
 
+import "github.com/everanium/itb/internal/wipe"
+
 // Close wipes every piece of secret material this [Pipeline] owns and
 // marks the Pipeline closed. Subsequent [Pipeline.EncryptStream] /
 // [Pipeline.DecryptStream] / [Pipeline.EncryptStreamBytes] /
@@ -46,13 +48,13 @@ func (p *Pipeline) Close() error {
 
 	// Zero the per-slot PRF fixed keys.
 	for i, k := range p.prfKeys {
-		clear(k)
+		wipe.Bytes(k)
 		p.prfKeys[i] = nil
 	}
 
 	// Zero the wrapper key.
 	if p.wrapperKey != nil {
-		clear(p.wrapperKey)
+		wipe.Bytes(p.wrapperKey)
 		p.wrapperKey = nil
 	}
 
@@ -61,7 +63,7 @@ func (p *Pipeline) Close() error {
 	// inducing a nil-func or MAC-to-No-MAC race on unsynchronised
 	// in-flight calls.
 	if p.macKey != nil {
-		clear(p.macKey)
+		wipe.Bytes(p.macKey)
 		p.macKey = nil
 	}
 	if p.macFunc != nil {
@@ -73,7 +75,7 @@ func (p *Pipeline) Close() error {
 
 	// Zero the retained wrap-layer blob — it carries both masters and
 	// the inner seed / PRF-key / MAC-key material.
-	clear(p.blob)
+	wipe.Bytes(p.blob)
 	p.blob = nil
 
 	// Zero parallax subkeys in place and drop parallax handles so the
@@ -82,5 +84,6 @@ func (p *Pipeline) Close() error {
 	p.parallaxSched = nil
 	p.parallaxCS = nil
 
+	wipe.CallStack2K([9][8]uint64{})
 	return nil
 }

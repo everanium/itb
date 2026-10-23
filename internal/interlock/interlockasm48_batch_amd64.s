@@ -62,6 +62,12 @@ lockLoop:
 lockDone:
 	XORQ AX, AX
 	XORQ BX, BX
+	XORQ CX, CX
+	XORQ DX, DX
+	XORQ SI, SI
+	XORQ R8, R8
+	XORQ R9, R9
+	XORQ R10, R10
 	XORQ R11, R11
 	RET
 
@@ -112,6 +118,12 @@ unlockLoop:
 
 unlockDone:
 	XORQ AX, AX
+	XORQ CX, CX
+	XORQ DX, DX
+	XORQ DI, DI
+	XORQ R8, R8
+	XORQ R9, R9
+	XORQ R10, R10
 	XORQ R11, R11
 	XORQ R12, R12
 	RET

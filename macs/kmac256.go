@@ -4,9 +4,8 @@ import (
 	"fmt"
 	"runtime"
 
-	"golang.org/x/crypto/sha3"
-
 	"github.com/everanium/itb"
+	"github.com/everanium/itb/internal/wipe"
 	"github.com/everanium/itb/macs/internal/keccakasm"
 )
 
@@ -26,10 +25,9 @@ import (
 // Caching strategy: cSHAKE256 carries internal sponge state, and
 // the absorb phase up through bytepad(encode_string(K), 136) is
 // keyspecific. The factory absorbs that prefix into a template
-// cSHAKE256 once, then clones the template per call to absorb the
-// message and emit 32 output bytes. Cloning is cheap (sponge state
-// copy) and concurrent goroutines may invoke the closure in
-// parallel.
+// cSHAKE256 once, then copies the template per call to absorb the
+// message and emit 32 output bytes. Concurrent goroutines may invoke
+// the closure in parallel.
 //
 // Key length must be at least 16 bytes (NIST SP 800-185 places no
 // hard lower bound, but ITB enforces 16-byte minimum to stay aligned
@@ -45,6 +43,7 @@ func KMAC256WithCustomization(key, customization []byte) (itb.MACFunc, error) {
 	if len(key) < 16 {
 		return nil, fmt.Errorf("macs: kmac256 key too short: %d bytes (min 16)", len(key))
 	}
+	defer wipe.CallStack2K([9][8]uint64{})
 	const rate = 136 // KMAC256 underlying cSHAKE256 rate in bytes (1088 bits)
 	const outputBits = 256
 
@@ -53,61 +52,34 @@ func KMAC256WithCustomization(key, customization []byte) (itb.MACFunc, error) {
 	// encKey is a plain copy of the key; prefix carries it until it is
 	// absorbed below.
 	clear(encKey)
+	runtime.KeepAlive(encKey)
 	suffix := rightEncode(uint64(outputBits))
 
 	custom := append([]byte(nil), customization...)
 
-	// AVX-512 tier: route through the vendored Keccak-f[1600] kernel
-	// in macs/internal/keccakasm. The cSHAKE256 header block
-	// bytepad(encode_string("KMAC") || encode_string(S), 136) is
-	// absorbed explicitly (x/crypto's constructor does the same
-	// internally); the keyed prefix and per-call message/suffix flow
-	// through the identical sponge schedule, so the tag is
-	// byte-for-byte the same as the scalar arm below.
-	if keccakasm.HasAVX512Fused {
-		header := bytepad(
-			append(encodeString([]byte("KMAC")), encodeString(custom)...), rate)
-		tmpl := keccakasm.NewCShake256()
-		tmpl.Write(header)
-		tmpl.Write(prefix)
-		clear(prefix)
-		return func(data []byte) []byte {
-			h := tmpl.Clone()
-			h.Write(data)
-			h.Write(suffix)
-			out := h.Sum256()
-			// The clone carries the keyed sponge state; zero it.
-			*h = keccakasm.CShake256{}
-			runtime.KeepAlive(h)
-			ret := append([]byte(nil), out[:]...)
-			clear(out[:])
-			runtime.KeepAlive(&out)
-			return ret
-		}, nil
-	}
-
-	// Scalar tier: stdlib-backed x/crypto cSHAKE256.
-	// Pre-absorb the keyed prefix into a template cSHAKE256.
-	// NewCShake256 takes function-name N = "KMAC" and customization S;
-	// per NIST SP 800-185, the cSHAKE256 padding bookkeeping happens
-	// inside the constructor.
-	template := sha3.NewCShake256([]byte("KMAC"), custom)
-	_, err := template.Write(prefix)
+	// Route all tiers through macs/internal/keccakasm (AVX-512 fused
+	// kernel where available, zeroized portable Go permutation otherwise).
+	// The cSHAKE256 header block bytepad(encode_string("KMAC") ||
+	// encode_string(S), 136) and the keyed prefix are absorbed once into
+	// tmpl; each call works on a stack value copy of tmpl and zeroes it
+	// inside Sum256Into.
+	header := bytepad(
+		append(encodeString([]byte("KMAC")), encodeString(custom)...), rate)
+	tmpl := keccakasm.NewCShake256()
+	tmpl.Write(header)
+	tmpl.Write(prefix)
+	wipe.Bytes(header)
 	clear(prefix)
-	if err != nil {
-		return nil, fmt.Errorf("macs: cshake256.Write(prefix): %w", err)
-	}
-
+	runtime.KeepAlive(prefix)
 	return func(data []byte) []byte {
-		h := template.Clone()
-		_, _ = h.Write(data)
-		_, _ = h.Write(suffix)
-		var out [32]byte
-		_, _ = h.Read(out[:])
-		h.Reset()
-		ret := append([]byte(nil), out[:]...)
-		clear(out[:])
-		runtime.KeepAlive(&out)
+		wipe.CallStack2K([9][8]uint64{})
+		defer wipe.CallStack2K([9][8]uint64{})
+		var h keccakasm.CShake256
+		h.CopyFrom(tmpl)
+		h.Write(data)
+		h.Write(suffix)
+		ret := make([]byte, 32)
+		h.Sum256Into(ret)
 		return ret
 	}, nil
 }
@@ -127,6 +99,7 @@ func KMAC256IncrementalWithCustomization(key, customization []byte) (itb.MACIncr
 	if len(key) < 16 {
 		return nil, fmt.Errorf("macs: kmac256 key too short: %d bytes (min 16)", len(key))
 	}
+	defer wipe.CallStack2K([9][8]uint64{})
 	const rate = 136
 	const outputBits = 256
 
@@ -135,51 +108,29 @@ func KMAC256IncrementalWithCustomization(key, customization []byte) (itb.MACIncr
 	// encKey is a plain copy of the key; prefix carries it until it is
 	// absorbed below.
 	clear(encKey)
+	runtime.KeepAlive(encKey)
 	suffix := rightEncode(uint64(outputBits))
 	custom := append([]byte(nil), customization...)
 
-	if keccakasm.HasAVX512Fused {
-		header := bytepad(
-			append(encodeString([]byte("KMAC")), encodeString(custom)...), rate)
-		tmpl := keccakasm.NewCShake256()
-		tmpl.Write(header)
-		tmpl.Write(prefix)
-		clear(prefix)
-		return func(chunks ...[]byte) []byte {
-			h := tmpl.Clone()
-			for _, c := range chunks {
-				h.Write(c)
-			}
-			h.Write(suffix)
-			out := h.Sum256()
-			// The clone carries the keyed sponge state; zero it.
-			*h = keccakasm.CShake256{}
-			runtime.KeepAlive(h)
-			ret := append([]byte(nil), out[:]...)
-			clear(out[:])
-			runtime.KeepAlive(&out)
-			return ret
-		}, nil
-	}
-
-	template := sha3.NewCShake256([]byte("KMAC"), custom)
-	_, err := template.Write(prefix)
+	header := bytepad(
+		append(encodeString([]byte("KMAC")), encodeString(custom)...), rate)
+	tmpl := keccakasm.NewCShake256()
+	tmpl.Write(header)
+	tmpl.Write(prefix)
+	wipe.Bytes(header)
 	clear(prefix)
-	if err != nil {
-		return nil, fmt.Errorf("macs: cshake256.Write(prefix): %w", err)
-	}
+	runtime.KeepAlive(prefix)
 	return func(chunks ...[]byte) []byte {
-		h := template.Clone()
+		wipe.CallStack2K([9][8]uint64{})
+		defer wipe.CallStack2K([9][8]uint64{})
+		var h keccakasm.CShake256
+		h.CopyFrom(tmpl)
 		for _, c := range chunks {
-			_, _ = h.Write(c)
+			h.Write(c)
 		}
-		_, _ = h.Write(suffix)
-		var out [32]byte
-		_, _ = h.Read(out[:])
-		h.Reset()
-		ret := append([]byte(nil), out[:]...)
-		clear(out[:])
-		runtime.KeepAlive(&out)
+		h.Write(suffix)
+		ret := make([]byte, 32)
+		h.Sum256Into(ret)
 		return ret
 	}, nil
 }

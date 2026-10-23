@@ -46,6 +46,7 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"encoding/binary"
+	"runtime"
 )
 
 // Schedule carries one AES-128 key in the two forms the package
@@ -112,5 +113,8 @@ func ChainAbsorb(s *Schedule, data []byte, seed0, seed1 uint64) (uint64, uint64)
 		}
 		s.block.Encrypt(state[:], state[:])
 	}
-	return binary.LittleEndian.Uint64(state[:8]), binary.LittleEndian.Uint64(state[8:])
+	lo, hi := binary.LittleEndian.Uint64(state[:8]), binary.LittleEndian.Uint64(state[8:])
+	clear(state[:])
+	runtime.KeepAlive(&state)
+	return lo, hi
 }

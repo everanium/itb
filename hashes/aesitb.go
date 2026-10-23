@@ -7,7 +7,13 @@ import (
 	"github.com/everanium/itb"
 	"github.com/everanium/itb/internal/aesitbasm"
 	"github.com/everanium/itb/internal/forcetier"
+	"github.com/everanium/itb/internal/wipe"
 )
+
+func aesITB128PairFromKeyPtr(k *[16]byte) (itb.HashFunc128, itb.BatchHashFunc128) {
+	h, b := wipe.MakeAESITB128FromKeyPtr(k)
+	return h, b
+}
 
 // AESITB128Pair returns a fresh (single, batched) AES-ITB hash pair
 // for itb.Seed128 integration. The two arms share the same
@@ -56,8 +62,7 @@ func AESITB128Pair(key ...[16]byte) (itb.HashFunc128, itb.BatchHashFunc128, [16]
 // Thin wrapper over itb.MakeAESITB128Hash for symmetry with the rest
 // of the hashes/ package's WithKey factories.
 func AESITB128PairWithKey(fixedKey [16]byte) (itb.HashFunc128, itb.BatchHashFunc128) {
-	h, b, _ := itb.MakeAESITB128Hash(fixedKey)
-	return h, b
+	return aesITB128PairFromKeyPtr(&fixedKey)
 }
 
 // aesITB128FusedChainHash is the [Spec.FusedChainHash128] factory of the
@@ -74,19 +79,18 @@ func aesITB128FusedChainHash(key []byte) (itb.FusedChainHashFunc128, itb.BatchFu
 	if forcetier.ChainHashSeq() {
 		return nil, nil, nil
 	}
-	var k [16]byte
-	copy(k[:], key)
+	k := (*[16]byte)(key)
 	single := func(components []uint64, data []byte) (uint64, uint64, bool) {
 		var out [2]uint64
 		switch len(data) {
 		case 13:
-			aesitbasm.FusedChain13x1(&k, components, &data[0], &out)
+			aesitbasm.FusedChain13x1(k, components, &data[0], &out)
 		case 20:
-			aesitbasm.FusedChain20x1(&k, components, &data[0], &out)
+			aesitbasm.FusedChain20x1(k, components, &data[0], &out)
 		case 36:
-			aesitbasm.FusedChain36x1(&k, components, &data[0], &out)
+			aesitbasm.FusedChain36x1(k, components, &data[0], &out)
 		case 68:
-			aesitbasm.FusedChain68x1(&k, components, &data[0], &out)
+			aesitbasm.FusedChain68x1(k, components, &data[0], &out)
 		default:
 			return 0, 0, false
 		}
@@ -106,13 +110,13 @@ func aesITB128FusedChainHash(key []byte) (itb.FusedChainHashFunc128, itb.BatchFu
 		dataPtrs := [4]*byte{&data[0][0], &data[1][0], &data[2][0], &data[3][0]}
 		switch n {
 		case 13:
-			aesitbasm.FusedChain13x4(&k, components, &dataPtrs, &out)
+			aesitbasm.FusedChain13x4(k, components, &dataPtrs, &out)
 		case 20:
-			aesitbasm.FusedChain20x4(&k, components, &dataPtrs, &out)
+			aesitbasm.FusedChain20x4(k, components, &dataPtrs, &out)
 		case 36:
-			aesitbasm.FusedChain36x4(&k, components, &dataPtrs, &out)
+			aesitbasm.FusedChain36x4(k, components, &dataPtrs, &out)
 		case 68:
-			aesitbasm.FusedChain68x4(&k, components, &dataPtrs, &out)
+			aesitbasm.FusedChain68x4(k, components, &dataPtrs, &out)
 		}
 		return out, true
 	}
@@ -170,9 +174,7 @@ func aesITB128FusedChainHash128x8(key []byte) (itb.BatchFusedChainHashFunc128x8,
 	if forcetier.ChainHashSeq() || !aesitbasm.FusedX8Active() {
 		return nil, nil
 	}
-	var k [16]byte
-	copy(k[:], key)
-	return aesITB128FusedChainHash8(k), nil
+	return aesITB128FusedChainHash8((*[16]byte)(key)), nil
 }
 
 // aesITB128FusedChainHash8 builds the eight-lane fused cascade hook of
@@ -181,7 +183,7 @@ func aesITB128FusedChainHash128x8(key []byte) (itb.BatchFusedChainHashFunc128x8,
 // eight-lane dispatcher call for the three nonce-buf shapes (20 / 36 /
 // 68 bytes, all lanes equal); any other lane-length configuration
 // reports ok = false and the seed runs the four-lane path twice.
-func aesITB128FusedChainHash8(k [16]byte) itb.BatchFusedChainHashFunc128x8 {
+func aesITB128FusedChainHash8(k *[16]byte) itb.BatchFusedChainHashFunc128x8 {
 	return func(components []uint64, data *[8][]byte) ([8][2]uint64, bool) {
 		var out [8][2]uint64
 		n := len(data[0])
@@ -199,11 +201,11 @@ func aesITB128FusedChainHash8(k [16]byte) itb.BatchFusedChainHashFunc128x8 {
 		}
 		switch n {
 		case 20:
-			aesitbasm.FusedChain20x8(&k, components, &dataPtrs, &out)
+			aesitbasm.FusedChain20x8(k, components, &dataPtrs, &out)
 		case 36:
-			aesitbasm.FusedChain36x8(&k, components, &dataPtrs, &out)
+			aesitbasm.FusedChain36x8(k, components, &dataPtrs, &out)
 		case 68:
-			aesitbasm.FusedChain68x8(&k, components, &dataPtrs, &out)
+			aesitbasm.FusedChain68x8(k, components, &dataPtrs, &out)
 		}
 		return out, true
 	}
@@ -222,10 +224,9 @@ func aesITB128InterlockFillBatch16(key []byte) (itb.InterlockFillFunc16, error) 
 	if len(key) != 16 {
 		return nil, fmt.Errorf("hashes: %q interlock fill batch-16 needs a 16-byte key, got %d", CipherAESITB128, len(key))
 	}
-	var k [16]byte
-	copy(k[:], key)
+	k := (*[16]byte)(key)
 	return func(components []uint64, groupIdxBase uint64, v uint32, out *[16][2]uint64) {
-		aesitbasm.FusedChain13x16(&k, components, groupIdxBase, v, out)
+		aesitbasm.FusedChain13x16(k, components, groupIdxBase, v, out)
 	}, nil
 }
 

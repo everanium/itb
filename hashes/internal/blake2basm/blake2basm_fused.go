@@ -16,6 +16,7 @@ package blake2basm
 
 import (
 	"encoding/binary"
+	"runtime"
 	"unsafe"
 
 	"golang.org/x/crypto/blake2b"
@@ -75,10 +76,14 @@ func absorb256(key *[32]byte, seed *[4]uint64, data []byte) [4]uint64 {
 		binary.LittleEndian.PutUint64(buf[off:], binary.LittleEndian.Uint64(buf[off:])^seed[i])
 	}
 	d := blake2b.Sum256(buf)
+	clear(buf)
+	runtime.KeepAlive(&stack)
 	var out [4]uint64
 	for i := range out {
 		out[i] = binary.LittleEndian.Uint64(d[8*i:])
 	}
+	clear(d[:])
+	runtime.KeepAlive(&d)
 	return out
 }
 
@@ -103,10 +108,14 @@ func absorb512(key *[64]byte, seed *[8]uint64, data []byte) [8]uint64 {
 		binary.LittleEndian.PutUint64(buf[off:], binary.LittleEndian.Uint64(buf[off:])^seed[i])
 	}
 	d := blake2b.Sum512(buf)
+	clear(buf)
+	runtime.KeepAlive(&stack)
 	var out [8]uint64
 	for i := range out {
 		out[i] = binary.LittleEndian.Uint64(d[8*i:])
 	}
+	clear(d[:])
+	runtime.KeepAlive(&d)
 	return out
 }
 
@@ -121,6 +130,8 @@ func ScalarFusedChain256(fixedKey *[32]byte, components []uint64, data []byte) [
 		}
 		h = absorb256(fixedKey, &seed, data)
 	}
+	clear(seed[:])
+	runtime.KeepAlive(&seed)
 	return h
 }
 
@@ -134,6 +145,8 @@ func ScalarFusedChain512(fixedKey *[64]byte, components []uint64, data []byte) [
 		}
 		h = absorb512(fixedKey, &seed, data)
 	}
+	clear(seed[:])
+	runtime.KeepAlive(&seed)
 	return h
 }
 
@@ -189,6 +202,8 @@ func scalarFill256X8(fixedKey *[32]byte, components []uint64, groupIdxBase uint6
 		fillBlock(&blk, groupIdxBase+uint64(i), v)
 		out[i] = ScalarFusedChain256(fixedKey, components, blk[:])
 	}
+	clear(blk[:])
+	runtime.KeepAlive(&blk)
 }
 
 func scalarFill512X4(fixedKey *[64]byte, components []uint64, groupIdxBase uint64, v uint32, out *[4][8]uint64) {
@@ -197,6 +212,8 @@ func scalarFill512X4(fixedKey *[64]byte, components []uint64, groupIdxBase uint6
 		fillBlock(&blk, groupIdxBase+uint64(i), v)
 		out[i] = ScalarFusedChain512(fixedKey, components, blk[:])
 	}
+	clear(blk[:])
+	runtime.KeepAlive(&blk)
 }
 
 // lanePtr views n bytes at p as a slice for the pure-Go fallbacks.
@@ -229,6 +246,8 @@ func scalarFill512X8(fixedKey *[64]byte, components []uint64, groupIdxBase uint6
 		fillBlock(&blk, groupIdxBase+uint64(i), v)
 		out[i] = ScalarFusedChain512(fixedKey, components, blk[:])
 	}
+	clear(blk[:])
+	runtime.KeepAlive(&blk)
 }
 
 // Half views of the eight-lane argument arrays, for the arms that run

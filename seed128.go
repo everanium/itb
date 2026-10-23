@@ -4,6 +4,9 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"fmt"
+	"runtime"
+	"sync/atomic"
+	"unsafe"
 )
 
 // HashFunc128 is the pluggable 128-bit hash function interface.
@@ -265,7 +268,16 @@ func (s *Seed128) blockHash128(buf []byte, blockIdx int) (uint64, uint64) {
 
 // deriveStartPixel computes seed+nonce-dependent pixel offset.
 func (s *Seed128) deriveStartPixel(nonce []byte, totalPixels int) int {
+	wipePixelCallStack([9][8]uint64{})
+	res := s.deriveStartPixelBody(nonce, totalPixels)
+	wipePixelCallStack([9][8]uint64{})
+	return res
+}
+
+//go:noinline
+func (s *Seed128) deriveStartPixelBody(nonce []byte, totalPixels int) int {
 	buf := make([]byte, 1+len(nonce))
+	defer secureWipe(buf)
 	buf[0] = 0x02
 	copy(buf[1:], nonce)
 	hLo, _ := s.ChainHash128(buf)
@@ -287,6 +299,7 @@ func (s *Seed128) deriveStartPixel(nonce []byte, totalPixels int) int {
 // material.
 func (s *Seed128) deriveInterLockSeed(nonce []byte) (uint64, uint64) {
 	buf := make([]byte, 1+len(nonce))
+	defer secureWipe(buf)
 	buf[0] = 0x04
 	copy(buf[1:], nonce)
 	return s.ChainHash128(buf)
@@ -296,7 +309,7 @@ func (s *Seed128) deriveInterLockSeed(nonce []byte) (uint64, uint64) {
 // s.BatchHash. Output [i] matches serial ChainHash128(data[i])
 // under the same Components. Caller ensures s.BatchHash != nil
 // (processChunk128 checks this before invoking).
-func (s *Seed128) BatchChainHash128(buf *[4][]byte) [4][2]uint64 {
+func (s *Seed128) BatchChainHash128(buf *[4][]byte) (h [4][2]uint64) {
 	if s.BatchFusedChain != nil {
 		if out, ok := s.BatchFusedChain(s.Components, buf); ok {
 			return out
@@ -307,7 +320,7 @@ func (s *Seed128) BatchChainHash128(buf *[4][]byte) [4][2]uint64 {
 		seeds[lane][0] = s.Components[0]
 		seeds[lane][1] = s.Components[1]
 	}
-	h := s.BatchHash(buf, seeds)
+	h = s.BatchHash(buf, seeds)
 
 	for i := 2; i < len(s.Components); i += 2 {
 		c0, c1 := s.Components[i], s.Components[i+1]
@@ -317,6 +330,8 @@ func (s *Seed128) BatchChainHash128(buf *[4][]byte) [4][2]uint64 {
 		}
 		h = s.BatchHash(buf, seeds)
 	}
+	clear(seeds[:])
+	runtime.KeepAlive(&seeds)
 	return h
 }
 
@@ -348,19 +363,20 @@ func (s *Seed128) BatchFusedChain8() BatchFusedChainHashFunc128x8 {
 // eight-lane hook first, otherwise two [Seed128.BatchChainHash128] calls
 // over the lane halves. Output [i] matches serial ChainHash128(buf[i])
 // under the same Components. Caller ensures s.BatchHash != nil.
-func (s *Seed128) batchChainHash128x8(buf *[8][]byte) [8][2]uint64 {
+func (s *Seed128) batchChainHash128x8(buf *[8][]byte) (out [8][2]uint64) {
 	if s.batchFusedChainX8 != nil {
-		if out, ok := s.batchFusedChainX8(s.Components, buf); ok {
-			return out
+		if res, ok := s.batchFusedChainX8(s.Components, buf); ok {
+			return res
 		}
 	}
-	var out [8][2]uint64
 	lo := [4][]byte{buf[0], buf[1], buf[2], buf[3]}
 	hi := [4][]byte{buf[4], buf[5], buf[6], buf[7]}
 	h := s.BatchChainHash128(&lo)
 	copy(out[0:4], h[:])
 	h = s.BatchChainHash128(&hi)
 	copy(out[4:8], h[:])
+	clear(h[:])
+	runtime.KeepAlive(&h)
 	return out
 }
 
@@ -415,7 +431,7 @@ func (s *Seed128) chainHash128With(components []uint64, buf []byte) (uint64, uin
 // the supplied slice: the batched fused hook first, the sequential
 // BatchHash loop otherwise. Output [i] matches chainHash128With on
 // buf[i]. Caller ensures s.BatchHash != nil.
-func (s *Seed128) batchChainHash128With(components []uint64, buf *[4][]byte) [4][2]uint64 {
+func (s *Seed128) batchChainHash128With(components []uint64, buf *[4][]byte) (h [4][2]uint64) {
 	if s.BatchFusedChain != nil {
 		if out, ok := s.BatchFusedChain(components, buf); ok {
 			return out
@@ -426,7 +442,7 @@ func (s *Seed128) batchChainHash128With(components []uint64, buf *[4][]byte) [4]
 		seeds[lane][0] = components[0]
 		seeds[lane][1] = components[1]
 	}
-	h := s.BatchHash(buf, seeds)
+	h = s.BatchHash(buf, seeds)
 	for i := 2; i < len(components); i += 2 {
 		c0, c1 := components[i], components[i+1]
 		for lane := 0; lane < 4; lane++ {
@@ -435,5 +451,30 @@ func (s *Seed128) batchChainHash128With(components []uint64, buf *[4][]byte) [4]
 		}
 		h = s.BatchHash(buf, seeds)
 	}
+	clear(seeds[:])
+	runtime.KeepAlive(&seeds)
 	return h
+}
+
+// pixelWipeObserver is a test-only hook (nil in production) invoked by
+// wipePixelCallStack with the base address of framePad so tests can
+// verify that pre-Body and post-Body wipes execute on the exact same
+// goroutine stack segment without triggering runtime.morestack_noctxt.
+var pixelWipeObserver atomic.Pointer[func(uintptr)]
+
+// wipePixelCallStack pre-grows the goroutine stack before a *Body call and
+// zeroes the stack frame of processChunk128Body /
+// deriveStartPixelBody / buildLockBatchPRF48_{128,256,512}Body (including
+// compiler register spills and autotmps) plus 4 KiB of the child call stack
+// below SP after the *Body call returns.
+//
+//go:noinline
+func wipePixelCallStack(argPad [9][8]uint64) {
+	var framePad [512]uint64
+	clear(framePad[:])
+	runtime.KeepAlive(&framePad)
+	runtime.KeepAlive(&argPad)
+	if fn := pixelWipeObserver.Load(); fn != nil {
+		(*fn)(uintptr(unsafe.Pointer(&framePad)))
+	}
 }

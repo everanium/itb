@@ -3,7 +3,10 @@ package siphashasm
 import (
 	"crypto/rand"
 	"encoding/binary"
+	"fmt"
+	"runtime/debug"
 	"testing"
+	"unsafe"
 )
 
 var pairCounts = []int{1, 2, 4, 8}
@@ -168,4 +171,166 @@ func checkDispatchersZeroAlloc(t *testing.T, label string) {
 // build's auto-selected dispatch state.
 func TestFusedDispatchersZeroAlloc(t *testing.T) {
 	checkDispatchersZeroAlloc(t, "auto")
+}
+
+const (
+	residueGap      = 1 << 10
+	residuePad      = 2 << 10
+	residueWindow   = 16 << 10
+	residueSentinel = 0x5A5A5A5A5A5A5A5A
+)
+
+var dumpSIMDRegsHook func(dst *[88]uint64)
+var dirtySIMDRegHook func(masked uint64)
+var genericResidueSink uint64
+
+//go:noinline
+func leakyGenericFrame(secret uint64, i int) {
+	var frame [8]uint64
+	for j := range frame {
+		frame[j] = secret
+	}
+	genericResidueSink = frame[(i+1)%len(frame)]
+}
+
+func checkResidueNegativeControls(t *testing.T) {
+	t.Helper()
+	secret := uint64(0xA5C35A3CF00DCAFE)
+	resStack := stackResidue(func() { leakyGenericFrame(secret, 0) })
+	stackHits := 0
+	for _, w := range resStack[:residueWindow/8] {
+		if w == secret {
+			stackHits++
+		}
+	}
+	if stackHits == 0 {
+		t.Fatal("negative control: stack-residue probe did not see secret stored by leakyGenericFrame")
+	}
+	if dirtySIMDRegHook != nil {
+		resReg := stackResidue(func() { dirtySIMDRegHook(secret ^ 0x5555555555555555) })
+		regHits := 0
+		for _, w := range resReg[residueWindow/8:] {
+			if w == secret {
+				regHits++
+			}
+		}
+		if regHits < 2 {
+			t.Fatalf("negative control: register snapshot saw %d hits of leaked register word, want >= 2", regHits)
+		}
+	}
+}
+
+func stackResidue(fn func()) []uint64 {
+	defer debug.SetGCPercent(debug.SetGCPercent(-1))
+	res := make([]uint64, residueWindow/8+88)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		residueGrow(0)
+		var regs [88]uint64
+		residueProbe(fn, res[:residueWindow/8], &regs)
+		copy(res[residueWindow/8:], regs[:])
+	}()
+	<-done
+	return res
+}
+
+//go:noinline
+func residueGrow(i int) byte {
+	var pad [4 * residueWindow]byte
+	pad[i] = 1
+	return pad[(i+1)%len(pad)]
+}
+
+//go:noinline
+func residueProbe(fn func(), res []uint64, regs *[88]uint64) {
+	var anchor uint64
+	top := unsafe.Add(unsafe.Pointer(&anchor), -residueGap)
+	for i := range res {
+		*(*uint64)(unsafe.Add(top, -8*(i+1))) = residueSentinel
+	}
+	residueDeep(fn, 0, regs)
+	for i := range res {
+		res[i] = *(*uint64)(unsafe.Add(top, -8*(i+1)))
+	}
+}
+
+//go:noinline
+func residueDeep(fn func(), i int, regs *[88]uint64) byte {
+	var pad [residuePad]byte
+	pad[i] = 1
+	fn()
+	if dumpSIMDRegsHook != nil {
+		dumpSIMDRegsHook(regs)
+	}
+	return pad[(i+7)%len(pad)]
+}
+
+func assertNoSecretResidue(t *testing.T, name string, res []uint64, secrets64 map[uint64]string) {
+	t.Helper()
+	written := 0
+	stackWords := residueWindow / 8
+	for i, w := range res {
+		if i < stackWords && w != residueSentinel {
+			written++
+		}
+		if i >= stackWords && w == 0 {
+			continue
+		}
+		if what, ok := secrets64[w]; ok {
+			if i < stackWords {
+				t.Errorf("%s: %s left in the stack %d bytes below the window top", name, what, 8*(i+1))
+			} else {
+				t.Errorf("%s: %s left in post-RET register snapshot (word %d)", name, what, i-stackWords)
+			}
+		}
+	}
+	if written == 0 {
+		t.Fatalf("%s: no word of the window was written; the probe missed the kernel frame", name)
+	}
+}
+
+func siphashSecrets(comps []uint64, outs [][2]uint64) map[uint64]string {
+	m := make(map[uint64]string)
+	for i, c := range comps {
+		m[c] = fmt.Sprintf("component word %d", i)
+		m[c^0x736f6d6570736575] = fmt.Sprintf("v0 init word %d", i)
+		m[c^0x646f72616e646f6d] = fmt.Sprintf("v1 init word %d", i)
+		m[c^0x6c7967656e657261] = fmt.Sprintf("v2 init word %d", i)
+		m[c^0x7465646279746573] = fmt.Sprintf("v3 init word %d", i)
+	}
+	for l, o := range outs {
+		m[o[0]] = fmt.Sprintf("lane %d output low word", l)
+		m[o[1]] = fmt.Sprintf("lane %d output high word", l)
+	}
+	return m
+}
+
+func checkSipHashResidue(t *testing.T, label string, x4 map[int]fusedX4Fn, x1 map[int]fusedX1Fn, x8 map[int]fusedX8Fn, x16 fusedX16Fn) {
+	t.Helper()
+	comps := randomComponents(2)
+	for _, n := range shapes {
+		_, ptrs := makeLaneData(n)
+		if f, ok := x4[n]; ok {
+			var out [4][2]uint64
+			res := stackResidue(func() { f(comps, &ptrs, &out) })
+			assertNoSecretResidue(t, fmt.Sprintf("%s x4 n=%d", label, n), res, siphashSecrets(comps, out[:]))
+		}
+		if f, ok := x1[n]; ok {
+			var out [2]uint64
+			res := stackResidue(func() { f(comps, ptrs[0], &out) })
+			assertNoSecretResidue(t, fmt.Sprintf("%s x1 n=%d", label, n), res, siphashSecrets(comps, [][2]uint64{out}))
+		}
+		if f, ok := x8[n]; ok {
+			_, ptrs8 := makeLaneData8(n)
+			var out [8][2]uint64
+			res := stackResidue(func() { f(comps, &ptrs8, &out) })
+			assertNoSecretResidue(t, fmt.Sprintf("%s x8 n=%d", label, n), res, siphashSecrets(comps, out[:]))
+		}
+	}
+	if x16 != nil {
+		var out [16][2]uint64
+		res := stackResidue(func() { x16(comps, 0x0123456789ABCDEF, 0xA5C33C5A, &out) })
+		assertNoSecretResidue(t, label+" x16", res, siphashSecrets(comps, out[:]))
+	}
 }

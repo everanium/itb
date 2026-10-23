@@ -3,12 +3,12 @@ package hashes
 import (
 	"fmt"
 	"hash"
-
-	"github.com/dchest/siphash"
+	"runtime"
 
 	"github.com/everanium/itb"
 	"github.com/everanium/itb/hashes/internal/siphashasm"
 	"github.com/everanium/itb/internal/forcetier"
+	"github.com/everanium/itb/internal/siphash24"
 )
 
 // SipHash24 returns a SipHash-2-4 itb.HashFunc128 closure.
@@ -17,7 +17,8 @@ import (
 // as the (seed0, seed1) pair — exactly the shape ITB's Seed128
 // ChainHash128 produces from the seed components. There is no
 // pre-keyed state to cache (no fixed key, no internal hasher object,
-// no scratch buffer) so the closure is a direct call into siphash.
+// no scratch buffer) so the closure evaluates SipHash-2-4-128 directly
+// and zeroes its internal state words before returning.
 //
 // Returns: (low64, high64) of SipHash128(key=(seed0, seed1), data).
 //
@@ -25,7 +26,7 @@ import (
 // Long-lived seed serialization is a matter of saving Components only.
 func SipHash24() itb.HashFunc128 {
 	return func(data []byte, seed0, seed1 uint64) (uint64, uint64) {
-		return siphash.Hash128(seed0, seed1, data)
+		return siphash24.Hash128(seed0, seed1, data)
 	}
 }
 
@@ -49,8 +50,10 @@ func SipHash24Pair() (itb.HashFunc128, itb.BatchHashFunc128) {
 	batched := func(data *[4][]byte, seeds [4][2]uint64) [4][2]uint64 {
 		var out [4][2]uint64
 		for lane := 0; lane < 4; lane++ {
-			out[lane][0], out[lane][1] = single(data[lane], seeds[lane][0], seeds[lane][1])
+			out[lane][0], out[lane][1] = siphash24.Hash128(seeds[lane][0], seeds[lane][1], data[lane])
 		}
+		clear(seeds[:])
+		runtime.KeepAlive(&seeds)
 		return out
 	}
 	return single, batched
@@ -195,5 +198,5 @@ func siphash24KeyedHash(key []byte) (hash.Hash, error) {
 	if len(key) != 16 {
 		return nil, fmt.Errorf("siphash24 key must be exactly 16 bytes, got %d", len(key))
 	}
-	return siphash.New128(key), nil
+	return siphash24.New128(key), nil
 }

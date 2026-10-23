@@ -67,8 +67,10 @@ static inline void extract56bits(const uint8_t *data, int dataLen, int bitIndex,
     int avail = dataLen - byteIdx;
     if (avail >= 8) {
         memcpy(&raw, &data[byteIdx], 8);
-    } else if (avail > 0) {
-        memcpy(&raw, &data[byteIdx], avail);
+    } else {
+        for (int i = 0; i < avail; i++) {
+            raw |= (uint64_t)data[byteIdx + i] << (unsigned)(i * 8);
+        }
     }
     raw >>= bitOff;
 
@@ -99,6 +101,58 @@ static inline void pack56bits(uint8_t *data, int dataLen, int bitIndex, const ui
             data[byteStart + i] = (uint8_t)(packed >> (unsigned)(i * 8));
         }
     }
+}
+
+// Per-invocation scratch workspace allocated once on the stack of
+// itb_process_pixels and wiped before return so per-pixel derived masks
+// and unpacked channel values do not remain on the call stack.
+typedef struct __attribute__((aligned(64))) {
+    union {
+        uint64_t rotMatrices[8];
+        uint64_t invRotMatrices[8];
+        uint64_t rotWArr[8];
+        uint64_t invRotWArr[8];
+        uint64_t rotQArr[4];
+        uint64_t invRotQArr[4];
+    } __attribute__((aligned(64)));
+    union {
+        uint64_t spreadMatrices[8];
+        uint64_t gatherMatrices[8];
+        uint64_t nmQArr[8];
+        uint64_t m2QArr[8];
+    } __attribute__((aligned(64)));
+    uint64_t nmbQArr[8] __attribute__((aligned(64)));
+    union {
+        uint64_t xorMaskArr[8];
+        uint64_t xorMask[4];
+    } __attribute__((aligned(64)));
+    union {
+        uint8_t valsBuf[64];
+        uint8_t vals[4][8];
+    } __attribute__((aligned(64)));
+    union {
+        uint8_t xorsBuf[32];
+        uint8_t xors[4][8];
+    } __attribute__((aligned(32)));
+    union {
+        uint8_t noiseMaskArr[8];
+        uint8_t noiseMask[4];
+    } __attribute__((aligned(8)));
+    uint8_t noiseMaskBelow[4];
+    unsigned int noisePos[4];
+    unsigned int dataRotation[4];
+    unsigned int dataRotationInv[4];
+} itb_pixel_scratch_t;
+
+static inline void itb_secure_wipe(void *p, size_t n) {
+    volatile uint64_t *vp = (volatile uint64_t *)p;
+    size_t words = n / sizeof(uint64_t);
+    for (size_t i = 0; i < words; i++) {
+        vp[i] = 0;
+    }
+#if defined(__GNUC__) || defined(__clang__)
+    __asm__ __volatile__("" : : "r"(p) : "memory");
+#endif
 }
 
 // =============================================================================
@@ -217,7 +271,8 @@ static inline void process4PixelsEncodeAVX2GFNI(
     int basePixel,
     int totalPixels,
     int p,
-    int bitIndex
+    int bitIndex,
+    itb_pixel_scratch_t * __restrict__ sc
 ) {
     const int Channels = 8;
     const int DataBitsPerChannel = 7;
@@ -236,48 +291,41 @@ static inline void process4PixelsEncodeAVX2GFNI(
         }
     }
 
-    uint8_t noiseMaskArr[4];
-    uint64_t rotMatrices[4] __attribute__((aligned(32)));
-    uint64_t spreadMatrices[4] __attribute__((aligned(32)));
-    uint64_t xorMaskArr[4];
-
     for (int b = 0; b < 4; b++) {
         uint64_t nh = noiseHashes[p + b];
         uint64_t dh = dataHashes[p + b];
         unsigned int np = (unsigned int)(nh & 7u);
         unsigned int dr = (unsigned int)(dh % 7u);
-        noiseMaskArr[b] = (uint8_t)(1u << np);
-        rotMatrices[b] = itb_gfni_rot_matrices[dr];
-        spreadMatrices[b] = itb_gfni_spread_matrices[np];
-        xorMaskArr[b] = dh >> DataRotationBits;
+        sc->noiseMaskArr[b] = (uint8_t)(1u << np);
+        sc->rotMatrices[b] = itb_gfni_rot_matrices[dr];
+        sc->spreadMatrices[b] = itb_gfni_spread_matrices[np];
+        sc->xorMaskArr[b] = dh >> DataRotationBits;
     }
 
     // Phase 1: extract 4×56 bits into 32-byte buffer.
-    uint8_t valsBuf[32] __attribute__((aligned(32)));
     for (int b = 0; b < 4; b++) {
-        extract56bits(data, dataLen, bitIndex + b * DataBitsPerPixel, &valsBuf[b * Channels]);
+        extract56bits(data, dataLen, bitIndex + b * DataBitsPerPixel, &sc->valsBuf[b * Channels]);
     }
-    __m256i vals = _mm256_load_si256((const __m256i *)valsBuf);
+    __m256i vals = _mm256_load_si256((const __m256i *)sc->valsBuf);
 
     // Phase 2: derive per-pixel xor masks (8 bytes per pixel).
-    uint8_t xorsBuf[32] __attribute__((aligned(32)));
     for (int b = 0; b < 4; b++) {
         for (int ch = 0; ch < Channels; ch++) {
-            xorsBuf[b * Channels + ch] = (uint8_t)((xorMaskArr[b] >> (unsigned)(ch * DataBitsPerChannel)) & 0x7F);
+            sc->xorsBuf[b * Channels + ch] = (uint8_t)((sc->xorMaskArr[b] >> (unsigned)(ch * DataBitsPerChannel)) & 0x7F);
         }
     }
-    __m256i xors = _mm256_load_si256((const __m256i *)xorsBuf);
+    __m256i xors = _mm256_load_si256((const __m256i *)sc->xorsBuf);
 
     // Phase 3: XOR (single VPXOR ymm).
     vals = _mm256_xor_si256(vals, xors);
 
     // Phase 4: rotate via GFNI affine transform — one VGF2P8AFFINEQB.
-    __m256i rotMat = _mm256_load_si256((const __m256i *)rotMatrices);
+    __m256i rotMat = _mm256_load_si256((const __m256i *)sc->rotMatrices);
     vals = _mm256_gf2p8affine_epi64_epi8(vals, rotMat, 0);
 
     // Phase 5: spread bits around per-pixel noisePos via GFNI, then OR with the
     // preserved noise bit from the original container byte.
-    __m256i spreadMat = _mm256_load_si256((const __m256i *)spreadMatrices);
+    __m256i spreadMat = _mm256_load_si256((const __m256i *)sc->spreadMatrices);
     __m256i spreadVals = _mm256_gf2p8affine_epi64_epi8(vals, spreadMat, 0);
 
     __m256i orig;
@@ -293,10 +341,10 @@ static inline void process4PixelsEncodeAVX2GFNI(
 
     // Broadcast per-pixel noiseMask byte to all 8 lanes within each pixel.
     __m256i noiseMaskV = _mm256_set_epi64x(
-        (int64_t)0x0101010101010101ULL * (uint64_t)noiseMaskArr[3],
-        (int64_t)0x0101010101010101ULL * (uint64_t)noiseMaskArr[2],
-        (int64_t)0x0101010101010101ULL * (uint64_t)noiseMaskArr[1],
-        (int64_t)0x0101010101010101ULL * (uint64_t)noiseMaskArr[0]);
+        (int64_t)0x0101010101010101ULL * (uint64_t)sc->noiseMaskArr[3],
+        (int64_t)0x0101010101010101ULL * (uint64_t)sc->noiseMaskArr[2],
+        (int64_t)0x0101010101010101ULL * (uint64_t)sc->noiseMaskArr[1],
+        (int64_t)0x0101010101010101ULL * (uint64_t)sc->noiseMaskArr[0]);
 
     __m256i result = _mm256_or_si256(spreadVals, _mm256_and_si256(orig, noiseMaskV));
 
@@ -342,7 +390,7 @@ static inline void process4PixelsEncodeAVX2GFNI(
 // geometry (bitIndex, dataLen); the packed data values are secret but
 // every instruction in the pipeline has data-independent latency.
 __attribute__((target("avx2,gfni")))
-static inline void pack56bitsX4AVX2(uint8_t *data, int dataLen, int bitIndex, __m256i vals) {
+static inline void pack56bitsX4AVX2(uint8_t *data, int dataLen, int bitIndex, __m256i vals, itb_pixel_scratch_t * __restrict__ sc) {
     int byteStart = bitIndex / 8;
     if (byteStart + 28 <= dataLen) {
         __m256i v = _mm256_and_si256(vals, _mm256_set1_epi8(0x7F));
@@ -363,10 +411,9 @@ static inline void pack56bitsX4AVX2(uint8_t *data, int dataLen, int bitIndex, __
         memcpy(data + byteStart + 14, &q2, 8);
         memcpy(data + byteStart + 20, &last, 8);
     } else {
-        uint8_t valsBuf[32] __attribute__((aligned(32)));
-        _mm256_store_si256((__m256i *)valsBuf, vals);
+        _mm256_store_si256((__m256i *)sc->valsBuf, vals);
         for (int b = 0; b < 4; b++) {
-            pack56bits(data, dataLen, bitIndex + b * 56, &valsBuf[b * 8], 8);
+            pack56bits(data, dataLen, bitIndex + b * 56, &sc->valsBuf[b * 8], 8);
         }
     }
 }
@@ -384,19 +431,17 @@ static inline void process4PixelsDecodeAVX2GFNI(
     int basePixel,
     int totalPixels,
     int p,
-    int bitIndex
+    int bitIndex,
+    itb_pixel_scratch_t * __restrict__ sc
 ) {
     const int Channels = 8;
     const int DataBitsPerChannel = 7;
     const int DataBitsPerPixel = 56;
     const int DataRotationBits = 3;
+    (void)DataBitsPerPixel;
 
     // Batch-entry wrap check — same contract as the encode helper.
     const int consecutive = (basePixel + 4 <= totalPixels);
-
-    uint64_t invRotMatrices[4] __attribute__((aligned(32)));
-    uint64_t gatherMatrices[4] __attribute__((aligned(32)));
-    uint64_t xorMaskArr[4];
 
     for (int b = 0; b < 4; b++) {
         uint64_t nh = noiseHashes[p + b];
@@ -405,9 +450,9 @@ static inline void process4PixelsDecodeAVX2GFNI(
         unsigned int dr = (unsigned int)(dh % 7u);
         // Inverse rotation amount for decode: 7 - r (mod 7).
         unsigned int dri = (7u - dr) % 7u;
-        invRotMatrices[b] = itb_gfni_rot_matrices[dri];
-        gatherMatrices[b] = itb_gfni_gather_matrices[np];
-        xorMaskArr[b] = dh >> DataRotationBits;
+        sc->invRotMatrices[b] = itb_gfni_rot_matrices[dri];
+        sc->gatherMatrices[b] = itb_gfni_gather_matrices[np];
+        sc->xorMaskArr[b] = dh >> DataRotationBits;
     }
 
     // Phase 1: load 4 pixels' container bytes, gather data bits via GFNI.
@@ -423,27 +468,26 @@ static inline void process4PixelsDecodeAVX2GFNI(
         }
         orig = _mm256_load_si256((const __m256i *)origBuf);
     }
-    __m256i gatherMat = _mm256_load_si256((const __m256i *)gatherMatrices);
+    __m256i gatherMat = _mm256_load_si256((const __m256i *)sc->gatherMatrices);
     __m256i vals = _mm256_gf2p8affine_epi64_epi8(orig, gatherMat, 0);
 
     // Phase 2: reverse rotate via GFNI.
-    __m256i invRotMat = _mm256_load_si256((const __m256i *)invRotMatrices);
+    __m256i invRotMat = _mm256_load_si256((const __m256i *)sc->invRotMatrices);
     vals = _mm256_gf2p8affine_epi64_epi8(vals, invRotMat, 0);
 
     // Phase 3: XOR with per-pixel xor masks.
-    uint8_t xorsBuf[32] __attribute__((aligned(32)));
     for (int b = 0; b < 4; b++) {
         for (int ch = 0; ch < Channels; ch++) {
-            xorsBuf[b * Channels + ch] = (uint8_t)((xorMaskArr[b] >> (unsigned)(ch * DataBitsPerChannel)) & 0x7F);
+            sc->xorsBuf[b * Channels + ch] = (uint8_t)((sc->xorMaskArr[b] >> (unsigned)(ch * DataBitsPerChannel)) & 0x7F);
         }
     }
-    __m256i xors = _mm256_load_si256((const __m256i *)xorsBuf);
+    __m256i xors = _mm256_load_si256((const __m256i *)sc->xorsBuf);
     vals = _mm256_xor_si256(vals, xors);
 
     // Phase 4: pack 8×7-bit values per pixel back into the data byte
     // stream — batched, replacing 4 scalar pack56bits calls plus the
     // store-forwarding-blocked YMM-to-stack round trip they required.
-    pack56bitsX4AVX2(data, dataLen, bitIndex, vals);
+    pack56bitsX4AVX2(data, dataLen, bitIndex, vals, sc);
 }
 
 #pragma GCC pop_options
@@ -622,12 +666,16 @@ static inline void process8PixelsEncodeAVX512GFNI(
     int basePixel,
     int totalPixels,
     int p,
-    int bitIndex
+    int bitIndex,
+    itb_pixel_scratch_t * __restrict__ sc
 ) {
     const int Channels = 8;
     const int DataBitsPerChannel = 7;
     const int DataBitsPerPixel = 56;
     const int DataRotationBits = 3;
+    (void)DataBitsPerChannel;
+    (void)DataBitsPerPixel;
+    (void)dataLen;
 
     // Batch-entry wrap check. Consecutive batches skip the per-lane wrap
     // subtracts entirely and address the container linearly.
@@ -641,20 +689,15 @@ static inline void process8PixelsEncodeAVX512GFNI(
         }
     }
 
-    uint8_t noiseMaskArr[8];
-    uint64_t rotMatrices[8] __attribute__((aligned(64)));
-    uint64_t spreadMatrices[8] __attribute__((aligned(64)));
-    uint64_t xorMaskArr[8];
-
     for (int b = 0; b < 8; b++) {
         uint64_t nh = noiseHashes[p + b];
         uint64_t dh = dataHashes[p + b];
         unsigned int np = (unsigned int)(nh & 7u);
         unsigned int dr = (unsigned int)(dh % 7u);
-        noiseMaskArr[b] = (uint8_t)(1u << np);
-        rotMatrices[b] = itb_gfni_rot_matrices[dr];
-        spreadMatrices[b] = itb_gfni_spread_matrices[np];
-        xorMaskArr[b] = dh >> DataRotationBits;
+        sc->noiseMaskArr[b] = (uint8_t)(1u << np);
+        sc->rotMatrices[b] = itb_gfni_rot_matrices[dr];
+        sc->spreadMatrices[b] = itb_gfni_spread_matrices[np];
+        sc->xorMaskArr[b] = dh >> DataRotationBits;
     }
 
     // Phase 1: extract 8×56 bits via VPERMB + variable-shift + VPMULTISHIFTQB.
@@ -668,18 +711,18 @@ static inline void process8PixelsEncodeAVX512GFNI(
 
     // Phase 2: derive per-pixel xor masks via VPMULTISHIFTQB on the 8 uint64s.
     // Replaces 8×8 scalar shift+mask (128 ops) with 3 ZMM ops.
-    __m512i xors = deriveXorsX8AVX512VBMI(xorMaskArr);
+    __m512i xors = deriveXorsX8AVX512VBMI(sc->xorMaskArr);
 
     // Phase 3: XOR (single VPXORQ zmm).
     vals = _mm512_xor_si512(vals, xors);
 
     // Phase 4: rotate via GFNI affine transform — one VGF2P8AFFINEQB on ZMM.
-    __m512i rotMat = _mm512_loadu_si512((const void *)rotMatrices);
+    __m512i rotMat = _mm512_loadu_si512((const void *)sc->rotMatrices);
     vals = _mm512_gf2p8affine_epi64_epi8(vals, rotMat, 0);
 
     // Phase 5: spread bits around per-pixel noisePos via GFNI, then OR with
     // the preserved noise bit from each pixel's original container byte.
-    __m512i spreadMat = _mm512_loadu_si512((const void *)spreadMatrices);
+    __m512i spreadMat = _mm512_loadu_si512((const void *)sc->spreadMatrices);
     __m512i spreadVals = _mm512_gf2p8affine_epi64_epi8(vals, spreadMat, 0);
 
     __m512i orig;
@@ -711,7 +754,7 @@ static inline void process8PixelsEncodeAVX512GFNI(
         6, 6, 6, 6, 6, 6, 6, 6,
         7, 7, 7, 7, 7, 7, 7, 7,
     };
-    __m128i noiseMasks8 = _mm_loadl_epi64((const __m128i *)noiseMaskArr);
+    __m128i noiseMasks8 = _mm_loadl_epi64((const __m128i *)sc->noiseMaskArr);
     __m512i noiseMaskV = _mm512_permutexvar_epi8(
         _mm512_load_si512((const void *)noiseBcastIdx),
         _mm512_castsi128_si512(noiseMasks8));
@@ -742,19 +785,18 @@ static inline void process8PixelsDecodeAVX512GFNI(
     int basePixel,
     int totalPixels,
     int p,
-    int bitIndex
+    int bitIndex,
+    itb_pixel_scratch_t * __restrict__ sc
 ) {
     const int Channels = 8;
     const int DataBitsPerChannel = 7;
     const int DataBitsPerPixel = 56;
     const int DataRotationBits = 3;
+    (void)DataBitsPerChannel;
+    (void)DataBitsPerPixel;
 
     // Batch-entry wrap check — same contract as the encode helper.
     const int consecutive = (basePixel + 8 <= totalPixels);
-
-    uint64_t invRotMatrices[8] __attribute__((aligned(64)));
-    uint64_t gatherMatrices[8] __attribute__((aligned(64)));
-    uint64_t xorMaskArr[8];
 
     for (int b = 0; b < 8; b++) {
         uint64_t nh = noiseHashes[p + b];
@@ -762,9 +804,9 @@ static inline void process8PixelsDecodeAVX512GFNI(
         unsigned int np = (unsigned int)(nh & 7u);
         unsigned int dr = (unsigned int)(dh % 7u);
         unsigned int dri = (7u - dr) % 7u;
-        invRotMatrices[b] = itb_gfni_rot_matrices[dri];
-        gatherMatrices[b] = itb_gfni_gather_matrices[np];
-        xorMaskArr[b] = dh >> DataRotationBits;
+        sc->invRotMatrices[b] = itb_gfni_rot_matrices[dri];
+        sc->gatherMatrices[b] = itb_gfni_gather_matrices[np];
+        sc->xorMaskArr[b] = dh >> DataRotationBits;
     }
 
     // Phase 1: load 8 pixels' container bytes, gather data bits via GFNI.
@@ -780,16 +822,16 @@ static inline void process8PixelsDecodeAVX512GFNI(
         }
         orig = _mm512_loadu_si512((const void *)origBuf);
     }
-    __m512i gatherMat = _mm512_loadu_si512((const void *)gatherMatrices);
+    __m512i gatherMat = _mm512_loadu_si512((const void *)sc->gatherMatrices);
     __m512i vals = _mm512_gf2p8affine_epi64_epi8(orig, gatherMat, 0);
 
     // Phase 2: reverse rotate via GFNI.
-    __m512i invRotMat = _mm512_loadu_si512((const void *)invRotMatrices);
+    __m512i invRotMat = _mm512_loadu_si512((const void *)sc->invRotMatrices);
     vals = _mm512_gf2p8affine_epi64_epi8(vals, invRotMat, 0);
 
     // Phase 3: XOR with per-pixel xor masks. Derive via VPMULTISHIFTQB
     // (3 ZMM ops vs 128 scalar shifts/masks) — same helper as encode.
-    __m512i xors = deriveXorsX8AVX512VBMI(xorMaskArr);
+    __m512i xors = deriveXorsX8AVX512VBMI(sc->xorMaskArr);
     vals = _mm512_xor_si512(vals, xors);
 
     // Phase 4: pack 8×7-bit values per pixel back into the data byte
@@ -907,7 +949,13 @@ static inline __m256i rotateBits7X4AVX2NoGFNI(__m256i vals, __m256i rotQ) {
 // target("avx2") only. See pack56bitsX4AVX2 for the packing-pipeline
 // and bounds commentary.
 __attribute__((target("avx2,gfni")))
-static inline void pack56bitsX4AVX2NoGFNI(uint8_t *data, int dataLen, int bitIndex, __m256i vals) {
+static inline void pack56bitsX4AVX2NoGFNI(
+    uint8_t *data,
+    int dataLen,
+    int bitIndex,
+    __m256i vals,
+    itb_pixel_scratch_t * __restrict__ sc
+) {
     int byteStart = bitIndex / 8;
     if (byteStart + 28 <= dataLen) {
         __m256i v = _mm256_and_si256(vals, _mm256_set1_epi8(0x7F));
@@ -928,10 +976,9 @@ static inline void pack56bitsX4AVX2NoGFNI(uint8_t *data, int dataLen, int bitInd
         memcpy(data + byteStart + 14, &q2, 8);
         memcpy(data + byteStart + 20, &last, 8);
     } else {
-        uint8_t valsBuf[32] __attribute__((aligned(32)));
-        _mm256_store_si256((__m256i *)valsBuf, vals);
+        _mm256_store_si256((__m256i *)sc->valsBuf, vals);
         for (int b = 0; b < 4; b++) {
-            pack56bits(data, dataLen, bitIndex + b * 56, &valsBuf[b * 8], 8);
+            pack56bits(data, dataLen, bitIndex + b * 56, &sc->valsBuf[b * 8], 8);
         }
     }
 }
@@ -950,7 +997,8 @@ static inline void process4PixelsEncodeAVX2NoGFNI(
     int basePixel,
     int totalPixels,
     int p,
-    int bitIndex
+    int bitIndex,
+    itb_pixel_scratch_t * __restrict__ sc
 ) {
     const int Channels = 8;
     const int DataBitsPerChannel = 7;
@@ -967,50 +1015,43 @@ static inline void process4PixelsEncodeAVX2NoGFNI(
         }
     }
 
-    uint64_t rotQArr[4] __attribute__((aligned(32)));
-    uint64_t nmQArr[4] __attribute__((aligned(32)));
-    uint64_t nmbQArr[4] __attribute__((aligned(32)));
-    uint64_t xorMaskArr[4];
-
     for (int b = 0; b < 4; b++) {
         uint64_t nh = noiseHashes[p + b];
         uint64_t dh = dataHashes[p + b];
         unsigned int np = (unsigned int)(nh & 7u);
         unsigned int dr = (unsigned int)(dh % 7u);
-        rotQArr[b] = (uint64_t)dr;
-        nmQArr[b] = 0x0101010101010101ULL * (uint64_t)(1u << np);
-        nmbQArr[b] = 0x0101010101010101ULL * (uint64_t)((1u << np) - 1u);
-        xorMaskArr[b] = dh >> DataRotationBits;
+        sc->rotQArr[b] = (uint64_t)dr;
+        sc->nmQArr[b] = 0x0101010101010101ULL * (uint64_t)(1u << np);
+        sc->nmbQArr[b] = 0x0101010101010101ULL * (uint64_t)((1u << np) - 1u);
+        sc->xorMaskArr[b] = dh >> DataRotationBits;
     }
 
     // Phase 1: extract 4x56 bits into 32-byte buffer.
-    uint8_t valsBuf[32] __attribute__((aligned(32)));
     for (int b = 0; b < 4; b++) {
-        extract56bits(data, dataLen, bitIndex + b * DataBitsPerPixel, &valsBuf[b * Channels]);
+        extract56bits(data, dataLen, bitIndex + b * DataBitsPerPixel, &sc->valsBuf[b * Channels]);
     }
-    __m256i vals = _mm256_load_si256((const __m256i *)valsBuf);
+    __m256i vals = _mm256_load_si256((const __m256i *)sc->valsBuf);
 
     // Phase 2: derive per-pixel xor masks (8 bytes per pixel).
-    uint8_t xorsBuf[32] __attribute__((aligned(32)));
     for (int b = 0; b < 4; b++) {
         for (int ch = 0; ch < Channels; ch++) {
-            xorsBuf[b * Channels + ch] = (uint8_t)((xorMaskArr[b] >> (unsigned)(ch * DataBitsPerChannel)) & 0x7F);
+            sc->xorsBuf[b * Channels + ch] = (uint8_t)((sc->xorMaskArr[b] >> (unsigned)(ch * DataBitsPerChannel)) & 0x7F);
         }
     }
-    __m256i xors = _mm256_load_si256((const __m256i *)xorsBuf);
+    __m256i xors = _mm256_load_si256((const __m256i *)sc->xorsBuf);
 
     // Phase 3: XOR (single VPXOR ymm).
     vals = _mm256_xor_si256(vals, xors);
 
     // Phase 4: rotate via the VPSLLVQ even/odd synthesis.
-    __m256i rotQ = _mm256_load_si256((const __m256i *)rotQArr);
+    __m256i rotQ = _mm256_load_si256((const __m256i *)sc->rotQArr);
     vals = rotateBits7X4AVX2NoGFNI(vals, rotQ);
 
     // Phase 5: spread bits around per-pixel noisePos via the constant
     // per-byte << 1 identity, then OR with the preserved noise bit from
     // the original container byte.
-    __m256i nmbV = _mm256_load_si256((const __m256i *)nmbQArr);
-    __m256i nmV = _mm256_load_si256((const __m256i *)nmQArr);
+    __m256i nmbV = _mm256_load_si256((const __m256i *)sc->nmbQArr);
+    __m256i nmV = _mm256_load_si256((const __m256i *)sc->nmQArr);
     __m256i t = _mm256_andnot_si256(nmbV, vals);
     t = _mm256_add_epi8(t, t);
     __m256i spreadVals = _mm256_or_si256(t, _mm256_and_si256(vals, nmbV));
@@ -1052,19 +1093,16 @@ static inline void process4PixelsDecodeAVX2NoGFNI(
     int basePixel,
     int totalPixels,
     int p,
-    int bitIndex
+    int bitIndex,
+    itb_pixel_scratch_t * __restrict__ sc
 ) {
     const int Channels = 8;
     const int DataBitsPerChannel = 7;
     const int DataBitsPerPixel = 56;
     const int DataRotationBits = 3;
+    (void)DataBitsPerPixel;
 
     const int consecutive = (basePixel + 4 <= totalPixels);
-
-    uint64_t invRotQArr[4] __attribute__((aligned(32)));
-    uint64_t nmbQArr[4] __attribute__((aligned(32)));
-    uint64_t m2QArr[4] __attribute__((aligned(32)));
-    uint64_t xorMaskArr[4];
 
     for (int b = 0; b < 4; b++) {
         uint64_t nh = noiseHashes[p + b];
@@ -1072,10 +1110,10 @@ static inline void process4PixelsDecodeAVX2NoGFNI(
         unsigned int np = (unsigned int)(nh & 7u);
         unsigned int dr = (unsigned int)(dh % 7u);
         unsigned int dri = (7u - dr) % 7u;
-        invRotQArr[b] = (uint64_t)dri;
-        nmbQArr[b] = 0x0101010101010101ULL * (uint64_t)((1u << np) - 1u);
-        m2QArr[b] = 0x0101010101010101ULL * (uint64_t)(0x7Fu ^ ((1u << np) - 1u));
-        xorMaskArr[b] = dh >> DataRotationBits;
+        sc->invRotQArr[b] = (uint64_t)dri;
+        sc->nmbQArr[b] = 0x0101010101010101ULL * (uint64_t)((1u << np) - 1u);
+        sc->m2QArr[b] = 0x0101010101010101ULL * (uint64_t)(0x7Fu ^ ((1u << np) - 1u));
+        sc->xorMaskArr[b] = dh >> DataRotationBits;
     }
 
     // Phase 1: load 4 pixels' container bytes, gather data bits via the
@@ -1092,28 +1130,27 @@ static inline void process4PixelsDecodeAVX2NoGFNI(
         }
         orig = _mm256_load_si256((const __m256i *)origBuf);
     }
-    __m256i nmbV = _mm256_load_si256((const __m256i *)nmbQArr);
-    __m256i m2V = _mm256_load_si256((const __m256i *)m2QArr);
+    __m256i nmbV = _mm256_load_si256((const __m256i *)sc->nmbQArr);
+    __m256i m2V = _mm256_load_si256((const __m256i *)sc->m2QArr);
     __m256i s = _mm256_srli_epi16(orig, 1);
     __m256i vals = _mm256_or_si256(_mm256_and_si256(orig, nmbV), _mm256_and_si256(s, m2V));
 
     // Phase 2: reverse rotate via the VPSLLVQ even/odd synthesis.
-    __m256i invRotQ = _mm256_load_si256((const __m256i *)invRotQArr);
+    __m256i invRotQ = _mm256_load_si256((const __m256i *)sc->invRotQArr);
     vals = rotateBits7X4AVX2NoGFNI(vals, invRotQ);
 
     // Phase 3: XOR with per-pixel xor masks.
-    uint8_t xorsBuf[32] __attribute__((aligned(32)));
     for (int b = 0; b < 4; b++) {
         for (int ch = 0; ch < Channels; ch++) {
-            xorsBuf[b * Channels + ch] = (uint8_t)((xorMaskArr[b] >> (unsigned)(ch * DataBitsPerChannel)) & 0x7F);
+            sc->xorsBuf[b * Channels + ch] = (uint8_t)((sc->xorMaskArr[b] >> (unsigned)(ch * DataBitsPerChannel)) & 0x7F);
         }
     }
-    __m256i xors = _mm256_load_si256((const __m256i *)xorsBuf);
+    __m256i xors = _mm256_load_si256((const __m256i *)sc->xorsBuf);
     vals = _mm256_xor_si256(vals, xors);
 
     // Phase 4: pack 8x7-bit values per pixel back into the data byte
     // stream.
-    pack56bitsX4AVX2NoGFNI(data, dataLen, bitIndex, vals);
+    pack56bitsX4AVX2NoGFNI(data, dataLen, bitIndex, vals, sc);
 }
 
 #pragma GCC pop_options
@@ -1306,7 +1343,13 @@ static inline __m512i rotateBits7X8AVX512NoGFNI(__m512i vals, __m512i rotW) {
 // bound). The bounds fallback keeps the semantics of 8 scalar
 // pack56bits calls for any caller without the hot-path guarantee.
 __attribute__((target("avx512f,avx512bw,avx512vl,gfni")))
-static inline void pack56bitsX8AVX512NoVBMI(uint8_t *data, int dataLen, int bitIndex, __m512i vals) {
+static inline void pack56bitsX8AVX512NoVBMI(
+    uint8_t *data,
+    int dataLen,
+    int bitIndex,
+    __m512i vals,
+    itb_pixel_scratch_t * __restrict__ sc
+) {
     int byteStart = bitIndex / 8;
     if (byteStart + 56 <= dataLen) {
         __m512i v = _mm512_and_si512(vals, _mm512_set1_epi8(0x7F));
@@ -1325,10 +1368,9 @@ static inline void pack56bitsX8AVX512NoVBMI(uint8_t *data, int dataLen, int bitI
         _mm_mask_storeu_epi8((void *)(data + byteStart + 42), 0x3FFF,
             _mm512_extracti32x4_epi32(compact, 3));
     } else {
-        uint8_t valsBuf[64] __attribute__((aligned(64)));
-        _mm512_storeu_si512((void *)valsBuf, vals);
+        _mm512_storeu_si512((void *)sc->valsBuf, vals);
         for (int b = 0; b < 8; b++) {
-            pack56bits(data, dataLen, bitIndex + b * 56, &valsBuf[b * 8], 8);
+            pack56bits(data, dataLen, bitIndex + b * 56, &sc->valsBuf[b * 8], 8);
         }
     }
 }
@@ -1348,13 +1390,15 @@ static inline void process8PixelsEncodeAVX512NoGFNI(
     int basePixel,
     int totalPixels,
     int p,
-    int bitIndex
+    int bitIndex,
+    itb_pixel_scratch_t * __restrict__ sc
 ) {
     const int Channels = 8;
     const int DataBitsPerChannel = 7;
     const int DataBitsPerPixel = 56;
     const int DataRotationBits = 3;
     (void)DataBitsPerChannel;
+    (void)DataBitsPerPixel;
 
     const int consecutive = (basePixel + 8 <= totalPixels);
     int pixelOffset[8];
@@ -1366,20 +1410,15 @@ static inline void process8PixelsEncodeAVX512NoGFNI(
         }
     }
 
-    uint64_t rotWArr[8] __attribute__((aligned(64)));
-    uint64_t nmQArr[8] __attribute__((aligned(64)));
-    uint64_t nmbQArr[8] __attribute__((aligned(64)));
-    uint64_t xorMaskArr[8] __attribute__((aligned(64)));
-
     for (int b = 0; b < 8; b++) {
         uint64_t nh = noiseHashes[p + b];
         uint64_t dh = dataHashes[p + b];
         unsigned int np = (unsigned int)(nh & 7u);
         unsigned int dr = (unsigned int)(dh % 7u);
-        rotWArr[b] = (uint64_t)dr * 0x0001000100010001ULL;
-        nmQArr[b] = 0x0101010101010101ULL * (uint64_t)(1u << np);
-        nmbQArr[b] = 0x0101010101010101ULL * (uint64_t)((1u << np) - 1u);
-        xorMaskArr[b] = dh >> DataRotationBits;
+        sc->rotWArr[b] = (uint64_t)dr * 0x0001000100010001ULL;
+        sc->nmQArr[b] = 0x0101010101010101ULL * (uint64_t)(1u << np);
+        sc->nmbQArr[b] = 0x0101010101010101ULL * (uint64_t)((1u << np) - 1u);
+        sc->xorMaskArr[b] = dh >> DataRotationBits;
     }
 
     // Phase 1: extract 8x56 bits via the BW arrange + field-extraction
@@ -1389,21 +1428,21 @@ static inline void process8PixelsEncodeAVX512NoGFNI(
     __m512i vals = extract56bitsX8AVX512NoVBMI(data, baseByteIdx, bitOff);
 
     // Phase 2: derive per-pixel xor masks.
-    __m512i xors = deriveXorsX8AVX512NoVBMI(xorMaskArr);
+    __m512i xors = deriveXorsX8AVX512NoVBMI(sc->xorMaskArr);
 
     // Phase 3: XOR (single VPXORQ zmm).
     vals = _mm512_xor_si512(vals, xors);
 
     // Phase 4: rotate via the VPSLLVW even/odd synthesis.
-    __m512i rotW = _mm512_load_si512((const void *)rotWArr);
+    __m512i rotW = _mm512_load_si512((const void *)sc->rotWArr);
     vals = rotateBits7X8AVX512NoGFNI(vals, rotW);
 
     // Phase 5: spread bits around per-pixel noisePos via the constant
     // per-byte << 1 identity, then merge the preserved noise bit from
     // each pixel's original container byte. VPTERNLOG imm 0xF8 computes
     // a | (b & c).
-    __m512i nmbV = _mm512_load_si512((const void *)nmbQArr);
-    __m512i nmV = _mm512_load_si512((const void *)nmQArr);
+    __m512i nmbV = _mm512_load_si512((const void *)sc->nmbQArr);
+    __m512i nmV = _mm512_load_si512((const void *)sc->nmQArr);
     __m512i t = _mm512_andnot_si512(nmbV, vals);
     t = _mm512_add_epi8(t, t);
     __m512i spreadVals = _mm512_ternarylogic_epi64(t, vals, nmbV, 0xF8);
@@ -1445,7 +1484,8 @@ static inline void process8PixelsDecodeAVX512NoGFNI(
     int basePixel,
     int totalPixels,
     int p,
-    int bitIndex
+    int bitIndex,
+    itb_pixel_scratch_t * __restrict__ sc
 ) {
     const int Channels = 8;
     const int DataBitsPerChannel = 7;
@@ -1456,21 +1496,16 @@ static inline void process8PixelsDecodeAVX512NoGFNI(
 
     const int consecutive = (basePixel + 8 <= totalPixels);
 
-    uint64_t invRotWArr[8] __attribute__((aligned(64)));
-    uint64_t nmbQArr[8] __attribute__((aligned(64)));
-    uint64_t m2QArr[8] __attribute__((aligned(64)));
-    uint64_t xorMaskArr[8] __attribute__((aligned(64)));
-
     for (int b = 0; b < 8; b++) {
         uint64_t nh = noiseHashes[p + b];
         uint64_t dh = dataHashes[p + b];
         unsigned int np = (unsigned int)(nh & 7u);
         unsigned int dr = (unsigned int)(dh % 7u);
         unsigned int dri = (7u - dr) % 7u;
-        invRotWArr[b] = (uint64_t)dri * 0x0001000100010001ULL;
-        nmbQArr[b] = 0x0101010101010101ULL * (uint64_t)((1u << np) - 1u);
-        m2QArr[b] = 0x0101010101010101ULL * (uint64_t)(0x7Fu ^ ((1u << np) - 1u));
-        xorMaskArr[b] = dh >> DataRotationBits;
+        sc->invRotWArr[b] = (uint64_t)dri * 0x0001000100010001ULL;
+        sc->nmbQArr[b] = 0x0101010101010101ULL * (uint64_t)((1u << np) - 1u);
+        sc->m2QArr[b] = 0x0101010101010101ULL * (uint64_t)(0x7Fu ^ ((1u << np) - 1u));
+        sc->xorMaskArr[b] = dh >> DataRotationBits;
     }
 
     // Phase 1: load 8 pixels' container bytes, gather data bits via the
@@ -1488,23 +1523,23 @@ static inline void process8PixelsDecodeAVX512NoGFNI(
         }
         orig = _mm512_loadu_si512((const void *)origBuf);
     }
-    __m512i nmbV = _mm512_load_si512((const void *)nmbQArr);
-    __m512i m2V = _mm512_load_si512((const void *)m2QArr);
+    __m512i nmbV = _mm512_load_si512((const void *)sc->nmbQArr);
+    __m512i m2V = _mm512_load_si512((const void *)sc->m2QArr);
     __m512i s = _mm512_srli_epi16(orig, 1);
     __m512i low = _mm512_and_si512(orig, nmbV);
     __m512i vals = _mm512_ternarylogic_epi64(low, s, m2V, 0xF8);
 
     // Phase 2: reverse rotate via the VPSLLVW even/odd synthesis.
-    __m512i invRotW = _mm512_load_si512((const void *)invRotWArr);
+    __m512i invRotW = _mm512_load_si512((const void *)sc->invRotWArr);
     vals = rotateBits7X8AVX512NoGFNI(vals, invRotW);
 
     // Phase 3: XOR with per-pixel xor masks.
-    __m512i xors = deriveXorsX8AVX512NoVBMI(xorMaskArr);
+    __m512i xors = deriveXorsX8AVX512NoVBMI(sc->xorMaskArr);
     vals = _mm512_xor_si512(vals, xors);
 
     // Phase 4: pack 8x7-bit values per pixel back into the data byte
     // stream.
-    pack56bitsX8AVX512NoVBMI(data, dataLen, bitIndex, vals);
+    pack56bitsX8AVX512NoVBMI(data, dataLen, bitIndex, vals, sc);
 }
 
 #pragma GCC pop_options
@@ -1530,9 +1565,265 @@ static inline int itb_check_avx512_nogfni(void) {
     return v;
 }
 
+static inline void itb_wipe_simd_avx512(void) {
+#if defined(_WIN64)
+    __asm__ __volatile__(
+        "vpxord %%zmm0, %%zmm0, %%zmm0\n\t"
+        "vpxord %%zmm1, %%zmm1, %%zmm1\n\t"
+        "vpxord %%zmm2, %%zmm2, %%zmm2\n\t"
+        "vpxord %%zmm3, %%zmm3, %%zmm3\n\t"
+        "vpxord %%zmm4, %%zmm4, %%zmm4\n\t"
+        "vpxord %%zmm5, %%zmm5, %%zmm5\n\t"
+        "vpxord %%zmm16, %%zmm16, %%zmm16\n\t"
+        "vpxord %%zmm17, %%zmm17, %%zmm17\n\t"
+        "vpxord %%zmm18, %%zmm18, %%zmm18\n\t"
+        "vpxord %%zmm19, %%zmm19, %%zmm19\n\t"
+        "vpxord %%zmm20, %%zmm20, %%zmm20\n\t"
+        "vpxord %%zmm21, %%zmm21, %%zmm21\n\t"
+        "vpxord %%zmm22, %%zmm22, %%zmm22\n\t"
+        "vpxord %%zmm23, %%zmm23, %%zmm23\n\t"
+        "vpxord %%zmm24, %%zmm24, %%zmm24\n\t"
+        "vpxord %%zmm25, %%zmm25, %%zmm25\n\t"
+        "vpxord %%zmm26, %%zmm26, %%zmm26\n\t"
+        "vpxord %%zmm27, %%zmm27, %%zmm27\n\t"
+        "vpxord %%zmm28, %%zmm28, %%zmm28\n\t"
+        "vpxord %%zmm29, %%zmm29, %%zmm29\n\t"
+        "vpxord %%zmm30, %%zmm30, %%zmm30\n\t"
+        "vpxord %%zmm31, %%zmm31, %%zmm31\n\t"
+        "kxorw %%k1, %%k1, %%k1\n\t"
+        "kxorw %%k2, %%k2, %%k2\n\t"
+        "kxorw %%k3, %%k3, %%k3\n\t"
+        "kxorw %%k4, %%k4, %%k4\n\t"
+        "kxorw %%k5, %%k5, %%k5\n\t"
+        "kxorw %%k6, %%k6, %%k6\n\t"
+        "kxorw %%k7, %%k7, %%k7\n\t"
+        "vzeroupper\n\t"
+        "xorl %%eax, %%eax\n\t"
+        "xorl %%ecx, %%ecx\n\t"
+        "xorl %%edx, %%edx\n\t"
+        "xorl %%r8d, %%r8d\n\t"
+        "xorl %%r9d, %%r9d\n\t"
+        "xorl %%r10d, %%r10d\n\t"
+        "xorl %%r11d, %%r11d"
+        :
+        :
+        : "rax", "rcx", "rdx", "r8", "r9", "r10", "r11",
+          "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "memory"
+    );
+#else
+    __asm__ __volatile__(
+        "vzeroall\n\t"
+        "vpxord %%zmm16, %%zmm16, %%zmm16\n\t"
+        "vpxord %%zmm17, %%zmm17, %%zmm17\n\t"
+        "vpxord %%zmm18, %%zmm18, %%zmm18\n\t"
+        "vpxord %%zmm19, %%zmm19, %%zmm19\n\t"
+        "vpxord %%zmm20, %%zmm20, %%zmm20\n\t"
+        "vpxord %%zmm21, %%zmm21, %%zmm21\n\t"
+        "vpxord %%zmm22, %%zmm22, %%zmm22\n\t"
+        "vpxord %%zmm23, %%zmm23, %%zmm23\n\t"
+        "vpxord %%zmm24, %%zmm24, %%zmm24\n\t"
+        "vpxord %%zmm25, %%zmm25, %%zmm25\n\t"
+        "vpxord %%zmm26, %%zmm26, %%zmm26\n\t"
+        "vpxord %%zmm27, %%zmm27, %%zmm27\n\t"
+        "vpxord %%zmm28, %%zmm28, %%zmm28\n\t"
+        "vpxord %%zmm29, %%zmm29, %%zmm29\n\t"
+        "vpxord %%zmm30, %%zmm30, %%zmm30\n\t"
+        "vpxord %%zmm31, %%zmm31, %%zmm31\n\t"
+        "kxorw %%k1, %%k1, %%k1\n\t"
+        "kxorw %%k2, %%k2, %%k2\n\t"
+        "kxorw %%k3, %%k3, %%k3\n\t"
+        "kxorw %%k4, %%k4, %%k4\n\t"
+        "kxorw %%k5, %%k5, %%k5\n\t"
+        "kxorw %%k6, %%k6, %%k6\n\t"
+        "kxorw %%k7, %%k7, %%k7\n\t"
+        "vzeroupper\n\t"
+        "xorl %%eax, %%eax\n\t"
+        "xorl %%ecx, %%ecx\n\t"
+        "xorl %%edx, %%edx\n\t"
+        "xorl %%esi, %%esi\n\t"
+        "xorl %%edi, %%edi\n\t"
+        "xorl %%r8d, %%r8d\n\t"
+        "xorl %%r9d, %%r9d\n\t"
+        "xorl %%r10d, %%r10d\n\t"
+        "xorl %%r11d, %%r11d"
+        :
+        :
+        : "rax", "rcx", "rdx", "rsi", "rdi", "r8", "r9", "r10", "r11",
+          "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "xmm6", "xmm7",
+          "xmm8", "xmm9", "xmm10", "xmm11", "xmm12", "xmm13", "xmm14", "xmm15",
+          "memory"
+    );
+#endif
+}
+
+static inline void itb_wipe_simd_avx2(void) {
+#if defined(_WIN64)
+    __asm__ __volatile__(
+        "vpxor %%ymm0, %%ymm0, %%ymm0\n\t"
+        "vpxor %%ymm1, %%ymm1, %%ymm1\n\t"
+        "vpxor %%ymm2, %%ymm2, %%ymm2\n\t"
+        "vpxor %%ymm3, %%ymm3, %%ymm3\n\t"
+        "vpxor %%ymm4, %%ymm4, %%ymm4\n\t"
+        "vpxor %%ymm5, %%ymm5, %%ymm5\n\t"
+        "vzeroupper\n\t"
+        "xorl %%eax, %%eax\n\t"
+        "xorl %%ecx, %%ecx\n\t"
+        "xorl %%edx, %%edx\n\t"
+        "xorl %%r8d, %%r8d\n\t"
+        "xorl %%r9d, %%r9d\n\t"
+        "xorl %%r10d, %%r10d\n\t"
+        "xorl %%r11d, %%r11d"
+        :
+        :
+        : "rax", "rcx", "rdx", "r8", "r9", "r10", "r11",
+          "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "memory"
+    );
+#else
+    __asm__ __volatile__(
+        "vzeroall\n\t"
+        "xorl %%eax, %%eax\n\t"
+        "xorl %%ecx, %%ecx\n\t"
+        "xorl %%edx, %%edx\n\t"
+        "xorl %%esi, %%esi\n\t"
+        "xorl %%edi, %%edi\n\t"
+        "xorl %%r8d, %%r8d\n\t"
+        "xorl %%r9d, %%r9d\n\t"
+        "xorl %%r10d, %%r10d\n\t"
+        "xorl %%r11d, %%r11d"
+        :
+        :
+        : "rax", "rcx", "rdx", "rsi", "rdi", "r8", "r9", "r10", "r11",
+          "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "xmm6", "xmm7",
+          "xmm8", "xmm9", "xmm10", "xmm11", "xmm12", "xmm13", "xmm14", "xmm15",
+          "memory"
+    );
+#endif
+}
+
+static inline void itb_wipe_simd_sse2(void) {
+#if defined(_WIN64)
+    __asm__ __volatile__(
+        "pxor %%xmm0, %%xmm0\n\t"
+        "pxor %%xmm1, %%xmm1\n\t"
+        "pxor %%xmm2, %%xmm2\n\t"
+        "pxor %%xmm3, %%xmm3\n\t"
+        "pxor %%xmm4, %%xmm4\n\t"
+        "pxor %%xmm5, %%xmm5\n\t"
+        "xorl %%eax, %%eax\n\t"
+        "xorl %%ecx, %%ecx\n\t"
+        "xorl %%edx, %%edx\n\t"
+        "xorl %%r8d, %%r8d\n\t"
+        "xorl %%r9d, %%r9d\n\t"
+        "xorl %%r10d, %%r10d\n\t"
+        "xorl %%r11d, %%r11d"
+        :
+        :
+        : "rax", "rcx", "rdx", "r8", "r9", "r10", "r11",
+          "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "memory"
+    );
+#else
+    __asm__ __volatile__(
+        "pxor %%xmm0, %%xmm0\n\t"
+        "pxor %%xmm1, %%xmm1\n\t"
+        "pxor %%xmm2, %%xmm2\n\t"
+        "pxor %%xmm3, %%xmm3\n\t"
+        "pxor %%xmm4, %%xmm4\n\t"
+        "pxor %%xmm5, %%xmm5\n\t"
+        "pxor %%xmm6, %%xmm6\n\t"
+        "pxor %%xmm7, %%xmm7\n\t"
+        "pxor %%xmm8, %%xmm8\n\t"
+        "pxor %%xmm9, %%xmm9\n\t"
+        "pxor %%xmm10, %%xmm10\n\t"
+        "pxor %%xmm11, %%xmm11\n\t"
+        "pxor %%xmm12, %%xmm12\n\t"
+        "pxor %%xmm13, %%xmm13\n\t"
+        "pxor %%xmm14, %%xmm14\n\t"
+        "pxor %%xmm15, %%xmm15\n\t"
+        "xorl %%eax, %%eax\n\t"
+        "xorl %%ecx, %%ecx\n\t"
+        "xorl %%edx, %%edx\n\t"
+        "xorl %%esi, %%esi\n\t"
+        "xorl %%edi, %%edi\n\t"
+        "xorl %%r8d, %%r8d\n\t"
+        "xorl %%r9d, %%r9d\n\t"
+        "xorl %%r10d, %%r10d\n\t"
+        "xorl %%r11d, %%r11d"
+        :
+        :
+        : "rax", "rcx", "rdx", "rsi", "rdi", "r8", "r9", "r10", "r11",
+          "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "xmm6", "xmm7",
+          "xmm8", "xmm9", "xmm10", "xmm11", "xmm12", "xmm13", "xmm14", "xmm15",
+          "memory"
+    );
+#endif
+}
+
 #endif  // x86_64 with GFNI
 
-// itb_process_pixels performs per-pixel encode/decode using pre-computed hashes.
+#if (defined(__GNUC__) || defined(__clang__)) && defined(__aarch64__)
+static inline void itb_wipe_simd_neon(void) {
+    __asm__ __volatile__(
+        "movi v0.16b, #0\n\t"
+        "movi v1.16b, #0\n\t"
+        "movi v2.16b, #0\n\t"
+        "movi v3.16b, #0\n\t"
+        "movi v4.16b, #0\n\t"
+        "movi v5.16b, #0\n\t"
+        "movi v6.16b, #0\n\t"
+        "movi v7.16b, #0\n\t"
+        "movi v16.16b, #0\n\t"
+        "movi v17.16b, #0\n\t"
+        "movi v18.16b, #0\n\t"
+        "movi v19.16b, #0\n\t"
+        "movi v20.16b, #0\n\t"
+        "movi v21.16b, #0\n\t"
+        "movi v22.16b, #0\n\t"
+        "movi v23.16b, #0\n\t"
+        "movi v24.16b, #0\n\t"
+        "movi v25.16b, #0\n\t"
+        "movi v26.16b, #0\n\t"
+        "movi v27.16b, #0\n\t"
+        "movi v28.16b, #0\n\t"
+        "movi v29.16b, #0\n\t"
+        "movi v30.16b, #0\n\t"
+        "movi v31.16b, #0\n\t"
+        "mov x0, xzr\n\t"
+        "mov x1, xzr\n\t"
+        "mov x2, xzr\n\t"
+        "mov x3, xzr\n\t"
+        "mov x4, xzr\n\t"
+        "mov x5, xzr\n\t"
+        "mov x6, xzr\n\t"
+        "mov x7, xzr\n\t"
+        "mov x8, xzr\n\t"
+        "mov x9, xzr\n\t"
+        "mov x10, xzr\n\t"
+        "mov x11, xzr\n\t"
+        "mov x12, xzr\n\t"
+        "mov x13, xzr\n\t"
+        "mov x14, xzr\n\t"
+        "mov x15, xzr\n\t"
+        "mov x16, xzr\n\t"
+        "mov x17, xzr"
+        :
+        :
+        : "v0", "v1", "v2", "v3", "v4", "v5", "v6", "v7",
+          "v16", "v17", "v18", "v19", "v20", "v21", "v22", "v23",
+          "v24", "v25", "v26", "v27", "v28", "v29", "v30", "v31",
+          "x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7",
+          "x8", "x9", "x10", "x11", "x12", "x13", "x14", "x15",
+          "x16", "x17", "memory"
+    );
+}
+#endif
+
+#if defined(__GNUC__) && !defined(__clang__)
+#define ITB_NOINLINE_NOCLONE __attribute__((noinline, noclone))
+#else
+#define ITB_NOINLINE_NOCLONE __attribute__((noinline))
+#endif
+
+// itb_process_pixels_body performs per-pixel encode/decode using pre-computed hashes.
 // Two-stage layout: a 4-pixel batched outer loop runs while four full-chCount
 // pixels still fit in the remaining bit budget, packing per-pixel data into
 // vals[4][8] / xors[4][8] arrays (32 bytes each) so GCC -O3
@@ -1547,7 +1838,7 @@ static inline int itb_check_avx512_nogfni(void) {
 #if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC diagnostic ignored "-Wstringop-overflow"
 #endif
-void itb_process_pixels(
+static ITB_NOINLINE_NOCLONE void itb_process_pixels_body(
     const uint64_t *noiseHashes,
     const uint64_t *dataHashes,
     uint8_t *container,
@@ -1558,7 +1849,8 @@ void itb_process_pixels(
     int startP,
     int endP,
     int totalBits,
-    int encode
+    int encode,
+    int wipeScratch
 ) {
     const int Channels = 8;
     const int DataBitsPerChannel = 7;
@@ -1588,6 +1880,8 @@ void itb_process_pixels(
     // in [0, totalPixels) stays below 2 * totalPixels.
     int basePixel = (startPixel + startP) % totalPixels;
 
+    itb_pixel_scratch_t sc;
+
     // SIMD dispatch flags — hoisted once before the hot loop. On x86_64 with
     // GFNI the per-pixel kernel routes into the AVX-512+GFNI 8-pixel helpers
     // first (when available), then the AVX2+GFNI 4-pixel helpers for any
@@ -1603,6 +1897,10 @@ void itb_process_pixels(
     const int useAVX2GFNI = 0;
     const int useAVX512NoGFNI = 0;
     const int useAVX2NoGFNI = 0;
+    (void)useAVX512GFNI;
+    (void)useAVX2GFNI;
+    (void)useAVX512NoGFNI;
+    (void)useAVX2NoGFNI;
 #endif
 
 #if defined(__GNUC__) && defined(__x86_64__)
@@ -1626,7 +1924,7 @@ void itb_process_pixels(
                     __builtin_prefetch(&container[prefetchIdx * Channels], 1, 0);
                 }
                 process8PixelsEncodeAVX512GFNI(noiseHashes, dataHashes, container, data, dataLen,
-                                                basePixel, totalPixels, p, bitIndex);
+                                                basePixel, totalPixels, p, bitIndex, &sc);
                 p += 8;
                 bitIndex += 8 * DataBitsPerPixel;
                 basePixel += 8;
@@ -1640,7 +1938,7 @@ void itb_process_pixels(
                     __builtin_prefetch(&container[prefetchIdx * Channels], 1, 0);
                 }
                 process8PixelsDecodeAVX512GFNI(noiseHashes, dataHashes, container, data, dataLen,
-                                                basePixel, totalPixels, p, bitIndex);
+                                                basePixel, totalPixels, p, bitIndex, &sc);
                 p += 8;
                 bitIndex += 8 * DataBitsPerPixel;
                 basePixel += 8;
@@ -1663,7 +1961,7 @@ void itb_process_pixels(
                     __builtin_prefetch(&container[prefetchIdx * Channels], 1, 0);
                 }
                 process8PixelsEncodeAVX512NoGFNI(noiseHashes, dataHashes, container, data, dataLen,
-                                                  basePixel, totalPixels, p, bitIndex);
+                                                  basePixel, totalPixels, p, bitIndex, &sc);
                 p += 8;
                 bitIndex += 8 * DataBitsPerPixel;
                 basePixel += 8;
@@ -1677,7 +1975,7 @@ void itb_process_pixels(
                     __builtin_prefetch(&container[prefetchIdx * Channels], 1, 0);
                 }
                 process8PixelsDecodeAVX512NoGFNI(noiseHashes, dataHashes, container, data, dataLen,
-                                                  basePixel, totalPixels, p, bitIndex);
+                                                  basePixel, totalPixels, p, bitIndex, &sc);
                 p += 8;
                 bitIndex += 8 * DataBitsPerPixel;
                 basePixel += 8;
@@ -1704,10 +2002,10 @@ void itb_process_pixels(
         if (useAVX2GFNI) {
             if (encode) {
                 process4PixelsEncodeAVX2GFNI(noiseHashes, dataHashes, container, data, dataLen,
-                                              basePixel, totalPixels, p, bitIndex);
+                                              basePixel, totalPixels, p, bitIndex, &sc);
             } else {
                 process4PixelsDecodeAVX2GFNI(noiseHashes, dataHashes, container, data, dataLen,
-                                              basePixel, totalPixels, p, bitIndex);
+                                              basePixel, totalPixels, p, bitIndex, &sc);
             }
             p += 4;
             bitIndex += 4 * DataBitsPerPixel;
@@ -1721,10 +2019,10 @@ void itb_process_pixels(
             // leftover handler under the Tier A' 8-pixel loop above.
             if (encode) {
                 process4PixelsEncodeAVX2NoGFNI(noiseHashes, dataHashes, container, data, dataLen,
-                                                basePixel, totalPixels, p, bitIndex);
+                                                basePixel, totalPixels, p, bitIndex, &sc);
             } else {
                 process4PixelsDecodeAVX2NoGFNI(noiseHashes, dataHashes, container, data, dataLen,
-                                                basePixel, totalPixels, p, bitIndex);
+                                                basePixel, totalPixels, p, bitIndex, &sc);
             }
             p += 4;
             bitIndex += 4 * DataBitsPerPixel;
@@ -1735,12 +2033,6 @@ void itb_process_pixels(
 #endif
 
         int pixelOffset[4];
-        unsigned int noisePos[4];
-        uint8_t noiseMask[4];
-        uint8_t noiseMaskBelow[4];
-        unsigned int dataRotation[4];
-        unsigned int dataRotationInv[4];
-        uint64_t xorMask[4];
 
         for (int b = 0; b < 4; b++) {
             int linearIdx = basePixel + b;
@@ -1748,27 +2040,24 @@ void itb_process_pixels(
             pixelOffset[b] = linearIdx * Channels;
             uint64_t nh = noiseHashes[p + b];
             uint64_t dh = dataHashes[p + b];
-            noisePos[b] = (unsigned int)(nh & 7);
-            noiseMask[b] = (uint8_t)(1 << noisePos[b]);
-            noiseMaskBelow[b] = noiseMask[b] - 1;
-            dataRotation[b] = (unsigned int)(dh % 7);
-            dataRotationInv[b] = 7 - dataRotation[b];
-            xorMask[b] = dh >> DataRotationBits;
+            sc.noisePos[b] = (unsigned int)(nh & 7);
+            sc.noiseMask[b] = (uint8_t)(1 << sc.noisePos[b]);
+            sc.noiseMaskBelow[b] = sc.noiseMask[b] - 1;
+            sc.dataRotation[b] = (unsigned int)(dh % 7);
+            sc.dataRotationInv[b] = 7 - sc.dataRotation[b];
+            sc.xorMask[b] = dh >> DataRotationBits;
         }
 
         if (encode) {
-            uint8_t vals[4][8];
-            uint8_t xors[4][8];
-
             // Phase 1: extract 56 bits per pixel into 8×7-bit fields.
             for (int b = 0; b < 4; b++) {
-                extract56bits(data, dataLen, bitIndex + b * DataBitsPerPixel, vals[b]);
+                extract56bits(data, dataLen, bitIndex + b * DataBitsPerPixel, sc.vals[b]);
             }
 
             // Phase 2: derive xor masks from each pixel's xorMask uint64.
             for (int b = 0; b < 4; b++) {
                 for (int ch = 0; ch < Channels; ch++) {
-                    xors[b][ch] = (uint8_t)((xorMask[b] >> (unsigned)(ch * DataBitsPerChannel)) & 0x7F);
+                    sc.xors[b][ch] = (uint8_t)((sc.xorMask[b] >> (unsigned)(ch * DataBitsPerChannel)) & 0x7F);
                 }
             }
 
@@ -1779,8 +2068,8 @@ void itb_process_pixels(
             // it (verified via -fopt-info-vec-missed) — flat pointer over the
             // exact same memory removes the ambiguity.
             {
-                uint8_t *valsFlat = &vals[0][0];
-                const uint8_t *xorsFlat = &xors[0][0];
+                uint8_t *valsFlat = &sc.vals[0][0];
+                const uint8_t *xorsFlat = &sc.xors[0][0];
                 for (int i = 0; i < 32; i++) {
                     valsFlat[i] ^= xorsFlat[i];
                 }
@@ -1789,7 +2078,7 @@ void itb_process_pixels(
             // Phase 4: Rotate — per-pixel rotation amount, scalar-unrolled per byte.
             for (int b = 0; b < 4; b++) {
                 for (int ch = 0; ch < Channels; ch++) {
-                    vals[b][ch] = rotateBits7(vals[b][ch], dataRotation[b]);
+                    sc.vals[b][ch] = rotateBits7(sc.vals[b][ch], sc.dataRotation[b]);
                 }
             }
 
@@ -1802,40 +2091,37 @@ void itb_process_pixels(
             // inner 8-byte loop as an XMM op (same shape as the scalar tail).
             for (int b = 0; b < 4; b++) {
                 uint8_t * __restrict__ pixelPtr = &container[pixelOffset[b]];
-                const uint8_t nmb = noiseMaskBelow[b];
-                const uint8_t nm = noiseMask[b];
-                const unsigned int np = noisePos[b];
+                const uint8_t nmb = sc.noiseMaskBelow[b];
+                const uint8_t nm = sc.noiseMask[b];
+                const unsigned int np = sc.noisePos[b];
                 for (int ch = 0; ch < Channels; ch++) {
                     uint8_t orig = pixelPtr[ch];
-                    uint8_t low = vals[b][ch] & nmb;
-                    uint8_t high = vals[b][ch] >> np;
+                    uint8_t low = sc.vals[b][ch] & nmb;
+                    uint8_t high = sc.vals[b][ch] >> np;
                     pixelPtr[ch] = low | (orig & nm) | (high << (np + 1));
                 }
             }
         } else {
-            uint8_t vals[4][8];
-            uint8_t xors[4][8];
-
             // Phase 1: Load container bytes, extract data bits (remove noise).
             // Pointer-per-pixel form mirrors encode Phase 5; lifts the inner
             // 8-byte loop out of the indexed gather pattern so GCC can keep
             // its XMM-vectorisation path on each pixel's contiguous bytes.
             for (int b = 0; b < 4; b++) {
                 const uint8_t * __restrict__ pixelPtr = &container[pixelOffset[b]];
-                const uint8_t nmb = noiseMaskBelow[b];
-                const unsigned int np = noisePos[b];
+                const uint8_t nmb = sc.noiseMaskBelow[b];
+                const unsigned int np = sc.noisePos[b];
                 for (int ch = 0; ch < Channels; ch++) {
                     uint8_t channelByte = pixelPtr[ch];
                     uint8_t low = channelByte & nmb;
                     uint8_t high = channelByte >> (np + 1);
-                    vals[b][ch] = low | (high << np);
+                    sc.vals[b][ch] = low | (high << np);
                 }
             }
 
             // Phase 2: Reverse rotate — per-pixel inverse rotation, scalar-unrolled.
             for (int b = 0; b < 4; b++) {
                 for (int ch = 0; ch < Channels; ch++) {
-                    vals[b][ch] = rotateBits7(vals[b][ch], dataRotationInv[b]);
+                    sc.vals[b][ch] = rotateBits7(sc.vals[b][ch], sc.dataRotationInv[b]);
                 }
             }
 
@@ -1844,7 +2130,7 @@ void itb_process_pixels(
             // collapses to a flat 32-byte loop GCC widens to vector XORs).
             for (int b = 0; b < 4; b++) {
                 for (int ch = 0; ch < Channels; ch++) {
-                    xors[b][ch] = (uint8_t)((xorMask[b] >> (unsigned)(ch * DataBitsPerChannel)) & 0x7F);
+                    sc.xors[b][ch] = (uint8_t)((sc.xorMask[b] >> (unsigned)(ch * DataBitsPerChannel)) & 0x7F);
                 }
             }
 
@@ -1852,8 +2138,8 @@ void itb_process_pixels(
             // vectorised under -O3. See encode-side note for why the
             // flat pointer is needed.
             {
-                uint8_t *valsFlat = &vals[0][0];
-                const uint8_t *xorsFlat = &xors[0][0];
+                uint8_t *valsFlat = &sc.vals[0][0];
+                const uint8_t *xorsFlat = &sc.xors[0][0];
                 for (int i = 0; i < 32; i++) {
                     valsFlat[i] ^= xorsFlat[i];
                 }
@@ -1861,7 +2147,7 @@ void itb_process_pixels(
 
             // Phase 4: Pack 8×7-bit values into the data byte stream.
             for (int b = 0; b < 4; b++) {
-                pack56bits(data, dataLen, bitIndex + b * DataBitsPerPixel, vals[b], Channels);
+                pack56bits(data, dataLen, bitIndex + b * DataBitsPerPixel, sc.vals[b], Channels);
             }
         }
 
@@ -1907,11 +2193,11 @@ void itb_process_pixels(
 
         if (encode) {
             // Phase 1: Bulk extract 56 bits into 8×7-bit values.
-            uint8_t vals[8];
+            uint8_t *vals = sc.vals[0];
             extract56bits(data, dataLen, bitIndex, vals);
 
             // Phase 2: Extract XOR masks from xorMask uint64.
-            uint8_t xors[8];
+            uint8_t *xors = sc.xors[0];
             for (int ch = 0; ch < chCount; ch++) {
                 xors[ch] = (uint8_t)((xorMask >> (unsigned)(ch * DataBitsPerChannel)) & 0x7F);
             }
@@ -1938,7 +2224,7 @@ void itb_process_pixels(
             if (bitIndex > totalBits) bitIndex = totalBits;
         } else {
             // Phase 1: Load container bytes, extract data bits (remove noise).
-            uint8_t vals[8];
+            uint8_t *vals = sc.vals[0];
             for (int ch = 0; ch < chCount; ch++) {
                 uint8_t channelByte = container[pixelOffset + ch];
                 uint8_t low = channelByte & noiseMaskBelow;
@@ -1965,5 +2251,176 @@ void itb_process_pixels(
         basePixel += 1;
         basePixel -= totalPixels & -(int)(basePixel >= totalPixels);
     }
+
+    if (wipeScratch) {
+        itb_secure_wipe(&sc, sizeof(sc));
+    }
 }
 #pragma GCC diagnostic pop
+
+static ITB_NOINLINE_NOCLONE void itb_wipe_c_stack(void) {
+    uint64_t pad[512];
+    itb_secure_wipe(pad, sizeof(pad));
+}
+
+void itb_process_pixels_batch(
+    const uint64_t *noiseHashes,
+    const uint64_t *dataHashes,
+    uint8_t *container,
+    uint8_t *data,
+    int dataLen,
+    int startPixel,
+    int totalPixels,
+    int startP,
+    int endP,
+    int totalBits,
+    int encode,
+    int wipeOnExit
+) {
+    itb_process_pixels_body(
+        noiseHashes, dataHashes, container, data, dataLen,
+        startPixel, totalPixels, startP, endP, totalBits, encode, wipeOnExit);
+    if (wipeOnExit) {
+        itb_wipe_c_stack();
+#if defined(__GNUC__) && defined(__x86_64__)
+        if (itb_check_avx512_gfni() || itb_check_avx512_nogfni()) {
+            itb_wipe_simd_avx512();
+        } else if (itb_check_avx2_gfni() || itb_check_avx2_nogfni()) {
+            itb_wipe_simd_avx2();
+        } else {
+            itb_wipe_simd_sse2();
+        }
+#elif (defined(__GNUC__) || defined(__clang__)) && defined(__aarch64__)
+        itb_wipe_simd_neon();
+#endif
+    }
+}
+
+void itb_process_pixels(
+    const uint64_t *noiseHashes,
+    const uint64_t *dataHashes,
+    uint8_t *container,
+    uint8_t *data,
+    int dataLen,
+    int startPixel,
+    int totalPixels,
+    int startP,
+    int endP,
+    int totalBits,
+    int encode
+) {
+    itb_process_pixels_batch(
+        noiseHashes, dataHashes, container, data, dataLen,
+        startPixel, totalPixels, startP, endP, totalBits, encode, 1);
+}
+
+static ITB_NOINLINE_NOCLONE void itb_cstack_paint_or_read(uint64_t *out, int words, int readBack) {
+    volatile uint64_t win[512];
+#if defined(__GNUC__) || defined(__clang__)
+    __asm__ __volatile__("" : "=m"(win) : : "memory");
+#endif
+    if (!readBack) {
+        for (int i = 0; i < 512; i++) {
+            win[i] = 0x5A5A5A5A5A5A5A5AULL;
+        }
+    } else {
+        int n = words < 512 ? words : 512;
+        for (int i = 0; i < n; i++) {
+            out[i] = win[i];
+            win[i] = 0;
+        }
+    }
+}
+
+#if (defined(__GNUC__) || defined(__clang__)) && !defined(_WIN32)
+__attribute__((visibility("hidden")))
+#endif
+ITB_NOINLINE_NOCLONE
+void itb_test_probe_pixels_c_stack(
+    const uint64_t *noiseHashes,
+    const uint64_t *dataHashes,
+    uint8_t *container,
+    uint8_t *data,
+    int dataLen,
+    int startPixel,
+    int totalPixels,
+    int startP,
+    int endP,
+    int totalBits,
+    int encode,
+    int mode,
+    int tier,
+    uint64_t *outWindow,
+    int windowWords
+) {
+#if defined(__GNUC__) && defined(__x86_64__)
+    itb_simd_avx512_gfni_supported = -1;
+    itb_simd_avx512_nogfni_supported = -1;
+    itb_simd_avx2_gfni_supported = -1;
+    itb_simd_avx2_nogfni_supported = -1;
+    int hwA = itb_check_avx512_gfni();
+    int hwANoG = itb_check_avx512_nogfni();
+    int hwB = itb_check_avx2_gfni();
+    int hwBNoG = itb_check_avx2_nogfni();
+    if (tier == 1) {
+        itb_simd_avx512_gfni_supported = hwA;
+        itb_simd_avx512_nogfni_supported = hwANoG;
+        itb_simd_avx2_gfni_supported = hwB;
+        itb_simd_avx2_nogfni_supported = hwBNoG;
+    } else if (tier == 2) {
+        itb_simd_avx512_gfni_supported = 0;
+        itb_simd_avx512_nogfni_supported = hwANoG;
+        itb_simd_avx2_gfni_supported = 0;
+        itb_simd_avx2_nogfni_supported = hwBNoG;
+    } else if (tier == 3) {
+        itb_simd_avx512_gfni_supported = 0;
+        itb_simd_avx512_nogfni_supported = 0;
+        itb_simd_avx2_gfni_supported = hwB;
+        itb_simd_avx2_nogfni_supported = hwBNoG;
+    } else if (tier == 4) {
+        itb_simd_avx512_gfni_supported = 0;
+        itb_simd_avx512_nogfni_supported = 0;
+        itb_simd_avx2_gfni_supported = 0;
+        itb_simd_avx2_nogfni_supported = hwBNoG;
+    } else if (tier == 5) {
+        itb_simd_avx512_gfni_supported = 0;
+        itb_simd_avx512_nogfni_supported = 0;
+        itb_simd_avx2_gfni_supported = 0;
+        itb_simd_avx2_nogfni_supported = 0;
+    }
+#else
+    (void)tier;
+#endif
+    itb_cstack_paint_or_read(NULL, 512, 0);
+    if (mode == 0) {
+        itb_process_pixels(
+            noiseHashes, dataHashes, container, data, dataLen,
+            startPixel, totalPixels, startP, endP, totalBits, encode);
+    } else if (mode == 1) {
+        itb_process_pixels_body(
+            noiseHashes, dataHashes, container, data, dataLen,
+            startPixel, totalPixels, startP, endP, totalBits, encode, 0);
+    } else {
+        itb_process_pixels_body(
+            noiseHashes, dataHashes, container, data, dataLen,
+            startPixel, totalPixels, startP, endP, totalBits, encode, 1);
+    }
+    itb_cstack_paint_or_read(outWindow, windowWords, 1);
+#if defined(__GNUC__) && defined(__x86_64__)
+    if (itb_check_avx512_gfni() || itb_check_avx512_nogfni()) {
+        itb_wipe_simd_avx512();
+    } else if (itb_check_avx2_gfni() || itb_check_avx2_nogfni()) {
+        itb_wipe_simd_avx2();
+    } else {
+        itb_wipe_simd_sse2();
+    }
+    itb_simd_avx512_gfni_supported = -1;
+    itb_simd_avx512_nogfni_supported = -1;
+    itb_simd_avx2_gfni_supported = -1;
+    itb_simd_avx2_nogfni_supported = -1;
+#elif (defined(__GNUC__) || defined(__clang__)) && defined(__aarch64__)
+    itb_wipe_simd_neon();
+#endif
+}
+
+

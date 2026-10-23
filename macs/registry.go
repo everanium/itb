@@ -81,7 +81,8 @@ func Make(name string, key []byte) (itb.MACFunc, error) {
 		return HMACBLAKE3(key)
 	}
 	if spec.MakeMAC != nil {
-		return spec.MakeMAC(key)
+		clonedKey := append([]byte(nil), key...)
+		return spec.MakeMAC(clonedKey)
 	}
 	return nil, fmt.Errorf("macs: dispatcher missing %q", name)
 }
@@ -112,7 +113,8 @@ func MakeIncremental(name string, key []byte) (itb.MACIncrementalFunc, error) {
 		return HMACBLAKE3Incremental(key)
 	}
 	if spec.MakeIncrementalMAC != nil {
-		return spec.MakeIncrementalMAC(key)
+		clonedKey := append([]byte(nil), key...)
+		return spec.MakeIncrementalMAC(clonedKey)
 	}
 	return nil, fmt.Errorf("macs: dispatcher missing %q", name)
 }

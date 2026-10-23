@@ -34,9 +34,13 @@ func TestPipelineCloseZeroisesState(t *testing.T) {
 	}
 	wrapperKeyAlias := pipe.wrapperKey
 	macKeyAlias := pipe.macKey
+	blobAlias := pipe.blob
 
 	if err := pipe.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
+	}
+	if blobAlias != nil && !allZero(blobAlias) {
+		t.Fatal("retained blob not zeroed in place after Close")
 	}
 
 	// Seed Components must be all zero, and per-seed closures must be
@@ -61,8 +65,8 @@ func TestPipelineCloseZeroisesState(t *testing.T) {
 		if out := s512.Hash([]byte("probe"), [8]uint64{}); out != ([8]uint64{}) {
 			t.Fatalf("seed[%d].Hash stub returned %x, want zero [8]uint64", i, out)
 		}
-		if s512.BatchHash != nil || s512.FusedChain != nil || s512.BatchFusedChain != nil {
-			t.Fatalf("seed[%d] batch/fused closures not nilled after Close", i)
+		if s512.BatchHash != nil || s512.FusedChain != nil || s512.BatchFusedChain != nil || s512.BatchFusedChain8() != nil || s512.InterlockFillX16() != nil || s512.InterlockFillX32() != nil {
+			t.Fatalf("seed[%d] batch/fused/interlock closures not nilled after Close", i)
 		}
 	}
 	// PRF keys must be all zero (nil for siphash24 profiles).
@@ -111,6 +115,7 @@ func TestPipelineRekeyZeroisesOldState(t *testing.T) {
 	defer pipe.Close()
 
 	oldWrapperKey := pipe.wrapperKey
+	oldBlob := pipe.blob
 	msg := []byte("rekey lifecycle check")
 	ctBefore, err := pipe.EncryptMessage(msg)
 	if err != nil {
@@ -129,12 +134,15 @@ func TestPipelineRekeyZeroisesOldState(t *testing.T) {
 		t.Fatalf("DecryptMessage after failed Rekey: err=%v, got=%q", err, ptBefore)
 	}
 
-	// Successful Rekey must wipe the retired wrapperKey in place.
+	// Successful Rekey must wipe the retired wrapperKey and old blob in place.
 	if _, err := pipe.Rekey(freshBytes(t, 32), freshBytes(t, 32)); err != nil {
 		t.Fatalf("Rekey: %v", err)
 	}
 	if !allZero(oldWrapperKey) {
 		t.Fatalf("old wrapperKey not zeroed after successful Rekey: %x", oldWrapperKey)
+	}
+	if !allZero(oldBlob) {
+		t.Fatal("old retained blob not zeroed in place after successful Rekey")
 	}
 }
 
@@ -202,4 +210,57 @@ func allZero(b []byte) bool {
 		}
 	}
 	return true
+}
+
+func TestPipelineCloseZeroisesSeedClosureKeysInPlace(t *testing.T) {
+	probe := []byte("0123456789abcdef0123")
+	t.Run("InitAndLoad_512", func(t *testing.T) {
+		pipe, blob, err := Init(ProfileStreamingAEADTripleMACV1, Opts{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		loaded, err := Load(blob)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var masters [8][]byte
+		for i := range masters {
+			masters[i] = freshBytes(t, 32)
+		}
+		fromKeys, _, err := InitKeys(ProfileStreamingAEADTripleMACV1, Opts{}, masters)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		for _, tc := range []struct {
+			name string
+			p    *Pipeline
+		}{
+			{"Init", pipe},
+			{"Load", loaded},
+			{"InitKeys", fromKeys},
+		} {
+			s0 := tc.p.seeds[0].(*itb.Seed512)
+			origHash := s0.Hash
+			origFused := s0.FusedChain
+			compsCopy := append([]uint64(nil), s0.Components...)
+			var sIn [8]uint64
+			copy(sIn[:], compsCopy[:8])
+			beforeHash := origHash(probe, sIn)
+
+			if err := tc.p.Close(); err != nil {
+				t.Fatalf("%s Close: %v", tc.name, err)
+			}
+			afterHash := origHash(probe, sIn)
+			if afterHash == beforeHash {
+				t.Fatalf("%s: captured Seed512.Hash closure still produced pre-Close output after Pipeline.Close()", tc.name)
+			}
+			if origFused != nil {
+				afterFused, ok := origFused(compsCopy, probe)
+				if ok && afterFused == beforeHash {
+					t.Fatalf("%s: captured Seed512.FusedChain closure still produced pre-Close output after Pipeline.Close()", tc.name)
+				}
+			}
+		}
+	})
 }

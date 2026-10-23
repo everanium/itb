@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/everanium/itb"
+	"github.com/everanium/itb/internal/wipe"
 	"github.com/everanium/itb/wrapper"
 )
 
@@ -161,14 +162,14 @@ func (p *Pipeline) encryptStreamBytesTailWrap(plaintext []byte) ([]byte, error) 
 	}
 	if cipherErr != nil {
 		b := wire.Bytes()
-		clear(b[:cap(b)])
+		wipe.Bytes(b[:cap(b)])
 		return nil, cipherErr
 	}
 
 	out := wire.Bytes()
 	nonce, werr := wrapper.WrapInPlace(p.wrapperCipher, p.wrapperKey, out[nlen:])
 	if werr != nil {
-		clear(out[:cap(out)])
+		wipe.Bytes(out[:cap(out)])
 		return nil, fmt.Errorf("triple: wrapper.WrapInPlace: %w", werr)
 	}
 	copy(out[:nlen], nonce)
@@ -189,7 +190,7 @@ func (p *Pipeline) decryptStreamBytesTailUnwrap(wire []byte) ([]byte, error) {
 	}
 
 	buf := make([]byte, len(wire))
-	defer clear(buf)
+	defer wipe.Bytes(buf)
 	copy(buf, wire)
 	inner, uerr := wrapper.UnwrapInPlace(p.wrapperCipher, p.wrapperKey, buf)
 	if uerr != nil {
@@ -272,7 +273,7 @@ func (p *Pipeline) decryptInnerStreaming(inner []byte) ([]byte, error) {
 	}
 	if cipherErr != nil {
 		b := plain.Bytes()
-		clear(b[:cap(b)])
+		wipe.Bytes(b[:cap(b)])
 		return nil, cipherErr
 	}
 	return plain.Bytes(), nil

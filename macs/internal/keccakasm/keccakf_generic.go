@@ -1,6 +1,11 @@
 package keccakasm
 
-import "math/bits"
+import (
+	"math/bits"
+	"runtime"
+
+	"github.com/everanium/itb/internal/wipe"
+)
 
 // keccakRC holds the 24 Keccak-f[1600] round constants (FIPS 202
 // Section 3.2.5). Public values at fixed offsets.
@@ -32,15 +37,16 @@ var keccakRot = [5][5]int{
 func keccakF1600Generic(a *[25]uint64) {
 	var c [5]uint64
 	var b [25]uint64
+	var d [1]uint64
 	for r := 0; r < 24; r++ {
 		// theta
 		for x := 0; x < 5; x++ {
 			c[x] = a[x] ^ a[x+5] ^ a[x+10] ^ a[x+15] ^ a[x+20]
 		}
 		for x := 0; x < 5; x++ {
-			d := c[(x+4)%5] ^ bits.RotateLeft64(c[(x+1)%5], 1)
+			d[0] = c[(x+4)%5] ^ bits.RotateLeft64(c[(x+1)%5], 1)
 			for y := 0; y < 25; y += 5 {
-				a[x+y] ^= d
+				a[x+y] ^= d[0]
 			}
 		}
 		// rho + pi
@@ -58,4 +64,11 @@ func keccakF1600Generic(a *[25]uint64) {
 		// iota
 		a[0] ^= keccakRC[r]
 	}
+	clear(c[:])
+	clear(b[:])
+	clear(d[:])
+	wipe.ClobberRegs()
+	runtime.KeepAlive(&c)
+	runtime.KeepAlive(&b)
+	runtime.KeepAlive(&d)
 }

@@ -5,7 +5,10 @@ import (
 	"crypto/sha512"
 	"encoding/binary"
 	"encoding/hex"
+	"runtime"
+	"runtime/debug"
 	"testing"
+	"unsafe"
 
 	"github.com/everanium/areion"
 	"github.com/everanium/itb/hashes"
@@ -554,14 +557,16 @@ func TestAreionSubkeyDerivation(t *testing.T) {
 	copy(key32, key64)
 
 	sum := sha512.Sum512(append([]byte("itb hashprf areion256 subkey"), key32...))
-	s256 := areionSeed256(key32)
+	var s256 [4]uint64
+	areionSeed256(key32, &s256)
 	for i := range s256 {
 		if want := binary.LittleEndian.Uint64(sum[i*8:]); s256[i] != want {
 			t.Errorf("areion256 seed word %d = %#x, want %#x", i, s256[i], want)
 		}
 	}
 	sum = sha512.Sum512(append([]byte("itb hashprf areion512 subkey"), key64...))
-	s512 := areionSeed512(key64)
+	var s512 [8]uint64
+	areionSeed512(key64, &s512)
 	for i := range s512 {
 		if want := binary.LittleEndian.Uint64(sum[i*8:]); s512[i] != want {
 			t.Errorf("areion512 seed word %d = %#x, want %#x", i, s512[i], want)
@@ -586,5 +591,252 @@ func TestNonPRFRejected(t *testing.T) {
 		if _, _, _, err := NewBatch(name, make([]byte, n)); err == nil {
 			t.Errorf("NewBatch(%q, %d-byte key): expected error", name, n)
 		}
+	}
+}
+
+const (
+	hashprfResidueGap      = 1 << 10
+	hashprfResiduePad      = 2 << 10
+	hashprfResidueWindow   = 16 << 10
+	hashprfResidueSentinel = uint64(0x5A5A5A5A5A5A5A5A)
+)
+
+func captureHashPRFStackResidue(t *testing.T, fn func()) []uint64 {
+	t.Helper()
+	defer debug.SetGCPercent(debug.SetGCPercent(-1))
+	res := make([]uint64, hashprfResidueWindow/8)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		hashprfResidueGrow(0)
+		hashprfResidueProbe(fn, res)
+	}()
+	<-done
+	written := 0
+	for _, w := range res {
+		if w != hashprfResidueSentinel {
+			written++
+		}
+	}
+	if written == 0 {
+		t.Fatal("stack probe window was not touched by target call")
+	}
+	return res
+}
+
+//go:noinline
+func hashprfResidueGrow(i int) byte {
+	var pad [4 * hashprfResidueWindow]byte
+	pad[i] = 1
+	return pad[(i+1)%len(pad)]
+}
+
+//go:noinline
+func hashprfResidueProbe(fn func(), res []uint64) {
+	var anchor uint64
+	top := unsafe.Add(unsafe.Pointer(&anchor), -hashprfResidueGap)
+	for i := range res {
+		*(*uint64)(unsafe.Add(top, -8*(i+1))) = hashprfResidueSentinel
+	}
+	hashprfResidueDeep(fn, 0)
+	for i := range res {
+		res[i] = *(*uint64)(unsafe.Add(top, -8*(i+1)))
+	}
+}
+
+//go:noinline
+func hashprfResidueDeep(fn func(), i int) byte {
+	var pad [hashprfResiduePad]byte
+	pad[i] = 1
+	fn()
+	return pad[(i+7)%len(pad)]
+}
+
+//go:noinline
+func leakyHashPRFKeyFrame(key []byte) uint64 {
+	var leak [8]uint64
+	for i := 0; i*8+8 <= len(key) && i < len(leak); i++ {
+		leak[i] = binary.LittleEndian.Uint64(key[i*8:])
+	}
+	runtime.KeepAlive(&leak)
+	return leak[0]
+}
+
+func TestZeroizationWithClose(t *testing.T) {
+	probeKey := make([]byte, 32)
+	for i := range probeKey {
+		probeKey[i] = byte(0x73 + i*5)
+	}
+
+	// Negative control: verify captureHashPRFStackResidue detects an unzeroed key word.
+	negWin := captureHashPRFStackResidue(t, func() {
+		_ = leakyHashPRFKeyFrame(probeKey)
+	})
+	wantWord := binary.LittleEndian.Uint64(probeKey[:8])
+	foundNeg := false
+	for _, w := range negWin {
+		if w == wantWord {
+			foundNeg = true
+			break
+		}
+	}
+	if !foundNeg {
+		t.Fatal("negative control failed: leakyHashPRFKeyFrame was not detected in stack residue")
+	}
+
+	in := []byte("hashprf-zeroization-probe-input!")
+	for _, p := range prims {
+		t.Run(p.name, func(t *testing.T) {
+			key := make([]byte, p.keySize)
+			for i := range key {
+				key[i] = byte(0x73 + i*5)
+			}
+			secrets := make(map[uint64]bool)
+			for off := 0; off+8 <= len(key); off += 8 {
+				w := binary.LittleEndian.Uint64(key[off:])
+				if w != 0 && w != hashprfResidueSentinel {
+					secrets[w] = true
+				}
+			}
+			for off := 0; off+8 <= len(in); off += 8 {
+				w := binary.LittleEndian.Uint64(in[off:])
+				if w != 0 && w != hashprfResidueSentinel {
+					secrets[w] = true
+				}
+			}
+			if p.name == hashes.CipherAreion256 {
+				sum := sha512.Sum512(append([]byte(areion256SubkeyLabel), key...))
+				for i := 0; i < 4; i++ {
+					secrets[binary.LittleEndian.Uint64(sum[i*8:])] = true
+				}
+			} else if p.name == hashes.CipherAreion512 {
+				sum := sha512.Sum512(append([]byte(areion512SubkeyLabel), key...))
+				for i := 0; i < 8; i++ {
+					secrets[binary.LittleEndian.Uint64(sum[i*8:])] = true
+				}
+			}
+
+			var prf func(dst, in []byte)
+			var bs int
+			var closeFn func()
+			var out []byte
+			win := captureHashPRFStackResidue(t, func() {
+				var err error
+				prf, bs, closeFn, err = NewWithClose(p.name, key)
+				if err != nil {
+					t.Fatalf("NewWithClose(%q): %v", p.name, err)
+				}
+				out = make([]byte, bs)
+				prf(out, in)
+			})
+			if closeFn == nil {
+				t.Fatalf("NewWithClose(%q) returned nil closeFn", p.name)
+			}
+			if bytes.Equal(out, make([]byte, bs)) {
+				t.Fatalf("%s: PRF output before closeFn is all zero", p.name)
+			}
+			for off := 0; off+8 <= len(out); off += 8 {
+				w := binary.LittleEndian.Uint64(out[off:])
+				if w != 0 && w != hashprfResidueSentinel {
+					secrets[w] = true
+				}
+			}
+			for idx, w := range win {
+				if secrets[w] {
+					t.Fatalf("%s: PRF evaluation left secret word %#x at stack slot %d", p.name, w, idx)
+				}
+			}
+
+			// After closeFn(), internal key/hasher state is zeroed so subsequent
+			// output differs from the keyed evaluation.
+			closeFn()
+			outAfter := make([]byte, bs)
+			prf(outAfter, in)
+			if bytes.Equal(out, outAfter) {
+				t.Fatalf("%s: PRF output unchanged after closeFn()", p.name)
+			}
+		})
+	}
+
+	for _, p := range batchPrims {
+		t.Run(p.name+"_batch", func(t *testing.T) {
+			key := make([]byte, p.keySize)
+			for i := range key {
+				key[i] = byte(0x91 + i*3)
+			}
+			secrets := make(map[uint64]bool)
+			for off := 0; off+8 <= len(key); off += 8 {
+				w := binary.LittleEndian.Uint64(key[off:])
+				if w != 0 && w != hashprfResidueSentinel {
+					secrets[w] = true
+				}
+			}
+			for off := 0; off+8 <= len(in); off += 8 {
+				w := binary.LittleEndian.Uint64(in[off:])
+				if w != 0 && w != hashprfResidueSentinel {
+					secrets[w] = true
+				}
+			}
+			if p.name == hashes.CipherAreion256 {
+				sum := sha512.Sum512(append([]byte(areion256SubkeyLabel), key...))
+				for i := 0; i < 4; i++ {
+					secrets[binary.LittleEndian.Uint64(sum[i*8:])] = true
+				}
+			} else if p.name == hashes.CipherAreion512 {
+				sum := sha512.Sum512(append([]byte(areion512SubkeyLabel), key...))
+				for i := 0; i < 8; i++ {
+					secrets[binary.LittleEndian.Uint64(sum[i*8:])] = true
+				}
+			}
+
+			var batch func(dst, in *[4][]byte)
+			var bs int
+			var ok bool
+			var closeFn func()
+			var bin, bout, boutAfter [4][]byte
+			win := captureHashPRFStackResidue(t, func() {
+				var err error
+				batch, bs, ok, closeFn, err = NewBatchWithClose(p.name, key)
+				if err != nil {
+					t.Fatalf("NewBatchWithClose(%q): %v", p.name, err)
+				}
+				if !ok {
+					return
+				}
+				for lane := 0; lane < 4; lane++ {
+					bin[lane] = in
+					bout[lane] = make([]byte, bs)
+					boutAfter[lane] = make([]byte, bs)
+				}
+				batch(&bout, &bin)
+			})
+			if !ok {
+				return
+			}
+			if closeFn == nil {
+				t.Fatalf("NewBatchWithClose(%q) returned nil closeFn", p.name)
+			}
+			for lane := 0; lane < 4; lane++ {
+				for off := 0; off+8 <= len(bout[lane]); off += 8 {
+					w := binary.LittleEndian.Uint64(bout[lane][off:])
+					if w != 0 && w != hashprfResidueSentinel {
+						secrets[w] = true
+					}
+				}
+			}
+			for idx, w := range win {
+				if secrets[w] {
+					t.Fatalf("%s batch: evaluation left secret word %#x at stack slot %d", p.name, w, idx)
+				}
+			}
+
+			closeFn()
+			batch(&boutAfter, &bin)
+			for lane := 0; lane < 4; lane++ {
+				if bytes.Equal(bout[lane], boutAfter[lane]) {
+					t.Fatalf("%s batch lane %d: output unchanged after closeFn()", p.name, lane)
+				}
+			}
+		})
 	}
 }

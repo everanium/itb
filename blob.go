@@ -200,6 +200,7 @@ func componentsFromStrings(strs []string) ([]uint64, error) {
 		v, err := strconv.ParseUint(s, 10, 64)
 		if err != nil {
 			clear(out)
+			runtime.KeepAlive(out)
 			return nil, ErrBlobMalformed
 		}
 		out[i] = v
@@ -208,29 +209,44 @@ func componentsFromStrings(strs []string) ([]uint64, error) {
 }
 
 // hexToFixed64 / hexToFixed32 decode a hex-encoded fixed-width
-// hash key. Both flag any length mismatch as [ErrBlobMalformed].
-func hexToFixed64(s string) ([64]byte, error) {
-	var out [64]byte
-	decoded, err := hex.DecodeString(s)
-	if err != nil || len(decoded) != 64 {
-		clear(decoded)
-		return out, ErrBlobMalformed
+// hash key directly into dst. Both flag any length mismatch as
+// [ErrBlobMalformed].
+func hexToFixed64(s string, dst *[64]byte) error {
+	if len(s) != 128 {
+		clear(dst[:])
+		runtime.KeepAlive(dst)
+		return ErrBlobMalformed
 	}
-	copy(out[:], decoded)
-	clear(decoded)
-	return out, nil
+	var src [128]byte
+	copy(src[:], s)
+	n, err := hex.Decode(dst[:], src[:])
+	clear(src[:])
+	runtime.KeepAlive(&src)
+	if err != nil || n != 64 {
+		clear(dst[:])
+		runtime.KeepAlive(dst)
+		return ErrBlobMalformed
+	}
+	return nil
 }
 
-func hexToFixed32(s string) ([32]byte, error) {
-	var out [32]byte
-	decoded, err := hex.DecodeString(s)
-	if err != nil || len(decoded) != 32 {
-		clear(decoded)
-		return out, ErrBlobMalformed
+func hexToFixed32(s string, dst *[32]byte) error {
+	if len(s) != 64 {
+		clear(dst[:])
+		runtime.KeepAlive(dst)
+		return ErrBlobMalformed
 	}
-	copy(out[:], decoded)
-	clear(decoded)
-	return out, nil
+	var src [64]byte
+	copy(src[:], s)
+	n, err := hex.Decode(dst[:], src[:])
+	clear(src[:])
+	runtime.KeepAlive(&src)
+	if err != nil || n != 32 {
+		clear(dst[:])
+		runtime.KeepAlive(dst)
+		return ErrBlobMalformed
+	}
+	return nil
 }
 
 // hexToBytes is the variable-length variant used by [Blob128] —
@@ -241,17 +257,28 @@ func hexToFixed32(s string) ([32]byte, error) {
 // multi-megabyte decoded slice before the downstream key-length
 // check in [hashes.Make128Pair] runs.
 func hexToBytes(s string) ([]byte, error) {
+	return decodeHexBounded(s, maxBlob128KeyHexLen)
+}
+
+func decodeHexBounded(s string, maxHexLen int) ([]byte, error) {
 	if s == "" {
 		return nil, nil
 	}
-	if len(s) > maxBlob128KeyHexLen {
+	if len(s) > maxHexLen || len(s)%2 != 0 {
 		return nil, ErrBlobMalformed
 	}
-	decoded, err := hex.DecodeString(s)
-	if err != nil {
+	src := make([]byte, len(s))
+	copy(src, s)
+	dst := make([]byte, len(s)/2)
+	n, err := hex.Decode(dst, src)
+	clear(src)
+	runtime.KeepAlive(src)
+	if err != nil || n != len(dst) {
+		clear(dst)
+		runtime.KeepAlive(dst)
 		return nil, ErrBlobMalformed
 	}
-	return decoded, nil
+	return dst, nil
 }
 
 // validateSeedComponentsLen checks that a freshly parsed component
@@ -511,6 +538,30 @@ func (b *Blob512) Export3Cfg(
 	ns, ds1, ds2, ds3, ss1, ss2, ss3 *Seed512,
 	opts ...Blob512Opts,
 ) ([]byte, error) {
+	var o Blob512Opts
+	defer func() {
+		clear(keyN[:])
+		clear(keyD1[:])
+		clear(keyD2[:])
+		clear(keyD3[:])
+		clear(keyS1[:])
+		clear(keyS2[:])
+		clear(keyS3[:])
+		clear(o.KeyL[:])
+		o = Blob512Opts{}
+		// Wipe the compiler-synthesized [1]Blob512Opts variadic backing array on the caller's stack frame holding by-value KeyL.
+		clear(opts)
+		runtime.KeepAlive(&keyN)
+		runtime.KeepAlive(&keyD1)
+		runtime.KeepAlive(&keyD2)
+		runtime.KeepAlive(&keyD3)
+		runtime.KeepAlive(&keyS1)
+		runtime.KeepAlive(&keyS2)
+		runtime.KeepAlive(&keyS3)
+		runtime.KeepAlive(&o)
+		runtime.KeepAlive(&opts)
+		wipePixelCallStack([9][8]uint64{})
+	}()
 	if cfg == nil {
 		return nil, ErrBlobNilCfg
 	}
@@ -520,7 +571,6 @@ func (b *Blob512) Export3Cfg(
 	if len(opts) > 1 {
 		return nil, ErrBlobTooManyOpts
 	}
-	var o Blob512Opts
 	if len(opts) == 1 {
 		o = opts[0]
 	}
@@ -601,27 +651,8 @@ func (b *Blob512) Import3Cfg(data []byte, cfg *Config) error {
 	if cfg == nil {
 		return ErrBlobNilCfg
 	}
-	var blob blobV1
-	if err := decodeBlobStrict(data, &blob); err != nil {
-		return ErrBlobMalformed
-	}
-	if blob.Version > blobVersionV1 {
-		return ErrBlobVersionTooNew
-	}
-	if blob.Mode != blobModePerRegion && blob.Mode != blobModePerContainer {
-		return ErrBlobModeMismatch
-	}
-	// KeyBits pre-validation — mirrors the [NewSeed512] /
-	// [SeedFromComponents512] contract at the Import boundary so a
-	// malformed blob (KeyBits outside the shipped range, or not a
-	// multiple of the width) cannot slip past validateSeedComponentsLen
-	// with a small "want" that then indexes past the seed material at
-	// first use (Encrypt3x512Cfg → ChainHash512 → Components[0:8]).
-	if blob.KeyBits < 512 || blob.KeyBits > MaxKeyBits || blob.KeyBits%512 != 0 {
-		return ErrBlobMalformed
-	}
-
 	var (
+		blob                                                 blobV1
 		keyN, keyD1, keyD2, keyD3, keyS1, keyS2, keyS3, keyL [64]byte
 		ns, ds1, ds2, ds3, ss1, ss2, ss3, ls                 []uint64
 		macKey                                               []byte
@@ -629,6 +660,8 @@ func (b *Blob512) Import3Cfg(data []byte, cfg *Config) error {
 		err                                                  error
 	)
 	defer func() {
+		blob = blobV1{}
+		runtime.KeepAlive(&blob)
 		clear(keyN[:])
 		clear(keyD1[:])
 		clear(keyD2[:])
@@ -655,35 +688,57 @@ func (b *Blob512) Import3Cfg(data []byte, cfg *Config) error {
 			clear(ss3)
 			clear(ls)
 			clear(macKey)
+			runtime.KeepAlive(ns)
+			runtime.KeepAlive(ds1)
+			runtime.KeepAlive(ds2)
+			runtime.KeepAlive(ds3)
+			runtime.KeepAlive(ss1)
+			runtime.KeepAlive(ss2)
+			runtime.KeepAlive(ss3)
+			runtime.KeepAlive(ls)
+			runtime.KeepAlive(macKey)
 		}
+		wipePixelCallStack([9][8]uint64{})
 	}()
 
-	keyN, err = hexToFixed64(blob.KeyN)
-	if err != nil {
+	if err = decodeBlobStrict(data, &blob); err != nil {
+		return ErrBlobMalformed
+	}
+	if blob.Version > blobVersionV1 {
+		return ErrBlobVersionTooNew
+	}
+	if blob.Mode != blobModePerRegion && blob.Mode != blobModePerContainer {
+		return ErrBlobModeMismatch
+	}
+	// KeyBits pre-validation — mirrors the [NewSeed512] /
+	// [SeedFromComponents512] contract at the Import boundary so a
+	// malformed blob (KeyBits outside the shipped range, or not a
+	// multiple of the width) cannot slip past validateSeedComponentsLen
+	// with a small "want" that then indexes past the seed material at
+	// first use (Encrypt3x512Cfg → ChainHash512 → Components[0:8]).
+	if blob.KeyBits < 512 || blob.KeyBits > MaxKeyBits || blob.KeyBits%512 != 0 {
+		return ErrBlobMalformed
+	}
+
+	if err = hexToFixed64(blob.KeyN, &keyN); err != nil {
 		return err
 	}
-	keyD1, err = hexToFixed64(blob.KeyD1)
-	if err != nil {
+	if err = hexToFixed64(blob.KeyD1, &keyD1); err != nil {
 		return err
 	}
-	keyD2, err = hexToFixed64(blob.KeyD2)
-	if err != nil {
+	if err = hexToFixed64(blob.KeyD2, &keyD2); err != nil {
 		return err
 	}
-	keyD3, err = hexToFixed64(blob.KeyD3)
-	if err != nil {
+	if err = hexToFixed64(blob.KeyD3, &keyD3); err != nil {
 		return err
 	}
-	keyS1, err = hexToFixed64(blob.KeyS1)
-	if err != nil {
+	if err = hexToFixed64(blob.KeyS1, &keyS1); err != nil {
 		return err
 	}
-	keyS2, err = hexToFixed64(blob.KeyS2)
-	if err != nil {
+	if err = hexToFixed64(blob.KeyS2, &keyS2); err != nil {
 		return err
 	}
-	keyS3, err = hexToFixed64(blob.KeyS3)
-	if err != nil {
+	if err = hexToFixed64(blob.KeyS3, &keyS3); err != nil {
 		return err
 	}
 	ns, err = componentsFromStrings(blob.NS)
@@ -723,8 +778,7 @@ func (b *Blob512) Import3Cfg(data []byte, cfg *Config) error {
 
 	hasLS := blob.KeyL != "" || len(blob.LS) > 0
 	if hasLS {
-		keyL, err = hexToFixed64(blob.KeyL)
-		if err != nil {
+		if err = hexToFixed64(blob.KeyL, &keyL); err != nil {
 			return err
 		}
 		ls, err = componentsFromStrings(blob.LS)
@@ -737,12 +791,9 @@ func (b *Blob512) Import3Cfg(data []byte, cfg *Config) error {
 	}
 
 	if blob.MACKey != "" {
-		if len(blob.MACKey) > maxMACKeyHexLen {
-			return ErrBlobMalformed
-		}
-		macKey, err = hex.DecodeString(blob.MACKey)
+		macKey, err = decodeHexBounded(blob.MACKey, maxMACKeyHexLen)
 		if err != nil {
-			return ErrBlobMalformed
+			return err
 		}
 	}
 
@@ -751,25 +802,24 @@ func (b *Blob512) Import3Cfg(data []byte, cfg *Config) error {
 	}
 	cfg.Mode = blob.Mode
 
-	*b = Blob512{
-		Mode:    blob.Mode,
-		KeyN:    keyN,
-		KeyD1:   keyD1,
-		KeyD2:   keyD2,
-		KeyD3:   keyD3,
-		KeyS1:   keyS1,
-		KeyS2:   keyS2,
-		KeyS3:   keyS3,
-		NS:      &Seed512{Components: ns},
-		DS1:     &Seed512{Components: ds1},
-		DS2:     &Seed512{Components: ds2},
-		DS3:     &Seed512{Components: ds3},
-		SS1:     &Seed512{Components: ss1},
-		SS2:     &Seed512{Components: ss2},
-		SS3:     &Seed512{Components: ss3},
-		MACKey:  macKey,
-		MACName: blob.MACName,
-	}
+	*b = Blob512{}
+	b.Mode = blob.Mode
+	b.KeyN = keyN
+	b.KeyD1 = keyD1
+	b.KeyD2 = keyD2
+	b.KeyD3 = keyD3
+	b.KeyS1 = keyS1
+	b.KeyS2 = keyS2
+	b.KeyS3 = keyS3
+	b.NS = &Seed512{Components: ns}
+	b.DS1 = &Seed512{Components: ds1}
+	b.DS2 = &Seed512{Components: ds2}
+	b.DS3 = &Seed512{Components: ds3}
+	b.SS1 = &Seed512{Components: ss1}
+	b.SS2 = &Seed512{Components: ss2}
+	b.SS3 = &Seed512{Components: ss3}
+	b.MACKey = macKey
+	b.MACName = blob.MACName
 	if hasLS {
 		b.KeyL = keyL
 		b.LS = &Seed512{Components: ls}
@@ -792,6 +842,30 @@ func (b *Blob256) Export3Cfg(
 	ns, ds1, ds2, ds3, ss1, ss2, ss3 *Seed256,
 	opts ...Blob256Opts,
 ) ([]byte, error) {
+	var o Blob256Opts
+	defer func() {
+		clear(keyN[:])
+		clear(keyD1[:])
+		clear(keyD2[:])
+		clear(keyD3[:])
+		clear(keyS1[:])
+		clear(keyS2[:])
+		clear(keyS3[:])
+		clear(o.KeyL[:])
+		o = Blob256Opts{}
+		// Wipe the compiler-synthesized [1]Blob256Opts variadic backing array on the caller's stack frame holding by-value KeyL.
+		clear(opts)
+		runtime.KeepAlive(&keyN)
+		runtime.KeepAlive(&keyD1)
+		runtime.KeepAlive(&keyD2)
+		runtime.KeepAlive(&keyD3)
+		runtime.KeepAlive(&keyS1)
+		runtime.KeepAlive(&keyS2)
+		runtime.KeepAlive(&keyS3)
+		runtime.KeepAlive(&o)
+		runtime.KeepAlive(&opts)
+		wipePixelCallStack([9][8]uint64{})
+	}()
 	if cfg == nil {
 		return nil, ErrBlobNilCfg
 	}
@@ -801,7 +875,6 @@ func (b *Blob256) Export3Cfg(
 	if len(opts) > 1 {
 		return nil, ErrBlobTooManyOpts
 	}
-	var o Blob256Opts
 	if len(opts) == 1 {
 		o = opts[0]
 	}
@@ -874,27 +947,8 @@ func (b *Blob256) Import3Cfg(data []byte, cfg *Config) error {
 	if cfg == nil {
 		return ErrBlobNilCfg
 	}
-	var blob blobV1
-	if err := decodeBlobStrict(data, &blob); err != nil {
-		return ErrBlobMalformed
-	}
-	if blob.Version > blobVersionV1 {
-		return ErrBlobVersionTooNew
-	}
-	if blob.Mode != blobModePerRegion && blob.Mode != blobModePerContainer {
-		return ErrBlobModeMismatch
-	}
-	// KeyBits pre-validation — mirrors the [NewSeed256] /
-	// [SeedFromComponents256] contract at the Import boundary so a
-	// malformed blob (KeyBits outside the shipped range, or not a
-	// multiple of the width) cannot slip past validateSeedComponentsLen
-	// with a small "want" that then indexes past the seed material at
-	// first use.
-	if blob.KeyBits < 512 || blob.KeyBits > MaxKeyBits || blob.KeyBits%256 != 0 {
-		return ErrBlobMalformed
-	}
-
 	var (
+		blob                                                 blobV1
 		keyN, keyD1, keyD2, keyD3, keyS1, keyS2, keyS3, keyL [32]byte
 		ns, ds1, ds2, ds3, ss1, ss2, ss3, ls                 []uint64
 		macKey                                               []byte
@@ -902,6 +956,8 @@ func (b *Blob256) Import3Cfg(data []byte, cfg *Config) error {
 		err                                                  error
 	)
 	defer func() {
+		blob = blobV1{}
+		runtime.KeepAlive(&blob)
 		clear(keyN[:])
 		clear(keyD1[:])
 		clear(keyD2[:])
@@ -928,35 +984,57 @@ func (b *Blob256) Import3Cfg(data []byte, cfg *Config) error {
 			clear(ss3)
 			clear(ls)
 			clear(macKey)
+			runtime.KeepAlive(ns)
+			runtime.KeepAlive(ds1)
+			runtime.KeepAlive(ds2)
+			runtime.KeepAlive(ds3)
+			runtime.KeepAlive(ss1)
+			runtime.KeepAlive(ss2)
+			runtime.KeepAlive(ss3)
+			runtime.KeepAlive(ls)
+			runtime.KeepAlive(macKey)
 		}
+		wipePixelCallStack([9][8]uint64{})
 	}()
 
-	keyN, err = hexToFixed32(blob.KeyN)
-	if err != nil {
+	if err = decodeBlobStrict(data, &blob); err != nil {
+		return ErrBlobMalformed
+	}
+	if blob.Version > blobVersionV1 {
+		return ErrBlobVersionTooNew
+	}
+	if blob.Mode != blobModePerRegion && blob.Mode != blobModePerContainer {
+		return ErrBlobModeMismatch
+	}
+	// KeyBits pre-validation — mirrors the [NewSeed256] /
+	// [SeedFromComponents256] contract at the Import boundary so a
+	// malformed blob (KeyBits outside the shipped range, or not a
+	// multiple of the width) cannot slip past validateSeedComponentsLen
+	// with a small "want" that then indexes past the seed material at
+	// first use.
+	if blob.KeyBits < 512 || blob.KeyBits > MaxKeyBits || blob.KeyBits%256 != 0 {
+		return ErrBlobMalformed
+	}
+
+	if err = hexToFixed32(blob.KeyN, &keyN); err != nil {
 		return err
 	}
-	keyD1, err = hexToFixed32(blob.KeyD1)
-	if err != nil {
+	if err = hexToFixed32(blob.KeyD1, &keyD1); err != nil {
 		return err
 	}
-	keyD2, err = hexToFixed32(blob.KeyD2)
-	if err != nil {
+	if err = hexToFixed32(blob.KeyD2, &keyD2); err != nil {
 		return err
 	}
-	keyD3, err = hexToFixed32(blob.KeyD3)
-	if err != nil {
+	if err = hexToFixed32(blob.KeyD3, &keyD3); err != nil {
 		return err
 	}
-	keyS1, err = hexToFixed32(blob.KeyS1)
-	if err != nil {
+	if err = hexToFixed32(blob.KeyS1, &keyS1); err != nil {
 		return err
 	}
-	keyS2, err = hexToFixed32(blob.KeyS2)
-	if err != nil {
+	if err = hexToFixed32(blob.KeyS2, &keyS2); err != nil {
 		return err
 	}
-	keyS3, err = hexToFixed32(blob.KeyS3)
-	if err != nil {
+	if err = hexToFixed32(blob.KeyS3, &keyS3); err != nil {
 		return err
 	}
 	ns, err = componentsFromStrings(blob.NS)
@@ -996,8 +1074,7 @@ func (b *Blob256) Import3Cfg(data []byte, cfg *Config) error {
 
 	hasLS := blob.KeyL != "" || len(blob.LS) > 0
 	if hasLS {
-		keyL, err = hexToFixed32(blob.KeyL)
-		if err != nil {
+		if err = hexToFixed32(blob.KeyL, &keyL); err != nil {
 			return err
 		}
 		ls, err = componentsFromStrings(blob.LS)
@@ -1010,12 +1087,9 @@ func (b *Blob256) Import3Cfg(data []byte, cfg *Config) error {
 	}
 
 	if blob.MACKey != "" {
-		if len(blob.MACKey) > maxMACKeyHexLen {
-			return ErrBlobMalformed
-		}
-		macKey, err = hex.DecodeString(blob.MACKey)
+		macKey, err = decodeHexBounded(blob.MACKey, maxMACKeyHexLen)
 		if err != nil {
-			return ErrBlobMalformed
+			return err
 		}
 	}
 
@@ -1024,25 +1098,24 @@ func (b *Blob256) Import3Cfg(data []byte, cfg *Config) error {
 	}
 	cfg.Mode = blob.Mode
 
-	*b = Blob256{
-		Mode:    blob.Mode,
-		KeyN:    keyN,
-		KeyD1:   keyD1,
-		KeyD2:   keyD2,
-		KeyD3:   keyD3,
-		KeyS1:   keyS1,
-		KeyS2:   keyS2,
-		KeyS3:   keyS3,
-		NS:      &Seed256{Components: ns},
-		DS1:     &Seed256{Components: ds1},
-		DS2:     &Seed256{Components: ds2},
-		DS3:     &Seed256{Components: ds3},
-		SS1:     &Seed256{Components: ss1},
-		SS2:     &Seed256{Components: ss2},
-		SS3:     &Seed256{Components: ss3},
-		MACKey:  macKey,
-		MACName: blob.MACName,
-	}
+	*b = Blob256{}
+	b.Mode = blob.Mode
+	b.KeyN = keyN
+	b.KeyD1 = keyD1
+	b.KeyD2 = keyD2
+	b.KeyD3 = keyD3
+	b.KeyS1 = keyS1
+	b.KeyS2 = keyS2
+	b.KeyS3 = keyS3
+	b.NS = &Seed256{Components: ns}
+	b.DS1 = &Seed256{Components: ds1}
+	b.DS2 = &Seed256{Components: ds2}
+	b.DS3 = &Seed256{Components: ds3}
+	b.SS1 = &Seed256{Components: ss1}
+	b.SS2 = &Seed256{Components: ss2}
+	b.SS3 = &Seed256{Components: ss3}
+	b.MACKey = macKey
+	b.MACName = blob.MACName
 	if hasLS {
 		b.KeyL = keyL
 		b.LS = &Seed256{Components: ls}
@@ -1065,6 +1138,14 @@ func (b *Blob128) Export3Cfg(
 	ns, ds1, ds2, ds3, ss1, ss2, ss3 *Seed128,
 	opts ...Blob128Opts,
 ) ([]byte, error) {
+	var o Blob128Opts
+	defer func() {
+		o = Blob128Opts{}
+		clear(opts)
+		runtime.KeepAlive(&o)
+		runtime.KeepAlive(&opts)
+		wipePixelCallStack([9][8]uint64{})
+	}()
 	if cfg == nil {
 		return nil, ErrBlobNilCfg
 	}
@@ -1074,7 +1155,6 @@ func (b *Blob128) Export3Cfg(
 	if len(opts) > 1 {
 		return nil, ErrBlobTooManyOpts
 	}
-	var o Blob128Opts
 	if len(opts) == 1 {
 		o = opts[0]
 	}
@@ -1151,27 +1231,8 @@ func (b *Blob128) Import3Cfg(data []byte, cfg *Config) error {
 	if cfg == nil {
 		return ErrBlobNilCfg
 	}
-	var blob blobV1
-	if err := decodeBlobStrict(data, &blob); err != nil {
-		return ErrBlobMalformed
-	}
-	if blob.Version > blobVersionV1 {
-		return ErrBlobVersionTooNew
-	}
-	if blob.Mode != blobModePerRegion && blob.Mode != blobModePerContainer {
-		return ErrBlobModeMismatch
-	}
-	// KeyBits pre-validation — mirrors the [NewSeed128] /
-	// [SeedFromComponents128] contract at the Import boundary so a
-	// malformed blob (KeyBits outside the shipped range, or not a
-	// multiple of the width) cannot slip past validateSeedComponentsLen
-	// with a small "want" that then indexes past the seed material at
-	// first use.
-	if blob.KeyBits < 512 || blob.KeyBits > MaxKeyBits || blob.KeyBits%128 != 0 {
-		return ErrBlobMalformed
-	}
-
 	var (
+		blob                                                 blobV1
 		keyN, keyD1, keyD2, keyD3, keyS1, keyS2, keyS3, keyL []byte
 		ns, ds1, ds2, ds3, ss1, ss2, ss3, ls                 []uint64
 		macKey                                               []byte
@@ -1179,6 +1240,8 @@ func (b *Blob128) Import3Cfg(data []byte, cfg *Config) error {
 		err                                                  error
 	)
 	defer func() {
+		blob = blobV1{}
+		runtime.KeepAlive(&blob)
 		if !ok {
 			clear(keyN)
 			clear(keyD1)
@@ -1197,8 +1260,45 @@ func (b *Blob128) Import3Cfg(data []byte, cfg *Config) error {
 			clear(ss3)
 			clear(ls)
 			clear(macKey)
+			runtime.KeepAlive(keyN)
+			runtime.KeepAlive(keyD1)
+			runtime.KeepAlive(keyD2)
+			runtime.KeepAlive(keyD3)
+			runtime.KeepAlive(keyS1)
+			runtime.KeepAlive(keyS2)
+			runtime.KeepAlive(keyS3)
+			runtime.KeepAlive(keyL)
+			runtime.KeepAlive(ns)
+			runtime.KeepAlive(ds1)
+			runtime.KeepAlive(ds2)
+			runtime.KeepAlive(ds3)
+			runtime.KeepAlive(ss1)
+			runtime.KeepAlive(ss2)
+			runtime.KeepAlive(ss3)
+			runtime.KeepAlive(ls)
+			runtime.KeepAlive(macKey)
 		}
+		wipePixelCallStack([9][8]uint64{})
 	}()
+
+	if err = decodeBlobStrict(data, &blob); err != nil {
+		return ErrBlobMalformed
+	}
+	if blob.Version > blobVersionV1 {
+		return ErrBlobVersionTooNew
+	}
+	if blob.Mode != blobModePerRegion && blob.Mode != blobModePerContainer {
+		return ErrBlobModeMismatch
+	}
+	// KeyBits pre-validation — mirrors the [NewSeed128] /
+	// [SeedFromComponents128] contract at the Import boundary so a
+	// malformed blob (KeyBits outside the shipped range, or not a
+	// multiple of the width) cannot slip past validateSeedComponentsLen
+	// with a small "want" that then indexes past the seed material at
+	// first use.
+	if blob.KeyBits < 512 || blob.KeyBits > MaxKeyBits || blob.KeyBits%128 != 0 {
+		return ErrBlobMalformed
+	}
 
 	keyN, err = hexToBytes(blob.KeyN)
 	if err != nil {
@@ -1279,12 +1379,9 @@ func (b *Blob128) Import3Cfg(data []byte, cfg *Config) error {
 	}
 
 	if blob.MACKey != "" {
-		if len(blob.MACKey) > maxMACKeyHexLen {
-			return ErrBlobMalformed
-		}
-		macKey, err = hex.DecodeString(blob.MACKey)
+		macKey, err = decodeHexBounded(blob.MACKey, maxMACKeyHexLen)
 		if err != nil {
-			return ErrBlobMalformed
+			return err
 		}
 	}
 
@@ -1293,25 +1390,24 @@ func (b *Blob128) Import3Cfg(data []byte, cfg *Config) error {
 	}
 	cfg.Mode = blob.Mode
 
-	*b = Blob128{
-		Mode:    blob.Mode,
-		KeyN:    keyN,
-		KeyD1:   keyD1,
-		KeyD2:   keyD2,
-		KeyD3:   keyD3,
-		KeyS1:   keyS1,
-		KeyS2:   keyS2,
-		KeyS3:   keyS3,
-		NS:      &Seed128{Components: ns},
-		DS1:     &Seed128{Components: ds1},
-		DS2:     &Seed128{Components: ds2},
-		DS3:     &Seed128{Components: ds3},
-		SS1:     &Seed128{Components: ss1},
-		SS2:     &Seed128{Components: ss2},
-		SS3:     &Seed128{Components: ss3},
-		MACKey:  macKey,
-		MACName: blob.MACName,
-	}
+	*b = Blob128{}
+	b.Mode = blob.Mode
+	b.KeyN = keyN
+	b.KeyD1 = keyD1
+	b.KeyD2 = keyD2
+	b.KeyD3 = keyD3
+	b.KeyS1 = keyS1
+	b.KeyS2 = keyS2
+	b.KeyS3 = keyS3
+	b.NS = &Seed128{Components: ns}
+	b.DS1 = &Seed128{Components: ds1}
+	b.DS2 = &Seed128{Components: ds2}
+	b.DS3 = &Seed128{Components: ds3}
+	b.SS1 = &Seed128{Components: ss1}
+	b.SS2 = &Seed128{Components: ss2}
+	b.SS3 = &Seed128{Components: ss3}
+	b.MACKey = macKey
+	b.MACName = blob.MACName
 	if hasLS {
 		b.KeyL = keyL
 		b.LS = &Seed128{Components: ls}

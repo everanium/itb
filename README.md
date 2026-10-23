@@ -102,7 +102,12 @@ cd cmd/cshared && go build -buildmode=c-shared -o ../../dist/linux-amd64/libitb3
 
 # CGO backend without ITB-native ASM (portable, audit-grade deterministic)
 cd cmd/cshared && go build -buildmode=c-shared -tags=noitbasm -o ../../dist/linux-amd64/libitb3.so .
+
+# Static C archive (for environments where runtime dlopen is unavailable or restricted)
+cd cmd/cshared && go build -buildmode=c-archive -o ../../dist/linux-amd64/libitb3.a .
 ```
+
+On platforms or sandboxes where dynamic library loading (`dlopen` / `-buildmode=c-shared`) is unavailable or restricted, `cmd/cshared` builds unmodified with `-buildmode=c-archive`, emitting `libitb3.a` and `libitb3.h` with the identical `ITB_*` and `ITB_Triple_*` C ABI symbol surface for compile-time static linking.
 
 ### Memory
 

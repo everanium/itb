@@ -270,14 +270,56 @@ const (
 // stack is grown past the window first and the collector is held off
 // for the duration, so the stack is neither grown nor shrunk (and so
 // never moved) between the sentinel fill, the call and the read-back.
+var dumpSIMDRegsHook func(dst *[88]uint64)
+var dirtySIMDRegHook func(masked uint64)
+var genericResidueSink uint64
+
+//go:noinline
+func leakyGenericFrame(secret uint64, i int) {
+	var frame [8]uint64
+	for j := range frame {
+		frame[j] = secret
+	}
+	genericResidueSink = frame[(i+1)%len(frame)]
+}
+
+func checkResidueNegativeControls(t *testing.T) {
+	t.Helper()
+	secret := uint64(0xA5C35A3CF00DCAFE)
+	resStack := stackResidue(func() { leakyGenericFrame(secret, 0) })
+	stackHits := 0
+	for _, w := range resStack[:residueWindow/8] {
+		if w == secret {
+			stackHits++
+		}
+	}
+	if stackHits == 0 {
+		t.Fatal("negative control: stack-residue probe did not see secret stored by leakyGenericFrame")
+	}
+	if dirtySIMDRegHook != nil {
+		resReg := stackResidue(func() { dirtySIMDRegHook(secret ^ 0x5555555555555555) })
+		regHits := 0
+		for _, w := range resReg[residueWindow/8:] {
+			if w == secret {
+				regHits++
+			}
+		}
+		if regHits < 2 {
+			t.Fatalf("negative control: register snapshot saw %d hits of leaked register word, want >= 2", regHits)
+		}
+	}
+}
+
 func stackResidue(fn func()) []uint64 {
 	defer debug.SetGCPercent(debug.SetGCPercent(-1))
-	res := make([]uint64, residueWindow/8)
+	res := make([]uint64, residueWindow/8+88)
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
 		residueGrow(0)
-		residueProbe(fn, res)
+		var regs [88]uint64
+		residueProbe(fn, res[:residueWindow/8], &regs)
+		copy(res[residueWindow/8:], regs[:])
 	}()
 	<-done
 	return res
@@ -298,13 +340,13 @@ func residueGrow(i int) byte {
 // lies below its own stack pointer.
 //
 //go:noinline
-func residueProbe(fn func(), res []uint64) {
+func residueProbe(fn func(), res []uint64, regs *[88]uint64) {
 	var anchor uint64
 	top := unsafe.Add(unsafe.Pointer(&anchor), -residueGap)
 	for i := range res {
 		*(*uint64)(unsafe.Add(top, -8*(i+1))) = residueSentinel
 	}
-	residueDeep(fn, 0)
+	residueDeep(fn, 0, regs)
 	for i := range res {
 		res[i] = *(*uint64)(unsafe.Add(top, -8*(i+1)))
 	}
@@ -314,10 +356,13 @@ func residueProbe(fn func(), res []uint64) {
 // the kernel's frame below it fall inside the window.
 //
 //go:noinline
-func residueDeep(fn func(), i int) byte {
+func residueDeep(fn func(), i int, regs *[88]uint64) byte {
 	var pad [residuePad]byte
 	pad[i] = 1
 	fn()
+	if dumpSIMDRegsHook != nil {
+		dumpSIMDRegsHook(regs)
+	}
 	return pad[(i+7)%len(pad)]
 }
 
@@ -328,16 +373,31 @@ func residueDeep(fn func(), i int) byte {
 func assertNoSecretResidue(t *testing.T, name string, res []uint64, secrets64 map[uint64]string, secrets32 map[uint32]string) {
 	t.Helper()
 	written := 0
+	stackWords := residueWindow / 8
 	for i, w := range res {
-		if w != residueSentinel {
+		if i < stackWords && w != residueSentinel {
 			written++
 		}
+		if i >= stackWords && w == 0 {
+			continue
+		}
 		if what, ok := secrets64[w]; ok {
-			t.Errorf("%s: %s left in the stack %d bytes below the window top", name, what, 8*(i+1))
+			if i < stackWords {
+				t.Errorf("%s: %s left in the stack %d bytes below the window top", name, what, 8*(i+1))
+			} else {
+				t.Errorf("%s: %s left in post-RET register snapshot (word %d)", name, what, i-stackWords)
+			}
 		}
 		for h, d := range [2]uint32{uint32(w), uint32(w >> 32)} {
+			if i >= stackWords && d == 0 {
+				continue
+			}
 			if what, ok := secrets32[d]; ok {
-				t.Errorf("%s: %s left in the stack %d bytes below the window top", name, what, 8*(i+1)-4*h)
+				if i < stackWords {
+					t.Errorf("%s: %s left in the stack %d bytes below the window top", name, what, 8*(i+1)-4*h)
+				} else {
+					t.Errorf("%s: %s left in post-RET register snapshot (word %d half %d)", name, what, i-stackWords, h)
+				}
 			}
 		}
 	}

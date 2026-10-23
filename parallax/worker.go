@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/everanium/itb/ctr"
+	"github.com/everanium/itb/internal/wipe"
 )
 
 // maxWorkers caps the goroutine count for the parallax XOR pass. The
@@ -42,7 +43,10 @@ func runWorkers(s *Schedule, cs *Cipherset, pi []int, nonce, dst, src []byte, se
 
 	workers := workerCount(total, numSegs)
 	if workers <= 1 {
-		return runRange(s, cs, pi, nonce, dst, src, 0, numSegs, segSize)
+		wipe.CallStack8K([9][8]uint64{})
+		err := runRange(s, cs, pi, nonce, dst, src, 0, numSegs, segSize)
+		wipe.CallStack8K([9][8]uint64{})
+		return err
 	}
 
 	segsPerWorker := (numSegs + workers - 1) / workers
@@ -60,7 +64,9 @@ func runWorkers(s *Schedule, cs *Cipherset, pi []int, nonce, dst, src []byte, se
 		wg.Add(1)
 		go func(idx, segStart, segEnd int) {
 			defer wg.Done()
+			wipe.CallStack8K([9][8]uint64{})
 			errs[idx] = runRange(s, cs, pi, nonce, dst, src, segStart, segEnd, segSize)
+			wipe.CallStack8K([9][8]uint64{})
 		}(w, start, end)
 	}
 	wg.Wait()
@@ -77,6 +83,8 @@ func runWorkers(s *Schedule, cs *Cipherset, pi []int, nonce, dst, src []byte, se
 // repositioning each slot's keystream counter to the segment's
 // absolute byte offset before XOR. segSize is the per-mode segment
 // width supplied by the caller.
+//
+//go:noinline
 func runRange(s *Schedule, cs *Cipherset, pi []int, nonce, dst, src []byte, segStart, segEnd, segSize int) error {
 	total := len(src)
 	n := len(pi)

@@ -382,7 +382,9 @@ def zmm256_x4(n):
     body += ["\tDECQ CX", "\tJNZ loop", ""]
     for l in range(4):
         body += [f"\tVEXTRACTI64X2 ${l}, Z14, {32 * l}(DX)", f"\tVEXTRACTI64X2 ${l}, Z15, {32 * l + 16}(DX)"]
-    body += [f"\tVPXORD {r}, {r}, {r}" for r in s2 + k1 + k2 + ["Z13"]]
+    body += [f"\tVPXORD X{i}, X{i}, X{i}" for i in range(32)]
+    body += [f"\tVMOVDQU64 Z0, {off}(SP)" for off in range(0, frame.aligned, 64)]
+    body += [f"\tXORQ {r}, {r}" for r in ["AX", "BX", "CX", "DX", "R8", "R9", "R10", "R11", "R12"]]
     body += ["\tVZEROUPPER", "\tRET"]
     sig = f"// func areion256FusedChain{n}x4Avx512Asm(fixedKey *[32]byte, comps *uint64, nGroups int, dataPtrs *[4]*byte, out *[4][4]uint64)"
     return lines + f"\n{sig}\nTEXT ·areion256FusedChain{n}x4Avx512Asm(SB), NOSPLIT, ${frame.aligned}-40\n" + "\n".join(body) + "\n"
@@ -456,7 +458,8 @@ DATA areionFill13<>+0x078(SB)/8, $0
         body += [f"\tVEXTRACTI64X2 ${l}, Z14, {32 * l}(DX)", f"\tVEXTRACTI64X2 ${l}, Z15, {32 * l + 16}(DX)"]
     for l in range(4):
         body += [f"\tVEXTRACTI64X2 ${l}, Z30, {128 + 32 * l}(DX)", f"\tVEXTRACTI64X2 ${l}, Z31, {128 + 32 * l + 16}(DX)"]
-    body += [f"\tVPXORD {r}, {r}, {r}" for r in ("Z4", "Z5", "Z20", "Z21", "Z8", "Z9", "Z10", "Z11", "Z26", "Z27", "Z13")]
+    body += [f"\tVPXORD X{i}, X{i}, X{i}" for i in range(32)]
+    body += [f"\tXORQ {r}, {r}" for r in ["AX", "BX", "CX", "DX", "R9"]]
     body += ["\tVZEROUPPER", "\tRET"]
     sig = "// func areion256FusedChain13x8Avx512Asm(fixedKey *[32]byte, comps *uint64, nGroups int, groupIdxBase uint64, out *[8][4]uint64, v uint32)"
     return lines + f"\n{sig}\nTEXT ·areion256FusedChain13x8Avx512Asm(SB), NOSPLIT, $0-44\n" + "\n".join(body) + "\n"
@@ -533,7 +536,9 @@ def zmm512_x4(n):
     body += ["\tDECQ CX", "\tJNZ loop", ""]
     for l in range(4):
         body += [f"\tVEXTRACTI64X2 ${l}, {st[b]}, {64 * l + 16 * b}(DX)" for b in range(4)]
-    body += [f"\tVPXORD {r}, {r}, {r}" for r in s2 + k1 + k2 + ["Z7"]]
+    body += [f"\tVPXORD X{i}, X{i}, X{i}" for i in range(32)]
+    body += [f"\tVMOVDQU64 Z0, {off}(SP)" for off in range(0, frame.aligned, 64)]
+    body += [f"\tXORQ {r}, {r}" for r in ["AX", "BX", "CX", "DX", "R8", "R9", "R10", "R11", "R12"]]
     body += ["\tVZEROUPPER", "\tRET"]
     sig = f"// func areion512FusedChain{n}x4Avx512Asm(fixedKey *[64]byte, comps *uint64, nGroups int, dataPtrs *[4]*byte, out *[4][8]uint64)"
     return lines + f"\n{sig}\nTEXT ·areion512FusedChain{n}x4Avx512Asm(SB), NOSPLIT, ${frame.aligned}-40\n" + "\n".join(body) + "\n"
@@ -585,7 +590,9 @@ def ymm256_x4(n):
         body += ["\tDECQ CX", f"\tJNZ loop{p}"]
         body += [f"\tVEXTRACTI128 $0, Y8, {64 * p}(DX)", f"\tVEXTRACTI128 $0, Y9, {64 * p + 16}(DX)",
                  f"\tVEXTRACTI128 $1, Y8, {64 * p + 32}(DX)", f"\tVEXTRACTI128 $1, Y9, {64 * p + 48}(DX)"]
-    body += [f"\tVPXOR {r}, {r}, {r}" for r in s2 + k1 + k2 + ["Y7"]]
+    body += [f"\tVPXOR Y{i}, Y{i}, Y{i}" for i in range(16)]
+    body += [f"\tVMOVDQU Y0, {off}(SP)" for off in range(0, frame.aligned, 32)]
+    body += [f"\tXORQ {r}, {r}" for r in ["AX", "BX", "CX", "DX", "R8", "R9", "R10", "R11", "R12"]]
     body += ["\tVZEROUPPER", "\tRET"]
     sig = f"// func areion256FusedChain{n}x4VaesAvx2Asm(fixedKey *[32]byte, comps *uint64, nGroups int, dataPtrs *[4]*byte, out *[4][4]uint64)"
     return lines + f"\n{sig}\nTEXT ·areion256FusedChain{n}x4VaesAvx2Asm(SB), NOSPLIT, ${frame.aligned}-40\n" + "\n".join(body) + "\n"
@@ -650,7 +657,9 @@ def ymm512_x4(n):
         for b in range(4):
             body += [f"\tVEXTRACTI128 $0, {s1[b]}, {128 * p + 16 * b}(DX)",
                      f"\tVEXTRACTI128 $1, {s1[b]}, {128 * p + 64 + 16 * b}(DX)"]
-    body += [f"\tVPXOR {r}, {r}, {r}" for r in s2 + k2 + ["Y7"]]
+    body += [f"\tVPXOR Y{i}, Y{i}, Y{i}" for i in range(16)]
+    body += [f"\tVMOVDQU Y0, {off}(SP)" for off in range(0, frame.aligned, 32)]
+    body += [f"\tXORQ {r}, {r}" for r in ["AX", "BX", "CX", "DX", "R8", "R9", "R10", "R11", "R12"]]
     body += ["\tVZEROUPPER", "\tRET"]
     sig = f"// func areion512FusedChain{n}x4VaesAvx2Asm(fixedKey *[64]byte, comps *uint64, nGroups int, dataPtrs *[4]*byte, out *[4][8]uint64)"
     return lines + f"\n{sig}\nTEXT ·areion512FusedChain{n}x4VaesAvx2Asm(SB), NOSPLIT, ${frame.aligned}-40\n" + "\n".join(body) + "\n"
@@ -813,10 +822,11 @@ def xmm256(n, lanes, vex=False):
             lane = 2 * p + li
             mov = "VMOVDQU" if vex else "MOVOU"
             body += [f"\t{mov} {s1a}, {32 * lane}(DX)", f"\t{mov} {s1b}, {32 * lane + 16}(DX)"]
-    s2_regs = [r for _, _, s2a, s2b in lane_regs for r in (s2a, s2b)]
-    k2_regs = [k2_of(li, b) for li in range(len(lane_regs)) for b in range(2)]
-    extra = (["X8", "X9"] if lanes == 1 else []) + ["X13", "X14"]
-    body += [f"\tVPXOR {r}, {r}, {r}" if vex else f"\tPXOR {r}, {r}" for r in s2_regs + k2_regs + extra]
+    mov = "VMOVDQU" if vex else "MOVOU"
+    body += [f"\tVPXOR X{i}, X{i}, X{i}" if vex else f"\tPXOR X{i}, X{i}" for i in range(16)]
+    body += [f"\t{mov} X0, {off}(SP)" for off in range(0, frame.aligned, 16)]
+    gprs = ["AX", "BX", "CX", "DX"] + ["R8", "R9", "R10", "R11"][:lanes] + ["R12"]
+    body += [f"\tXORQ {r}, {r}" for r in gprs]
     body.append("\tRET")
     suf = "Vex" if vex else "AesNi"
     if lanes == 4:
@@ -926,7 +936,11 @@ def xmm512(n, lanes, vex=False):
         body += ["\tDECQ CX", f"\tJNZ loop{p}"]
         mov = "VMOVDQU" if vex else "MOVOU"
         body += [f"\t{mov} {s1[b]}, {64 * p + 16 * b}(DX)" for b in range(4)]
-    body += [f"\tVPXOR {r}, {r}, {r}" if vex else f"\tPXOR {r}, {r}" for r in s2 + k2 + ["X14", "X15"]]
+    mov = "VMOVDQU" if vex else "MOVOU"
+    body += [f"\tVPXOR X{i}, X{i}, X{i}" if vex else f"\tPXOR X{i}, X{i}" for i in range(16)]
+    body += [f"\t{mov} X0, {off}(SP)" for off in range(0, frame.aligned, 16)]
+    gprs = ["AX", "BX", "CX", "DX"] + ["R8", "R9", "R10", "R11"][:lanes] + ["R12"]
+    body += [f"\tXORQ {r}, {r}" for r in gprs]
     body.append("\tRET")
     suf = "Vex" if vex else "AesNi"
     if lanes == 4:
@@ -1078,7 +1092,16 @@ def neon256(n, lanes):
         for li, (s1a, s1b, _, _) in enumerate(lane_regs):
             lane = 2 * p + li
             body += [f"\tADD ${32 * lane}, R4, R6", f"\tVST1 [{s1a}.B16, {s1b}.B16], (R6)"]
-    body += [f"\tVEOR {r}.B16, {r}.B16, {r}.B16" for r in k1 + [r for pair in k2[:len(lane_regs)] for r in pair] + [r for _, _, s2a, s2b in lane_regs for r in (s2a, s2b)]]
+    body += [f"\tVEOR V{i}.B16, V{i}.B16, V{i}.B16" for i in range(32)]
+    rem = frame.aligned
+    while rem >= 64:
+        body.append("\tVST1.P [V0.B16, V1.B16, V2.B16, V3.B16], 64(R7)")
+        rem -= 64
+    while rem >= 16:
+        body.append("\tVST1.P [V0.B16], 16(R7)")
+        rem -= 16
+    gprs = ["R0", "R1", "R2"] + (["R3"] if lanes == 4 else []) + ["R4", "R5", "R6", "R7"] + ["R8", "R9", "R10", "R11"][:lanes] + ["R12", "R13"]
+    body += [f"\tMOVD ZR, {r}" for r in gprs]
     body.append("\tRET")
     if lanes == 4:
         sig = f"// func areion256FusedChain{n}x4NeonAsm(fixedKey *[32]byte, comps *uint64, nGroups int, dataPtrs *[4]*byte, out *[4][4]uint64)"
@@ -1156,7 +1179,16 @@ def neon512(n, lanes):
                 body += [f"\tVEOR {k1[b]}.B16, {s1[b]}.B16, {s1[b]}.B16", f"\tVEOR {k2[b]}.B16, {s1[b]}.B16, {s1[b]}.B16"]
         body += ["\tSUBS $1, R2, R2", f"\tBNE loop{p}"]
         body += [f"\tADD ${64 * p}, R4, R6", "\tVST1 [V0.B16, V1.B16, V2.B16, V3.B16], (R6)"]
-    body += [f"\tVEOR {r}.B16, {r}.B16, {r}.B16" for r in k1 + k2 + s2]
+    body += [f"\tVEOR V{i}.B16, V{i}.B16, V{i}.B16" for i in range(32)]
+    rem = frame.aligned
+    while rem >= 64:
+        body.append("\tVST1.P [V0.B16, V1.B16, V2.B16, V3.B16], 64(R7)")
+        rem -= 64
+    while rem >= 16:
+        body.append("\tVST1.P [V0.B16], 16(R7)")
+        rem -= 16
+    gprs = ["R0", "R1", "R2"] + (["R3"] if lanes == 4 else []) + ["R4", "R5", "R6", "R7"] + ["R8", "R9", "R10", "R11"][:lanes] + ["R12", "R13"]
+    body += [f"\tMOVD ZR, {r}" for r in gprs]
     body.append("\tRET")
     if lanes == 4:
         sig = f"// func areion512FusedChain{n}x4NeonAsm(fixedKey *[64]byte, comps *uint64, nGroups int, dataPtrs *[4]*byte, out *[4][8]uint64)"
@@ -1366,7 +1398,9 @@ def zmm256_wide(n, groups):
             lane = 4 * g + l
             body += [f"\tVEXTRACTI64X2 ${l}, {s1[g][0]}, {32 * lane}(DX)",
                      f"\tVEXTRACTI64X2 ${l}, {s1[g][1]}, {32 * lane + 16}(DX)"]
-    body += [f"\tVPXORD {r}, {r}, {r}" for r in k1 + [r for g in range(groups) for r in k2[g]] + [scr] + [r for g in range(groups) for r in s2[g]]]
+    body += [f"\tVPXORD X{i}, X{i}, X{i}" for i in range(32)]
+    body += [f"\tVMOVDQU64 Z0, {off}(SP)" for off in range(0, frame.aligned, 64)]
+    body += [f"\tXORQ {r}, {r}" for r in ["AX", "BX", "CX", "DX", "R8", "R9", "R10", "R11", "R12"]]
     body += ["\tVZEROUPPER", "\tRET"]
     sig = f"// func areion256FusedChain{n}x{lanes}Avx512Asm(fixedKey *[32]byte, comps *uint64, nGroups int, dataPtrs *[{lanes}]*byte, out *[{lanes}][4]uint64)"
     return lines + f"\n{sig}\nTEXT ·areion256FusedChain{n}x{lanes}Avx512Asm(SB), {text_flags(frame)}${frame.aligned}-40\n" + "\n".join(body) + "\n"
@@ -1455,7 +1489,10 @@ def zmm512_wide(n, groups, fill=False):
         for l in range(4):
             lane = 4 * g + l
             body += [f"\tVEXTRACTI64X2 ${l}, {s2[g][b]}, {64 * lane + 16 * b}(DX)" for b in range(4)]
-    body += [f"\tVPXORD {r}, {r}, {r}" for r in k1 + [r for g in range(groups) for r in k2[g]] + scr + [r for g in range(groups) for r in s1[g]]]
+    body += [f"\tVPXORD X{i}, X{i}, X{i}" for i in range(32)]
+    body += [f"\tVMOVDQU64 Z0, {off}(SP)" for off in range(0, frame.aligned, 64)]
+    gprs = ["AX", "BX", "CX", "DX", "R9"] if fill else ["AX", "BX", "CX", "DX", "R8", "R9", "R10", "R11", "R12"]
+    body += [f"\tXORQ {r}, {r}" for r in gprs]
     body += ["\tVZEROUPPER", "\tRET"]
     if fill:
         sig = f"// func areion512FusedChain{n}x{lanes}Avx512Asm(fixedKey *[64]byte, comps *uint64, nGroups int, groupIdxBase uint64, out *[{lanes}][8]uint64, v uint32)"
@@ -1563,7 +1600,15 @@ def neon256_x8_fill():
         for li, (s1a, s1b, _, _) in enumerate(regs):
             lane = 4 * p + li
             body += [f"\tADD ${32 * lane}, R4, R6", f"\tVST1 [{s1a}.B16, {s1b}.B16], (R6)"]
-    body += [f"\tVEOR {r}.B16, {r}.B16, {r}.B16" for r in [r for w0, w1 in w for r in (w0, w1)] + [r for _, _, s2a, s2b in regs for r in (s2a, s2b)] + temps]
+    body += [f"\tVEOR V{i}.B16, V{i}.B16, V{i}.B16" for i in range(32)]
+    rem = frame.aligned
+    while rem >= 64:
+        body.append("\tVST1.P [V0.B16, V1.B16, V2.B16, V3.B16], 64(R7)")
+        rem -= 64
+    while rem >= 16:
+        body.append("\tVST1.P [V0.B16], 16(R7)")
+        rem -= 16
+    body += [f"\tMOVD ZR, {r}" for r in ["R0", "R1", "R2", "R4", "R5", "R6", "R7", "R8", "R12", "R13", "R14"]]
     body.append("\tRET")
     sig = "// func areion256FusedChain13x8NeonAsm(fixedKey *[32]byte, comps *uint64, nGroups int, groupIdxBase uint64, out *[8][4]uint64, v uint32)"
     return lines + f"\n{sig}\nTEXT ·areion256FusedChain13x8NeonAsm(SB), NOSPLIT, ${frame.aligned}-44\n" + "\n".join(body) + "\n"
@@ -1639,7 +1684,15 @@ def neon512_x8_fill():
             lane = 2 * p + l
             body += [f"\tADD ${64 * lane}, R4, R6",
                      f"\tVST1 [{s2[l][0]}.B16, {s2[l][1]}.B16, {s2[l][2]}.B16, {s2[l][3]}.B16], (R6)"]
-    body += [f"\tVEOR {r}.B16, {r}.B16, {r}.B16" for r in [r for wl in w for r in wl] + [r for sl in s1 for r in sl] + temps]
+    body += [f"\tVEOR V{i}.B16, V{i}.B16, V{i}.B16" for i in range(32)]
+    rem = frame.aligned
+    while rem >= 64:
+        body.append("\tVST1.P [V0.B16, V1.B16, V2.B16, V3.B16], 64(R7)")
+        rem -= 64
+    while rem >= 16:
+        body.append("\tVST1.P [V0.B16], 16(R7)")
+        rem -= 16
+    body += [f"\tMOVD ZR, {r}" for r in ["R0", "R1", "R2", "R4", "R5", "R6", "R7", "R8", "R12", "R13", "R14"]]
     body.append("\tRET")
     sig = "// func areion512FusedChain13x8NeonAsm(fixedKey *[64]byte, comps *uint64, nGroups int, groupIdxBase uint64, out *[8][8]uint64, v uint32)"
     return lines + f"\n{sig}\nTEXT ·areion512FusedChain13x8NeonAsm(SB), NOSPLIT, ${frame.aligned}-44\n" + "\n".join(body) + "\n"
@@ -1729,6 +1782,8 @@ def xmm_general(vex=False):
         body += xmm256_round_regs(chains, ["X13"] * 4, [f"\t{mov} {64 * r}(CX), X13"], vex=vex)
     for l, (a, b) in enumerate(lanes):
         body += [f"\t{mov} {a}, {16 * l}(AX)", f"\t{mov} {b}, {16 * l}(BX)"]
+    body += [f"\tVPXOR X{i}, X{i}, X{i}" if vex else f"\tPXOR X{i}, X{i}" for i in range(16)]
+    body += [f"\tXORQ {r}, {r}" for r in ["AX", "BX", "CX"]]
     body.append("\tRET")
     lines += f"\n// func areion256Permutex4{sfx}RC(x0, x1 *areion.Block4, rc *[15 * 64]byte)\n"
     lines += f"TEXT ·areion256Permutex4{sfx}RC(SB), NOSPLIT, $0-24\n" + "\n".join(body) + "\n"
@@ -1748,6 +1803,8 @@ def xmm_general(vex=False):
         # final rotation: output block b comes from register ROT[b]
         for b in range(4):
             body += [f"\t{mov} {sA[ROT[b]]}, {32 * p}({ptrs[b]})", f"\t{mov} {sB[ROT[b]]}, {32 * p + 16}({ptrs[b]})"]
+    body += [f"\tVPXOR X{i}, X{i}, X{i}" if vex else f"\tPXOR X{i}, X{i}" for i in range(16)]
+    body += [f"\tXORQ {r}, {r}" for r in ["AX", "BX", "CX", "DX", "SI"]]
     body.append("\tRET")
     lines += f"\n// func areion512Permutex4{sfx}RC(x0, x1, x2, x3 *areion.Block4, rc *[15 * 64]byte)\n"
     lines += f"TEXT ·areion512Permutex4{sfx}RC(SB), NOSPLIT, $0-40\n" + "\n".join(body) + "\n"
@@ -1768,8 +1825,8 @@ def xmm_general(vex=False):
                 body += [f"\tVPXOR {s2a}, {s1a}, {s1a}", f"\tVPXOR {s2b}, {s1b}, {s1b}", f"\t{mov} {s1a}, {o}(AX)", f"\t{mov} {s1b}, {o}(BX)"]
             else:
                 body += [f"\tPXOR {s2a}, {s1a}", f"\tPXOR {s2b}, {s1b}", f"\t{mov} {s1a}, {o}(AX)", f"\t{mov} {s1b}, {o}(BX)"]
-    for r in ("X2", "X3", "X4", "X5", "X6", "X7", "X8", "X9", "X10", "X11"):
-        body.append(f"\tVPXOR {r}, {r}, {r}" if vex else f"\tPXOR {r}, {r}")
+    body += [f"\tVPXOR X{i}, X{i}, X{i}" if vex else f"\tPXOR X{i}, X{i}" for i in range(16)]
+    body += [f"\tXORQ {r}, {r}" for r in ["AX", "BX", "CX", "DX"]]
     body.append("\tRET")
     lines += f"\n// func Areion256SoEMPermutex4{sfx}(s1b0, s1b1, s2b0, s2b1 *areion.Block4)\n"
     lines += f"TEXT ·Areion256SoEMPermutex4{sfx}(SB), NOSPLIT, $0-32\n" + "\n".join(body) + "\n"
@@ -1793,9 +1850,8 @@ def xmm_general(vex=False):
                 body += [f"\tVPXOR {s2[ROT[b]]}, {s1[ROT[b]]}, {s1[ROT[b]]}", f"\t{mov} {s1[ROT[b]]}, {16 * l}({p1[b]})"]
             else:
                 body += [f"\tPXOR {s2[ROT[b]]}, {s1[ROT[b]]}", f"\t{mov} {s1[ROT[b]]}, {16 * l}({p1[b]})"]
-    zero_512 = ("X4", "X5", "X6", "X7") if vex else ("X4", "X5", "X6", "X7", "X8", "X9", "X10", "X11")
-    for r in zero_512:
-        body.append(f"\tVPXOR {r}, {r}, {r}" if vex else f"\tPXOR {r}, {r}")
+    body += [f"\tVPXOR X{i}, X{i}, X{i}" if vex else f"\tPXOR X{i}, X{i}" for i in range(16)]
+    body += [f"\tXORQ {r}, {r}" for r in ["AX", "BX", "CX", "DX", "SI", "DI", "R8", "R9"]]
     body.append("\tRET")
     lines += f"\n// func Areion512SoEMPermutex4{sfx}(a1, b1, c1, d1, a2, b2, c2, d2 *areion.Block4)\n"
     lines += f"TEXT ·Areion512SoEMPermutex4{sfx}(SB), NOSPLIT, $0-64\n" + "\n".join(body) + "\n"
@@ -1832,6 +1888,8 @@ def render_all():
     files["areion_fusedchain512_13x8_neon_arm64.s"] = neon512_x8_fill()
     files["areion_soem_vex_amd64.s"] = xmm_general(vex=True)
     files["areion_soem_aesni_amd64.s"] = xmm_general()
+    files["areion_fusedchain256_13x4_avx512_amd64.s"] += '\n// func dumpSIMDRegs(dst *[88]uint64, avx512 bool)\nTEXT ·dumpSIMDRegs(SB), NOSPLIT, $0-9\n\tMOVQ dst+0(FP), AX\n\tMOVQ CX, 512(AX)\n\tMOVQ DX, 520(AX)\n\tMOVQ SI, 528(AX)\n\tMOVQ DI, 536(AX)\n\tMOVQ R8, 544(AX)\n\tMOVQ R9, 552(AX)\n\tMOVQ R10, 560(AX)\n\tMOVQ R11, 568(AX)\n\tMOVQ R12, 576(AX)\n\tMOVQ R13, 584(AX)\n\tMOVQ R15, 592(AX)\n\tMOVOU X0, 0(AX)\n\tMOVOU X1, 16(AX)\n\tMOVOU X2, 32(AX)\n\tMOVOU X3, 48(AX)\n\tMOVOU X4, 64(AX)\n\tMOVOU X5, 80(AX)\n\tMOVOU X6, 96(AX)\n\tMOVOU X7, 112(AX)\n\tMOVOU X8, 128(AX)\n\tMOVOU X9, 144(AX)\n\tMOVOU X10, 160(AX)\n\tMOVOU X11, 176(AX)\n\tMOVOU X12, 192(AX)\n\tMOVOU X13, 208(AX)\n\tMOVOU X14, 224(AX)\n\tMOVOU X15, 240(AX)\n\tMOVBLZX avx512+8(FP), CX\n\tTESTQ CX, CX\n\tJZ dumpDone\n\tVMOVDQU64 X16, 256(AX)\n\tVMOVDQU64 X17, 272(AX)\n\tVMOVDQU64 X18, 288(AX)\n\tVMOVDQU64 X19, 304(AX)\n\tVMOVDQU64 X20, 320(AX)\n\tVMOVDQU64 X21, 336(AX)\n\tVMOVDQU64 X22, 352(AX)\n\tVMOVDQU64 X23, 368(AX)\n\tVMOVDQU64 X24, 384(AX)\n\tVMOVDQU64 X25, 400(AX)\n\tVMOVDQU64 X26, 416(AX)\n\tVMOVDQU64 X27, 432(AX)\n\tVMOVDQU64 X28, 448(AX)\n\tVMOVDQU64 X29, 464(AX)\n\tVMOVDQU64 X30, 480(AX)\n\tVMOVDQU64 X31, 496(AX)\ndumpDone:\n\tPXOR X2, X2\n\tXORQ R12, R12\n\tXORQ AX, AX\n\tXORQ CX, CX\n\tRET\n\n// func dirtySIMDRegForTest(masked uint64)\nTEXT ·dirtySIMDRegForTest(SB), NOSPLIT, $0-8\n\tMOVQ masked+0(FP), R12\n\tMOVQ $0x5555555555555555, AX\n\tXORQ AX, R12\n\tMOVQ R12, X2\n\tXORQ AX, AX\n\tRET\n'
+    files["areion_fusedchain256_13x4_neon_arm64.s"] += '\n// func dumpSIMDRegs(dst *[88]uint64, avx512 bool)\nTEXT ·dumpSIMDRegs(SB), NOSPLIT, $0-9\n\tMOVD dst+0(FP), R0\n\tMOVD R1, 512(R0)\n\tMOVD R2, 520(R0)\n\tMOVD R3, 528(R0)\n\tMOVD R4, 536(R0)\n\tMOVD R5, 544(R0)\n\tMOVD R6, 552(R0)\n\tMOVD R7, 560(R0)\n\tMOVD R8, 568(R0)\n\tMOVD R9, 576(R0)\n\tMOVD R10, 584(R0)\n\tMOVD R11, 592(R0)\n\tMOVD R12, 600(R0)\n\tMOVD R13, 608(R0)\n\tMOVD R14, 616(R0)\n\tMOVD R15, 624(R0)\n\tMOVD R16, 632(R0)\n\tMOVD R17, 640(R0)\n\tMOVD R19, 648(R0)\n\tMOVD R20, 656(R0)\n\tMOVD R21, 664(R0)\n\tMOVD R22, 672(R0)\n\tMOVD R23, 680(R0)\n\tMOVD R24, 688(R0)\n\tMOVD R25, 696(R0)\n\tVST1.P [V0.B16, V1.B16, V2.B16, V3.B16], 64(R0)\n\tVST1.P [V4.B16, V5.B16, V6.B16, V7.B16], 64(R0)\n\tVST1.P [V8.B16, V9.B16, V10.B16, V11.B16], 64(R0)\n\tVST1.P [V12.B16, V13.B16, V14.B16, V15.B16], 64(R0)\n\tVST1.P [V16.B16, V17.B16, V18.B16, V19.B16], 64(R0)\n\tVST1.P [V20.B16, V21.B16, V22.B16, V23.B16], 64(R0)\n\tVST1.P [V24.B16, V25.B16, V26.B16, V27.B16], 64(R0)\n\tVST1 [V28.B16, V29.B16, V30.B16, V31.B16], (R0)\n\tVEOR V2.B16, V2.B16, V2.B16\n\tMOVD ZR, R12\n\tMOVD ZR, R0\n\tRET\n\n// func dirtySIMDRegForTest(masked uint64)\nTEXT ·dirtySIMDRegForTest(SB), NOSPLIT, $0-8\n\tMOVD masked+0(FP), R12\n\tMOVD $0x5555555555555555, R0\n\tEOR R0, R12, R12\n\tVMOV R12, V2.D[0]\n\tMOVD ZR, R0\n\tRET\n'
     return files
 
 

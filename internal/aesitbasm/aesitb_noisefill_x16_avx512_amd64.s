@@ -76,5 +76,10 @@ loop:
 	// schedule from the register file (ZMM0..ZMM15 in full) and leaves
 	// the upper halves clean, which also serves as the VZEROUPPER on
 	// exit.
+	XORQ AX, AX
+	XORQ CX, CX
+	XORQ DX, DX
+	XORQ SI, SI
+	XORQ DI, DI
 	VZEROALL
 	RET

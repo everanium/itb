@@ -20,6 +20,7 @@ package chacha20asm
 import (
 	"encoding/binary"
 	"math/bits"
+	"runtime"
 	"unsafe"
 )
 
@@ -212,12 +213,15 @@ func slotWords(data []byte, j, blocks int) [4]uint32 {
 	if j == blocks-1 {
 		slot[15] = SlotTagFinal | byte(r)
 	}
-	return [4]uint32{
+	out := [4]uint32{
 		binary.LittleEndian.Uint32(slot[0:]),
 		binary.LittleEndian.Uint32(slot[4:]),
 		binary.LittleEndian.Uint32(slot[8:]),
 		binary.LittleEndian.Uint32(slot[12:]),
 	}
+	clear(slot[:])
+	runtime.KeepAlive(&slot)
+	return out
 }
 
 // HChaCha20Chain is the ChaCha20 PRF of the parent hashes package over a
@@ -230,16 +234,22 @@ func HChaCha20Chain(key *[32]byte, data []byte) [4]uint64 {
 		k[i] = binary.LittleEndian.Uint32(key[4*i:])
 	}
 	blocks := SlotBlocks(len(data))
+	var in [4]uint32
 	for j := 0; j < blocks; j++ {
-		in := slotWords(data, j, blocks)
+		in = slotWords(data, j, blocks)
 		k = HChaCha20(&k, &in)
 	}
-	return [4]uint64{
+	clear(in[:])
+	runtime.KeepAlive(&in)
+	out := [4]uint64{
 		uint64(k[0]) | uint64(k[1])<<32,
 		uint64(k[2]) | uint64(k[3])<<32,
 		uint64(k[4]) | uint64(k[5])<<32,
 		uint64(k[6]) | uint64(k[7])<<32,
 	}
+	clear(k[:])
+	runtime.KeepAlive(&k)
+	return out
 }
 
 // absorb256 is the parent package's ChaCha20 PRF of one (key, seed,
@@ -251,7 +261,10 @@ func absorb256(fixedKey *[32]byte, seed *[4]uint64, data []byte) [4]uint64 {
 		off := 8 * i
 		binary.LittleEndian.PutUint64(key[off:], binary.LittleEndian.Uint64(key[off:])^seed[i])
 	}
-	return HChaCha20Chain(&key, data)
+	out := HChaCha20Chain(&key, data)
+	clear(key[:])
+	runtime.KeepAlive(&key)
+	return out
 }
 
 // ScalarFusedChain256 is the pure-Go reference cascade: one ChaCha20
@@ -265,6 +278,8 @@ func ScalarFusedChain256(fixedKey *[32]byte, components []uint64, data []byte) [
 		}
 		h = absorb256(fixedKey, &seed, data)
 	}
+	clear(seed[:])
+	runtime.KeepAlive(&seed)
 	return h
 }
 
@@ -315,6 +330,8 @@ func scalarFill256X8(fixedKey *[32]byte, components []uint64, groupIdxBase uint6
 		fillBlock(&blk, groupIdxBase+uint64(i), v)
 		out[i] = ScalarFusedChain256(fixedKey, components, blk[:])
 	}
+	clear(blk[:])
+	runtime.KeepAlive(&blk)
 }
 
 // lanePtr views n bytes at p as a slice for the pure-Go fallbacks.

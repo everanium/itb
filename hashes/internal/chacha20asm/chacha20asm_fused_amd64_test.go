@@ -188,6 +188,7 @@ func BenchmarkFill(b *testing.B) {
 // key word and no output dword may be left in the stack once a kernel has
 // returned.
 func TestFusedKernelsLeaveNoSecretInFrame(t *testing.T) {
+	checkResidueNegativeControls(t)
 	for _, tier := range amd64CascadeTiers() {
 		if !tier.ok {
 			continue
@@ -203,4 +204,14 @@ func TestFusedKernelsLeaveNoSecretInFrame(t *testing.T) {
 		}
 	}
 	checkChachaResidue(t, "gpr", nil, kernels256x1, nil)
+}
+
+func dumpSIMDRegs(dst *[88]uint64, avx512 bool)
+func dirtySIMDRegForTest(masked uint64)
+
+func init() {
+	dumpSIMDRegsHook = func(dst *[88]uint64) {
+		dumpSIMDRegs(dst, cpuid.AVX512F)
+	}
+	dirtySIMDRegHook = dirtySIMDRegForTest
 }

@@ -1,7 +1,9 @@
 package capi
 
 import (
+	"bytes"
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"testing"
 )
@@ -129,5 +131,161 @@ func TestReadOnlyConstants(t *testing.T) {
 func TestDefaultNonceBits(t *testing.T) {
 	if got := DefaultNonceBits(); got != 512 {
 		t.Errorf("DefaultNonceBits() = %d, want 512", got)
+	}
+}
+
+func TestCAPITripleOptsAndKeysZeroization(t *testing.T) {
+	pmHex := "0123456789abcdef0123456789abcdef112233445566778899aabbccddeeff00"
+	wmHex := "fedcba9876543210fedcba9876543210ffeeddccbbaa99887766554433221100"
+
+	// Negative control: hex.DecodeString on a string with a valid 32-byte secret prefix followed by
+	// an invalid hex byte returns the decoded 32-byte secret prefix in the error slice.
+	neg, negErr := hex.DecodeString(pmHex + "zz")
+	if negErr == nil || len(neg) != 32 {
+		t.Fatalf("hex.DecodeString malformed: len=%d, err=%v", len(neg), negErr)
+	}
+	clear(neg)
+
+	opts, err := parseTripleOpts("pm=" + pmHex + "&wm=" + wmHex)
+	if err != nil {
+		t.Fatalf("parseTripleOpts: %v", err)
+	}
+	if cap(opts.PermMaster) != len(opts.PermMaster) || len(opts.PermMaster) != 32 {
+		t.Fatalf("PermMaster len/cap = %d/%d, want 32/32", len(opts.PermMaster), cap(opts.PermMaster))
+	}
+	if cap(opts.WrapMaster) != len(opts.WrapMaster) || len(opts.WrapMaster) != 32 {
+		t.Fatalf("WrapMaster len/cap = %d/%d, want 32/32", len(opts.WrapMaster), cap(opts.WrapMaster))
+	}
+	clear(opts.PermMaster)
+	clear(opts.WrapMaster)
+
+	// Error path after valid pm/wm must wipe decoded PermMaster and WrapMaster.
+	badOpts, badErr := parseTripleOpts("pm=" + pmHex + "&wm=" + wmHex + "&unknownKey=1")
+	if badErr == nil {
+		t.Fatal("parseTripleOpts with unknownKey expected error")
+	}
+	for i, b := range badOpts.PermMaster {
+		if b != 0 {
+			t.Fatalf("parseTripleOpts error path left non-zero PermMaster[%d] = %#x", i, b)
+		}
+	}
+	for i, b := range badOpts.WrapMaster {
+		if b != 0 {
+			t.Fatalf("parseTripleOpts error path left non-zero WrapMaster[%d] = %#x", i, b)
+		}
+	}
+
+	// Verify TripleInit, TripleInitKeys, and TripleRekey succeed and handle StatusBufferTooSmall cleanly.
+	blobBuf := make([]byte, 1<<15)
+	id, blobLen, st := TripleInit("singlemsg-aesitb-mac-v1", "pm="+pmHex+"&wm="+wmHex, blobBuf)
+	if st != StatusOK || blobLen == 0 {
+		t.Fatalf("TripleInit: %v (%s)", st, LastError())
+	}
+	defer FreeTriple(id)
+
+	masters := make([][]byte, 8)
+	for i := range masters {
+		masters[i] = bytes.Repeat([]byte{byte(0x11 + i)}, 32)
+	}
+	blobOut := make([]byte, 1<<15)
+	id2, _, st := TripleInitKeys("singlemsg-aesitb-mac-v1", "pm="+pmHex+"&wm="+wmHex, masters, blobOut)
+	if st != StatusOK {
+		t.Fatalf("TripleInitKeys: %v (%s)", st, LastError())
+	}
+	FreeTriple(id2)
+
+	tinyBuf := make([]byte, 8)
+	if _, need, st := TripleInitKeys("singlemsg-aesitb-mac-v1", "pm="+pmHex+"&wm="+wmHex, masters, tinyBuf); st != StatusBufferTooSmall || need <= len(tinyBuf) {
+		t.Fatalf("TripleInitKeys tiny buffer: status=%v need=%d", st, need)
+	}
+	for i, b := range tinyBuf {
+		if b != 0 {
+			t.Fatalf("TripleInitKeys tiny buffer modified at [%d] = %#x", i, b)
+		}
+	}
+
+	newPM := bytes.Repeat([]byte{0xAA}, 32)
+	newWM := bytes.Repeat([]byte{0xBB}, 32)
+	if _, st := TripleRekey(id, newPM, newWM, blobOut); st != StatusOK {
+		t.Fatalf("TripleRekey: %v (%s)", st, LastError())
+	}
+}
+
+func TestCAPIStreamSpoolZeroization(t *testing.T) {
+	sp := newStreamSpool()
+	chunk1 := bytes.Repeat([]byte{0xA5}, 1024)
+	if _, err := sp.Write(chunk1); err != nil {
+		t.Fatalf("sp.Write(chunk1): %v", err)
+	}
+	oldBacking := sp.buf[:cap(sp.buf)]
+	origCap := cap(sp.buf)
+
+	// Partial read must compact unread bytes and wipe the trailing n bytes without shrinking capacity.
+	dst := make([]byte, 300)
+	n, drained := sp.read(dst, false)
+	if n != 300 || drained {
+		t.Fatalf("sp.read = (%d, %v), want (300, false)", n, drained)
+	}
+	if cap(sp.buf) != origCap {
+		t.Fatalf("sp.read shrank capacity from %d to %d", origCap, cap(sp.buf))
+	}
+	for i := len(sp.buf); i < origCap; i++ {
+		if oldBacking[i] != 0 {
+			t.Fatalf("sp.read left non-zero byte %#x at oldBacking[%d]", oldBacking[i], i)
+		}
+	}
+
+	// Trigger growth beyond origCap and verify oldBacking is completely wiped.
+	bigChunk := bytes.Repeat([]byte{0x5A}, origCap*2)
+	if _, err := sp.Write(bigChunk); err != nil {
+		t.Fatalf("sp.Write(bigChunk): %v", err)
+	}
+	for i, b := range oldBacking {
+		if b != 0 {
+			t.Fatalf("sp.Write growth left non-zero byte %#x in oldBacking[%d]", b, i)
+		}
+	}
+
+	// Verify sp.wipe() zeroes the current backing array.
+	curBacking := sp.buf[:cap(sp.buf)]
+	sp.wipe()
+	for i, b := range curBacking {
+		if b != 0 {
+			t.Fatalf("sp.wipe() left non-zero byte %#x in curBacking[%d]", b, i)
+		}
+	}
+
+	// Verify TripleStreamRead wipes spool on decrypt error.
+	blobBuf := make([]byte, 1<<15)
+	id, _, st := TripleInit("streaming-aead-triple-mac-v1", "", blobBuf)
+	if st != StatusOK {
+		t.Fatalf("TripleInit: %v (%s)", st, LastError())
+	}
+	defer FreeTriple(id)
+
+	pt := bytes.Repeat([]byte{0x42}, 1024)
+	wireBuf := make([]byte, len(pt)+64<<10)
+	wLen, st := TripleEncryptStream(id, pt, wireBuf)
+	if st != StatusOK {
+		t.Fatalf("TripleEncryptStream: %v (%s)", st, LastError())
+	}
+	wireBuf[wLen-1] ^= 0xFF
+
+	decID, st := TripleDecryptStreamBegin(id)
+	if st != StatusOK {
+		t.Fatalf("TripleDecryptStreamBegin: %v (%s)", st, LastError())
+	}
+	defer TripleStreamFree(decID)
+
+	if st := TripleStreamWrite(decID, wireBuf[:wLen]); st != StatusOK {
+		t.Fatalf("TripleStreamWrite: %v", st)
+	}
+	if st := TripleStreamEnd(decID); st != StatusOK {
+		t.Fatalf("TripleStreamEnd: %v", st)
+	}
+	outBuf := make([]byte, 4096)
+	got, fin, st := TripleStreamRead(decID, outBuf)
+	if st == StatusOK || got != 0 || fin {
+		t.Fatalf("TripleStreamRead on tampered stream = (%d, %v, %v), want (0, false, error)", got, fin, st)
 	}
 }

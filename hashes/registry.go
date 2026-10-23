@@ -6,10 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"hash"
-	"runtime"
 	"sync"
 
 	"github.com/everanium/itb"
+	"github.com/everanium/itb/internal/wipe"
 )
 
 // Width is the native intermediate-state width of a hash primitive.
@@ -468,53 +468,8 @@ func validateKey(name string, want int, key ...[]byte) ([]byte, error) {
 // or the supplied key size does not match the primitive's native key
 // length.
 func Make128(name string, key ...[]byte) (itb.HashFunc128, []byte, error) {
-	switch name {
-	case "aesitb128":
-		explicit, err := validateKey("aesitb128", 16, key...)
-		if err != nil {
-			return nil, nil, err
-		}
-		if explicit != nil {
-			var k [16]byte
-			copy(k[:], explicit)
-			h, _, ret := AESITB128Pair(k)
-			clear(k[:])
-			runtime.KeepAlive(&k)
-			return h, ret[:], nil
-		}
-		h, _, ret := AESITB128Pair()
-		return h, ret[:], nil
-	case "aescmac":
-		explicit, err := validateKey("aescmac", 16, key...)
-		if err != nil {
-			return nil, nil, err
-		}
-		if explicit != nil {
-			var k [16]byte
-			copy(k[:], explicit)
-			fn, ret := AESCMAC(k)
-			clear(k[:])
-			runtime.KeepAlive(&k)
-			return fn, ret[:], nil
-		}
-		fn, ret := AESCMAC()
-		return fn, ret[:], nil
-	case "siphash24":
-		if len(key) > 0 {
-			return nil, nil, fmt.Errorf("hashes: %q does not accept a fixed key (keyed by seed components)", name)
-		}
-		return SipHash24(), nil, nil
-	}
-	if s, ok := Find(name); ok {
-		if s.Width != W128 {
-			return nil, nil, fmt.Errorf("hashes: %q has width %d, not 128", name, s.Width)
-		}
-		if s.Make128Pair != nil {
-			h, _, ret, err := s.Make128Pair(key...)
-			return h, ret, err
-		}
-	}
-	return nil, nil, fmt.Errorf("hashes: unknown 128-bit primitive %q", name)
+	h, _, ret, err := Make128Pair(name, key...)
+	return h, ret, err
 }
 
 // Make128Pair returns the (single, batched) HashFunc128 / BatchHashFunc128
@@ -545,31 +500,27 @@ func Make128Pair(name string, key ...[]byte) (itb.HashFunc128, itb.BatchHashFunc
 		if err != nil {
 			return nil, nil, nil, err
 		}
+		var k [16]byte
 		if explicit != nil {
-			var k [16]byte
 			copy(k[:], explicit)
-			h, b, ret := AESITB128Pair(k)
-			clear(k[:])
-			runtime.KeepAlive(&k)
-			return h, b, ret[:], nil
+		} else if _, err := rand.Read(k[:]); err != nil {
+			panic(err)
 		}
-		h, b, ret := AESITB128Pair()
-		return h, b, ret[:], nil
+		h, b := aesITB128PairFromKeyPtr(&k)
+		return h, b, k[:], nil
 	case "aescmac":
 		explicit, err := validateKey("aescmac", 16, key...)
 		if err != nil {
 			return nil, nil, nil, err
 		}
+		var k [16]byte
 		if explicit != nil {
-			var k [16]byte
 			copy(k[:], explicit)
-			h, b, ret := AESCMACPair(k)
-			clear(k[:])
-			runtime.KeepAlive(&k)
-			return h, b, ret[:], nil
+		} else if _, err := rand.Read(k[:]); err != nil {
+			panic(err)
 		}
-		h, b, ret := AESCMACPair()
-		return h, b, ret[:], nil
+		h, b := AESCMACPairWithKey(k)
+		return h, b, k[:], nil
 	case "siphash24":
 		if len(key) > 0 {
 			return nil, nil, nil, fmt.Errorf("hashes: %q does not accept a fixed key (keyed by seed components)", name)
@@ -582,7 +533,16 @@ func Make128Pair(name string, key ...[]byte) (itb.HashFunc128, itb.BatchHashFunc
 			return nil, nil, nil, fmt.Errorf("hashes: %q has width %d, not 128", name, s.Width)
 		}
 		if s.Make128Pair != nil {
-			return s.Make128Pair(key...)
+			var clonedKey [][]byte
+			if len(key) > 0 {
+				clonedKey = make([][]byte, len(key))
+				for i := range key {
+					if key[i] != nil {
+						clonedKey[i] = append([]byte(nil), key[i]...)
+					}
+				}
+			}
+			return s.Make128Pair(clonedKey...)
 		}
 	}
 	return nil, nil, nil, fmt.Errorf("hashes: unknown 128-bit primitive %q", name)
@@ -599,93 +559,8 @@ func Make128Pair(name string, key ...[]byte) (itb.HashFunc128, itb.BatchHashFunc
 // Returns an error when name is unknown, width is not 256, or supplied
 // key size is wrong.
 func Make256(name string, key ...[]byte) (itb.HashFunc256, []byte, error) {
-	switch name {
-	case "areion256":
-		explicit, err := validateKey("areion256", 32, key...)
-		if err != nil {
-			return nil, nil, err
-		}
-		if explicit != nil {
-			var k [32]byte
-			copy(k[:], explicit)
-			h, _, ret := Areion256Pair(k)
-			clear(k[:])
-			runtime.KeepAlive(&k)
-			return h, ret[:], nil
-		}
-		h, _, ret := Areion256Pair()
-		return h, ret[:], nil
-	case "blake2b256":
-		explicit, err := validateKey("blake2b256", 32, key...)
-		if err != nil {
-			return nil, nil, err
-		}
-		if explicit != nil {
-			var k [32]byte
-			copy(k[:], explicit)
-			fn, ret := BLAKE2b256(k)
-			clear(k[:])
-			runtime.KeepAlive(&k)
-			return fn, ret[:], nil
-		}
-		fn, ret := BLAKE2b256()
-		return fn, ret[:], nil
-	case "blake2s":
-		explicit, err := validateKey("blake2s", 32, key...)
-		if err != nil {
-			return nil, nil, err
-		}
-		if explicit != nil {
-			var k [32]byte
-			copy(k[:], explicit)
-			fn, ret := BLAKE2s(k)
-			clear(k[:])
-			runtime.KeepAlive(&k)
-			return fn, ret[:], nil
-		}
-		fn, ret := BLAKE2s()
-		return fn, ret[:], nil
-	case "blake3":
-		explicit, err := validateKey("blake3", 32, key...)
-		if err != nil {
-			return nil, nil, err
-		}
-		if explicit != nil {
-			var k [32]byte
-			copy(k[:], explicit)
-			fn, ret := BLAKE3(k)
-			clear(k[:])
-			runtime.KeepAlive(&k)
-			return fn, ret[:], nil
-		}
-		fn, ret := BLAKE3()
-		return fn, ret[:], nil
-	case "chacha20":
-		explicit, err := validateKey("chacha20", 32, key...)
-		if err != nil {
-			return nil, nil, err
-		}
-		if explicit != nil {
-			var k [32]byte
-			copy(k[:], explicit)
-			fn, ret := ChaCha20(k)
-			clear(k[:])
-			runtime.KeepAlive(&k)
-			return fn, ret[:], nil
-		}
-		fn, ret := ChaCha20()
-		return fn, ret[:], nil
-	}
-	if s, ok := Find(name); ok {
-		if s.Width != W256 {
-			return nil, nil, fmt.Errorf("hashes: %q has width %d, not 256", name, s.Width)
-		}
-		if s.Make256Pair != nil {
-			h, _, ret, err := s.Make256Pair(key...)
-			return h, ret, err
-		}
-	}
-	return nil, nil, fmt.Errorf("hashes: unknown 256-bit primitive %q", name)
+	h, _, ret, err := Make256Pair(name, key...)
+	return h, ret, err
 }
 
 // Make256Pair returns the (single, batched) HashFunc256 / BatchHashFunc256
@@ -715,83 +590,82 @@ func Make256Pair(name string, key ...[]byte) (itb.HashFunc256, itb.BatchHashFunc
 		if err != nil {
 			return nil, nil, nil, err
 		}
+		var k [32]byte
 		if explicit != nil {
-			var k [32]byte
 			copy(k[:], explicit)
-			h, b, ret := Areion256Pair(k)
-			clear(k[:])
-			runtime.KeepAlive(&k)
-			return h, b, ret[:], nil
+		} else if _, err := rand.Read(k[:]); err != nil {
+			panic(err)
 		}
-		h, b, ret := Areion256Pair()
-		return h, b, ret[:], nil
+		h, b := areion256PairFromKeyPtr(&k)
+		return h, b, k[:], nil
 	case "blake2b256":
 		explicit, err := validateKey("blake2b256", 32, key...)
 		if err != nil {
 			return nil, nil, nil, err
 		}
+		var k [32]byte
 		if explicit != nil {
-			var k [32]byte
 			copy(k[:], explicit)
-			h, b, ret := BLAKE2b256Pair(k)
-			clear(k[:])
-			runtime.KeepAlive(&k)
-			return h, b, ret[:], nil
+		} else if _, err := rand.Read(k[:]); err != nil {
+			panic(err)
 		}
-		h, b, ret := BLAKE2b256Pair()
-		return h, b, ret[:], nil
+		h, b := blake2b256PairFromKeyPtr(&k)
+		return h, b, k[:], nil
 	case "blake2s":
 		explicit, err := validateKey("blake2s", 32, key...)
 		if err != nil {
 			return nil, nil, nil, err
 		}
+		var k [32]byte
 		if explicit != nil {
-			var k [32]byte
 			copy(k[:], explicit)
-			h, b, ret := BLAKE2s256Pair(k)
-			clear(k[:])
-			runtime.KeepAlive(&k)
-			return h, b, ret[:], nil
+		} else if _, err := rand.Read(k[:]); err != nil {
+			panic(err)
 		}
-		h, b, ret := BLAKE2s256Pair()
-		return h, b, ret[:], nil
+		h, b := blake2s256PairFromKeyPtr(&k)
+		return h, b, k[:], nil
 	case "blake3":
 		explicit, err := validateKey("blake3", 32, key...)
 		if err != nil {
 			return nil, nil, nil, err
 		}
+		var k [32]byte
 		if explicit != nil {
-			var k [32]byte
 			copy(k[:], explicit)
-			h, b, ret := BLAKE3256Pair(k)
-			clear(k[:])
-			runtime.KeepAlive(&k)
-			return h, b, ret[:], nil
+		} else if _, err := rand.Read(k[:]); err != nil {
+			panic(err)
 		}
-		h, b, ret := BLAKE3256Pair()
-		return h, b, ret[:], nil
+		h, b := BLAKE3256PairWithKey(k)
+		return h, b, k[:], nil
 	case "chacha20":
 		explicit, err := validateKey("chacha20", 32, key...)
 		if err != nil {
 			return nil, nil, nil, err
 		}
+		var k [32]byte
 		if explicit != nil {
-			var k [32]byte
 			copy(k[:], explicit)
-			h, b, ret := ChaCha20256Pair(k)
-			clear(k[:])
-			runtime.KeepAlive(&k)
-			return h, b, ret[:], nil
+		} else if _, err := rand.Read(k[:]); err != nil {
+			panic(err)
 		}
-		h, b, ret := ChaCha20256Pair()
-		return h, b, ret[:], nil
+		h, b := chacha20256PairFromKeyPtr(&k)
+		return h, b, k[:], nil
 	}
 	if s, ok := Find(name); ok {
 		if s.Width != W256 {
 			return nil, nil, nil, fmt.Errorf("hashes: %q has width %d, not 256", name, s.Width)
 		}
 		if s.Make256Pair != nil {
-			return s.Make256Pair(key...)
+			var clonedKey [][]byte
+			if len(key) > 0 {
+				clonedKey = make([][]byte, len(key))
+				for i := range key {
+					if key[i] != nil {
+						clonedKey[i] = append([]byte(nil), key[i]...)
+					}
+				}
+			}
+			return s.Make256Pair(clonedKey...)
 		}
 	}
 	return nil, nil, nil, fmt.Errorf("hashes: unknown 256-bit primitive %q", name)
@@ -807,48 +681,8 @@ func Make256Pair(name string, key ...[]byte) (itb.HashFunc256, itb.BatchHashFunc
 // Returns an error when name is unknown, width is not 512, or supplied
 // key size is wrong.
 func Make512(name string, key ...[]byte) (itb.HashFunc512, []byte, error) {
-	switch name {
-	case "areion512":
-		explicit, err := validateKey("areion512", 64, key...)
-		if err != nil {
-			return nil, nil, err
-		}
-		if explicit != nil {
-			var k [64]byte
-			copy(k[:], explicit)
-			h, _, ret := Areion512Pair(k)
-			clear(k[:])
-			runtime.KeepAlive(&k)
-			return h, ret[:], nil
-		}
-		h, _, ret := Areion512Pair()
-		return h, ret[:], nil
-	case "blake2b512":
-		explicit, err := validateKey("blake2b512", 64, key...)
-		if err != nil {
-			return nil, nil, err
-		}
-		if explicit != nil {
-			var k [64]byte
-			copy(k[:], explicit)
-			fn, ret := BLAKE2b512(k)
-			clear(k[:])
-			runtime.KeepAlive(&k)
-			return fn, ret[:], nil
-		}
-		fn, ret := BLAKE2b512()
-		return fn, ret[:], nil
-	}
-	if s, ok := Find(name); ok {
-		if s.Width != W512 {
-			return nil, nil, fmt.Errorf("hashes: %q has width %d, not 512", name, s.Width)
-		}
-		if s.Make512Pair != nil {
-			h, _, ret, err := s.Make512Pair(key...)
-			return h, ret, err
-		}
-	}
-	return nil, nil, fmt.Errorf("hashes: unknown 512-bit primitive %q", name)
+	h, _, ret, err := Make512Pair(name, key...)
+	return h, ret, err
 }
 
 // Make512Pair returns the (single, batched) HashFunc512 / BatchHashFunc512
@@ -872,38 +706,43 @@ func Make512Pair(name string, key ...[]byte) (itb.HashFunc512, itb.BatchHashFunc
 		if err != nil {
 			return nil, nil, nil, err
 		}
+		var k [64]byte
 		if explicit != nil {
-			var k [64]byte
 			copy(k[:], explicit)
-			h, b, ret := Areion512Pair(k)
-			clear(k[:])
-			runtime.KeepAlive(&k)
-			return h, b, ret[:], nil
+		} else if _, err := rand.Read(k[:]); err != nil {
+			panic(err)
 		}
-		h, b, ret := Areion512Pair()
-		return h, b, ret[:], nil
+		h, b := areion512PairFromKeyPtr(&k)
+		return h, b, k[:], nil
 	case "blake2b512":
 		explicit, err := validateKey("blake2b512", 64, key...)
 		if err != nil {
 			return nil, nil, nil, err
 		}
+		var k [64]byte
 		if explicit != nil {
-			var k [64]byte
 			copy(k[:], explicit)
-			h, b, ret := BLAKE2b512Pair(k)
-			clear(k[:])
-			runtime.KeepAlive(&k)
-			return h, b, ret[:], nil
+		} else if _, err := rand.Read(k[:]); err != nil {
+			panic(err)
 		}
-		h, b, ret := BLAKE2b512Pair()
-		return h, b, ret[:], nil
+		h, b := blake2b512PairFromKeyPtr(&k)
+		return h, b, k[:], nil
 	}
 	if s, ok := Find(name); ok {
 		if s.Width != W512 {
 			return nil, nil, nil, fmt.Errorf("hashes: %q has width %d, not 512", name, s.Width)
 		}
 		if s.Make512Pair != nil {
-			return s.Make512Pair(key...)
+			var clonedKey [][]byte
+			if len(key) > 0 {
+				clonedKey = make([][]byte, len(key))
+				for i := range key {
+					if key[i] != nil {
+						clonedKey[i] = append([]byte(nil), key[i]...)
+					}
+				}
+			}
+			return s.Make512Pair(clonedKey...)
 		}
 	}
 	return nil, nil, nil, fmt.Errorf("hashes: unknown 512-bit primitive %q", name)
@@ -927,6 +766,7 @@ func Make512Pair(name string, key ...[]byte) (itb.HashFunc512, itb.BatchHashFunc
 // factories via [Register]; shipped [Registry] entries are exercised
 // by the round-trip test suite.
 func smokeValidate(spec Spec) error {
+	defer wipe.CallStack2K([9][8]uint64{})
 	probe := []byte("hashes: register smoke probe")
 	switch spec.Width {
 	case W128:
@@ -934,7 +774,7 @@ func smokeValidate(spec Spec) error {
 		if err != nil {
 			return fmt.Errorf("hashes: Register: %q Make128Pair(): %w", spec.Name, err)
 		}
-		defer clear(key)
+		defer wipe.Bytes(key)
 		if single == nil {
 			return fmt.Errorf("hashes: Register: %q Make128Pair returned a nil single-arm closure", spec.Name)
 		}
@@ -969,7 +809,7 @@ func smokeValidate(spec Spec) error {
 		if err != nil {
 			return fmt.Errorf("hashes: Register: %q Make256Pair(): %w", spec.Name, err)
 		}
-		defer clear(key)
+		defer wipe.Bytes(key)
 		if single == nil {
 			return fmt.Errorf("hashes: Register: %q Make256Pair returned a nil single-arm closure", spec.Name)
 		}
@@ -1005,7 +845,7 @@ func smokeValidate(spec Spec) error {
 		if err != nil {
 			return fmt.Errorf("hashes: Register: %q Make512Pair(): %w", spec.Name, err)
 		}
-		defer clear(key)
+		defer wipe.Bytes(key)
 		if single == nil {
 			return fmt.Errorf("hashes: Register: %q Make512Pair returned a nil single-arm closure", spec.Name)
 		}
@@ -1067,6 +907,7 @@ func smokeValidate(spec Spec) error {
 // that panics on any of these calls surfaces as a returned error
 // rather than crashing the [Register] caller.
 func smokeOptionalHashHooks(spec Spec, probe []byte) (err error) {
+	defer wipe.CallStack2K([9][8]uint64{})
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("hashes: Register: %q optional-hook smoke panicked: %v", spec.Name, r)
@@ -1078,8 +919,10 @@ func smokeOptionalHashHooks(spec Spec, probe []byte) (err error) {
 		if h1 == nil {
 			return fmt.Errorf("hashes: Register: %q HashHash returned a nil hash.Hash", spec.Name)
 		}
+		defer wipe.StructPtr(h1)
 		h1.Write(probe)
 		out1 := h1.Sum(nil)
+		defer wipe.Bytes(out1)
 		if len(out1) != wantLen {
 			return fmt.Errorf("hashes: Register: %q HashHash output length %d does not match Width/8 = %d", spec.Name, len(out1), wantLen)
 		}
@@ -1087,8 +930,10 @@ func smokeOptionalHashHooks(spec Spec, probe []byte) (err error) {
 		if h2 == nil {
 			return fmt.Errorf("hashes: Register: %q HashHash returned a nil hash.Hash on the second fresh call", spec.Name)
 		}
+		defer wipe.StructPtr(h2)
 		h2.Write(probe)
 		out2 := h2.Sum(nil)
+		defer wipe.Bytes(out2)
 		if !bytes.Equal(out1, out2) {
 			return fmt.Errorf("hashes: Register: %q HashHash is non-deterministic across fresh instances (two Write/Sum passes over identical input disagree)", spec.Name)
 		}
@@ -1103,7 +948,7 @@ func smokeOptionalHashHooks(spec Spec, probe []byte) (err error) {
 		// silently skipped in that case. The no-panic contract
 		// still holds via the outer defer/recover.
 		key := make([]byte, wantLen)
-		defer clear(key)
+		defer wipe.Bytes(key)
 		if _, rerr := rand.Read(key); rerr != nil {
 			return fmt.Errorf("hashes: Register: %q KeyedHash smoke: crypto/rand: %w", spec.Name, rerr)
 		}
@@ -1112,8 +957,10 @@ func smokeOptionalHashHooks(spec Spec, probe []byte) (err error) {
 			if kh1 == nil {
 				return fmt.Errorf("hashes: Register: %q KeyedHash returned a nil hash.Hash without error at %d-byte key", spec.Name, wantLen)
 			}
+			defer wipe.StructPtr(kh1)
 			kh1.Write(probe)
 			tag1 := kh1.Sum(nil)
+			defer wipe.Bytes(tag1)
 			kh2, kerr2 := spec.KeyedHash(key)
 			if kerr2 != nil {
 				return fmt.Errorf("hashes: Register: %q KeyedHash rejected the %d-byte key on the second fresh call after accepting it on the first: %w", spec.Name, wantLen, kerr2)
@@ -1121,8 +968,10 @@ func smokeOptionalHashHooks(spec Spec, probe []byte) (err error) {
 			if kh2 == nil {
 				return fmt.Errorf("hashes: Register: %q KeyedHash returned a nil hash.Hash on the second fresh call at %d-byte key", spec.Name, wantLen)
 			}
+			defer wipe.StructPtr(kh2)
 			kh2.Write(probe)
 			tag2 := kh2.Sum(nil)
+			defer wipe.Bytes(tag2)
 			if !bytes.Equal(tag1, tag2) {
 				return fmt.Errorf("hashes: Register: %q KeyedHash is non-deterministic across fresh instances at %d-byte key (two Write/Sum passes over identical (key, input) disagree)", spec.Name, wantLen)
 			}
@@ -1132,8 +981,10 @@ func smokeOptionalHashHooks(spec Spec, probe []byte) (err error) {
 		// key or return an error — both are within contract; the
 		// outer defer/recover converts any panic into a returned
 		// error, closing the only misbehaviour worth catching here.
-		_, _ = spec.KeyedHash(nil)
-		_, _ = spec.KeyedHash([]byte{})
+		khNil, _ := spec.KeyedHash(nil)
+		wipe.StructPtr(khNil)
+		khEmpty, _ := spec.KeyedHash([]byte{})
+		wipe.StructPtr(khEmpty)
 	}
 	return nil
 }

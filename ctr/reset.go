@@ -5,8 +5,12 @@ import (
 	"crypto/cipher"
 	"fmt"
 	"io"
+	"reflect"
+	"runtime"
+	"unsafe"
 
 	"github.com/everanium/itb/hashes"
+	"github.com/everanium/itb/internal/wipe"
 	"golang.org/x/crypto/chacha20"
 )
 
@@ -63,6 +67,9 @@ func NewResettableAt(name string, key, nonce []byte, byteOffset int) (Resettable
 	if byteOffset < 0 {
 		return nil, fmt.Errorf("ctr: negative byteOffset %d", byteOffset)
 	}
+	if name == hashes.CipherAES128CTR {
+		return newAESResettableAt(key, nonce, byteOffset)
+	}
 	ks, err := NewResettable(name, key, nonce)
 	if err != nil {
 		return nil, err
@@ -85,12 +92,64 @@ func NewResettableAt(name string, key, nonce []byte, byteOffset int) (Resettable
 // the nonce, then discards the intra-block remainder; the cipher.Block
 // is reused so AES key expansion runs once per construction.
 type aesResettable struct {
-	block  cipher.Block
-	nonce  [aes.BlockSize]byte
-	stream cipher.Stream
+	block            cipher.Block
+	nonce            [aes.BlockSize]byte
+	iv               [aes.BlockSize]byte
+	scratch          [aes.BlockSize]byte
+	stream           cipher.Stream
+	streamDirectSize int
+}
+
+func detectStreamDirectSize(s *cipher.Stream) int {
+	if s == nil || *s == nil {
+		return 0
+	}
+	rv := reflect.ValueOf(*s)
+	if rv.Kind() != reflect.Struct || rv.NumField() != 1 {
+		return 0
+	}
+	f := rv.Field(0)
+	if f.Kind() != reflect.Pointer || f.IsNil() {
+		return 0
+	}
+	elem := f.Type().Elem()
+	if elem.Kind() != reflect.Struct {
+		return 0
+	}
+	for i := 0; i < elem.NumField(); i++ {
+		switch elem.Field(i).Type.Kind() {
+		case reflect.Pointer, reflect.Slice, reflect.Interface, reflect.Map, reflect.Chan, reflect.Func:
+			return 0
+		}
+	}
+	ifaceWords := (*[2]unsafe.Pointer)(unsafe.Pointer(s))
+	if ifaceWords[1] != f.UnsafePointer() {
+		return 0
+	}
+	return int(elem.Size())
+}
+
+func (a *aesResettable) wipeStream() {
+	if a.stream == nil {
+		return
+	}
+	if a.streamDirectSize > 0 {
+		p := (*[2]unsafe.Pointer)(unsafe.Pointer(&a.stream))[1]
+		if p != nil {
+			b := unsafe.Slice((*byte)(p), a.streamDirectSize)
+			clear(b)
+			runtime.KeepAlive(b)
+			return
+		}
+	}
+	wipe.StructPtr(a.stream)
 }
 
 func newAESResettable(key, nonce []byte) (*aesResettable, error) {
+	return newAESResettableAt(key, nonce, 0)
+}
+
+func newAESResettableAt(key, nonce []byte, byteOffset int) (*aesResettable, error) {
 	if len(key) != 16 {
 		return nil, fmt.Errorf("ctr: aes-128-ctr key must be 16 bytes, got %d", len(key))
 	}
@@ -103,7 +162,22 @@ func newAESResettable(key, nonce []byte) (*aesResettable, error) {
 	}
 	a := &aesResettable{block: block}
 	copy(a.nonce[:], nonce)
-	a.stream = cipher.NewCTR(block, a.nonce[:])
+	if byteOffset == 0 {
+		a.stream = cipher.NewCTR(block, a.nonce[:])
+		a.streamDirectSize = detectStreamDirectSize(&a.stream)
+		return a, nil
+	}
+	blockOff := uint64(byteOffset / aes.BlockSize)
+	intra := byteOffset % aes.BlockSize
+	ivAtInto(&a.iv, a.nonce[:], blockOff)
+	a.stream = cipher.NewCTR(block, a.iv[:])
+	a.streamDirectSize = detectStreamDirectSize(&a.stream)
+	clear(a.iv[:])
+	if intra > 0 {
+		z := a.scratch[:intra]
+		a.stream.XORKeyStream(z, z)
+		clear(z)
+	}
 	return a, nil
 }
 
@@ -117,17 +191,27 @@ func (a *aesResettable) ResetCounter(byteOffset int) error {
 	}
 	blockOff := uint64(byteOffset / aes.BlockSize)
 	intra := byteOffset % aes.BlockSize
-	iv := ivAt(a.nonce[:], blockOff)
-	a.stream = cipher.NewCTR(a.block, iv)
-	clear(iv)
-	discard(a.stream, intra)
+	ivAtInto(&a.iv, a.nonce[:], blockOff)
+	a.wipeStream()
+	a.stream = cipher.NewCTR(a.block, a.iv[:])
+	clear(a.iv[:])
+	if intra > 0 {
+		z := a.scratch[:intra]
+		a.stream.XORKeyStream(z, z)
+		clear(z)
+	}
 	return nil
 }
 
 func (a *aesResettable) Close() error {
 	clear(a.nonce[:])
-	a.block = nil
+	clear(a.iv[:])
+	clear(a.scratch[:])
+	a.wipeStream()
+	wipe.StructPtr(a.block)
 	a.stream = nil
+	a.block = nil
+	runtime.KeepAlive(a)
 	return nil
 }
 
@@ -141,9 +225,10 @@ func (a *aesResettable) Close() error {
 // counter is 32 bits wide, so byteOffset must satisfy
 // byteOffset/64 <= 2^32 − 1.
 type chaCha20Resettable struct {
-	cipher *chacha20.Cipher
-	key    []byte
-	nonce  []byte
+	cipher  *chacha20.Cipher
+	key     []byte
+	nonce   []byte
+	scratch [64]byte
 }
 
 func newChaCha20Resettable(key, nonce []byte) (*chaCha20Resettable, error) {
@@ -159,6 +244,8 @@ func newChaCha20Resettable(key, nonce []byte) (*chaCha20Resettable, error) {
 	if err != nil {
 		clear(keyCopy)
 		clear(nonceCopy)
+		runtime.KeepAlive(keyCopy)
+		runtime.KeepAlive(nonceCopy)
 		return nil, err
 	}
 	return &chaCha20Resettable{
@@ -201,34 +288,49 @@ func (c *chaCha20Resettable) ResetCounter(byteOffset int) error {
 	fresh.SetCounter(uint32(blockOff))
 	if c.cipher != nil {
 		*c.cipher = chacha20.Cipher{}
+		runtime.KeepAlive(c.cipher)
 	}
 	c.cipher = fresh
-	discard(c.cipher, byteOffset%blockSize)
+	if intra := byteOffset % blockSize; intra > 0 {
+		z := c.scratch[:intra]
+		c.cipher.XORKeyStream(z, z)
+		clear(z)
+	}
 	return nil
 }
 
 func (c *chaCha20Resettable) Close() error {
 	if c.cipher != nil {
 		*c.cipher = chacha20.Cipher{}
+		runtime.KeepAlive(c.cipher)
 		c.cipher = nil
 	}
+	clear(c.scratch[:])
 	clear(c.key)
 	clear(c.nonce)
+	runtime.KeepAlive(c)
+	runtime.KeepAlive(c.key)
+	runtime.KeepAlive(c.nonce)
 	return nil
 }
 
 // ResetCounter on sipCTR drops the partial-block buffer, positions the
-// 64-bit block counter at the block containing byteOffset, and discards
-// the intra-block remainder so the next XORKeyStream starts at the byte
-// at byteOffset.
+// 64-bit block counter at the block containing byteOffset, and advances
+// past the intra-block remainder without escaping a scratch slice so the
+// next XORKeyStream starts at the byte at byteOffset.
 func (c *sipCTR) ResetCounter(byteOffset int) error {
 	if byteOffset < 0 {
 		return fmt.Errorf("ctr: negative byteOffset %d", byteOffset)
 	}
 	const blockSize = 16
 	c.counter = uint64(byteOffset / blockSize)
+	clear(c.keystrm[:])
 	c.keystrmN = 0
-	discard(c, byteOffset%blockSize)
+	if rem := byteOffset % blockSize; rem > 0 {
+		c.refill()
+		clear(c.keystrm[:rem])
+		c.keystrmN = blockSize - rem
+	}
 	return nil
 }
 
@@ -239,23 +341,33 @@ func (c *prfHashCTR) ResetCounter(byteOffset int) error {
 		return fmt.Errorf("ctr: negative byteOffset %d", byteOffset)
 	}
 	c.counter = uint64(byteOffset / c.blockSize)
+	clear(c.keystrm)
 	c.keystrmN = 0
-	discard(c, byteOffset%c.blockSize)
+	if rem := byteOffset % c.blockSize; rem > 0 {
+		c.refill()
+		clear(c.keystrm[:rem])
+		c.keystrmN = c.blockSize - rem
+	}
 	return nil
 }
 
 // ResetCounter on prfHashCTRBatch positions the next refill at the
 // 4-block group containing byteOffset (refill writes blocks
 // counter..counter+3 and advances by 4), drops the partial buffer, and
-// discards the intra-group remainder so the next XORKeyStream starts at
-// byteOffset.
+// advances past the intra-group remainder without escaping a scratch
+// slice so the next XORKeyStream starts at byteOffset.
 func (c *prfHashCTRBatch) ResetCounter(byteOffset int) error {
 	if byteOffset < 0 {
 		return fmt.Errorf("ctr: negative byteOffset %d", byteOffset)
 	}
 	groupSize := 4 * c.blockSize
 	c.counter = uint64(byteOffset/groupSize) * 4
+	clear(c.keystrm)
 	c.keystrmN = 0
-	discard(c, byteOffset%groupSize)
+	if rem := byteOffset % groupSize; rem > 0 {
+		c.refill()
+		clear(c.keystrm[:rem])
+		c.keystrmN = groupSize - rem
+	}
 	return nil
 }

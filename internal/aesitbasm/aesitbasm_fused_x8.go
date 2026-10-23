@@ -13,19 +13,26 @@ package aesitbasm
 // result is bit-exact with eight [ScalarFusedChain] evaluations on
 // every arm.
 
-// fusedX4Dispatch is the signature of the four-lane fused dispatchers.
-type fusedX4Dispatch func(key *[16]byte, components []uint64, dataPtrs *[4]*byte, out *[4][2]uint64)
-
-// fusedChainX8ViaX4 runs an eight-lane cascade as two four-lane calls of
-// x4: lanes 0..3 first, then lanes 4..7. The x4 dispatcher applies its own
-// tier selection and component guard, so this is the fallback of every
-// arm that has no eight-lane kernel.
-func fusedChainX8ViaX4(x4 fusedX4Dispatch, key *[16]byte, components []uint64, dataPtrs *[8]*byte, out *[8][2]uint64) {
+// fusedChainX8ViaX4 runs an eight-lane cascade at shape n as two
+// four-lane calls of the shape's x4 dispatcher: lanes 0..3 first, then
+// lanes 4..7. The x4 dispatcher applies its own tier selection and
+// component guard, so this is the fallback of every arm that has no
+// eight-lane kernel. The dispatchers are called directly (not through a
+// function value) so the lane-pointer halves and output array stay on
+// the stack.
+func fusedChainX8ViaX4(n int, key *[16]byte, components []uint64, dataPtrs *[8]*byte, out *[8][2]uint64) {
 	lo := [4]*byte{dataPtrs[0], dataPtrs[1], dataPtrs[2], dataPtrs[3]}
 	hi := [4]*byte{dataPtrs[4], dataPtrs[5], dataPtrs[6], dataPtrs[7]}
-	var o [4][2]uint64
-	x4(key, components, &lo, &o)
-	copy(out[0:4], o[:])
-	x4(key, components, &hi, &o)
-	copy(out[4:8], o[:])
+	outLo, outHi := (*[4][2]uint64)(out[0:4]), (*[4][2]uint64)(out[4:8])
+	switch n {
+	case 20:
+		FusedChain20x4(key, components, &lo, outLo)
+		FusedChain20x4(key, components, &hi, outHi)
+	case 36:
+		FusedChain36x4(key, components, &lo, outLo)
+		FusedChain36x4(key, components, &hi, outHi)
+	case 68:
+		FusedChain68x4(key, components, &lo, outLo)
+		FusedChain68x4(key, components, &hi, outHi)
+	}
 }
