@@ -3,6 +3,7 @@ package ctr
 import (
 	"crypto/aes"
 	"crypto/cipher"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"reflect"
@@ -10,8 +11,8 @@ import (
 	"unsafe"
 
 	"github.com/everanium/itb/hashes"
+	"github.com/everanium/itb/internal/chacha20ctr"
 	"github.com/everanium/itb/internal/wipe"
-	"golang.org/x/crypto/chacha20"
 )
 
 // ResettableKeystream is a Keystream whose internal counter can be
@@ -94,10 +95,14 @@ func NewResettableAt(name string, key, nonce []byte, byteOffset int) (Resettable
 type aesResettable struct {
 	block            cipher.Block
 	nonce            [aes.BlockSize]byte
+	nonceHi          uint64
+	nonceLo          uint64
 	iv               [aes.BlockSize]byte
 	scratch          [aes.BlockSize]byte
 	stream           cipher.Stream
+	streamAlt        cipher.Stream
 	streamDirectSize int
+	fastReset        bool
 }
 
 func detectStreamDirectSize(s *cipher.Stream) int {
@@ -127,6 +132,49 @@ func detectStreamDirectSize(s *cipher.Stream) int {
 		return 0
 	}
 	return int(elem.Size())
+}
+
+var (
+	aesCTRDirectSize int
+	aesCTRFastReset  bool
+)
+
+func init() {
+	var zeroKey [16]byte
+	block, err := aes.NewCipher(zeroKey[:])
+	if err != nil {
+		return
+	}
+	const (
+		probeHi = uint64(0x0102030405060708)
+		probeLo = uint64(0x090a0b0c0d0e0f10)
+	)
+	var probeIV [aes.BlockSize]byte
+	binary.BigEndian.PutUint64(probeIV[0:8], probeHi)
+	binary.BigEndian.PutUint64(probeIV[8:16], probeLo)
+	s := cipher.NewCTR(block, probeIV[:])
+	sz := detectStreamDirectSize(&s)
+	aesCTRDirectSize = sz
+	if sz >= 24 && sz <= 512+24 {
+		p := (*[2]unsafe.Pointer)(unsafe.Pointer(&s))[1]
+		if p != nil {
+			schedLen := sz - 24
+			tail := (*[3]uint64)(unsafe.Add(p, schedLen))
+			if tail[0] == probeLo && tail[1] == probeHi && tail[2] == 0 {
+				var z [5]byte
+				s.XORKeyStream(z[:], z[:])
+				clear(z[:])
+				if tail[0] == probeLo && tail[1] == probeHi && tail[2] == 5 {
+					aesCTRFastReset = true
+				}
+			}
+			b := unsafe.Slice((*byte)(p), sz)
+			clear(b)
+			runtime.KeepAlive(b)
+		}
+	}
+	wipe.StructPtr(s)
+	wipe.StructPtr(block)
 }
 
 func (a *aesResettable) wipeStream() {
@@ -160,18 +208,39 @@ func newAESResettableAt(key, nonce []byte, byteOffset int) (*aesResettable, erro
 	if err != nil {
 		return nil, err
 	}
-	a := &aesResettable{block: block}
+	a := &aesResettable{
+		block:            block,
+		nonceHi:          binary.BigEndian.Uint64(nonce[0:8]),
+		nonceLo:          binary.BigEndian.Uint64(nonce[8:16]),
+		streamDirectSize: aesCTRDirectSize,
+	}
 	copy(a.nonce[:], nonce)
+
+	s0 := cipher.NewCTR(block, a.nonce[:])
+	if aesCTRFastReset {
+		p0 := (*[2]unsafe.Pointer)(unsafe.Pointer(&s0))[1]
+		if p0 != nil {
+			schedLen := aesCTRDirectSize - 24
+			a.fastReset = true
+			tail0 := (*[3]uint64)(unsafe.Add(p0, schedLen))
+			tail0[0] = a.nonceLo
+			tail0[1] = a.nonceHi
+			tail0[2] = uint64(byteOffset)
+			a.stream = s0
+			return a, nil
+		}
+	}
+
 	if byteOffset == 0 {
-		a.stream = cipher.NewCTR(block, a.nonce[:])
-		a.streamDirectSize = detectStreamDirectSize(&a.stream)
+		a.stream = s0
 		return a, nil
 	}
+	a.stream = s0
+	a.wipeStream()
 	blockOff := uint64(byteOffset / aes.BlockSize)
 	intra := byteOffset % aes.BlockSize
 	ivAtInto(&a.iv, a.nonce[:], blockOff)
 	a.stream = cipher.NewCTR(block, a.iv[:])
-	a.streamDirectSize = detectStreamDirectSize(&a.stream)
 	clear(a.iv[:])
 	if intra > 0 {
 		z := a.scratch[:intra]
@@ -189,6 +258,21 @@ func (a *aesResettable) ResetCounter(byteOffset int) error {
 	if byteOffset < 0 {
 		return fmt.Errorf("ctr: negative byteOffset %d", byteOffset)
 	}
+	if a.fastReset {
+		if a.streamAlt == nil {
+			s1 := cipher.NewCTR(a.block, a.nonce[:])
+			a.wipeStream()
+			a.streamAlt = s1
+			a.stream = s1
+		}
+		p := (*[2]unsafe.Pointer)(unsafe.Pointer(&a.stream))[1]
+		schedLen := a.streamDirectSize - 24
+		tail := (*[3]uint64)(unsafe.Add(p, schedLen))
+		tail[0] = a.nonceLo
+		tail[1] = a.nonceHi
+		tail[2] = uint64(byteOffset)
+		return nil
+	}
 	blockOff := uint64(byteOffset / aes.BlockSize)
 	intra := byteOffset % aes.BlockSize
 	ivAtInto(&a.iv, a.nonce[:], blockOff)
@@ -205,9 +289,16 @@ func (a *aesResettable) ResetCounter(byteOffset int) error {
 
 func (a *aesResettable) Close() error {
 	clear(a.nonce[:])
+	a.nonceHi = 0
+	a.nonceLo = 0
 	clear(a.iv[:])
 	clear(a.scratch[:])
 	a.wipeStream()
+	if a.streamAlt != nil {
+		a.stream = a.streamAlt
+		a.wipeStream()
+		a.streamAlt = nil
+	}
 	wipe.StructPtr(a.block)
 	a.stream = nil
 	a.block = nil
@@ -215,48 +306,93 @@ func (a *aesResettable) Close() error {
 	return nil
 }
 
-// chaCha20Resettable wraps *chacha20.Cipher (RFC 8439). The upstream
-// SetCounter refuses to move the block counter backwards (it panics to
-// prevent counter reuse across distinct messages), so ResetCounter
-// rebuilds the cipher from the original key and nonce on every call,
-// then SetCounter takes the always-fresh counter forward to the target
-// block. The intra-block remainder is then discarded so the next
-// XORKeyStream starts at the byte at byteOffset. The RFC 8439 block
-// counter is 32 bits wide, so byteOffset must satisfy
-// byteOffset/64 <= 2^32 − 1.
+// chaCha20Resettable implements RFC 8439 ChaCha20 in counter mode with
+// zero-allocation ResetCounter repositioning and SIMD-accelerated block XOR.
 type chaCha20Resettable struct {
-	cipher  *chacha20.Cipher
-	key     []byte
-	nonce   []byte
-	scratch [64]byte
+	key     [8]uint32
+	nonce   [3]uint32
+	counter uint64
+	skip    int
+	buf     [64]byte
+	bufOff  int
+	bufLen  int
 }
 
 func newChaCha20Resettable(key, nonce []byte) (*chaCha20Resettable, error) {
-	if len(key) != chacha20.KeySize {
-		return nil, fmt.Errorf("ctr: chacha20 key must be %d bytes, got %d", chacha20.KeySize, len(key))
+	if len(key) != chacha20ctr.KeySize {
+		return nil, fmt.Errorf("ctr: chacha20 key must be %d bytes, got %d", chacha20ctr.KeySize, len(key))
 	}
-	if len(nonce) != chacha20.NonceSize {
-		return nil, fmt.Errorf("ctr: chacha20 nonce must be %d bytes, got %d", chacha20.NonceSize, len(nonce))
+	if len(nonce) != chacha20ctr.NonceSize {
+		return nil, fmt.Errorf("ctr: chacha20 nonce must be %d bytes, got %d", chacha20ctr.NonceSize, len(nonce))
 	}
-	keyCopy := append([]byte(nil), key...)
-	nonceCopy := append([]byte(nil), nonce...)
-	c, err := chacha20.NewUnauthenticatedCipher(keyCopy, nonceCopy)
-	if err != nil {
-		clear(keyCopy)
-		clear(nonceCopy)
-		runtime.KeepAlive(keyCopy)
-		runtime.KeepAlive(nonceCopy)
-		return nil, err
+	c := &chaCha20Resettable{}
+	for i := range c.key {
+		c.key[i] = binary.LittleEndian.Uint32(key[4*i:])
 	}
-	return &chaCha20Resettable{
-		cipher: c,
-		key:    keyCopy,
-		nonce:  nonceCopy,
-	}, nil
+	for i := range c.nonce {
+		c.nonce[i] = binary.LittleEndian.Uint32(nonce[4*i:])
+	}
+	return c, nil
 }
 
 func (c *chaCha20Resettable) XORKeyStream(dst, src []byte) {
-	c.cipher.XORKeyStream(dst, src)
+	if len(dst) < len(src) {
+		panic("ctr/chacha20: short dst")
+	}
+	if len(src) == 0 {
+		return
+	}
+	if c.skip > 0 {
+		if c.counter >= 1<<32 {
+			panic("ctr/chacha20: counter overflow")
+		}
+		c.buf = [64]byte{}
+		chacha20ctr.XORKeyStreamBlocks(c.buf[:], c.buf[:], &c.key, &c.nonce, uint32(c.counter))
+		c.counter++
+		clear(c.buf[:c.skip])
+		c.bufOff = c.skip
+		c.bufLen = 64 - c.skip
+		c.skip = 0
+	}
+	if c.bufLen > 0 {
+		take := c.bufLen
+		if take > len(src) {
+			take = len(src)
+		}
+		bufSlice := c.buf[c.bufOff : c.bufOff+take]
+		for i := 0; i < take; i++ {
+			dst[i] = src[i] ^ bufSlice[i]
+		}
+		clear(bufSlice)
+		c.bufOff += take
+		c.bufLen -= take
+		src = src[take:]
+		dst = dst[take:]
+	}
+	if nBlocks := len(src) / 64; nBlocks > 0 {
+		if c.counter+uint64(nBlocks) > 1<<32 {
+			panic("ctr/chacha20: counter overflow")
+		}
+		adv := nBlocks * 64
+		chacha20ctr.XORKeyStreamBlocks(dst[:adv], src[:adv], &c.key, &c.nonce, uint32(c.counter))
+		c.counter += uint64(nBlocks)
+		src = src[adv:]
+		dst = dst[adv:]
+	}
+	if rem := len(src); rem > 0 {
+		if c.counter >= 1<<32 {
+			panic("ctr/chacha20: counter overflow")
+		}
+		c.buf = [64]byte{}
+		chacha20ctr.XORKeyStreamBlocks(c.buf[:], c.buf[:], &c.key, &c.nonce, uint32(c.counter))
+		c.counter++
+		for i := 0; i < rem; i++ {
+			dst[i] = src[i] ^ c.buf[i]
+		}
+		clear(c.buf[:rem])
+		c.bufOff = rem
+		c.bufLen = 64 - rem
+	}
 }
 
 func (c *chaCha20Resettable) ResetCounter(byteOffset int) error {
@@ -265,52 +401,20 @@ func (c *chaCha20Resettable) ResetCounter(byteOffset int) error {
 	}
 	const blockSize = 64
 	blockOff := uint64(byteOffset / blockSize)
-	// RFC 8439 fixes the ChaCha20 block counter at 32 bits; any
-	// byteOffset at or above 2^38 (~256 GiB per (key, nonce)) implies
-	// blockOff at or above 2^32, which the uint32 cast below would
-	// silently wrap. Reject with the same scoped error the seek-side
-	// NewAt uses so both entry points speak the same language: name
-	// the failure (counter overflow) AND the intact layer (inner ITB
-	// confidentiality unaffected — the outer cipher is a format-
-	// deniability whitener, not the confidentiality carrier) AND the
-	// escape (AES-128-CTR outer cipher uses a 128-bit big-endian
-	// counter and is practically unlimited for random nonces).
-	// Written as >= 2^32 rather than > 2^32-1: the Go s390x backend folds
-	// an unsigned compare of a right-shifted value against 0xFFFFFFFF to
-	// false, which would silently drop this guard on that target.
 	if blockOff >= 1<<32 {
 		return fmt.Errorf("ctr: chacha20 counter overflow — byteOffset %d requires block index %d ≥ 2^32 (~256 GiB per (key, nonce)); outer-layer format deniability weakens past this seek point, inner ITB confidentiality unaffected. Choose AES-128-CTR outer cipher for streams above this cap", byteOffset, blockOff)
 	}
-	fresh, err := chacha20.NewUnauthenticatedCipher(c.key, c.nonce)
-	if err != nil {
-		return err
-	}
-	fresh.SetCounter(uint32(blockOff))
-	if c.cipher != nil {
-		*c.cipher = chacha20.Cipher{}
-		runtime.KeepAlive(c.cipher)
-	}
-	c.cipher = fresh
-	if intra := byteOffset % blockSize; intra > 0 {
-		z := c.scratch[:intra]
-		c.cipher.XORKeyStream(z, z)
-		clear(z)
-	}
+	clear(c.buf[:])
+	c.counter = blockOff
+	c.bufOff = 0
+	c.bufLen = 0
+	c.skip = byteOffset % blockSize
 	return nil
 }
 
 func (c *chaCha20Resettable) Close() error {
-	if c.cipher != nil {
-		*c.cipher = chacha20.Cipher{}
-		runtime.KeepAlive(c.cipher)
-		c.cipher = nil
-	}
-	clear(c.scratch[:])
-	clear(c.key)
-	clear(c.nonce)
+	*c = chaCha20Resettable{}
 	runtime.KeepAlive(c)
-	runtime.KeepAlive(c.key)
-	runtime.KeepAlive(c.nonce)
 	return nil
 }
 
@@ -360,14 +464,13 @@ func (c *prfHashCTRBatch) ResetCounter(byteOffset int) error {
 	if byteOffset < 0 {
 		return fmt.Errorf("ctr: negative byteOffset %d", byteOffset)
 	}
-	groupSize := 4 * c.blockSize
-	c.counter = uint64(byteOffset/groupSize) * 4
+	c.counter = uint64(byteOffset / c.blockSize)
 	clear(c.keystrm)
 	c.keystrmN = 0
-	if rem := byteOffset % groupSize; rem > 0 {
+	if rem := byteOffset % c.blockSize; rem > 0 {
 		c.refill()
 		clear(c.keystrm[:rem])
-		c.keystrmN = groupSize - rem
+		c.keystrmN = 4*c.blockSize - rem
 	}
 	return nil
 }

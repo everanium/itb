@@ -1,0 +1,1718 @@
+//go:build amd64 && !purego && !noitbasm
+
+// AVX-512VL (EVEX YMM 4-lane SOV) and AVX2 (VEX YMM 4-lane SOV) RFC 7693
+// Keyed BLAKE2b-256 and BLAKE2b-512 CTR keystream XOR and 4-lane batch-PRF
+// compression kernels.
+//
+// Construction (per 24-byte CTR block b = 0..nBlocks-1 at counter c = counter + b):
+//   v[0..7]   = hKey[0..7] (precomputed non-final key-block chaining state)
+//   v[8..11]  = IV[0..3]
+//   v[12]     = IV[4] ^ 152
+//   v[13]     = IV[5]
+//   v[14]     = IV[6] ^ 0xffffffffffffffff
+//   v[15]     = IV[7]
+//   m[0]      = nonce[0]
+//   m[1]      = nonce[1]
+//   m[2]      = uint64(counter + b)
+//   m[3..15]  = 0 (elided across all 12 rounds)
+//   h'[0..7]  = hKey[0..7] ^ v'[0..7] ^ v'[8..15]
+// Matches RFC 7693 / golang.org/x/crypto/blake2b bit-for-bit.
+//
+// Register allocation (AVX-512VL YMM 4-lane SOV):
+//   Y0..Y15   working state words v[0..15] across 4 parallel lanes
+//   Y16..Y23  broadcast hKey[0..7] (or m[0..7] in general 1-block kernel)
+//   Y24..Y26  m[0], m[1], m[2] across 4 lanes (Y16..Y31 = m[0..15] in general kernel)
+//   Y28..Y31  4x4 qword transpose scratch
+//
+// Register allocation (AVX2 VEX YMM 4-lane SOV):
+//   Y0..Y11   working state words v[0..11] across 4 parallel lanes
+//   Y12       working state word v[12] (or v[15] during G3, G4)
+//   Y13, Y14  working state words v[13], v[14]
+//   Y15       rotate / broadcast / transpose scratch
+//   R8..R11   parked state word v[15] (or v[12] during G3, G4)
+//   R12, R13  swap scratch GPRs
+//
+// Stack frame: $0 on all entry points (100% register-resident).
+
+#include "textflag.h"
+
+#define G_EVEX(a, b, c, d, mx, my) \
+	VPADDQ b, a, a; \
+	VPADDQ mx, a, a; \
+	VPXORQ a, d, d; \
+	VPRORQ $32, d, d; \
+	VPADDQ d, c, c; \
+	VPXORQ c, b, b; \
+	VPRORQ $24, b, b; \
+	VPADDQ b, a, a; \
+	VPADDQ my, a, a; \
+	VPXORQ a, d, d; \
+	VPRORQ $16, d, d; \
+	VPADDQ d, c, c; \
+	VPXORQ c, b, b; \
+	VPRORQ $63, b, b
+
+#define GX_EVEX(a, b, c, d, mx) \
+	VPADDQ b, a, a; \
+	VPADDQ mx, a, a; \
+	VPXORQ a, d, d; \
+	VPRORQ $32, d, d; \
+	VPADDQ d, c, c; \
+	VPXORQ c, b, b; \
+	VPRORQ $24, b, b; \
+	VPADDQ b, a, a; \
+	VPXORQ a, d, d; \
+	VPRORQ $16, d, d; \
+	VPADDQ d, c, c; \
+	VPXORQ c, b, b; \
+	VPRORQ $63, b, b
+
+#define GY_EVEX(a, b, c, d, my) \
+	VPADDQ b, a, a; \
+	VPXORQ a, d, d; \
+	VPRORQ $32, d, d; \
+	VPADDQ d, c, c; \
+	VPXORQ c, b, b; \
+	VPRORQ $24, b, b; \
+	VPADDQ b, a, a; \
+	VPADDQ my, a, a; \
+	VPXORQ a, d, d; \
+	VPRORQ $16, d, d; \
+	VPADDQ d, c, c; \
+	VPXORQ c, b, b; \
+	VPRORQ $63, b, b
+
+#define GZ_EVEX(a, b, c, d) \
+	VPADDQ b, a, a; \
+	VPXORQ a, d, d; \
+	VPRORQ $32, d, d; \
+	VPADDQ d, c, c; \
+	VPXORQ c, b, b; \
+	VPRORQ $24, b, b; \
+	VPADDQ b, a, a; \
+	VPXORQ a, d, d; \
+	VPRORQ $16, d, d; \
+	VPADDQ d, c, c; \
+	VPXORQ c, b, b; \
+	VPRORQ $63, b, b
+
+#define ROUND_24_EVEX_0 \
+	G_EVEX(Y0, Y4, Y8, Y12, Y24, Y25); \
+	GX_EVEX(Y1, Y5, Y9, Y13, Y26); \
+	GZ_EVEX(Y2, Y6, Y10, Y14); \
+	GZ_EVEX(Y3, Y7, Y11, Y15); \
+	GZ_EVEX(Y0, Y5, Y10, Y15); \
+	GZ_EVEX(Y1, Y6, Y11, Y12); \
+	GZ_EVEX(Y2, Y7, Y8, Y13); \
+	GZ_EVEX(Y3, Y4, Y9, Y14)
+
+#define ROUND_24_EVEX_1 \
+	GZ_EVEX(Y0, Y4, Y8, Y12); \
+	GZ_EVEX(Y1, Y5, Y9, Y13); \
+	GZ_EVEX(Y2, Y6, Y10, Y14); \
+	GZ_EVEX(Y3, Y7, Y11, Y15); \
+	GX_EVEX(Y0, Y5, Y10, Y15, Y25); \
+	G_EVEX(Y1, Y6, Y11, Y12, Y24, Y26); \
+	GZ_EVEX(Y2, Y7, Y8, Y13); \
+	GZ_EVEX(Y3, Y4, Y9, Y14)
+
+#define ROUND_24_EVEX_2 \
+	GZ_EVEX(Y0, Y4, Y8, Y12); \
+	GY_EVEX(Y1, Y5, Y9, Y13, Y24); \
+	GY_EVEX(Y2, Y6, Y10, Y14, Y26); \
+	GZ_EVEX(Y3, Y7, Y11, Y15); \
+	GZ_EVEX(Y0, Y5, Y10, Y15); \
+	GZ_EVEX(Y1, Y6, Y11, Y12); \
+	GY_EVEX(Y2, Y7, Y8, Y13, Y25); \
+	GZ_EVEX(Y3, Y4, Y9, Y14)
+
+#define ROUND_24_EVEX_3 \
+	GZ_EVEX(Y0, Y4, Y8, Y12); \
+	GY_EVEX(Y1, Y5, Y9, Y13, Y25); \
+	GZ_EVEX(Y2, Y6, Y10, Y14); \
+	GZ_EVEX(Y3, Y7, Y11, Y15); \
+	GX_EVEX(Y0, Y5, Y10, Y15, Y26); \
+	GZ_EVEX(Y1, Y6, Y11, Y12); \
+	GY_EVEX(Y2, Y7, Y8, Y13, Y24); \
+	GZ_EVEX(Y3, Y4, Y9, Y14)
+
+#define ROUND_24_EVEX_4 \
+	GY_EVEX(Y0, Y4, Y8, Y12, Y24); \
+	GZ_EVEX(Y1, Y5, Y9, Y13); \
+	GX_EVEX(Y2, Y6, Y10, Y14, Y26); \
+	GZ_EVEX(Y3, Y7, Y11, Y15); \
+	GY_EVEX(Y0, Y5, Y10, Y15, Y25); \
+	GZ_EVEX(Y1, Y6, Y11, Y12); \
+	GZ_EVEX(Y2, Y7, Y8, Y13); \
+	GZ_EVEX(Y3, Y4, Y9, Y14)
+
+#define ROUND_24_EVEX_5 \
+	GX_EVEX(Y0, Y4, Y8, Y12, Y26); \
+	GZ_EVEX(Y1, Y5, Y9, Y13); \
+	GX_EVEX(Y2, Y6, Y10, Y14, Y24); \
+	GZ_EVEX(Y3, Y7, Y11, Y15); \
+	GZ_EVEX(Y0, Y5, Y10, Y15); \
+	GZ_EVEX(Y1, Y6, Y11, Y12); \
+	GZ_EVEX(Y2, Y7, Y8, Y13); \
+	GX_EVEX(Y3, Y4, Y9, Y14, Y25)
+
+#define ROUND_24_EVEX_6 \
+	GZ_EVEX(Y0, Y4, Y8, Y12); \
+	GX_EVEX(Y1, Y5, Y9, Y13, Y25); \
+	GZ_EVEX(Y2, Y6, Y10, Y14); \
+	GZ_EVEX(Y3, Y7, Y11, Y15); \
+	GX_EVEX(Y0, Y5, Y10, Y15, Y24); \
+	GZ_EVEX(Y1, Y6, Y11, Y12); \
+	GY_EVEX(Y2, Y7, Y8, Y13, Y26); \
+	GZ_EVEX(Y3, Y4, Y9, Y14)
+
+#define ROUND_24_EVEX_7 \
+	GZ_EVEX(Y0, Y4, Y8, Y12); \
+	GZ_EVEX(Y1, Y5, Y9, Y13); \
+	GY_EVEX(Y2, Y6, Y10, Y14, Y25); \
+	GZ_EVEX(Y3, Y7, Y11, Y15); \
+	GY_EVEX(Y0, Y5, Y10, Y15, Y24); \
+	GZ_EVEX(Y1, Y6, Y11, Y12); \
+	GZ_EVEX(Y2, Y7, Y8, Y13); \
+	GX_EVEX(Y3, Y4, Y9, Y14, Y26)
+
+#define ROUND_24_EVEX_8 \
+	GZ_EVEX(Y0, Y4, Y8, Y12); \
+	GZ_EVEX(Y1, Y5, Y9, Y13); \
+	GZ_EVEX(Y2, Y6, Y10, Y14); \
+	GX_EVEX(Y3, Y7, Y11, Y15, Y24); \
+	GY_EVEX(Y0, Y5, Y10, Y15, Y26); \
+	GZ_EVEX(Y1, Y6, Y11, Y12); \
+	GX_EVEX(Y2, Y7, Y8, Y13, Y25); \
+	GZ_EVEX(Y3, Y4, Y9, Y14)
+
+#define ROUND_24_EVEX_9 \
+	GY_EVEX(Y0, Y4, Y8, Y12, Y26); \
+	GZ_EVEX(Y1, Y5, Y9, Y13); \
+	GZ_EVEX(Y2, Y6, Y10, Y14); \
+	GX_EVEX(Y3, Y7, Y11, Y15, Y25); \
+	GZ_EVEX(Y0, Y5, Y10, Y15); \
+	GZ_EVEX(Y1, Y6, Y11, Y12); \
+	GZ_EVEX(Y2, Y7, Y8, Y13); \
+	GY_EVEX(Y3, Y4, Y9, Y14, Y24)
+
+#define ROUNDS_24_EVEX \
+	ROUND_24_EVEX_0; \
+	ROUND_24_EVEX_1; \
+	ROUND_24_EVEX_2; \
+	ROUND_24_EVEX_3; \
+	ROUND_24_EVEX_4; \
+	ROUND_24_EVEX_5; \
+	ROUND_24_EVEX_6; \
+	ROUND_24_EVEX_7; \
+	ROUND_24_EVEX_8; \
+	ROUND_24_EVEX_9; \
+	ROUND_24_EVEX_0; \
+	ROUND_24_EVEX_1
+
+#define INIT_STATE_24_EVEX \
+	VMOVDQA64 Y16, Y0; \
+	VMOVDQA64 Y17, Y1; \
+	VMOVDQA64 Y18, Y2; \
+	VMOVDQA64 Y19, Y3; \
+	VMOVDQA64 Y20, Y4; \
+	VMOVDQA64 Y21, Y5; \
+	VMOVDQA64 Y22, Y6; \
+	VMOVDQA64 Y23, Y7; \
+	VPBROADCASTQ blake2bIV<>+0(SB), Y8; \
+	VPBROADCASTQ blake2bIV<>+8(SB), Y9; \
+	VPBROADCASTQ blake2bIV<>+16(SB), Y10; \
+	VPBROADCASTQ blake2bIV<>+24(SB), Y11; \
+	VPBROADCASTQ blake2bIV24<>+0(SB), Y12; \
+	VPBROADCASTQ blake2bIV<>+40(SB), Y13; \
+	VPBROADCASTQ blake2bIV24<>+8(SB), Y14; \
+	VPBROADCASTQ blake2bIV<>+56(SB), Y15
+
+#define TRANSPOSE_4x4_Q_EVEX(r0, r1, r2, r3) \
+	VPUNPCKLQDQ r1, r0, Y28; \
+	VPUNPCKHQDQ r1, r0, Y29; \
+	VPUNPCKLQDQ r3, r2, Y30; \
+	VPUNPCKHQDQ r3, r2, Y31; \
+	VSHUFI64X2 $0x00, Y30, Y28, r0; \
+	VSHUFI64X2 $0x00, Y31, Y29, r1; \
+	VSHUFI64X2 $0x03, Y30, Y28, r2; \
+	VSHUFI64X2 $0x03, Y31, Y29, r3
+
+#define WIPE_EVEX_ALL \
+	VPXORD X0, X0, X0; \
+	VPXORD X1, X1, X1; \
+	VPXORD X2, X2, X2; \
+	VPXORD X3, X3, X3; \
+	VPXORD X4, X4, X4; \
+	VPXORD X5, X5, X5; \
+	VPXORD X6, X6, X6; \
+	VPXORD X7, X7, X7; \
+	VPXORD X8, X8, X8; \
+	VPXORD X9, X9, X9; \
+	VPXORD X10, X10, X10; \
+	VPXORD X11, X11, X11; \
+	VPXORD X12, X12, X12; \
+	VPXORD X13, X13, X13; \
+	VPXORD X14, X14, X14; \
+	VPXORD X15, X15, X15; \
+	VPXORD X16, X16, X16; \
+	VPXORD X17, X17, X17; \
+	VPXORD X18, X18, X18; \
+	VPXORD X19, X19, X19; \
+	VPXORD X20, X20, X20; \
+	VPXORD X21, X21, X21; \
+	VPXORD X22, X22, X22; \
+	VPXORD X23, X23, X23; \
+	VPXORD X24, X24, X24; \
+	VPXORD X25, X25, X25; \
+	VPXORD X26, X26, X26; \
+	VPXORD X27, X27, X27; \
+	VPXORD X28, X28, X28; \
+	VPXORD X29, X29, X29; \
+	VPXORD X30, X30, X30; \
+	VPXORD X31, X31, X31
+
+// func blake2bXORBlocks256Avx512Asm(hKey *[8]uint64, nonce *[2]uint64, counter uint64, dst, src *byte, nBlocks int)
+TEXT ·blake2bXORBlocks256Avx512Asm(SB), NOSPLIT, $0-48
+	MOVQ hKey+0(FP), AX
+	MOVQ nonce+8(FP), BX
+	MOVQ dst+24(FP), DI
+	MOVQ src+32(FP), SI
+	MOVQ nBlocks+40(FP), DX
+	TESTQ DX, DX
+	JLE xor256_avx512_done
+
+	VPBROADCASTQ 0(AX), Y16
+	VPBROADCASTQ 8(AX), Y17
+	VPBROADCASTQ 16(AX), Y18
+	VPBROADCASTQ 24(AX), Y19
+	VPBROADCASTQ 32(AX), Y20
+	VPBROADCASTQ 40(AX), Y21
+	VPBROADCASTQ 48(AX), Y22
+	VPBROADCASTQ 56(AX), Y23
+	VPBROADCASTQ 0(BX), Y24
+	VPBROADCASTQ 8(BX), Y25
+	VPBROADCASTQ counter+16(FP), Y26
+	VPADDQ inc0123<>+0(SB), Y26, Y26
+
+xor256_avx512_loop:
+	INIT_STATE_24_EVEX
+	ROUNDS_24_EVEX
+
+	VPTERNLOGQ $0x96, Y16, Y8, Y0
+	VPTERNLOGQ $0x96, Y17, Y9, Y1
+	VPTERNLOGQ $0x96, Y18, Y10, Y2
+	VPTERNLOGQ $0x96, Y19, Y11, Y3
+
+	TRANSPOSE_4x4_Q_EVEX(Y0, Y1, Y2, Y3)
+
+	CMPQ DX, $4
+	JB xor256_avx512_tail
+
+	VPXORQ 0(SI), Y0, Y0
+	VPXORQ 32(SI), Y1, Y1
+	VPXORQ 64(SI), Y2, Y2
+	VPXORQ 96(SI), Y3, Y3
+	VMOVDQU64 Y0, 0(DI)
+	VMOVDQU64 Y1, 32(DI)
+	VMOVDQU64 Y2, 64(DI)
+	VMOVDQU64 Y3, 96(DI)
+
+	VPADDQ.BCST inc4<>+0(SB), Y26, Y26
+	ADDQ $128, SI
+	ADDQ $128, DI
+	SUBQ $4, DX
+	JNZ xor256_avx512_loop
+	JMP xor256_avx512_done
+
+xor256_avx512_tail:
+	VPXORQ 0(SI), Y0, Y0
+	VMOVDQU64 Y0, 0(DI)
+	CMPQ DX, $1
+	JE xor256_avx512_done
+
+	VPXORQ 32(SI), Y1, Y1
+	VMOVDQU64 Y1, 32(DI)
+	CMPQ DX, $2
+	JE xor256_avx512_done
+
+	VPXORQ 64(SI), Y2, Y2
+	VMOVDQU64 Y2, 64(DI)
+
+xor256_avx512_done:
+	WIPE_EVEX_ALL
+	XORQ AX, AX
+	XORQ BX, BX
+	XORQ DX, DX
+	XORQ SI, SI
+	XORQ DI, DI
+	VZEROUPPER
+	RET
+
+// func blake2bXORBlocks512Avx512Asm(hKey *[8]uint64, nonce *[2]uint64, counter uint64, dst, src *byte, nBlocks int)
+TEXT ·blake2bXORBlocks512Avx512Asm(SB), NOSPLIT, $0-48
+	MOVQ hKey+0(FP), AX
+	MOVQ nonce+8(FP), BX
+	MOVQ dst+24(FP), DI
+	MOVQ src+32(FP), SI
+	MOVQ nBlocks+40(FP), DX
+	TESTQ DX, DX
+	JLE xor512_avx512_done
+
+	VPBROADCASTQ 0(AX), Y16
+	VPBROADCASTQ 8(AX), Y17
+	VPBROADCASTQ 16(AX), Y18
+	VPBROADCASTQ 24(AX), Y19
+	VPBROADCASTQ 32(AX), Y20
+	VPBROADCASTQ 40(AX), Y21
+	VPBROADCASTQ 48(AX), Y22
+	VPBROADCASTQ 56(AX), Y23
+	VPBROADCASTQ 0(BX), Y24
+	VPBROADCASTQ 8(BX), Y25
+	VPBROADCASTQ counter+16(FP), Y26
+	VPADDQ inc0123<>+0(SB), Y26, Y26
+
+xor512_avx512_loop:
+	INIT_STATE_24_EVEX
+	ROUNDS_24_EVEX
+
+	VPTERNLOGQ $0x96, Y16, Y8, Y0
+	VPTERNLOGQ $0x96, Y17, Y9, Y1
+	VPTERNLOGQ $0x96, Y18, Y10, Y2
+	VPTERNLOGQ $0x96, Y19, Y11, Y3
+	VPTERNLOGQ $0x96, Y20, Y12, Y4
+	VPTERNLOGQ $0x96, Y21, Y13, Y5
+	VPTERNLOGQ $0x96, Y22, Y14, Y6
+	VPTERNLOGQ $0x96, Y23, Y15, Y7
+
+	TRANSPOSE_4x4_Q_EVEX(Y0, Y1, Y2, Y3)
+	TRANSPOSE_4x4_Q_EVEX(Y4, Y5, Y6, Y7)
+
+	CMPQ DX, $4
+	JB xor512_avx512_tail
+
+	VPXORQ 0(SI), Y0, Y0
+	VPXORQ 32(SI), Y4, Y4
+	VPXORQ 64(SI), Y1, Y1
+	VPXORQ 96(SI), Y5, Y5
+	VPXORQ 128(SI), Y2, Y2
+	VPXORQ 160(SI), Y6, Y6
+	VPXORQ 192(SI), Y3, Y3
+	VPXORQ 224(SI), Y7, Y7
+	VMOVDQU64 Y0, 0(DI)
+	VMOVDQU64 Y4, 32(DI)
+	VMOVDQU64 Y1, 64(DI)
+	VMOVDQU64 Y5, 96(DI)
+	VMOVDQU64 Y2, 128(DI)
+	VMOVDQU64 Y6, 160(DI)
+	VMOVDQU64 Y3, 192(DI)
+	VMOVDQU64 Y7, 224(DI)
+
+	VPADDQ.BCST inc4<>+0(SB), Y26, Y26
+	ADDQ $256, SI
+	ADDQ $256, DI
+	SUBQ $4, DX
+	JNZ xor512_avx512_loop
+	JMP xor512_avx512_done
+
+xor512_avx512_tail:
+	VPXORQ 0(SI), Y0, Y0
+	VPXORQ 32(SI), Y4, Y4
+	VMOVDQU64 Y0, 0(DI)
+	VMOVDQU64 Y4, 32(DI)
+	CMPQ DX, $1
+	JE xor512_avx512_done
+
+	VPXORQ 64(SI), Y1, Y1
+	VPXORQ 96(SI), Y5, Y5
+	VMOVDQU64 Y1, 64(DI)
+	VMOVDQU64 Y5, 96(DI)
+	CMPQ DX, $2
+	JE xor512_avx512_done
+
+	VPXORQ 128(SI), Y2, Y2
+	VPXORQ 160(SI), Y6, Y6
+	VMOVDQU64 Y2, 128(DI)
+	VMOVDQU64 Y6, 160(DI)
+
+xor512_avx512_done:
+	WIPE_EVEX_ALL
+	XORQ AX, AX
+	XORQ BX, BX
+	XORQ DX, DX
+	XORQ SI, SI
+	XORQ DI, DI
+	VZEROUPPER
+	RET
+
+// func blake2bBatch24_256Avx512Asm(hKey *[8]uint64, m012 *[3][4]uint64, dstPtrs *[4]*byte)
+TEXT ·blake2bBatch24_256Avx512Asm(SB), NOSPLIT, $0-24
+	MOVQ hKey+0(FP), AX
+	MOVQ m012+8(FP), BX
+	MOVQ dstPtrs+16(FP), DX
+
+	VPBROADCASTQ 0(AX), Y16
+	VPBROADCASTQ 8(AX), Y17
+	VPBROADCASTQ 16(AX), Y18
+	VPBROADCASTQ 24(AX), Y19
+	VPBROADCASTQ 32(AX), Y20
+	VPBROADCASTQ 40(AX), Y21
+	VPBROADCASTQ 48(AX), Y22
+	VPBROADCASTQ 56(AX), Y23
+	VMOVDQU64 0(BX), Y24
+	VMOVDQU64 32(BX), Y25
+	VMOVDQU64 64(BX), Y26
+
+	INIT_STATE_24_EVEX
+	ROUNDS_24_EVEX
+
+	VPTERNLOGQ $0x96, Y16, Y8, Y0
+	VPTERNLOGQ $0x96, Y17, Y9, Y1
+	VPTERNLOGQ $0x96, Y18, Y10, Y2
+	VPTERNLOGQ $0x96, Y19, Y11, Y3
+
+	TRANSPOSE_4x4_Q_EVEX(Y0, Y1, Y2, Y3)
+
+	MOVQ 0(DX), R8
+	MOVQ 8(DX), R9
+	MOVQ 16(DX), R10
+	MOVQ 24(DX), R11
+	VMOVDQU64 Y0, 0(R8)
+	VMOVDQU64 Y1, 0(R9)
+	VMOVDQU64 Y2, 0(R10)
+	VMOVDQU64 Y3, 0(R11)
+
+	WIPE_EVEX_ALL
+	XORQ AX, AX
+	XORQ BX, BX
+	XORQ DX, DX
+	XORQ R8, R8
+	XORQ R9, R9
+	XORQ R10, R10
+	XORQ R11, R11
+	VZEROUPPER
+	RET
+
+// func blake2bBatch24_512Avx512Asm(hKey *[8]uint64, m012 *[3][4]uint64, dstPtrs *[4]*byte)
+TEXT ·blake2bBatch24_512Avx512Asm(SB), NOSPLIT, $0-24
+	MOVQ hKey+0(FP), AX
+	MOVQ m012+8(FP), BX
+	MOVQ dstPtrs+16(FP), DX
+
+	VPBROADCASTQ 0(AX), Y16
+	VPBROADCASTQ 8(AX), Y17
+	VPBROADCASTQ 16(AX), Y18
+	VPBROADCASTQ 24(AX), Y19
+	VPBROADCASTQ 32(AX), Y20
+	VPBROADCASTQ 40(AX), Y21
+	VPBROADCASTQ 48(AX), Y22
+	VPBROADCASTQ 56(AX), Y23
+	VMOVDQU64 0(BX), Y24
+	VMOVDQU64 32(BX), Y25
+	VMOVDQU64 64(BX), Y26
+
+	INIT_STATE_24_EVEX
+	ROUNDS_24_EVEX
+
+	VPTERNLOGQ $0x96, Y16, Y8, Y0
+	VPTERNLOGQ $0x96, Y17, Y9, Y1
+	VPTERNLOGQ $0x96, Y18, Y10, Y2
+	VPTERNLOGQ $0x96, Y19, Y11, Y3
+	VPTERNLOGQ $0x96, Y20, Y12, Y4
+	VPTERNLOGQ $0x96, Y21, Y13, Y5
+	VPTERNLOGQ $0x96, Y22, Y14, Y6
+	VPTERNLOGQ $0x96, Y23, Y15, Y7
+
+	TRANSPOSE_4x4_Q_EVEX(Y0, Y1, Y2, Y3)
+	TRANSPOSE_4x4_Q_EVEX(Y4, Y5, Y6, Y7)
+
+	MOVQ 0(DX), R8
+	MOVQ 8(DX), R9
+	MOVQ 16(DX), R10
+	MOVQ 24(DX), R11
+	VMOVDQU64 Y0, 0(R8)
+	VMOVDQU64 Y4, 32(R8)
+	VMOVDQU64 Y1, 0(R9)
+	VMOVDQU64 Y5, 32(R9)
+	VMOVDQU64 Y2, 0(R10)
+	VMOVDQU64 Y6, 32(R10)
+	VMOVDQU64 Y3, 0(R11)
+	VMOVDQU64 Y7, 32(R11)
+
+	WIPE_EVEX_ALL
+	XORQ AX, AX
+	XORQ BX, BX
+	XORQ DX, DX
+	XORQ R8, R8
+	XORQ R9, R9
+	XORQ R10, R10
+	XORQ R11, R11
+	VZEROUPPER
+	RET
+
+#define ROUND_GEN_EVEX(s0, s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11, s12, s13, s14, s15) \
+	G_EVEX(Y0, Y4, Y8, Y12, s0, s1); \
+	G_EVEX(Y1, Y5, Y9, Y13, s2, s3); \
+	G_EVEX(Y2, Y6, Y10, Y14, s4, s5); \
+	G_EVEX(Y3, Y7, Y11, Y15, s6, s7); \
+	G_EVEX(Y0, Y5, Y10, Y15, s8, s9); \
+	G_EVEX(Y1, Y6, Y11, Y12, s10, s11); \
+	G_EVEX(Y2, Y7, Y8, Y13, s12, s13); \
+	G_EVEX(Y3, Y4, Y9, Y14, s14, s15)
+
+// func blake2bCompress4Avx512Asm(h *[8][4]uint64, m *[16][4]uint64, t0, f0 uint64)
+TEXT ·blake2bCompress4Avx512Asm(SB), NOSPLIT, $0-32
+	MOVQ h+0(FP), AX
+	MOVQ m+8(FP), BX
+
+	VMOVDQU64 0(AX), Y0
+	VMOVDQU64 32(AX), Y1
+	VMOVDQU64 64(AX), Y2
+	VMOVDQU64 96(AX), Y3
+	VMOVDQU64 128(AX), Y4
+	VMOVDQU64 160(AX), Y5
+	VMOVDQU64 192(AX), Y6
+	VMOVDQU64 224(AX), Y7
+
+	VPBROADCASTQ blake2bIV<>+0(SB), Y8
+	VPBROADCASTQ blake2bIV<>+8(SB), Y9
+	VPBROADCASTQ blake2bIV<>+16(SB), Y10
+	VPBROADCASTQ blake2bIV<>+24(SB), Y11
+	MOVQ blake2bIV<>+32(SB), CX
+	XORQ t0+16(FP), CX
+	VPBROADCASTQ CX, Y12
+	VPBROADCASTQ blake2bIV<>+40(SB), Y13
+	MOVQ blake2bIV<>+48(SB), CX
+	XORQ f0+24(FP), CX
+	VPBROADCASTQ CX, Y14
+	VPBROADCASTQ blake2bIV<>+56(SB), Y15
+
+	VMOVDQU64 0(BX), Y16
+	VMOVDQU64 32(BX), Y17
+	VMOVDQU64 64(BX), Y18
+	VMOVDQU64 96(BX), Y19
+	VMOVDQU64 128(BX), Y20
+	VMOVDQU64 160(BX), Y21
+	VMOVDQU64 192(BX), Y22
+	VMOVDQU64 224(BX), Y23
+	VMOVDQU64 256(BX), Y24
+	VMOVDQU64 288(BX), Y25
+	VMOVDQU64 320(BX), Y26
+	VMOVDQU64 352(BX), Y27
+	VMOVDQU64 384(BX), Y28
+	VMOVDQU64 416(BX), Y29
+	VMOVDQU64 448(BX), Y30
+	VMOVDQU64 480(BX), Y31
+
+	ROUND_GEN_EVEX(Y16, Y17, Y18, Y19, Y20, Y21, Y22, Y23, Y24, Y25, Y26, Y27, Y28, Y29, Y30, Y31)
+	ROUND_GEN_EVEX(Y30, Y26, Y20, Y24, Y25, Y31, Y29, Y22, Y17, Y28, Y16, Y18, Y27, Y23, Y21, Y19)
+	ROUND_GEN_EVEX(Y27, Y24, Y28, Y16, Y21, Y18, Y31, Y29, Y26, Y30, Y19, Y22, Y23, Y17, Y25, Y20)
+	ROUND_GEN_EVEX(Y23, Y25, Y19, Y17, Y29, Y28, Y27, Y30, Y18, Y22, Y21, Y26, Y20, Y16, Y31, Y24)
+	ROUND_GEN_EVEX(Y25, Y16, Y21, Y23, Y18, Y20, Y26, Y31, Y30, Y17, Y27, Y28, Y22, Y24, Y19, Y29)
+	ROUND_GEN_EVEX(Y18, Y28, Y22, Y26, Y16, Y27, Y24, Y19, Y20, Y29, Y23, Y21, Y31, Y30, Y17, Y25)
+	ROUND_GEN_EVEX(Y28, Y21, Y17, Y31, Y30, Y29, Y20, Y26, Y16, Y23, Y22, Y19, Y25, Y18, Y24, Y27)
+	ROUND_GEN_EVEX(Y29, Y27, Y23, Y30, Y28, Y17, Y19, Y25, Y21, Y16, Y31, Y20, Y24, Y22, Y18, Y26)
+	ROUND_GEN_EVEX(Y22, Y31, Y30, Y25, Y27, Y19, Y16, Y24, Y28, Y18, Y29, Y23, Y17, Y20, Y26, Y21)
+	ROUND_GEN_EVEX(Y26, Y18, Y24, Y20, Y23, Y22, Y17, Y21, Y31, Y27, Y25, Y30, Y19, Y28, Y29, Y16)
+	ROUND_GEN_EVEX(Y16, Y17, Y18, Y19, Y20, Y21, Y22, Y23, Y24, Y25, Y26, Y27, Y28, Y29, Y30, Y31)
+	ROUND_GEN_EVEX(Y30, Y26, Y20, Y24, Y25, Y31, Y29, Y22, Y17, Y28, Y16, Y18, Y27, Y23, Y21, Y19)
+
+	VPXORQ Y8, Y0, Y0
+	VPXORQ 0(AX), Y0, Y0
+	VMOVDQU64 Y0, 0(AX)
+
+	VPXORQ Y9, Y1, Y1
+	VPXORQ 32(AX), Y1, Y1
+	VMOVDQU64 Y1, 32(AX)
+
+	VPXORQ Y10, Y2, Y2
+	VPXORQ 64(AX), Y2, Y2
+	VMOVDQU64 Y2, 64(AX)
+
+	VPXORQ Y11, Y3, Y3
+	VPXORQ 96(AX), Y3, Y3
+	VMOVDQU64 Y3, 96(AX)
+
+	VPXORQ Y12, Y4, Y4
+	VPXORQ 128(AX), Y4, Y4
+	VMOVDQU64 Y4, 128(AX)
+
+	VPXORQ Y13, Y5, Y5
+	VPXORQ 160(AX), Y5, Y5
+	VMOVDQU64 Y5, 160(AX)
+
+	VPXORQ Y14, Y6, Y6
+	VPXORQ 192(AX), Y6, Y6
+	VMOVDQU64 Y6, 192(AX)
+
+	VPXORQ Y15, Y7, Y7
+	VPXORQ 224(AX), Y7, Y7
+	VMOVDQU64 Y7, 224(AX)
+
+	WIPE_EVEX_ALL
+	XORQ AX, AX
+	XORQ BX, BX
+	XORQ CX, CX
+	VZEROUPPER
+	RET
+
+// -----------------------------------------------------------------------------
+// AVX2 4-lane YMM SOV Kernels ($0 stack frame)
+// -----------------------------------------------------------------------------
+
+#define ROR63_AVX2(b) \
+	VPSRLQ $63, b, Y15; \
+	VPADDQ b, b, b; \
+	VPOR Y15, b, b
+
+// SWAP_Y12 exchanges Y12 (4x64) with (R8, R9, R10, R11) using scratch Y15 and R12, R13.
+#define SWAP_Y12 \
+	VMOVQ R10, X15; \
+	VPINSRQ $1, R11, X15, X15; \
+	VMOVQ X12, R12; \
+	VPEXTRQ $1, X12, R13; \
+	VEXTRACTI128 $1, Y12, X12; \
+	VMOVQ X12, R10; \
+	VPEXTRQ $1, X12, R11; \
+	VMOVQ R8, X12; \
+	VPINSRQ $1, R9, X12, X12; \
+	VINSERTI128 $1, X15, Y12, Y12; \
+	MOVQ R12, R8; \
+	MOVQ R13, R9
+
+#define GZ_AVX2(a, b, c, d) \
+	VPADDQ b, a, a; \
+	VPXOR a, d, d; \
+	VPSHUFD $0xB1, d, d; \
+	VPADDQ d, c, c; \
+	VPXOR c, b, b; \
+	VPSHUFB ror24<>+0(SB), b, b; \
+	VPADDQ b, a, a; \
+	VPXOR a, d, d; \
+	VPSHUFB ror16<>+0(SB), d, d; \
+	VPADDQ d, c, c; \
+	VPXOR c, b, b; \
+	ROR63_AVX2(b)
+
+// CTR 24B AVX2 G macros (BX = nonce *[2]uint64, CX = counter uint64)
+#define G_CTR_M0_M1(a, b, c, d) \
+	VPADDQ b, a, a; \
+	VPBROADCASTQ 0(BX), Y15; \
+	VPADDQ Y15, a, a; \
+	VPXOR a, d, d; \
+	VPSHUFD $0xB1, d, d; \
+	VPADDQ d, c, c; \
+	VPXOR c, b, b; \
+	VPSHUFB ror24<>+0(SB), b, b; \
+	VPADDQ b, a, a; \
+	VPBROADCASTQ 8(BX), Y15; \
+	VPADDQ Y15, a, a; \
+	VPXOR a, d, d; \
+	VPSHUFB ror16<>+0(SB), d, d; \
+	VPADDQ d, c, c; \
+	VPXOR c, b, b; \
+	ROR63_AVX2(b)
+
+#define G_CTR_M0_M2(a, b, c, d) \
+	VPADDQ b, a, a; \
+	VPBROADCASTQ 0(BX), Y15; \
+	VPADDQ Y15, a, a; \
+	VPXOR a, d, d; \
+	VPSHUFD $0xB1, d, d; \
+	VPADDQ d, c, c; \
+	VPXOR c, b, b; \
+	VPSHUFB ror24<>+0(SB), b, b; \
+	VPADDQ b, a, a; \
+	VMOVQ CX, X15; \
+	VPBROADCASTQ X15, Y15; \
+	VPADDQ inc0123<>+0(SB), Y15, Y15; \
+	VPADDQ Y15, a, a; \
+	VPXOR a, d, d; \
+	VPSHUFB ror16<>+0(SB), d, d; \
+	VPADDQ d, c, c; \
+	VPXOR c, b, b; \
+	ROR63_AVX2(b)
+
+#define GX_CTR_M0(a, b, c, d) \
+	VPADDQ b, a, a; \
+	VPBROADCASTQ 0(BX), Y15; \
+	VPADDQ Y15, a, a; \
+	VPXOR a, d, d; \
+	VPSHUFD $0xB1, d, d; \
+	VPADDQ d, c, c; \
+	VPXOR c, b, b; \
+	VPSHUFB ror24<>+0(SB), b, b; \
+	VPADDQ b, a, a; \
+	VPXOR a, d, d; \
+	VPSHUFB ror16<>+0(SB), d, d; \
+	VPADDQ d, c, c; \
+	VPXOR c, b, b; \
+	ROR63_AVX2(b)
+
+#define GX_CTR_M1(a, b, c, d) \
+	VPADDQ b, a, a; \
+	VPBROADCASTQ 8(BX), Y15; \
+	VPADDQ Y15, a, a; \
+	VPXOR a, d, d; \
+	VPSHUFD $0xB1, d, d; \
+	VPADDQ d, c, c; \
+	VPXOR c, b, b; \
+	VPSHUFB ror24<>+0(SB), b, b; \
+	VPADDQ b, a, a; \
+	VPXOR a, d, d; \
+	VPSHUFB ror16<>+0(SB), d, d; \
+	VPADDQ d, c, c; \
+	VPXOR c, b, b; \
+	ROR63_AVX2(b)
+
+#define GX_CTR_M2(a, b, c, d) \
+	VPADDQ b, a, a; \
+	VMOVQ CX, X15; \
+	VPBROADCASTQ X15, Y15; \
+	VPADDQ inc0123<>+0(SB), Y15, Y15; \
+	VPADDQ Y15, a, a; \
+	VPXOR a, d, d; \
+	VPSHUFD $0xB1, d, d; \
+	VPADDQ d, c, c; \
+	VPXOR c, b, b; \
+	VPSHUFB ror24<>+0(SB), b, b; \
+	VPADDQ b, a, a; \
+	VPXOR a, d, d; \
+	VPSHUFB ror16<>+0(SB), d, d; \
+	VPADDQ d, c, c; \
+	VPXOR c, b, b; \
+	ROR63_AVX2(b)
+
+#define GY_CTR_M0(a, b, c, d) \
+	VPADDQ b, a, a; \
+	VPXOR a, d, d; \
+	VPSHUFD $0xB1, d, d; \
+	VPADDQ d, c, c; \
+	VPXOR c, b, b; \
+	VPSHUFB ror24<>+0(SB), b, b; \
+	VPADDQ b, a, a; \
+	VPBROADCASTQ 0(BX), Y15; \
+	VPADDQ Y15, a, a; \
+	VPXOR a, d, d; \
+	VPSHUFB ror16<>+0(SB), d, d; \
+	VPADDQ d, c, c; \
+	VPXOR c, b, b; \
+	ROR63_AVX2(b)
+
+#define GY_CTR_M1(a, b, c, d) \
+	VPADDQ b, a, a; \
+	VPXOR a, d, d; \
+	VPSHUFD $0xB1, d, d; \
+	VPADDQ d, c, c; \
+	VPXOR c, b, b; \
+	VPSHUFB ror24<>+0(SB), b, b; \
+	VPADDQ b, a, a; \
+	VPBROADCASTQ 8(BX), Y15; \
+	VPADDQ Y15, a, a; \
+	VPXOR a, d, d; \
+	VPSHUFB ror16<>+0(SB), d, d; \
+	VPADDQ d, c, c; \
+	VPXOR c, b, b; \
+	ROR63_AVX2(b)
+
+#define GY_CTR_M2(a, b, c, d) \
+	VPADDQ b, a, a; \
+	VPXOR a, d, d; \
+	VPSHUFD $0xB1, d, d; \
+	VPADDQ d, c, c; \
+	VPXOR c, b, b; \
+	VPSHUFB ror24<>+0(SB), b, b; \
+	VPADDQ b, a, a; \
+	VMOVQ CX, X15; \
+	VPBROADCASTQ X15, Y15; \
+	VPADDQ inc0123<>+0(SB), Y15, Y15; \
+	VPADDQ Y15, a, a; \
+	VPXOR a, d, d; \
+	VPSHUFB ror16<>+0(SB), d, d; \
+	VPADDQ d, c, c; \
+	VPXOR c, b, b; \
+	ROR63_AVX2(b)
+
+#define ROUND_24_CTR_AVX2_0 \
+	G_CTR_M0_M1(Y0, Y4, Y8, Y12); \
+	GX_CTR_M2(Y1, Y5, Y9, Y13); \
+	GZ_AVX2(Y2, Y6, Y10, Y14); \
+	SWAP_Y12; \
+	GZ_AVX2(Y3, Y7, Y11, Y12); \
+	GZ_AVX2(Y0, Y5, Y10, Y12); \
+	SWAP_Y12; \
+	GZ_AVX2(Y1, Y6, Y11, Y12); \
+	GZ_AVX2(Y2, Y7, Y8, Y13); \
+	GZ_AVX2(Y3, Y4, Y9, Y14)
+
+#define ROUND_24_CTR_AVX2_1 \
+	GZ_AVX2(Y0, Y4, Y8, Y12); \
+	GZ_AVX2(Y1, Y5, Y9, Y13); \
+	GZ_AVX2(Y2, Y6, Y10, Y14); \
+	SWAP_Y12; \
+	GZ_AVX2(Y3, Y7, Y11, Y12); \
+	GX_CTR_M1(Y0, Y5, Y10, Y12); \
+	SWAP_Y12; \
+	G_CTR_M0_M2(Y1, Y6, Y11, Y12); \
+	GZ_AVX2(Y2, Y7, Y8, Y13); \
+	GZ_AVX2(Y3, Y4, Y9, Y14)
+
+#define ROUND_24_CTR_AVX2_2 \
+	GZ_AVX2(Y0, Y4, Y8, Y12); \
+	GY_CTR_M0(Y1, Y5, Y9, Y13); \
+	GY_CTR_M2(Y2, Y6, Y10, Y14); \
+	SWAP_Y12; \
+	GZ_AVX2(Y3, Y7, Y11, Y12); \
+	GZ_AVX2(Y0, Y5, Y10, Y12); \
+	SWAP_Y12; \
+	GZ_AVX2(Y1, Y6, Y11, Y12); \
+	GY_CTR_M1(Y2, Y7, Y8, Y13); \
+	GZ_AVX2(Y3, Y4, Y9, Y14)
+
+#define ROUND_24_CTR_AVX2_3 \
+	GZ_AVX2(Y0, Y4, Y8, Y12); \
+	GY_CTR_M1(Y1, Y5, Y9, Y13); \
+	GZ_AVX2(Y2, Y6, Y10, Y14); \
+	SWAP_Y12; \
+	GZ_AVX2(Y3, Y7, Y11, Y12); \
+	GX_CTR_M2(Y0, Y5, Y10, Y12); \
+	SWAP_Y12; \
+	GZ_AVX2(Y1, Y6, Y11, Y12); \
+	GY_CTR_M0(Y2, Y7, Y8, Y13); \
+	GZ_AVX2(Y3, Y4, Y9, Y14)
+
+#define ROUND_24_CTR_AVX2_4 \
+	GY_CTR_M0(Y0, Y4, Y8, Y12); \
+	GZ_AVX2(Y1, Y5, Y9, Y13); \
+	GX_CTR_M2(Y2, Y6, Y10, Y14); \
+	SWAP_Y12; \
+	GZ_AVX2(Y3, Y7, Y11, Y12); \
+	GY_CTR_M1(Y0, Y5, Y10, Y12); \
+	SWAP_Y12; \
+	GZ_AVX2(Y1, Y6, Y11, Y12); \
+	GZ_AVX2(Y2, Y7, Y8, Y13); \
+	GZ_AVX2(Y3, Y4, Y9, Y14)
+
+#define ROUND_24_CTR_AVX2_5 \
+	GX_CTR_M2(Y0, Y4, Y8, Y12); \
+	GZ_AVX2(Y1, Y5, Y9, Y13); \
+	GX_CTR_M0(Y2, Y6, Y10, Y14); \
+	SWAP_Y12; \
+	GZ_AVX2(Y3, Y7, Y11, Y12); \
+	GZ_AVX2(Y0, Y5, Y10, Y12); \
+	SWAP_Y12; \
+	GZ_AVX2(Y1, Y6, Y11, Y12); \
+	GZ_AVX2(Y2, Y7, Y8, Y13); \
+	GX_CTR_M1(Y3, Y4, Y9, Y14)
+
+#define ROUND_24_CTR_AVX2_6 \
+	GZ_AVX2(Y0, Y4, Y8, Y12); \
+	GX_CTR_M1(Y1, Y5, Y9, Y13); \
+	GZ_AVX2(Y2, Y6, Y10, Y14); \
+	SWAP_Y12; \
+	GZ_AVX2(Y3, Y7, Y11, Y12); \
+	GX_CTR_M0(Y0, Y5, Y10, Y12); \
+	SWAP_Y12; \
+	GZ_AVX2(Y1, Y6, Y11, Y12); \
+	GY_CTR_M2(Y2, Y7, Y8, Y13); \
+	GZ_AVX2(Y3, Y4, Y9, Y14)
+
+#define ROUND_24_CTR_AVX2_7 \
+	GZ_AVX2(Y0, Y4, Y8, Y12); \
+	GZ_AVX2(Y1, Y5, Y9, Y13); \
+	GY_CTR_M1(Y2, Y6, Y10, Y14); \
+	SWAP_Y12; \
+	GZ_AVX2(Y3, Y7, Y11, Y12); \
+	GY_CTR_M0(Y0, Y5, Y10, Y12); \
+	SWAP_Y12; \
+	GZ_AVX2(Y1, Y6, Y11, Y12); \
+	GZ_AVX2(Y2, Y7, Y8, Y13); \
+	GX_CTR_M2(Y3, Y4, Y9, Y14)
+
+#define ROUND_24_CTR_AVX2_8 \
+	GZ_AVX2(Y0, Y4, Y8, Y12); \
+	GZ_AVX2(Y1, Y5, Y9, Y13); \
+	GZ_AVX2(Y2, Y6, Y10, Y14); \
+	SWAP_Y12; \
+	GX_CTR_M0(Y3, Y7, Y11, Y12); \
+	GY_CTR_M2(Y0, Y5, Y10, Y12); \
+	SWAP_Y12; \
+	GZ_AVX2(Y1, Y6, Y11, Y12); \
+	GX_CTR_M1(Y2, Y7, Y8, Y13); \
+	GZ_AVX2(Y3, Y4, Y9, Y14)
+
+#define ROUND_24_CTR_AVX2_9 \
+	GY_CTR_M2(Y0, Y4, Y8, Y12); \
+	GZ_AVX2(Y1, Y5, Y9, Y13); \
+	GZ_AVX2(Y2, Y6, Y10, Y14); \
+	SWAP_Y12; \
+	GX_CTR_M1(Y3, Y7, Y11, Y12); \
+	GZ_AVX2(Y0, Y5, Y10, Y12); \
+	SWAP_Y12; \
+	GZ_AVX2(Y1, Y6, Y11, Y12); \
+	GZ_AVX2(Y2, Y7, Y8, Y13); \
+	GY_CTR_M0(Y3, Y4, Y9, Y14)
+
+#define ROUNDS_24_CTR_AVX2 \
+	ROUND_24_CTR_AVX2_0; \
+	ROUND_24_CTR_AVX2_1; \
+	ROUND_24_CTR_AVX2_2; \
+	ROUND_24_CTR_AVX2_3; \
+	ROUND_24_CTR_AVX2_4; \
+	ROUND_24_CTR_AVX2_5; \
+	ROUND_24_CTR_AVX2_6; \
+	ROUND_24_CTR_AVX2_7; \
+	ROUND_24_CTR_AVX2_8; \
+	ROUND_24_CTR_AVX2_9; \
+	ROUND_24_CTR_AVX2_0; \
+	ROUND_24_CTR_AVX2_1
+
+#define INIT_STATE_24_AVX2 \
+	VPBROADCASTQ 0(AX), Y0; \
+	VPBROADCASTQ 8(AX), Y1; \
+	VPBROADCASTQ 16(AX), Y2; \
+	VPBROADCASTQ 24(AX), Y3; \
+	VPBROADCASTQ 32(AX), Y4; \
+	VPBROADCASTQ 40(AX), Y5; \
+	VPBROADCASTQ 48(AX), Y6; \
+	VPBROADCASTQ 56(AX), Y7; \
+	VPBROADCASTQ blake2bIV<>+0(SB), Y8; \
+	VPBROADCASTQ blake2bIV<>+8(SB), Y9; \
+	VPBROADCASTQ blake2bIV<>+16(SB), Y10; \
+	VPBROADCASTQ blake2bIV<>+24(SB), Y11; \
+	VPBROADCASTQ blake2bIV24<>+0(SB), Y12; \
+	VPBROADCASTQ blake2bIV<>+40(SB), Y13; \
+	VPBROADCASTQ blake2bIV24<>+8(SB), Y14; \
+	MOVQ blake2bIV<>+56(SB), R8; \
+	MOVQ R8, R9; \
+	MOVQ R8, R10; \
+	MOVQ R8, R11
+
+#define TRANSPOSE_4x4_Q_AVX2(r0, r1, r2, r3) \
+	VPUNPCKLQDQ r1, r0, Y8; \
+	VPUNPCKHQDQ r1, r0, Y9; \
+	VPUNPCKLQDQ r3, r2, Y10; \
+	VPUNPCKHQDQ r3, r2, Y11; \
+	VPERM2I128 $0x20, Y10, Y8, r0; \
+	VPERM2I128 $0x20, Y11, Y9, r1; \
+	VPERM2I128 $0x31, Y10, Y8, r2; \
+	VPERM2I128 $0x31, Y11, Y9, r3
+
+#define WIPE_AVX2_ALL \
+	VPXOR Y0, Y0, Y0; \
+	VPXOR Y1, Y1, Y1; \
+	VPXOR Y2, Y2, Y2; \
+	VPXOR Y3, Y3, Y3; \
+	VPXOR Y4, Y4, Y4; \
+	VPXOR Y5, Y5, Y5; \
+	VPXOR Y6, Y6, Y6; \
+	VPXOR Y7, Y7, Y7; \
+	VPXOR Y8, Y8, Y8; \
+	VPXOR Y9, Y9, Y9; \
+	VPXOR Y10, Y10, Y10; \
+	VPXOR Y11, Y11, Y11; \
+	VPXOR Y12, Y12, Y12; \
+	VPXOR Y13, Y13, Y13; \
+	VPXOR Y14, Y14, Y14; \
+	VPXOR Y15, Y15, Y15
+
+// func blake2bXORBlocks256Avx2Asm(hKey *[8]uint64, nonce *[2]uint64, counter uint64, dst, src *byte, nBlocks int)
+TEXT ·blake2bXORBlocks256Avx2Asm(SB), NOSPLIT, $0-48
+	MOVQ hKey+0(FP), AX
+	MOVQ nonce+8(FP), BX
+	MOVQ counter+16(FP), CX
+	MOVQ dst+24(FP), DI
+	MOVQ src+32(FP), SI
+	MOVQ nBlocks+40(FP), DX
+	TESTQ DX, DX
+	JLE xor256_avx2_done
+
+xor256_avx2_loop:
+	INIT_STATE_24_AVX2
+	ROUNDS_24_CTR_AVX2
+
+	VPXOR Y8, Y0, Y0
+	VPBROADCASTQ 0(AX), Y15
+	VPXOR Y15, Y0, Y0
+	VPXOR Y9, Y1, Y1
+	VPBROADCASTQ 8(AX), Y15
+	VPXOR Y15, Y1, Y1
+	VPXOR Y10, Y2, Y2
+	VPBROADCASTQ 16(AX), Y15
+	VPXOR Y15, Y2, Y2
+	VPXOR Y11, Y3, Y3
+	VPBROADCASTQ 24(AX), Y15
+	VPXOR Y15, Y3, Y3
+
+	TRANSPOSE_4x4_Q_AVX2(Y0, Y1, Y2, Y3)
+
+	CMPQ DX, $4
+	JB xor256_avx2_tail
+
+	VPXOR 0(SI), Y0, Y0
+	VPXOR 32(SI), Y1, Y1
+	VPXOR 64(SI), Y2, Y2
+	VPXOR 96(SI), Y3, Y3
+	VMOVDQU Y0, 0(DI)
+	VMOVDQU Y1, 32(DI)
+	VMOVDQU Y2, 64(DI)
+	VMOVDQU Y3, 96(DI)
+
+	ADDQ $4, CX
+	ADDQ $128, SI
+	ADDQ $128, DI
+	SUBQ $4, DX
+	JNZ xor256_avx2_loop
+	JMP xor256_avx2_done
+
+xor256_avx2_tail:
+	VPXOR 0(SI), Y0, Y0
+	VMOVDQU Y0, 0(DI)
+	CMPQ DX, $1
+	JE xor256_avx2_done
+
+	VPXOR 32(SI), Y1, Y1
+	VMOVDQU Y1, 32(DI)
+	CMPQ DX, $2
+	JE xor256_avx2_done
+
+	VPXOR 64(SI), Y2, Y2
+	VMOVDQU Y2, 64(DI)
+
+xor256_avx2_done:
+	WIPE_AVX2_ALL
+	XORQ AX, AX
+	XORQ BX, BX
+	XORQ CX, CX
+	XORQ DX, DX
+	XORQ SI, SI
+	XORQ DI, DI
+	XORQ R8, R8
+	XORQ R9, R9
+	XORQ R10, R10
+	XORQ R11, R11
+	XORQ R12, R12
+	XORQ R13, R13
+	VZEROUPPER
+	RET
+
+// func blake2bXORBlocks512Avx2Asm(hKey *[8]uint64, nonce *[2]uint64, counter uint64, dst, src *byte, nBlocks int)
+TEXT ·blake2bXORBlocks512Avx2Asm(SB), NOSPLIT, $0-48
+	MOVQ hKey+0(FP), AX
+	MOVQ nonce+8(FP), BX
+	MOVQ counter+16(FP), CX
+	MOVQ dst+24(FP), DI
+	MOVQ src+32(FP), SI
+	MOVQ nBlocks+40(FP), DX
+	TESTQ DX, DX
+	JLE xor512_avx2_done
+
+xor512_avx2_loop:
+	INIT_STATE_24_AVX2
+	ROUNDS_24_CTR_AVX2
+
+	VPXOR Y8, Y0, Y0
+	VPBROADCASTQ 0(AX), Y15
+	VPXOR Y15, Y0, Y0
+	VPXOR Y9, Y1, Y1
+	VPBROADCASTQ 8(AX), Y15
+	VPXOR Y15, Y1, Y1
+	VPXOR Y10, Y2, Y2
+	VPBROADCASTQ 16(AX), Y15
+	VPXOR Y15, Y2, Y2
+	VPXOR Y11, Y3, Y3
+	VPBROADCASTQ 24(AX), Y15
+	VPXOR Y15, Y3, Y3
+	VPXOR Y12, Y4, Y4
+	VPBROADCASTQ 32(AX), Y15
+	VPXOR Y15, Y4, Y4
+	VPXOR Y13, Y5, Y5
+	VPBROADCASTQ 40(AX), Y15
+	VPXOR Y15, Y5, Y5
+	VPXOR Y14, Y6, Y6
+	VPBROADCASTQ 48(AX), Y15
+	VPXOR Y15, Y6, Y6
+
+	VMOVQ R10, X15
+	VPINSRQ $1, R11, X15, X15
+	VMOVQ R8, X8
+	VPINSRQ $1, R9, X8, X8
+	VINSERTI128 $1, X15, Y8, Y15
+	VPXOR Y15, Y7, Y7
+	VPBROADCASTQ 56(AX), Y15
+	VPXOR Y15, Y7, Y7
+
+	TRANSPOSE_4x4_Q_AVX2(Y0, Y1, Y2, Y3)
+	TRANSPOSE_4x4_Q_AVX2(Y4, Y5, Y6, Y7)
+
+	CMPQ DX, $4
+	JB xor512_avx2_tail
+
+	VPXOR 0(SI), Y0, Y0
+	VPXOR 32(SI), Y4, Y4
+	VPXOR 64(SI), Y1, Y1
+	VPXOR 96(SI), Y5, Y5
+	VPXOR 128(SI), Y2, Y2
+	VPXOR 160(SI), Y6, Y6
+	VPXOR 192(SI), Y3, Y3
+	VPXOR 224(SI), Y7, Y7
+	VMOVDQU Y0, 0(DI)
+	VMOVDQU Y4, 32(DI)
+	VMOVDQU Y1, 64(DI)
+	VMOVDQU Y5, 96(DI)
+	VMOVDQU Y2, 128(DI)
+	VMOVDQU Y6, 160(DI)
+	VMOVDQU Y3, 192(DI)
+	VMOVDQU Y7, 224(DI)
+
+	ADDQ $4, CX
+	ADDQ $256, SI
+	ADDQ $256, DI
+	SUBQ $4, DX
+	JNZ xor512_avx2_loop
+	JMP xor512_avx2_done
+
+xor512_avx2_tail:
+	VPXOR 0(SI), Y0, Y0
+	VPXOR 32(SI), Y4, Y4
+	VMOVDQU Y0, 0(DI)
+	VMOVDQU Y4, 32(DI)
+	CMPQ DX, $1
+	JE xor512_avx2_done
+
+	VPXOR 64(SI), Y1, Y1
+	VPXOR 96(SI), Y5, Y5
+	VMOVDQU Y1, 64(DI)
+	VMOVDQU Y5, 96(DI)
+	CMPQ DX, $2
+	JE xor512_avx2_done
+
+	VPXOR 128(SI), Y2, Y2
+	VPXOR 160(SI), Y6, Y6
+	VMOVDQU Y2, 128(DI)
+	VMOVDQU Y6, 160(DI)
+
+xor512_avx2_done:
+	WIPE_AVX2_ALL
+	XORQ AX, AX
+	XORQ BX, BX
+	XORQ CX, CX
+	XORQ DX, DX
+	XORQ SI, SI
+	XORQ DI, DI
+	XORQ R8, R8
+	XORQ R9, R9
+	XORQ R10, R10
+	XORQ R11, R11
+	XORQ R12, R12
+	XORQ R13, R13
+	VZEROUPPER
+	RET
+
+// Memory-operand G macros for AVX2 Batch24 and Compress4 (BX = message SoA base)
+#define G_MEM_AVX2(a, b, c, d, mx_off, my_off) \
+	VPADDQ b, a, a; \
+	VPADDQ mx_off(BX), a, a; \
+	VPXOR a, d, d; \
+	VPSHUFD $0xB1, d, d; \
+	VPADDQ d, c, c; \
+	VPXOR c, b, b; \
+	VPSHUFB ror24<>+0(SB), b, b; \
+	VPADDQ b, a, a; \
+	VPADDQ my_off(BX), a, a; \
+	VPXOR a, d, d; \
+	VPSHUFB ror16<>+0(SB), d, d; \
+	VPADDQ d, c, c; \
+	VPXOR c, b, b; \
+	ROR63_AVX2(b)
+
+#define GX_MEM_AVX2(a, b, c, d, mx_off) \
+	VPADDQ b, a, a; \
+	VPADDQ mx_off(BX), a, a; \
+	VPXOR a, d, d; \
+	VPSHUFD $0xB1, d, d; \
+	VPADDQ d, c, c; \
+	VPXOR c, b, b; \
+	VPSHUFB ror24<>+0(SB), b, b; \
+	VPADDQ b, a, a; \
+	VPXOR a, d, d; \
+	VPSHUFB ror16<>+0(SB), d, d; \
+	VPADDQ d, c, c; \
+	VPXOR c, b, b; \
+	ROR63_AVX2(b)
+
+#define GY_MEM_AVX2(a, b, c, d, my_off) \
+	VPADDQ b, a, a; \
+	VPXOR a, d, d; \
+	VPSHUFD $0xB1, d, d; \
+	VPADDQ d, c, c; \
+	VPXOR c, b, b; \
+	VPSHUFB ror24<>+0(SB), b, b; \
+	VPADDQ b, a, a; \
+	VPADDQ my_off(BX), a, a; \
+	VPXOR a, d, d; \
+	VPSHUFB ror16<>+0(SB), d, d; \
+	VPADDQ d, c, c; \
+	VPXOR c, b, b; \
+	ROR63_AVX2(b)
+
+#define ROUND_24_MEM_AVX2_0 \
+	G_MEM_AVX2(Y0, Y4, Y8, Y12, 0, 32); \
+	GX_MEM_AVX2(Y1, Y5, Y9, Y13, 64); \
+	GZ_AVX2(Y2, Y6, Y10, Y14); \
+	SWAP_Y12; \
+	GZ_AVX2(Y3, Y7, Y11, Y12); \
+	GZ_AVX2(Y0, Y5, Y10, Y12); \
+	SWAP_Y12; \
+	GZ_AVX2(Y1, Y6, Y11, Y12); \
+	GZ_AVX2(Y2, Y7, Y8, Y13); \
+	GZ_AVX2(Y3, Y4, Y9, Y14)
+
+#define ROUND_24_MEM_AVX2_1 \
+	GZ_AVX2(Y0, Y4, Y8, Y12); \
+	GZ_AVX2(Y1, Y5, Y9, Y13); \
+	GZ_AVX2(Y2, Y6, Y10, Y14); \
+	SWAP_Y12; \
+	GZ_AVX2(Y3, Y7, Y11, Y12); \
+	GX_MEM_AVX2(Y0, Y5, Y10, Y12, 32); \
+	SWAP_Y12; \
+	G_MEM_AVX2(Y1, Y6, Y11, Y12, 0, 64); \
+	GZ_AVX2(Y2, Y7, Y8, Y13); \
+	GZ_AVX2(Y3, Y4, Y9, Y14)
+
+#define ROUND_24_MEM_AVX2_2 \
+	GZ_AVX2(Y0, Y4, Y8, Y12); \
+	GY_MEM_AVX2(Y1, Y5, Y9, Y13, 0); \
+	GY_MEM_AVX2(Y2, Y6, Y10, Y14, 64); \
+	SWAP_Y12; \
+	GZ_AVX2(Y3, Y7, Y11, Y12); \
+	GZ_AVX2(Y0, Y5, Y10, Y12); \
+	SWAP_Y12; \
+	GZ_AVX2(Y1, Y6, Y11, Y12); \
+	GY_MEM_AVX2(Y2, Y7, Y8, Y13, 32); \
+	GZ_AVX2(Y3, Y4, Y9, Y14)
+
+#define ROUND_24_MEM_AVX2_3 \
+	GZ_AVX2(Y0, Y4, Y8, Y12); \
+	GY_MEM_AVX2(Y1, Y5, Y9, Y13, 32); \
+	GZ_AVX2(Y2, Y6, Y10, Y14); \
+	SWAP_Y12; \
+	GZ_AVX2(Y3, Y7, Y11, Y12); \
+	GX_MEM_AVX2(Y0, Y5, Y10, Y12, 64); \
+	SWAP_Y12; \
+	GZ_AVX2(Y1, Y6, Y11, Y12); \
+	GY_MEM_AVX2(Y2, Y7, Y8, Y13, 0); \
+	GZ_AVX2(Y3, Y4, Y9, Y14)
+
+#define ROUND_24_MEM_AVX2_4 \
+	GY_MEM_AVX2(Y0, Y4, Y8, Y12, 0); \
+	GZ_AVX2(Y1, Y5, Y9, Y13); \
+	GX_MEM_AVX2(Y2, Y6, Y10, Y14, 64); \
+	SWAP_Y12; \
+	GZ_AVX2(Y3, Y7, Y11, Y12); \
+	GY_MEM_AVX2(Y0, Y5, Y10, Y12, 32); \
+	SWAP_Y12; \
+	GZ_AVX2(Y1, Y6, Y11, Y12); \
+	GZ_AVX2(Y2, Y7, Y8, Y13); \
+	GZ_AVX2(Y3, Y4, Y9, Y14)
+
+#define ROUND_24_MEM_AVX2_5 \
+	GX_MEM_AVX2(Y0, Y4, Y8, Y12, 64); \
+	GZ_AVX2(Y1, Y5, Y9, Y13); \
+	GX_MEM_AVX2(Y2, Y6, Y10, Y14, 0); \
+	SWAP_Y12; \
+	GZ_AVX2(Y3, Y7, Y11, Y12); \
+	GZ_AVX2(Y0, Y5, Y10, Y12); \
+	SWAP_Y12; \
+	GZ_AVX2(Y1, Y6, Y11, Y12); \
+	GZ_AVX2(Y2, Y7, Y8, Y13); \
+	GX_MEM_AVX2(Y3, Y4, Y9, Y14, 32)
+
+#define ROUND_24_MEM_AVX2_6 \
+	GZ_AVX2(Y0, Y4, Y8, Y12); \
+	GX_MEM_AVX2(Y1, Y5, Y9, Y13, 32); \
+	GZ_AVX2(Y2, Y6, Y10, Y14); \
+	SWAP_Y12; \
+	GZ_AVX2(Y3, Y7, Y11, Y12); \
+	GX_MEM_AVX2(Y0, Y5, Y10, Y12, 0); \
+	SWAP_Y12; \
+	GZ_AVX2(Y1, Y6, Y11, Y12); \
+	GY_MEM_AVX2(Y2, Y7, Y8, Y13, 64); \
+	GZ_AVX2(Y3, Y4, Y9, Y14)
+
+#define ROUND_24_MEM_AVX2_7 \
+	GZ_AVX2(Y0, Y4, Y8, Y12); \
+	GZ_AVX2(Y1, Y5, Y9, Y13); \
+	GY_MEM_AVX2(Y2, Y6, Y10, Y14, 32); \
+	SWAP_Y12; \
+	GZ_AVX2(Y3, Y7, Y11, Y12); \
+	GY_MEM_AVX2(Y0, Y5, Y10, Y12, 0); \
+	SWAP_Y12; \
+	GZ_AVX2(Y1, Y6, Y11, Y12); \
+	GZ_AVX2(Y2, Y7, Y8, Y13); \
+	GX_MEM_AVX2(Y3, Y4, Y9, Y14, 64)
+
+#define ROUND_24_MEM_AVX2_8 \
+	GZ_AVX2(Y0, Y4, Y8, Y12); \
+	GZ_AVX2(Y1, Y5, Y9, Y13); \
+	GZ_AVX2(Y2, Y6, Y10, Y14); \
+	SWAP_Y12; \
+	GX_MEM_AVX2(Y3, Y7, Y11, Y12, 0); \
+	GY_MEM_AVX2(Y0, Y5, Y10, Y12, 64); \
+	SWAP_Y12; \
+	GZ_AVX2(Y1, Y6, Y11, Y12); \
+	GX_MEM_AVX2(Y2, Y7, Y8, Y13, 32); \
+	GZ_AVX2(Y3, Y4, Y9, Y14)
+
+#define ROUND_24_MEM_AVX2_9 \
+	GY_MEM_AVX2(Y0, Y4, Y8, Y12, 64); \
+	GZ_AVX2(Y1, Y5, Y9, Y13); \
+	GZ_AVX2(Y2, Y6, Y10, Y14); \
+	SWAP_Y12; \
+	GX_MEM_AVX2(Y3, Y7, Y11, Y12, 32); \
+	GZ_AVX2(Y0, Y5, Y10, Y12); \
+	SWAP_Y12; \
+	GZ_AVX2(Y1, Y6, Y11, Y12); \
+	GZ_AVX2(Y2, Y7, Y8, Y13); \
+	GY_MEM_AVX2(Y3, Y4, Y9, Y14, 0)
+
+#define ROUNDS_24_MEM_AVX2 \
+	ROUND_24_MEM_AVX2_0; \
+	ROUND_24_MEM_AVX2_1; \
+	ROUND_24_MEM_AVX2_2; \
+	ROUND_24_MEM_AVX2_3; \
+	ROUND_24_MEM_AVX2_4; \
+	ROUND_24_MEM_AVX2_5; \
+	ROUND_24_MEM_AVX2_6; \
+	ROUND_24_MEM_AVX2_7; \
+	ROUND_24_MEM_AVX2_8; \
+	ROUND_24_MEM_AVX2_9; \
+	ROUND_24_MEM_AVX2_0; \
+	ROUND_24_MEM_AVX2_1
+
+// func blake2bBatch24_256Avx2Asm(hKey *[8]uint64, m012 *[3][4]uint64, dstPtrs *[4]*byte)
+TEXT ·blake2bBatch24_256Avx2Asm(SB), NOSPLIT, $0-24
+	MOVQ hKey+0(FP), AX
+	MOVQ m012+8(FP), BX
+	MOVQ dstPtrs+16(FP), DX
+
+	INIT_STATE_24_AVX2
+	ROUNDS_24_MEM_AVX2
+
+	VPXOR Y8, Y0, Y0
+	VPBROADCASTQ 0(AX), Y15
+	VPXOR Y15, Y0, Y0
+	VPXOR Y9, Y1, Y1
+	VPBROADCASTQ 8(AX), Y15
+	VPXOR Y15, Y1, Y1
+	VPXOR Y10, Y2, Y2
+	VPBROADCASTQ 16(AX), Y15
+	VPXOR Y15, Y2, Y2
+	VPXOR Y11, Y3, Y3
+	VPBROADCASTQ 24(AX), Y15
+	VPXOR Y15, Y3, Y3
+
+	TRANSPOSE_4x4_Q_AVX2(Y0, Y1, Y2, Y3)
+
+	MOVQ 0(DX), R8
+	MOVQ 8(DX), R9
+	MOVQ 16(DX), R10
+	MOVQ 24(DX), R11
+	VMOVDQU Y0, 0(R8)
+	VMOVDQU Y1, 0(R9)
+	VMOVDQU Y2, 0(R10)
+	VMOVDQU Y3, 0(R11)
+
+	WIPE_AVX2_ALL
+	XORQ AX, AX
+	XORQ BX, BX
+	XORQ DX, DX
+	XORQ R8, R8
+	XORQ R9, R9
+	XORQ R10, R10
+	XORQ R11, R11
+	XORQ R12, R12
+	XORQ R13, R13
+	VZEROUPPER
+	RET
+
+// func blake2bBatch24_512Avx2Asm(hKey *[8]uint64, m012 *[3][4]uint64, dstPtrs *[4]*byte)
+TEXT ·blake2bBatch24_512Avx2Asm(SB), NOSPLIT, $0-24
+	MOVQ hKey+0(FP), AX
+	MOVQ m012+8(FP), BX
+	MOVQ dstPtrs+16(FP), DX
+
+	INIT_STATE_24_AVX2
+	ROUNDS_24_MEM_AVX2
+
+	VPXOR Y8, Y0, Y0
+	VPBROADCASTQ 0(AX), Y15
+	VPXOR Y15, Y0, Y0
+	VPXOR Y9, Y1, Y1
+	VPBROADCASTQ 8(AX), Y15
+	VPXOR Y15, Y1, Y1
+	VPXOR Y10, Y2, Y2
+	VPBROADCASTQ 16(AX), Y15
+	VPXOR Y15, Y2, Y2
+	VPXOR Y11, Y3, Y3
+	VPBROADCASTQ 24(AX), Y15
+	VPXOR Y15, Y3, Y3
+	VPXOR Y12, Y4, Y4
+	VPBROADCASTQ 32(AX), Y15
+	VPXOR Y15, Y4, Y4
+	VPXOR Y13, Y5, Y5
+	VPBROADCASTQ 40(AX), Y15
+	VPXOR Y15, Y5, Y5
+	VPXOR Y14, Y6, Y6
+	VPBROADCASTQ 48(AX), Y15
+	VPXOR Y15, Y6, Y6
+
+	VMOVQ R10, X15
+	VPINSRQ $1, R11, X15, X15
+	VMOVQ R8, X8
+	VPINSRQ $1, R9, X8, X8
+	VINSERTI128 $1, X15, Y8, Y15
+	VPXOR Y15, Y7, Y7
+	VPBROADCASTQ 56(AX), Y15
+	VPXOR Y15, Y7, Y7
+
+	TRANSPOSE_4x4_Q_AVX2(Y0, Y1, Y2, Y3)
+	TRANSPOSE_4x4_Q_AVX2(Y4, Y5, Y6, Y7)
+
+	MOVQ 0(DX), R8
+	MOVQ 8(DX), R9
+	MOVQ 16(DX), R10
+	MOVQ 24(DX), R11
+	VMOVDQU Y0, 0(R8)
+	VMOVDQU Y4, 32(R8)
+	VMOVDQU Y1, 0(R9)
+	VMOVDQU Y5, 32(R9)
+	VMOVDQU Y2, 0(R10)
+	VMOVDQU Y6, 32(R10)
+	VMOVDQU Y3, 0(R11)
+	VMOVDQU Y7, 32(R11)
+
+	WIPE_AVX2_ALL
+	XORQ AX, AX
+	XORQ BX, BX
+	XORQ DX, DX
+	XORQ R8, R8
+	XORQ R9, R9
+	XORQ R10, R10
+	XORQ R11, R11
+	XORQ R12, R12
+	XORQ R13, R13
+	VZEROUPPER
+	RET
+
+#define ROUND_GEN_AVX2(s0, s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11, s12, s13, s14, s15) \
+	G_MEM_AVX2(Y0, Y4, Y8, Y12, s0, s1); \
+	G_MEM_AVX2(Y1, Y5, Y9, Y13, s2, s3); \
+	G_MEM_AVX2(Y2, Y6, Y10, Y14, s4, s5); \
+	SWAP_Y12; \
+	G_MEM_AVX2(Y3, Y7, Y11, Y12, s6, s7); \
+	G_MEM_AVX2(Y0, Y5, Y10, Y12, s8, s9); \
+	SWAP_Y12; \
+	G_MEM_AVX2(Y1, Y6, Y11, Y12, s10, s11); \
+	G_MEM_AVX2(Y2, Y7, Y8, Y13, s12, s13); \
+	G_MEM_AVX2(Y3, Y4, Y9, Y14, s14, s15)
+
+// func blake2bCompress4Avx2Asm(h *[8][4]uint64, m *[16][4]uint64, t0, f0 uint64)
+TEXT ·blake2bCompress4Avx2Asm(SB), NOSPLIT, $0-32
+	MOVQ h+0(FP), AX
+	MOVQ m+8(FP), BX
+
+	VMOVDQU 0(AX), Y0
+	VMOVDQU 32(AX), Y1
+	VMOVDQU 64(AX), Y2
+	VMOVDQU 96(AX), Y3
+	VMOVDQU 128(AX), Y4
+	VMOVDQU 160(AX), Y5
+	VMOVDQU 192(AX), Y6
+	VMOVDQU 224(AX), Y7
+
+	VPBROADCASTQ blake2bIV<>+0(SB), Y8
+	VPBROADCASTQ blake2bIV<>+8(SB), Y9
+	VPBROADCASTQ blake2bIV<>+16(SB), Y10
+	VPBROADCASTQ blake2bIV<>+24(SB), Y11
+	MOVQ blake2bIV<>+32(SB), CX
+	XORQ t0+16(FP), CX
+	VMOVQ CX, X12
+	VPBROADCASTQ X12, Y12
+	VPBROADCASTQ blake2bIV<>+40(SB), Y13
+	MOVQ blake2bIV<>+48(SB), CX
+	XORQ f0+24(FP), CX
+	VMOVQ CX, X14
+	VPBROADCASTQ X14, Y14
+	MOVQ blake2bIV<>+56(SB), R8
+	MOVQ R8, R9
+	MOVQ R8, R10
+	MOVQ R8, R11
+
+	ROUND_GEN_AVX2(0, 32, 64, 96, 128, 160, 192, 224, 256, 288, 320, 352, 384, 416, 448, 480)
+	ROUND_GEN_AVX2(448, 320, 128, 256, 288, 480, 416, 192, 32, 384, 0, 64, 352, 224, 160, 96)
+	ROUND_GEN_AVX2(352, 256, 384, 0, 160, 64, 480, 416, 320, 448, 96, 192, 224, 32, 288, 128)
+	ROUND_GEN_AVX2(224, 288, 96, 32, 416, 384, 352, 448, 64, 192, 160, 320, 128, 0, 480, 256)
+	ROUND_GEN_AVX2(288, 0, 160, 224, 64, 128, 320, 480, 448, 32, 352, 384, 192, 256, 96, 416)
+	ROUND_GEN_AVX2(64, 384, 192, 320, 0, 352, 256, 96, 128, 416, 224, 160, 480, 448, 32, 288)
+	ROUND_GEN_AVX2(384, 160, 32, 480, 448, 416, 128, 320, 0, 224, 192, 96, 288, 64, 256, 352)
+	ROUND_GEN_AVX2(416, 352, 224, 448, 384, 32, 96, 288, 160, 0, 480, 128, 256, 192, 64, 320)
+	ROUND_GEN_AVX2(192, 480, 448, 288, 352, 96, 0, 256, 384, 64, 416, 224, 32, 128, 320, 160)
+	ROUND_GEN_AVX2(320, 64, 256, 128, 224, 192, 32, 160, 480, 352, 288, 448, 96, 384, 416, 0)
+	ROUND_GEN_AVX2(0, 32, 64, 96, 128, 160, 192, 224, 256, 288, 320, 352, 384, 416, 448, 480)
+	ROUND_GEN_AVX2(448, 320, 128, 256, 288, 480, 416, 192, 32, 384, 0, 64, 352, 224, 160, 96)
+
+	VPXOR Y8, Y0, Y0
+	VPXOR 0(AX), Y0, Y0
+	VMOVDQU Y0, 0(AX)
+
+	VPXOR Y9, Y1, Y1
+	VPXOR 32(AX), Y1, Y1
+	VMOVDQU Y1, 32(AX)
+
+	VPXOR Y10, Y2, Y2
+	VPXOR 64(AX), Y2, Y2
+	VMOVDQU Y2, 64(AX)
+
+	VPXOR Y11, Y3, Y3
+	VPXOR 96(AX), Y3, Y3
+	VMOVDQU Y3, 96(AX)
+
+	VPXOR Y12, Y4, Y4
+	VPXOR 128(AX), Y4, Y4
+	VMOVDQU Y4, 128(AX)
+
+	VPXOR Y13, Y5, Y5
+	VPXOR 160(AX), Y5, Y5
+	VMOVDQU Y5, 160(AX)
+
+	VPXOR Y14, Y6, Y6
+	VPXOR 192(AX), Y6, Y6
+	VMOVDQU Y6, 192(AX)
+
+	VMOVQ R10, X15
+	VPINSRQ $1, R11, X15, X15
+	VMOVQ R8, X8
+	VPINSRQ $1, R9, X8, X8
+	VINSERTI128 $1, X15, Y8, Y15
+	VPXOR Y15, Y7, Y7
+	VPXOR 224(AX), Y7, Y7
+	VMOVDQU Y7, 224(AX)
+
+	WIPE_AVX2_ALL
+	XORQ AX, AX
+	XORQ BX, BX
+	XORQ CX, CX
+	XORQ R8, R8
+	XORQ R9, R9
+	XORQ R10, R10
+	XORQ R11, R11
+	XORQ R12, R12
+	XORQ R13, R13
+	VZEROUPPER
+	RET
+
+// -----------------------------------------------------------------------------
+// Read-only constant tables
+// -----------------------------------------------------------------------------
+
+DATA blake2bIV<>+0(SB)/8, $0x6a09e667f3bcc908
+DATA blake2bIV<>+8(SB)/8, $0xbb67ae8584caa73b
+DATA blake2bIV<>+16(SB)/8, $0x3c6ef372fe94f82b
+DATA blake2bIV<>+24(SB)/8, $0xa54ff53a5f1d36f1
+DATA blake2bIV<>+32(SB)/8, $0x510e527fade682d1
+DATA blake2bIV<>+40(SB)/8, $0x9b05688c2b3e6c1f
+DATA blake2bIV<>+48(SB)/8, $0x1f83d9abfb41bd6b
+DATA blake2bIV<>+56(SB)/8, $0x5be0cd19137e2179
+GLOBL blake2bIV<>(SB), RODATA|NOPTR, $64
+
+DATA blake2bIV24<>+0(SB)/8, $0x510e527fade68249
+DATA blake2bIV24<>+8(SB)/8, $0xe07c265404be4294
+GLOBL blake2bIV24<>(SB), RODATA|NOPTR, $16
+
+DATA inc0123<>+0(SB)/8, $0
+DATA inc0123<>+8(SB)/8, $1
+DATA inc0123<>+16(SB)/8, $2
+DATA inc0123<>+24(SB)/8, $3
+GLOBL inc0123<>(SB), RODATA|NOPTR, $32
+
+DATA inc4<>+0(SB)/8, $4
+GLOBL inc4<>(SB), RODATA|NOPTR, $8
+
+DATA ror24<>+0(SB)/8, $0x0201000706050403
+DATA ror24<>+8(SB)/8, $0x0a09080f0e0d0c0b
+DATA ror24<>+16(SB)/8, $0x0201000706050403
+DATA ror24<>+24(SB)/8, $0x0a09080f0e0d0c0b
+GLOBL ror24<>(SB), RODATA|NOPTR, $32
+
+DATA ror16<>+0(SB)/8, $0x0100070605040302
+DATA ror16<>+8(SB)/8, $0x09080f0e0d0c0b0a
+DATA ror16<>+16(SB)/8, $0x0100070605040302
+DATA ror16<>+24(SB)/8, $0x09080f0e0d0c0b0a
+GLOBL ror16<>(SB), RODATA|NOPTR, $32
+
+// func dumpSIMDRegs(dst *[88]uint64, avx512 bool)
+TEXT ·dumpSIMDRegs(SB), NOSPLIT, $0-9
+	MOVQ dst+0(FP), AX
+	MOVQ CX, 512(AX)
+	MOVQ DX, 520(AX)
+	MOVQ SI, 528(AX)
+	MOVQ DI, 536(AX)
+	MOVQ R8, 544(AX)
+	MOVQ R9, 552(AX)
+	MOVQ R10, 560(AX)
+	MOVQ R11, 568(AX)
+	MOVQ R12, 576(AX)
+	MOVQ R13, 584(AX)
+	MOVQ R15, 592(AX)
+	VMOVDQU X0, 0(AX)
+	VMOVDQU X1, 16(AX)
+	VMOVDQU X2, 32(AX)
+	VMOVDQU X3, 48(AX)
+	VMOVDQU X4, 64(AX)
+	VMOVDQU X5, 80(AX)
+	VMOVDQU X6, 96(AX)
+	VMOVDQU X7, 112(AX)
+	VMOVDQU X8, 128(AX)
+	VMOVDQU X9, 144(AX)
+	VMOVDQU X10, 160(AX)
+	VMOVDQU X11, 176(AX)
+	VMOVDQU X12, 192(AX)
+	VMOVDQU X13, 208(AX)
+	VMOVDQU X14, 224(AX)
+	VMOVDQU X15, 240(AX)
+	MOVBLZX avx512+8(FP), CX
+	TESTQ CX, CX
+	JZ dumpDone
+	VMOVDQU64 X16, 256(AX)
+	VMOVDQU64 X17, 272(AX)
+	VMOVDQU64 X18, 288(AX)
+	VMOVDQU64 X19, 304(AX)
+	VMOVDQU64 X20, 320(AX)
+	VMOVDQU64 X21, 336(AX)
+	VMOVDQU64 X22, 352(AX)
+	VMOVDQU64 X23, 368(AX)
+	VMOVDQU64 X24, 384(AX)
+	VMOVDQU64 X25, 400(AX)
+	VMOVDQU64 X26, 416(AX)
+	VMOVDQU64 X27, 432(AX)
+	VMOVDQU64 X28, 448(AX)
+	VMOVDQU64 X29, 464(AX)
+	VMOVDQU64 X30, 480(AX)
+	VMOVDQU64 X31, 496(AX)
+dumpDone:
+	VPXOR X2, X2, X2
+	XORQ R12, R12
+	XORQ AX, AX
+	XORQ CX, CX
+	VZEROUPPER
+	RET
+
+// func dirtySIMDRegForTest(masked uint64)
+TEXT ·dirtySIMDRegForTest(SB), NOSPLIT, $0-8
+	MOVQ masked+0(FP), R12
+	MOVQ $0x5555555555555555, AX
+	XORQ AX, R12
+	VMOVQ R12, X2
+	XORQ AX, AX
+	RET

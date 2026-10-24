@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	itb "github.com/everanium/itb"
+	"github.com/everanium/itb/internal/triplewire"
 	"github.com/everanium/itb/internal/wipe"
 	"github.com/everanium/itb/triple"
 )
@@ -317,13 +318,10 @@ func FreeTriple(id TripleHandleID) (st Status) {
 // StatusBufferTooSmall.
 //
 // The whole plaintext is available up front on this surface, so the
-// call routes through [triple.Pipeline.EncryptStreamBytes] — the
-// one-shot Streaming entry whose direct path composes a
-// single-chunk emission via the itb-root Single Message entries when the
-// parallax layer is disengaged and the plaintext fits the itb-root
-// single-message cap, bypassing the per-chunk io.Reader / io.Writer
-// machinery. Bindings sizing their buffer via
-// max(plain_len * 2, 65536) hit the fast path in practice.
+// call routes through the one-shot Streaming entry whose direct path
+// composes a single-chunk emission via the itb-root Single Message
+// entries when the payload fits within a single chunk, writing
+// directly into wireDst when len(wireDst) >= TripleMaxWireSize.
 func TripleEncryptStream(id TripleHandleID, plainSrc, wireDst []byte) (n int, st Status) {
 	defer recoverPanic(&st, StatusEncryptFailed)
 
@@ -331,27 +329,34 @@ func TripleEncryptStream(id TripleHandleID, plainSrc, wireDst []byte) (n int, st
 	if st != StatusOK {
 		return 0, st
 	}
-	wire, err := h.pipe.EncryptStreamBytes(plainSrc)
+	var dstSlice []byte
+	if len(wireDst) > 0 {
+		dstSlice = wireDst[:0:len(wireDst)]
+	}
+	wire, err := triplewire.EncryptStreamBytesTo(h.pipe, dstSlice, plainSrc)
 	if err != nil {
 		s := mapTripleError(err)
 		return 0, s
 	}
 	if len(wire) > len(wireDst) {
+		wipe.Bytes(wire[:cap(wire)])
 		setLastErr(StatusBufferTooSmall)
 		return len(wire), StatusBufferTooSmall
 	}
-	copy(wireDst, wire)
+	if len(wire) > 0 && (len(wireDst) == 0 || &wire[0] != &wireDst[0]) {
+		copy(wireDst, wire)
+		wipe.Bytes(wire[:cap(wire)])
+	}
 	return len(wire), StatusOK
 }
 
 // TripleDecryptStream is the receive-side counterpart of
-// [TripleEncryptStream]. Routes through
-// [triple.Pipeline.DecryptStreamBytes], whose direct path decodes
-// single-chunk wires via the itb-root Single Message entries and whose
-// wrapper posture unwraps the wire in one in-place keystream pass;
-// multi-chunk and parallax-on wires take the full reverse chain. Same
-// caller-allocated-buffer convention; the caller's wireSrc bytes are
-// never mutated.
+// [TripleEncryptStream]. Routes through the one-shot Streaming decode
+// entry, whose direct path decodes single-chunk wires directly into
+// plainDst when len(plainDst) is sufficient and whose wrapper posture
+// unwraps the wire in one in-place keystream pass; multi-chunk wires
+// take the full reverse chain. Same caller-allocated-buffer convention;
+// the caller's wireSrc bytes are never mutated.
 func TripleDecryptStream(id TripleHandleID, wireSrc, plainDst []byte) (n int, st Status) {
 	defer recoverPanic(&st, StatusDecryptFailed)
 
@@ -359,17 +364,24 @@ func TripleDecryptStream(id TripleHandleID, wireSrc, plainDst []byte) (n int, st
 	if st != StatusOK {
 		return 0, st
 	}
-	plain, err := h.pipe.DecryptStreamBytes(wireSrc)
+	var dstSlice []byte
+	if len(plainDst) > 0 {
+		dstSlice = plainDst[:0:len(plainDst)]
+	}
+	plain, err := triplewire.DecryptStreamBytesTo(h.pipe, dstSlice, wireSrc)
 	if err != nil {
 		s := mapTripleError(err)
 		return 0, s
 	}
-	defer wipe.Bytes(plain)
 	if len(plain) > len(plainDst) {
+		wipe.Bytes(plain[:cap(plain)])
 		setLastErr(StatusBufferTooSmall)
 		return len(plain), StatusBufferTooSmall
 	}
-	copy(plainDst, plain)
+	if len(plain) > 0 && (len(plainDst) == 0 || &plain[0] != &plainDst[0]) {
+		copy(plainDst, plain)
+		wipe.Bytes(plain[:cap(plain)])
+	}
 	return len(plain), StatusOK
 }
 
@@ -387,16 +399,24 @@ func TripleEncryptMessage(id TripleHandleID, plain, wireDst []byte) (n int, st S
 	if st != StatusOK {
 		return 0, st
 	}
-	wire, err := h.pipe.EncryptMessage(plain)
+	var dstSlice []byte
+	if len(wireDst) > 0 {
+		dstSlice = wireDst[:0:len(wireDst)]
+	}
+	wire, err := h.pipe.EncryptMessageTo(dstSlice, plain)
 	if err != nil {
 		s := mapTripleError(err)
 		return 0, s
 	}
 	if len(wire) > len(wireDst) {
+		wipe.Bytes(wire[:cap(wire)])
 		setLastErr(StatusBufferTooSmall)
 		return len(wire), StatusBufferTooSmall
 	}
-	copy(wireDst, wire)
+	if len(wire) > 0 && (len(wireDst) == 0 || &wire[0] != &wireDst[0]) {
+		copy(wireDst, wire)
+		wipe.Bytes(wire[:cap(wire)])
+	}
 	return len(wire), StatusOK
 }
 
@@ -409,18 +429,92 @@ func TripleDecryptMessage(id TripleHandleID, wire, plainDst []byte) (n int, st S
 	if st != StatusOK {
 		return 0, st
 	}
-	plain, err := h.pipe.DecryptMessage(wire)
+	var dstSlice []byte
+	if len(plainDst) > 0 {
+		dstSlice = plainDst[:0:len(plainDst)]
+	}
+	plain, err := h.pipe.DecryptMessageTo(dstSlice, wire)
 	if err != nil {
 		s := mapTripleError(err)
 		return 0, s
 	}
-	defer wipe.Bytes(plain)
 	if len(plain) > len(plainDst) {
+		wipe.Bytes(plain[:cap(plain)])
 		setLastErr(StatusBufferTooSmall)
 		return len(plain), StatusBufferTooSmall
 	}
-	copy(plainDst, plain)
+	if len(plain) > 0 && (len(plainDst) == 0 || &plain[0] != &plainDst[0]) {
+		copy(plainDst, plain)
+		wipe.Bytes(plain[:cap(plain)])
+	}
 	return len(plain), StatusOK
+}
+
+// TripleMaxWireSize returns the deterministic wire byte length that
+// [TripleEncryptMessage] produces for plaintextLen (> 0) under the
+// handle's resolved profile and maxBarrierFill override (<= 0 uses the
+// Pipeline's configured BarrierFill). Returns StatusBadHandle on an
+// unknown handle, StatusTripleClosed on a closed handle, and
+// StatusBadInput when plaintextLen <= 0 or the handle's profile is
+// blob-only.
+func TripleMaxWireSize(id TripleHandleID, plaintextLen int, maxBarrierFill int) (n int, st Status) {
+	defer recoverPanic(&st, StatusInternal)
+
+	h, st := resolveTriple(id)
+	if st != StatusOK {
+		return 0, st
+	}
+	if plaintextLen <= 0 {
+		setLastErr(StatusBadInput)
+		return 0, StatusBadInput
+	}
+	w := h.pipe.MaxWireSizeWithBarrierFill(plaintextLen, maxBarrierFill)
+	if w == 0 {
+		if blob := h.pipe.Save(); blob == nil {
+			setLastErr(StatusTripleClosed)
+			return 0, StatusTripleClosed
+		} else {
+			wipe.Bytes(blob)
+		}
+		setLastErr(StatusBadInput)
+		return 0, StatusBadInput
+	}
+	return w, StatusOK
+}
+
+// TripleMaxPlaintextSize is the monotone inverse of [TripleMaxWireSize]:
+// it returns the largest plaintext byte length whose encrypted wire
+// envelope under maxBarrierFill does not exceed maxWireBytes (or 0 with
+// StatusOK when even a 1-byte plaintext exceeds maxWireBytes). Returns
+// StatusBadHandle on an unknown handle, StatusTripleClosed on a closed
+// handle, and StatusBadInput when maxWireBytes <= 0 or the handle's
+// profile is blob-only.
+func TripleMaxPlaintextSize(id TripleHandleID, maxWireBytes int, maxBarrierFill int) (n int, st Status) {
+	defer recoverPanic(&st, StatusInternal)
+
+	h, st := resolveTriple(id)
+	if st != StatusOK {
+		return 0, st
+	}
+	if maxWireBytes <= 0 {
+		setLastErr(StatusBadInput)
+		return 0, StatusBadInput
+	}
+	minWire := h.pipe.MaxWireSizeWithBarrierFill(1, maxBarrierFill)
+	if minWire == 0 {
+		if blob := h.pipe.Save(); blob == nil {
+			setLastErr(StatusTripleClosed)
+			return 0, StatusTripleClosed
+		} else {
+			wipe.Bytes(blob)
+		}
+		setLastErr(StatusBadInput)
+		return 0, StatusBadInput
+	}
+	if maxWireBytes < minWire {
+		return 0, StatusOK
+	}
+	return h.pipe.MaxPlaintextSizeWithBarrierFill(maxWireBytes, maxBarrierFill), StatusOK
 }
 
 // mapTripleError translates a triple-package sentinel or wrapped

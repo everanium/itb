@@ -74,9 +74,9 @@ func xorParallelAt(name string, key, nonce []byte, base int, dst, src []byte) er
 	n := len(src)
 	workers := wrapWorkers(n)
 	if n < parallelThreshold || workers <= 1 {
-		wipe.CallStack8K([9][8]uint64{})
+		wipe.CallStack2K([9][8]uint64{})
 		err := xorRangeAt(name, key, nonce, base, dst[:n], src)
-		wipe.CallStack8K([9][8]uint64{})
+		wipe.CallStack2K([9][8]uint64{})
 		return err
 	}
 
@@ -95,9 +95,9 @@ func xorParallelAt(name string, key, nonce []byte, base int, dst, src []byte) er
 		wg.Add(1)
 		go func(w, start, end int) {
 			defer wg.Done()
-			wipe.CallStack8K([9][8]uint64{})
+			wipe.CallStack2K([9][8]uint64{})
 			errs[w] = xorRangeAt(name, key, nonce, base+start, dst[start:end], src[start:end])
-			wipe.CallStack8K([9][8]uint64{})
+			wipe.CallStack2K([9][8]uint64{})
 		}(w, start, end)
 	}
 	wg.Wait()

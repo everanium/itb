@@ -17,7 +17,7 @@ For the standards' own conformance, refer to the upstream specifications and lib
 - `github.com/zeebo/blake3` — BLAKE3 keyed mode.
 - NIST FIPS-197 — the AES block cipher (`crypto/aes`); NIST SP 800-38A — Counter (CTR) block-cipher mode of operation.
 - `github.com/dchest/siphash` — SipHash-2-4 test vectors.
-- RFC 8439 — ChaCha20 (`golang.org/x/crypto/chacha20`).
+- RFC 8439 — ChaCha20 (bit-exact with `golang.org/x/crypto/chacha20`; SIMD-accelerated on x86-64 AVX-512 / AVX2 and ARM64 NEON, with portable Go fallback).
 
 ## Table of constructions
 
@@ -31,7 +31,7 @@ For the standards' own conformance, refer to the upstream specifications and lib
 | `blake3` | native keyed BLAKE3, 32-byte output | PRF-counter mode | 32 B (collision bound 2^128) | 32 bytes | 16 bytes |
 | `aescmac` | AES-128 (`crypto/aes`) | AES-128 in CTR mode (`crypto/cipher.NewCTR`) | 16 B (NIST CTR, AES-NI accelerated) | 16 bytes | 16 bytes |
 | `siphash24` | SipHash-2-4, 128-bit output (`github.com/dchest/siphash`) | PRF-counter mode | 16 B (collision bound 2^64) | 16 bytes | 16 bytes |
-| `chacha20` | ChaCha20 (RFC 8439) (`golang.org/x/crypto/chacha20`) | RFC 8439 ChaCha20 keystream | 64 B (standard RFC 8439 stream) | 32 bytes | 12 bytes |
+| `chacha20` | ChaCha20 (RFC 8439) | RFC 8439 ChaCha20 keystream | 64 B (standard RFC 8439 stream, SIMD-accelerated) | 32 bytes | 12 bytes |
 
 ## Areion-CTR (registry: `areion256`, `areion512`)
 
@@ -51,6 +51,8 @@ where:
 - **`blockSize`** is the PRF output width: 32 bytes for `areion256`, 64 bytes for `areion512`.
 
 Each keystream block hashes a 24-byte PRF input and emits the full `blockSize`-byte output; sub-block tails consume the leading bytes of a freshly hashed block.
+
+**Counter-injection and feed-forward structure.** Because the 24-byte input fits within a single absorb chunk (`24` bytes for `areion256`, `56` bytes for `areion512`), each keystream block evaluates one SoEM22 call over the length-prefixed state `LE64(24) || nonce(16) || LE64(counter_i)` (with the trailing 32 bytes `state[32..63]` fixed to zero in `areion512`). The counter-carrying state is simultaneously XOR-whitened with two secret subkeys (`k1 = key` and `k2 = SHA-512(domain || key)`) into two distinct AES-round permutations `P1(m ⊕ k1)` and `P2(m ⊕ k2)`, and their outputs are combined with post-whitening as `P1(m ⊕ k1) ⊕ P2(m ⊕ k2) ⊕ k1 ⊕ k2`, preventing single-branch backward permutation inversion from observed keystream blocks.
 
 **Stream shape.** PRF-counter mode, **not** a permutation-native CTR. The keystream-block collision birthday bound is `2^(blockSize*8/2)` — **2^128** for `areion256` and **2^256** for `areion512`, both well clear of any practical bound. The 64-bit counter admits 2^64 blocks per nonce before the counter space is exhausted.
 
@@ -75,6 +77,8 @@ where:
 
 Each keystream block hashes a 24-byte PRF input (`nonce(16) || LE64(counter)`) and emits the full `blockSize`-byte digest; sub-block tails consume the leading bytes of a freshly hashed block.
 
+**Counter-injection and feed-forward structure.** Unlike XOF counter modes that inject the block counter into state words `v[12..13]` once before round 1, placing `nonce(16) || LE64(counter_i)` in the message block (`m[0..2]` in `blake2b256` / `blake2b512`, `m[0..5]` in `blake2s` / `blake3`) causes the message schedule to **re-inject both the 128-bit nonce and the 64-bit counter via modular addition (`+ m[sigma[r][...]]`) into column and diagonal `G` calls across every round** (`12` rounds in BLAKE2b, `10` in BLAKE2s, `7` in BLAKE3). The initial chaining words `v[0..7]` are entirely secret (`hKey[0..7]` from the precomputed key block in BLAKE2b / BLAKE2s, `keyWords[0..7]` in BLAKE3) while the remaining message words (`13/16` = 832 bits in BLAKE2b, `10/16` = 320 bits in BLAKE2s / BLAKE3) are fixed to zero, eliminating multi-word message-modification degrees of freedom. At compression output, the non-invertible Davies-Meyer XOR feed-forward (`hKey ⊕ v_lo ⊕ v_hi` in BLAKE2b / BLAKE2s; `v_lo ⊕ v_hi` with the upper 256 state bits discarded in BLAKE3, and upper-half digest truncation in `blake2b256`) prevents inverting the round permutation from keystream outputs.
+
 **Stream shape.** This is PRF-counter mode, **not** a permutation-native CTR. Two distinct counter inputs can in principle produce the same keystream block, so the keystream-block collision birthday bound is `2^(blockSize*8/2)` — **2^128** for the 32-byte-block names (`blake2b256`, `blake2s`, `blake3`) and **2^256** for `blake2b512`. Both are well clear of any practical bound. The 64-bit counter admits 2^64 blocks per nonce before the counter space is exhausted.
 
 **Security claim.** PRF-secure keystream under the standard keyed-BLAKE PRF assumption — XORing PRF output with plaintext is the canonical PRF-secure stream — conditional on the `(key, nonce)` pair not being reused across distinct streams. Keyed BLAKE2 / BLAKE3 is **not** a NIST-approved cipher; the construction is sound under the keyed-BLAKE PRF security argument. No security beyond a sound PRF-counter construction is claimed.
@@ -88,6 +92,8 @@ Each keystream block hashes a 24-byte PRF input (`nonce(16) || LE64(counter)`) a
 1. The 16-byte key is the AES-128 key (`aes.NewCipher(key)`).
 2. The 16-byte nonce is the CTR initial counter block — the IV passed to `cipher.NewCTR(block, nonce)`.
 3. `XORKeyStream` produces the keystream by encrypting successive counter blocks under AES-128 and XORing the result over the input; the standard library advances the 128-bit counter internally.
+
+**Counter-injection structure.** Each 16-byte counter block enters once at initial round-key whitening (`block_i ⊕ k_0`) and traverses 10 invertible AES rounds whitened by expanded subkeys `k_1..k_10`, with no per-round counter re-injection and no post-round feed-forward. Unlike the feed-forward PRF-counter constructions, the map `block_i ↦ AES_K(block_i)` is a bijective pseudorandom permutation over 128-bit blocks whose keystream security up to the `2^64`-block birthday bound reduces directly to the PRP assumption on AES-128.
 
 **Standards posture.** This is the stdlib's CTR mode over the stdlib's AES; it is standard NIST CTR mode end to end. On hosts with the AES instruction set (`crypto/aes` AES-NI on x86, the ARM Crypto Extension on ARM64) the block calls are hardware-accelerated.
 
@@ -113,21 +119,25 @@ where:
 
 Each keystream block hashes a 16-byte PRF input formed from `nonce_hi || (nonce_lo XOR counter_le)`. This binds every block to the stream's nonce while injecting unique 64-bit counter material per block. The 16-byte `(lo, hi)` SipHash-128 output is the keystream block; sub-block tails consume the leading bytes of a freshly hashed block.
 
+**Counter-injection and finalization structure.** Starting from the 256-bit key-initialized state `v[0..3]` (with `nonce_hi` pre-absorbed once via `v3 ^= nonce_hi; SipRound²; v0 ^= nonce_hi`), each block injects the counter word `m1 = nonce_lo ⊕ counter_le` **twice** in a pre- and post-round XOR sandwich (`v3 ^= m1; SipRound²; v0 ^= m1`), where the second XOR acts as a message-word feed-forward across the two compression rounds. The state then absorbs the fixed length word `b = 16 << 56` (`v3 ^= b; SipRound²; v0 ^= b`) and runs two domain-separated 4-round finalization cascades (`v2 ^= 0xee; SipRound⁴` and `v1 ^= 0xdd; SipRound⁴`), each folded from 256 bits to 64 bits via `(v0 ⊕ v1) ⊕ (v2 ⊕ v3)` so that `m1` traverses 6 SipRounds before `lo` and 10 SipRounds before `hi`.
+
 **Stream shape.** This is PRF-counter mode, **not** a permutation-native CTR. Native stream ciphers (AES-128-CTR and ChaCha20) use a permutation or stream-native keystream where each counter value yields a distinct block with no keystream-block collision until the counter space is exhausted. SipHash-CTR instead hashes the counter through a PRF whose output is 128 bits wide, so two distinct counter inputs can in principle produce the same 16-byte keystream block. The keystream-block collision birthday bound is therefore **2^64** — on par with the 128-bit block-cipher CTR paths, since their collision space is likewise 2^128 over 16-byte blocks. The 64-bit counter likewise admits 2^64 blocks (2^68 bytes) per nonce before the counter space is exhausted.
 
 **Security claim.** PRF-secure keystream under the same PRF assumption that justifies AES-CTR — XORing PRF output with plaintext is the canonical PRF-secure stream — conditional on the `(key, nonce)` pair not being reused across distinct streams. The 128-bit SipHash output places the keystream-block collision bound at 2^64. No security beyond a sound PRF-counter construction is claimed.
 
 ## ChaCha20 (registry: `chacha20`)
 
-**Underlying primitive.** ChaCha20 stream cipher, RFC 8439 variant (`golang.org/x/crypto/chacha20.NewUnauthenticatedCipher`).
+**Underlying primitive.** ChaCha20 stream cipher, RFC 8439 variant (SIMD-accelerated on x86-64 AVX-512 / AVX2 and ARM64 NEON, with portable Go fallback; bit-exact with `golang.org/x/crypto/chacha20`).
 
 **Construction.** The ChaCha20 (RFC 8439) keystream directly.
 
 1. The 32-byte key is the ChaCha20 key.
 2. The 12-byte nonce is the RFC 8439 nonce.
-3. `XORKeyStream` is the underlying `chacha20.Cipher`'s own `XORKeyStream` — the RFC 8439 keystream XORed over the input, with the 32-bit block counter advancing internally.
+3. `XORKeyStream` produces the RFC 8439 keystream XORed over the input, with the 32-bit block counter advancing internally.
 
-**Standards posture.** This is the upstream `x/crypto/chacha20` keystream with no ITB-side wrapping. It is the RFC 8439 ChaCha20 stream as the library ships it.
+**Counter-injection and feed-forward structure.** Each 64-byte block initializes the 512-bit state `S` with the four constants (`x[0..3]`), the 256-bit key (`x[4..11]`), the 32-bit block counter (`x[12]`), and the 96-bit nonce (`x[13..15]`), permutes `S` through 20 ARX quarter-rounds (`π(S)`), and finishes with the RFC 8439 § 2.3 word-wise 32-bit modular addition feed-forward `π(S) ⊞ S`. Re-adding `key[0..7]`, `counter`, and `nonce[0..2]` modulo `2^32` into the permuted output breaks the invertibility of the public 20-round permutation `π` and prevents backward state recovery from observed keystream blocks.
+
+**Standards posture.** This is the standard RFC 8439 ChaCha20 keystream, bit-exact with `golang.org/x/crypto/chacha20`.
 
 **Stream shape.** ChaCha20 is a stream-native cipher whose keystream is generated from distinct block-counter values; there is no keystream-block collision until the counter space is exhausted. This is the standard stream-cipher property.
 

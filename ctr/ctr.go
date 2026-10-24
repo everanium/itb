@@ -6,12 +6,10 @@ import (
 	"fmt"
 	"runtime"
 
-	"golang.org/x/crypto/chacha20"
-
 	"github.com/everanium/itb/hashes"
+	"github.com/everanium/itb/internal/chacha20ctr"
 	"github.com/everanium/itb/internal/hashprf"
 	"github.com/everanium/itb/internal/siphash24"
-	"github.com/everanium/itb/internal/wipe"
 )
 
 // Keystream is the minimal interface a counter-mode cipher exposes. The
@@ -34,7 +32,7 @@ func KeySize(name string) (int, error) {
 	case hashes.CipherSipHash24:
 		return 16, nil
 	case hashes.CipherChaCha20:
-		return chacha20.KeySize, nil // 32
+		return chacha20ctr.KeySize, nil // 32
 	case hashes.CipherAreion256, hashes.CipherAreion512, hashes.CipherBLAKE2b256, hashes.CipherBLAKE2b512, hashes.CipherBLAKE2s, hashes.CipherBLAKE3:
 		return hashprf.KeySize(name)
 	default:
@@ -50,7 +48,7 @@ func NonceSize(name string) (int, error) {
 	case hashes.CipherSipHash24:
 		return 16, nil
 	case hashes.CipherChaCha20:
-		return chacha20.NonceSize, nil // 12
+		return chacha20ctr.NonceSize, nil // 12
 	case hashes.CipherAreion256, hashes.CipherAreion512, hashes.CipherBLAKE2b256, hashes.CipherBLAKE2b512, hashes.CipherBLAKE2s, hashes.CipherBLAKE3:
 		return hashCTRNonceSize, nil // 16
 	default:
@@ -75,39 +73,16 @@ func New(name string, key, nonce []byte) (Keystream, error) {
 	case hashes.CipherSipHash24:
 		return newSipHashCTR(key, nonce)
 	case hashes.CipherChaCha20:
-		if len(key) != chacha20.KeySize {
-			return nil, fmt.Errorf("ctr: chacha20 key must be %d bytes, got %d", chacha20.KeySize, len(key))
-		}
-		if len(nonce) != chacha20.NonceSize {
-			return nil, fmt.Errorf("ctr: chacha20 nonce must be %d bytes, got %d", chacha20.NonceSize, len(nonce))
-		}
-		c, err := chacha20.NewUnauthenticatedCipher(key, nonce)
+		c, err := newChaCha20Resettable(key, nonce)
 		if err != nil {
 			return nil, err
 		}
-		return &chaCha20CTR{c: c}, nil
+		return c, nil
 	case hashes.CipherAreion256, hashes.CipherAreion512, hashes.CipherBLAKE2b256, hashes.CipherBLAKE2b512, hashes.CipherBLAKE2s, hashes.CipherBLAKE3:
 		return newPrfHashCTR(name, key, nonce)
 	default:
 		return nil, fmt.Errorf("ctr: unknown cipher %q", name)
 	}
-}
-
-type chaCha20CTR struct {
-	c *chacha20.Cipher
-}
-
-func (w *chaCha20CTR) XORKeyStream(dst, src []byte) {
-	w.c.XORKeyStream(dst, src)
-}
-
-func (w *chaCha20CTR) Close() error {
-	if w.c != nil {
-		*w.c = chacha20.Cipher{}
-		runtime.KeepAlive(w.c)
-		w.c = nil
-	}
-	return nil
 }
 
 // SipHash-2-4 in CTR mode.
@@ -127,6 +102,7 @@ type sipCTR struct {
 	k0, k1   uint64
 	nonceHi  uint64
 	nonceLo  uint64
+	vInit    [4]uint64
 	counter  uint64
 	keystrm  [16]byte
 	keystrmN int // number of unconsumed bytes in keystrm[16-keystrmN:]
@@ -145,6 +121,7 @@ func newSipHashCTR(key, nonce []byte) (Keystream, error) {
 		nonceHi: binary.LittleEndian.Uint64(nonce[:8]),
 		nonceLo: binary.LittleEndian.Uint64(nonce[8:]),
 	}
+	siphash24.InitCTRState(&c.vInit, c.k0, c.k1, c.nonceHi)
 	return c, nil
 }
 
@@ -182,19 +159,12 @@ func (c *sipCTR) XORKeyStream(dst, src []byte) {
 		c.keystrmN -= take
 	}
 
-	// Bulk path: hash one 16-byte input per 16-byte keystream block, XOR
-	// directly via two uint64 in registers — skips the keystrm[16]byte buffer entirely.
-	if n-i >= 16 {
-		for n-i >= 16 {
-			lo, hi := siphash24.Block128Raw(c.k0, c.k1, c.nonceHi, c.nonceLo^c.counter)
-			srcLo := binary.LittleEndian.Uint64(src[i:])
-			srcHi := binary.LittleEndian.Uint64(src[i+8:])
-			binary.LittleEndian.PutUint64(dst[i:], srcLo^lo)
-			binary.LittleEndian.PutUint64(dst[i+8:], srcHi^hi)
-			c.counter++
-			i += 16
-		}
-		wipe.ClobberRegs()
+	// Bulk path: evaluate full 16-byte blocks via SIMD / register-ABI CTR kernel.
+	if nBlocks := (n - i) / 16; nBlocks > 0 {
+		adv := nBlocks * 16
+		siphash24.XORKeyStreamBlocksWithState(dst[i:i+adv], src[i:i+adv], &c.vInit, c.nonceLo, c.counter)
+		c.counter += uint64(nBlocks)
+		i += adv
 	}
 
 	// Tail (<16 bytes): refill keystrm buffer and consume the leading bytes.

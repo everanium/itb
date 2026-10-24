@@ -42,6 +42,19 @@ var bufferPool = &sync.Pool{
 	},
 }
 
+const (
+	maxCachedBuffers = 32
+	maxCachedStages  = 16
+)
+
+var (
+	bufferCacheMu sync.Mutex
+	bufferCache   []*[]byte
+
+	stageCacheMu sync.Mutex
+	stageCache   []*[]byte
+)
+
 // acquireBuffer returns a slice of exactly n bytes drawn from
 // [bufferPool], growing the underlying capacity by allocating a fresh
 // `make([]byte, n)` if the pooled buffer is too small. The returned
@@ -53,9 +66,32 @@ var bufferPool = &sync.Pool{
 // Always paired with a [releaseBuffer] call when the buffer is no
 // longer needed.
 func acquireBuffer(n int) (*[]byte, []byte) {
+	poolstats.BufGet.Add(1)
+	bufferCacheMu.Lock()
+	if m := len(bufferCache); m > 0 {
+		for i := m - 1; i >= 0; i-- {
+			ptr := bufferCache[i]
+			if cap(*ptr) >= n {
+				bufferCache[i] = bufferCache[m-1]
+				bufferCache[m-1] = nil
+				bufferCache = bufferCache[:m-1]
+				bufferCacheMu.Unlock()
+				return ptr, (*ptr)[:n]
+			}
+		}
+		ptr := bufferCache[m-1]
+		bufferCache[m-1] = nil
+		bufferCache = bufferCache[:m-1]
+		bufferCacheMu.Unlock()
+		poolstats.BufRegrow.Add(1)
+		poolstats.BufRegrowBytes.Add(int64(n))
+		buf := make([]byte, n)
+		return ptr, buf
+	}
+	bufferCacheMu.Unlock()
+
 	ptr := bufferPool.Get().(*[]byte)
 	buf := *ptr
-	poolstats.BufGet.Add(1)
 	if cap(buf) < n {
 		poolstats.BufRegrow.Add(1)
 		poolstats.BufRegrowBytes.Add(int64(n))
@@ -74,7 +110,14 @@ func acquireBuffer(n int) (*[]byte, []byte) {
 // derivatives.
 func releaseBuffer(ptr *[]byte, buf []byte) {
 	secureWipe(buf)
-	*ptr = buf
+	*ptr = buf[:cap(buf)]
+	bufferCacheMu.Lock()
+	if len(bufferCache) < maxCachedBuffers {
+		bufferCache = append(bufferCache, ptr)
+		bufferCacheMu.Unlock()
+		return
+	}
+	bufferCacheMu.Unlock()
 	bufferPool.Put(ptr)
 }
 
@@ -86,7 +129,7 @@ func releaseBuffer(ptr *[]byte, buf []byte) {
 // acquireBuffer call retains.
 //
 // The pool's New returns an empty item; the first checkout on a miss
-// allocates exactly the requested width and the release stores that
+// allocates the requested width and the release stores that
 // width back, so items converge on the widest chunk budget requested
 // across the pipelines sharing the pool and are never regrown into
 // throw-away capacity.
@@ -106,10 +149,39 @@ var stagePool = &sync.Pool{
 // Always paired with a [releaseStage] call carrying the high-water
 // mark of bytes the caller wrote.
 func acquireStage(n int) (*[]byte, []byte) {
+	stageCacheMu.Lock()
+	if m := len(stageCache); m > 0 {
+		for i := m - 1; i >= 0; i-- {
+			ptr := stageCache[i]
+			if cap(*ptr) >= n {
+				stageCache[i] = stageCache[m-1]
+				stageCache[m-1] = nil
+				stageCache = stageCache[:m-1]
+				stageCacheMu.Unlock()
+				return ptr, (*ptr)[:n]
+			}
+		}
+		ptr := stageCache[m-1]
+		stageCache[m-1] = nil
+		stageCache = stageCache[:m-1]
+		stageCacheMu.Unlock()
+		allocCap := n
+		if n >= 64*1024 {
+			allocCap = n + n/4 + 8192
+		}
+		buf := make([]byte, allocCap)
+		return ptr, buf[:n]
+	}
+	stageCacheMu.Unlock()
+
 	ptr := stagePool.Get().(*[]byte)
 	buf := *ptr
 	if cap(buf) < n {
-		buf = make([]byte, n)
+		allocCap := n
+		if n >= 64*1024 {
+			allocCap = n + n/4 + 8192
+		}
+		buf = make([]byte, allocCap)
 	}
 	return ptr, buf[:n]
 }
@@ -121,5 +193,12 @@ func acquireStage(n int) (*[]byte, []byte) {
 func releaseStage(ptr *[]byte, buf []byte, used int) {
 	secureWipe(buf[:used])
 	*ptr = buf[:0]
+	stageCacheMu.Lock()
+	if len(stageCache) < maxCachedStages {
+		stageCache = append(stageCache, ptr)
+		stageCacheMu.Unlock()
+		return
+	}
+	stageCacheMu.Unlock()
 	stagePool.Put(ptr)
 }

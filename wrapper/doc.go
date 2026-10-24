@@ -27,7 +27,9 @@
 //   - SipHash-2-4 in CTR mode (16-byte nonce) — github.com/dchest/siphash PRF
 //     with a custom counter loop, sound under the standard PRF assumption
 //     SipHash-2-4 already satisfies as a 128-bit-keyed PRF/MAC.
-//   - ChaCha20 (RFC 8439) (12-byte nonce) — golang.org/x/crypto/chacha20.
+//   - ChaCha20 (RFC 8439) (12-byte nonce) — SIMD-accelerated RFC 8439 keystream
+//     (AVX-512 / AVX2 on x86-64, NEON on ARM64, portable Go fallback; bit-exact
+//     with golang.org/x/crypto/chacha20).
 //
 // Per-stream nonce hygiene: every Wrap entry point generates a fresh CSPRNG
 // nonce and emits it once at stream start. Each byte position of a stream maps

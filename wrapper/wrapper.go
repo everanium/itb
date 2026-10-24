@@ -4,6 +4,8 @@ import (
 	"crypto/rand"
 	"fmt"
 	"io"
+	"runtime"
+	"sync"
 
 	"github.com/everanium/itb/ctr"
 	"github.com/everanium/itb/hashes"
@@ -205,6 +207,87 @@ func UnwrapInPlace(name string, key, wire []byte) ([]byte, error) {
 // ks is re-seated to the new offset; a smaller chunk advances ks directly so
 // the common small-write path pays no per-chunk reseed keying.
 
+const maxCachedWrapperScratch = 8
+
+var (
+	wrapperScratchPool = sync.Pool{
+		New: func() any {
+			var b []byte
+			return &b
+		},
+	}
+	wrapperScratchMu    sync.Mutex
+	wrapperScratchCache []*[]byte
+)
+
+func acquireWrapperScratch(need int) (*[]byte, []byte) {
+	wrapperScratchMu.Lock()
+	if m := len(wrapperScratchCache); m > 0 {
+		for i := m - 1; i >= 0; i-- {
+			ptr := wrapperScratchCache[i]
+			if cap(*ptr) >= need {
+				wrapperScratchCache[i] = wrapperScratchCache[m-1]
+				wrapperScratchCache[m-1] = nil
+				wrapperScratchCache = wrapperScratchCache[:m-1]
+				wrapperScratchMu.Unlock()
+				return ptr, (*ptr)[:need]
+			}
+		}
+		ptr := wrapperScratchCache[m-1]
+		wrapperScratchCache[m-1] = nil
+		wrapperScratchCache = wrapperScratchCache[:m-1]
+		wrapperScratchMu.Unlock()
+		buf := make([]byte, need)
+		return ptr, buf
+	}
+	wrapperScratchMu.Unlock()
+
+	ptr := wrapperScratchPool.Get().(*[]byte)
+	buf := *ptr
+	if cap(buf) < need {
+		buf = make([]byte, need)
+	}
+	return ptr, buf[:need]
+}
+
+func releaseWrapperScratch(ptr *[]byte, buf []byte, used int) {
+	if ptr == nil {
+		return
+	}
+	if used <= 0 || used > cap(buf) {
+		used = cap(buf)
+	}
+	clear(buf[:used])
+	runtime.KeepAlive(buf)
+	*ptr = buf[:0]
+	wrapperScratchMu.Lock()
+	if len(wrapperScratchCache) < maxCachedWrapperScratch {
+		wrapperScratchCache = append(wrapperScratchCache, ptr)
+		wrapperScratchMu.Unlock()
+		return
+	}
+	wrapperScratchMu.Unlock()
+	wrapperScratchPool.Put(ptr)
+}
+
+func (kw *keystreamWriter) ensureScratch(need int) []byte {
+	if cap(kw.scratch) < need {
+		if kw.scratchPtr != nil {
+			releaseWrapperScratch(kw.scratchPtr, kw.scratch, kw.scratchHW)
+			kw.scratchPtr = nil
+			kw.scratchHW = 0
+		}
+		kw.scratchPtr, kw.scratch = acquireWrapperScratch(need)
+		kw.scratchHW = need
+		return kw.scratch
+	}
+	if need > kw.scratchHW {
+		kw.scratchHW = need
+	}
+	kw.scratch = kw.scratch[:need]
+	return kw.scratch
+}
+
 type keystreamWriter struct {
 	w            io.Writer
 	name         string
@@ -212,8 +295,10 @@ type keystreamWriter struct {
 	nonce        []byte
 	ks           Keystream // serial keystream, positioned at byte offset off
 	off          int       // cumulative bytes XORed so far
-	scratch      []byte    // reused across Writes; grows to the largest emission seen
-	noncePending bool      // true until the first non-empty Write batches the nonce out
+	scratchPtr   *[]byte
+	scratch      []byte // reused across Writes; grows to the largest emission seen
+	scratchHW    int    // high-water byte count written into scratch
+	noncePending bool   // true until the first non-empty Write batches the nonce out
 	closed       bool
 }
 
@@ -236,10 +321,7 @@ func (kw *keystreamWriter) Write(p []byte) (int, error) {
 	}
 	if kw.noncePending {
 		need := len(kw.nonce) + len(p)
-		if cap(kw.scratch) < need {
-			kw.scratch = make([]byte, need)
-		}
-		buf := kw.scratch[:need]
+		buf := kw.ensureScratch(need)
 		copy(buf, kw.nonce)
 		tail := buf[len(kw.nonce):]
 		if len(p) >= parallelThreshold {
@@ -264,10 +346,7 @@ func (kw *keystreamWriter) Write(p []byte) (int, error) {
 		}
 		return len(p), nil
 	}
-	if cap(kw.scratch) < len(p) {
-		kw.scratch = make([]byte, len(p))
-	}
-	out := kw.scratch[:len(p)]
+	out := kw.ensureScratch(len(p))
 	if len(p) >= parallelThreshold {
 		if err := xorParallelAt(kw.name, kw.key, kw.nonce, kw.off, out, p); err != nil {
 			return 0, err
@@ -294,7 +373,15 @@ func (kw *keystreamWriter) Close() error {
 	kw.closed = true
 	clear(kw.key)
 	clear(kw.nonce)
-	clear(kw.scratch[:cap(kw.scratch)])
+	if kw.scratchPtr != nil {
+		releaseWrapperScratch(kw.scratchPtr, kw.scratch, kw.scratchHW)
+		kw.scratchPtr = nil
+		kw.scratchHW = 0
+	} else {
+		clear(kw.scratch[:cap(kw.scratch)])
+		runtime.KeepAlive(kw.scratch)
+	}
+	kw.scratch = nil
 	if c, ok := kw.ks.(io.Closer); ok {
 		_ = c.Close()
 	}

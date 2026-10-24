@@ -346,3 +346,179 @@ func (d *digest128) Sum(in []byte) []byte {
 	runtime.KeepAlive(&out)
 	return ret
 }
+
+func initCTRStateRaw(vInit *[4]uint64, k0, k1, nonceHi uint64) {
+	v0 := k0 ^ initV0
+	v1 := k1 ^ initV1
+	v2 := k0 ^ initV2
+	v3 := (k1 ^ initV3) ^ nonceHi
+	v0, v1, v2, v3 = sipRound(v0, v1, v2, v3)
+	v0, v1, v2, v3 = sipRound(v0, v1, v2, v3)
+	v0 ^= nonceHi
+	vInit[0], vInit[1], vInit[2], vInit[3] = v0, v1, v2, v3
+}
+
+// InitCTRState precomputes the 4-word SipHash-2-4-128 state after absorbing
+// the constant high 64-bit nonce word nonceHi under key (k0, k1) and zeroes
+// its working registers before returning.
+func InitCTRState(vInit *[4]uint64, k0, k1, nonceHi uint64) {
+	initCTRStateRaw(vInit, k0, k1, nonceHi)
+	wipe.ClobberRegs()
+}
+
+// XORKeyStreamBlocks XORs nBlocks = len(src) / 16 blocks of 16-byte
+// SipHash-2-4-128 counter-mode keystream into dst starting at counter.
+// Block b (0 <= b < nBlocks) is Block128Raw(k0, k1, nonceHi, nonceLo^(counter+b)).
+func XORKeyStreamBlocks(dst, src []byte, k0, k1, nonceHi, nonceLo, counter uint64) {
+	nBlocks := len(src) / Size128
+	if nBlocks <= 0 {
+		return
+	}
+	if len(dst) < nBlocks*Size128 {
+		panic("siphash24: dst smaller than src")
+	}
+	var vInit [4]uint64
+	initCTRStateRaw(&vInit, k0, k1, nonceHi)
+	k0, k1, nonceHi = 0, 0, 0
+	XORKeyStreamBlocksWithState(dst, src, &vInit, nonceLo, counter)
+	nonceLo = 0
+	clear(vInit[:])
+	runtime.KeepAlive(&vInit)
+	runtime.KeepAlive(&k0)
+	runtime.KeepAlive(&k1)
+	runtime.KeepAlive(&nonceHi)
+	runtime.KeepAlive(&nonceLo)
+	wipe.CallStack512B()
+}
+
+//go:noinline
+func scalarXORKeyStreamBlocksWithState(dst, src []byte, vInit *[4]uint64, nonceLo, counter uint64) {
+	nBlocks := len(src) / Size128
+	if nBlocks <= 0 {
+		return
+	}
+	if len(dst) < nBlocks*Size128 {
+		panic("siphash24: dst smaller than src")
+	}
+	const bPad = uint64(16) << 56
+	var s [6]uint64
+	ctr := counter
+	for b := 0; b < nBlocks; b++ {
+		s[4] = nonceLo ^ ctr
+		s[0] = vInit[0]
+		s[1] = vInit[1]
+		s[2] = vInit[2]
+		s[3] = vInit[3] ^ s[4]
+		sipRound6(&s)
+		sipRound6(&s)
+		s[0] ^= s[4]
+
+		s[3] ^= bPad
+		sipRound6(&s)
+		sipRound6(&s)
+		s[0] ^= bPad
+
+		s[2] ^= 0xee
+		sipRound6(&s)
+		sipRound6(&s)
+		sipRound6(&s)
+		sipRound6(&s)
+		s[5] = (s[0] ^ s[1]) ^ (s[2] ^ s[3])
+
+		s[1] ^= 0xdd
+		sipRound6(&s)
+		sipRound6(&s)
+		sipRound6(&s)
+		sipRound6(&s)
+		hi := (s[0] ^ s[1]) ^ (s[2] ^ s[3])
+
+		off := b * Size128
+		srcLo := binary.LittleEndian.Uint64(src[off:])
+		srcHi := binary.LittleEndian.Uint64(src[off+8:])
+		binary.LittleEndian.PutUint64(dst[off:], srcLo^s[5])
+		binary.LittleEndian.PutUint64(dst[off+8:], srcHi^hi)
+		ctr++
+	}
+	nonceLo = 0
+	clear(s[:])
+	runtime.KeepAlive(&s)
+	runtime.KeepAlive(&nonceLo)
+	wipe.CallStack512B()
+}
+
+//go:noinline
+func scalarBatchPRFx4(dst, in *[4][]byte, k0, k1 uint64) {
+	var v [6]uint64
+	for lane := 0; lane < 4; lane++ {
+		if len(dst[lane]) < Size128 {
+			panic("siphash24: dst buffer smaller than 16 bytes")
+		}
+		p := in[lane]
+		v[0] = k0 ^ initV0
+		v[1] = k1 ^ initV1
+		v[2] = k0 ^ initV2
+		v[3] = k1 ^ initV3
+
+		n := len(p)
+		off := 0
+		for ; off+8 <= n; off += 8 {
+			v[4] = binary.LittleEndian.Uint64(p[off:])
+			v[3] ^= v[4]
+			sipRound6(&v)
+			sipRound6(&v)
+			v[0] ^= v[4]
+		}
+
+		v[5] = uint64(n) << 56
+		rem := p[off:]
+		switch len(rem) {
+		case 7:
+			v[5] |= uint64(rem[6]) << 48
+			fallthrough
+		case 6:
+			v[5] |= uint64(rem[5]) << 40
+			fallthrough
+		case 5:
+			v[5] |= uint64(rem[4]) << 32
+			fallthrough
+		case 4:
+			v[5] |= uint64(rem[3]) << 24
+			fallthrough
+		case 3:
+			v[5] |= uint64(rem[2]) << 16
+			fallthrough
+		case 2:
+			v[5] |= uint64(rem[1]) << 8
+			fallthrough
+		case 1:
+			v[5] |= uint64(rem[0])
+		}
+		v[3] ^= v[5]
+		sipRound6(&v)
+		sipRound6(&v)
+		v[0] ^= v[5]
+
+		v[2] ^= 0xee
+		sipRound6(&v)
+		sipRound6(&v)
+		sipRound6(&v)
+		sipRound6(&v)
+		lo := (v[0] ^ v[1]) ^ (v[2] ^ v[3])
+
+		v[1] ^= 0xdd
+		sipRound6(&v)
+		sipRound6(&v)
+		sipRound6(&v)
+		sipRound6(&v)
+		hi := (v[0] ^ v[1]) ^ (v[2] ^ v[3])
+
+		binary.LittleEndian.PutUint64(dst[lane][:8], lo)
+		binary.LittleEndian.PutUint64(dst[lane][8:16], hi)
+	}
+	k0, k1 = 0, 0
+	clear(v[:])
+	runtime.KeepAlive(&v)
+	runtime.KeepAlive(&k0)
+	runtime.KeepAlive(&k1)
+	wipe.CallStack512B()
+}

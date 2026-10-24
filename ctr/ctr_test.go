@@ -312,3 +312,47 @@ func TestDRBGArmsInstalled(t *testing.T) {
 		t.Fatal("aesitb128 reached the ctr constructor")
 	}
 }
+
+func TestChaCha20LastBlockAndOverflow(t *testing.T) {
+	key := make([]byte, 32)
+	nonce := make([]byte, 12)
+	for i := range key {
+		key[i] = byte(0x31 + i)
+	}
+	for i := range nonce {
+		nonce[i] = byte(0x91 + i)
+	}
+	const lastBlockOffset = ((1 << 32) - 1) * 64
+	ks1, err := NewResettableAt(hashes.CipherChaCha20, key, nonce, lastBlockOffset)
+	if err != nil {
+		t.Fatalf("NewResettableAt: %v", err)
+	}
+	ks2, err := NewAt(hashes.CipherChaCha20, key, nonce, lastBlockOffset)
+	if err != nil {
+		t.Fatalf("NewAt: %v", err)
+	}
+	src := make([]byte, 64)
+	for i := range src {
+		src[i] = byte(i + 1)
+	}
+	dst1 := make([]byte, 64)
+	dst2 := make([]byte, 64)
+	ks1.XORKeyStream(dst1, src)
+	ks2.XORKeyStream(dst2, src)
+	if !bytes.Equal(dst1, dst2) {
+		t.Fatal("last block output mismatch between NewResettableAt and NewAt")
+	}
+	panicked := false
+	func() {
+		defer func() {
+			if recover() != nil {
+				panicked = true
+			}
+		}()
+		var extra [1]byte
+		ks1.XORKeyStream(extra[:], extra[:])
+	}()
+	if !panicked {
+		t.Fatal("expected panic on XORKeyStream past block 2^32 - 1")
+	}
+}

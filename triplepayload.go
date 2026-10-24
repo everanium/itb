@@ -4,9 +4,123 @@ import (
 	"encoding/binary"
 	"fmt"
 	"sync"
+	"unsafe"
 
 	"github.com/everanium/itb/internal/drbg"
+	"github.com/everanium/itb/internal/triplewire"
 )
+
+func init() {
+	triplewire.EncryptNoMACInto = func(width int, cfg any, dst []byte, lead int, s0, s1, s2, s3, s4, s5, s6, s7 any, data []byte) ([]byte, error) {
+		var c *Config
+		if cfg != nil {
+			c = cfg.(*Config)
+		}
+		switch width {
+		case 128:
+			return encryptMsg3x128CfgInto(c, dst, lead,
+				s0.(*Seed128), s1.(*Seed128), s2.(*Seed128), s3.(*Seed128),
+				s4.(*Seed128), s5.(*Seed128), s6.(*Seed128), s7.(*Seed128),
+				data)
+		case 256:
+			return encryptMsg3x256CfgInto(c, dst, lead,
+				s0.(*Seed256), s1.(*Seed256), s2.(*Seed256), s3.(*Seed256),
+				s4.(*Seed256), s5.(*Seed256), s6.(*Seed256), s7.(*Seed256),
+				data)
+		case 512:
+			return encryptMsg3x512CfgInto(c, dst, lead,
+				s0.(*Seed512), s1.(*Seed512), s2.(*Seed512), s3.(*Seed512),
+				s4.(*Seed512), s5.(*Seed512), s6.(*Seed512), s7.(*Seed512),
+				data)
+		}
+		return nil, fmt.Errorf("itb: unsupported width %d", width)
+	}
+	triplewire.DecryptNoMACInto = func(width int, cfg any, dst []byte, s0, s1, s2, s3, s4, s5, s6, s7 any, fileData []byte) ([]byte, error) {
+		var c *Config
+		if cfg != nil {
+			c = cfg.(*Config)
+		}
+		switch width {
+		case 128:
+			return decryptMsg3x128CfgInto(c, dst,
+				s0.(*Seed128), s1.(*Seed128), s2.(*Seed128), s3.(*Seed128),
+				s4.(*Seed128), s5.(*Seed128), s6.(*Seed128), s7.(*Seed128),
+				fileData)
+		case 256:
+			return decryptMsg3x256CfgInto(c, dst,
+				s0.(*Seed256), s1.(*Seed256), s2.(*Seed256), s3.(*Seed256),
+				s4.(*Seed256), s5.(*Seed256), s6.(*Seed256), s7.(*Seed256),
+				fileData)
+		case 512:
+			return decryptMsg3x512CfgInto(c, dst,
+				s0.(*Seed512), s1.(*Seed512), s2.(*Seed512), s3.(*Seed512),
+				s4.(*Seed512), s5.(*Seed512), s6.(*Seed512), s7.(*Seed512),
+				fileData)
+		}
+		return nil, fmt.Errorf("itb: unsupported width %d", width)
+	}
+	triplewire.EncryptAuthInto = func(width int, cfg any, dst []byte, lead int, s0, s1, s2, s3, s4, s5, s6, s7 any, data []byte, mac func([]byte) []byte) ([]byte, error) {
+		var c *Config
+		if cfg != nil {
+			c = cfg.(*Config)
+		}
+		switch width {
+		case 128:
+			return encryptAuthenticated3x128CfgInto(c, dst, lead,
+				s0.(*Seed128), s1.(*Seed128), s2.(*Seed128), s3.(*Seed128),
+				s4.(*Seed128), s5.(*Seed128), s6.(*Seed128), s7.(*Seed128),
+				data, MACFunc(mac))
+		case 256:
+			return encryptAuthenticated3x256CfgInto(c, dst, lead,
+				s0.(*Seed256), s1.(*Seed256), s2.(*Seed256), s3.(*Seed256),
+				s4.(*Seed256), s5.(*Seed256), s6.(*Seed256), s7.(*Seed256),
+				data, MACFunc(mac))
+		case 512:
+			return encryptAuthenticated3x512CfgInto(c, dst, lead,
+				s0.(*Seed512), s1.(*Seed512), s2.(*Seed512), s3.(*Seed512),
+				s4.(*Seed512), s5.(*Seed512), s6.(*Seed512), s7.(*Seed512),
+				data, MACFunc(mac))
+		}
+		return nil, fmt.Errorf("itb: unsupported width %d", width)
+	}
+	triplewire.DecryptAuthInto = func(width int, cfg any, dst []byte, s0, s1, s2, s3, s4, s5, s6, s7 any, fileData []byte, mac func([]byte) []byte) ([]byte, error) {
+		var c *Config
+		if cfg != nil {
+			c = cfg.(*Config)
+		}
+		switch width {
+		case 128:
+			return decryptAuthenticated3x128CfgInto(c, dst,
+				s0.(*Seed128), s1.(*Seed128), s2.(*Seed128), s3.(*Seed128),
+				s4.(*Seed128), s5.(*Seed128), s6.(*Seed128), s7.(*Seed128),
+				fileData, MACFunc(mac))
+		case 256:
+			return decryptAuthenticated3x256CfgInto(c, dst,
+				s0.(*Seed256), s1.(*Seed256), s2.(*Seed256), s3.(*Seed256),
+				s4.(*Seed256), s5.(*Seed256), s6.(*Seed256), s7.(*Seed256),
+				fileData, MACFunc(mac))
+		case 512:
+			return decryptAuthenticated3x512CfgInto(c, dst,
+				s0.(*Seed512), s1.(*Seed512), s2.(*Seed512), s3.(*Seed512),
+				s4.(*Seed512), s5.(*Seed512), s6.(*Seed512), s7.(*Seed512),
+				fileData, MACFunc(mac))
+		}
+		return nil, fmt.Errorf("itb: unsupported width %d", width)
+	}
+}
+
+func slicesOverlap(a, b []byte) bool {
+	if cap(a) == 0 || len(b) == 0 {
+		return false
+	}
+	aFull := a[:cap(a)]
+	bFull := b[:len(b)]
+	aStart := uintptr(unsafe.Pointer(&aFull[0]))
+	aEnd := aStart + uintptr(len(aFull))
+	bStart := uintptr(unsafe.Pointer(&bFull[0]))
+	bEnd := bStart + uintptr(len(bFull))
+	return aStart < bEnd && bStart < aEnd
+}
 
 // Shared encrypt-side stages of the Triple Ouroboros encrypt paths
 // (encrypt3x*Cfg behind Encrypt3x*, and encryptStreamAuthenticated3x*Cfg
@@ -133,6 +247,10 @@ func (tp *triplePayloads) release() {
 // stage (see interlock_nonce.go), so each lane — and each third's COBS
 // bound — carries its own fragment.
 func buildTripleWire3(cfg *Config, data []byte, bp lockBatchPRF48, reserve int, fillReserve bool, lead int, nonce, ilNonce []byte, sizeFn func(cobsLens [3]int) (width, height int)) (tp *triplePayloads, out, container []byte, width, height int, err error) {
+	return buildTripleWire3Into(cfg, nil, data, bp, reserve, fillReserve, lead, nonce, ilNonce, sizeFn)
+}
+
+func buildTripleWire3Into(cfg *Config, dst, data []byte, bp lockBatchPRF48, reserve int, fillReserve bool, lead int, nonce, ilNonce []byte, sizeFn func(cobsLens [3]int) (width, height int)) (tp *triplePayloads, out, container []byte, width, height int, err error) {
 	defer bp.wipe()
 	laneLen := tripleLaneLen(len(data))
 	lens, offs := nonceSplit(len(ilNonce))
@@ -160,12 +278,18 @@ func buildTripleWire3(cfg *Config, data []byte, bp lockBatchPRF48, reserve int, 
 		fillName = cfg.DRBG
 	}
 
-	// Allocate the wire and write the header on the calling goroutine.
-	// The wire buffer has no data dependency on interlock or COBS, so
-	// the three background container-fill goroutines can enter
-	// drbg.FillWith immediately after this point.
+	// Allocate (or reuse dst for) the wire and write the header on the
+	// calling goroutine. The wire buffer has no data dependency on
+	// interlock or COBS, so the three background container-fill
+	// goroutines can enter drbg.FillWith immediately after this point.
 	hdr := headerSizeCfg(cfg)
-	out = make([]byte, lead+hdr+totalPixels*Channels)
+	totalNeed := lead + hdr + totalPixels*Channels
+	if cap(dst) >= totalNeed && !slicesOverlap(dst, data) {
+		out = dst[:totalNeed]
+		clear(out)
+	} else {
+		out = make([]byte, totalNeed)
+	}
 	header := out[lead : lead+hdr]
 	copy(header, nonce)
 	binary.BigEndian.PutUint16(header[len(nonce):], uint16(width))
@@ -203,12 +327,18 @@ func buildTripleWire3(cfg *Config, data []byte, bp lockBatchPRF48, reserve int, 
 	//
 	// Each lane holds its interlock-nonce fragment followed by the
 	// laneLen bytes the barrier writes. acquireBuffer hands back a
-	// zeroed slice, so the fragment copy is the only write ahead of the
-	// barrier's own sub-slice.
+	// zeroed slice sized to at least caps[2] (the widest third) so the
+	// six buffers cycled through bufferPool (three lanes + three COBS
+	// outputs) share an identical capacity floor and never trigger pool
+	// regrow allocations.
 	var lanePtrs [3]*[]byte
 	var lanes [3][]byte
 	for i := range lanes {
-		lanePtrs[i], lanes[i] = acquireBuffer(lens[i] + laneLen)
+		laneNeed := lens[i] + laneLen
+		allocCap := max(laneNeed, caps[2])
+		var laneBuf []byte
+		lanePtrs[i], laneBuf = acquireBuffer(allocCap)
+		lanes[i] = laneBuf[:laneNeed]
 		copy(lanes[i][:lens[i]], ilNonce[offs[i]:offs[i]+lens[i]])
 	}
 	releaseLanes := func() {
@@ -220,8 +350,10 @@ func buildTripleWire3(cfg *Config, data []byte, bp lockBatchPRF48, reserve int, 
 	tp = &triplePayloads{}
 	tp.payloadLen = [3]int{caps[0], caps[1], caps[2] - reserve}
 	for i := range tp.full {
-		tp.ptrs[i], tp.full[i] = acquireBuffer(caps[i])
-		tp.bufs[i] = tp.full[i][:caps[i]]
+		var fullBuf []byte
+		tp.ptrs[i], fullBuf = acquireBuffer(caps[2])
+		tp.full[i] = fullBuf[:caps[i]]
+		tp.bufs[i] = tp.full[i]
 	}
 
 	splitForTriple48LockedInto(cfg, data, bp,
@@ -269,12 +401,14 @@ func buildTripleWire3(cfg *Config, data []byte, bp lockBatchPRF48, reserve int, 
 	for _, e := range wireErr {
 		if e != nil {
 			tp.release()
+			secureWipe(out)
 			return nil, nil, nil, 0, 0, fmt.Errorf("itb: crypto/rand: %w", e)
 		}
 	}
 	for _, e := range laneErr {
 		if e != nil {
 			tp.release()
+			secureWipe(out)
 			return nil, nil, nil, 0, 0, e
 		}
 	}

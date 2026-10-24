@@ -72,6 +72,7 @@ var (
 
 	// ErrEmptyInput is returned by every [Pipeline] cipher entry point
 	// ([Pipeline.EncryptMessage] / [Pipeline.DecryptMessage] /
+	// [Pipeline.EncryptMessageTo] / [Pipeline.DecryptMessageTo] /
 	// [Pipeline.EncryptStream] / [Pipeline.DecryptStream] /
 	// [Pipeline.EncryptStreamBytes] / [Pipeline.DecryptStreamBytes])
 	// when the plaintext or wire input is empty (nil or zero-length),
@@ -241,7 +242,9 @@ type Opts struct {
 // Concurrency posture: post-[Init] and post-[Load], all Pipeline
 // state relevant to encryption is read-only. Concurrent
 // [Pipeline.EncryptStream] / [Pipeline.DecryptStream] /
-// [Pipeline.EncryptMessage] / [Pipeline.DecryptMessage] calls on the
+// [Pipeline.EncryptStreamBytes] / [Pipeline.DecryptStreamBytes] /
+// [Pipeline.EncryptMessage] / [Pipeline.DecryptMessage] /
+// [Pipeline.EncryptMessageTo] / [Pipeline.DecryptMessageTo] calls on the
 // same Pipeline are safe by construction; per-call state lives in
 // caller-provided buffers and per-call scratch. [Pipeline.Rekey] and
 // [Pipeline.MaxWorkers] do mutate Pipeline state and MUST be

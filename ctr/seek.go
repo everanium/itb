@@ -74,12 +74,9 @@ func NewAt(name string, key, nonce []byte, byteOffset int) (Keystream, error) {
 	if byteOffset == 0 {
 		return New(name, key, nonce)
 	}
-	bs, err := streamBlockSize(name)
-	if err != nil {
+	if _, err := streamBlockSize(name); err != nil {
 		return nil, err
 	}
-	blockOff := uint64(byteOffset / bs)
-	intra := byteOffset % bs
 
 	// AES-CTR cannot be re-seeked after construction; build it with an
 	// offset IV instead via newAESResettableAt so the returned Keystream
@@ -117,27 +114,13 @@ func NewAt(name string, key, nonce []byte, byteOffset int) (Keystream, error) {
 			return nil, err
 		}
 		return c, nil
-	case *chaCha20CTR:
-		// ChaCha20's block counter is a uint32 (RFC 8439); a silent
-		// uint32(blockOff) truncation past 2^32 would reuse keystream
-		// bytes, weakening the wrapper's outer-layer format-deniability
-		// past ~256 GiB of stream under a single (key, nonce). Inner
-		// ITB confidentiality is unaffected by such reuse — the outer
-		// cipher is a format-deniability whitener, not the layer that
-		// carries confidentiality — but the caller must be told
-		// explicitly rather than getting a silently-corrupt keystream.
-		// For streams that need to exceed this, choose an outer cipher
-		// with a wider counter (AES-128-CTR uses a 128-bit big-endian
-		// counter and is practically unlimited for random nonces).
-		const chacha20MaxBlock = uint64(1) << 32
-		if blockOff >= chacha20MaxBlock {
+	case *chaCha20Resettable:
+		if err := c.ResetCounter(byteOffset); err != nil {
 			_ = c.Close()
-			return nil, fmt.Errorf("ctr: chacha20 counter overflow — byteOffset %d requires block index %d ≥ 2^32 (~256 GiB per (key, nonce)); outer-layer format deniability weakens past this seek point, inner ITB confidentiality unaffected. Choose AES-128-CTR outer cipher for streams above this cap", byteOffset, blockOff)
+			return nil, err
 		}
-		c.c.SetCounter(uint32(blockOff))
+		return c, nil
 	default:
 		return nil, fmt.Errorf("ctr: %s keystream is not seekable", name)
 	}
-	discard(ks, intra)
-	return ks, nil
 }

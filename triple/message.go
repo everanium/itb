@@ -2,12 +2,18 @@ package triple
 
 import (
 	"bytes"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
+	"math"
+	"sync"
+	"unsafe"
 
 	"github.com/everanium/itb"
+	"github.com/everanium/itb/internal/triplewire"
 	"github.com/everanium/itb/internal/wipe"
+	"github.com/everanium/itb/macs"
 	"github.com/everanium/itb/wrapper"
 )
 
@@ -42,6 +48,106 @@ var ErrProfileNoCipher = errors.New("triple: profile does not expose any cipher 
 // the itb-root cap so the message surface has a single, self-documenting
 // gate for the fast path.
 const messageFastPathMaxBytes = 64 << 20
+
+// parallaxFrameHeaderBytes is the per-frame header overhead added by
+// the parallax layer: 4-byte little-endian plaintext length + 16-byte
+// per-chunk nonce.
+const parallaxFrameHeaderBytes = 20
+
+const maxCachedTripleScratch = 8
+
+// tripleScratchPool recycles transient byte buffers used by the
+// single-chunk parallax frame assembly and in-place wrapper unwrapping.
+// Every checkout is wiped via [wipe.Bytes] before return to the pool.
+var (
+	tripleScratchPool  sync.Pool
+	tripleScratchMu    sync.Mutex
+	tripleScratchCache []*[]byte
+)
+
+func acquireTripleScratch(n int) (*[]byte, []byte) {
+	tripleScratchMu.Lock()
+	if m := len(tripleScratchCache); m > 0 {
+		for i := m - 1; i >= 0; i-- {
+			bp := tripleScratchCache[i]
+			if cap(*bp) >= n {
+				tripleScratchCache[i] = tripleScratchCache[m-1]
+				tripleScratchCache[m-1] = nil
+				tripleScratchCache = tripleScratchCache[:m-1]
+				tripleScratchMu.Unlock()
+				return bp, (*bp)[:n]
+			}
+		}
+		bp := tripleScratchCache[m-1]
+		tripleScratchCache[m-1] = nil
+		tripleScratchCache = tripleScratchCache[:m-1]
+		tripleScratchMu.Unlock()
+		b := make([]byte, n)
+		*bp = b
+		return bp, b
+	}
+	tripleScratchMu.Unlock()
+
+	if v := tripleScratchPool.Get(); v != nil {
+		bp := v.(*[]byte)
+		if cap(*bp) >= n {
+			b := (*bp)[:n]
+			return bp, b
+		}
+		b := make([]byte, n)
+		*bp = b
+		return bp, b
+	}
+	b := make([]byte, n)
+	return &b, b
+}
+
+func releaseTripleScratch(bp *[]byte, b []byte) {
+	if bp == nil {
+		return
+	}
+	wipe.Bytes(b)
+	*bp = b[:cap(b)]
+	tripleScratchMu.Lock()
+	if len(tripleScratchCache) < maxCachedTripleScratch {
+		tripleScratchCache = append(tripleScratchCache, bp)
+		tripleScratchMu.Unlock()
+		return
+	}
+	tripleScratchMu.Unlock()
+	tripleScratchPool.Put(bp)
+}
+
+// canEncryptDirect reports whether a plaintext of length plaintextLen
+// can be encrypted as a single ITB chunk via the direct whole-buffer
+// path. When parallax is disengaged, any plaintext up to
+// [messageFastPathMaxBytes] qualifies. When parallax is engaged, the
+// single-frame parallax output (plaintextLen + 20 bytes) must fit
+// within a single resolved chunkSize as well as [messageFastPathMaxBytes]
+// so the resulting single-chunk wire is identical to the streaming path.
+func (p *Pipeline) canEncryptDirect(plaintextLen int) bool {
+	if !p.resolved.Parallax {
+		return plaintextLen <= messageFastPathMaxBytes
+	}
+	cs := p.resolved.ChunkSize
+	if cs <= 0 {
+		cs = itb.DefaultChunkSize
+	}
+	framedLen := plaintextLen + parallaxFrameHeaderBytes
+	return framedLen <= cs && framedLen <= messageFastPathMaxBytes
+}
+
+func slicesOverlap(a, b []byte) bool {
+	if cap(a) == 0 || len(b) == 0 {
+		return false
+	}
+	aFull := a[:cap(a)]
+	aStart := uintptr(unsafe.Pointer(&aFull[0]))
+	aEnd := aStart + uintptr(len(aFull))
+	bStart := uintptr(unsafe.Pointer(&b[0]))
+	bEnd := bStart + uintptr(len(b))
+	return aStart < bEnd && bStart < aEnd
+}
 
 // EncryptMessage encrypts a single message and returns its wire bytes.
 //
@@ -89,6 +195,16 @@ const messageFastPathMaxBytes = 64 << 20
 // [ErrProfileNoCipher] when the resolved profile mode is blob-only;
 // [ErrEmptyInput] on empty plaintext.
 func (p *Pipeline) EncryptMessage(plaintext []byte) ([]byte, error) {
+	return p.EncryptMessageTo(nil, plaintext)
+}
+
+// EncryptMessageTo encrypts plaintext and writes the resulting wire
+// bytes into dst[:0], returning the populated slice. When cap(dst) is
+// sufficient to hold the wire envelope, no output slice is allocated on
+// the heap; otherwise a fresh slice is allocated and returned. On any
+// cipher failure after output staging begins, any candidate bytes
+// written into dst are wiped before return.
+func (p *Pipeline) EncryptMessageTo(dst, plaintext []byte) ([]byte, error) {
 	if p.isClosed() {
 		return nil, ErrClosed
 	}
@@ -98,10 +214,13 @@ func (p *Pipeline) EncryptMessage(plaintext []byte) ([]byte, error) {
 	if len(plaintext) == 0 {
 		return nil, ErrEmptyInput
 	}
-	if !p.resolved.Parallax && len(plaintext) <= messageFastPathMaxBytes {
-		return p.encryptMessageDirect(plaintext)
+	if p.canEncryptDirect(len(plaintext)) {
+		return p.encryptMessageDirectTo(dst, plaintext)
 	}
-	return p.encryptMessageStreaming(plaintext)
+	if p.resolved.Wrapper {
+		return p.encryptStreamBytesTailWrapTo(dst, plaintext)
+	}
+	return p.encryptMessageStreamingTo(dst, plaintext)
 }
 
 // DecryptMessage is the receive-side counterpart of
@@ -138,6 +257,16 @@ func (p *Pipeline) EncryptMessage(plaintext []byte) ([]byte, error) {
 // [ErrProfileNoCipher] when the resolved profile mode is blob-only;
 // [ErrEmptyInput] on empty wire.
 func (p *Pipeline) DecryptMessage(wire []byte) ([]byte, error) {
+	return p.DecryptMessageTo(nil, wire)
+}
+
+// DecryptMessageTo decrypts wire and writes the recovered plaintext
+// into dst[:0], returning the populated slice. When cap(dst) is
+// sufficient, no output slice is allocated on the heap; otherwise a
+// fresh slice is allocated and returned. On any cipher failure after
+// output staging begins, any candidate bytes written into dst are wiped
+// before return.
+func (p *Pipeline) DecryptMessageTo(dst, wire []byte) ([]byte, error) {
 	if p.isClosed() {
 		return nil, ErrClosed
 	}
@@ -147,67 +276,103 @@ func (p *Pipeline) DecryptMessage(wire []byte) ([]byte, error) {
 	if len(wire) == 0 {
 		return nil, ErrEmptyInput
 	}
-	if !p.resolved.Parallax {
-		plain, ok, err := p.decryptMessageDirect(wire)
-		if ok {
-			return plain, err
-		}
+	if p.resolved.Wrapper {
+		return p.decryptStreamBytesTailUnwrapTo(dst, wire)
 	}
-	return p.decryptMessageStreaming(wire)
+	plain, ok, err := p.decryptInnerSingleChunkTo(dst, wire)
+	if ok {
+		return plain, err
+	}
+	return p.decryptMessageStreamingTo(dst, wire)
 }
 
 // encryptMessageDirect implements the direct whole-buffer encrypt
-// path. Precondition: parallax layer disengaged and len(plaintext)
-// within [messageFastPathMaxBytes]. Produces the same wire envelope as
-// the streaming fallback when the plaintext fits in a single chunk.
+// path. Precondition: [Pipeline.canEncryptDirect] holds for
+// len(plaintext). Produces the same wire envelope as the streaming
+// fallback when the payload fits in a single ITB chunk.
 func (p *Pipeline) encryptMessageDirect(plaintext []byte) ([]byte, error) {
+	return p.encryptMessageDirectTo(nil, plaintext)
+}
+
+func (p *Pipeline) encryptMessageDirectTo(dst, plaintext []byte) ([]byte, error) {
 	// Public entry points reject empty input with ErrEmptyInput
 	// upfront; this branch is a defensive guard if an internal caller
 	// passes an empty slice on the No MAC arm.
-	if len(plaintext) == 0 && p.macFunc == nil {
+	if len(plaintext) == 0 && p.macFunc == nil && !p.resolved.Parallax {
 		if p.resolved.Wrapper {
 			nonce, err := wrapper.WrapInPlace(p.wrapperCipher, p.wrapperKey, nil)
 			if err != nil {
 				return nil, fmt.Errorf("triple: wrapper.WrapInPlace: %w", err)
 			}
+			if cap(dst) >= len(nonce) {
+				out := dst[:len(nonce)]
+				copy(out, nonce)
+				wipe.Bytes(nonce)
+				return out, nil
+			}
 			return nonce, nil
+		}
+		if cap(dst) > 0 {
+			return dst[:0], nil
 		}
 		return []byte{}, nil
 	}
 
-	// The itb-root Single Message entries emit the complete inner wire
-	// — streamID (or the No MAC dummy of the same length) followed by
-	// the one chunk — so no assembly happens here.
-	var inner []byte
-	var err error
+	innerPlain := plaintext
+	if p.resolved.Parallax {
+		frameLen := parallaxFrameHeaderBytes + len(plaintext)
+		framePtr, frame := acquireTripleScratch(frameLen)
+		defer releaseTripleScratch(framePtr, frame)
+		nonce, err := p.parallaxSched.EncryptInto(frame[parallaxFrameHeaderBytes:], plaintext, p.parallaxCS)
+		if err != nil {
+			return nil, fmt.Errorf("triple: parallax.EncryptInto: %w", err)
+		}
+		binary.LittleEndian.PutUint32(frame[:4], uint32(len(plaintext)))
+		copy(frame[4:parallaxFrameHeaderBytes], nonce)
+		innerPlain = frame
+	}
+
+	nlen := 0
+	if p.resolved.Wrapper {
+		var err error
+		nlen, err = wrapper.NonceSize(p.wrapperCipher)
+		if err != nil {
+			return nil, fmt.Errorf("triple: wrapper.NonceSize: %w", err)
+		}
+	}
+	lead := nlen + streamIDPrefixLen
+
+	// The itb-root Single Message *Into entries reserve lead bytes
+	// ahead of the chunk and write the 32-byte streamID (or No MAC
+	// dummy) into out[lead-32 : lead]. When Wrapper is engaged, the
+	// leading nlen bytes hold the wrapper nonce slot and WrapInPlace
+	// seals out[nlen:] in place without a second allocation or copy.
+	var (
+		out []byte
+		err error
+	)
 	if p.macFunc != nil {
-		inner, err = encryptMessageAuth(p, plaintext)
+		out, err = encryptMessageAuthInto(p, dst, lead, innerPlain)
 	} else {
-		inner, err = encryptMessageNoMAC(p, plaintext)
+		out, err = encryptMessageNoMACInto(p, dst, lead, innerPlain)
 	}
 	if err != nil {
 		return nil, err
 	}
-	if !p.resolved.Wrapper {
-		return inner, nil
+	if p.resolved.Wrapper {
+		nonce, werr := wrapper.WrapInPlace(p.wrapperCipher, p.wrapperKey, out[nlen:])
+		if werr != nil {
+			wipe.Bytes(out)
+			return nil, fmt.Errorf("triple: wrapper.WrapInPlace: %w", werr)
+		}
+		copy(out[:nlen], nonce)
 	}
-
-	// The buffer is sized to the final wire so the wrapper wrap
-	// operates in place on the body without a second allocation.
-	defer wipe.Bytes(inner)
-	nlen, err := wrapper.NonceSize(p.wrapperCipher)
-	if err != nil {
-		return nil, fmt.Errorf("triple: wrapper.NonceSize: %w", err)
-	}
-	out := make([]byte, nlen+len(inner))
-	body := out[nlen:]
-	copy(body, inner)
-	nonce, werr := wrapper.WrapInPlace(p.wrapperCipher, p.wrapperKey, body)
-	if werr != nil {
+	if cap(dst) >= len(out) && len(out) > 0 && &out[0] != &dst[:1][0] {
+		res := dst[:len(out)]
+		copy(res, out)
 		wipe.Bytes(out)
-		return nil, fmt.Errorf("triple: wrapper.WrapInPlace: %w", werr)
+		return res, nil
 	}
-	copy(out[:nlen], nonce)
 	return out, nil
 }
 
@@ -216,15 +381,22 @@ func (p *Pipeline) encryptMessageDirect(plaintext []byte) ([]byte, error) {
 // by this path (successfully decoded or terminally rejected). Returns
 // (nil, false, nil) when the wire does not parse as a single-chunk
 // envelope, signalling the caller to fall through to the streaming
-// fallback. Precondition: parallax layer disengaged.
+// fallback.
 func (p *Pipeline) decryptMessageDirect(wire []byte) ([]byte, bool, error) {
+	return p.decryptMessageDirectTo(nil, wire)
+}
+
+func (p *Pipeline) decryptMessageDirectTo(dst, wire []byte) ([]byte, bool, error) {
 	inner := wire
 	if p.resolved.Wrapper {
 		// Public entry points reject empty wire with ErrEmptyInput
 		// upfront; this branch is a defensive guard if an internal
 		// caller passes an empty slice under wrapper-on.
 		if len(wire) == 0 {
-			if p.macFunc == nil {
+			if p.macFunc == nil && !p.resolved.Parallax {
+				if cap(dst) > 0 {
+					return dst[:0], true, nil
+				}
 				return []byte{}, true, nil
 			}
 			return nil, false, nil
@@ -236,8 +408,8 @@ func (p *Pipeline) decryptMessageDirect(wire []byte) ([]byte, bool, error) {
 		if len(wire) < nlen {
 			return nil, false, nil
 		}
-		buf := make([]byte, len(wire))
-		defer wipe.Bytes(buf)
+		bufPtr, buf := acquireTripleScratch(len(wire))
+		defer releaseTripleScratch(bufPtr, buf)
 		copy(buf, wire)
 		unwrapped, uerr := wrapper.UnwrapInPlace(p.wrapperCipher, p.wrapperKey, buf)
 		if uerr != nil {
@@ -245,40 +417,7 @@ func (p *Pipeline) decryptMessageDirect(wire []byte) ([]byte, bool, error) {
 		}
 		inner = unwrapped
 	}
-
-	if len(inner) == 0 {
-		if p.macFunc == nil {
-			return []byte{}, true, nil
-		}
-		return nil, false, nil
-	}
-	if len(inner) < streamIDPrefixLen {
-		return nil, false, nil
-	}
-
-	// Try to parse a single chunk header behind the streamID prefix.
-	// If the header parses AND the announced chunk length equals the
-	// entire remaining body, the wire carries exactly one chunk and
-	// the fast path applies. Multi-chunk wires (produced by
-	// EncryptStream on plaintext larger than chunkSize) fail this
-	// equality and route to the streaming fallback.
-	body := inner[streamIDPrefixLen:]
-	chunkLen, perr := itb.ParseChunkLenCfg(p.cfg, body)
-	if perr != nil || chunkLen != len(body) {
-		return nil, false, nil
-	}
-
-	// The itb-root Single Message entries consume the whole inner wire,
-	// prefix included. On the MAC arm the root entry already rejects a
-	// chunk whose final flag is not set with [itb.ErrStreamTruncated] —
-	// the same diagnostic the streaming fallback produces for a
-	// transcript that ends before its terminator.
-	if p.macFunc != nil {
-		plain, derr := decryptMessageAuth(p, inner)
-		return plain, true, derr
-	}
-	plain, derr := decryptMessageNoMAC(p, inner)
-	return plain, true, derr
+	return p.decryptInnerSingleChunkTo(dst, inner)
 }
 
 // encryptMessageNoMAC width-dispatches to the No MAC Single Message
@@ -286,26 +425,15 @@ func (p *Pipeline) decryptMessageDirect(wire []byte) ([]byte, bool, error) {
 // width / barrier fill / max-workers overrides land on the underlying
 // call site.
 func encryptMessageNoMAC(p *Pipeline, plaintext []byte) ([]byte, error) {
+	return encryptMessageNoMACInto(p, nil, streamIDPrefixLen, plaintext)
+}
+
+func encryptMessageNoMACInto(p *Pipeline, dst []byte, lead int, plaintext []byte) ([]byte, error) {
 	switch p.width {
-	case 128:
-		return itb.Encrypt3x128Cfg(p.cfg,
-			p.seeds[0].(*itb.Seed128), p.seeds[1].(*itb.Seed128),
-			p.seeds[2].(*itb.Seed128), p.seeds[3].(*itb.Seed128), p.seeds[4].(*itb.Seed128),
-			p.seeds[5].(*itb.Seed128), p.seeds[6].(*itb.Seed128), p.seeds[7].(*itb.Seed128),
-			plaintext,
-		)
-	case 256:
-		return itb.Encrypt3x256Cfg(p.cfg,
-			p.seeds[0].(*itb.Seed256), p.seeds[1].(*itb.Seed256),
-			p.seeds[2].(*itb.Seed256), p.seeds[3].(*itb.Seed256), p.seeds[4].(*itb.Seed256),
-			p.seeds[5].(*itb.Seed256), p.seeds[6].(*itb.Seed256), p.seeds[7].(*itb.Seed256),
-			plaintext,
-		)
-	case 512:
-		return itb.Encrypt3x512Cfg(p.cfg,
-			p.seeds[0].(*itb.Seed512), p.seeds[1].(*itb.Seed512),
-			p.seeds[2].(*itb.Seed512), p.seeds[3].(*itb.Seed512), p.seeds[4].(*itb.Seed512),
-			p.seeds[5].(*itb.Seed512), p.seeds[6].(*itb.Seed512), p.seeds[7].(*itb.Seed512),
+	case 128, 256, 512:
+		return triplewire.EncryptNoMACInto(p.width, p.cfg, dst, lead,
+			p.seeds[0], p.seeds[1], p.seeds[2], p.seeds[3],
+			p.seeds[4], p.seeds[5], p.seeds[6], p.seeds[7],
 			plaintext,
 		)
 	}
@@ -318,26 +446,15 @@ func encryptMessageNoMAC(p *Pipeline, plaintext []byte) ([]byte, error) {
 // per-chunk binding the streaming fallback emits when the plaintext
 // fits in one chunk.
 func encryptMessageAuth(p *Pipeline, plaintext []byte) ([]byte, error) {
+	return encryptMessageAuthInto(p, nil, streamIDPrefixLen, plaintext)
+}
+
+func encryptMessageAuthInto(p *Pipeline, dst []byte, lead int, plaintext []byte) ([]byte, error) {
 	switch p.width {
-	case 128:
-		return itb.EncryptAuthenticated3x128Cfg(p.cfg,
-			p.seeds[0].(*itb.Seed128), p.seeds[1].(*itb.Seed128),
-			p.seeds[2].(*itb.Seed128), p.seeds[3].(*itb.Seed128), p.seeds[4].(*itb.Seed128),
-			p.seeds[5].(*itb.Seed128), p.seeds[6].(*itb.Seed128), p.seeds[7].(*itb.Seed128),
-			plaintext, p.macFunc,
-		)
-	case 256:
-		return itb.EncryptAuthenticated3x256Cfg(p.cfg,
-			p.seeds[0].(*itb.Seed256), p.seeds[1].(*itb.Seed256),
-			p.seeds[2].(*itb.Seed256), p.seeds[3].(*itb.Seed256), p.seeds[4].(*itb.Seed256),
-			p.seeds[5].(*itb.Seed256), p.seeds[6].(*itb.Seed256), p.seeds[7].(*itb.Seed256),
-			plaintext, p.macFunc,
-		)
-	case 512:
-		return itb.EncryptAuthenticated3x512Cfg(p.cfg,
-			p.seeds[0].(*itb.Seed512), p.seeds[1].(*itb.Seed512),
-			p.seeds[2].(*itb.Seed512), p.seeds[3].(*itb.Seed512), p.seeds[4].(*itb.Seed512),
-			p.seeds[5].(*itb.Seed512), p.seeds[6].(*itb.Seed512), p.seeds[7].(*itb.Seed512),
+	case 128, 256, 512:
+		return triplewire.EncryptAuthInto(p.width, p.cfg, dst, lead,
+			p.seeds[0], p.seeds[1], p.seeds[2], p.seeds[3],
+			p.seeds[4], p.seeds[5], p.seeds[6], p.seeds[7],
 			plaintext, p.macFunc,
 		)
 	}
@@ -348,26 +465,15 @@ func encryptMessageAuth(p *Pipeline, plaintext []byte) ([]byte, error) {
 // decrypt entry. Mirror image of [encryptMessageNoMAC]; inner is the
 // whole prefix-plus-chunk wire.
 func decryptMessageNoMAC(p *Pipeline, inner []byte) ([]byte, error) {
+	return decryptMessageNoMACInto(p, nil, inner)
+}
+
+func decryptMessageNoMACInto(p *Pipeline, dst, inner []byte) ([]byte, error) {
 	switch p.width {
-	case 128:
-		return itb.Decrypt3x128Cfg(p.cfg,
-			p.seeds[0].(*itb.Seed128), p.seeds[1].(*itb.Seed128),
-			p.seeds[2].(*itb.Seed128), p.seeds[3].(*itb.Seed128), p.seeds[4].(*itb.Seed128),
-			p.seeds[5].(*itb.Seed128), p.seeds[6].(*itb.Seed128), p.seeds[7].(*itb.Seed128),
-			inner,
-		)
-	case 256:
-		return itb.Decrypt3x256Cfg(p.cfg,
-			p.seeds[0].(*itb.Seed256), p.seeds[1].(*itb.Seed256),
-			p.seeds[2].(*itb.Seed256), p.seeds[3].(*itb.Seed256), p.seeds[4].(*itb.Seed256),
-			p.seeds[5].(*itb.Seed256), p.seeds[6].(*itb.Seed256), p.seeds[7].(*itb.Seed256),
-			inner,
-		)
-	case 512:
-		return itb.Decrypt3x512Cfg(p.cfg,
-			p.seeds[0].(*itb.Seed512), p.seeds[1].(*itb.Seed512),
-			p.seeds[2].(*itb.Seed512), p.seeds[3].(*itb.Seed512), p.seeds[4].(*itb.Seed512),
-			p.seeds[5].(*itb.Seed512), p.seeds[6].(*itb.Seed512), p.seeds[7].(*itb.Seed512),
+	case 128, 256, 512:
+		return triplewire.DecryptNoMACInto(p.width, p.cfg, dst,
+			p.seeds[0], p.seeds[1], p.seeds[2], p.seeds[3],
+			p.seeds[4], p.seeds[5], p.seeds[6], p.seeds[7],
 			inner,
 		)
 	}
@@ -380,26 +486,15 @@ func decryptMessageNoMAC(p *Pipeline, inner []byte) ([]byte, error) {
 // cumulative offset 0 and rejects a non-terminating chunk with
 // [itb.ErrStreamTruncated]. inner is the whole prefix-plus-chunk wire.
 func decryptMessageAuth(p *Pipeline, inner []byte) ([]byte, error) {
+	return decryptMessageAuthInto(p, nil, inner)
+}
+
+func decryptMessageAuthInto(p *Pipeline, dst, inner []byte) ([]byte, error) {
 	switch p.width {
-	case 128:
-		return itb.DecryptAuthenticated3x128Cfg(p.cfg,
-			p.seeds[0].(*itb.Seed128), p.seeds[1].(*itb.Seed128),
-			p.seeds[2].(*itb.Seed128), p.seeds[3].(*itb.Seed128), p.seeds[4].(*itb.Seed128),
-			p.seeds[5].(*itb.Seed128), p.seeds[6].(*itb.Seed128), p.seeds[7].(*itb.Seed128),
-			inner, p.macFunc,
-		)
-	case 256:
-		return itb.DecryptAuthenticated3x256Cfg(p.cfg,
-			p.seeds[0].(*itb.Seed256), p.seeds[1].(*itb.Seed256),
-			p.seeds[2].(*itb.Seed256), p.seeds[3].(*itb.Seed256), p.seeds[4].(*itb.Seed256),
-			p.seeds[5].(*itb.Seed256), p.seeds[6].(*itb.Seed256), p.seeds[7].(*itb.Seed256),
-			inner, p.macFunc,
-		)
-	case 512:
-		return itb.DecryptAuthenticated3x512Cfg(p.cfg,
-			p.seeds[0].(*itb.Seed512), p.seeds[1].(*itb.Seed512),
-			p.seeds[2].(*itb.Seed512), p.seeds[3].(*itb.Seed512), p.seeds[4].(*itb.Seed512),
-			p.seeds[5].(*itb.Seed512), p.seeds[6].(*itb.Seed512), p.seeds[7].(*itb.Seed512),
+	case 128, 256, 512:
+		return triplewire.DecryptAuthInto(p.width, p.cfg, dst,
+			p.seeds[0], p.seeds[1], p.seeds[2], p.seeds[3],
+			p.seeds[4], p.seeds[5], p.seeds[6], p.seeds[7],
 			inner, p.macFunc,
 		)
 	}
@@ -414,9 +509,19 @@ func decryptMessageAuth(p *Pipeline, inner []byte) ([]byte, error) {
 // preserved) and oversized plaintexts (larger than
 // [messageFastPathMaxBytes]).
 func (p *Pipeline) encryptMessageStreaming(plaintext []byte) ([]byte, error) {
-	var wire bytes.Buffer
-	wire.Grow(len(plaintext) + len(plaintext)/4 + 65536)
-	innerSrc, innerDst, closeFn, err := buildEncryptChain(p, bytes.NewReader(plaintext), &wire)
+	return p.encryptMessageStreamingTo(nil, plaintext)
+}
+
+func (p *Pipeline) encryptMessageStreamingTo(dst, plaintext []byte) ([]byte, error) {
+	need := p.MaxWireSize(len(plaintext))
+	var wire *bytes.Buffer
+	if need > 0 && cap(dst) >= need && !slicesOverlap(dst, plaintext) {
+		wire = bytes.NewBuffer(dst[:0:cap(dst)])
+	} else {
+		wire = &bytes.Buffer{}
+		wire.Grow(need)
+	}
+	innerSrc, innerDst, closeFn, err := buildEncryptChain(p, bytes.NewReader(plaintext), wire)
 	if err != nil {
 		return nil, err
 	}
@@ -456,7 +561,14 @@ func (p *Pipeline) encryptMessageStreaming(plaintext []byte) ([]byte, error) {
 		wipe.Bytes(b[:cap(b)])
 		return nil, err
 	}
-	return wire.Bytes(), nil
+	out := wire.Bytes()
+	if cap(dst) >= len(out) && len(out) > 0 && &out[0] != &dst[:1][0] && !slicesOverlap(dst, plaintext) {
+		res := dst[:len(out)]
+		copy(res, out)
+		wipe.Bytes(out[:cap(out)])
+		return res, nil
+	}
+	return out, nil
 }
 
 // decryptMessageStreaming is the fallback decrypt path. Mirror image
@@ -464,9 +576,22 @@ func (p *Pipeline) encryptMessageStreaming(plaintext []byte) ([]byte, error) {
 // [bytes.Reader] into the reverse Triple chain. Covers parallax-on
 // and multi-chunk wires.
 func (p *Pipeline) decryptMessageStreaming(wire []byte) ([]byte, error) {
-	var plain bytes.Buffer
-	plain.Grow(len(wire))
-	innerSrc, innerDst, closeFn, err := buildDecryptChain(p, bytes.NewReader(wire), &plain)
+	return p.decryptMessageStreamingTo(nil, wire)
+}
+
+func (p *Pipeline) decryptMessageStreamingTo(dst, wire []byte) ([]byte, error) {
+	growHint := p.MaxPlaintextSize(len(wire))
+	if growHint <= 0 {
+		growHint = len(wire)
+	}
+	var plain *bytes.Buffer
+	if cap(dst) >= growHint && !slicesOverlap(dst, wire) {
+		plain = bytes.NewBuffer(dst[:0:cap(dst)])
+	} else {
+		plain = &bytes.Buffer{}
+		plain.Grow(growHint)
+	}
+	innerSrc, innerDst, closeFn, err := buildDecryptChain(p, bytes.NewReader(wire), plain)
 	if err != nil {
 		return nil, err
 	}
@@ -494,7 +619,14 @@ func (p *Pipeline) decryptMessageStreaming(wire []byte) ([]byte, error) {
 		wipe.Bytes(b[:cap(b)])
 		return nil, err
 	}
-	return plain.Bytes(), nil
+	out := plain.Bytes()
+	if cap(dst) >= len(out) && len(out) > 0 && &out[0] != &dst[:1][0] && !slicesOverlap(dst, wire) {
+		res := dst[:len(out)]
+		copy(res, out)
+		wipe.Bytes(out[:cap(out)])
+		return res, nil
+	}
+	return out, nil
 }
 
 // hasNoCipherSurface reports whether the resolved profile mode
@@ -514,3 +646,234 @@ func hasNoCipherSurface(mode string) bool {
 // self-documenting without a cross-package import for a single byte
 // count.
 const streamIDPrefixLen = 32
+
+// MaxWireSize returns the deterministic wire byte length that
+// [Pipeline.EncryptMessage] produces for a plaintext of length
+// plaintextLen (> 0) under this Pipeline's resolved profile and Config
+// (including Wrapper nonce, 32-byte prefix, NonceBits header,
+// ContainerMode 1/2 floor, BarrierFill, MAC tag reservation, COBS
+// bound, and Parallax framing). Returns 0 when p is nil, closed, has
+// no cipher surface, or plaintextLen <= 0.
+func (p *Pipeline) MaxWireSize(plaintextLen int) int {
+	if p == nil {
+		return 0
+	}
+	return p.MaxWireSizeWithBarrierFill(plaintextLen, p.effectiveBarrierFill())
+}
+
+func addSat(a, b int) int {
+	if b > math.MaxInt-a {
+		return math.MaxInt
+	}
+	return a + b
+}
+
+func mulSat(a, b int) int {
+	if a <= 0 || b <= 0 {
+		return 0
+	}
+	if a > math.MaxInt/b {
+		return math.MaxInt
+	}
+	return a * b
+}
+
+// MaxWireSizeWithBarrierFill returns the deterministic wire byte length
+// that [Pipeline.EncryptMessage] produces for a plaintext of length
+// plaintextLen (> 0) when evaluated under maxBarrierFill. When
+// maxBarrierFill <= 0, the Pipeline's configured BarrierFill (or
+// [itb.DefaultBarrierFill] = 1) is used; positive values are rounded up
+// to the valid ITB BarrierFill set {1, 2, 4, 8, 16, 32} (clamped at 32).
+func (p *Pipeline) MaxWireSizeWithBarrierFill(plaintextLen, maxBarrierFill int) int {
+	if p == nil || p.isClosed() || hasNoCipherSurface(p.resolved.Mode) || plaintextLen <= 0 {
+		return 0
+	}
+	bf := p.resolveBarrierFill(maxBarrierFill)
+
+	var total int
+	if p.canEncryptDirect(plaintextLen) {
+		innerLen := plaintextLen
+		if p.resolved.Parallax {
+			innerLen += parallaxFrameHeaderBytes
+		}
+		total = p.chunkWireSize(innerLen, bf)
+	} else {
+		cs := p.resolved.ChunkSize
+		if cs <= 0 {
+			cs = itb.DefaultChunkSize
+		}
+		innerLen := plaintextLen
+		if p.resolved.Parallax {
+			numFrames := 1 + (plaintextLen-1)/cs
+			innerLen = addSat(plaintextLen, mulSat(numFrames, parallaxFrameHeaderBytes))
+			if innerLen == math.MaxInt {
+				return math.MaxInt
+			}
+		}
+		fullChunks := innerLen / cs
+		rem := innerLen % cs
+		if fullChunks > 0 {
+			total = addSat(total, mulSat(fullChunks, p.chunkWireSize(cs, bf)))
+		}
+		if rem > 0 {
+			total = addSat(total, p.chunkWireSize(rem, bf))
+		}
+	}
+
+	if p.resolved.Wrapper {
+		if nlen, err := wrapper.NonceSize(p.wrapperCipher); err == nil {
+			total = addSat(total, nlen)
+		}
+	}
+	return total
+}
+
+// MaxPlaintextSize is the monotone inverse of [Pipeline.MaxWireSize]:
+// it returns the largest plaintext byte length whose encrypted wire
+// envelope does not exceed maxWireBytes, or 0 if even a 1-byte
+// plaintext exceeds maxWireBytes.
+func (p *Pipeline) MaxPlaintextSize(maxWireBytes int) int {
+	if p == nil {
+		return 0
+	}
+	return p.MaxPlaintextSizeWithBarrierFill(maxWireBytes, p.effectiveBarrierFill())
+}
+
+// MaxPlaintextSizeWithBarrierFill is the monotone inverse of
+// [Pipeline.MaxWireSizeWithBarrierFill]: it returns the largest
+// plaintext byte length whose encrypted wire envelope under
+// maxBarrierFill does not exceed maxWireBytes, or 0 if even a 1-byte
+// plaintext exceeds maxWireBytes.
+func (p *Pipeline) MaxPlaintextSizeWithBarrierFill(maxWireBytes, maxBarrierFill int) int {
+	if p == nil || p.isClosed() || hasNoCipherSurface(p.resolved.Mode) || maxWireBytes <= 0 {
+		return 0
+	}
+	if p.MaxWireSizeWithBarrierFill(1, maxBarrierFill) > maxWireBytes {
+		return 0
+	}
+	lo, hi := 1, maxWireBytes
+	if hi == math.MaxInt {
+		hi = math.MaxInt - 1
+	}
+	for lo < hi {
+		mid := lo + (hi-lo+1)/2
+		w := p.MaxWireSizeWithBarrierFill(mid, maxBarrierFill)
+		if w < mid || w > maxWireBytes {
+			hi = mid - 1
+		} else {
+			lo = mid
+		}
+	}
+	return lo
+}
+
+func (p *Pipeline) effectiveBarrierFill() int {
+	if p.cfg != nil && p.cfg.BarrierFill > 0 {
+		return p.cfg.BarrierFill
+	}
+	return itb.DefaultBarrierFill
+}
+
+func (p *Pipeline) resolveBarrierFill(maxBarrierFill int) int {
+	if maxBarrierFill <= 0 {
+		return p.effectiveBarrierFill()
+	}
+	switch {
+	case maxBarrierFill <= 1:
+		return 1
+	case maxBarrierFill <= 2:
+		return 2
+	case maxBarrierFill <= 4:
+		return 4
+	case maxBarrierFill <= 8:
+		return 8
+	case maxBarrierFill <= 16:
+		return 16
+	default:
+		return 32
+	}
+}
+
+func (p *Pipeline) chunkWireSize(chunkPlainLen, bf int) int {
+	laneLen := 2 * ((chunkPlainLen + 4 + 5) / 6)
+	nonceLen := itb.DefaultNonceBits / 8
+	if p.cfg != nil && p.cfg.NonceBits > 0 {
+		nonceLen = p.cfg.NonceBits / 8
+	}
+	lens := [3]int{nonceLen / 3, nonceLen / 3, nonceLen / 3}
+	for i := 0; i < nonceLen%3; i++ {
+		lens[i]++
+	}
+	tagSize := 32
+	if p.macFunc != nil {
+		if spec, ok := macs.Find(p.resolved.MacName); ok && spec.TagSize > 0 {
+			tagSize = spec.TagSize
+		} else if tag := p.macFunc(nil); len(tag) > 0 {
+			tagSize = len(tag)
+			wipe.Bytes(tag)
+		}
+	} else if p.cfg != nil && p.cfg.TagStubSize > 0 {
+		tagSize = p.cfg.TagStubSize
+	}
+	reserve := tagSize + 1
+
+	cobsBound := func(n int) int {
+		if n <= 0 {
+			return 1
+		}
+		return n + n/254 + 2
+	}
+	cobsLens := [3]int{
+		cobsBound(lens[0] + laneLen),
+		cobsBound(lens[1] + laneLen),
+		cobsBound(lens[2]+laneLen) + reserve,
+	}
+
+	minPx := (p.resolved.KeyBits*10000 + 28074 - 1) / 28074
+	var totalPixels int
+	if p.cfg != nil && p.cfg.Mode == 2 {
+		maxDataThirdPixels := 0
+		for i := 0; i < 3; i++ {
+			needed := cobsLens[i] + 1
+			pixels := (needed*8 + itb.DataBitsPerPixel - 1) / itb.DataBitsPerPixel
+			if pixels > maxDataThirdPixels {
+				maxDataThirdPixels = pixels
+			}
+		}
+		totalPixels = 3 * maxDataThirdPixels
+		if totalPixels < minPx {
+			totalPixels = minPx
+		}
+	} else {
+		maxThirdPixels := 0
+		for i := 0; i < 3; i++ {
+			needed := cobsLens[i] + 1
+			pixels := (needed*8 + itb.DataBitsPerPixel - 1) / itb.DataBitsPerPixel
+			if pixels < minPx {
+				pixels = minPx
+			}
+			if pixels > maxThirdPixels {
+				maxThirdPixels = pixels
+			}
+		}
+		totalPixels = 3 * maxThirdPixels
+	}
+
+	side := ceilSqrt(totalPixels) + bf
+	hdrLen := nonceLen + 4
+	return streamIDPrefixLen + hdrLen + side*side*itb.Channels
+}
+
+func ceilSqrt(n int) int {
+	if n <= 1 {
+		return 1
+	}
+	s := int(math.Sqrt(float64(n)))
+	for s*s < n {
+		s++
+	}
+	for (s-1)*(s-1) >= n {
+		s--
+	}
+	return s
+}

@@ -349,3 +349,329 @@ func TestEncryptMessageConcurrentSamePipeline(t *testing.T) {
 		}
 	}
 }
+
+// TestMaxWireSizeEVPNTableAnchors verifies that MaxWireSize and
+// MaxWireSizeWithBarrierFill reproduce exact deterministic wire byte
+// counts across the eVPN payload spectrum for Mode 1 and Mode 2 under
+// KeyBits=1024, NonceBits=512, Parallax=true, and Wrapper=chacha20, and
+// that PktBufSize = ebuffers/2 fits under Base64 expansion for all
+// BarrierFill in {1, 2, 4}.
+func TestMaxWireSizeEVPNTableAnchors(t *testing.T) {
+	pipeM1, _, err := Init(ProfileSingleMsgTripleMACV1, Opts{
+		Mode:        1,
+		KeyBits:     1024,
+		NonceBits:   512,
+		BarrierFill: 1,
+		OuterCipher: "chacha20",
+	})
+	if err != nil {
+		t.Fatalf("Init Mode 1: %v", err)
+	}
+	defer pipeM1.Close()
+
+	pipeM2, _, err := Init(ProfileSingleMsgTripleMACV1, Opts{
+		Mode:        2,
+		KeyBits:     1024,
+		NonceBits:   512,
+		BarrierFill: 1,
+		OuterCipher: "chacha20",
+	})
+	if err != nil {
+		t.Fatalf("Init Mode 2: %v", err)
+	}
+	defer pipeM2.Close()
+
+	for _, plainLen := range []int{5, 100, 1460, 9001, 16384, 32768, 65536, 131072} {
+		pt := freshBytes(t, plainLen)
+		wireM1, err := pipeM1.EncryptMessage(pt)
+		if err != nil {
+			t.Fatalf("EncryptMessage Mode 1 (%d): %v", plainLen, err)
+		}
+		if got := pipeM1.MaxWireSize(plainLen); got != len(wireM1) {
+			t.Errorf("Mode 1 BF=1 MaxWireSize(%d) = %d, actual wire len = %d", plainLen, got, len(wireM1))
+		}
+
+		wireM2, err := pipeM2.EncryptMessage(pt)
+		if err != nil {
+			t.Fatalf("EncryptMessage Mode 2 (%d): %v", plainLen, err)
+		}
+		if got := pipeM2.MaxWireSize(plainLen); got != len(wireM2) {
+			t.Errorf("Mode 2 BF=1 MaxWireSize(%d) = %d, actual wire len = %d", plainLen, got, len(wireM2))
+		}
+		if plainLen <= 1460 && len(wireM2) >= len(wireM1) {
+			t.Errorf("Mode 2 wire (%d) not smaller than Mode 1 wire (%d) at small payload %d",
+				len(wireM2), len(wireM1), plainLen)
+		}
+	}
+
+	// Verify PktBufSize = ebuffers/2 fits within ebuffers after Base64
+	// expansion for all BarrierFill in {1, 2, 4}.
+	for _, ebufKB := range []int{32, 64, 128, 256} {
+		ebufBytes := ebufKB * 1024
+		pktBufSize := ebufBytes / 2
+		for _, bf := range []int{1, 2, 4} {
+			wireLen := pipeM2.MaxWireSizeWithBarrierFill(pktBufSize, bf)
+			b64Len := ((wireLen + 2) / 3) * 4
+			if b64Len > ebufBytes {
+				t.Errorf("ebuffers=%dKB bf=%d: Base64(MaxWireSize(%d)) = %d > %d",
+					ebufKB, bf, pktBufSize, b64Len, ebufBytes)
+			}
+			if maxPt := pipeM2.MaxPlaintextSizeWithBarrierFill(wireLen, bf); maxPt < pktBufSize {
+				t.Errorf("ebuffers=%dKB bf=%d: MaxPlaintextSizeWithBarrierFill(%d, %d) = %d < %d",
+					ebufKB, bf, wireLen, bf, maxPt, pktBufSize)
+			}
+		}
+	}
+}
+
+// TestMaxWireSizeAndMaxPlaintextSizeMatrix verifies MaxWireSize,
+// MaxWireSizeWithBarrierFill, MaxPlaintextSize, and
+// MaxPlaintextSizeWithBarrierFill across BarrierFill in
+// {1, 2, 4, 8, 16, 32}, ContainerMode in {1, 2}, KeyBits in
+// {512, 1024, 2048}, NonceBits in {128, 256, 512}, and all
+// (Parallax x Wrapper x MAC) combinations.
+func TestMaxWireSizeAndMaxPlaintextSizeMatrix(t *testing.T) {
+	barrierFills := []int{1, 2, 4, 8, 16, 32}
+	modes := []int{1, 2}
+	keyBitsList := []struct {
+		kb   int
+		hash string
+	}{
+		{512, "aescmac"},
+		{1024, "blake2b256"},
+		{2048, "blake2b512"},
+	}
+
+	for _, kb := range keyBitsList {
+		for _, mode := range modes {
+			for _, bf := range barrierFills {
+				for _, tog := range toggleCases {
+					for _, prof := range []string{ProfileSingleMsgTripleMACV1, ProfileSingleMsgTripleNoMACV1} {
+						opts := Opts{
+							Mode:         mode,
+							KeyBits:      kb.kb,
+							InnerHash:    kb.hash,
+							NonceBits:    256,
+							BarrierFill:  bf,
+							WithParallax: boolPtrHelper(tog.parallax),
+							WithWrapper:  boolPtrHelper(tog.wrapper),
+						}
+						pipe, _, err := Init(prof, opts)
+						if err != nil {
+							t.Fatalf("Init(kb=%d, mode=%d, bf=%d, tog=%s, prof=%s): %v",
+								kb.kb, mode, bf, tog.name, prof, err)
+						}
+
+						for _, sz := range []int{1, 37, 1460, 16384} {
+							want := pipe.MaxWireSize(sz)
+							if want <= sz {
+								t.Fatalf("MaxWireSize(%d) = %d <= sz", sz, want)
+							}
+							if got0 := pipe.MaxWireSizeWithBarrierFill(sz, 0); got0 != want {
+								t.Fatalf("MaxWireSizeWithBarrierFill(%d, 0) = %d, want %d", sz, got0, want)
+							}
+							pt := freshBytes(t, sz)
+							wire, err := pipe.EncryptMessage(pt)
+							if err != nil {
+								t.Fatalf("EncryptMessage(%d): %v", sz, err)
+							}
+							if len(wire) != want {
+								t.Fatalf("kb=%d mode=%d bf=%d tog=%s prof=%s sz=%d: len(wire)=%d != MaxWireSize=%d",
+									kb.kb, mode, bf, tog.name, prof, sz, len(wire), want)
+							}
+
+							maxPt := pipe.MaxPlaintextSize(want)
+							if maxPt < sz {
+								t.Fatalf("MaxPlaintextSize(%d) = %d < %d", want, maxPt, sz)
+							}
+							if pipe.MaxWireSize(maxPt) > want {
+								t.Fatalf("MaxWireSize(maxPt=%d) = %d > %d", maxPt, pipe.MaxWireSize(maxPt), want)
+							}
+							if pipe.MaxWireSize(maxPt+1) <= want {
+								t.Fatalf("MaxWireSize(maxPt+1=%d) = %d <= %d (not maximal)",
+									maxPt+1, pipe.MaxWireSize(maxPt+1), want)
+							}
+						}
+
+						minWire := pipe.MaxWireSize(1)
+						if got := pipe.MaxPlaintextSize(minWire - 1); got != 0 {
+							t.Fatalf("MaxPlaintextSize(minWire-1) = %d, want 0", got)
+						}
+						if got := pipe.MaxWireSize(0); got != 0 {
+							t.Fatalf("MaxWireSize(0) = %d, want 0", got)
+						}
+						if got := pipe.MaxPlaintextSize(0); got != 0 {
+							t.Fatalf("MaxPlaintextSize(0) = %d, want 0", got)
+						}
+						_ = pipe.Close()
+						if got := pipe.MaxWireSize(64); got != 0 {
+							t.Fatalf("closed MaxWireSize = %d, want 0", got)
+						}
+						if got := pipe.MaxPlaintextSize(65536); got != 0 {
+							t.Fatalf("closed MaxPlaintextSize = %d, want 0", got)
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+// TestEncryptMessageToAndDecryptMessageTo verifies zero-copy destination
+// buffer reuse, cross-surface compatibility (including single-chunk
+// Parallax=true), and destination buffer wiping on error.
+func TestEncryptMessageToAndDecryptMessageTo(t *testing.T) {
+	for _, tog := range toggleCases {
+		for _, m := range messageModeCases {
+			tog, m := tog, m
+			t.Run(tog.name+"/"+m.name, func(t *testing.T) {
+				opts := Opts{
+					WithParallax: boolPtrHelper(tog.parallax),
+					WithWrapper:  boolPtrHelper(tog.wrapper),
+				}
+				pipe, blob, err := Init(m.profile, opts)
+				if err != nil {
+					t.Fatalf("Init: %v", err)
+				}
+				defer pipe.Close()
+
+				rx, err := Load(blob)
+				if err != nil {
+					t.Fatalf("Load: %v", err)
+				}
+				defer rx.Close()
+
+				pt := freshBytes(t, 8192)
+				maxWire := pipe.MaxWireSize(len(pt))
+				encBuf := make([]byte, 0, maxWire+64)
+				decBuf := make([]byte, 0, len(pt)+64)
+
+				wire, err := pipe.EncryptMessageTo(encBuf, pt)
+				if err != nil {
+					t.Fatalf("EncryptMessageTo: %v", err)
+				}
+				if len(wire) != maxWire {
+					t.Fatalf("len(wire) = %d, want MaxWireSize = %d", len(wire), maxWire)
+				}
+				if &wire[0] != &encBuf[:1][0] {
+					t.Fatalf("EncryptMessageTo did not reuse encBuf backing array")
+				}
+
+				got, err := rx.DecryptMessageTo(decBuf, wire)
+				if err != nil {
+					t.Fatalf("DecryptMessageTo: %v", err)
+				}
+				if !bytes.Equal(got, pt) {
+					t.Fatalf("DecryptMessageTo plaintext mismatch")
+				}
+				if &got[0] != &decBuf[:1][0] {
+					t.Fatalf("DecryptMessageTo did not reuse decBuf backing array")
+				}
+
+				// Cross-check with streaming surfaces when profile is streaming.
+				if m.streaming {
+					sWire, err := pipe.encryptStreamBytesTo(encBuf[:0], pt)
+					if err != nil {
+						t.Fatalf("encryptStreamBytesTo: %v", err)
+					}
+					if &sWire[0] != &encBuf[:1][0] {
+						t.Fatalf("encryptStreamBytesTo did not reuse encBuf backing array")
+					}
+					sGot, err := rx.DecryptMessageTo(decBuf[:0], sWire)
+					if err != nil {
+						t.Fatalf("DecryptMessageTo(encryptStreamBytesTo): %v", err)
+					}
+					if !bytes.Equal(sGot, pt) {
+						t.Fatalf("DecryptMessageTo(encryptStreamBytesTo) mismatch")
+					}
+					bGot, err := rx.decryptStreamBytesTo(decBuf[:0], wire)
+					if err != nil {
+						t.Fatalf("decryptStreamBytesTo(EncryptMessageTo): %v", err)
+					}
+					if !bytes.Equal(bGot, pt) {
+						t.Fatalf("decryptStreamBytesTo(EncryptMessageTo) mismatch")
+					}
+					if &bGot[0] != &decBuf[:1][0] {
+						t.Fatalf("decryptStreamBytesTo did not reuse decBuf backing array")
+					}
+				}
+
+				// In-place / overlapping dst and input must round-trip without clobbering.
+				inPlace := make([]byte, maxWire+64)
+				copy(inPlace, pt)
+				ipWire, err := pipe.EncryptMessageTo(inPlace[:0], inPlace[:len(pt)])
+				if err != nil {
+					t.Fatalf("in-place EncryptMessageTo: %v", err)
+				}
+				if &ipWire[0] != &inPlace[0] {
+					t.Fatalf("in-place EncryptMessageTo did not return inPlace slice")
+				}
+				ipPlain, err := rx.DecryptMessageTo(inPlace[:0], ipWire)
+				if err != nil {
+					t.Fatalf("in-place DecryptMessageTo: %v", err)
+				}
+				if !bytes.Equal(ipPlain, pt) {
+					t.Fatalf("in-place DecryptMessageTo plaintext mismatch")
+				}
+				if &ipPlain[0] != &inPlace[0] {
+					t.Fatalf("in-place DecryptMessageTo did not return inPlace slice")
+				}
+
+				// Entry pre-checks must not clobber dst before any cipher staging occurs.
+				sentinel := make([]byte, 128)
+				for i := range sentinel {
+					sentinel[i] = 0xAA
+				}
+				if _, err := pipe.EncryptMessageTo(sentinel[:0], nil); !errors.Is(err, ErrEmptyInput) {
+					t.Fatalf("expected ErrEmptyInput, got %v", err)
+				}
+				for i, b := range sentinel {
+					if b != 0xAA {
+						t.Fatalf("sentinel[%d] = 0x%02x after EncryptMessageTo pre-check error, want 0xAA", i, b)
+					}
+				}
+				if _, err := rx.DecryptMessageTo(sentinel[:0], nil); !errors.Is(err, ErrEmptyInput) {
+					t.Fatalf("expected ErrEmptyInput, got %v", err)
+				}
+				for i, b := range sentinel {
+					if b != 0xAA {
+						t.Fatalf("sentinel[%d] = 0x%02x after DecryptMessageTo pre-check error, want 0xAA", i, b)
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestMaxWireSizeTagStubAndOverflowGuards(t *testing.T) {
+	// On a MAC-carrying profile, Opts.TagStubSize < 32 must not cause
+	// MaxWireSize to under-predict the MAC's actual tag reservation.
+	pipe, _, err := Init(ProfileStreamingAEADTripleMACV1, Opts{
+		TagStubSize: 16,
+	})
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	defer pipe.Close()
+
+	pt := freshBytes(t, 4096)
+	wire, err := pipe.EncryptMessage(pt)
+	if err != nil {
+		t.Fatalf("EncryptMessage: %v", err)
+	}
+	if got := pipe.MaxWireSize(len(pt)); got != len(wire) {
+		t.Fatalf("MaxWireSize(%d) with TagStubSize=16 on MAC profile = %d, want len(wire) = %d", len(pt), got, len(wire))
+	}
+
+	// Extreme inputs near math.MaxInt must saturate cleanly without negative wrap.
+	const maxInt = int(^uint(0) >> 1)
+	if got := pipe.MaxWireSize(maxInt); got <= 0 {
+		t.Fatalf("MaxWireSize(MaxInt) = %d, want > 0", got)
+	}
+	if got := pipe.MaxPlaintextSize(maxInt); got <= 0 {
+		t.Fatalf("MaxPlaintextSize(MaxInt) = %d, want > 0", got)
+	}
+	if got := pipe.MaxPlaintextSize(maxInt - 1024); got <= 0 {
+		t.Fatalf("MaxPlaintextSize(MaxInt-1024) = %d, want > 0", got)
+	}
+}

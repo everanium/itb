@@ -13,7 +13,7 @@ import io.github.everanium.itb3.Runtime as JRuntime
 object ItbRuntime {
 
     /** The binding's own version. */
-    const val BINDING_VERSION: String = "0.7.4"
+    const val BINDING_VERSION: String = "0.7.5"
 
     /**
      * Sets the Go runtime's soft heap limit in bytes and returns the

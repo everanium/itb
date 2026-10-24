@@ -67,7 +67,7 @@ import (
 // Library version exposed via ITB_Version. Bumped per ABI-relevant
 // release. The value is informational; binding code may key feature
 // detection off it.
-const libitb3Version = "0.7.4"
+const libitb3Version = "0.7.5"
 
 func main() {} // required for buildmode=c-shared
 
@@ -815,6 +815,53 @@ func ITB_Triple_DecryptMessage(
 	wireBytes := goBytesView(wire, wireLen)
 	dst := goBytesViewMut(out, outCap)
 	n, st := capi.TripleDecryptMessage(capi.TripleHandleID(handle), wireBytes, dst)
+	*outLen = C.size_t(n)
+	return C.int(st)
+}
+
+// Computes the deterministic wire byte length that ITB_Triple_EncryptMessage
+// produces for a plaintext of length ptlen (> 0) under the handle's
+// resolved profile and max_barrier_fill override (<= 0 uses the
+// Pipeline's configured BarrierFill). Writes the byte count into *out_len.
+//
+//export ITB_Triple_MaxWireSize
+func ITB_Triple_MaxWireSize(
+	handle C.uintptr_t,
+	ptlen C.size_t,
+	maxBarrierFill C.int,
+	outLen *C.size_t,
+) C.int {
+	if outLen == nil {
+		return C.int(capi.StatusBadInput)
+	}
+	if !validateLen(ptlen) {
+		return C.int(capi.StatusBadInput)
+	}
+	n, st := capi.TripleMaxWireSize(capi.TripleHandleID(handle), int(ptlen), int(maxBarrierFill))
+	*outLen = C.size_t(n)
+	return C.int(st)
+}
+
+// Monotone inverse of ITB_Triple_MaxWireSize: computes the largest
+// plaintext byte length whose encrypted wire envelope under
+// max_barrier_fill does not exceed max_wire_bytes (> 0), writing the
+// result into *out_len (0 with ITB_OK when even a 1-byte plaintext
+// exceeds max_wire_bytes).
+//
+//export ITB_Triple_MaxPlaintextSize
+func ITB_Triple_MaxPlaintextSize(
+	handle C.uintptr_t,
+	maxWireBytes C.size_t,
+	maxBarrierFill C.int,
+	outLen *C.size_t,
+) C.int {
+	if outLen == nil {
+		return C.int(capi.StatusBadInput)
+	}
+	if !validateLen(maxWireBytes) {
+		return C.int(capi.StatusBadInput)
+	}
+	n, st := capi.TripleMaxPlaintextSize(capi.TripleHandleID(handle), int(maxWireBytes), int(maxBarrierFill))
 	*outLen = C.size_t(n)
 	return C.int(st)
 }

@@ -57,33 +57,29 @@ else
     ITB_STREAM_PROFILE_DEFAULT="streaming-noaead-triple-v1"
 fi
 
+JAR="$PWD/build/libs/bench.jar"
+
 # Split at the shell layer so each shape carries its own ITB_PROFILE
-# in a single script pass (the Gradle runBench task handles
-# "message", "stream", and "all" arguments individually).
+# in a single script pass.
 case "${1:-all}" in
     message)
         export ITB_PROFILE="${ITB_MSG_PROFILE_DEFAULT}"
-        exec ./gradlew --console=plain runBench --args=message
+        exec java -jar "$JAR" message
         ;;
     stream)
         export ITB_PROFILE="${ITB_STREAM_PROFILE_DEFAULT}"
-        exec ./gradlew --console=plain runBench --args=stream
+        exec java -jar "$JAR" stream
         ;;
     stream_one_shot)
         export ITB_PROFILE="${ITB_STREAM_PROFILE_DEFAULT}"
-        exec ./gradlew --console=plain runBench --args=stream_one_shot
+        exec java -jar "$JAR" stream_one_shot
         ;;
     all)
-        # --no-daemon forces a fresh Gradle process for each invocation
-        # so the second runBench call does not inherit the first call's
-        # cached task state (Gradle's args= discriminator is not part of
-        # the task input hash and would otherwise mark the second call
-        # UP-TO-DATE).
         export ITB_PROFILE="${ITB_MSG_PROFILE_DEFAULT}"
-        ./gradlew --no-daemon --console=plain runBench --args=message
+        java -jar "$JAR" message
         export ITB_PROFILE="${ITB_STREAM_PROFILE_DEFAULT}"
-        ./gradlew --no-daemon --console=plain runBench --args=stream
-        exec ./gradlew --no-daemon --console=plain runBench --args=stream_one_shot
+        java -jar "$JAR" stream
+        exec java -jar "$JAR" stream_one_shot
         ;;
     *)
         echo "usage: $0 [message|stream|stream_one_shot|all]" >&2

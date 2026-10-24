@@ -1030,9 +1030,14 @@ func splitTriple48WorkerBody(gs, ge, M, factor int, src framedSrc48, p0, p1, p2 
 func interleaveTriple48LockedBatch(p0, p1, p2 []byte, bp lockBatchPRF48, cfg *Config) []byte {
 	M := len(p0) / 2
 	result := make([]byte, M*6)
+	interleaveTriple48LockedBatchInto(result, p0, p1, p2, bp, cfg)
+	return result
+}
 
+func interleaveTriple48LockedBatchInto(result, p0, p1, p2 []byte, bp lockBatchPRF48, cfg *Config) {
+	M := len(p0) / 2
 	if M == 0 {
-		return result
+		return
 	}
 
 	factor := bp.factor
@@ -1046,7 +1051,7 @@ func interleaveTriple48LockedBatch(p0, p1, p2 []byte, bp lockBatchPRF48, cfg *Co
 		wipePixelCallStack([9][8]uint64{})
 		interleaveTriple48WorkerBody(0, numGroups, M, factor, result, p0, p1, p2, bp)
 		wipePixelCallStack([9][8]uint64{})
-		return result
+		return
 	}
 	groupsPerWorker := (numGroups + G - 1) / G
 	var wg sync.WaitGroup
@@ -1068,7 +1073,6 @@ func interleaveTriple48LockedBatch(p0, p1, p2 []byte, bp lockBatchPRF48, cfg *Co
 		}(gStart, gEnd)
 	}
 	wg.Wait()
-	return result
 }
 
 //go:noinline
@@ -1239,6 +1243,10 @@ func splitForTriple48LockedInto(cfg *Config, data []byte, bp lockBatchPRF48, p0,
 // extent instead of distinguishing wrong-seed attempts from valid ones
 // via an error oracle.
 func interleaveForTriple48LockedCfg(cfg *Config, p0, p1, p2 []byte, bp lockBatchPRF48) []byte {
+	return interleaveForTriple48LockedCfgInto(cfg, nil, p0, p1, p2, bp)
+}
+
+func interleaveForTriple48LockedCfgInto(cfg *Config, dst, p0, p1, p2 []byte, bp lockBatchPRF48) []byte {
 	defer bp.wipe()
 	// Wrong-seed decrypt paths pass unequal-length lanes (each COBS-
 	// decoded stream truncates at whatever spurious 0x00 the garbage
@@ -1257,6 +1265,54 @@ func interleaveForTriple48LockedCfg(cfg *Config, p0, p1, p2 []byte, bp lockBatch
 	}
 	if len(p2) != origLen2 {
 		defer secureWipe(p2)
+	}
+	if cap(dst) > 0 {
+		M := len(p0) / 2
+		if M == 0 {
+			return dst[:0]
+		}
+		if len(dst) == 1 && cap(dst) >= M*6 {
+			framed := dst[:M*6]
+			interleaveTriple48LockedBatchInto(framed, p0, p1, p2, bp, cfg)
+			if len(framed) < 4 {
+				return framed
+			}
+			length := binary.BigEndian.Uint32(framed[:4])
+			end := uint64(length) + 4
+			if end > uint64(len(framed)) {
+				end = uint64(len(framed))
+			}
+			secureWipe(framed[:4])
+			secureWipe(framed[int(end):])
+			return framed[4:int(end)]
+		}
+		framedPtr, framed := acquireStage(M * 6)
+		defer releaseStage(framedPtr, framed, len(framed))
+		interleaveTriple48LockedBatchInto(framed, p0, p1, p2, bp, cfg)
+		if len(framed) < 4 {
+			if cap(dst) >= len(framed) {
+				out := dst[:len(framed)]
+				copy(out, framed)
+				return out
+			}
+			out := make([]byte, len(framed))
+			copy(out, framed)
+			return out
+		}
+		length := binary.BigEndian.Uint32(framed[:4])
+		end := uint64(length) + 4
+		if end > uint64(len(framed)) {
+			end = uint64(len(framed))
+		}
+		payloadLen := int(end) - 4
+		var out []byte
+		if cap(dst) >= payloadLen {
+			out = dst[:payloadLen]
+		} else {
+			out = make([]byte, payloadLen)
+		}
+		copy(out, framed[4:int(end)])
+		return out
 	}
 	framed := interleaveTriple48LockedBatch(p0, p1, p2, bp, cfg)
 	if len(framed) < 4 {

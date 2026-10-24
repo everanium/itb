@@ -24,6 +24,17 @@ import (
 // through every Cfg-aware accessor in the authenticated pipeline; nil
 // cfg falls back to the compile-in defaults.
 func EncryptAuthenticated3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed256, data []byte, macFunc MACFunc) ([]byte, error) {
+	return encryptAuthenticated3x256CfgInto(cfg, nil, streamIDPrefixLen, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data, macFunc)
+}
+
+// encryptAuthenticated3x256CfgInto is like [EncryptAuthenticated3x256Cfg]
+// but reserves lead (>= [streamIDPrefixLen]) bytes ahead of the chunk,
+// writes the 32-byte streamID into out[lead-32 : lead], and reuses dst
+// when cap(dst) is sufficient and does not overlap data.
+func encryptAuthenticated3x256CfgInto(cfg *Config, dst []byte, lead int, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed256, data []byte, macFunc MACFunc) ([]byte, error) {
+	if lead < streamIDPrefixLen {
+		lead = streamIDPrefixLen
+	}
 	if err := checkEightSeeds256(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
 		return nil, err
 	}
@@ -45,11 +56,11 @@ func EncryptAuthenticated3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, d
 	if err != nil {
 		return nil, err
 	}
-	out, err := encryptStreamAuthenticated3x256Cfg(cfg, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data, macFunc, streamID, nil, 0, true, streamIDPrefixLen)
+	out, err := encryptStreamAuthenticated3x256CfgInto(cfg, dst, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data, macFunc, streamID, nil, 0, true, lead)
 	if err != nil {
 		return nil, err
 	}
-	copy(out[:streamIDPrefixLen], streamID[:])
+	copy(out[lead-streamIDPrefixLen:lead], streamID[:])
 	return out, nil
 }
 
@@ -64,6 +75,12 @@ func EncryptAuthenticated3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, d
 // bytes and multi-chunk streams are rejected before the MAC runs. nil
 // cfg falls back to the compile-in defaults.
 func DecryptAuthenticated3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed256, fileData []byte, macFunc MACFunc) ([]byte, error) {
+	return decryptAuthenticated3x256CfgInto(cfg, nil, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, fileData, macFunc)
+}
+
+// decryptAuthenticated3x256CfgInto is like [DecryptAuthenticated3x256Cfg]
+// but reuses dst when cap(dst) is sufficient to hold the recovered plaintext.
+func decryptAuthenticated3x256CfgInto(cfg *Config, dst []byte, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed256, fileData []byte, macFunc MACFunc) ([]byte, error) {
 	if err := checkEightSeeds256(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
 		return nil, err
 	}
@@ -86,13 +103,9 @@ func DecryptAuthenticated3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, d
 	}
 	var streamID [streamIDPrefixLen]byte
 	copy(streamID[:], fileData[:streamIDPrefixLen])
-	plain, finalFlag, err := DecryptStreamAuthenticated3x256Cfg(cfg, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, fileData[streamIDPrefixLen:], macFunc, streamID, nil, 0)
+	plain, _, err := decryptStreamAuthenticated3x256CfgInto(cfg, dst, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, fileData[streamIDPrefixLen:], macFunc, streamID, nil, 0, true)
 	if err != nil {
 		return nil, err
-	}
-	if !finalFlag {
-		secureWipe(plain)
-		return nil, ErrStreamTruncated
 	}
 	return plain, nil
 }
@@ -125,6 +138,10 @@ func EncryptStreamAuthenticated3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSe
 // streamID on chunk 0, chunkPrefix on every later chunk — into the
 // reserved bytes, so every chunk record is a single allocation.
 func encryptStreamAuthenticated3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed256, data []byte, macFunc MACFunc, streamID [32]byte, chunkPrefix []byte, cumulativePixelOffset uint64, finalFlag bool, lead int) ([]byte, error) {
+	return encryptStreamAuthenticated3x256CfgInto(cfg, nil, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data, macFunc, streamID, chunkPrefix, cumulativePixelOffset, finalFlag, lead)
+}
+
+func encryptStreamAuthenticated3x256CfgInto(cfg *Config, dst []byte, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed256, data []byte, macFunc MACFunc, streamID [32]byte, chunkPrefix []byte, cumulativePixelOffset uint64, finalFlag bool, lead int) ([]byte, error) {
 	if err := checkEightSeeds256(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
 		return nil, err
 	}
@@ -163,7 +180,7 @@ func encryptStreamAuthenticated3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSe
 	// is written below.
 	bp := buildLockBatchPRF48_256Cfg(cfg, lockSeed, ilNonce)
 	defer bp.wipe()
-	tp, out, container, width, height, err := buildTripleWire3(cfg, data, bp, tagSize+1, false, lead, nonce, ilNonce,
+	tp, out, container, width, height, err := buildTripleWire3Into(cfg, dst, data, bp, tagSize+1, false, lead, nonce, ilNonce,
 		func(cobsLens [3]int) (int, int) {
 			return containerSizeAuth3_256Cfg(cfg, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, cobsLens)
 		})
@@ -230,6 +247,10 @@ func encryptStreamAuthenticated3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSe
 // ahead of the chunk for every later chunk; any other length is
 // rejected. nil cfg falls back to the compile-in defaults.
 func DecryptStreamAuthenticated3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed256, chunkData []byte, macFunc MACFunc, streamID [32]byte, chunkPrefix []byte, cumulativePixelOffset uint64) ([]byte, bool, error) {
+	return decryptStreamAuthenticated3x256CfgInto(cfg, nil, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, chunkData, macFunc, streamID, chunkPrefix, cumulativePixelOffset, false)
+}
+
+func decryptStreamAuthenticated3x256CfgInto(cfg *Config, dst []byte, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed256, chunkData []byte, macFunc MACFunc, streamID [32]byte, chunkPrefix []byte, cumulativePixelOffset uint64, requireFinal bool) ([]byte, bool, error) {
 	if err := checkEightSeeds256(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
 		return nil, false, err
 	}
@@ -299,7 +320,9 @@ func DecryptStreamAuthenticated3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSe
 		}
 	}()
 	for i := 0; i < 3; i++ {
-		decodedPtrs[i], decoded[i] = acquireBuffer(caps[i])
+		var decBuf []byte
+		decodedPtrs[i], decBuf = acquireBuffer(caps[2])
+		decoded[i] = decBuf[:caps[i]]
 	}
 
 	perThird := configuredWorkerCount(cfg) / 3
@@ -351,6 +374,9 @@ func DecryptStreamAuthenticated3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSe
 	}
 
 	finalFlag := flag == 0xFF
+	if requireFinal && !finalFlag {
+		return nil, false, ErrStreamTruncated
+	}
 
 	// 3 parallel null-search + in-place cobsDecode (MAC already verified
 	// data integrity; each decoded lane overwrites its own COBS bytes
@@ -391,6 +417,9 @@ func DecryptStreamAuthenticated3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSe
 	}
 
 	if emptyThird[0] && emptyThird[1] && emptyThird[2] {
+		if cap(dst) > 0 {
+			return dst[:0], true, nil
+		}
 		return []byte{}, true, nil
 	}
 
@@ -400,5 +429,5 @@ func DecryptStreamAuthenticated3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSe
 	defer secureWipe(ilNonce)
 	bp := buildLockBatchPRF48_256Cfg(cfg, lockSeed, ilNonce)
 	defer bp.wipe()
-	return interleaveForTriple48LockedCfg(cfg, lanes[0], lanes[1], lanes[2], bp), finalFlag, nil
+	return interleaveForTriple48LockedCfgInto(cfg, dst, lanes[0], lanes[1], lanes[2], bp), finalFlag, nil
 }

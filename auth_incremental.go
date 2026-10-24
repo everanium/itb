@@ -31,8 +31,8 @@ func macTagCfg(cfg *Config, macFunc MACFunc, parts ...[]byte) []byte {
 	for _, p := range parts {
 		total += len(p)
 	}
-	bufPtr, buf := acquireBuffer(total)
-	defer releaseBuffer(bufPtr, buf)
+	bufPtr, buf := acquireStage(total)
+	defer releaseStage(bufPtr, buf, total)
 	off := 0
 	for _, p := range parts {
 		off += copy(buf[off:], p)

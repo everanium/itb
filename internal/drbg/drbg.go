@@ -64,9 +64,8 @@ import (
 	"strings"
 	"sync"
 
-	"golang.org/x/crypto/chacha20"
-
 	"github.com/everanium/itb/aesitb"
+	"github.com/everanium/itb/internal/chacha20ctr"
 	"github.com/everanium/itb/internal/cpuid"
 	"github.com/everanium/itb/internal/wipe"
 )
@@ -283,18 +282,18 @@ func fillAesCTR(dst []byte) error {
 // (32-byte key + 12-byte nonce, per RFC 8439) and expands the keystream
 // over dst.
 func fillChaCha20(dst []byte) error {
-	var seed [chacha20.KeySize + chacha20.NonceSize]byte
+	var seed [chacha20ctr.KeySize + chacha20ctr.NonceSize]byte
 	defer wipe.Bytes(seed[:])
 	if _, err := rand.Read(seed[:]); err != nil {
 		return err
 	}
-	stream, err := chacha20.NewUnauthenticatedCipher(seed[:chacha20.KeySize], seed[chacha20.KeySize:])
-	if err != nil {
+	var stream chacha20ctr.Cipher
+	if err := stream.Init(seed[:chacha20ctr.KeySize], seed[chacha20ctr.KeySize:]); err != nil {
 		return err
 	}
 	stream.XORKeyStream(dst, dst)
 	// The cipher state carries the key words and the unused keystream
 	// tail; zero it once the fill is done.
-	wipe.StructPtr(stream)
+	stream.Wipe()
 	return nil
 }

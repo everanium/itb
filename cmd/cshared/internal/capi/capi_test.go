@@ -289,3 +289,101 @@ func TestCAPIStreamSpoolZeroization(t *testing.T) {
 		t.Fatalf("TripleStreamRead on tampered stream = (%d, %v, %v), want (0, false, error)", got, fin, st)
 	}
 }
+
+func TestCAPITripleMaxWireAndPlaintextSize(t *testing.T) {
+	blobBuf := make([]byte, 1<<15)
+	id, _, st := TripleInit("streaming-aead-triple-mac-v1", "", blobBuf)
+	if st != StatusOK {
+		t.Fatalf("TripleInit: %v (%s)", st, LastError())
+	}
+	defer FreeTriple(id)
+
+	if _, st := TripleMaxWireSize(0, 1500, 0); st != StatusBadHandle {
+		t.Fatalf("TripleMaxWireSize(0): got %v, want StatusBadHandle", st)
+	}
+	if _, st := TripleMaxPlaintextSize(0, 65536, 0); st != StatusBadHandle {
+		t.Fatalf("TripleMaxPlaintextSize(0): got %v, want StatusBadHandle", st)
+	}
+	if _, st := TripleMaxWireSize(id, 0, 0); st != StatusBadInput {
+		t.Fatalf("TripleMaxWireSize(pt=0): got %v, want StatusBadInput", st)
+	}
+	if _, st := TripleMaxPlaintextSize(id, 0, 0); st != StatusBadInput {
+		t.Fatalf("TripleMaxPlaintextSize(wire=0): got %v, want StatusBadInput", st)
+	}
+
+	maxW, st := TripleMaxWireSize(id, 1500, 0)
+	if st != StatusOK || maxW <= 1500 {
+		t.Fatalf("TripleMaxWireSize(1500) = (%d, %v), want (>1500, StatusOK)", maxW, st)
+	}
+	pt := bytes.Repeat([]byte{0x5C}, 1500)
+	wireDst := make([]byte, maxW)
+	wN, st := TripleEncryptMessage(id, pt, wireDst)
+	if st != StatusOK || wN != maxW {
+		t.Fatalf("TripleEncryptMessage into exact MaxWireSize = (%d, %v), want (%d, StatusOK)", wN, st, maxW)
+	}
+	plainDst := make([]byte, len(pt))
+	pN, st := TripleDecryptMessage(id, wireDst[:wN], plainDst)
+	if st != StatusOK || pN != len(pt) || !bytes.Equal(plainDst[:pN], pt) {
+		t.Fatalf("TripleDecryptMessage into exact len(pt) = (%d, %v)", pN, st)
+	}
+
+	maxPt, st := TripleMaxPlaintextSize(id, maxW, 0)
+	if st != StatusOK || maxPt < 1500 {
+		t.Fatalf("TripleMaxPlaintextSize(%d) = (%d, %v), want (>=1500, StatusOK)", maxW, maxPt, st)
+	}
+	// Smaller than minimum wire returns (0, StatusOK).
+	smallPt, st := TripleMaxPlaintextSize(id, 8, 0)
+	if st != StatusOK || smallPt != 0 {
+		t.Fatalf("TripleMaxPlaintextSize(8) = (%d, %v), want (0, StatusOK)", smallPt, st)
+	}
+
+	// Sub-slice with len < required but cap >= required must return
+	// StatusBufferTooSmall without writing or wiping past len(sub).
+	backing := make([]byte, maxW+128)
+	for i := range backing {
+		backing[i] = 0xA5
+	}
+	smallLen := 16
+	if _, st := TripleEncryptMessage(id, pt, backing[:smallLen]); st != StatusBufferTooSmall {
+		t.Fatalf("TripleEncryptMessage(small sub-slice): got %v, want StatusBufferTooSmall", st)
+	}
+	for i := smallLen; i < len(backing); i++ {
+		if backing[i] != 0xA5 {
+			t.Fatalf("TripleEncryptMessage modified backing[%d] = %#x past len(sub)", i, backing[i])
+		}
+	}
+	if _, st := TripleEncryptStream(id, pt, backing[:smallLen]); st != StatusBufferTooSmall {
+		t.Fatalf("TripleEncryptStream(small sub-slice): got %v, want StatusBufferTooSmall", st)
+	}
+	for i := smallLen; i < len(backing); i++ {
+		if backing[i] != 0xA5 {
+			t.Fatalf("TripleEncryptStream modified backing[%d] = %#x past len(sub)", i, backing[i])
+		}
+	}
+	if _, st := TripleDecryptMessage(id, wireDst[:wN], backing[:smallLen]); st != StatusBufferTooSmall {
+		t.Fatalf("TripleDecryptMessage(small sub-slice): got %v, want StatusBufferTooSmall", st)
+	}
+	for i := smallLen; i < len(backing); i++ {
+		if backing[i] != 0xA5 {
+			t.Fatalf("TripleDecryptMessage modified backing[%d] = %#x past len(sub)", i, backing[i])
+		}
+	}
+	if _, st := TripleDecryptStream(id, wireDst[:wN], backing[:smallLen]); st != StatusBufferTooSmall {
+		t.Fatalf("TripleDecryptStream(small sub-slice): got %v, want StatusBufferTooSmall", st)
+	}
+	for i := smallLen; i < len(backing); i++ {
+		if backing[i] != 0xA5 {
+			t.Fatalf("TripleDecryptStream modified backing[%d] = %#x past len(sub)", i, backing[i])
+		}
+	}
+
+	if st := TripleClose(id); st != StatusOK {
+		t.Fatalf("TripleClose: %v", st)
+	}
+	if _, st := TripleMaxWireSize(id, 1500, 0); st != StatusTripleClosed {
+		t.Fatalf("closed TripleMaxWireSize = %v, want StatusTripleClosed", st)
+	}
+	if _, st := TripleMaxPlaintextSize(id, maxW, 0); st != StatusTripleClosed {
+		t.Fatalf("closed TripleMaxPlaintextSize = %v, want StatusTripleClosed", st)
+	}
+}

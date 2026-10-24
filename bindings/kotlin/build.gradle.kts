@@ -13,7 +13,7 @@ plugins {
 }
 
 group = "io.github.everanium"
-version = "0.7.4"
+version = "0.7.5"
 
 repositories {
     mavenCentral()
@@ -125,6 +125,19 @@ val eitbJar = tasks.register<Jar>("eitbJar") {
     exclude("META-INF/*.SF", "META-INF/*.DSA", "META-INF/*.RSA")
 }
 
+val benchJar = tasks.register<Jar>("benchJar") {
+    description = "Self-contained bench CLI jar"
+    archiveFileName = "bench.jar"
+    manifest {
+        attributes("Main-Class" to "io.github.everanium.itb3.kotlin.bench.MainKt")
+    }
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    from(bench.output)
+    from(sourceSets.main.get().output)
+    from(configurations["benchRuntimeClasspath"].map { if (it.isDirectory) it else zipTree(it) })
+    exclude("META-INF/*.SF", "META-INF/*.DSA", "META-INF/*.RSA")
+}
+
 val loopJar = tasks.register<Jar>("loopJar") {
     description = "Self-contained loop stress-harness jar"
     archiveFileName = "loop.jar"
@@ -139,7 +152,7 @@ val loopJar = tasks.register<Jar>("loopJar") {
 }
 
 tasks.assemble {
-    dependsOn("benchClasses", "eitbClasses", eitbJar, loopJar)
+    dependsOn("benchClasses", "eitbClasses", benchJar, eitbJar, loopJar)
 }
 
 // Maven publication metadata. No sources / javadoc jar is attached:

@@ -15,14 +15,14 @@
 //     keyed via the upstream keyed-hash mode. The PRF output is the
 //     leading blockSize bytes of the keyed digest over the input.
 //
-// The Areion family additionally exposes a 4-wide batched PRF via NewBatch:
-// it hashes four inputs in one SIMD batch (bit-exact with the single-input
-// PRF), which the ctr keystream uses to amortise per-block dispatch. The
-// BLAKE family has no batch path, and NewBatch reports none for those names.
+// The supported primitives — the Areion family and the BLAKE family —
+// expose both a single-input PRF via New and a 4-wide batched PRF via
+// NewBatch (bit-exact with the single-input PRF), which the ctr keystream
+// uses to amortise per-block dispatch.
 //
 // The package is a shared dependency of the ctr and kdf packages, which
 // import it for their keyed-PRF and SP 800-108 counter-mode constructions
-// respectively. It imports the BLAKE upstream packages and the ITB hashes
+// respectively. It imports the BLAKE CTR/PRF packages and the ITB hashes
 // package; it does not import ctr or kdf, so no import cycle arises.
 package hashprf
 
@@ -30,18 +30,15 @@ import (
 	"crypto/sha512"
 	"encoding/binary"
 	"fmt"
-	"hash"
 	"runtime"
-
-	"golang.org/x/crypto/blake2b"
-	"golang.org/x/crypto/blake2s"
-
-	"github.com/zeebo/blake3"
 
 	"github.com/everanium/areion"
 	"github.com/everanium/itb"
 	"github.com/everanium/itb/hashes"
 	"github.com/everanium/itb/internal/areionasm"
+	"github.com/everanium/itb/internal/blake2bctr"
+	"github.com/everanium/itb/internal/blake2sctr"
+	"github.com/everanium/itb/internal/blake3ctr"
 	"github.com/everanium/itb/internal/wipe"
 )
 
@@ -186,17 +183,16 @@ const (
 // hashes/CONSTRUCTIONS.md, n = 256 for areion256 and n = 512 for
 // areion512.
 func areionSeed256(key []byte, out *[4]uint64) {
-	h := sha512.New()
-	h.Write([]byte(areion256SubkeyLabel))
-	h.Write(key)
-	var sum [sha512.Size]byte
-	h.Sum(sum[:0])
-	wipe.StructPtr(h)
+	var in [len(areion256SubkeyLabel) + 32]byte
+	copy(in[:len(areion256SubkeyLabel)], areion256SubkeyLabel)
+	copy(in[len(areion256SubkeyLabel):], key)
+	sum := sha512.Sum512(in[:])
 	for i := range out {
 		out[i] = binary.LittleEndian.Uint64(sum[i*8:])
 	}
-	// sum is the derived subkey; zero the stack copy and scrub the SHA-512 frame.
+	clear(in[:])
 	clear(sum[:])
+	runtime.KeepAlive(&in)
 	runtime.KeepAlive(&sum)
 	wipe.CallStack2K([9][8]uint64{})
 }
@@ -206,17 +202,16 @@ func areionSeed256(key []byte, out *[4]uint64) {
 // little-endian uint64 words into out, under the same security statement at
 // n = 512.
 func areionSeed512(key []byte, out *[8]uint64) {
-	h := sha512.New()
-	h.Write([]byte(areion512SubkeyLabel))
-	h.Write(key)
-	var sum [sha512.Size]byte
-	h.Sum(sum[:0])
-	wipe.StructPtr(h)
+	var in [len(areion512SubkeyLabel) + 64]byte
+	copy(in[:len(areion512SubkeyLabel)], areion512SubkeyLabel)
+	copy(in[len(areion512SubkeyLabel):], key)
+	sum := sha512.Sum512(in[:])
 	for i := range out {
 		out[i] = binary.LittleEndian.Uint64(sum[i*8:])
 	}
-	// sum is the derived subkey; zero the stack copy and scrub the SHA-512 frame.
+	clear(in[:])
 	clear(sum[:])
+	runtime.KeepAlive(&in)
 	runtime.KeepAlive(&sum)
 	wipe.CallStack2K([9][8]uint64{})
 }
@@ -339,143 +334,81 @@ func newAreion512PRF(key []byte) (func(dst, in []byte), func()) {
 	return prf, closeFn
 }
 
-var blake3PRFZeroChunk [1024]byte
-
-//go:noinline
-func evalBlakePRF(dst, in []byte, h hash.Hash, scratch []byte, size int, scrubScratch bool) {
-	h.Write(in)
-	if !scrubScratch && len(dst) >= size {
-		h.Sum(dst[:0])
-		h.Reset()
-		return
-	}
-	out := h.Sum(scratch[:0])
-	for i := 0; i < size && i < len(out); i++ {
-		dst[i] = out[i]
-	}
-	clear(scratch)
-	runtime.KeepAlive(scratch)
-	h.Reset()
-}
-
-// newBlake2bPRF keys a BLAKE2b hasher (output size 32 or 64) and returns
-// a PRF that resets and re-hashes the input per call. The keyed hasher is
-// created once; each call resets its state, so the hasher is not
-// reallocated per call.
-func newBlake2bPRF(key []byte, size int, scrubScratch bool) (func(dst, in []byte), func()) {
-	var h hash.Hash
-	var err error
+// newBlake2bPRF precomputes the RFC 7693 keyed BLAKE2b block-0 chaining
+// state (output size 32 or 64) and returns a zero-allocation PRF closure.
+func newBlake2bPRF(key []byte, size int, _ bool) (func(dst, in []byte), func()) {
+	var hKey [8]uint64
+	var keyBlock [4]uint64
 	if size == 32 {
-		h, err = blake2b.New256(key)
-	} else {
-		h, err = blake2b.New512(key)
-	}
-	if err != nil {
-		// A valid 32-byte key never fails for BLAKE2b; New has already
-		// validated the key length, so any error here is a bug.
-		panic(fmt.Sprintf("hashprf: blake2b keying: %v", err))
-	}
-	wipe.CallStack2K([9][8]uint64{})
-	var scratch [64]byte
-	prf := func(dst, in []byte) {
-		evalBlakePRF(dst, in, h, scratch[:], size, scrubScratch)
-	}
-	closeFn := func() {
-		clear(scratch[:])
-		runtime.KeepAlive(&scratch)
-		wipe.StructPtr(h)
-	}
-	return prf, closeFn
-}
-
-// newBlake2sPRF keys a BLAKE2s-256 hasher and returns a PRF over the
-// reset/re-hash cycle.
-func newBlake2sPRF(key []byte, scrubScratch bool) (func(dst, in []byte), func()) {
-	h, err := blake2s.New256(key)
-	if err != nil {
-		panic(fmt.Sprintf("hashprf: blake2s keying: %v", err))
-	}
-	wipe.CallStack2K([9][8]uint64{})
-	var scratch [32]byte
-	prf := func(dst, in []byte) {
-		evalBlakePRF(dst, in, h, scratch[:], 32, scrubScratch)
-	}
-	closeFn := func() {
-		clear(scratch[:])
-		runtime.KeepAlive(&scratch)
-		wipe.StructPtr(h)
-	}
-	return prf, closeFn
-}
-
-//go:noinline
-func evalBlake3PRF(dst, in []byte, h, tmpl *blake3.Hasher, buf *[32]byte, scrubBuf bool) {
-	_, _ = h.Write(in)
-	if !scrubBuf && len(dst) >= 32 {
-		h.Sum(dst[:0])
-		h.Reset()
-		return
-	}
-	h.Sum(buf[:0])
-	for i := 0; i < 32; i++ {
-		dst[i] = buf[i]
-	}
-	clear(buf[:])
-	runtime.KeepAlive(buf)
-	if len(in) <= len(blake3PRFZeroChunk) {
-		h.Reset()
-		if len(in) > 0 {
-			_, _ = h.Write(blake3PRFZeroChunk[:len(in)])
-			h.Reset()
+		blake2bctr.InitKey256(key, &hKey, &keyBlock)
+		wipe.CallStack2K([9][8]uint64{})
+		prf := func(dst, in []byte) {
+			blake2bctr.Eval256(dst, in, &hKey, &keyBlock)
 		}
-	} else {
-		*h = *tmpl
+		closeFn := func() {
+			clear(hKey[:])
+			clear(keyBlock[:])
+			runtime.KeepAlive(&hKey)
+			runtime.KeepAlive(&keyBlock)
+		}
+		return prf, closeFn
 	}
-	runtime.KeepAlive(h)
-}
-
-// newBlake3PRF keys a BLAKE3 hasher once and returns a PRF over the
-// reset/re-hash cycle, mirroring the blake2b / blake2s closures above.
-//
-// The registry HashFunc in hashes/blake3.go clones a shared template per
-// call because that closure is shared across the goroutines that process
-// ITB pixels in parallel, where Reset() on a shared hasher would race. The
-// PRF returned here is bound to one keystream / KDF instance and is driven
-// strictly sequentially (the prfHashCTR keystream and the SP 800-108
-// counter loop are both single-threaded), so Reset() on a captured hasher
-// is safe and avoids the per-call 8 KiB state copy that Clone() incurs.
-// Restoring *h = *tmpl after each call zeroes all 8 KiB of h.a.buf and
-// h.a.stack while preserving the keyed IV.
-func newBlake3PRF(key []byte, scrubBuf bool) (func(dst, in []byte), func()) {
-	tmpl, err := blake3.NewKeyed(key)
-	if err != nil {
-		panic(fmt.Sprintf("hashprf: blake3 keying: %v", err))
-	}
-	h, err := blake3.NewKeyed(key)
-	if err != nil {
-		panic(fmt.Sprintf("hashprf: blake3 keying: %v", err))
-	}
+	blake2bctr.InitKey512(key, &hKey, &keyBlock)
 	wipe.CallStack2K([9][8]uint64{})
-	var buf [32]byte
 	prf := func(dst, in []byte) {
-		evalBlake3PRF(dst, in, h, tmpl, &buf, scrubBuf)
+		blake2bctr.Eval512(dst, in, &hKey, &keyBlock)
 	}
 	closeFn := func() {
-		clear(buf[:])
-		runtime.KeepAlive(&buf)
-		wipe.StructPtr(h)
-		wipe.StructPtr(tmpl)
+		clear(hKey[:])
+		clear(keyBlock[:])
+		runtime.KeepAlive(&hKey)
+		runtime.KeepAlive(&keyBlock)
 	}
 	return prf, closeFn
 }
 
-// NewBatch returns a 4-wide batched keyed PRF for the primitives that expose a
-// SIMD batch path, together with the per-lane output block size. ok reports
-// whether a batch path exists for name: only the Areion family does (via the
-// registry BatchHashFunc factories, which are bit-exact with the single-input
-// HashFunc), so a batched keystream over those primitives produces output
-// byte-identical to the single-block PRF. ok is false for the BLAKE family,
-// whose registry factories expose no 4-wide batch; callers fall back to New.
+// newBlake2sPRF precomputes the RFC 7693 keyed BLAKE2s-256 block-0 chaining
+// state and returns a zero-allocation PRF closure.
+func newBlake2sPRF(key []byte, _ bool) (func(dst, in []byte), func()) {
+	var hKey [8]uint32
+	var keyWords [8]uint32
+	blake2sctr.InitKey(key, &hKey, &keyWords)
+	wipe.CallStack2K([9][8]uint64{})
+	prf := func(dst, in []byte) {
+		blake2sctr.Eval(dst, in, &hKey, &keyWords)
+	}
+	closeFn := func() {
+		clear(hKey[:])
+		clear(keyWords[:])
+		runtime.KeepAlive(&hKey)
+		runtime.KeepAlive(&keyWords)
+	}
+	return prf, closeFn
+}
+
+// newBlake3PRF parses the 32-byte key into key words and returns a keyed
+// BLAKE3 PRF closure that evaluates single-block inputs (<= 64 bytes) directly
+// without heap allocation.
+func newBlake3PRF(key []byte, _ bool) (func(dst, in []byte), func()) {
+	var keyWords [8]uint32
+	var keyBytes [32]byte
+	blake3ctr.InitKey(key, &keyWords)
+	copy(keyBytes[:], key)
+	wipe.CallStack2K([9][8]uint64{})
+	prf := func(dst, in []byte) {
+		blake3ctr.Eval(dst, in, &keyWords, &keyBytes)
+	}
+	closeFn := func() {
+		clear(keyWords[:])
+		clear(keyBytes[:])
+		runtime.KeepAlive(&keyWords)
+		runtime.KeepAlive(&keyBytes)
+	}
+	return prf, closeFn
+}
+
+// NewBatch returns a 4-wide batched keyed PRF for the supported primitives,
+// together with the per-lane output block size.
 //
 // The returned batch closure fills dst[0..3] (each at least blockSize bytes)
 // from in[0..3]. It is bound to one keystream / KDF instance and driven
@@ -495,7 +428,8 @@ func NewBatchWithClose(name string, key []byte) (batch func(dst, in *[4][]byte),
 	}
 	wrapped := func(dst, in *[4][]byte) {
 		raw(dst, in)
-		wipe.CallStack2K([9][8]uint64{})
+		wipe.CallStack12K([9][8]uint64{})
+		wipe.ClobberRegs()
 	}
 	return wrapped, bs, true, c, nil
 }
@@ -525,40 +459,167 @@ func NewBatchRawWithClose(name string, key []byte) (batch func(dst, in *[4][]byt
 			return b, s.blockSize, true, c, nil
 		}
 		return nil, 0, false, nil, nil
+	case hashes.CipherBLAKE2b256:
+		b, c := newBlake2b256BatchPRF(key)
+		return b, s.blockSize, true, c, nil
+	case hashes.CipherBLAKE2b512:
+		b, c := newBlake2b512BatchPRF(key)
+		return b, s.blockSize, true, c, nil
+	case hashes.CipherBLAKE2s:
+		b, c := newBlake2sBatchPRF(key)
+		return b, s.blockSize, true, c, nil
+	case hashes.CipherBLAKE3:
+		b, c := newBlake3BatchPRF(key)
+		return b, s.blockSize, true, c, nil
 	default:
 		return nil, 0, false, nil, nil
 	}
 }
 
-//go:noinline
-func evalAreion256BatchPRF(dst, in *[4][]byte, fixedKey *[32]byte, seeds *[4][4]uint64, fullKeys *[4][64]byte) {
-	const chunkSize = 24
-	commonLen := len(in[0])
-	for lane := 1; lane < 4; lane++ {
-		if len(in[lane]) != commonLen {
-			panic("areion: batched arm requires equal lane lengths (ITB contract)")
-		}
+func newBlake2b256BatchPRF(key []byte) (func(dst, in *[4][]byte), func()) {
+	var hKey [8]uint64
+	var keyBlock [4]uint64
+	blake2bctr.InitKey256(key, &hKey, &keyBlock)
+	wipe.CallStack2K([9][8]uint64{})
+	wipe.ClobberRegs()
+	batch := func(dst, in *[4][]byte) {
+		blake2bctr.BatchPRF256x4(dst, in, &hKey, &keyBlock)
 	}
+	closeFn := func() {
+		clear(hKey[:])
+		clear(keyBlock[:])
+		runtime.KeepAlive(&hKey)
+		runtime.KeepAlive(&keyBlock)
+	}
+	return batch, closeFn
+}
+
+func newBlake2b512BatchPRF(key []byte) (func(dst, in *[4][]byte), func()) {
+	var hKey [8]uint64
+	var keyBlock [4]uint64
+	blake2bctr.InitKey512(key, &hKey, &keyBlock)
+	wipe.CallStack2K([9][8]uint64{})
+	wipe.ClobberRegs()
+	batch := func(dst, in *[4][]byte) {
+		blake2bctr.BatchPRF512x4(dst, in, &hKey, &keyBlock)
+	}
+	closeFn := func() {
+		clear(hKey[:])
+		clear(keyBlock[:])
+		runtime.KeepAlive(&hKey)
+		runtime.KeepAlive(&keyBlock)
+	}
+	return batch, closeFn
+}
+
+func newBlake2sBatchPRF(key []byte) (func(dst, in *[4][]byte), func()) {
+	var hKey [8]uint32
+	var keyWords [8]uint32
+	blake2sctr.InitKey(key, &hKey, &keyWords)
+	wipe.CallStack2K([9][8]uint64{})
+	wipe.ClobberRegs()
+	batch := func(dst, in *[4][]byte) {
+		blake2sctr.BatchPRFx4(dst, in, &hKey, &keyWords)
+	}
+	closeFn := func() {
+		clear(hKey[:])
+		clear(keyWords[:])
+		runtime.KeepAlive(&hKey)
+		runtime.KeepAlive(&keyWords)
+	}
+	return batch, closeFn
+}
+
+func newBlake3BatchPRF(key []byte) (func(dst, in *[4][]byte), func()) {
+	var keyWords [8]uint32
+	var keyBytes [32]byte
+	blake3ctr.InitKey(key, &keyWords)
+	copy(keyBytes[:], key)
+	wipe.CallStack2K([9][8]uint64{})
+	wipe.ClobberRegs()
+	batch := func(dst, in *[4][]byte) {
+		blake3ctr.BatchPRFx4(dst, in, &keyWords, &keyBytes)
+	}
+	closeFn := func() {
+		clear(keyWords[:])
+		clear(keyBytes[:])
+		runtime.KeepAlive(&keyWords)
+		runtime.KeepAlive(&keyBytes)
+	}
+	return batch, closeFn
+}
+
+type areion256SoAKey struct {
+	fixedKey   [32]byte
+	seed       [4]uint64
+	fullKeys   [4][64]byte
+	k1b0, k1b1 [8]uint64
+	k2b0, k2b1 [8]uint64
+	wb0, wb1   [8]uint64
+}
+
+type areion512SoAKey struct {
+	fixedKey               [64]byte
+	seed                   [8]uint64
+	fullKeys               [4][128]byte
+	k1b0, k1b1, k1b2, k1b3 areion.Block4
+	k2b0, k2b1, k2b2, k2b3 areion.Block4
+	wb0, wb1, wb2, wb3     [8]uint64
+}
+
+func areionSoEMBatchedActive() bool {
+	return areionasm.HasVAESAVX512 || areionasm.HasVAESAVX2NoAVX512 || areionasm.HasAVXAESNIBatched || areionasm.HasAESNIBatched || areionasm.HasARMAESBatched
+}
+
+func areion256SoEMPermutex4(s1b0, s1b1, s2b0, s2b1 *areion.Block4) {
+	switch {
+	case areionasm.HasVAESAVX512:
+		areionasm.Areion256SoEMPermutex4Interleaved(s1b0, s1b1, s2b0, s2b1)
+	case areionasm.HasVAESAVX2NoAVX512:
+		areionasm.Areion256SoEMPermutex4VaesAvx2(s1b0, s1b1, s2b0, s2b1)
+	case areionasm.HasAVXAESNIBatched:
+		areionasm.Areion256SoEMPermutex4Vex(s1b0, s1b1, s2b0, s2b1)
+	case areionasm.HasAESNIBatched:
+		areionasm.Areion256SoEMPermutex4AesNi(s1b0, s1b1, s2b0, s2b1)
+	case areionasm.HasARMAESBatched:
+		areionasm.Areion256SoEMPermutex4NEON(s1b0, s1b1, s2b0, s2b1)
+	}
+}
+
+func areion512SoEMPermutex4(a1, b1, c1, d1, a2, b2, c2, d2 *areion.Block4) {
+	switch {
+	case areionasm.HasVAESAVX512:
+		areionasm.Areion512SoEMPermutex4Interleaved(a1, b1, c1, d1, a2, b2, c2, d2)
+	case areionasm.HasVAESAVX2NoAVX512:
+		areionasm.Areion512SoEMPermutex4VaesAvx2(a1, b1, c1, d1, a2, b2, c2, d2)
+	case areionasm.HasAVXAESNIBatched:
+		areionasm.Areion512SoEMPermutex4Vex(a1, b1, c1, d1, a2, b2, c2, d2)
+	case areionasm.HasAESNIBatched:
+		areionasm.Areion512SoEMPermutex4AesNi(a1, b1, c1, d1, a2, b2, c2, d2)
+	case areionasm.HasARMAESBatched:
+		areionasm.Areion512SoEMPermutex4NEON(a1, b1, c1, d1, a2, b2, c2, d2)
+	}
+}
+
+//go:noinline
+func evalAreion256BatchPRFSlow(dst, in *[4][]byte, soa *areion256SoAKey, commonLen int) {
+	const chunkSize = 24
 	if areionasm.FusedAvailable() {
 		var out [4][4]uint64
 		fused := true
 		switch commonLen {
 		case 13:
-			for lane := range out {
-				areionasm.Fused256Chain13x1(fixedKey, seeds[lane][:], &in[lane][0], &out[lane])
-			}
+			ptrs := [4]*byte{&in[0][0], &in[1][0], &in[2][0], &in[3][0]}
+			areionasm.Fused256Chain13x4(&soa.fixedKey, soa.seed[:], &ptrs, &out)
 		case 20:
-			for lane := range out {
-				areionasm.Fused256Chain20x1(fixedKey, seeds[lane][:], &in[lane][0], &out[lane])
-			}
+			ptrs := [4]*byte{&in[0][0], &in[1][0], &in[2][0], &in[3][0]}
+			areionasm.Fused256Chain20x4(&soa.fixedKey, soa.seed[:], &ptrs, &out)
 		case 36:
-			for lane := range out {
-				areionasm.Fused256Chain36x1(fixedKey, seeds[lane][:], &in[lane][0], &out[lane])
-			}
+			ptrs := [4]*byte{&in[0][0], &in[1][0], &in[2][0], &in[3][0]}
+			areionasm.Fused256Chain36x4(&soa.fixedKey, soa.seed[:], &ptrs, &out)
 		case 68:
-			for lane := range out {
-				areionasm.Fused256Chain68x1(fixedKey, seeds[lane][:], &in[lane][0], &out[lane])
-			}
+			ptrs := [4]*byte{&in[0][0], &in[1][0], &in[2][0], &in[3][0]}
+			areionasm.Fused256Chain68x4(&soa.fixedKey, soa.seed[:], &ptrs, &out)
 		default:
 			fused = false
 		}
@@ -582,12 +643,12 @@ func evalAreion256BatchPRF(dst, in *[4][]byte, fixedKey *[32]byte, seeds *[4][4]
 		for lane := 0; lane < 4; lane++ {
 			copy(states[lane][8:8+commonLen], in[lane])
 		}
-		states = itb.AreionSoEM256x4(fullKeys, &states)
+		states = itb.AreionSoEM256x4(&soa.fullKeys, &states)
 	} else {
 		for lane := 0; lane < 4; lane++ {
 			copy(states[lane][8:8+chunkSize], in[lane][0:chunkSize])
 		}
-		states = itb.AreionSoEM256x4(fullKeys, &states)
+		states = itb.AreionSoEM256x4(&soa.fullKeys, &states)
 		off := chunkSize
 		for off < commonLen {
 			end := off + chunkSize
@@ -597,7 +658,7 @@ func evalAreion256BatchPRF(dst, in *[4][]byte, fixedKey *[32]byte, seeds *[4][4]
 			for lane := 0; lane < 4; lane++ {
 				absorbXOR(states[lane][8:8+(end-off)], in[lane][off:end])
 			}
-			states = itb.AreionSoEM256x4(fullKeys, &states)
+			states = itb.AreionSoEM256x4(&soa.fullKeys, &states)
 			off = end
 		}
 	}
@@ -608,72 +669,118 @@ func evalAreion256BatchPRF(dst, in *[4][]byte, fixedKey *[32]byte, seeds *[4][4]
 	runtime.KeepAlive(&states)
 }
 
-// newAreion256BatchPRF builds a 4-wide Areion-SoEM-256 PRF that hashes four
-// equal-length inputs per call under fixedKey || areionSeed256(key) and
-// writes each 32-byte result into dst[lane]. Owning fixedKey, seeds, and
-// fullKeys directly in the closure environment lets closeFn zero all key
-// material in place.
-func newAreion256BatchPRF(key []byte) (func(dst, in *[4][]byte), func()) {
-	var fixedKey [32]byte
-	copy(fixedKey[:], key)
-	var seeds [4][4]uint64
-	var fullKeys [4][64]byte
-	var s [4]uint64
-	areionSeed256(key, &s)
-	for lane := 0; lane < 4; lane++ {
-		seeds[lane] = s
-		copy(fullKeys[lane][:32], fixedKey[:])
-		for i := 0; i < 4; i++ {
-			binary.LittleEndian.PutUint64(fullKeys[lane][32+i*8:], s[i])
-		}
-	}
-	clear(s[:])
-	runtime.KeepAlive(&s)
-	wipe.CallStack2K([9][8]uint64{})
-
-	batch := func(dst, in *[4][]byte) {
-		evalAreion256BatchPRF(dst, in, &fixedKey, &seeds, &fullKeys)
-	}
-	closeFn := func() {
-		clear(fixedKey[:])
-		clear(seeds[:])
-		clear(fullKeys[:])
-		runtime.KeepAlive(&fixedKey)
-		runtime.KeepAlive(&seeds)
-		runtime.KeepAlive(&fullKeys)
-	}
-	return batch, closeFn
-}
-
 //go:noinline
-func evalAreion512BatchPRF(dst, in *[4][]byte, fixedKey *[64]byte, seeds *[4][8]uint64, fullKeys *[4][128]byte) {
-	const chunkSize = 56
+func evalAreion256BatchPRF(dst, in *[4][]byte, soa *areion256SoAKey) {
 	commonLen := len(in[0])
 	for lane := 1; lane < 4; lane++ {
 		if len(in[lane]) != commonLen {
 			panic("areion: batched arm requires equal lane lengths (ITB contract)")
 		}
 	}
+	if commonLen != 24 || !areionSoEMBatchedActive() {
+		evalAreion256BatchPRFSlow(dst, in, soa, commonLen)
+		return
+	}
+	var s1b0, s1b1, s2b0, s2b1 areion.Block4
+	for lane := 0; lane < 4; lane++ {
+		inp := in[lane]
+		m0 := uint64(24)
+		m1 := binary.LittleEndian.Uint64(inp[0:8])
+		m2 := binary.LittleEndian.Uint64(inp[8:16])
+		m3 := binary.LittleEndian.Uint64(inp[16:24])
+		w := lane * 2
+		o := lane * 16
+		binary.LittleEndian.PutUint64(s1b0[o:o+8], m0^soa.k1b0[w])
+		binary.LittleEndian.PutUint64(s1b0[o+8:o+16], m1^soa.k1b0[w+1])
+		binary.LittleEndian.PutUint64(s1b1[o:o+8], m2^soa.k1b1[w])
+		binary.LittleEndian.PutUint64(s1b1[o+8:o+16], m3^soa.k1b1[w+1])
+		binary.LittleEndian.PutUint64(s2b0[o:o+8], m0^soa.k2b0[w])
+		binary.LittleEndian.PutUint64(s2b0[o+8:o+16], m1^soa.k2b0[w+1])
+		binary.LittleEndian.PutUint64(s2b1[o:o+8], m2^soa.k2b1[w])
+		binary.LittleEndian.PutUint64(s2b1[o+8:o+16], m3^soa.k2b1[w+1])
+	}
+	areion256SoEMPermutex4(&s1b0, &s1b1, &s2b0, &s2b1)
+	for lane := 0; lane < 4; lane++ {
+		d := dst[lane]
+		w := lane * 2
+		o := lane * 16
+		binary.LittleEndian.PutUint64(d[0:8], binary.LittleEndian.Uint64(s1b0[o:o+8])^soa.wb0[w])
+		binary.LittleEndian.PutUint64(d[8:16], binary.LittleEndian.Uint64(s1b0[o+8:o+16])^soa.wb0[w+1])
+		binary.LittleEndian.PutUint64(d[16:24], binary.LittleEndian.Uint64(s1b1[o:o+8])^soa.wb1[w])
+		binary.LittleEndian.PutUint64(d[24:32], binary.LittleEndian.Uint64(s1b1[o+8:o+16])^soa.wb1[w+1])
+	}
+	clear(s1b0[:])
+	clear(s1b1[:])
+	clear(s2b0[:])
+	clear(s2b1[:])
+	runtime.KeepAlive(&s1b0)
+	runtime.KeepAlive(&s1b1)
+	runtime.KeepAlive(&s2b0)
+	runtime.KeepAlive(&s2b1)
+}
+
+//go:noinline
+func initAreion256SoAKey(soa *areion256SoAKey, key []byte) {
+	copy(soa.fixedKey[:], key)
+	areionSeed256(key, &soa.seed)
+	k1w0 := binary.LittleEndian.Uint64(soa.fixedKey[0:8])
+	k1w1 := binary.LittleEndian.Uint64(soa.fixedKey[8:16])
+	k1w2 := binary.LittleEndian.Uint64(soa.fixedKey[16:24])
+	k1w3 := binary.LittleEndian.Uint64(soa.fixedKey[24:32])
+	for lane := 0; lane < 4; lane++ {
+		copy(soa.fullKeys[lane][:32], soa.fixedKey[:])
+		for i := 0; i < 4; i++ {
+			binary.LittleEndian.PutUint64(soa.fullKeys[lane][32+i*8:], soa.seed[i])
+		}
+		w := lane * 2
+		soa.k1b0[w], soa.k1b0[w+1] = k1w0, k1w1
+		soa.k1b1[w], soa.k1b1[w+1] = k1w2, k1w3
+		soa.k2b0[w], soa.k2b0[w+1] = soa.seed[0], soa.seed[1]
+		soa.k2b1[w], soa.k2b1[w+1] = soa.seed[2], soa.seed[3]
+		soa.wb0[w], soa.wb0[w+1] = k1w0^soa.seed[0], k1w1^soa.seed[1]
+		soa.wb1[w], soa.wb1[w+1] = k1w2^soa.seed[2], k1w3^soa.seed[3]
+	}
+	wipe.ClobberRegs()
+}
+
+// newAreion256BatchPRF builds a 4-wide Areion-SoEM-256 PRF that hashes four
+// equal-length inputs per call under fixedKey || areionSeed256(key) and
+// writes each 32-byte result into dst[lane]. Owning fixedKey, seeds, and
+// fullKeys directly in the closure environment lets closeFn zero all key
+// material in place.
+func newAreion256BatchPRF(key []byte) (func(dst, in *[4][]byte), func()) {
+	var soa areion256SoAKey
+	initAreion256SoAKey(&soa, key)
+
+	batch := func(dst, in *[4][]byte) {
+		evalAreion256BatchPRF(dst, in, &soa)
+	}
+	closeFn := func() {
+		soa = areion256SoAKey{}
+		runtime.KeepAlive(&soa)
+	}
+	return batch, closeFn
+}
+
+//go:noinline
+func evalAreion512BatchPRFSlow(dst, in *[4][]byte, soa *areion512SoAKey, commonLen int) {
+	const chunkSize = 56
 	if areionasm.FusedAvailable() {
 		var out [4][8]uint64
 		fused := true
 		switch commonLen {
 		case 13:
-			for lane := range out {
-				areionasm.Fused512Chain13x1(fixedKey, seeds[lane][:], &in[lane][0], &out[lane])
-			}
+			ptrs := [4]*byte{&in[0][0], &in[1][0], &in[2][0], &in[3][0]}
+			areionasm.Fused512Chain13x4(&soa.fixedKey, soa.seed[:], &ptrs, &out)
 		case 20:
-			for lane := range out {
-				areionasm.Fused512Chain20x1(fixedKey, seeds[lane][:], &in[lane][0], &out[lane])
-			}
+			ptrs := [4]*byte{&in[0][0], &in[1][0], &in[2][0], &in[3][0]}
+			areionasm.Fused512Chain20x4(&soa.fixedKey, soa.seed[:], &ptrs, &out)
 		case 36:
-			for lane := range out {
-				areionasm.Fused512Chain36x1(fixedKey, seeds[lane][:], &in[lane][0], &out[lane])
-			}
+			ptrs := [4]*byte{&in[0][0], &in[1][0], &in[2][0], &in[3][0]}
+			areionasm.Fused512Chain36x4(&soa.fixedKey, soa.seed[:], &ptrs, &out)
 		case 68:
-			for lane := range out {
-				areionasm.Fused512Chain68x1(fixedKey, seeds[lane][:], &in[lane][0], &out[lane])
-			}
+			ptrs := [4]*byte{&in[0][0], &in[1][0], &in[2][0], &in[3][0]}
+			areionasm.Fused512Chain68x4(&soa.fixedKey, soa.seed[:], &ptrs, &out)
 		default:
 			fused = false
 		}
@@ -697,12 +804,12 @@ func evalAreion512BatchPRF(dst, in *[4][]byte, fixedKey *[64]byte, seeds *[4][8]
 		for lane := 0; lane < 4; lane++ {
 			copy(states[lane][8:8+commonLen], in[lane])
 		}
-		states = itb.AreionSoEM512x4(fullKeys, &states)
+		states = itb.AreionSoEM512x4(&soa.fullKeys, &states)
 	} else {
 		for lane := 0; lane < 4; lane++ {
 			copy(states[lane][8:8+chunkSize], in[lane][0:chunkSize])
 		}
-		states = itb.AreionSoEM512x4(fullKeys, &states)
+		states = itb.AreionSoEM512x4(&soa.fullKeys, &states)
 		off := chunkSize
 		for off < commonLen {
 			end := off + chunkSize
@@ -712,7 +819,7 @@ func evalAreion512BatchPRF(dst, in *[4][]byte, fixedKey *[64]byte, seeds *[4][8]
 			for lane := 0; lane < 4; lane++ {
 				absorbXOR(states[lane][8:8+(end-off)], in[lane][off:end])
 			}
-			states = itb.AreionSoEM512x4(fullKeys, &states)
+			states = itb.AreionSoEM512x4(&soa.fullKeys, &states)
 			off = end
 		}
 	}
@@ -723,37 +830,115 @@ func evalAreion512BatchPRF(dst, in *[4][]byte, fixedKey *[64]byte, seeds *[4][8]
 	runtime.KeepAlive(&states)
 }
 
+//go:noinline
+func evalAreion512BatchPRF(dst, in *[4][]byte, soa *areion512SoAKey) {
+	commonLen := len(in[0])
+	for lane := 1; lane < 4; lane++ {
+		if len(in[lane]) != commonLen {
+			panic("areion: batched arm requires equal lane lengths (ITB contract)")
+		}
+	}
+	if commonLen != 24 || !areionSoEMBatchedActive() {
+		evalAreion512BatchPRFSlow(dst, in, soa, commonLen)
+		return
+	}
+	var s1b0, s1b1, s1b2, s1b3, s2b0, s2b1, s2b2, s2b3 areion.Block4
+	copy(s1b2[:], soa.k1b2[:])
+	copy(s1b3[:], soa.k1b3[:])
+	copy(s2b2[:], soa.k2b2[:])
+	copy(s2b3[:], soa.k2b3[:])
+	for lane := 0; lane < 4; lane++ {
+		inp := in[lane]
+		m0 := uint64(24)
+		m1 := binary.LittleEndian.Uint64(inp[0:8])
+		m2 := binary.LittleEndian.Uint64(inp[8:16])
+		m3 := binary.LittleEndian.Uint64(inp[16:24])
+		o := lane * 16
+		binary.LittleEndian.PutUint64(s1b0[o:o+8], m0^binary.LittleEndian.Uint64(soa.k1b0[o:o+8]))
+		binary.LittleEndian.PutUint64(s1b0[o+8:o+16], m1^binary.LittleEndian.Uint64(soa.k1b0[o+8:o+16]))
+		binary.LittleEndian.PutUint64(s1b1[o:o+8], m2^binary.LittleEndian.Uint64(soa.k1b1[o:o+8]))
+		binary.LittleEndian.PutUint64(s1b1[o+8:o+16], m3^binary.LittleEndian.Uint64(soa.k1b1[o+8:o+16]))
+		binary.LittleEndian.PutUint64(s2b0[o:o+8], m0^binary.LittleEndian.Uint64(soa.k2b0[o:o+8]))
+		binary.LittleEndian.PutUint64(s2b0[o+8:o+16], m1^binary.LittleEndian.Uint64(soa.k2b0[o+8:o+16]))
+		binary.LittleEndian.PutUint64(s2b1[o:o+8], m2^binary.LittleEndian.Uint64(soa.k2b1[o:o+8]))
+		binary.LittleEndian.PutUint64(s2b1[o+8:o+16], m3^binary.LittleEndian.Uint64(soa.k2b1[o+8:o+16]))
+	}
+	areion512SoEMPermutex4(&s1b0, &s1b1, &s1b2, &s1b3, &s2b0, &s2b1, &s2b2, &s2b3)
+	for lane := 0; lane < 4; lane++ {
+		d := dst[lane]
+		w := lane * 2
+		o := lane * 16
+		binary.LittleEndian.PutUint64(d[0:8], binary.LittleEndian.Uint64(s1b0[o:o+8])^soa.wb0[w])
+		binary.LittleEndian.PutUint64(d[8:16], binary.LittleEndian.Uint64(s1b0[o+8:o+16])^soa.wb0[w+1])
+		binary.LittleEndian.PutUint64(d[16:24], binary.LittleEndian.Uint64(s1b1[o:o+8])^soa.wb1[w])
+		binary.LittleEndian.PutUint64(d[24:32], binary.LittleEndian.Uint64(s1b1[o+8:o+16])^soa.wb1[w+1])
+		binary.LittleEndian.PutUint64(d[32:40], binary.LittleEndian.Uint64(s1b2[o:o+8])^soa.wb2[w])
+		binary.LittleEndian.PutUint64(d[40:48], binary.LittleEndian.Uint64(s1b2[o+8:o+16])^soa.wb2[w+1])
+		binary.LittleEndian.PutUint64(d[48:56], binary.LittleEndian.Uint64(s1b3[o:o+8])^soa.wb3[w])
+		binary.LittleEndian.PutUint64(d[56:64], binary.LittleEndian.Uint64(s1b3[o+8:o+16])^soa.wb3[w+1])
+	}
+	clear(s1b0[:])
+	clear(s1b1[:])
+	clear(s1b2[:])
+	clear(s1b3[:])
+	clear(s2b0[:])
+	clear(s2b1[:])
+	clear(s2b2[:])
+	clear(s2b3[:])
+	runtime.KeepAlive(&s1b0)
+	runtime.KeepAlive(&s1b1)
+	runtime.KeepAlive(&s1b2)
+	runtime.KeepAlive(&s1b3)
+	runtime.KeepAlive(&s2b0)
+	runtime.KeepAlive(&s2b1)
+	runtime.KeepAlive(&s2b2)
+	runtime.KeepAlive(&s2b3)
+}
+
+//go:noinline
+func initAreion512SoAKey(soa *areion512SoAKey, key []byte) {
+	copy(soa.fixedKey[:], key)
+	areionSeed512(key, &soa.seed)
+	for lane := 0; lane < 4; lane++ {
+		copy(soa.fullKeys[lane][:64], soa.fixedKey[:])
+		for i := 0; i < 8; i++ {
+			binary.LittleEndian.PutUint64(soa.fullKeys[lane][64+i*8:], soa.seed[i])
+		}
+		o := lane * 16
+		copy(soa.k1b0[o:o+16], soa.fixedKey[0:16])
+		copy(soa.k1b1[o:o+16], soa.fixedKey[16:32])
+		copy(soa.k1b2[o:o+16], soa.fixedKey[32:48])
+		copy(soa.k1b3[o:o+16], soa.fixedKey[48:64])
+		copy(soa.k2b0[o:o+16], soa.fullKeys[lane][64:80])
+		copy(soa.k2b1[o:o+16], soa.fullKeys[lane][80:96])
+		copy(soa.k2b2[o:o+16], soa.fullKeys[lane][96:112])
+		copy(soa.k2b3[o:o+16], soa.fullKeys[lane][112:128])
+		w := lane * 2
+		soa.wb0[w] = binary.LittleEndian.Uint64(soa.fixedKey[0:8]) ^ soa.seed[0]
+		soa.wb0[w+1] = binary.LittleEndian.Uint64(soa.fixedKey[8:16]) ^ soa.seed[1]
+		soa.wb1[w] = binary.LittleEndian.Uint64(soa.fixedKey[16:24]) ^ soa.seed[2]
+		soa.wb1[w+1] = binary.LittleEndian.Uint64(soa.fixedKey[24:32]) ^ soa.seed[3]
+		soa.wb2[w] = binary.LittleEndian.Uint64(soa.fixedKey[32:40]) ^ soa.seed[4]
+		soa.wb2[w+1] = binary.LittleEndian.Uint64(soa.fixedKey[40:48]) ^ soa.seed[5]
+		soa.wb3[w] = binary.LittleEndian.Uint64(soa.fixedKey[48:56]) ^ soa.seed[6]
+		soa.wb3[w+1] = binary.LittleEndian.Uint64(soa.fixedKey[56:64]) ^ soa.seed[7]
+	}
+	wipe.ClobberRegs()
+}
+
 // newAreion512BatchPRF is the Areion-SoEM-512 counterpart: four inputs per
 // SIMD batch, every lane under the key-derived seed of areionSeed512, each
 // 64-byte result written into dst[lane].
 func newAreion512BatchPRF(key []byte) (func(dst, in *[4][]byte), func()) {
-	var fixedKey [64]byte
-	copy(fixedKey[:], key)
-	var seeds [4][8]uint64
-	var fullKeys [4][128]byte
-	var s [8]uint64
-	areionSeed512(key, &s)
-	for lane := 0; lane < 4; lane++ {
-		seeds[lane] = s
-		copy(fullKeys[lane][:64], fixedKey[:])
-		for i := 0; i < 8; i++ {
-			binary.LittleEndian.PutUint64(fullKeys[lane][64+i*8:], s[i])
-		}
-	}
-	clear(s[:])
-	runtime.KeepAlive(&s)
-	wipe.CallStack2K([9][8]uint64{})
+	var soa areion512SoAKey
+	initAreion512SoAKey(&soa, key)
 
 	batch := func(dst, in *[4][]byte) {
-		evalAreion512BatchPRF(dst, in, &fixedKey, &seeds, &fullKeys)
+		evalAreion512BatchPRF(dst, in, &soa)
 	}
 	closeFn := func() {
-		clear(fixedKey[:])
-		clear(seeds[:])
-		clear(fullKeys[:])
-		runtime.KeepAlive(&fixedKey)
-		runtime.KeepAlive(&seeds)
-		runtime.KeepAlive(&fullKeys)
+		soa = areion512SoAKey{}
+		runtime.KeepAlive(&soa)
 	}
 	return batch, closeFn
 }

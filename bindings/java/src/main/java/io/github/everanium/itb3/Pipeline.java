@@ -8,6 +8,7 @@ import java.lang.ref.Cleaner;
 import java.lang.ref.Reference;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 import javax.security.auth.Destroyable;
@@ -74,9 +75,17 @@ public final class Pipeline implements AutoCloseable, Destroyable {
         ByteBuffer profileC = Native.cstr(profile);
         ByteBuffer optsC = Native.cstr(opts.build());
         long[] handle = new long[1];
-        retryOnce(BLOB_CAP, (buf, cap, len) ->
-                Native.tripleInit(profileC, optsC, buf, cap, len, handle));
-        return new Pipeline(handle[0]);
+        byte[] blob = null;
+        try {
+            blob = retryOnce(BLOB_CAP, (buf, cap, len) ->
+                    Native.tripleInit(profileC, optsC, buf, cap, len, handle));
+            return new Pipeline(handle[0]);
+        } finally {
+            if (blob != null) {
+                Arrays.fill(blob, (byte) 0);
+            }
+            wipe(optsC);
+        }
     }
 
     /** Deterministically constructs a Pipeline from eight caller-supplied
@@ -123,19 +132,20 @@ public final class Pipeline implements AutoCloseable, Destroyable {
             }
         }
         long[] handle = new long[1];
+        byte[] blob = null;
         try {
             final int flatLen = total;
             final int mastersCount = count;
-            retryOnce(BLOB_CAP, (buf, cap, len) ->
+            blob = retryOnce(BLOB_CAP, (buf, cap, len) ->
                     Native.tripleInitKeys(profileC, optsC, flatBuf, flatLen,
                             lensBuf, mastersCount, buf, cap, len, handle));
             return new Pipeline(handle[0]);
         } finally {
-            if (flatBuf != null) {
-                for (int i = 0; i < total; i++) {
-                    flatBuf.put(i, (byte) 0);
-                }
+            if (blob != null) {
+                Arrays.fill(blob, (byte) 0);
             }
+            wipe(flatBuf);
+            wipe(optsC);
         }
     }
 
@@ -154,12 +164,18 @@ public final class Pipeline implements AutoCloseable, Destroyable {
         ByteBuffer pmC = Native.direct(permMaster);
         ByteBuffer wmC = Native.direct(wrapMaster);
         long[] handle = new long[1];
-        ItbException.check(Native.tripleLoad(blobC,
-                blob == null ? 0 : blob.length,
-                pmC, permMaster == null ? 0 : permMaster.length,
-                wmC, wrapMaster == null ? 0 : wrapMaster.length,
-                mastersCount(permMaster, wrapMaster), handle));
-        return new Pipeline(handle[0]);
+        try {
+            ItbException.check(Native.tripleLoad(blobC,
+                    blob == null ? 0 : blob.length,
+                    pmC, permMaster == null ? 0 : permMaster.length,
+                    wmC, wrapMaster == null ? 0 : wrapMaster.length,
+                    mastersCount(permMaster, wrapMaster), handle));
+            return new Pipeline(handle[0]);
+        } finally {
+            wipe(blobC);
+            wipe(pmC);
+            wipe(wmC);
+        }
     }
 
     /** {@link #load} for a blob stored in a file; the file is read
@@ -175,11 +191,16 @@ public final class Pipeline implements AutoCloseable, Destroyable {
         ByteBuffer pmC = Native.direct(permMaster);
         ByteBuffer wmC = Native.direct(wrapMaster);
         long[] handle = new long[1];
-        ItbException.check(Native.tripleLoadF(pathC,
-                pmC, permMaster == null ? 0 : permMaster.length,
-                wmC, wrapMaster == null ? 0 : wrapMaster.length,
-                mastersCount(permMaster, wrapMaster), handle));
-        return new Pipeline(handle[0]);
+        try {
+            ItbException.check(Native.tripleLoadF(pathC,
+                    pmC, permMaster == null ? 0 : permMaster.length,
+                    wmC, wrapMaster == null ? 0 : wrapMaster.length,
+                    mastersCount(permMaster, wrapMaster), handle));
+            return new Pipeline(handle[0]);
+        } finally {
+            wipe(pmC);
+            wipe(wmC);
+        }
     }
 
     /** Folds the optional master pair into the CAPI arity flag: 0 for
@@ -285,6 +306,8 @@ public final class Pipeline implements AutoCloseable, Destroyable {
                             wmC, wrapMaster == null ? 0 : wrapMaster.length,
                             buf, cap, len));
         } finally {
+            wipe(pmC);
+            wipe(wmC);
             Reference.reachabilityFence(this);
         }
     }
@@ -512,6 +535,16 @@ public final class Pipeline implements AutoCloseable, Destroyable {
         int invoke(ByteBuffer out, long cap, long[] outLen);
     }
 
+    private static void wipe(ByteBuffer buf) {
+        if (buf == null) {
+            return;
+        }
+        int cap = buf.capacity();
+        for (int i = 0; i < cap; i++) {
+            buf.put(i, (byte) 0);
+        }
+    }
+
     /** Single retry-once dispatch site for every variable-size output
      * buffer: pre-allocate {@code cap}, and on BUFFER_TOO_SMALL retry
      * once with the exact size the FFI reported through the length
@@ -521,12 +554,17 @@ public final class Pipeline implements AutoCloseable, Destroyable {
     private static byte[] retryOnce(int cap, OutCall call) {
         ByteBuffer buf = ByteBuffer.allocateDirect(cap);
         long[] len = new long[1];
-        int rc = call.invoke(buf, cap, len);
-        if (rc == Status.BUFFER_TOO_SMALL.code() && len[0] > cap) {
-            buf = ByteBuffer.allocateDirect((int) len[0]);
-            rc = call.invoke(buf, buf.capacity(), len);
+        try {
+            int rc = call.invoke(buf, cap, len);
+            if (rc == Status.BUFFER_TOO_SMALL.code() && len[0] > cap) {
+                wipe(buf);
+                buf = ByteBuffer.allocateDirect((int) len[0]);
+                rc = call.invoke(buf, buf.capacity(), len);
+            }
+            ItbException.check(rc);
+            return Native.toArray(buf, (int) len[0]);
+        } finally {
+            wipe(buf);
         }
-        ItbException.check(rc);
-        return Native.toArray(buf, (int) len[0]);
     }
 }

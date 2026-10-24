@@ -9,9 +9,13 @@
 // [Pipeline.EncryptStream] /
 // [Pipeline.DecryptStream] (Reader/Writer),
 // [Pipeline.EncryptStreamBytes] / [Pipeline.DecryptStreamBytes]
-// (whole-buffer convenience over the streaming wire), and
-// [Pipeline.EncryptMessage] / [Pipeline.DecryptMessage] (Single
-// Message shape). Callers who need a configuration outside the shipped
+// (whole-buffer convenience over the streaming wire),
+// [Pipeline.EncryptMessage] / [Pipeline.DecryptMessage] and
+// [Pipeline.EncryptMessageTo] / [Pipeline.DecryptMessageTo] (Single
+// Message shape), plus the exact upper-bound sizing helpers
+// [Pipeline.MaxWireSize] / [Pipeline.MaxWireSizeWithBarrierFill] and
+// [Pipeline.MaxPlaintextSize] / [Pipeline.MaxPlaintextSizeWithBarrierFill].
+// Callers who need a configuration outside the shipped
 // catalogue install a [Profile] literal at process init via
 // [Register] and reference the registered name at [Init] or [InitKeys] like any
 // shipped profile; [Lookup] and [Profiles] read the catalogue back.
@@ -98,11 +102,14 @@
 //
 // The Streaming AEAD IO-Driven surface is the primary use case. The
 // Single Message surface ([Pipeline.EncryptMessage] /
-// [Pipeline.DecryptMessage]) provides a direct whole-buffer fast path
-// for non-parallax messages under 64 MiB, falling back to streaming
-// buffered execution for larger payloads or when parallax multiplexing
-// is active. Users who want the direct per-call cipher surface consume
-// the corresponding *Cfg-bearing free functions in the itb root package.
+// [Pipeline.DecryptMessage] and [Pipeline.EncryptMessageTo] /
+// [Pipeline.DecryptMessageTo]) provides a direct single-chunk fast path
+// for non-parallax messages under 64 MiB (and single-chunk parallax
+// messages bounded by len(plaintext)+20 <= chunkSize), falling back to
+// streaming buffered execution for larger payloads or multi-chunk
+// parallax payloads. Users who want the direct per-call cipher surface
+// consume the corresponding *Cfg-bearing free functions in the itb root
+// package.
 //
 // The shipped catalogue covers both single-primitive and
 // mixed-primitive constellations. Single-primitive profiles bind one

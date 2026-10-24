@@ -43,9 +43,9 @@ func runWorkers(s *Schedule, cs *Cipherset, pi []int, nonce, dst, src []byte, se
 
 	workers := workerCount(total, numSegs)
 	if workers <= 1 {
-		wipe.CallStack8K([9][8]uint64{})
+		wipe.CallStack2K([9][8]uint64{})
 		err := runRange(s, cs, pi, nonce, dst, src, 0, numSegs, segSize)
-		wipe.CallStack8K([9][8]uint64{})
+		wipe.CallStack2K([9][8]uint64{})
 		return err
 	}
 
@@ -64,9 +64,9 @@ func runWorkers(s *Schedule, cs *Cipherset, pi []int, nonce, dst, src []byte, se
 		wg.Add(1)
 		go func(idx, segStart, segEnd int) {
 			defer wg.Done()
-			wipe.CallStack8K([9][8]uint64{})
+			wipe.CallStack2K([9][8]uint64{})
 			errs[idx] = runRange(s, cs, pi, nonce, dst, src, segStart, segEnd, segSize)
-			wipe.CallStack8K([9][8]uint64{})
+			wipe.CallStack2K([9][8]uint64{})
 		}(w, start, end)
 	}
 	wg.Wait()

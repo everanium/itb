@@ -5,6 +5,7 @@ import (
 	"crypto/sha512"
 	"encoding/binary"
 	"encoding/hex"
+	"fmt"
 	"runtime"
 	"runtime/debug"
 	"testing"
@@ -29,8 +30,7 @@ var prims = []struct {
 	{hashes.CipherBLAKE3, 32, 32},
 }
 
-// batchPrims lists the primitives that expose a 4-wide batch PRF (only the
-// Areion family; BLAKE has no native SIMD batch path).
+// batchPrims lists the primitives that expose a 4-wide batch PRF.
 var batchPrims = []struct {
 	name      string
 	keySize   int
@@ -38,19 +38,17 @@ var batchPrims = []struct {
 }{
 	{hashes.CipherAreion256, 32, 32},
 	{hashes.CipherAreion512, 64, 64},
+	{hashes.CipherBLAKE2b256, 32, 32},
+	{hashes.CipherBLAKE2b512, 32, 64},
+	{hashes.CipherBLAKE2s, 32, 32},
+	{hashes.CipherBLAKE3, 32, 32},
 }
 
-// nonBatchPrims lists primitives that do NOT expose a batch path; NewBatch
-// must report ok=false with no error for each.
+// nonBatchPrims lists primitives in specs that do NOT expose a batch path.
 var nonBatchPrims = []struct {
 	name    string
 	keySize int
-}{
-	{hashes.CipherBLAKE2b256, 32},
-	{hashes.CipherBLAKE2b512, 32},
-	{hashes.CipherBLAKE2s, 32},
-	{hashes.CipherBLAKE3, 32},
-}
+}{}
 
 // TestKeyBlockSizes verifies the declared key and block sizes and the
 // unknown-name error paths.
@@ -759,84 +757,87 @@ func TestZeroizationWithClose(t *testing.T) {
 	}
 
 	for _, p := range batchPrims {
-		t.Run(p.name+"_batch", func(t *testing.T) {
-			key := make([]byte, p.keySize)
-			for i := range key {
-				key[i] = byte(0x91 + i*3)
-			}
-			secrets := make(map[uint64]bool)
-			for off := 0; off+8 <= len(key); off += 8 {
-				w := binary.LittleEndian.Uint64(key[off:])
-				if w != 0 && w != hashprfResidueSentinel {
-					secrets[w] = true
+		for _, inSlice := range [][]byte{in, in[:24]} {
+			inSlice := inSlice
+			t.Run(fmt.Sprintf("%s_batch_len%d", p.name, len(inSlice)), func(t *testing.T) {
+				key := make([]byte, p.keySize)
+				for i := range key {
+					key[i] = byte(0x91 + i*3)
 				}
-			}
-			for off := 0; off+8 <= len(in); off += 8 {
-				w := binary.LittleEndian.Uint64(in[off:])
-				if w != 0 && w != hashprfResidueSentinel {
-					secrets[w] = true
-				}
-			}
-			if p.name == hashes.CipherAreion256 {
-				sum := sha512.Sum512(append([]byte(areion256SubkeyLabel), key...))
-				for i := 0; i < 4; i++ {
-					secrets[binary.LittleEndian.Uint64(sum[i*8:])] = true
-				}
-			} else if p.name == hashes.CipherAreion512 {
-				sum := sha512.Sum512(append([]byte(areion512SubkeyLabel), key...))
-				for i := 0; i < 8; i++ {
-					secrets[binary.LittleEndian.Uint64(sum[i*8:])] = true
-				}
-			}
-
-			var batch func(dst, in *[4][]byte)
-			var bs int
-			var ok bool
-			var closeFn func()
-			var bin, bout, boutAfter [4][]byte
-			win := captureHashPRFStackResidue(t, func() {
-				var err error
-				batch, bs, ok, closeFn, err = NewBatchWithClose(p.name, key)
-				if err != nil {
-					t.Fatalf("NewBatchWithClose(%q): %v", p.name, err)
-				}
-				if !ok {
-					return
-				}
-				for lane := 0; lane < 4; lane++ {
-					bin[lane] = in
-					bout[lane] = make([]byte, bs)
-					boutAfter[lane] = make([]byte, bs)
-				}
-				batch(&bout, &bin)
-			})
-			if !ok {
-				return
-			}
-			if closeFn == nil {
-				t.Fatalf("NewBatchWithClose(%q) returned nil closeFn", p.name)
-			}
-			for lane := 0; lane < 4; lane++ {
-				for off := 0; off+8 <= len(bout[lane]); off += 8 {
-					w := binary.LittleEndian.Uint64(bout[lane][off:])
+				secrets := make(map[uint64]bool)
+				for off := 0; off+8 <= len(key); off += 8 {
+					w := binary.LittleEndian.Uint64(key[off:])
 					if w != 0 && w != hashprfResidueSentinel {
 						secrets[w] = true
 					}
 				}
-			}
-			for idx, w := range win {
-				if secrets[w] {
-					t.Fatalf("%s batch: evaluation left secret word %#x at stack slot %d", p.name, w, idx)
+				for off := 0; off+8 <= len(inSlice); off += 8 {
+					w := binary.LittleEndian.Uint64(inSlice[off:])
+					if w != 0 && w != hashprfResidueSentinel {
+						secrets[w] = true
+					}
 				}
-			}
+				if p.name == hashes.CipherAreion256 {
+					sum := sha512.Sum512(append([]byte(areion256SubkeyLabel), key...))
+					for i := 0; i < 4; i++ {
+						secrets[binary.LittleEndian.Uint64(sum[i*8:])] = true
+					}
+				} else if p.name == hashes.CipherAreion512 {
+					sum := sha512.Sum512(append([]byte(areion512SubkeyLabel), key...))
+					for i := 0; i < 8; i++ {
+						secrets[binary.LittleEndian.Uint64(sum[i*8:])] = true
+					}
+				}
 
-			closeFn()
-			batch(&boutAfter, &bin)
-			for lane := 0; lane < 4; lane++ {
-				if bytes.Equal(bout[lane], boutAfter[lane]) {
-					t.Fatalf("%s batch lane %d: output unchanged after closeFn()", p.name, lane)
+				var batch func(dst, in *[4][]byte)
+				var bs int
+				var ok bool
+				var closeFn func()
+				var bin, bout, boutAfter [4][]byte
+				win := captureHashPRFStackResidue(t, func() {
+					var err error
+					batch, bs, ok, closeFn, err = NewBatchWithClose(p.name, key)
+					if err != nil {
+						t.Fatalf("NewBatchWithClose(%q): %v", p.name, err)
+					}
+					if !ok {
+						return
+					}
+					for lane := 0; lane < 4; lane++ {
+						bin[lane] = inSlice
+						bout[lane] = make([]byte, bs)
+						boutAfter[lane] = make([]byte, bs)
+					}
+					batch(&bout, &bin)
+				})
+				if !ok {
+					return
 				}
-			}
-		})
+				if closeFn == nil {
+					t.Fatalf("NewBatchWithClose(%q) returned nil closeFn", p.name)
+				}
+				for lane := 0; lane < 4; lane++ {
+					for off := 0; off+8 <= len(bout[lane]); off += 8 {
+						w := binary.LittleEndian.Uint64(bout[lane][off:])
+						if w != 0 && w != hashprfResidueSentinel {
+							secrets[w] = true
+						}
+					}
+				}
+				for idx, w := range win {
+					if secrets[w] {
+						t.Fatalf("%s batch (len=%d): evaluation left secret word %#x at stack slot %d", p.name, len(inSlice), w, idx)
+					}
+				}
+
+				closeFn()
+				batch(&boutAfter, &bin)
+				for lane := 0; lane < 4; lane++ {
+					if bytes.Equal(bout[lane], boutAfter[lane]) {
+						t.Fatalf("%s batch (len=%d) lane %d: output unchanged after closeFn()", p.name, len(inSlice), lane)
+					}
+				}
+			})
+		}
 	}
 }

@@ -241,3 +241,71 @@ func TestDRBGAutoTier(t *testing.T) {
 		t.Fatalf("DRBGAutoTier() = %q, want %q (selected tier %q)", got, want, drbg.SelectedTier())
 	}
 }
+
+// TestBufferPoolZeroRegrowSteadyState verifies that repeated Triple
+// Ouroboros encrypt/decrypt calls at a fixed payload size do not
+// trigger bufferPool capacity thrashing between the three interlock
+// lanes and the three COBS payload buffers.
+func TestBufferPoolZeroRegrowSteadyState(t *testing.T) {
+	prev := runtime.GOMAXPROCS(1)
+	defer runtime.GOMAXPROCS(prev)
+	runtime.GC()
+	runtime.GC()
+	prevGC := debug.SetGCPercent(-1)
+	defer debug.SetGCPercent(prevGC)
+
+	cfg := &Config{MaxWorkers: 1}
+	n, l, d1, d2, d3, s1, s2, s3 := mkTriple128(t)
+	mac := func(msg []byte) []byte {
+		out := make([]byte, 32)
+		for i, b := range msg {
+			out[i%32] ^= b
+		}
+		return out
+	}
+	payload := make([]byte, 64*1024)
+	for i := range payload {
+		payload[i] = byte(i)
+	}
+
+	// Warm up pool slots.
+	for i := 0; i < 2; i++ {
+		wire, err := EncryptAuthenticated3x128Cfg(cfg, n, l, d1, d2, d3, s1, s2, s3, payload, mac)
+		if err != nil {
+			t.Fatalf("warmup encrypt: %v", err)
+		}
+		plain, err := DecryptAuthenticated3x128Cfg(cfg, n, l, d1, d2, d3, s1, s2, s3, wire, mac)
+		if err != nil {
+			t.Fatalf("warmup decrypt: %v", err)
+		}
+		if len(plain) != len(payload) {
+			t.Fatalf("plain len = %d, want %d", len(plain), len(payload))
+		}
+	}
+
+	before := poolstats.Take()
+	for i := 0; i < 5; i++ {
+		wire, err := EncryptAuthenticated3x128Cfg(cfg, n, l, d1, d2, d3, s1, s2, s3, payload, mac)
+		if err != nil {
+			t.Fatalf("encrypt: %v", err)
+		}
+		plain, err := DecryptAuthenticated3x128Cfg(cfg, n, l, d1, d2, d3, s1, s2, s3, wire, mac)
+		if err != nil {
+			t.Fatalf("decrypt: %v", err)
+		}
+		if len(plain) != len(payload) {
+			t.Fatalf("plain len = %d, want %d", len(plain), len(payload))
+		}
+	}
+	after := poolstats.Take()
+	// Under -race, sync.Pool.Put randomly drops 1 in 4 items, causing
+	// bufferPool.New (4096 B) + acquireBuffer regrow to increment both
+	// BufNew and BufRegrow together. Regrowth of an already-pooled
+	// item (thrashing between lanes and payloads) increments BufRegrow
+	// without incrementing BufNew.
+	regrowExisting := int64(after.BufRegrow-before.BufRegrow) - int64(after.BufNew-before.BufNew)
+	if regrowExisting > 0 {
+		t.Fatalf("pooled buffer regrew %d times in steady state (BufRegrow %d -> %d, BufNew %d -> %d)",
+			regrowExisting, before.BufRegrow, after.BufRegrow, before.BufNew, after.BufNew)
+	}
+}

@@ -18,7 +18,7 @@ For the standards' own conformance, refer to the upstream specifications and lib
 - `github.com/zeebo/blake3` — BLAKE3 keyed mode.
 - RFC 4493 — the AES-CMAC algorithm (AES-128).
 - `github.com/dchest/siphash` — SipHash-2-4 test vectors.
-- `golang.org/x/crypto/chacha20` — XChaCha20 (24-byte nonce variant).
+- XChaCha20 (24-byte nonce variant over HChaCha20 + RFC 8439 ChaCha20; bit-exact with `golang.org/x/crypto/chacha20`, SIMD-accelerated on x86-64 AVX-512 / AVX2 and ARM64 NEON, with portable Go fallback).
 
 ## Table of constructions
 
@@ -57,6 +57,8 @@ where:
 
 The subkey is the leftmost `outLen` bytes of the concatenated PRF outputs `K(1) || K(2) || ...`.
 
+**Counter-injection and feed-forward structure.** Each PRF evaluation initializes `state[0..8) = LE64(9 + len(label))` and absorbs `[i]_32be || Label || 0x00 || [L]_32be` in `24`-byte (`areion256`) or `56`-byte (`areion512`) chunks into `state[8..]`, placing `[i]_32be` in `state[8..12)` of the first chunk (for `len(label) <= 15` in `areion256` or `len(label) <= 47` in `areion512`, the entire input is absorbed in one call). Every chunk evaluation simultaneously XOR-whitens `state` with both secret subkeys (`k1` and `k2 = SHA-512(domain || key)`) into the two independent Areion permutations `P1` and `P2` and combines them with post-whitening as `P1(state ⊕ k1) ⊕ P2(state ⊕ k2) ⊕ k1 ⊕ k2`, preventing backward permutation inversion across chunks or from emitted subkey blocks.
+
 **Output is NOT cross-length prefix-consistent.** As with every SP 800-108 construction here, the bound `[L]_32be` field makes the output specific to `outLen`; slicing a longer derivation does **not** equal deriving the shorter length directly.
 
 **Security claim.** SP 800-108 Counter Mode is a NIST-standard KDF; the Areion-SoEM keyed hash is a CBC-MAC over the SoEM22 keyed function `P1(m ⊕ k1) ⊕ P2(m ⊕ k2) ⊕ k1 ⊕ k2` (two Areion permutations under distinct round-constant tables), a PRF up to about `2^{2n/3}` queries by Theorem 1 of Chen–Lambooij–Mennink (CRYPTO 2019; ePrint 2019/554) in the random-permutation model, with both subkeys secret, the derived second subkey modelled as independent of the first under SHA-512 as a random oracle, and the two Areion permutations modelled as independent random permutations; the CBC-MAC chaining term `q² · ℓ² / 2^n` of `hashes/CONSTRUCTIONS.md` is birthday-level in the state width `n`. The Areion-SoEM PRF is **not** NIST-approved, so the construction is sound under that PRF assumption without claiming NIST conformance.
@@ -74,6 +76,8 @@ The keyed mode here is the upstream **standard keyed PRF** (RFC 7693 keyed BLAKE
 
 **Per-block PRF input and prefix-inconsistency.** Identical to the SP 800-108 r1 layout above (`[i]_32be || Label || 0x00 || Context || [L]_32be` with empty Context and `[L]_32be = outLen * 8`); because `[L]_32be` is bound into every block input, the output is **not** cross-length prefix-consistent.
 
+**Counter-injection and feed-forward structure.** Starting from the secret key-derived chaining state (`hKey[0..7]` from the precomputed key block in BLAKE2b / BLAKE2s, `keyWords[0..7]` in BLAKE3), each block places `[i]_32be` in the leading 32 bits of message word `m[0]` followed by `Label || 0x00 || [L]_32be` (for `len(label) <= 119` in BLAKE2b or `len(label) <= 55` in BLAKE2s / BLAKE3, the entire input fits in a single zero-padded final compression block). Across every round (`12` rounds in BLAKE2b, `10` in BLAKE2s, `7` in BLAKE3), the message schedule **re-injects `m[0]` along with the label and `[L]_32be` words via modular addition (`+ m[sigma[r][...]]`) into column and diagonal `G` calls**, and the compression finishes with the non-invertible Davies-Meyer XOR feed-forward (`hKey ⊕ v_lo ⊕ v_hi` in BLAKE2b / BLAKE2s; `v_lo ⊕ v_hi` with upper-half state truncation in BLAKE3, and upper-half digest truncation in `blake2b256`).
+
 **Security claim.** SP 800-108 Counter Mode is a NIST-standard KDF; the keyed BLAKE PRF is sound under the standard PRF assumption on keyed BLAKE2 / BLAKE3. The mode is NIST-standard but the BLAKE PRF is **not** NIST-approved, so the construction is sound under the keyed-BLAKE PRF security argument without claiming NIST conformance.
 
 ## SP 800-108 Counter Mode (registry: `aescmac`, `siphash24`)
@@ -85,6 +89,8 @@ The keyed mode here is the upstream **standard keyed PRF** (RFC 7693 keyed BLAKE
 
 **Per-block PRF input and prefix-inconsistency.** Identical to the SP 800-108 r1 layout above (`[i]_32be || Label || 0x00 || Context || [L]_32be`): only the leading 4 counter bytes change between blocks while the suffix `Label || 0x00 || [L]_32be` is built once and reused per block, and the bound `[L]_32be` suffix makes the output **not** cross-length prefix-consistent (deriving 64 bytes and truncating to 32 does **not** equal deriving 32 bytes directly).
 
+**Counter-injection and finalization structure.** In `aescmac`, `[i]_32be || Label || 0x00 || [L]_32be` is partitioned into `⌈(9 + len(label)) / 16⌉` blocks where `[i]_32be` enters the first AES-128 encryption at `M_1[0..4)` and `[L]_32be` enters the final block alongside RFC 4493 subkey whitening (`K1` for a full final block, `10*` padding plus `K2` for a partial block). In `siphash24`, every 8-byte word `m` of the input (beginning with `[i]_32be || label[0..4)`) is injected **twice** via the pre- and post-round XOR sandwich (`v3 ^= m; SipRound²; v0 ^= m`), followed by the length-tagged final word (`(9 + len(label)) << 56` ORed with trailing bytes) and two domain-separated 4-round finalization cascades (`v2 ^= 0xee; SipRound⁴` and `v1 ^= 0xdd; SipRound⁴`), each folded from 256 bits to 64 bits via `(v0 ⊕ v1) ⊕ (v2 ⊕ v3)`.
+
 **Key-separation property.** Distinct labels produce distinct PRF inputs at every block index, so subkeys derived under different labels are independent. The label is public; only distinctness is required.
 
 **Security claim.** SP 800-108 Counter Mode is a NIST-standard KDF; with PRF = AES-CMAC over AES-128 the construction is NIST-standard end to end, PRF-secure under the standard PRP assumption on AES-128. With PRF = SipHash-2-4 the SP 800-108 mode is unchanged, but SipHash-as-PRF is **not** NIST-approved; the construction is sound under SipHash-2-4's own PRF security argument, without claiming NIST conformance.
@@ -92,13 +98,15 @@ The keyed mode here is the upstream **standard keyed PRF** (RFC 7693 keyed BLAKE
 
 ## XChaCha20 keystream KDF (registry: `chacha20`)
 
-**Underlying primitive.** XChaCha20 stream cipher (`golang.org/x/crypto/chacha20`, 24-byte-nonce variant).
+**Underlying primitive.** XChaCha20 stream cipher (24-byte-nonce variant over HChaCha20 + RFC 8439 ChaCha20; SIMD-accelerated on x86-64 AVX-512 / AVX2 and ARM64 NEON, with portable Go fallback, bit-exact with `golang.org/x/crypto/chacha20`).
 
 **Construction.** The subkey is the leading `outLen` bytes of the XChaCha20 keystream at counter 0:
 
 1. The 32-byte master is the XChaCha20 **key** (`master[:32]`).
 2. The public `label` becomes the XChaCha20 **nonce**: it is right-zero-padded into a 24-byte nonce buffer (`copy(nonce[:], label)`). The label must be **at most 24 bytes**; a longer label is an error.
 3. XChaCha20 is initialised with this key and nonce. The keystream at counter 0 is extracted by XORing it into a zeroed `outLen`-byte buffer; the result is the raw keystream prefix.
+
+**Subkey-derivation and feed-forward structure.** Initialization executes a two-stage cascade: first, `HChaCha20` permutes `[sigma | master[0..7] | nonce[0..16)]` (consuming the first 16 bytes of the zero-padded `label`) through 20 ARX quarter-rounds and extracts a 256-bit subkey from outer state words `x[0..3]` and `x[12..15]` while discarding the 256-bit middle state `x[4..11]`. Second, RFC 8439 ChaCha20 generates 64-byte blocks starting at `counter = 0` under that derived subkey and the 12-byte inner nonce `[0, LE32(nonce[16:20]), LE32(nonce[20:24])]`, finishing each 20-round block with the word-wise 32-bit modular addition feed-forward `π(S) ⊞ S` that re-adds the derived subkey, block counter, and inner nonce words modulo `2^32`.
 
 **Key-separation property.** Distinct labels select distinct XChaCha20 nonces, yielding independent keystreams under the same key. The label is public; only distinctness is required.
 

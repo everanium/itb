@@ -26,7 +26,7 @@ namespace Everanium\Itb3;
 final class Itb
 {
     /** Binding version. */
-    public const VERSION = '0.7.4';
+    public const VERSION = '0.7.5';
 
     /** Floor capacity for blob output buffers (create / save / rekey). */
     public const BLOB_CAP = 65536;
@@ -53,7 +53,8 @@ final class Itb
             self::BLOB_CAP,
             static function ($buf, int $cap, $lenPtr) use ($ffi, $profile, $optsStr, $handlePtr): int {
                 return $ffi->ITB_Triple_Init($profile, $optsStr, $buf, $cap, $lenPtr, $handlePtr);
-            }
+            },
+            true
         );
         return new Pipeline((int) $handle->cdata);
     }
@@ -116,7 +117,8 @@ final class Itb
                         $lenPtr,
                         $handlePtr
                     );
-                }
+                },
+                true
             );
         } finally {
             \FFI::memset($flatBuf, 0, $allocLen);

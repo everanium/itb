@@ -150,11 +150,23 @@ func containerSizeAuth3_256Cfg(cfg *Config, noiseSeed *Seed256, dataSeed1, dataS
 // accessor in the pipeline; nil cfg falls back to [DefaultNonceBits] /
 // [DefaultBarrierFill] / runtime.NumCPU.
 func Encrypt3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed256, data []byte) ([]byte, error) {
-	out, err := encrypt3x256Cfg(cfg, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data, streamIDPrefixLen)
+	return encryptMsg3x256CfgInto(cfg, nil, streamIDPrefixLen, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data)
+}
+
+// encryptMsg3x256CfgInto is like [Encrypt3x256Cfg] but reserves lead
+// (>= [streamIDPrefixLen]) bytes ahead of the chunk, writes the 32-byte
+// CSPRNG dummy prefix into out[lead-32 : lead], and reuses dst when
+// cap(dst) is sufficient and does not overlap data.
+func encryptMsg3x256CfgInto(cfg *Config, dst []byte, lead int, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed256, data []byte) ([]byte, error) {
+	if lead < streamIDPrefixLen {
+		lead = streamIDPrefixLen
+	}
+	out, err := encrypt3x256CfgInto(cfg, dst, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data, lead)
 	if err != nil {
 		return nil, err
 	}
-	if err := fillNomacPrefix(out[:streamIDPrefixLen]); err != nil {
+	if err := fillNomacPrefix(out[lead-streamIDPrefixLen : lead]); err != nil {
+		secureWipe(out)
 		return nil, err
 	}
 	return out, nil
@@ -167,6 +179,10 @@ func Encrypt3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dat
 // chunk's CSPRNG dummy prefix into the reserved bytes, so every chunk
 // record is a single allocation.
 func encrypt3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed256, data []byte, lead int) ([]byte, error) {
+	return encrypt3x256CfgInto(cfg, nil, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, data, lead)
+}
+
+func encrypt3x256CfgInto(cfg *Config, dst []byte, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed256, data []byte, lead int) ([]byte, error) {
 	if err := checkEightSeeds256(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
 		return nil, err
 	}
@@ -198,7 +214,7 @@ func encrypt3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dat
 	// reserved bytes are pure DRBG on the No MAC side.
 	bp := buildLockBatchPRF48_256Cfg(cfg, lockSeed, ilNonce)
 	defer bp.wipe()
-	tp, out, container, width, height, err := buildTripleWire3(cfg, data, bp, nomacTagStubSizeCfg(cfg), true, lead, nonce, ilNonce,
+	tp, out, container, width, height, err := buildTripleWire3Into(cfg, dst, data, bp, nomacTagStubSizeCfg(cfg), true, lead, nonce, ilNonce,
 		func(cobsLens [3]int) (int, int) {
 			return containerSize3_256Cfg(cfg, noiseSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, cobsLens)
 		})
@@ -242,6 +258,12 @@ func encrypt3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dat
 // bytes and multi-chunk streams are rejected. nil cfg falls back to
 // the compile-in defaults.
 func Decrypt3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed256, fileData []byte) ([]byte, error) {
+	return decryptMsg3x256CfgInto(cfg, nil, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, fileData)
+}
+
+// decryptMsg3x256CfgInto is like [Decrypt3x256Cfg] but reuses dst when
+// cap(dst) is sufficient to hold the recovered plaintext.
+func decryptMsg3x256CfgInto(cfg *Config, dst []byte, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed256, fileData []byte) ([]byte, error) {
 	if err := checkEightSeeds256(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
 		return nil, err
 	}
@@ -257,7 +279,7 @@ func Decrypt3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dat
 	if chunkLen, perr := ParseChunkLenCfg(cfg, fileData[streamIDPrefixLen:]); perr == nil && streamIDPrefixLen+chunkLen != len(fileData) {
 		return nil, fmt.Errorf("itb: wire is %d bytes, want %d for prefix + one chunk (trailing bytes or a multi-chunk stream)", len(fileData), streamIDPrefixLen+chunkLen)
 	}
-	return decrypt3x256Cfg(cfg, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, fileData[streamIDPrefixLen:])
+	return decrypt3x256CfgInto(cfg, dst, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, fileData[streamIDPrefixLen:])
 }
 
 // decrypt3x256Cfg decodes one No MAC chunk —
@@ -265,6 +287,10 @@ func Decrypt3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dat
 // The streaming decoders hand it each chunk in turn; [Decrypt3x256Cfg]
 // hands it the Single Message wire past the prefix.
 func decrypt3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed256, fileData []byte) ([]byte, error) {
+	return decrypt3x256CfgInto(cfg, nil, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3, fileData)
+}
+
+func decrypt3x256CfgInto(cfg *Config, dst []byte, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed256, fileData []byte) ([]byte, error) {
 	if err := checkEightSeeds256(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
 		return nil, err
 	}
@@ -316,7 +342,9 @@ func decrypt3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dat
 		}
 	}()
 	for i := 0; i < 3; i++ {
-		decodedPtrs[i], decoded[i] = acquireBuffer(caps[i])
+		var decBuf []byte
+		decodedPtrs[i], decBuf = acquireBuffer(caps[2])
+		decoded[i] = decBuf[:caps[i]]
 	}
 
 	offset1 := third * Channels
@@ -368,5 +396,5 @@ func decrypt3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dat
 	defer secureWipe(ilNonce)
 	bp := buildLockBatchPRF48_256Cfg(cfg, lockSeed, ilNonce)
 	defer bp.wipe()
-	return interleaveForTriple48LockedCfg(cfg, lanes[0], lanes[1], lanes[2], bp), nil
+	return interleaveForTriple48LockedCfgInto(cfg, dst, lanes[0], lanes[1], lanes[2], bp), nil
 }

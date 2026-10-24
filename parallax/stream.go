@@ -101,12 +101,43 @@ func chunkAllocSize(capBytes int) int {
 	return (n + chunkAllocGranule - 1) / chunkAllocGranule * chunkAllocGranule
 }
 
+const maxCachedChunks = 16
+
+var (
+	streamChunkCacheMu sync.Mutex
+	streamChunkCache   []*[]byte
+)
+
 // acquireChunkBuffer borrows a *[]byte sized for capBytes from the
 // pool. The returned slice has length 0 and capacity at least capBytes.
 func acquireChunkBuffer(capBytes int) (*[]byte, []byte) {
+	poolstats.ChunkGet.Add(1)
+	streamChunkCacheMu.Lock()
+	if m := len(streamChunkCache); m > 0 {
+		for i := m - 1; i >= 0; i-- {
+			ptr := streamChunkCache[i]
+			if cap(*ptr) >= capBytes {
+				streamChunkCache[i] = streamChunkCache[m-1]
+				streamChunkCache[m-1] = nil
+				streamChunkCache = streamChunkCache[:m-1]
+				streamChunkCacheMu.Unlock()
+				return ptr, (*ptr)[:0]
+			}
+		}
+		ptr := streamChunkCache[m-1]
+		streamChunkCache[m-1] = nil
+		streamChunkCache = streamChunkCache[:m-1]
+		streamChunkCacheMu.Unlock()
+		alloc := chunkAllocSize(capBytes)
+		poolstats.ChunkRegrow.Add(1)
+		poolstats.ChunkRegrowBytes.Add(int64(alloc))
+		buf := make([]byte, 0, alloc)
+		return ptr, buf
+	}
+	streamChunkCacheMu.Unlock()
+
 	ptr := streamChunkPool.Get().(*[]byte)
 	buf := *ptr
-	poolstats.ChunkGet.Add(1)
 	if cap(buf) < capBytes {
 		alloc := chunkAllocSize(capBytes)
 		poolstats.ChunkRegrow.Add(1)
@@ -133,6 +164,13 @@ func releaseChunkBuffer(ptr *[]byte, buf []byte, used int) {
 	}
 	clear(buf[:used])
 	*ptr = buf[:0]
+	streamChunkCacheMu.Lock()
+	if len(streamChunkCache) < maxCachedChunks {
+		streamChunkCache = append(streamChunkCache, ptr)
+		streamChunkCacheMu.Unlock()
+		return
+	}
+	streamChunkCacheMu.Unlock()
 	streamChunkPool.Put(ptr)
 }
 
@@ -160,6 +198,9 @@ type chunkedEncryptWriter struct {
 	bufPtr   *[]byte
 	buf      []byte
 	bufHW    int // high-water mark of bytes written into buf
+	framePtr *[]byte
+	frameBuf []byte
+	frameHW  int
 	closed   bool
 	err      error
 }
@@ -206,7 +247,18 @@ func (w *chunkedEncryptWriter) flushChunk() error {
 	if len(w.buf) == 0 {
 		return nil
 	}
-	frame := make([]byte, frameLenSize+NonceSize+len(w.buf))
+	frameSize := frameLenSize + NonceSize + len(w.buf)
+	if cap(w.frameBuf) < frameSize {
+		if w.framePtr != nil {
+			releaseChunkBuffer(w.framePtr, w.frameBuf, w.frameHW)
+		}
+		w.framePtr, w.frameBuf = acquireChunkBuffer(frameSize)
+		w.frameHW = 0
+	}
+	if frameSize > w.frameHW {
+		w.frameHW = frameSize
+	}
+	frame := w.frameBuf[:frameSize]
 	nonce, err := w.schedule.EncryptInto(frame[frameLenSize+NonceSize:], w.buf, w.cs)
 	if err != nil {
 		return err
@@ -238,6 +290,11 @@ func (w *chunkedEncryptWriter) Close() error {
 		releaseChunkBuffer(w.bufPtr, w.buf, w.bufHW)
 		w.bufPtr = nil
 		w.buf = nil
+	}
+	if w.framePtr != nil {
+		releaseChunkBuffer(w.framePtr, w.frameBuf, w.frameHW)
+		w.framePtr = nil
+		w.frameBuf = nil
 	}
 	return err
 }

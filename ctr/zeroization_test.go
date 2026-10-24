@@ -106,6 +106,10 @@ func TestCTRCloseAndKeystreamBufferZeroization(t *testing.T) {
 				if !allZeroBytes(impl.keystrm[:5]) {
 					t.Fatalf("prfHashCTRBatch consumed keystream bytes [0:5] not zeroed: %x", impl.keystrm[:5])
 				}
+			case *chaCha20Resettable:
+				if !allZeroBytes(impl.buf[:5]) {
+					t.Fatalf("chaCha20Resettable consumed keystream bytes [0:5] not zeroed: %x", impl.buf[:5])
+				}
 			}
 
 			// ResetCounter must clear any buffered keystream bytes and wipe old *aes.CTR.
@@ -160,9 +164,9 @@ func TestCTRCloseAndKeystreamBufferZeroization(t *testing.T) {
 						t.Fatalf("prfHashCTRBatch inStore[%d] not zeroed on Close", lane)
 					}
 				}
-			case *chaCha20CTR:
-				if impl.c != nil {
-					t.Fatal("chaCha20CTR cipher pointer not nilled on Close")
+			case *chaCha20Resettable:
+				if impl.key != ([8]uint32{}) || impl.nonce != ([3]uint32{}) || !allZeroBytes(impl.buf[:]) {
+					t.Fatal("chaCha20Resettable state not zeroed on Close")
 				}
 			}
 		})

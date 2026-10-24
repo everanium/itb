@@ -6,9 +6,8 @@ import (
 	"fmt"
 	"runtime"
 
-	"golang.org/x/crypto/chacha20"
-
 	"github.com/everanium/itb/hashes"
+	"github.com/everanium/itb/internal/chacha20ctr"
 	"github.com/everanium/itb/internal/siphash24"
 	"github.com/everanium/itb/internal/wipe"
 )
@@ -20,8 +19,8 @@ const (
 	chacha20KeySize  = 32 // XChaCha20 key
 )
 
-// chacha20NonceSize is the XChaCha20 nonce length. A 24-byte nonce
-// selects the XChaCha20 variant of chacha20.NewUnauthenticatedCipher.
+// chacha20NonceSize is the XChaCha20 nonce length (24-byte nonce over
+// HChaCha20 subkey derivation and RFC 8439 ChaCha20 counter mode).
 const chacha20NonceSize = 24
 
 // maxOutLen caps the requested output length. The SP 800-108 counter-mode
@@ -143,7 +142,8 @@ func deriveChaCha20(master []byte, label string, outLen int) ([]byte, error) {
 	}
 	var nonce [chacha20NonceSize]byte
 	copy(nonce[:], label)
-	c, err := chacha20.NewUnauthenticatedCipher(master[:chacha20KeySize], nonce[:])
+	var c chacha20ctr.Cipher
+	err := c.Init(master[:chacha20KeySize], nonce[:])
 	clear(nonce[:])
 	runtime.KeepAlive(&nonce)
 	if err != nil {
@@ -154,8 +154,7 @@ func deriveChaCha20(master []byte, label string, outLen int) ([]byte, error) {
 	c.XORKeyStream(out, out)
 	// The cipher state carries the derived key words and the unused
 	// keystream tail; zero it.
-	*c = chacha20.Cipher{}
-	runtime.KeepAlive(c)
+	c.Wipe()
 	return out, nil
 }
 

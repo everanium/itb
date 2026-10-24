@@ -163,7 +163,14 @@ func TestHashWrongNonceLength(t *testing.T) {
 // directly from hashprf.New so the test does not depend on the dispatch in
 // newPrfHashCTR (which routes Areion through the batch path).
 func TestBatchKeystreamParity(t *testing.T) {
-	for _, name := range []string{hashes.CipherAreion256, hashes.CipherAreion512} {
+	for _, name := range []string{
+		hashes.CipherAreion256,
+		hashes.CipherAreion512,
+		hashes.CipherBLAKE2b256,
+		hashes.CipherBLAKE2b512,
+		hashes.CipherBLAKE2s,
+		hashes.CipherBLAKE3,
+	} {
 		ksize, err := hashprf.KeySize(name)
 		if err != nil {
 			t.Fatalf("%s: KeySize: %v", name, err)

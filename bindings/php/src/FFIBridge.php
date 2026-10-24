@@ -93,22 +93,30 @@ final class FFIBridge
      *
      * @param callable(\FFI\CData, int, \FFI\CData): int $call
      */
-    public static function retryOnce(int $cap, callable $call): string
+    public static function retryOnce(int $cap, callable $call, bool $discard = false): string
     {
         $ffi = self::get();
         $buf = $ffi->new("char[$cap]");
         $len = $ffi->new('size_t');
-        $rc = $call($buf, $cap, \FFI::addr($len));
-        // Retry only when the reported length strictly exceeds the
-        // current capacity.
-        if ($rc === Status::BUFFER_TOO_SMALL && (int) $len->cdata > $cap) {
-            $cap = (int) $len->cdata;
-            $buf = $ffi->new("char[$cap]");
+        try {
             $rc = $call($buf, $cap, \FFI::addr($len));
+            // Retry only when the reported length strictly exceeds the
+            // current capacity.
+            if ($rc === Status::BUFFER_TOO_SMALL && (int) $len->cdata > $cap) {
+                \FFI::memset($buf, 0, $cap);
+                $cap = (int) $len->cdata;
+                $buf = $ffi->new("char[$cap]");
+                $rc = $call($buf, $cap, \FFI::addr($len));
+            }
+            self::check($rc);
+            if ($discard) {
+                return '';
+            }
+            $n = (int) $len->cdata;
+            return $n > 0 ? \FFI::string($buf, $n) : '';
+        } finally {
+            \FFI::memset($buf, 0, $cap);
         }
-        self::check($rc);
-        $n = (int) $len->cdata;
-        return $n > 0 ? \FFI::string($buf, $n) : '';
     }
 
     private static function load(): \FFI
