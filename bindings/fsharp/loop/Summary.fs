@@ -234,6 +234,7 @@ let final (r: RunState) (elapsedNs: int64) : int =
         add (",\"blob_mode\":" + d cfg.BlobMode)
         add (",\"drbg\":" + jsonString cfg.Drbg)
         add (",\"drbg_auto_tier\":" + jsonString (Runtime.drbgAutoTier ()))
+        add (",\"interlock\":" + jsonString cfg.Interlock)
         add (",\"chunk_size_bytes\":" + d cfg.ChunkSize)
         add (",\"barrier_fill\":" + d cfg.BarrierFill)
         add (",\"parallax\":\"" + onOff cfg.Parallax + "\"")

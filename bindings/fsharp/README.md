@@ -87,7 +87,7 @@ let result =
 
 `Opts` overrides the profile default at `init` (chunk size, outer
 cipher, parallax on/off, wrapper on/off, MAC name, palette,
-`maxWorkers`); values compose through the pipeline operator. The
+`interlock`, `maxWorkers`); values compose through the pipeline operator. The
 blob the receiver loads carries the resolved shape, so `load` takes
 no opts:
 
@@ -95,6 +95,7 @@ no opts:
 let opts =
     Opts.empty
     |> Opts.withMode 2L
+    |> Opts.withInterlock "168"
     |> Opts.withChunkSize 65536L
     |> Opts.withWrapper false
 let result =

@@ -95,11 +95,13 @@ assert($plain === 'any text or binary data');
 
 Opts overrides the profile default at `create` (chunk size, outer
 cipher, parallax on/off, wrapper on/off, MAC name, palette, worker
-cap) as a plain `key => value` array. The resolved shape is written
-into the blob, so the receiver loads it with no opts of its own:
+cap, `interlock` (`"48"` | `"168"`, `""` = default 48-bit; `"168"`
+requires a 512-bit hash)) as a plain `key => value` array. The
+resolved shape is written into the blob, so the receiver loads it
+with no opts of its own:
 
 ```php
-$opts = ['mode' => 2, 'chunkSize' => 65536, 'withWrapper' => false];
+$opts = ['mode' => 2, 'interlock' => '168', 'chunkSize' => 65536, 'withWrapper' => false];
 $sender = Itb::create('singlemsg-triple-mac-v1', $opts);
 $receiver = Itb::load($sender->save());
 ```

@@ -202,6 +202,31 @@ class PersistTest {
     }
 
     @Test
+    fun interlockRoundTripInspectLoadAndValidation() {
+        Pipeline.init("singlemsg-triple-mac-v1", Opts().interlock("168")).use { sender ->
+            val wire = sender.encryptMessage(plain)
+            assertContentEquals(plain, sender.decryptMessage(wire))
+            val blob = sender.save()
+            val prof = Pipeline.inspect(blob)
+            assertEquals("168", prof.interlock())
+            assertTrue("\"interlock\":\"168\"" in prof.toJson())
+            Pipeline.load(blob).use { receiver ->
+                assertContentEquals(plain, receiver.decryptMessage(wire))
+            }
+        }
+
+        val ex256 = assertFailsWith<ItbException> {
+            Pipeline.init("singlemsg-triple-mac-v1", Opts().innerHash("blake3").interlock("168"))
+        }
+        assertEquals(Status.BadInput, ex256.status)
+
+        val ex96 = assertFailsWith<ItbException> {
+            Pipeline.init("singlemsg-triple-mac-v1", Opts().interlock("96"))
+        }
+        assertEquals(Status.BadInput, ex96.status)
+    }
+
+    @Test
     fun initKeysDeterminismAndValidation() {
         val masters = Array(8) { i -> ByteArray(32) { (0x11 * (i + 1)).toByte() } }
         Pipeline.initKeys("singlemsg-triple-mac-v1", masters).use { p1 ->

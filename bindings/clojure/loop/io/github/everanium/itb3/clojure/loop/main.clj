@@ -69,6 +69,7 @@
    :gomaxprocs 0
    :goroutines 3
    :hash "areion512"
+   :interlock ""
    :iterations 0
    :json-output false
    :key-bits 0
@@ -152,6 +153,10 @@
     :help "inner ITB hash primitive name"
     :suffix (default-suffix-str (:hash raw-defaults))
     :store (store-string :hash)}
+   {:name "interlock" :type "string"
+    :help "Interlocked Barrier chunk width: 48 | 168; empty = profile default (48; 168 requires 512-bit hash)"
+    :suffix (default-suffix-str (:interlock raw-defaults))
+    :store (store-string :interlock)}
    {:name "iterations" :type "int"
     :help "fixed per-worker iteration count; 0 = duration-based"
     :suffix ""
@@ -386,6 +391,9 @@
         _ (when-not (one-of [0 1 2 4 8 16 32] (:barrier-fill raw))
             (invalid! (str "--barrier-fill must be 1 | 2 | 4 | 8 | 16 | 32 "
                            "(or 0 = profile default), got " (:barrier-fill raw))))
+        _ (when-not (one-of ["" "48" "168"] (:interlock raw))
+            (invalid! (str "--interlock must be 48 | 168 (or empty = profile default), got \""
+                           (:interlock raw) "\"")))
         chunk-size (or (size/parse-size (:chunk-size raw))
                        (invalid! (str "--chunk-size: invalid size \"" (:chunk-size raw) "\"")))
         _ (when (neg? (long (:gomaxprocs raw)))
@@ -419,6 +427,7 @@
      :barrier-fill (:barrier-fill raw)
      ;; validated by Init: the C ABI enumerates no DRBG names
      :drbg (:drbg raw)
+     :interlock (:interlock raw)
      :gomaxprocs (:gomaxprocs raw)
      :rekey-every (:rekey-every raw)
      :blob-cycle-every (:blob-cycle-every raw)
@@ -542,7 +551,8 @@
                            " parallax=" (state/on-off (:parallax? record))
                            " wrapper=" (state/on-off (:wrapper? record))
                            (when (= 2 (:container-mode record)) " container-mode=2")
-                           (when (seq (:drbg record)) (str " drbg=" (:drbg record))))))))
+                           (when (seq (:drbg record)) (str " drbg=" (:drbg record)))
+                           (when (seq (:interlock record)) (str " interlock=" (:interlock record))))))))
 
 (defn- build-pipeline
   "Constructs one Pipeline against profile with every flag-carried
@@ -562,6 +572,7 @@
               :nonce-bits (:nonce-bits cfg)
               :barrier-fill (:barrier-fill cfg)
               :drbg (:drbg cfg)
+              :interlock (:interlock cfg)
               :chunk-size (:chunk-size cfg)}
         opts (if (zero? (.length ^String (:profile cfg)))
                base
@@ -645,7 +656,8 @@
                        " seed=" (Long/toUnsignedString (long (:seed cfg)))
                        " json-output=" (if (:json-output cfg) "true" "false")
                        (when (not= 1 (long (:blob-mode cfg))) (str " blob-mode=" (:blob-mode cfg)))
-                       (when (seq (:drbg cfg)) (str " drbg=" (:drbg cfg)))))
+                       (when (seq (:drbg cfg)) (str " drbg=" (:drbg cfg)))
+                       (when (seq (:interlock cfg)) (str " interlock=" (:interlock cfg)))))
   (state/log-line (str "policy: microbatch-tiers=" (state/policy-label "ITB_MICROBATCH_TIERS")
                        " hashpool-starters=" (state/policy-label "ITB_HASHPOOL_STARTERS"))))
 

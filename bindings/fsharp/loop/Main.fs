@@ -82,6 +82,7 @@ type private RawFlags() =
     member val Gomaxprocs = 0L with get, set
     member val Goroutines = 3L with get, set
     member val Hash = "areion512" with get, set
+    member val Interlock = "" with get, set
     member val Iterations = 0L with get, set
     member val JsonOutput = false with get, set
     member val KeyBits = 0L with get, set
@@ -193,6 +194,13 @@ let private flags: Flag list =
         IsBool = false
         DefaultSuffix = defaultOfStr dflt.Hash
         Store = storeStr (fun f v -> f.Hash <- v) }
+      { Name = "interlock"
+        TypeLabel = "string"
+        Help =
+          "Interlocked Barrier chunk width: 48 | 168; empty = profile default (48; 168 requires 512-bit hash)"
+        IsBool = false
+        DefaultSuffix = defaultOfStr dflt.Interlock
+        Store = storeStr (fun f v -> f.Interlock <- v) }
       { Name = "iterations"
         TypeLabel = "int"
         Help = "fixed per-worker iteration count; 0 = duration-based"
@@ -506,6 +514,9 @@ let private parseFlags (args: string[]) : Config option * int =
     else
 
     // --drbg is validated by Init: the C ABI enumerates no DRBG names.
+    if not (List.contains f.Interlock [ ""; "48"; "168" ]) then
+        reject ("--interlock must be 48 | 168 (or empty = profile default), got \"" + f.Interlock + "\"")
+    else
 
     match parseSize f.ChunkSize with
     | None -> reject ("--chunk-size: invalid size \"" + f.ChunkSize + "\"")
@@ -548,6 +559,7 @@ let private parseFlags (args: string[]) : Config option * int =
           ChunkSize = chunkSize
           BarrierFill = f.BarrierFill
           Drbg = f.Drbg
+          Interlock = f.Interlock
           Gomaxprocs = int f.Gomaxprocs
           RekeyEvery = f.RekeyEvery
           BlobCycleEvery = f.BlobCycleEvery
@@ -654,6 +666,7 @@ let private logPipelineInitialised (profile: string) (blob: byte[]) =
             + onOff rec_.Parallax + " wrapper=" + onOff rec_.Wrapper
             + (if rec_.ContainerMode.HasValue && rec_.ContainerMode.Value = 2 then " container-mode=2" else "")
             + (if String.IsNullOrEmpty rec_.Drbg then "" else " drbg=" + rec_.Drbg)
+            + (if String.IsNullOrEmpty rec_.Interlock then "" else " interlock=" + rec_.Interlock)
         )
 
 /// Constructs one Pipeline against profile with every flag-carried
@@ -674,6 +687,7 @@ let private buildPipeline (cfg: Config) (profile: string) : (Pipeline * byte[]) 
         |> Opts.withNonceBits cfg.NonceBits
         |> Opts.withBarrierFill cfg.BarrierFill
         |> Opts.withDrbg cfg.Drbg
+        |> Opts.withInterlock cfg.Interlock
         |> Opts.withChunkSize cfg.ChunkSize
 
     let resolved =
@@ -756,6 +770,7 @@ let private run (args: string[]) : int =
         + (if cfg.JsonOutput then "true" else "false")
         + (if cfg.BlobMode <> 1L then " blob-mode=" + d cfg.BlobMode else "")
         + (if cfg.Drbg.Length > 0 then " drbg=" + cfg.Drbg else "")
+        + (if cfg.Interlock.Length > 0 then " interlock=" + cfg.Interlock else "")
     )
 
     logLine (

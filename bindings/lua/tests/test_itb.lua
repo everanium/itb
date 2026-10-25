@@ -515,6 +515,30 @@ run("drbg survives a register copy", function()
     assert(looked:find('"drbg":"csprng"', 1, true), looked)
 end)
 
+run("interlock 168 round trip, inspect, and bad input", function()
+    local sender <close> = itb.create("singlemsg-triple-mac-v1",
+        itb.opts({ interlock = "168" }))
+    local wire = sender:encrypt_message("interlock 168")
+    assert(sender:decrypt_message(wire) == "interlock 168")
+
+    local blob = sender:save()
+    local record = itb.inspect(blob)
+    assert(record:find('"interlock":"168"', 1, true), record)
+
+    local receiver <close> = itb.load(blob)
+    assert(receiver:decrypt_message(wire) == "interlock 168")
+
+    assert_status({ itb.status.BAD_INPUT }, function()
+        itb.create("singlemsg-triple-mac-v1",
+            itb.opts({ inner_hash = "blake3", interlock = "168" }))
+    end)
+
+    assert_status({ itb.status.BAD_INPUT }, function()
+        itb.create("singlemsg-triple-mac-v1",
+            itb.opts({ interlock = "96" }))
+    end)
+end)
+
 -- ---------------------------------------------------------------------
 
 if failures > 0 then

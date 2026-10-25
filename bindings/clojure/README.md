@@ -93,11 +93,13 @@ any `key=value` pair through verbatim). The blob the receiver loads
 carries the resolved shape, so `load` takes no opts:
 
 ```clojure
-(let [opts {:mode 2 :chunk-size 65536 :wrapper? false}]
+(let [opts {:mode 2 :interlock "168" :chunk-size 65536 :wrapper? false}]
   (with-open [sender (itb/init "singlemsg-triple-mac-v1" opts)]
     (with-open [receiver (itb/load (itb/save sender))]
       ...)))
 ```
+
+`:interlock` sets the interlock width in bits (`"48"` | `"168"`, `""` = default 48-bit; `"168"` requires a 512-bit hash).
 
 `itb/init-keys` constructs a `Pipeline` deterministically from eight caller-supplied master keys (one per seed slot `0..7`) via per-slot KDF, so two peers holding the same eight master keys derive identical `Pipeline` instances without exchanging a session blob. The eight master keys must come from independent entropy or key-agreement sources — never derive all eight keys from a single secret or a single KDF parent key.
 

@@ -31,6 +31,12 @@ Public NotInheritable Class Opts
         Return Me
     End Function
 
+    ''' <summary>Interlocked Barrier chunk width: "48" (default) | "168" (requires a 512-bit hash).</summary>
+    Public Function WithInterlock(interlock As String) As Opts
+        _inner.WithInterlock(interlock)
+        Return Me
+    End Function
+
     ''' <summary>Hex-encodes the parallax master override
     ''' (<c>pm</c>).</summary>
     Public Function WithPermMaster(master As Byte()) As Opts

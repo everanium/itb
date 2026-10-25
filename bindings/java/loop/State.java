@@ -47,6 +47,7 @@ final class State {
         long chunkSize;
         long barrierFill;
         String drbg = "";
+        String interlock = "";
         int gomaxprocs;
         long rekeyEvery;
         long blobCycleEvery;

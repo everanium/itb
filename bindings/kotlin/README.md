@@ -86,13 +86,14 @@ Pipeline.init("singlemsg-triple-mac-v1").use { sender ->
 //   Pipeline.loadF("/path/session.blob").use { receiver -> /* ... */ }
 ```
 
-The `Opts` DSL overrides the profile default at `init` (chunk size,
-outer cipher, parallax on/off, wrapper on/off, MAC name, palette,
-`maxWorkers`); the blob the receiver loads carries the resolved
-shape, so `load` takes no opts:
+The `Opts` DSL overrides the profile default at `init` (`mode`,
+`interlock` (`"48"` | `"168"`, `""` = default 48-bit; `"168"` requires
+a 512-bit hash), chunk size, outer cipher, parallax on/off, wrapper
+on/off, MAC name, palette, `maxWorkers`); the blob the receiver loads
+carries the resolved shape, so `load` takes no opts:
 
 ```kotlin
-val cfg = opts { mode(2); chunkSize(65536); wrapper(false) }
+val cfg = opts { mode(2); interlock("168"); chunkSize(65536); wrapper(false) }
 Pipeline.init("singlemsg-triple-mac-v1", cfg).use { sender ->
     Pipeline.load(sender.save()).use { receiver ->
         // ...

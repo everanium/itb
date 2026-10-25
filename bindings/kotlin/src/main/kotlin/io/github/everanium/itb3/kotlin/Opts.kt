@@ -32,6 +32,9 @@ class Opts {
     /** Overrides the container floor sizing mode: 1 (per-region, default) or 2 (per-container compact). */
     fun mode(n: Long): Opts = apply { impl.withMode(n) }
 
+    /** Overrides the Interlocked Barrier chunk width: `"48"` (default) or `"168"` (requires a 512-bit hash). */
+    fun interlock(interlock: String): Opts = apply { impl.withInterlock(interlock) }
+
     /** Hex-encodes the parallax master override (`pm`). */
     fun permMaster(master: ByteArray): Opts = apply { impl.withPermMaster(master) }
 

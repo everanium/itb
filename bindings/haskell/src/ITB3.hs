@@ -54,6 +54,7 @@ module ITB3
   , renderOpts
   , opt
   , mode
+  , interlock
   , permMaster
   , wrapMaster
   , withParallax

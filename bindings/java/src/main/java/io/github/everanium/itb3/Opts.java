@@ -25,6 +25,11 @@ public final class Opts {
         return withRaw("mode", Long.toString(n));
     }
 
+    /** Overrides the Interlocked Barrier chunk width: {@code "48"} (default) or {@code "168"} (requires a 512-bit hash). */
+    public Opts withInterlock(String interlock) {
+        return withRaw("interlock", interlock);
+    }
+
     /** Hex-encodes the parallax master override ({@code pm}). */
     public Opts withPermMaster(byte[] master) {
         return withRaw("pm", hex(master));

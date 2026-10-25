@@ -206,4 +206,27 @@ final class PersistTest extends TestCase
         Itb::register('php-binding-test-drbg-copy', $recipe);
         $this->assertSame('csprng', Itb::lookup('php-binding-test-drbg-copy')['drbg']);
     }
+
+    public function testInterlock168RoundTripAndInspect(): void
+    {
+        $sender = Itb::create(self::PROFILE, ['interlock' => '168']);
+        $plain = 'interlock 168 round trip';
+        $wire = $sender->encryptMessage($plain);
+        $this->assertSame($plain, $sender->decryptMessage($wire));
+        $blob = $sender->save();
+        $this->assertSame('168', Itb::inspect($blob)['interlock']);
+        $receiver = Itb::load($blob);
+        $this->assertSame($plain, $receiver->decryptMessage($wire));
+        $sender->free();
+        $receiver->free();
+
+        foreach ([['innerHash' => 'blake3', 'interlock' => '168'], ['interlock' => '96']] as $badOpts) {
+            try {
+                Itb::create(self::PROFILE, $badOpts);
+                $this->fail('expected ItbException');
+            } catch (ItbException $e) {
+                $this->assertSame(Status::BAD_INPUT, $e->getStatus());
+            }
+        }
+    }
 }

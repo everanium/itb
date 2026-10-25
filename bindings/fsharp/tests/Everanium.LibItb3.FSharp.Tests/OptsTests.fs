@@ -26,6 +26,7 @@ let ``typed setters accumulate expected pairs in order`` () =
         |> Opts.withInnerHash "areion512"
         |> Opts.withOuterCipher "chacha20"
         |> Opts.withDrbg "csprng"
+        |> Opts.withInterlock "168"
         |> Opts.withParallaxPalette [ "aescmac"; "chacha20"; "blake3" ]
 
     let expected =
@@ -43,6 +44,7 @@ let ``typed setters accumulate expected pairs in order`` () =
           "innerHash", "areion512"
           "outerCipher", "chacha20"
           "drbg", "csprng"
+          "interlock", "168"
           "parallaxPalette", "aescmac,chacha20,blake3" ]
 
     Assert.Equal<(string * string) list>(expected, opts.Pairs)

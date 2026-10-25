@@ -12,6 +12,7 @@
   Recognised keys:
 
     :mode                   long — container floor sizing mode: 1 (per-region, default) | 2 (per-container)
+    :interlock              string — interlock width in bits: \"48\" | \"168\", \"\" = default 48-bit; \"168\" requires a 512-bit hash
     :perm-master            byte array — parallax master override
     :wrap-master            byte array — wrapper master override
     :parallax?              boolean
@@ -56,6 +57,7 @@
     (doseq [[k v] m]
       (case k
         :mode (.withMode o (long v))
+        :interlock (.withInterlock o (str v))
         :perm-master (.withPermMaster o ^bytes v)
         :wrap-master (.withWrapMaster o ^bytes v)
         :parallax? (.withParallax o (boolean v))

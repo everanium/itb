@@ -303,6 +303,7 @@ final class Summary {
             j.append(",\"blob_mode\":").append(cfg.blobMode);
             j.append(",\"drbg\":").append(jsonString(cfg.drbg));
             j.append(",\"drbg_auto_tier\":").append(jsonString(Runtime.drbgAutoTier()));
+            j.append(",\"interlock\":").append(jsonString(cfg.interlock));
             j.append(",\"chunk_size_bytes\":").append(cfg.chunkSize);
             j.append(",\"barrier_fill\":").append(cfg.barrierFill);
             j.append(",\"parallax\":\"").append(Main.onOff(cfg.parallax)).append('"');

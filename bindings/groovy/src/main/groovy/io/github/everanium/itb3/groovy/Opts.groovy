@@ -40,6 +40,11 @@ class Opts {
         withRaw('mode', Long.toString(n))
     }
 
+    /** Interlocked Barrier chunk width: {@code '48'} (default) | {@code '168'} (requires a 512-bit hash). */
+    Opts withInterlock(String interlock) {
+        withRaw('interlock', interlock)
+    }
+
     /** Hex-encodes the parallax master override ({@code pm}). */
     Opts withPermMaster(byte[] master) {
         withRaw('pm', hex(master))

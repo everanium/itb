@@ -211,6 +211,32 @@ class PersistTest {
     }
 
     @Test
+    void interlockRoundTripInspectLoadAndValidation() {
+        Pipeline.withPipeline('singlemsg-triple-mac-v1', new Opts().withInterlock('168')) { Pipeline sender ->
+            byte[] wire = sender.encryptMessage(PLAIN)
+            assertArrayEquals(PLAIN, sender.decryptMessage(wire))
+            byte[] blob = sender.save()
+            Profile prof = Pipeline.inspect(blob)
+            assertEquals('168', prof.interlock())
+            assertTrue(prof.toJson().contains('"interlock":"168"'))
+            Pipeline.withLoaded(blob) { Pipeline receiver ->
+                assertArrayEquals(PLAIN, receiver.decryptMessage(wire))
+            }
+        }
+        assertEquals('168', Pipeline.profileOf(interlock: '168').interlock())
+
+        def e256 = assertThrows(ItbException) {
+            Pipeline.init('singlemsg-triple-mac-v1', new Opts().withInnerHash('blake3').withInterlock('168'))
+        }
+        assertEquals(Status.BAD_INPUT, e256.status)
+
+        def e96 = assertThrows(ItbException) {
+            Pipeline.init('singlemsg-triple-mac-v1', new Opts().withInterlock('96'))
+        }
+        assertEquals(Status.BAD_INPUT, e96.status)
+    }
+
+    @Test
     void initKeysDeterminismAndValidation() {
         List<byte[]> masters = (0..<8).collect { int i ->
             byte[] k = new byte[32]

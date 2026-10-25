@@ -180,6 +180,7 @@ hash_names <- function() {
 # passes through unchanged.
 .OPTS_KEY_MAP <- c(
   mode = "mode",
+  interlock = "interlock",
   nonce_bits = "nonceBits",
   key_bits = "keyBits",
   with_parallax = "withParallax",

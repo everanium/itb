@@ -394,6 +394,7 @@ function emit_json(
         . \sprintf(',"blob_mode":%d', $cfg->blobMode)
         . ',"drbg":' . json_string($cfg->drbg)
         . ',"drbg_auto_tier":' . json_string(Itb::drbgAutoTier())
+        . ',"interlock":' . json_string($cfg->interlock)
         . \sprintf(',"chunk_size_bytes":%d', $cfg->chunkSize)
         . \sprintf(',"barrier_fill":%d', $cfg->barrierFill)
         . ',"parallax":"' . on_off($cfg->parallax) . '"'

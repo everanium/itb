@@ -213,6 +213,7 @@
           (.append ",\"blob_mode\":") (.append (long (:blob-mode cfg)))
           (.append ",\"drbg\":") (.append (json-string (:drbg cfg)))
           (.append ",\"drbg_auto_tier\":") (.append (json-string (runtime/drbg-auto-tier)))
+          (.append ",\"interlock\":") (.append (json-string (:interlock cfg)))
           (.append ",\"chunk_size_bytes\":") (.append (long (:chunk-size cfg)))
           (.append ",\"barrier_fill\":") (.append (long (:barrier-fill cfg)))
           (.append ",\"parallax\":\"") (.append (state/on-off (:parallax cfg))) (.append \")

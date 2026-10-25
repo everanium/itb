@@ -102,6 +102,8 @@ final class Config
     public $barrierFill = 0;
     /** DRBG fill primitive; '' = profile default (auto tier). */
     public $drbg = '';
+    /** Interlocked Barrier chunk width: '' | '48' | '168'. */
+    public $interlock = '';
     /** 0 = inherit from the environment. */
     public $gomaxprocs = 0;
     /** Per-worker iterations between rotations; 0 = never. */

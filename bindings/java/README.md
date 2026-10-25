@@ -83,13 +83,14 @@ try (Pipeline sender = Pipeline.init("singlemsg-triple-mac-v1");
 //   Pipeline receiver = Pipeline.loadF("/path/session.blob");
 ```
 
-The `Opts` builder overrides the profile default at `init` (chunk
-size, outer cipher, parallax on/off, wrapper on/off, MAC name,
-palette, `maxWorkers`); the blob the receiver loads carries the
-resolved shape, so `load` takes no opts:
+The `Opts` builder overrides the profile default at `init` (`withMode`,
+`withInterlock` (`"48"` | `"168"`, `""` = default 48-bit; `"168"` requires
+a 512-bit hash), chunk size, outer cipher, parallax on/off, wrapper
+on/off, MAC name, palette, `maxWorkers`); the blob the receiver loads
+carries the resolved shape, so `load` takes no opts:
 
 ```java
-Opts opts = new Opts().withMode(2).withChunkSize(65536).withWrapper(false);
+Opts opts = new Opts().withMode(2).withInterlock("168").withChunkSize(65536).withWrapper(false);
 try (Pipeline sender = Pipeline.init("singlemsg-triple-mac-v1", opts);
         Pipeline receiver = Pipeline.load(sender.save())) {
     // ...

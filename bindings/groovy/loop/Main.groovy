@@ -80,6 +80,7 @@ final class Config {
     long chunkSize
     long barrierFill
     String drbg = ''
+    String interlock = ''
     int gomaxprocs
     long rekeyEvery
     long blobCycleEvery
@@ -212,6 +213,7 @@ final class RawFlags {
     long gomaxprocs
     long goroutines = 3L
     String hash = 'areion512'
+    String interlock = ''
     long iterations
     boolean jsonOutput
     long keyBits
@@ -401,6 +403,10 @@ final class Main {
                 'inner ITB hash primitive name',
                 false, defaultOfString(d.hash),
                 { RawFlags f, String s -> f.hash = s; true } as Closure<Boolean>),
+            new Flag('interlock', 'string',
+                'Interlocked Barrier chunk width: 48 | 168; empty = profile default (48; 168 requires 512-bit hash)',
+                false, defaultOfString(d.interlock),
+                { RawFlags f, String s -> f.interlock = s; true } as Closure<Boolean>),
             new Flag('iterations', 'int',
                 'fixed per-worker iteration count; 0 = duration-based',
                 false, '',
@@ -705,6 +711,11 @@ final class Main {
                     "profile default), got ${f.barrierFill}")
             return new Parsed(null, 2)
         }
+        if (!f.interlock.isEmpty() && f.interlock != '48' && f.interlock != '168') {
+            System.err.println('loop: --interlock must be 48 | 168 (or empty = profile ' +
+                    "default), got \"${f.interlock}\"")
+            return new Parsed(null, 2)
+        }
         Long chunkSize = Size.parseSize(f.chunkSize)
         if (chunkSize == null) {
             System.err.println("loop: --chunk-size: invalid size \"${f.chunkSize}\"")
@@ -749,6 +760,7 @@ final class Main {
         cfg.chunkSize = chunkSize
         cfg.barrierFill = f.barrierFill
         cfg.drbg = f.drbg // validated by Init: the C ABI enumerates no DRBG names
+        cfg.interlock = f.interlock
         cfg.gomaxprocs = (int) f.gomaxprocs
         cfg.rekeyEvery = f.rekeyEvery
         cfg.blobCycleEvery = f.blobCycleEvery
@@ -851,6 +863,7 @@ final class Main {
                 .withNonceBits(cfg.nonceBits)
                 .withBarrierFill(cfg.barrierFill)
                 .withDrbg(cfg.drbg)
+                .withInterlock(cfg.interlock)
                 .withChunkSize(cfg.chunkSize)
         if (!cfg.profile.isEmpty()) {
             Filled filled = fillKeystreamLayers(cfg.profile, opts, cfg.parallax, cfg.wrapper)
@@ -911,7 +924,8 @@ final class Main {
                 " parallax=${onOff(rec.parallax())}" +
                 " wrapper=${onOff(rec.wrapper())}" +
                 (rec.containerMode() != null && rec.containerMode() == 2 ? ' container-mode=2' : '') +
-                (rec.drbg().isEmpty() ? '' : " drbg=${rec.drbg()}"))
+                (rec.drbg().isEmpty() ? '' : " drbg=${rec.drbg()}") +
+                (rec.interlock().isEmpty() ? '' : " interlock=${rec.interlock()}"))
     }
 
     private static int run(String[] args) {
@@ -973,7 +987,8 @@ final class Main {
                 " seed=${Long.toUnsignedString(cfg.seed)}" +
                 " json-output=${cfg.jsonOutput ? 'true' : 'false'}" +
                 (cfg.blobMode != 1L ? " blob-mode=${cfg.blobMode}" : '') +
-                (cfg.drbg.isEmpty() ? '' : " drbg=${cfg.drbg}"))
+                (cfg.drbg.isEmpty() ? '' : " drbg=${cfg.drbg}") +
+                (cfg.interlock.isEmpty() ? '' : " interlock=${cfg.interlock}"))
         logLine("policy: microbatch-tiers=${policyLabel('ITB_MICROBATCH_TIERS')}" +
                 " hashpool-starters=${policyLabel('ITB_HASHPOOL_STARTERS')}")
 

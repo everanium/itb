@@ -127,7 +127,8 @@ final class Pipeline implements AutoCloseable {
 
     /** {@link #register} from a Groovy named-argument map whose keys
      * are the record's setter names ({@code mode}, {@code width},
-     * {@code hash}, {@code hashes}, {@code keyBits}, {@code drbg}, {@code mac},
+     * {@code hash}, {@code hashes}, {@code keyBits}, {@code drbg},
+     * {@code interlock}, {@code mac},
      * {@code tagStub}, {@code chunk}, {@code wrapper}, {@code outer},
      * {@code parallax}, {@code palette}, {@code segment}):
      *
@@ -153,6 +154,7 @@ final class Pipeline implements AutoCloseable {
                 case 'hashes': profile.hashes(strings(value)); break
                 case 'keyBits': profile.keyBits(((Number) value).intValue()); break
                 case 'drbg': profile.drbg(String.valueOf(value)); break
+                case 'interlock': profile.interlock(String.valueOf(value)); break
                 case 'mac': profile.mac(String.valueOf(value)); break
                 case 'tagStub': profile.tagStub(((Number) value).intValue()); break
                 case 'chunk': profile.chunk(((Number) value).intValue()); break

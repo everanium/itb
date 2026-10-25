@@ -137,6 +137,30 @@
           (is (= "csprng" (:drbg (itb/inspect (itb/save sender)))))
           (is (round-trips? sender receiver)))))))
 
+(deftest interlock-round-trip-inspect-load-and-validation
+  (with-open [sender (itb/init "singlemsg-triple-mac-v1" {:interlock "168"})]
+    (let [wire (itb/encrypt-message sender plain)
+          blob (itb/save sender)
+          prof (itb/inspect blob)]
+      (is (Arrays/equals ^bytes plain ^bytes (itb/decrypt-message sender wire)))
+      (is (= "168" (:interlock prof)))
+      (is (.contains (.toJson (profile/map->profile prof)) "\"interlock\":\"168\""))
+      (with-open [receiver (itb/load blob)]
+        (is (Arrays/equals ^bytes plain ^bytes (itb/decrypt-message receiver wire))))))
+  (let [e1 (try
+             (with-open [_ (itb/init "singlemsg-triple-mac-v1"
+                                     {:inner-hash "blake3" :interlock "168"})]
+               nil)
+             (catch clojure.lang.ExceptionInfo e e))]
+    (is (some? e1))
+    (is (= :bad-input (err/error-status e1))))
+  (let [e2 (try
+             (with-open [_ (itb/init "singlemsg-triple-mac-v1" {:interlock "96"})]
+               nil)
+             (catch clojure.lang.ExceptionInfo e e))]
+    (is (some? e2))
+    (is (= :bad-input (err/error-status e2)))))
+
 (deftest init-keys-determinism-and-validation
   (let [masters (vec (for [i (range 8)]
                        (byte-array 32 (unchecked-byte (* 0x11 (inc i))))))]

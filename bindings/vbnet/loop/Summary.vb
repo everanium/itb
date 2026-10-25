@@ -275,6 +275,7 @@ Friend Module Summary
             j.Append(",""blob_mode"":").Append(Dx(cfg.BlobMode))
             j.Append(",""drbg"":").Append(JsonString(cfg.Drbg))
             j.Append(",""drbg_auto_tier"":").Append(JsonString(Library.DrbgAutoTier()))
+            j.Append(",""interlock"":").Append(JsonString(cfg.Interlock))
             j.Append(",""chunk_size_bytes"":").Append(Dx(cfg.ChunkSize))
             j.Append(",""barrier_fill"":").Append(Dx(cfg.BarrierFill))
             j.Append(",""parallax"":""").Append(OnOff(cfg.Parallax)).Append(""""c)

@@ -40,6 +40,9 @@ module Opts =
     /// Container floor sizing mode: 1 (per-region, default) | 2 (per-container).
     let withMode (n: int64) (opts: Opts) : Opts = withRaw "mode" (string n) opts
 
+    /// Interlocked Barrier chunk width: "48" (default) | "168" (requires a 512-bit hash).
+    let withInterlock (interlock: string) (opts: Opts) : Opts = withRaw "interlock" interlock opts
+
     /// Hex-encodes the parallax master override (<c>pm</c>).
     let withPermMaster (master: byte[]) (opts: Opts) : Opts = withRaw "pm" (hex master) opts
 

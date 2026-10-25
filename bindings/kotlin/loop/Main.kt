@@ -114,6 +114,7 @@ class Config(
     val chunkSize: Long,
     val barrierFill: Long,
     val drbg: String,
+    val interlock: String,
     val gomaxprocs: Int,
     val rekeyEvery: Long,
     val blobCycleEvery: Long,
@@ -237,6 +238,7 @@ private class RawFlags {
     var gomaxprocs = 0L
     var goroutines = 3L
     var hash = "areion512"
+    var interlock = ""
     var iterations = 0L
     var jsonOutput = false
     var keyBits = 0L
@@ -329,6 +331,12 @@ private fun buildFlags(): List<Flag> {
             "inner ITB hash primitive name",
             false, defaultOf(d.hash),
         ) { f, s -> f.hash = s; true },
+        Flag(
+            "interlock", "string",
+            "Interlocked Barrier chunk width: 48 | 168; empty = profile default " +
+                "(48; 168 requires 512-bit hash)",
+            false, defaultOf(d.interlock),
+        ) { f, s -> f.interlock = s; true },
         Flag(
             "iterations", "int",
             "fixed per-worker iteration count; 0 = duration-based",
@@ -647,6 +655,13 @@ private fun parseFlags(args: Array<String>): Parsed {
         )
         return Parsed(null, 2)
     }
+    if (f.interlock !in listOf("", "48", "168")) {
+        System.err.println(
+            "loop: --interlock must be 48 | 168 (or empty = profile default), " +
+                "got \"${f.interlock}\"",
+        )
+        return Parsed(null, 2)
+    }
     val chunkSize = parseSize(f.chunkSize)
     if (chunkSize == null) {
         System.err.println("loop: --chunk-size: invalid size \"${f.chunkSize}\"")
@@ -694,6 +709,7 @@ private fun parseFlags(args: Array<String>): Parsed {
             chunkSize = chunkSize,
             barrierFill = f.barrierFill,
             drbg = f.drbg, // validated by Init: the C ABI enumerates no DRBG names
+            interlock = f.interlock,
             gomaxprocs = f.gomaxprocs.toInt(),
             rekeyEvery = f.rekeyEvery,
             blobCycleEvery = f.blobCycleEvery,
@@ -821,6 +837,7 @@ private fun buildPipeline(cfg: Config, profile: String): Built? {
         .nonceBits(cfg.nonceBits)
         .barrierFill(cfg.barrierFill)
         .drbg(cfg.drbg)
+        .interlock(cfg.interlock)
         .chunkSize(cfg.chunkSize)
     if (cfg.profile.isNotEmpty()) {
         val filled = fillKeystreamLayers(cfg.profile, opts, cfg.parallax, cfg.wrapper)
@@ -878,7 +895,8 @@ private fun logPipelineInitialised(profile: String, blob: ByteArray) {
             " parallax=${onOff(rec.parallax())}" +
             " wrapper=${onOff(rec.wrapper())}" +
             (if (rec.containerMode() == 2) " container-mode=2" else "") +
-            (if (rec.drbg().isEmpty()) "" else " drbg=${rec.drbg()}"),
+            (if (rec.drbg().isEmpty()) "" else " drbg=${rec.drbg()}") +
+            (if (rec.interlock().isEmpty()) "" else " interlock=${rec.interlock()}"),
     )
 }
 
@@ -944,7 +962,8 @@ private fun run(args: Array<String>): Int {
             " seed=${java.lang.Long.toUnsignedString(cfg.seed)}" +
             " json-output=${if (cfg.jsonOutput) "true" else "false"}" +
             (if (cfg.blobMode != 1L) " blob-mode=${cfg.blobMode}" else "") +
-            (if (cfg.drbg.isEmpty()) "" else " drbg=${cfg.drbg}"),
+            (if (cfg.drbg.isEmpty()) "" else " drbg=${cfg.drbg}") +
+            (if (cfg.interlock.isEmpty()) "" else " interlock=${cfg.interlock}"),
     )
     logLine(
         "policy: microbatch-tiers=${policyLabel("ITB_MICROBATCH_TIERS")}" +

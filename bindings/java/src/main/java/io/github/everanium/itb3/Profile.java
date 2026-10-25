@@ -49,6 +49,7 @@ public final class Profile {
     private Integer barrierFill;
     private Integer containerMode;
     private String drbg = "";
+    private String interlock = "";
     private String mac = "";
     private int tagStub;
     private int chunk;
@@ -120,6 +121,13 @@ public final class Profile {
      * of an inspected record keeps it. */
     public String drbg() {
         return drbg;
+    }
+
+    /** Interlocked Barrier chunk width ({@code interlock}): {@code "48"}
+     * or {@code "168"}; empty when absent, which selects 48-bit. A
+     * recipe field: a registered copy of an inspected record keeps it. */
+    public String interlock() {
+        return interlock;
     }
 
     /** MAC name ({@code mac}); empty on a No MAC profile. */
@@ -223,6 +231,11 @@ public final class Profile {
         return this;
     }
 
+    public Profile interlock(String value) {
+        this.interlock = value == null ? "" : value;
+        return this;
+    }
+
     public Profile mac(String value) {
         this.mac = value == null ? "" : value;
         return this;
@@ -278,6 +291,7 @@ public final class Profile {
                 && chunk == p.chunk && wrapper == p.wrapper && parallax == p.parallax
                 && segment == p.segment && name.equals(p.name) && mode.equals(p.mode)
                 && hash.equals(p.hash) && hashes.equals(p.hashes) && drbg.equals(p.drbg)
+                && interlock.equals(p.interlock)
                 && mac.equals(p.mac)
                 && outer.equals(p.outer) && palette.equals(p.palette)
                 && Objects.equals(nonceBits, p.nonceBits)
@@ -288,8 +302,8 @@ public final class Profile {
     @Override
     public int hashCode() {
         return Objects.hash(name, mode, width, hash, hashes, keyBits, nonceBits,
-                barrierFill, containerMode, drbg, mac, tagStub, chunk, wrapper, outer, parallax, palette,
-                segment);
+                barrierFill, containerMode, drbg, interlock, mac, tagStub, chunk, wrapper, outer,
+                parallax, palette, segment);
     }
 
     @Override
@@ -327,6 +341,9 @@ public final class Profile {
         }
         if (!drbg.isEmpty()) {
             key(sb, first, "drbg").append(quote(drbg));
+        }
+        if (!interlock.isEmpty()) {
+            key(sb, first, "interlock").append(quote(interlock));
         }
         if (!mac.isEmpty()) {
             key(sb, first, "mac").append(quote(mac));
@@ -396,6 +413,9 @@ public final class Profile {
                     break;
                 case "drbg":
                     out.drbg = p.string();
+                    break;
+                case "interlock":
+                    out.interlock = p.string();
                     break;
                 case "mac":
                     out.mac = p.string();

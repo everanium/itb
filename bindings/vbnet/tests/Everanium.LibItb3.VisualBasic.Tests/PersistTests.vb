@@ -236,5 +236,44 @@ Public Class PersistTests
             Sub() Pipeline.InitKeys("singlemsg-triple-mac-v1", shortKeys))
         Assert.Equal(Status.BadInput, exShort.Status)
     End Sub
+
+    <Fact>
+    Public Sub InterlockRoundTripsAndInspects()
+        Using sender As Pipeline = Pipeline.Init("singlemsg-triple-mac-v1", New Opts().WithInterlock("168"))
+            Dim wire As Byte() = sender.EncryptMessage(Plain)
+            Assert.Equal(Of Byte)(Plain, sender.DecryptMessage(wire))
+            Dim blob As Byte() = sender.Save()
+            Dim prof As Global.Everanium.Itb3.Profile = Pipeline.Inspect(blob)
+            Assert.Equal("168", prof.Interlock)
+            Assert.Contains("""interlock"":""168""", prof.ToJson())
+            Using receiver As Pipeline = Pipeline.Load(blob)
+                Assert.Equal(Of Byte)(Plain, receiver.DecryptMessage(wire))
+                Assert.Equal(Of Byte)(Plain, sender.DecryptMessage(receiver.EncryptMessage(Plain)))
+            End Using
+        End Using
+    End Sub
+
+    <Fact>
+    Public Sub DefaultInterlockIsAbsent()
+        Using pipe As Pipeline = Pipeline.Init("singlemsg-triple-mac-v1")
+            Dim prof As Global.Everanium.Itb3.Profile = Pipeline.Inspect(pipe.Save())
+            Assert.Equal("", prof.Interlock)
+            Assert.DoesNotContain("""interlock""", prof.ToJson())
+        End Using
+        Dim registry As Global.Everanium.Itb3.Profile = Pipeline.Lookup("singlemsg-triple-mac-v1")
+        Assert.Equal("", registry.Interlock)
+        Assert.DoesNotContain("""interlock""", registry.ToJson())
+    End Sub
+
+    <Fact>
+    Public Sub InterlockRejectsInvalidAnd256BitHash()
+        Dim ex256 As ItbException = Assert.Throws(Of ItbException)(
+            Sub() Pipeline.Init("singlemsg-triple-mac-v1", New Opts().WithInnerHash("blake3").WithInterlock("168")))
+        Assert.Equal(Status.BadInput, ex256.Status)
+
+        Dim exInvalid As ItbException = Assert.Throws(Of ItbException)(
+            Sub() Pipeline.Init("singlemsg-triple-mac-v1", New Opts().WithInterlock("96")))
+        Assert.Equal(Status.BadInput, exInvalid.Status)
+    End Sub
 End Class
 

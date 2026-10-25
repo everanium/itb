@@ -93,13 +93,14 @@ Java-style try-with-resources scope it equally well; the
 `withPipeline` / `withLoaded` factories fold init (or load) + close
 into one closure.
 
-The `Opts` builder overrides the profile default at `init` (chunk
-size, outer cipher, parallax on/off, wrapper on/off, MAC name,
-palette, `maxWorkers`); the blob the receiver loads carries the
-resolved shape, so `load` takes no opts:
+The `Opts` builder overrides the profile default at `init` (`withMode`,
+`withInterlock` (`"48"` | `"168"`, `""` = default 48-bit; `"168"` requires
+a 512-bit hash), chunk size, outer cipher, parallax on/off, wrapper
+on/off, MAC name, palette, `maxWorkers`); the blob the receiver loads
+carries the resolved shape, so `load` takes no opts:
 
 ```groovy
-def opts = new Opts().withMode(2).withChunkSize(65536).withWrapper(false)
+def opts = new Opts().withMode(2).withInterlock('168').withChunkSize(65536).withWrapper(false)
 Pipeline.withPipeline('singlemsg-triple-mac-v1', opts) { sender ->
     Pipeline.withLoaded(sender.save()) { receiver ->
         // ...
@@ -153,7 +154,7 @@ named-argument map — byte-array values are hex-encoded, everything
 else is rendered with `toString()`:
 
 ```groovy
-def opts = Opts.of(mode: 2, chunkSize: 4096, withParallax: false)
+def opts = Opts.of(mode: 2, interlock: '168', chunkSize: 4096, withParallax: false)
 ```
 
 ## Persisting sessions

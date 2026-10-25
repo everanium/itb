@@ -204,3 +204,39 @@ let ``initKeys determinism and validation`` () =
     let errShort = unwrapError (Pipeline.initKeys "singlemsg-triple-mac-v1" Opts.empty shortKeys)
     Assert.Equal(Status.BadInput, errShort.Status)
 
+[<Fact>]
+let ``interlock round trips and inspects`` () =
+    let opts = Opts.empty |> Opts.withInterlock "168"
+    use sender = unwrap (Pipeline.init "singlemsg-triple-mac-v1" opts)
+    let wire = unwrap (Pipeline.encryptMessage sender plain)
+    Assert.Equal<byte[]>(plain, unwrap (Pipeline.decryptMessage sender wire))
+    let blob = unwrap (Pipeline.save sender)
+    let prof = unwrap (Pipeline.inspect blob)
+    Assert.Equal("168", prof.Interlock)
+    Assert.Contains("\"interlock\":\"168\"", prof.ToJson())
+    use receiver = unwrap (Pipeline.load blob)
+    Assert.Equal<byte[]>(plain, unwrap (Pipeline.decryptMessage receiver wire))
+    let back = unwrap (Pipeline.encryptMessage receiver plain)
+    Assert.Equal<byte[]>(plain, unwrap (Pipeline.decryptMessage sender back))
+
+[<Fact>]
+let ``default interlock is absent`` () =
+    use pipe = unwrap (Pipeline.init "singlemsg-triple-mac-v1" Opts.empty)
+    let prof = unwrap (Pipeline.inspect (unwrap (Pipeline.save pipe)))
+    Assert.Equal("", prof.Interlock)
+    Assert.DoesNotContain("\"interlock\"", prof.ToJson())
+    let registry = unwrap (Pipeline.lookup "singlemsg-triple-mac-v1")
+    Assert.Equal("", registry.Interlock)
+    Assert.DoesNotContain("\"interlock\"", registry.ToJson())
+
+[<Fact>]
+let ``interlock rejects invalid and 256-bit hash`` () =
+    let opts256 = Opts.empty |> Opts.withInnerHash "blake3" |> Opts.withInterlock "168"
+    let err256 = unwrapError (Pipeline.init "singlemsg-triple-mac-v1" opts256)
+    Assert.Equal(Status.BadInput, err256.Status)
+
+    let optsInvalid = Opts.empty |> Opts.withInterlock "96"
+    let errInvalid = unwrapError (Pipeline.init "singlemsg-triple-mac-v1" optsInvalid)
+    Assert.Equal(Status.BadInput, errInvalid.Status)
+
+

@@ -105,6 +105,8 @@ function flag_table(): array
             . 'are clamped to 1'],
         ['hash', 'string', KIND_STRING, 'areion512',
             'inner ITB hash primitive name'],
+        ['interlock', 'string', KIND_STRING, '',
+            'Interlocked Barrier chunk width: 48 | 168; empty = profile default (48; 168 requires 512-bit hash)'],
         ['iterations', 'int', KIND_INT64, 0,
             'fixed per-worker iteration count; 0 = duration-based'],
         ['json-output', '', KIND_BOOL, false,
@@ -480,6 +482,12 @@ function parse_flags(array $argv): array
     }
     // Validated by Init: the C ABI enumerates no DRBG names.
     $cfg->drbg = (string) $raw['drbg'];
+    $cfg->interlock = (string) $raw['interlock'];
+    if (!\in_array($cfg->interlock, ['', '48', '168'], true)) {
+        err_line('--interlock must be 48 | 168 (or empty = profile default), got "'
+            . $cfg->interlock . '"');
+        return [-1, $cfg];
+    }
     $chunkSize = parse_size((string) $raw['chunk-size']);
     if ($chunkSize === null) {
         err_line('--chunk-size: invalid size "' . $raw['chunk-size'] . '"');
@@ -628,6 +636,9 @@ function log_pipeline_initialised(string $profile, string $blob): void
     if (record_str($record, 'drbg') !== '-') {
         $line .= ' drbg=' . $record['drbg'];
     }
+    if (record_str($record, 'interlock') !== '-') {
+        $line .= ' interlock=' . $record['interlock'];
+    }
     log_line($line);
 }
 
@@ -706,6 +717,7 @@ function build_pipeline(Config $cfg, string $profile): ?array
         'nonceBits' => $cfg->nonceBits,
         'barrierFill' => $cfg->barrierFill,
         'drbg' => $cfg->drbg,
+        'interlock' => $cfg->interlock,
         'chunkSize' => $cfg->chunkSize,
     ];
     if ($cfg->profile !== '') {
@@ -810,7 +822,8 @@ function run(array $argv): int
         $cfg->jsonOutput ? 'true' : 'false'
     )
         . ($cfg->blobMode !== 1 ? ' blob-mode=' . $cfg->blobMode : '')
-        . ($cfg->drbg !== '' ? ' drbg=' . $cfg->drbg : ''));
+        . ($cfg->drbg !== '' ? ' drbg=' . $cfg->drbg : '')
+        . ($cfg->interlock !== '' ? ' interlock=' . $cfg->interlock : ''));
     log_line(\sprintf(
         'policy: microbatch-tiers=%s hashpool-starters=%s',
         policy_label(\getenv('ITB_MICROBATCH_TIERS')),

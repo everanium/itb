@@ -67,6 +67,7 @@ Friend Class Config
     Friend ChunkSize As Long
     Friend BarrierFill As Long
     Friend Drbg As String = ""
+    Friend Interlock As String = ""
     Friend Gomaxprocs As Integer
     Friend RekeyEvery As Long
     Friend BlobCycleEvery As Long
@@ -235,6 +236,7 @@ Friend Module Program
         Friend Gomaxprocs As Long = 0
         Friend Goroutines As Long = 3
         Friend Hash As String = "areion512"
+        Friend Interlock As String = ""
         Friend Iterations As Long = 0
         Friend JsonOutput As Boolean = False
         Friend KeyBits As Long = 0
@@ -344,6 +346,13 @@ Friend Module Program
                 False, DefaultOf(d.Hash),
                 Function(f, s)
                     f.Hash = s
+                    Return True
+                End Function),
+            New Flag("interlock", "string",
+                "Interlocked Barrier chunk width: 48 | 168; empty = profile default (48; 168 requires 512-bit hash)",
+                False, DefaultOf(d.Interlock),
+                Function(f, s)
+                    f.Interlock = s
                     Return True
                 End Function),
             New Flag("iterations", "int",
@@ -657,6 +666,10 @@ Friend Module Program
                           Dx(f.BarrierFill))
         End If
         ' --drbg is validated by Init: the C ABI enumerates no DRBG names.
+        If f.Interlock <> "" AndAlso f.Interlock <> "48" AndAlso f.Interlock <> "168" Then
+            Return Reject("--interlock must be 48 | 168 (or empty = profile default), got """ &
+                          f.Interlock & """")
+        End If
 
         Dim chunkSize As Long? = ParseSize(f.ChunkSize)
         If Not chunkSize.HasValue Then
@@ -699,6 +712,7 @@ Friend Module Program
             .ChunkSize = chunkSize.Value,
             .BarrierFill = f.BarrierFill,
             .Drbg = f.Drbg,
+            .Interlock = f.Interlock,
             .Gomaxprocs = CInt(f.Gomaxprocs),
             .RekeyEvery = f.RekeyEvery,
             .BlobCycleEvery = f.BlobCycleEvery,
@@ -808,7 +822,8 @@ Friend Module Program
                 " chunk-size=" & rec.Chunk.ToString(Inv) & " mac=" & Dash(rec.Mac) &
                 " parallax=" & OnOff(rec.Parallax) & " wrapper=" & OnOff(rec.Wrapper) &
                 If(rec.ContainerMode.HasValue AndAlso rec.ContainerMode.Value = 2, " container-mode=2", "") &
-                If(String.IsNullOrEmpty(rec.Drbg), "", " drbg=" & rec.Drbg))
+                If(String.IsNullOrEmpty(rec.Drbg), "", " drbg=" & rec.Drbg) &
+                If(String.IsNullOrEmpty(rec.Interlock), "", " interlock=" & rec.Interlock))
     End Sub
 
     Private Function Dash(s As String) As String
@@ -834,6 +849,7 @@ Friend Module Program
             WithNonceBits(cfg.NonceBits).
             WithBarrierFill(cfg.BarrierFill).
             WithDrbg(cfg.Drbg).
+            WithInterlock(cfg.Interlock).
             WithChunkSize(cfg.ChunkSize)
 
         If cfg.ProfileName.Length > 0 Then
@@ -919,7 +935,8 @@ Friend Module Program
                 " seed=" & cfg.Seed.ToString(Inv) &
                 " json-output=" & If(cfg.JsonOutput, "true", "false") &
                 If(cfg.BlobMode <> 1, " blob-mode=" & Dx(cfg.BlobMode), "") &
-                If(cfg.Drbg.Length > 0, " drbg=" & cfg.Drbg, ""))
+                If(cfg.Drbg.Length > 0, " drbg=" & cfg.Drbg, "") &
+                If(cfg.Interlock.Length > 0, " interlock=" & cfg.Interlock, ""))
         LogLine("policy: microbatch-tiers=" & PolicyLabel("ITB_MICROBATCH_TIERS") &
                 " hashpool-starters=" & PolicyLabel("ITB_HASHPOOL_STARTERS"))
 

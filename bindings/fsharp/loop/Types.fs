@@ -51,6 +51,7 @@ type Config =
       ChunkSize: int64
       BarrierFill: int64
       Drbg: string
+      Interlock: string
       Gomaxprocs: int
       RekeyEvery: int64
       BlobCycleEvery: int64

@@ -128,6 +128,7 @@ public final class Main {
         long gomaxprocs;
         long goroutines = 3;
         String hash = "areion512";
+        String interlock = "";
         long iterations;
         boolean jsonOutput;
         long keyBits;
@@ -278,6 +279,14 @@ public final class Main {
                     false, defaultOf(d.hash),
                     (f, s) -> {
                         f.hash = s;
+                        return true;
+                    }),
+            new Flag("interlock", "string",
+                    "Interlocked Barrier chunk width: 48 | 168; empty = profile default"
+                            + " (48; 168 requires 512-bit hash)",
+                    false, defaultOf(d.interlock),
+                    (f, s) -> {
+                        f.interlock = s;
                         return true;
                     }),
             new Flag("iterations", "int",
@@ -665,6 +674,12 @@ public final class Main {
                     + " profile default), got " + f.barrierFill);
             return new Parsed(null, 2);
         }
+        if (!f.interlock.isEmpty() && !"48".equals(f.interlock) && !"168".equals(f.interlock)) {
+            System.err.println(
+                    "loop: --interlock must be 48 | 168 (or empty = profile default), got \""
+                            + f.interlock + "\"");
+            return new Parsed(null, 2);
+        }
         Long chunkSize = Size.parseSize(f.chunkSize);
         if (chunkSize == null) {
             System.err.println("loop: --chunk-size: invalid size \"" + f.chunkSize + "\"");
@@ -710,6 +725,7 @@ public final class Main {
         cfg.chunkSize = chunkSize;
         cfg.barrierFill = f.barrierFill;
         cfg.drbg = f.drbg; // validated by Init: the C ABI enumerates no DRBG names
+        cfg.interlock = f.interlock;
         cfg.gomaxprocs = (int) f.gomaxprocs;
         cfg.rekeyEvery = f.rekeyEvery;
         cfg.blobCycleEvery = f.blobCycleEvery;
@@ -844,6 +860,7 @@ public final class Main {
                 .withNonceBits(cfg.nonceBits)
                 .withBarrierFill(cfg.barrierFill)
                 .withDrbg(cfg.drbg)
+                .withInterlock(cfg.interlock)
                 .withChunkSize(cfg.chunkSize);
         if (!cfg.profile.isEmpty()) {
             Filled filled = fillKeystreamLayers(cfg.profile, opts, cfg.parallax, cfg.wrapper);
@@ -905,7 +922,8 @@ public final class Main {
                 + " wrapper=" + onOff(rec.wrapper())
                 + (rec.containerMode() != null && rec.containerMode() == 2
                         ? " container-mode=2" : "")
-                + (rec.drbg().isEmpty() ? "" : " drbg=" + rec.drbg()));
+                + (rec.drbg().isEmpty() ? "" : " drbg=" + rec.drbg())
+                + (rec.interlock().isEmpty() ? "" : " interlock=" + rec.interlock()));
     }
 
     // ------------------------------------------------------------------
@@ -970,7 +988,8 @@ public final class Main {
                 + " seed=" + Long.toUnsignedString(cfg.seed)
                 + " json-output=" + (cfg.jsonOutput ? "true" : "false")
                 + (cfg.blobMode != 1 ? " blob-mode=" + cfg.blobMode : "")
-                + (cfg.drbg.isEmpty() ? "" : " drbg=" + cfg.drbg));
+                + (cfg.drbg.isEmpty() ? "" : " drbg=" + cfg.drbg)
+                + (cfg.interlock.isEmpty() ? "" : " interlock=" + cfg.interlock));
         logLine("policy: microbatch-tiers=" + policyLabel("ITB_MICROBATCH_TIERS")
                 + " hashpool-starters=" + policyLabel("ITB_HASHPOOL_STARTERS"));
 
