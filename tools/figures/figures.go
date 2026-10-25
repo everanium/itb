@@ -182,6 +182,21 @@ type Figures struct {
 	SampleBudget float64 // 2 × Log2Preimage
 	Log2Messages float64 // SampleBudget − Log2Chunks
 
+	// 168-bit Rank Barrier mask-space constants (Proof 11 / Proof 12).
+	A168, B168, AB168  *big.Int
+	Log2A168, Log2B168 float64
+	Log2AB168          float64
+	GCD168             *big.Int
+	GCD168Factors      string
+	Log2GCD168         float64
+	Preimages168       *big.Int // ⌊2^512 / (A₁₆₈ · B₁₆₈)⌋
+	Log2Preimage168    float64
+	MaxChunks168       int     // ⌈(4 + MaxMessage) × 8 / 168⌉
+	Log2Chunks168      float64 // log₂ MaxChunks168
+	AccumBias168       float64 // Log2Chunks168 − Log2Preimage168
+	SampleBudget168    float64 // 2 × Log2Preimage168
+	Log2Messages168    float64 // SampleBudget168 − Log2Chunks168
+
 	// Wrapper nonce sizes per outer cipher, measured as the wire delta
 	// of wrapper.Wrap over the raw wire.
 	WrapperNonce map[string]int
@@ -525,6 +540,24 @@ func (f *Figures) rankBarrier() {
 	f.AccumBias = f.Log2Chunks - f.Log2Preimage
 	f.SampleBudget = 2 * f.Log2Preimage
 	f.Log2Messages = f.SampleBudget - f.Log2Chunks
+
+	f.A168 = new(big.Int).Binomial(168, 56)
+	f.B168 = new(big.Int).Binomial(112, 56)
+	f.AB168 = new(big.Int).Mul(f.A168, f.B168)
+	f.Log2A168 = log2Big(f.A168)
+	f.Log2B168 = log2Big(f.B168)
+	f.Log2AB168 = log2Big(f.AB168)
+	f.GCD168 = new(big.Int).GCD(nil, nil, f.A168, f.B168)
+	f.GCD168Factors = factoriseBig(f.GCD168)
+	f.Log2GCD168 = log2Big(f.GCD168)
+	two512 := new(big.Int).Lsh(big.NewInt(1), 512)
+	f.Preimages168 = new(big.Int).Quo(two512, f.AB168)
+	f.Log2Preimage168 = log2Big(f.Preimages168)
+	f.MaxChunks168 = ((4+f.MaxMessage)*8 + 167) / 168
+	f.Log2Chunks168 = math.Log2(float64(f.MaxChunks168))
+	f.AccumBias168 = f.Log2Chunks168 - f.Log2Preimage168
+	f.SampleBudget168 = 2 * f.Log2Preimage168
+	f.Log2Messages168 = f.SampleBudget168 - f.Log2Chunks168
 }
 
 // wrapperNonces measures the outer-cipher nonce each wrapper cipher
@@ -557,30 +590,48 @@ func log2Big(x *big.Int) float64 {
 // factorise renders n as a product of prime powers in the documentation's
 // notation, e.g. "3² · 17 · 19 · 23".
 func factorise(n int64) string {
+	return factoriseBig(big.NewInt(n))
+}
+
+func factoriseBig(in *big.Int) string {
 	sup := []rune("⁰¹²³⁴⁵⁶⁷⁸⁹")
+	n := new(big.Int).Set(in)
 	out := ""
-	for p := int64(2); p*p <= n; p++ {
+	p := big.NewInt(2)
+	zero := big.NewInt(0)
+	one := big.NewInt(1)
+	rem := new(big.Int)
+	sq := new(big.Int)
+	for {
+		sq.Mul(p, p)
+		if sq.Cmp(n) > 0 {
+			break
+		}
 		e := 0
-		for n%p == 0 {
-			n /= p
+		for {
+			rem.Mod(n, p)
+			if rem.Cmp(zero) != 0 {
+				break
+			}
+			n.Quo(n, p)
 			e++
 		}
-		if e == 0 {
-			continue
+		if e > 0 {
+			if out != "" {
+				out += " · "
+			}
+			out += p.String()
+			if e > 1 {
+				out += string(sup[e])
+			}
 		}
-		if out != "" {
-			out += " · "
-		}
-		out += fmt.Sprint(p)
-		if e > 1 {
-			out += string(sup[e])
-		}
+		p.Add(p, one)
 	}
-	if n > 1 {
+	if n.Cmp(one) > 0 {
 		if out != "" {
 			out += " · "
 		}
-		out += fmt.Sprint(n)
+		out += n.String()
 	}
 	return out
 }

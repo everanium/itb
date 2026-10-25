@@ -1030,7 +1030,7 @@ func TestTripleInitKeysCapi(t *testing.T) {
 }
 
 // TestTripleInitInterlock168Capi verifies the interlock= query-string option
-// on TripleInit, Inspect, Load, single-message and streaming round-trips,
+// on TripleInit, Inspect, Load, Single Message and streaming round-trips,
 // and rejection of non-512-bit or unknown interlock values.
 func TestTripleInitInterlock168Capi(t *testing.T) {
 	blobBuf := make([]byte, 1<<15)

@@ -5,10 +5,15 @@
 # per direction) at natural dispatch and then under every documented
 # forced-tier value for the four dispatch axes:
 #
-#   ITB_FORCE_INTERLOCK_TIER          = avx512 | avx512x8 | avx2 | sve2 | sve | neon | scalar
+#   ITB_FORCE_INTERLOCK_TIER          = avx512 | avx512x8 | avx2 | bmi2 | sve2 | sve | neon | scalar
 #   ITB_FORCE_HASH_TIER               = avx512 | vaesavx2 | avx2 | vex | aesni | gpr | sve2 | sve | neon | scalar
 #   ITB_FORCE_INTERLOCK_PRF_FILL_TIER = avx512 | vaesavx2 | avx2 | vex | aesni | gpr | neon | scalar
 #   ITB_FORCE_PIXEL_TIER              = A | A_NOGFNI | B | B_NOGFNI | C
+#
+# Also reports and benchmarks the 168-bit Interlocked Barrier tiers
+# (ITB_INTERLOCK=168):
+#   amd64: AVX-512 | AVX2 | BMI2 PEXT/PDEP | Go software fallback (scalar)
+#   arm64: SVE2-BitPerm | NEON | Go software fallback (scalar)
 #
 # The arm64-only tokens (neon / sve / sve2) are swept below on the
 # arm64 branch; the amd64-only tokens (avx512 / vaesavx2 / avx2 / vex /
@@ -72,16 +77,37 @@ run_bench() {
 }
 
 ARCH=$(uname -m)
+cpu_flags=$(awk -F': +' '/^(flags|Features)/{print $2; exit}' /proc/cpuinfo 2>/dev/null || echo "")
+has_flag() {
+    case " $cpu_flags " in
+        *" $1 "*) echo "yes" ;;
+        *)        echo "no"  ;;
+    esac
+}
+
 case "$ARCH" in
     aarch64|arm64)
         interlock_tiers=(sve2 sve neon scalar)
+        interlock168_tiers=(sve2 sve neon scalar)
         hash_tiers=(gpr neon scalar)
         prf_fill_tiers=(neon gpr scalar)
+        echo "=== Interlocked Barrier Hardware Tiers (48-bit & 168-bit, arm64) ==="
+        echo "  SVE2-BitPerm (sve2: BEXT/BDEP batch apply + NEON 8-lane unrank) : $(has_flag svebitperm)"
+        echo "  NEON         (neon: 8-lane TBX unrank + batched apply)          : $(has_flag asimd)"
+        echo "  Go software fallback (scalar: rankToMaskTriple168 + softPEXT168): yes"
+        echo ""
         ;;
     *)
-        interlock_tiers=(avx512 avx512x8 avx2 scalar)
+        interlock_tiers=(avx512 avx512x8 avx2 bmi2 scalar)
+        interlock168_tiers=(avx512 avx2 bmi2 scalar)
         hash_tiers=(avx512 vaesavx2 avx2 vex aesni gpr scalar)
         prf_fill_tiers=(avx512 vaesavx2 avx2 vex aesni gpr scalar)
+        echo "=== Interlocked Barrier Hardware Tiers (48-bit & 168-bit, amd64) ==="
+        echo "  AVX-512              (avx512: 8-lane ZMM unrank + BMI2 batch apply): $(has_flag avx512f)"
+        echo "  AVX2                 (avx2: 4-lanex2 YMM unrank + BMI2 PEXT/PDEP)  : $(has_flag avx2)"
+        echo "  BMI2 PEXT/PDEP       (bmi2: Chunk48Lock / Chunk168Lock PEXTQ/PDEPQ): $(has_flag bmi2)"
+        echo "  Go software fallback (scalar: rankToMaskTriple168 + softPEXT168)   : yes"
+        echo ""
         ;;
 esac
 
@@ -89,11 +115,21 @@ echo "=== Natural dispatch ==="
 run_bench "natural"
 echo ""
 
-echo "=== Forced interlock tier ==="
+echo "=== Forced interlock tier (48-bit) ==="
 for t in "${interlock_tiers[@]}"; do
-    run_bench "INTERLOCK=$t" ITB_FORCE_INTERLOCK_TIER=$t
+    run_bench "INTERLOCK=$t" ITB_INTERLOCK=48 ITB_FORCE_INTERLOCK_TIER=$t
 done
 echo ""
+
+if [ "$INTERLOCK" != "48" ]; then
+    echo "=== Forced 168-bit interlock tier (ITB_INTERLOCK=168) ==="
+    run_bench "IL168=natural" ITB_INTERLOCK=168
+    for t in "${interlock168_tiers[@]}"; do
+        run_bench "IL168=$t" ITB_INTERLOCK=168 ITB_FORCE_INTERLOCK_TIER=$t
+    done
+    run_bench "IL168(blake2b512)=natural" ITB_INNER_HASH=blake2b512 ITB_INTERLOCK=168
+    echo ""
+fi
 
 echo "=== Forced hash tier ==="
 for t in "${hash_tiers[@]}"; do

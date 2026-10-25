@@ -67,7 +67,7 @@ import (
 // Library version exposed via ITB_Version. Bumped per ABI-relevant
 // release. The value is informational; binding code may key feature
 // detection off it.
-const libitb3Version = "0.7.5"
+const libitb3Version = "0.8.1"
 
 func main() {} // required for buildmode=c-shared
 

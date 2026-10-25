@@ -1014,7 +1014,7 @@ func TestBlobExportRejectsModeOutOfRange(t *testing.T) {
 // TestBlob512ExportImportInterlock168 verifies that Interlock: "168"
 // supplied via Blob512Opts or Config is emitted into globals.interlock,
 // sets b.Interlock = "168" on export and import, normalizes "48" to "",
-// and rejects unknown values with ErrInterlockWidthMismatch.
+// and rejects unknown values with an error.
 func TestBlob512ExportImportInterlock168(t *testing.T) {
 	ks := makeAreion512Keys(t, 8)
 	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeed512Triple(t, ks)

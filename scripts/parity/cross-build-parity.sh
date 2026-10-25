@@ -63,6 +63,7 @@ cd "$REPO"
 # forcing env vars (ITB_FORCE_HASH_TIER / ITB_FORCE_INTERLOCK_TIER)
 # are always-on library behaviour, so every arm consumes them without
 # build flags.
+CGO_ENABLED=1 go build -o tools/parity/parity             ./tools/parity
 CGO_ENABLED=1 go build -o tools/parity/parity-cgo         ./tools/parity
 CGO_ENABLED=0 go build -o tools/parity/parity-nocgo       ./tools/parity
 CGO_ENABLED=1 CGO_CFLAGS="-DITB_PARITY_TIER_OVERRIDE" \
@@ -353,15 +354,15 @@ done
 # ---------------------------------------------------------------------------
 # Section 4 — interlock-tier sweep × nonce widths, two lockSeed widths.
 # Forces the 48-bit interlock rank-mask tier on the cgo arm against the
-# scalar-forced nocgo arm, both directions. 7 tiers × 2 hashes × 48 =
-# 672 cells. areion512 drives the 512-bit lockSeed (x4 fill, 8-lane
+# scalar-forced nocgo arm, both directions. 8 tiers × 2 hashes × 48 =
+# 768 cells. areion512 drives the 512-bit lockSeed (x4 fill, 8-lane
 # unrank passes); aesitb128 drives the 128-bit lockSeed whose batch-16
 # fill runs the 16-chunk unrank pass — the only shape that reaches the
 # 16-lane AVX-512 kernel. avx512x8 keeps the AVX-512 kernel but runs
 # each 16-chunk batch as two 8-lane passes, so the x8×2 wire geometry
 # is validated against the 16-lane pass on the same host.
 # ---------------------------------------------------------------------------
-ILTIERS=(avx512 avx512x8 avx2 sve2 sve neon scalar)
+ILTIERS=(avx512 avx512x8 avx2 bmi2 sve2 sve neon scalar)
 ILHASHES=(aesitb128 areion512)
 IL_CELLS=$(( ${#ILTIERS[@]} * ${#ILHASHES[@]} * ${#NONCEBITS[@]} * ${#SIZES[@]} * 2 ))
 
@@ -408,11 +409,15 @@ done
 # ---------------------------------------------------------------------------
 # Section 4b — 168-bit interlock-tier sweep × nonce widths on 512-bit hashes.
 # Forces the 168-bit interlock rank-mask / chunk168 tier on the cgo arm
-# against the scalar-forced nocgo arm, both directions, across areion512
-# and blake2b512. 7 tiers × 2 hashes × 48 = 672 cells.
+# against the scalar-forced nocgo arm, both directions, across areion512,
+# blake2b512, and mixed 512-bit constellations (areion512,blake2b512,areion512),
+# including non-21-byte-multiple tail sizes (1, 6, 20, 21, 22, 41, 42, 43,
+# 63, 64, 1024).
 # ---------------------------------------------------------------------------
 IL168HASHES=(areion512 blake2b512)
-IL168_CELLS=$(( ${#ILTIERS[@]} * ${#IL168HASHES[@]} * ${#NONCEBITS[@]} * ${#SIZES[@]} * 2 ))
+IL168_TAIL_SIZES=(1 6 20 21 22 41 42 43 63 64 1024)
+IL168_TAIL_SPECS=("areion512:areion512" "blake2b512:blake2b512" "mixed512:areion512,blake2b512,areion512")
+IL168_CELLS=$(( ${#ILTIERS[@]} * ${#IL168HASHES[@]} * ${#NONCEBITS[@]} * ${#SIZES[@]} * 2 + ${#ILTIERS[@]} * ${#IL168_TAIL_SPECS[@]} * ${#IL168_TAIL_SIZES[@]} * 2 ))
 
 for ILHASH in "${IL168HASHES[@]}"; do
     ILPROFILE="parity-${ILHASH}-v1"
@@ -455,6 +460,51 @@ for ILHASH in "${IL168HASHES[@]}"; do
                     FAIL=$((FAIL + 1))
                 fi
             done
+        done
+    done
+done
+
+for SPEC in "${IL168_TAIL_SPECS[@]}"; do
+    TAG="${SPEC%%:*}"
+    ILHASH="${SPEC#*:}"
+    ILPROFILE="parity-${TAG}-il168-v1"
+    SEED="$WORKDIR/seed-${TAG}-il168-tail.blob"
+    ./tools/parity/parity-cgo -mode=init \
+        -profile="$ILPROFILE" -hash="$ILHASH" -seed-file="$SEED" -nonce-bits=512 -interlock=168
+
+    for SIZE in "${IL168_TAIL_SIZES[@]}"; do
+        PLAIN="$WORKDIR/plain-il168-tail-${SIZE}.bin"
+        if [ ! -f "$PLAIN" ]; then
+            head -c "$SIZE" /dev/urandom > "$PLAIN"
+        fi
+        PLAIN_HASH=$(sha256sum "$PLAIN" | awk '{print $1}')
+
+        for ILT in "${ILTIERS[@]}"; do
+            WIRE1="$WORKDIR/wire-il168-tail-${TAG}-${SIZE}-${ILT}.bin"
+            BACK1="$WORKDIR/back-il168-tail-${TAG}-${SIZE}-${ILT}-nocgo.bin"
+            ITB_FORCE_INTERLOCK_TIER="$ILT" ./tools/parity/parity-cgo -mode=encrypt \
+                -profile="$ILPROFILE" -hash="$ILHASH" -seed-file="$SEED" -nonce-bits=512 -interlock=168 \
+                -in="$PLAIN" -out="$WIRE1"
+            ITB_FORCE_INTERLOCK_TIER=scalar ./tools/parity/parity-nocgo -mode=decrypt \
+                -profile="$ILPROFILE" -hash="$ILHASH" -seed-file="$SEED" -nonce-bits=512 -interlock=168 \
+                -in="$WIRE1" -out="$BACK1"
+            if [ "$(sha256sum "$BACK1" | awk '{print $1}')" != "$PLAIN_HASH" ]; then
+                echo "FAIL: il168-tail iltier=$ILT spec=$TAG encrypt=cgo decrypt=nocgo-scalar size=$SIZE"
+                FAIL=$((FAIL + 1))
+            fi
+
+            WIRE2="$WORKDIR/wire-il168-tail-${TAG}-${SIZE}-scalar-vs-${ILT}.bin"
+            BACK2="$WORKDIR/back-il168-tail-${TAG}-${SIZE}-${ILT}-cgo.bin"
+            ITB_FORCE_INTERLOCK_TIER=scalar ./tools/parity/parity-nocgo -mode=encrypt \
+                -profile="$ILPROFILE" -hash="$ILHASH" -seed-file="$SEED" -nonce-bits=512 -interlock=168 \
+                -in="$PLAIN" -out="$WIRE2"
+            ITB_FORCE_INTERLOCK_TIER="$ILT" ./tools/parity/parity-cgo -mode=decrypt \
+                -profile="$ILPROFILE" -hash="$ILHASH" -seed-file="$SEED" -nonce-bits=512 -interlock=168 \
+                -in="$WIRE2" -out="$BACK2"
+            if [ "$(sha256sum "$BACK2" | awk '{print $1}')" != "$PLAIN_HASH" ]; then
+                echo "FAIL: il168-tail iltier=$ILT spec=$TAG encrypt=nocgo-scalar decrypt=cgo size=$SIZE"
+                FAIL=$((FAIL + 1))
+            fi
         done
     done
 done

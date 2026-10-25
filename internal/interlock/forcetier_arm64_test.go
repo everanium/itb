@@ -37,7 +37,7 @@ func TestForceInterlockTierApplied(t *testing.T) {
 			t.Fatalf("scalar: HasNEONInterlock=%v HasChunk48Batch=%v HasChunk168Batch=%v HasSVE2Interlock=%v, want all false",
 				HasNEONInterlock, HasChunk48Batch, HasChunk168Batch, HasSVE2Interlock)
 		}
-	case "avx512", "avx512x8", "avx2":
+	case "avx512", "avx512x8", "avx2", "bmi2":
 		t.Skipf("%s tier keeps auto-dispatch on arm64", tier)
 	default:
 		t.Fatalf("unexpected validated tier %q", tier)

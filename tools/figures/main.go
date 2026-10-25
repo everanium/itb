@@ -25,6 +25,7 @@ import (
 	"flag"
 	"fmt"
 	"math"
+	"math/big"
 	"os"
 	"text/tabwriter"
 
@@ -169,6 +170,19 @@ func Print(out *os.File, f *Figures) {
 	row("accumulated bias", "2^"+fixed(f.AccumBias, 1))
 	row("distinguisher sample budget", "2^"+fixed(f.SampleBudget, 1)+" chunks", "~2^"+fixed(f.Log2Messages, 1)+" messages")
 	row("masks consistent with one 48-bit crib", "2^"+fixed(f.Log2AB-48, 1))
+
+	section("Rank Barrier 168-bit mask space")
+	gcd168Float, _ := new(big.Float).SetInt(f.GCD168).Float64()
+	row("A₁₆₈ = C(168, 56)", commaBig(f.A168), "log2 "+fixed(f.Log2A168, 2))
+	row("B₁₆₈ = C(112, 56)", commaBig(f.B168), "log2 "+fixed(f.Log2B168, 2))
+	row("A₁₆₈ · B₁₆₈", commaBig(f.AB168), "2^"+fixed(f.Log2AB168, 2))
+	row("gcd(A₁₆₈, B₁₆₈)", commaBig(f.GCD168), f.GCD168Factors, "log2 "+fixed(f.Log2GCD168, 2), "1/gcd "+sci(1/gcd168Float, 3))
+	row("preimages ⌊2^512 / (A₁₆₈ · B₁₆₈)⌋", commaBig(f.Preimages168), "2^"+fixed(f.Log2Preimage168, 2))
+	row("per-chunk bias", "2^"+fixed(-f.Log2Preimage168, 1))
+	row("max chunks per message", comma(f.MaxChunks168), "2^"+fixed(f.Log2Chunks168, 2))
+	row("accumulated bias", "2^"+fixed(f.AccumBias168, 1))
+	row("distinguisher sample budget", "2^"+fixed(f.SampleBudget168, 1)+" chunks", "~2^"+fixed(f.Log2Messages168, 1)+" messages")
+	row("masks consistent with one 168-bit crib", "2^"+fixed(f.Log2AB168-168, 1))
 
 	section("Wrapper nonce per outer cipher")
 	for _, name := range wrapper.CipherNames {

@@ -3,11 +3,11 @@
 # and language-binding loop harnesses.
 #
 # Builds two arms of tools/loop (default CGO + SIMD assembly and
-# CGO_ENABLED=0 -tags noitbasm pure-Go fallback) and executes a 96-cell
-# stress matrix per arm (192 Go runs by default), plus an optional 20-cell
+# CGO_ENABLED=0 -tags noitbasm pure-Go fallback) and executes a 100-cell
+# stress matrix per arm (200 Go runs by default), plus an optional 22-cell
 # matrix per selected language binding (e.g. --bindings c,ada).
 #
-# Matrix coverage (96 Go cells):
+# Matrix coverage (100 Go cells):
 #   - Group 1 (16 cells): 4 (Parallax=on/off x Wrapper=on/off) x 4 surface/mode
 #     configurations (both AEAD+MAC, multi-chunk stream_one_shot,
 #     singlemsg-triple-nomac-v1, streaming-noaead-triple-v1).
@@ -18,11 +18,12 @@
 #     (128 / 256 / 512), container floor modes (Per-Region Mode 1 and
 #     Per-Container Mode 2), rotating payloads, all explicit DRBG overrides,
 #     and mixed-primitive streaming profiles.
-#   - Group 4 (20 cells): mixed-primitive Single Message and Streaming AEAD /
+#   - Group 4 (24 cells): mixed-primitive Single Message and Streaming AEAD /
 #     Non-AEAD profiles, AES-ITB profiles paired with AES-CMAC outer layers,
 #     multi-chunk stream + message stress across AES-CMAC, ChaCha20,
 #     Areion-SoEM-256, and Areion-SoEM-512, and 168-bit Interlocked Barrier
-#     cells across Areion-SoEM-512, BLAKE2b-512, and mixed width-512.
+#     cells across Areion-SoEM-512, BLAKE2b-512, and mixed width-512 across
+#     Mode 1 / Mode 2 and MAC / NoMAC / NoAEAD regimes.
 #
 # Every cell enables periodic rekeying (--rekey-every) and blob export/import
 # cycling (--blob-cycle-every) and asserts zero data mismatches, bounded
@@ -56,7 +57,7 @@ Options:
   --goroutines <N>       Worker goroutines/threads per cell (default: ${GOROUTINES})
   --gomaxprocs <N>       GOMAXPROCS per cell (default: ${GOMAXPROCS_VAL})
   --arm <mode>           Go build arm: default | noitbasm | both | none (default: ${ARM_MODE})
-  --bindings <list>      Comma-separated bindings to run 16-cell matrix on (e.g. c,ada)
+  --bindings <list>      Comma-separated bindings to run 22-cell matrix on (e.g. c,ada)
   --with-bindings        Shorthand for --bindings c,ada
   --filter <substr>      Run only cells whose name contains <substr>
   --work-dir <dir>       Output directory for binaries and logs (default: ${WORK_DIR})
@@ -143,7 +144,7 @@ if [[ "${CLEAN_LOGS}" -eq 1 ]]; then
 fi
 
 # ---------------------------------------------------------------------------
-# 64-Cell Go tools/loop Stress Matrix
+# 100-Cell Go tools/loop Stress Matrix
 # ---------------------------------------------------------------------------
 declare -a GO_CELLS=(
   # --- Group 1 (16 cells): 4x4 (Parallax x Wrapper) x (both, multi-chunk stream_one_shot, nomac, noaead) ---
@@ -167,7 +168,7 @@ declare -a GO_CELLS=(
   "g1_15_p0_w1_noaead_os|--profile streaming-noaead-triple-v1 --shape stream_one_shot --parallax off --wrapper on --hash blake2b256 --chunk-size 256KB --payload-size 1MB --rekey-every 5 --blob-cycle-every 7"
   "g1_16_p0_w0_noaead_os|--profile streaming-noaead-triple-v1 --shape stream_one_shot --parallax off --wrapper off --hash blake2b256 --chunk-size 256KB --payload-size 1MB --rekey-every 5 --blob-cycle-every 7"
 
-  # --- Group 2 (40 cells): All 10 Hash Primitives x All 4 (Parallax=on/off x Wrapper=on/off) Regimes ---
+  # --- Group 2 (40 cells): Every Hash Primitive x All 4 (Parallax=on/off x Wrapper=on/off) Regimes ---
   "g2_01_aesitb128_p1w1|--shape both --parallax on --wrapper on --hash aesitb128 --mac hmac-blake3 --payload-size 512KB --rekey-every 5 --blob-cycle-every 7"
   "g2_02_areion256_p1w1|--shape both --parallax on --wrapper on --hash areion256 --mac hmac-blake3 --payload-size 512KB --rekey-every 5 --blob-cycle-every 7"
   "g2_03_areion512_p1w1|--shape both --parallax on --wrapper on --hash areion512 --mac hmac-blake3 --payload-size 512KB --rekey-every 5 --blob-cycle-every 7"
@@ -212,7 +213,7 @@ declare -a GO_CELLS=(
   "g2_39_siphash24_p0w0|--shape both --parallax off --wrapper off --hash siphash24 --mac hmac-blake3 --payload-size 512KB --rekey-every 5 --blob-cycle-every 7"
   "g2_40_chacha20_p0w0|--shape both --parallax off --wrapper off --hash chacha20 --mac hmac-blake3 --payload-size 512KB --rekey-every 5 --blob-cycle-every 7"
 
-  # --- Group 3 (20 cells): MACs, Key/Nonce Widths, Container Modes 1/2, Rotating Payloads, All 11 DRBGs & Mixed Profiles ---
+  # --- Group 3 (20 cells): MACs, Key/Nonce Widths, Container Modes 1/2, Rotating Payloads, Every DRBG & Mixed Profiles ---
   "g3_01_mac_hmac_sha256|--shape both --parallax on --wrapper on --hash areion256 --mac hmac-sha256 --key-bits 512 --nonce-bits 128 --payload-size 512KB --rekey-every 4 --blob-cycle-every 6"
   "g3_02_mac_kmac256|--shape both --parallax on --wrapper on --hash areion512 --mac kmac256 --key-bits 2048 --nonce-bits 512 --payload-size 512KB --rekey-every 4 --blob-cycle-every 6"
   "g3_03_kb1024_nb256|--shape both --parallax on --wrapper off --hash blake2b512 --mac hmac-blake3 --key-bits 1024 --nonce-bits 256 --payload-size 512KB --rekey-every 4 --blob-cycle-every 6"
@@ -234,7 +235,7 @@ declare -a GO_CELLS=(
   "g3_19_prof_aead_mixed|--profile streaming-aead-triple-mac-mixed-v1 --shape stream --payload-size 1MB --rekey-every 4 --blob-cycle-every 6"
   "g3_20_prof_noaead_mixed|--profile streaming-noaead-triple-mixed-v1 --shape stream_one_shot --payload-size 1MB --rekey-every 4 --blob-cycle-every 6"
 
-  # --- Group 4 (20 cells): Mixed SingleMsg/Stream, AES-ITB Profiles, Multi-Chunk Layer Permutations & Interlock 168 ---
+  # --- Group 4 (24 cells): Mixed SingleMsg/Stream, AES-ITB Profiles, Multi-Chunk Layer Permutations & Interlock 168 ---
   "g4_01_mixed_sm_mac|--profile singlemsg-triple-mac-mixed-v1 --parallax on --wrapper on --payload-size 1MB --rekey-every 4 --blob-cycle-every 6"
   "g4_02_mixed_sm_nomac|--profile singlemsg-triple-nomac-mixed-v1 --parallax off --wrapper on --payload-size 1MB --rekey-every 4 --blob-cycle-every 6"
   "g4_03_mixed_aead_os|--profile streaming-aead-triple-mac-mixed-v1 --shape stream_one_shot --parallax on --wrapper off --chunk-size 256KB --payload-size 1MB --rekey-every 4 --blob-cycle-every 6"
@@ -259,10 +260,14 @@ declare -a GO_CELLS=(
   "g4_18_blake2b512_il168_p0w0|--shape both --parallax off --wrapper off --hash blake2b512 --mac kmac256 --interlock 168 --chunk-size 256KB --payload-size 1MB --rekey-every 4 --blob-cycle-every 6"
   "g4_19_areion512_il168_nomac|--profile singlemsg-triple-nomac-v1 --parallax on --wrapper on --hash areion512 --interlock 168 --payload-size 1MB --rekey-every 4 --blob-cycle-every 6"
   "g4_20_mixed512_il168_sm|--profile singlemsg-triple-nomac-mixed-v1 --parallax on --wrapper on --interlock 168 --payload-size 1MB --rekey-every 4 --blob-cycle-every 6"
+  "g4_21_areion512_il168_bm2|--shape both --parallax on --wrapper off --hash areion512 --mac hmac-sha256 --blob-mode 2 --interlock 168 --chunk-size 256KB --payload-size 1MB --rekey-every 4 --blob-cycle-every 6"
+  "g4_22_blake2b512_il168_bm2_noaead|--profile streaming-noaead-triple-v1 --shape stream --parallax off --wrapper on --hash blake2b512 --blob-mode 2 --interlock 168 --chunk-size 256KB --payload-size 1MB --rekey-every 4 --blob-cycle-every 6"
+  "g4_23_blake2b512_il168_nomac|--profile singlemsg-triple-nomac-v1 --parallax on --wrapper off --hash blake2b512 --interlock 168 --payload-size 1MB --rekey-every 4 --blob-cycle-every 6"
+  "g4_24_mixed512_il168_bm2|--profile singlemsg-triple-nomac-mixed-v1 --parallax off --wrapper off --blob-mode 2 --interlock 168 --payload-size 1MB --rekey-every 4 --blob-cycle-every 6"
 )
 
 # ---------------------------------------------------------------------------
-# 20-Cell Binding loop Stress Matrix (per selected binding)
+# 22-Cell Binding loop Stress Matrix (per selected binding)
 # ---------------------------------------------------------------------------
 declare -a BINDING_CELLS=(
   "b01_p1_w1_both|--shape both --parallax on --wrapper on --hash areion512 --mac hmac-blake3 --payload-size 1MB --rekey-every 4 --blob-cycle-every 6"
@@ -288,6 +293,8 @@ declare -a BINDING_CELLS=(
   "b18_siphash24_kmac|--shape both --parallax off --wrapper on --hash siphash24 --mac kmac256 --chunk-size 256KB --payload-size 512KB --rekey-every 4 --blob-cycle-every 6"
   "b19_mixed_nomac|--profile singlemsg-triple-nomac-mixed-v1 --parallax on --wrapper on --payload-size 1MB --rekey-every 4 --blob-cycle-every 6"
   "b20_mixed_noaead|--profile streaming-noaead-triple-mixed-v1 --shape stream --parallax on --wrapper on --chunk-size 256KB --payload-size 1MB --rekey-every 4 --blob-cycle-every 6"
+  "b21_areion512_il168|--shape both --parallax on --wrapper on --hash areion512 --mac hmac-blake3 --interlock 168 --chunk-size 256KB --payload-size 512KB --rekey-every 4 --blob-cycle-every 6"
+  "b22_mixed512_il168|--profile singlemsg-triple-nomac-mixed-v1 --parallax on --wrapper on --blob-mode 2 --interlock 168 --payload-size 1MB --rekey-every 4 --blob-cycle-every 6"
 )
 
 run_suite() {

@@ -27,7 +27,7 @@ import "github.com/everanium/itb/internal/forcetier"
 //	         does not exceed the NEON 8-lane kernel at the 128-bit
 //	         vector length of the shipping Graviton parts.
 //
-// The amd64 tokens (avx512, avx512x8, avx2) keep auto-dispatch with a
+// The amd64 tokens (avx512, avx512x8, avx2, bmi2) keep auto-dispatch with a
 // stderr note. Production auto-dispatch is unaffected when the variable
 // is unset.
 func init() {

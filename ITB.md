@@ -8,7 +8,7 @@
 
 ## 1. The Core Idea: Absorption
 
-The shipped construction composes two inseparable mechanisms — a per-chunk 48-bit keyed permutation (Rank Barrier) and a per-pixel absorption stage (Pixel Barrier), described in detail in §12. This section outlines the absorption intuition provided by the Pixel Barrier.
+The shipped construction composes two inseparable mechanisms — a per-chunk keyed permutation (Rank Barrier, operating over 48-bit chunks by default or 168-bit chunks under `Interlock = "168"` on 512-bit primitives) and a per-pixel absorption stage (Pixel Barrier), described in detail in §12. This section outlines the absorption intuition provided by the Pixel Barrier.
 
 The hash output is computed and determines the pixel configuration, but it is absorbed into a random container. The observer sees only: random byte ± modification. Because the original random byte is unknown, the modification is unknown, making the hash output unobservable.
 
@@ -39,7 +39,7 @@ Fresh nonces guarantee that encrypting the same message with the same seeds prod
 - A completely different random container (fresh DRBG draw).
 - A fresh configuration map (nonce feeds into every ChainHash invocation).
 - Three independent start pixel offsets (`main_nonce` feeds `deriveStartPixel`).
-- A fresh per-chunk 48-bit permutation draw (`interlock_nonce` feeds `deriveInterLockSeed`).
+- A fresh per-chunk 48-bit (or 168-bit under `Interlock = "168"`) permutation draw (`interlock_nonce` feeds `deriveInterLockSeed`).
 
 Repeated transmissions of identical plaintext produce uncorrelated containers. The classic stream-cipher two-time-pad vulnerability is prevented by the per-chunk permutation, resulting in null plaintext recovery (§9).
 
@@ -50,7 +50,7 @@ Both nonces are drawn internally on every call from `crypto/rand` and enforced p
 The construction requires 8 mandatory seeds, drawn as independent CSPRNG components and enforced pairwise-distinct by byte-level `Components` comparison:
 
 - **noiseSeed** → noise position (which bit in each channel holds noise).
-- **lockSeed** → 48-bit Interlocked Barrier per-chunk permutation channel.
+- **lockSeed** → Interlocked Barrier per-chunk permutation channel (`48`-bit default `"48"`, or `168`-bit `"168"` on 512-bit primitives).
 - **dataSeed1, dataSeed2, dataSeed3** → per-region rotation and XOR configurations.
 - **startSeed1, startSeed2, startSeed3** → per-region pixel offsets.
 
@@ -60,36 +60,36 @@ The `lockSeed` derives the barrier's permutation independently from the `noiseSe
 
 ## 5. Triple Ouroboros: Three Interleaved Regions
 
-Plaintext never reaches the regions as contiguous bytes. Every message first passes through the Rank Barrier (§12) — a per-chunk PRF-keyed 48-bit permutation — which partitions the input into three region payloads. Each region receives a stream of PRF-permuted 16-bit lane fragments rather than plaintext.
+Plaintext never reaches the regions as contiguous bytes. Every message first passes through the Rank Barrier (§12) — a per-chunk PRF-keyed permutation — which partitions the input into three region payloads. In the default 48-bit mode (`Interlock = "48"` or `""`), each 48-bit (`6`-byte) chunk is partitioned into three 16-bit (`2`-byte) lane fragments across `|Ω_chunk| ≈ 2^70.20` balanced partitions. When paired with a 512-bit inner primitive (`areion512` or `blake2b512`), callers can select the strategic 168-bit mode (`Interlock = "168"`), which partitions each 168-bit (`21`-byte) chunk into three 56-bit (`7`-byte) lane fragments — exactly one 56-bit pixel data payload per region — across `|Ω_chunk,168| ≈ 2^258.60` balanced partitions.
 
 **How plaintext becomes three region payloads:**
 
 1. A 4-byte big-endian length prefix is prepended to the plaintext, allowing exact restoration of the original extent.
-2. The byte stream is processed in 48-bit (6-byte) chunks.
-3. For each chunk, lane distribution is evaluated through a **two-stage cascade fill** (`lockSeed` + `interlock_nonce`) followed by combinadic unranking into balanced mask triple `(m0, m1, m2)` (see §12 for full derivation).
-4. `chunk48lock(x, m0, m1, m2)` compresses the 48-bit chunk into three 16-bit lane values `(l0, l1, l2)` using three BMI2 `PEXTQ` instructions on x86 (or portable fallback) in ~3 cycles per chunk in constant time (AMD Zen 1 / Zen 2: [microcoded](HWTHREATS.md#52-microarchitecture-floors--tier-dispatch)).
-5. Region 0 receives `l0` (2 bytes), Region 1 receives `l1`, and Region 2 receives `l2`, advancing in lockstep.
+2. The byte stream is processed in 48-bit (`6`-byte) chunks by default, or in 168-bit (`21`-byte) chunks under `Interlock = "168"`.
+3. For each chunk, lane distribution is evaluated through a **two-stage cascade fill** (`lockSeed` + `interlock_nonce`) followed by combinadic unranking into a balanced mask triple `(m0, m1, m2)` — three disjoint 16-of-48 masks in 48-bit mode, or three disjoint 56-of-168 masks (`[3]uint64` each) in 168-bit mode (see §12 for full derivation).
+4. In 48-bit mode, `chunk48lock(x, m0, m1, m2)` compresses the 48-bit chunk into three 16-bit lane values `(l0, l1, l2)` using three BMI2 `PEXTQ` instructions on x86 (or portable fallback) in ~3 cycles per chunk in constant time (AMD Zen 1 / Zen 2: [microcoded](HWTHREATS.md#52-microarchitecture-floors--tier-dispatch)). In 168-bit mode (`chunk168lock` / `chunk168LockBatch`), the 168-bit (3-word) chunk is compressed into three 56-bit lane values `(l0, l1, l2)` via nine BMI2 `PEXTQ` instructions (`3 words × 3 lanes`) stitched with `POPCNTQ` shifts on x86, ARM64 SVE2 `BEXT`, or the constant-time 56-step branchless software fallbacks (`pext56` on ARM64 non-SVE2 via `TrailingZeros64` / `RBIT`+`CLZ`, and portable `softPEXT168`).
+5. Region 0 receives `l0` (`2` bytes in 48-bit mode; `7` bytes in 168-bit mode), Region 1 receives `l1`, and Region 2 receives `l2`, advancing in lockstep.
 6. Each region's lane buffer begins with its respective fragment of the interlock nonce. The accumulated payload enters COBS encoding; these fragments sit inside the Pixel Barrier's encryption coverage and are authenticated under AEAD modes (MAC-Inside-Encrypt composition). Nonce splitting is derived deterministically from the configured nonce width, requiring no wire length metadata.
 
 ```
 Plaintext + 4-byte BE length prefix
         │
         ▼
-  ┌─────────────────────────────────────────────────┐
-  │ 48-bit chunk 0 │ 48-bit chunk 1 │ 48-bit ... │
-  └─────────────────────────────────────────────────┘
-        │                │
-        ▼                ▼
-   PRF-keyed         PRF-keyed
-   mask triple 0     mask triple 1     ... (independently keyed per chunk)
-   (m0, m1, m2)      (m0, m1, m2)
-        │                │
-        ▼                ▼
-   chunk48lock →     chunk48lock →
-   (l0, l1, l2)      (l0, l1, l2)
-        │                │
-        ▼                ▼
-   Region 0 payload:  il_frag0 ‖ l0_chunk0 ‖ l0_chunk1 ‖ ...  (16 bits per chunk)
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │ 48-bit (6 B) or 168-bit (21 B) chunk 0 │ chunk 1 │ chunk 2 ...      │
+  └─────────────────────────────────────────────────────────────────────┘
+        │                                    │
+        ▼                                    ▼
+   PRF-keyed                            PRF-keyed
+   mask triple 0                        mask triple 1     ... (independently keyed per chunk)
+   (m0, m1, m2)                         (m0, m1, m2)
+        │                                    │
+        ▼                                    ▼
+   chunk48lock / chunk168lock →         chunk48lock / chunk168lock →
+   (l0, l1, l2)                         (l0, l1, l2)
+        │                                    │
+        ▼                                    ▼
+   Region 0 payload:  il_frag0 ‖ l0_chunk0 ‖ l0_chunk1 ‖ ...  (16 bits in "48"; 56 bits / 7 B in "168")
    Region 1 payload:  il_frag1 ‖ l1_chunk0 ‖ l1_chunk1 ‖ ...
    Region 2 payload:  il_frag2 ‖ l2_chunk0 ‖ l2_chunk1 ‖ ...
 ```
@@ -109,7 +109,7 @@ Container (one allocation, three parallel fills):
   pixels 0..P/3  pixels P/3..2P/3  pixels 2P/3..P
 ```
 
-**Three parallel encrypt pipelines.** Each region payload (16-bit fragments) is COBS-encoded, null-terminated, padded with DRBG fill, and encrypted using separate seeds:
+**Three parallel encrypt pipelines.** Each region payload (16-bit lane fragments in 48-bit mode, or 56-bit lane fragments in 168-bit mode) is COBS-encoded, null-terminated, padded with DRBG fill, and encrypted using separate seeds:
 
 ```
 Region 0 payload (l0 stream) → COBS → [cobs|0x00|fill] → dataSeed1 + startSeed1 + noiseSeed → Region 0
@@ -165,7 +165,7 @@ To resist chosen-ciphertext ambiguity reduction, the minimum pixel count enforce
 
 Both modes converge to identical dimensions once payload volume exceeds the floor. Decoders parse `W` and `H` directly from the frame header; decryption is mode-independent and handles ciphertexts from either mode without configuration.
 
-**Decryption.** After the 32-byte prefix, the header `[main_nonce][W][H]` is parsed, and the container is split into thirds. Three parallel goroutines invert the Pixel Barrier (noise strip, inverse rotation, XOR unmask) and COBS-decode the lane payloads. The leading interlock-nonce fragments are reassembled. Then `interleaveTriple48LockedBatch` reconstructs the 48-bit chunks using mask triples derived from `lockSeed` and `interlock_nonce`, and the 4-byte length prefix is removed to restore the exact original plaintext.
+**Decryption.** After the 32-byte prefix, the header `[main_nonce][W][H]` is parsed, and the container is split into thirds. Three parallel goroutines invert the Pixel Barrier (noise strip, inverse rotation, XOR unmask) and COBS-decode the lane payloads. The leading interlock-nonce fragments are reassembled. Then `interleaveTriple48LockedBatch` (or `interleaveTriple168LockedBatch` under `Interlock = "168"`) reconstructs the 48-bit (or 168-bit) chunks using mask triples derived from `lockSeed` and `interlock_nonce`, and the 4-byte length prefix is removed to restore the exact original plaintext.
 
 ## 6. Under Normal Use: Attack Resistance Summary
 
@@ -181,7 +181,7 @@ Under standard operation with a PRF-grade hash and CSPRNG nonces:
 Under passive observation (COA, CPA), the barrier absorbs hash outputs. Under Full KPA, resistance is 4-factor under the PRF assumption:
 
 1. **PRF non-invertibility** — candidate hash outputs cannot be verified against seeds without knowledge of the seed.
-2. **Rank Barrier per-chunk mask permutation** — each 48-bit chunk is permuted across lanes via a mask drawn from ≈ 2^70.20 balanced partitions.
+2. **Rank Barrier per-chunk mask permutation** — each 48-bit chunk is permuted across lanes via a mask drawn from ≈ 2^70.20 balanced partitions (or ≈ 2^258.60 balanced partitions per 168-bit chunk when `Interlock = "168"` is selected on a 512-bit primitive).
 3. **startPixel isolation** — three independent, non-transmitted offsets (`sp0`, `sp1`, `sp2`) must be jointly enumerated without feedback.
 4. **Pixel Barrier ambiguity** — 7 rotations × 8 noise positions maintain 56 equiprobable candidates per pixel at 1:1 signal/noise.
 
@@ -210,7 +210,7 @@ Full KPA (where the attacker knows the entire plaintext) is the standard cryptog
 | Condition | Result |
 |---|---|
 | Full KPA + invertible primitive | Rank Barrier permutation and multi-seed coupling foreclose SAT-based seed recovery at instance formulation. Bitwuzla does not recover the true seed even under maximum-peek regimes (see [REDTEAM.md § FNV-1a lo-lane SAT](REDTEAM.md#fnv-1a-lo-lane-sat--architecturally-foreclosed)). |
-| Full KPA + PRF (non-invertible) | Inversion is infeasible. Work factor reduces to brute-force: `P × 2^(2·keyBits)` (Core ITB) or `P × 2^keyBits` (MAC + Reveal), plus per-chunk mask space (≈ 2^70.20 per chunk). |
+| Full KPA + PRF (non-invertible) | Inversion is infeasible. Work factor reduces to brute-force: `P × 2^(2·keyBits)` (Core ITB) or `P × 2^keyBits` (MAC + Reveal), plus per-chunk mask space (≈ 2^70.20 per 48-bit chunk, or ≈ 2^258.60 per 168-bit chunk under `Interlock = "168"`). |
 
 Without the barrier, an attacker could test 56 candidates per pixel, invert the hash to recover candidate seeds, and verify across pixels. Under a PRF, candidate verification is infeasible. Under an invertible primitive, the Rank Barrier removes the fixed position-to-lane mapping needed to verify on a second pixel.
 
@@ -222,7 +222,7 @@ Without the barrier, an attacker could test 56 candidates per pixel, invert the 
 
 The construction utilizes two independent nonces: `main_nonce` (governing per-pixel and per-region derivations) and `interlock_nonce` (governing per-chunk mask selections). Both are generated internally from `crypto/rand` and enforced distinct. Reaching a caller-forced reuse condition through the shipped API is prevented by internal CSPRNG generation, so reuse can only be simulated in the lab via test overrides.
 
-At the default 512-bit width, birthday collision on either slot requires ~2^256 messages. Within one message (64 MB cap, about 2^23.4 chunks of 48 bits) a repeated per-chunk mask is expected with probability ~2^-24. Simultaneous collision on both slots requires a CSPRNG hardware failure.
+At the default 512-bit width, birthday collision on either slot requires ~2^256 messages. Within one message (64 MB cap, about 2^23.4 chunks of 48 bits) a repeated per-chunk mask is expected with probability ~2^-24 (or under `Interlock = "168"`, at most 3,195,661 ≈ 2^21.61 chunks of 168 bits across a ≈ 2^258.60 mask space, where within-message mask repetition probability drops to ~2^-216.4). Simultaneous collision on both slots requires a CSPRNG hardware failure.
 
 Three collision scenarios exist in lab testing:
 
@@ -261,21 +261,23 @@ The only theoretical recovery path is a local cache side-channel on the CPU. Eve
 
 The Interlocked Barrier is an always-on layer composing two inseparable mechanisms:
 
-- **Rank Barrier** — a per-chunk 48-bit keyed permutation over the interleaved payload, drawn from a space of ≈ 2^70.20 balanced partitions keyed by `lockSeed` and `interlock_nonce`.
+- **Rank Barrier** — a per-chunk keyed permutation over the interleaved payload keyed by `lockSeed` and `interlock_nonce`, operating in two chunk-width modes:
+  - **48-bit default mode (`Interlock = "48"` or `""`):** partitions each 48-bit (`6`-byte) chunk into three 16-bit (`2`-byte) lane fragments across `|Ω_chunk| = A · B ≈ 2^70.20` balanced partitions (supported across all primitive widths: 128, 256, and 512 bits).
+  - **168-bit strategic mode (`Interlock = "168"`):** partitions each 168-bit (`21`-byte) chunk into three 56-bit (`7`-byte) lane fragments — matching one full 56-bit pixel data payload per region — across `|Ω_chunk,168| = A₁₆₈ · B₁₆₈ ≈ 2^258.60` balanced partitions (requires a 512-bit inner primitive: `areion512` or `blake2b512`).
 - **Pixel Barrier** — a per-pixel encoding stage masking each channel byte via channel XOR, 7-position rotation, and noise-bit insertion, keyed by `dataSeed` and `noiseSeed`.
 
 Rank Barrier denies a stable bit-to-lane mapping; Pixel Barrier denies a per-byte observation channel. Neither runs in isolation.
 
-**Rank Barrier — two-stage cascade fill and 48-bit chunk permutation.** Plaintext bits are never mapped to lanes by `lockSeed` directly. Instead, lane distribution is evaluated through a two-stage cascade:
+**Rank Barrier — two-stage cascade fill and chunk permutation.** Plaintext bits are never mapped to lanes by `lockSeed` directly. Instead, lane distribution is evaluated through a two-stage cascade:
 
 1. **Intermediate key derivation:** An intermediate key `K = deriveInterLockSeed(interlock_nonce)` is derived under domain tag `0x04` via a full ChainHash cascade over `[0x04 ‖ interlock_nonce]` keyed by `lockSeed`.
 2. **Primer round and session-component feed-forward:** The builder constructs the prepended component slice `lockComps = [K[0], ..., K[w-1], c[0], ..., c[n-1]]` (where `w = width / 64` words and `c` are `lockSeed.Components`). Round 1 is the dedicated **primer round** seeded with intermediate key `K`; rounds 2 .. 1 + keyBits/width feed the state forward through the session components.
    Distinction from Pixel Barrier: The Pixel Barrier operates directly over session components at depth `r = keyBits / width` (4 / 8 / 16 rounds at width 128 for 512 / 1024 / 2048-bit keys; 2 / 4 / 8 at width 256; 1 / 2 / 4 at width 512), without an intermediate key. The Rank Barrier operates at depth `r = 1 + keyBits / width` (5 / 9 / 17 rounds at width 128; 3 / 5 / 9 at width 256; 2 / 3 / 5 at width 512), where the additional primer round binds every chunk's rank to `interlock_nonce` before session components are mixed. The Rank Barrier cascade fill is **exactly 1 round deeper** than the Pixel Barrier cascade.
-3. **Per-chunk rank evaluation:** Each group evaluates input block `[0x03 ‖ LE64(groupIdx) ‖ v]` (13 bytes; `v` — the 4-byte interlock-nonce fold, the bytewise XOR of the interlock nonce's 4-byte slices, one value per message) through the cascade over `lockComps`, yielding a 128-bit rank per chunk.
-4. **Combinadic unranking:** The rank reduces to `(idx0, idx1)` via `(q, idx1) = divmod128(rank, B)` and `idx0 = q mod A`, mapped to disjoint 16-of-48 masks `(m0, m1, m2)` via binomial combinatorial unranking.
-5. **Constant-time hardware execution:** Three BMI2 `PEXTQ` instructions (`chunk48LockBatch`) compress the 48-bit chunk into three 16-bit lane values in ~3 cycles per chunk in constant time (AMD Zen 1 / Zen 2: [microcoded](HWTHREATS.md#52-microarchitecture-floors--tier-dispatch)). Reassembly uses three BMI2 `PDEPQ` instructions followed by pairwise `ORQ`.
+3. **Per-chunk rank evaluation:** Each group evaluates input block `[0x03 ‖ LE64(groupIdx) ‖ v]` (13 bytes; `v` — the 4-byte interlock-nonce fold, the bytewise XOR of the interlock nonce's 4-byte slices, one value per message) through the cascade over `lockComps`, yielding a 128-bit rank per chunk in 48-bit mode (1 / 2 / 4 chunks per group digest at width 128 / 256 / 512) or a full 512-bit rank digest (`R₅₁₂`, 8 little-endian `uint64` limbs) dedicated to a single 168-bit chunk in 168-bit mode (`1 group = 1 chunk`).
+4. **Combinadic unranking:** In 48-bit mode, the 128-bit rank reduces to `(idx0, idx1)` via `(q, idx1) = divmod128(rank, B)` and `idx0 = q mod A`, mapped to disjoint 16-of-48 masks `(m0, m1, m2)` via binomial combinatorial unranking. In 168-bit mode (`splitRank168`), the 512-bit rank `R₅₁₂` reduces to a 3-limb `idx0 < A₁₆₈` and 2-limb `idx1 < B₁₆₈` via `(Q, idx1) = divmod(R₅₁₂, B₁₆₈)` (7 limb steps) and `idx0 = Q mod A₁₆₈` (5 limb steps) using compile-time Barrett-like reciprocals (`μ_B = ⌊2^236 / B₁₆₈⌋`, `μ_A = ⌊2^342 / A₁₆₈⌋`) with branchless 64×64→128 multiplies, which then unrank into three disjoint 56-of-168 masks `(m0, m1, m2)` (`[3]uint64` each).
+5. **Constant-time hardware execution:** In 48-bit mode, three BMI2 `PEXTQ` instructions (`chunk48LockBatch`) compress the 48-bit chunk into three 16-bit lane values in ~3 cycles per chunk in constant time (AMD Zen 1 / Zen 2: [microcoded](HWTHREATS.md#52-microarchitecture-floors--tier-dispatch)), and reassembly uses three BMI2 `PDEPQ` instructions followed by pairwise `ORQ`. In 168-bit mode (`chunk168LockBatch` / `unchunk168LockBatch`), x86-64 BMI2 executes nine `PEXTQ` instructions (`3 words × 3 lanes`) stitched via `POPCNTQ` shifts (inverse: nine `PDEPQ` instructions + bitwise `ORQ`), ARM64 SVE2 executes `BEXT` / `BDEP`, and non-BMI2 / non-SVE2 targets execute a constant-time 56-iteration branchless set-bit walk (`pext56` / `pdep56` on ARM64 non-SVE2 via `TrailingZeros64` / `RBIT`+`CLZ`, and portable `softPEXT168` / `softPDEP168`).
 
-**Mask-space cardinality (Theorem 11).** The number of balanced partitions per chunk is ([Proof 11](PROOFS.md#proof-11-48-bit-rank-barrier-mask-space-interlocked-barrier), [SCIENCE.md § 2.15](SCIENCE.md#215-48-bit-rank-barrier-mask-space-theorem-11)):
+**48-bit mask-space cardinality (Theorem 11).** In the default 48-bit mode (`Interlock = "48"`), the number of balanced partitions per chunk is ([Proof 11](PROOFS.md#proof-11-48-bit-rank-barrier-mask-space-interlocked-barrier), [SCIENCE.md § 2.15](SCIENCE.md#215-48-bit-rank-barrier-mask-space-theorem-11)):
 
 - `A = C(48, 16) = 2,254,848,913,647` (log₂ ≈ 41.04) — choices for `m0`.
 - `B = C(32, 16) = 601,080,390` (log₂ ≈ 29.16) — choices for `m1` from remaining bits (`m2` complement).
@@ -290,7 +292,60 @@ Under the PRF assumption, recovered masks carry zero information about neighbori
 
 This reaches the full `[0, A) × [0, B)` space near-uniformly. The naive alternative `(rank mod A, rank mod B)` is flawed because `gcd(A, B) = gcd(C(48, 16), C(32, 16)) = 66,861 = 3² · 17 · 19 · 23`, which would restrict reachable pairs to `1 / 66,861 ≈ 1.5 × 10⁻⁵` of the space (eroding `log₂ 66,861 ≈ 16.03` bits of entropy). The two-step divmod reduction preserves the full ≈ 2^70.20 space.
 
-**Bias distribution.** The two-step reduction carries a fixed relative deviation of ≈ 2^-57.8 per chunk on the lowest `2^128 mod (A · B)` pairs. Accumulated linearly over a maximum message of 2^23.42 chunks, deviation is bounded by ≈ 2^-34.4. Detecting this would require ~2^115.6 chunk samples (~2^92 maximum-size messages), far beyond any attainable data budget.
+**48-bit bias distribution.** The two-step reduction carries a fixed relative deviation of ≈ 2^-57.8 per chunk on the lowest `2^128 mod (A · B)` pairs. Accumulated linearly over a maximum message of 2^23.42 chunks, deviation is bounded by ≈ 2^-34.4. Detecting this would require ~2^115.6 chunk samples (~2^92 maximum-size messages), far beyond any attainable data budget.
+
+### 168-Bit Interlocked Barrier (`Interlock = "168"`): Trans-Landauer Margin for 512-Bit Primitives
+
+When ITB is configured with a 512-bit inner primitive (`areion512` or `blake2b512`), callers can enable the **168-bit Interlocked Barrier** (`Interlock = "168"`). Rather than slicing a 512-bit cascade output into four 128-bit ranks for 48-bit chunks, the 168-bit mode consumes the entire 512-bit digest (`2^512`) to key a single **168-bit (`21`-byte) chunk** partitioned into **three 56-bit (`7`-byte) lanes**. Because each ITB pixel carries exactly `56` data bits across its 8 channels (`8 × 7 = 56`), each 168-bit chunk delivers one complete pixel's worth of pre-COBS lane payload to each of the three regions in lockstep.
+
+**168-bit mask-space cardinality (`|Ω_chunk,168|`).** The number of balanced 56-of-168 partitions per 21-byte chunk is:
+
+- `A₁₆₈ = C(168, 56) = 1,799,363,822,299,435,101,766,134,108,620,363,111,079,750,360` (`log₂ ≈ 150.33`) — choices for the 56 bit positions routed to lane 0 (`m0`).
+- `B₁₆₈ = C(112, 56) = 390,590,044,887,157,789,360,330,532,465,784` (`log₂ ≈ 108.27`) — choices for the 56 bit positions routed to lane 1 (`m1`) from the remaining 112 bits (`m2` is uniquely fixed as the 56-bit complement).
+- `|Ω_chunk,168| = A₁₆₈ · B₁₆₈ = 702,813,596,120,264,168,420,100,264,216,585,729,858,529,081,007,646,807,547,722,792,977,161,961,682,240` (`log₂ ≈ 258.60`, `≈ 2^258.60`).
+
+Even on a **single 21-byte chunk**, the permutation space (`≈ 2^258.60`) exceeds the entire 256-bit key space of AES-256 (`2^256`) by more than `6×`. Across `C` independent chunks, the joint mask space `(A₁₆₈ · B₁₆₈)^C ≈ 2^(258.60 × C)` overtakes every supported key space within a few dozen bytes of payload:
+
+- **`C = 2` chunks (`42` bytes):** `2^517.2 > 2^512` (exceeds a 512-bit key space).
+- **`C = 4` chunks (`84` bytes):** `2^1034.4 > 2^1024` (exceeds a 1024-bit key space).
+- **`C = 8` chunks (`168` bytes — one 8-chunk SIMD superblock):** `2^2068.8 > 2^2048` (exceeds the maximum 2048-bit key space).
+
+**Algebraic under-determination at 168 known bits.** Mapping a 512-bit rank (`2^512`) onto `|Ω_chunk,168|` yields:
+
+- **Preimages per mask triple:** `⌊2^512 / (A₁₆₈ · B₁₆₈)⌋ = 19,077,331,463,075,847,632,709,418,264,551,801,233,111,994,340,630,406,080,247,337,248,653,165,811,287 ≈ 2^253.40`.
+- **Observation-compatible masks for a 168-bit crib:** Even if an attacker knows all 168 plaintext bits (`21` bytes) of a chunk and hypothetically observes the three 56-bit lane outputs, any permutation of identical bits within a chunk produces the same lane projection. For a typical balanced 168-bit crib, `≈ 2^90.6` (`≈ 2^90`) distinct mask triples out of `≈ 2^258.60` remain algebraically compatible with the observation, providing zero unique anchor for solver formulation.
+
+**Anti-collapse `gcd(A₁₆₈, B₁₆₈)` in 168-bit mode.** For the 168-bit binomial pair, the greatest common divisor is:
+
+- `gcd(A₁₆₈, B₁₆₈) = gcd(C(168, 56), C(112, 56)) = 10,078,335,949,946,663,736 = 2³ · 3² · 19 · 29 · 31 · 59 · 61 · 67 · 71 · 73 · 79 · 83` (`log₂ ≈ 63.13`, `1 / gcd ≈ 9.9 × 10⁻²⁰`).
+
+A naive independent reduction `(R₅₁₂ mod A₁₆₈, R₅₁₂ mod B₁₆₈)` would suffer a catastrophic CRT collapse, restricting reachable masks to `1 / 10,078,335,949,946,663,736 ≈ 9.9 × 10⁻²⁰` of the space and destroying `log₂ gcd ≈ 63.13` bits of entropy. The two-step exact-`B₁₆₈` reciprocal reduction `(Q, idx1) = divmod(R₅₁₂, B₁₆₈)`, `idx0 = Q mod A₁₆₈` (`splitRank168`) avoids this trap entirely and covers the full `A₁₆₈ × B₁₆₈` Cartesian space (`≈ 2^258.60`).
+
+**Trans-Landauer bias and statistical distinguisher floor.** Because `2^512` is `2^253.40 ×` larger than `A₁₆₈ · B₁₆₈`, the modular reduction residual is vanishingly small:
+
+- **Per-chunk bias:** `≈ 2^-253.4`.
+- **Maximum chunks in a 64 MiB message:** `3,195,661` (`≈ 2^21.61`).
+- **Accumulated bias across a maximum 64 MiB message:** `≈ 2^-231.8`.
+- **Statistical distinguisher sample budget (`1 / ε²`):** `≈ 2^506.8` chunk samples (`~2^485` maximum-size 64 MiB messages).
+
+To put `≈ 2^506.8` chunks into physical perspective: the **Landauer thermodynamic bound** on the total number of irreversible bit operations achievable by converting the entire mass-energy of the observable universe (`~4 × 10^69 J`) into computation at the cosmic microwave background temperature (`2.725 K`) is `~2^306` (`≈ 10^92`). The `2^506.8`-chunk sample budget required merely to distinguish the 168-bit Rank Barrier's unranking distribution from an ideal mathematical uniform distribution exceeds the universal Landauer limit by **more than 200 orders of magnitude in base 2** (`> 2^200×`, or `> 10^60×`). Statistical bias in the 168-bit Rank Barrier is physically unobservable under the laws of thermodynamics.
+
+| Parameter | 48-Bit Default (`Interlock = "48"` / `""`) | 168-Bit Strategic (`Interlock = "168"`) |
+|---|---|---|
+| **Supported inner widths** | `128`, `256`, `512` bits (all primitives) | `512` bits (`areion512`, `blake2b512`) |
+| **Chunk → 3 lanes** | `48` bits (`6` B) → `3 × 16` bits (`2` B) | `168` bits (`21` B) → `3 × 56` bits (`7` B, 1 pixel/lane) |
+| **Choice count `A` (`m0`)** | `C(48, 16) = 2,254,848,913,647` (`log₂ ≈ 41.04`) | `C(168, 56) ≈ 1.80 × 10⁴⁵` (`log₂ ≈ 150.33`) |
+| **Choice count `B` (`m1`)** | `C(32, 16) = 601,080,390` (`log₂ ≈ 29.16`) | `C(112, 56) ≈ 3.91 × 10³²` (`log₂ ≈ 108.27`) |
+| **Mask space `\|Ω_chunk\| = A · B`** | `≈ 2^70.20` | `≈ 2^258.60` (`> 6×` AES-256 key space per chunk) |
+| **Anti-collapse `gcd(A, B)`** | `66,861` (`log₂ ≈ 16.03`, `1/gcd ≈ 1.5 × 10⁻⁵`) | `10,078,335,949,946,663,736` (`log₂ ≈ 63.13`, `1/gcd ≈ 9.9 × 10⁻²⁰`) |
+| **PRF rank width per chunk** | `128` bits (`2^128`) | `512` bits (`2^512`) |
+| **Preimages per mask triple** | `⌊2^128 / (A · B)⌋ ≈ 2^57.80` | `⌊2^512 / (A₁₆₈ · B₁₆₈)⌋ ≈ 2^253.40` |
+| **Compatible masks per crib chunk** | `≈ 2^22.2` (`≈ 2^22`) | `≈ 2^90.6` (`≈ 2^90`) |
+| **Per-chunk bias** | `≈ 2^-57.8` | `≈ 2^-253.4` |
+| **Max chunks in 64 MiB message** | `11,184,812` (`≈ 2^23.42`) | `3,195,661` (`≈ 2^21.61`) |
+| **Accumulated bias (64 MiB)** | `≈ 2^-34.4` | `≈ 2^-231.8` |
+| **Distinguisher sample budget (`1/ε²`)** | `~2^115.6` chunks (`~2^92` max messages) | `≈ 2^506.8` chunks (`~2^485` max messages; `> 2^200×` Landauer `~2^306`) |
+| **Chunks to exceed `2^512 / 2^1024 / 2^2048`** | `C = 8 / 15 / 30` chunks (`48 / 90 / 180` B) | `C = 2 / 4 / 8` chunks (`42 / 84 / 168` B) |
 
 **Pixel Barrier — per-pixel absorption.** Each pixel packs 56 data bits into 8 channel bytes labelled with the RGBWYOPA mnemonic (Red, Green, Blue, White, Yellow, Orange, Purple, Alpha) as byte-unit positions, unrelated to image processing. Each channel undergoes 7-bit XOR masking, 7-position rotation, and insertion of an original DRBG noise bit at `noisePos`.
 
@@ -298,7 +353,7 @@ This reaches the full `[0, A) × [0, B)` space near-uniformly. The naive alterna
 
 **Why KPA candidates do not break the barrier.** An attacker can calculate 56 candidate hash outputs per pixel, but all 56 are equally consistent with observation. Without ChainHash inversion, the candidate space cannot be narrowed. Under an invertible primitive, inverting ChainHash bypasses the Pixel Barrier's per-pixel ambiguity, but the Rank Barrier's per-chunk permutation remains — the mapping from plaintext bits to lane positions is a hidden secret that primitive inversion cannot recover. Direct guessing of the 62-bit-per-pixel configuration map requires `2^(62·P)` attempts (≈ 2^75950 for 1024-bit keys), far exceeding the key space.
 
-**Cost and mandatory enforcement.** Unranking runs on AVX-512F or AVX2 SIMD kernels, with portable Pure Go fallbacks. Every exported entrypoint of the `itb.Encrypt3x*` and `Decrypt*` families, as well as all shipped `Triple` profiles, routes through the Interlocked Barrier unconditionally; no runtime bypass knob exists.
+**Cost and mandatory enforcement.** Unranking runs on 8/16-lane AVX-512F, AVX2, or ARM64 NEON SIMD kernels (`RankToMaskTripleUnrank48*` for 48-bit mode; 8-lane `RankToMaskTripleUnrank168*` over the 64-byte-aligned 303-row tiered `crow168Packed` / `crow168PackedNEON` tables (`155,136` B) for 168-bit mode), with constant-time Pure Go fallbacks. Every exported entrypoint of the `itb.Encrypt3x*` and `Decrypt*` families, as well as all shipped `Triple` profiles, routes through the Interlocked Barrier unconditionally (`Interlock = "48"` by default, or `Interlock = "168"` when configured on 512-bit primitives via `itb.Config`, `triple.Opts`, `triple.Profile`, or `itb.Blob512Opts`); no runtime bypass knob exists.
 
 ## 13. Quantum Resistance
 
@@ -329,7 +384,7 @@ Estimates assume a 1024-bit key (128-bit primitive, ~10 ns per hash round on mod
 
 The barrier and the PRF primitive protect each other:
 
-- **PRF protects the barrier:** Non-invertibility prevents an attacker from resolving the 56-to-1 per-pixel ambiguity and the per-chunk ≈ 2^70.20 mask space.
+- **PRF protects the barrier:** Non-invertibility prevents an attacker from resolving the 56-to-1 per-pixel ambiguity and the per-chunk ≈ 2^70.20 (or ≈ 2^258.60 under `Interlock = "168"`) mask space.
 - **Barrier protects the PRF:** Two pixels with identical hash outputs receive different container bytes from the DRBG, so their observed bytes differ. The collision is absorbed. The inseparable Interlocked Barrier absorbs a broad spectrum of primitive weaknesses beneath its composite layers: output collisions, statistical non-uniformities, structural biases, and trapdoor effects (such as the BEA-1 partition trapdoors documented in [HARNESS.md](HARNESS.md)) are masked by random container noise insertion, independent rotation, and per-chunk lane scrambling. Even below-spec stress primitives exhibit zero observable leakage when enveloped by the full barrier.
 - **ChainHash architecture resists MITM:** Sequential component mixing ensures that partial key compromise reveals nothing about adjacent components.
 

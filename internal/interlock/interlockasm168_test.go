@@ -219,10 +219,10 @@ func checkMaskTriple168Valid(t *testing.T, tag string, lane int, m0, m1, m2 [3]u
 //   - Transition p = 67 (2-limb to 1-limb): sum_{i=0}^{21} C(68+i, 35+i) + C(68,34) - 1
 //     (rem[1]==1 on entry to p=67 with krem=34)
 //   - All extreme (z0, z1, z2) popcount distributions:
-//     * z0 = 64 (m0_0 == 0): A168 - 1 and C(128,56) - 1
-//     * z0 = 8  (m0_0 has 56 bits set): 0
-//     * z2 = 0  (m0_2 == 0xFFFFFFFFFF): A168 - 1 and sum_{i=0}^{39} C(128+i, 17+i)
-//     * z2 = 40 (m0_2 == 0): 0 and C(128,56) - 1
+//   - z0 = 64 (m0_0 == 0): A168 - 1 and C(128,56) - 1
+//   - z0 = 8  (m0_0 has 56 bits set): 0
+//   - z2 = 0  (m0_2 == 0xFFFFFFFFFF): A168 - 1 and sum_{i=0}^{39} C(128+i, 17+i)
+//   - z2 = 40 (m0_2 == 0): 0 and C(128,56) - 1
 func boundaryIdx0Vectors() [][3]uint64 {
 	one := [3]uint64{1, 0, 0}
 	aMinus1 := u192Sub(testA168, one)

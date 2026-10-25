@@ -41,7 +41,7 @@ import (
 // eitbGoVersion matches the shipped libitb3 ABI version reported by
 // [github.com/everanium/itb/cmd/cshared] so the Go native tool prints
 // the same "libitb3 X.Y.Z" line as every binding's eitb.
-const eitbGoVersion = "0.7.5"
+const eitbGoVersion = "0.8.1"
 
 const usage = `usage: eitb version
        eitb profiles
@@ -141,7 +141,9 @@ func cmdEncrypt(profile, infile, outfile string) error {
 	if err != nil {
 		return err
 	}
-	pipe, blob, err := triple.Init(profile, triple.Opts{})
+	pipe, blob, err := triple.Init(profile, triple.Opts{
+		Interlock: os.Getenv("ITB_INTERLOCK"),
+	})
 	if err != nil {
 		return err
 	}

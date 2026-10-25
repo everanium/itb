@@ -83,13 +83,32 @@ echo "=== 2c. roundtrip: drbg operator selection ==="
 cmp "$tmp/plain.txt" "$tmp/drbg.dec"
 "$BIN" verify "$tmp/drbg.blob"
 
-echo "=== 2d. roundtrip: interlock 168 (512-bit hash) ==="
+echo "=== 2d. roundtrip: interlock 168 (512-bit hashes + mixed512 + rekey + 21-byte tails) ==="
 "$BIN" genblob nomac areion512 --interlock 168 -o "$tmp/il168.blob"
 "$BIN" inspect "$tmp/il168.blob" | grep -q "^interlock: 168$"
 "$BIN" encrypt "$tmp/il168.blob" -i "$tmp/plain.txt" -o "$tmp/il168.cipher"
 "$BIN" decrypt "$tmp/il168.blob" -i "$tmp/il168.cipher" -o "$tmp/il168.dec"
 cmp "$tmp/plain.txt" "$tmp/il168.dec"
 "$BIN" verify "$tmp/il168.blob"
+
+"$BIN" genblob mac blake2b512 -m kmac256 --interlock 168 -o "$tmp/il168_blake2b.blob"
+"$BIN" inspect "$tmp/il168_blake2b.blob" | grep -q "^interlock: 168$"
+"$BIN" encrypt "$tmp/il168_blake2b.blob" -i "$tmp/plain.txt" -o "$tmp/il168_blake2b.cipher"
+"$BIN" decrypt "$tmp/il168_blake2b.blob" -i "$tmp/il168_blake2b.cipher" -o "$tmp/il168_blake2b.dec"
+cmp "$tmp/plain.txt" "$tmp/il168_blake2b.dec"
+"$BIN" verify "$tmp/il168_blake2b.blob"
+
+"$BIN" genblob nomac mixed512 -w chacha20 --interlock 168 -o "$tmp/il168_mixed512.blob"
+"$BIN" inspect "$tmp/il168_mixed512.blob" | grep -q "^interlock: 168$"
+for sz in 1 6 20 21 22 41 42 43 63 64 1024; do
+    head -c "$sz" /dev/urandom > "$tmp/il168_${sz}.bin"
+    "$BIN" encrypt "$tmp/il168_mixed512.blob" -i "$tmp/il168_${sz}.bin" -o "$tmp/il168_${sz}.enc"
+    "$BIN" decrypt "$tmp/il168_mixed512.blob" -i "$tmp/il168_${sz}.enc" -o "$tmp/il168_${sz}.dec"
+    cmp "$tmp/il168_${sz}.bin" "$tmp/il168_${sz}.dec"
+done
+"$BIN" rekey "$tmp/il168_mixed512.blob" -w -o "$tmp/il168_mixed512.rk"
+"$BIN" inspect "$tmp/il168_mixed512.rk" | grep -q "^interlock: 168$"
+"$BIN" verify "$tmp/il168_mixed512.rk"
 
 echo "=== 3. roundtrip: mac mode + genblob to stdout ==="
 "$BIN" genblob mac areion512 -k 1024 -m hmac-blake3 -o "$tmp/mac.blob"

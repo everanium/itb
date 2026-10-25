@@ -44,6 +44,14 @@ func TestForceInterlockTierApplied(t *testing.T) {
 		if !HasAVX2RankMask || HasAVX512RankMask {
 			t.Fatalf("avx2: HasAVX2RankMask=%v HasAVX512RankMask=%v, want true/false", HasAVX2RankMask, HasAVX512RankMask)
 		}
+	case "bmi2":
+		if !cpuid.BMI2 {
+			t.Skip("bmi2 tier not executable on this host")
+		}
+		if !HasBMI2 || HasAVX512RankMask || HasAVX2RankMask {
+			t.Fatalf("bmi2: HasBMI2=%v HasAVX512RankMask=%v HasAVX2RankMask=%v, want true/false/false",
+				HasBMI2, HasAVX512RankMask, HasAVX2RankMask)
+		}
 	case "scalar":
 		if HasAVX512RankMask || HasAVX2RankMask || HasBMI2 {
 			t.Fatalf("scalar: HasAVX512RankMask=%v HasAVX2RankMask=%v HasBMI2=%v, want all false",

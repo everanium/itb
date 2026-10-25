@@ -27,6 +27,10 @@ import (
 //	         chunk-apply kernels are cleared so the per-chunk apply
 //	         path is reproduced for cross-tier parity checks
 //	         (production BMI2 hosts default to the batched kernels).
+//	bmi2   — requires BMI2 silicon; disables the AVX-512 and AVX2
+//	         rank-unrank kernels and the batched chunk-apply kernels
+//	         while keeping HasBMI2 set, so scalar rank-unrank runs
+//	         paired with the per-chunk BMI2 PEXT/PDEP apply kernels.
 //	scalar — disables the AVX-512 and AVX2 rank-mask kernels, the
 //	         BMI2 PEXT/PDEP kernels and the batched chunk-apply
 //	         kernels, so the pure-Go softPEXT / softPDEP and
@@ -57,6 +61,16 @@ func init() {
 		}
 		HasAVX2RankMask = true
 		HasAVX512RankMask = false
+		HasChunk48Batch = false
+		HasChunk168Batch = false
+	case "bmi2":
+		if !cpuid.BMI2 {
+			forcetier.Warnf("interlock: bmi2 tier needs BMI2 silicon; keeping auto-dispatch")
+			return
+		}
+		HasAVX512RankMask = false
+		HasAVX2RankMask = false
+		HasBMI2 = true
 		HasChunk48Batch = false
 		HasChunk168Batch = false
 	case "scalar":

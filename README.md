@@ -26,9 +26,33 @@
 
 ---
 
-A parameterized symmetric cipher construction library for Go that suppresses hash output under passive observation through independent barrier mechanisms: **noise insertion** (a random container filled by `internal/drbg` — CSPRNG-seeded noise from the operator-selected DRBG fill primitive, AES-256-CTR by default where hardware AES is present and ChaCha20 otherwise — makes hash output unobservable), **encoding ambiguity** (secret rotation yields 7^P unverifiable configurations that survive CCA), and the **Interlocked Barrier** (the composite pair of the **Rank Barrier** — a per-chunk PRF-keyed 48-bit permutation over three regions with a per-chunk mask space of ≈ 2^70.20 balanced partitions executed in ~3 cycles in constant time via BMI2 PEXTQ/PDEPQ — and the **Pixel Barrier** — per-pixel channel XOR masking, rotation, and noise insertion). 8-seed isolation ensures compromise of any one domain provides zero information about the others.
+A parameterized symmetric cipher construction library for Go that suppresses hash output under passive observation through independent barrier mechanisms: **noise insertion** (a random container filled by `internal/drbg` — CSPRNG-seeded noise from the operator-selected DRBG fill primitive, AES-256-CTR by default where hardware AES is present and ChaCha20 otherwise — makes hash output unobservable), **encoding ambiguity** (secret rotation yields 7^P unverifiable configurations that survive CCA), and the **Interlocked Barrier** (the composite pair of the **Rank Barrier** — a per-chunk PRF-keyed three-region bit-permutation operating at 48-bit chunk width by default with a per-chunk mask space of ≈ 2^70.20 balanced partitions executed in ~3 cycles in constant time via BMI2 PEXTQ/PDEPQ, or an optional 168-bit chunk width for 512-bit primitives with a per-chunk mask space of `C(168, 56) · C(112, 56) ≈ 2^258.60` balanced partitions — and the **Pixel Barrier** — per-pixel channel XOR masking, rotation, and noise insertion). 8-seed isolation ensures compromise of any one domain provides zero information about the others.
 
 **Ambiguity-Based Security.** The number of observation-consistent **configurations** grows with data size — a property orthogonal to Shannon's key-entropy bound (distinct from Shannon's perfect-secrecy relationship on plaintext entropy; not a violation of it). The Interlocked Barrier (Rank Barrier + Pixel Barrier) converts known-plaintext cryptanalysis from a computational-hardness problem into an instance-formulation one under the PRF assumption: a known-plaintext crib reaches neither a fixed lane position (Rank Barrier) nor an observable byte (Pixel Barrier).
+
+### ITB Features
+
+| Feature / Component | Key Properties | Status |
+|---|---|---|
+| **Rank Barrier (168-bit Interlock)** | 21-byte chunk → 3 × 56-bit lanes; `C(168,56)·C(112,56) ≈ 2^258.60` mask space; bias `≈ 2^-253.4`; 512-bit primitives | Experimental |
+| **Rank Barrier (48-bit Interlock, default)** | 6-byte chunk → 3 × 16-bit lanes; `C(48,16)·C(32,16) ≈ 2^70.20` mask space; bias `≈ 2^-57.8`; all 128/256/512-bit primitives | Stable |
+| **Pixel Barrier (8-channel RGBWYOPA)** | 56 data bits + 8 noise bits per pixel; `7^P` CCA ambiguity; Mode 1 & Mode 2 container floors | Stable |
+| **AES-ITB-128** (`aesitb128`) | 128-bit reduced-round AES CBC-MAC chain (inner-role Non-PRF + DRBG fill) | Stable |
+| **Areion-SoEM-256** (`areion256`) | 256-bit CBC-MAC over SoEM22 wide-block PRF (~170-bit bound) | Stable |
+| **Areion-SoEM-512** (`areion512`) | 512-bit CBC-MAC over SoEM22 wide-block PRF (~341-bit bound) | Stable |
+| **BLAKE2b-256** (`blake2b256`) | 256-bit ARX prepend-key MAC & RFC 7693 keyed PRF | Stable |
+| **BLAKE2b-512** (`blake2b512`) | 512-bit ARX prepend-key MAC & RFC 7693 keyed PRF | Stable |
+| **BLAKE2s** (`blake2s`) | 256-bit ARX prepend-key MAC & RFC 7693 keyed PRF | Stable |
+| **BLAKE3** (`blake3`) | 256-bit ARX native keyed BLAKE3 PRF with seed XOR mix | Stable |
+| **AES-CMAC** (`aescmac`) | 128-bit AES-128-CBC-MAC (inner), RFC 4493 CMAC (KDF) & SP 800-38A CTR stream cipher | Stable |
+| **SipHash-2-4** (`siphash24`) | 128-bit ARX keyed PRF (SipHash-2-4-128) | Stable |
+| **ChaCha20** (`chacha20`) | 256-bit HChaCha20 cascade PRF (inner), RFC 8439 stream cipher & XChaCha20 KDF | Stable |
+| **MACs** (`macs/`) | 32-byte tag MAC-Inside-Encrypt factories (NIST SP 800-185, RFC 2104 & native keyed PRF) | Stable |
+| **Parallax** (`parallax/`) | Pre-inner horizontal segment multiplexing across a counter-mode cipher palette | Stable |
+| **Wrapper** (`wrapper/`) | Format-deniability outer counter-mode keystream envelope over the ITB container | Stable |
+| **DRBG** (`internal/drbg`) | CSPRNG-seeded noise-container filler (AES-256-CTR / RFC 8439 ChaCha20 auto-tiering) | Stable |
+| **KDF** (`kdf/`) | NIST SP 800-108r1 Counter Mode & XChaCha20 keystream subkey derivation | Stable |
+| **CTR** (`ctr/`) | Seekable PRF-counter, NIST SP 800-38A AES-128-CTR & RFC 8439 keystream factories | Stable |
 
 **[Quick Start](#quick-start)**
 
@@ -44,7 +68,7 @@ A parameterized symmetric cipher construction library for Go that suppresses has
 
 ## Status
 
-The Core API and the Go C ABI are consolidated around the `triple/` facade and the Cfg-only Low-Level surface. The 48-bit always-on barrier is engaged unconditionally on every call and its adversarial re-verification is documented in [REDTEAM.md](REDTEAM.md).
+The Core API and the Go C ABI are consolidated around the `triple/` facade and the Cfg-only Low-Level surface. The always-on Interlocked Barrier (48-bit by default, with an optional 168-bit mode for 512-bit primitives) is engaged unconditionally on every call and its adversarial re-verification is documented in [REDTEAM.md](REDTEAM.md).
 
 ### Library
 
@@ -1170,7 +1194,7 @@ This is best read as **local key evolution** — each round derives a fresh effe
 | 256-bit | 4 | **2** | **3** (1 primer + 2 session) | **2** |
 | 512-bit | 8 | **1** | **2** (1 primer + 1 session) | **1** |
 
-**What ChainHash does and does not include.** ChainHash returns the full native-width block. The narrowing is not part of ChainHash: the per-pixel encoder consumes only the low word (`hLo` / `h[0]`) and discards the rest, while the Interlocked Barrier's per-chunk mask draw consumes the full 128-bit `HashFunc128` output pair `(lo, hi)` as the rank input to `rankToMaskTriple48` — both words are load-bearing. So the output narrowing at 128 / 256 / 512-bit is a Pixel Barrier choice layered on top of ChainHash, not a property of ChainHash itself. Under the PRF assumption any consistent subset of a PRF's output is itself a PRF on those bits.
+**What ChainHash does and does not include.** ChainHash returns the full native-width block. The narrowing is not part of ChainHash: the per-pixel encoder consumes only the low word (`hLo` / `h[0]`) and discards the rest, while the Interlocked Barrier's per-chunk mask draw consumes the full 128-bit `HashFunc128` output pair `(lo, hi)` as the rank input to `rankToMaskTriple48` in the default 48-bit mode (or the full 512-bit `HashFunc512` digest `[8]uint64` as the rank input to `rankToMaskTriple168` in 168-bit mode) — every word is load-bearing. So the output narrowing at 128 / 256 / 512-bit is a Pixel Barrier choice layered on top of ChainHash, not a property of ChainHash itself. Under the PRF assumption any consistent subset of a PRF's output is itself a PRF on those bits.
 
 ## Wire format
 
@@ -1225,10 +1249,10 @@ The 8 mandatory seeds are drawn as independent CSPRNG components; the API surfac
 | Grover resistance | √P × 2^keyBits (Core ITB / MAC + Silent Drop) to √P × 2^(keyBits/2) (MAC + Reveal) |
 | Plausible deniability | Core ITB / MAC + Silent Drop (wrong seed → garbage indistinguishable from valid plaintext) |
 | Encoding ambiguity | Every mode (7^P unverifiable rotation combinations, surviving CCA; DRBG residue adds independent ambiguity in data positions) |
-| Rank Barrier | Always on; per-chunk 48-bit keyed permutation over three regions; per-chunk mask space ≈ 2^70.20 balanced partitions |
+| Rank Barrier | Always on; per-chunk 48-bit keyed permutation over three regions (`C(48, 16) · C(32, 16) ≈ 2^70.20` balanced partitions, bias `≈ 2^-57.8`), or optional 168-bit permutation for 512-bit primitives (`C(168, 56) · C(112, 56) ≈ 2^258.60` balanced partitions, bias `≈ 2^-253.4`) |
 | 8-seed isolation | Every mode (noiseSeed, lockSeed, dataSeed1..3, startSeed1..3 independent) |
 | Oracle-free deniability | Core ITB / MAC + Silent Drop; MAC + Reveal has a CCA oracle bounded to the noise-position channel (Proof 6) |
-| Known-plaintext resistance (Crib / Full / Partial KPA) | Under the PRF assumption and fresh nonces, closed at the instance-formulation layer by the barrier's per-chunk ≈ 2^70.20 mask space + per-chunk PRF independence + 3-region enumeration dimension + 8-seed isolation (architectural claim) |
+| Known-plaintext resistance (Crib / Full / Partial KPA) | Under the PRF assumption and fresh nonces, closed at the instance-formulation layer by the barrier's per-chunk ≈ 2^70.20 mask space (`≈ 2^258.60` in 168-bit mode) + per-chunk PRF independence + 3-region enumeration dimension + 8-seed isolation (architectural claim) |
 | Chosen-plaintext resistance | Under the PRF assumption and fresh nonces, the always-on keyed permutation plus fresh per-message draws leave ciphertext at the statistical floor (architectural claim) |
 | Noise insertion | Core ITB / MAC + Silent Drop; bypassed via CCA in MAC + Reveal (DRBG residue in data positions survives) |
 | Hash function requirement | PRF required; PRF and barrier are complementary — neither sufficient alone; NPRF permitted subject to strict quality requirements |
@@ -1238,19 +1262,21 @@ The 8 mandatory seeds are drawn as independent CSPRNG components; the API surfac
 
 ### Interlocked Barrier — composite defense architecture (Rank Barrier + Pixel Barrier)
 
-The always-on Rank Barrier is driven by a **combinadic unrank** step: a public, deterministic combinatorial algorithm that transforms one 128-bit PRF output (from the per-group `lockSeed` cascade under domain tag `0x03`, keyed by the per-container `0x04` derivation with a dedicated primer round 1 on intermediate key `K`) into a pairwise-disjoint balanced three-lane bit-permutation over each 48-bit input chunk. Every region receives exactly 16 bits from each 48-bit chunk via its assigned mask; the three masks together cover the full 48 bits with no overlap. On x86-64, execution is accelerated via three BMI2 `PEXTQ` instructions for compression into lanes and three `PDEPQ` instructions for reassembly in ~3 cycles in constant time.
+The always-on Rank Barrier is driven by a **combinadic unrank** step: a public, deterministic combinatorial algorithm that transforms one 128-bit PRF output (from the per-group `lockSeed` cascade under domain tag `0x03`, keyed by the per-container `0x04` derivation with a dedicated primer round 1 on intermediate key `K`) into a pairwise-disjoint balanced three-lane bit-permutation over each 48-bit input chunk (`C(48, 16) · C(32, 16) ≈ 2^70.20` balanced partitions, per-chunk bias `≈ 2^-57.8`). Every region receives exactly 16 bits from each 48-bit chunk via its assigned mask; the three masks together cover the full 48 bits with no overlap. On x86-64, execution is accelerated via three BMI2 `PEXTQ` instructions for compression into lanes and three `PDEPQ` instructions for reassembly in ~3 cycles in constant time.
+
+When configured with `Interlock: "168"` (available for 512-bit primitives `areion512` and `blake2b512`), the Rank Barrier operates over 168-bit (21-byte) chunks split into 3 × 56-bit (7-byte) lanes using the full 512-bit `lockSeed` cascade output (`2^512`). The partition constants are `A₁₆₈ = C(168, 56) = 1,799,363,822,299,435,101,766,134,108,620,363,111,079,750,360` (`log₂ ≈ 150.33`) and `B₁₆₈ = C(112, 56) = 390,590,044,887,157,789,360,330,532,465,784` (`log₂ ≈ 108.27`), yielding a per-chunk mask space of `|Ω_chunk,168| = A₁₆₈ · B₁₆₈ = 702,813,596,120,264,168,420,100,264,216,585,729,858,529,081,007,646,807,547,722,792,977,161,961,682,240 ≈ 2^258.60` balanced partitions. With `⌊2^512 / (A₁₆₈ · B₁₆₈)⌋ ≈ 2^253.40` preimages per mask triple, the per-chunk bias is `≈ 2^-253.4` (`≈ 2^-231.8` accumulated across a maximum 64 MiB message of `3,195,661 ≈ 2^21.61` chunks, requiring `1 / ε² ≈ 2^506.8` chunk samples or `~2^485` maximum-size messages for a statistical distinguisher), and a single 168-bit (21-byte) crib leaves `≈ 2^90.6` (`≈ 2^90`) compatible mask triples.
 
 Four architectural properties emerge simultaneously from the same layer:
 
-- **Diffusion.** 48 input bits are dispersed across 3 × 16-bit output lanes, distributing every plaintext bit at 1-bit granularity across the three regions.
+- **Diffusion.** 48 input bits are dispersed across 3 × 16-bit output lanes (or 168 input bits across 3 × 56-bit output lanes in 168-bit mode), distributing every plaintext bit at 1-bit granularity across the three regions.
 - **Confusion.** The rank → mask mapping is non-linear over GF(2) — integer arithmetic through binomial-coefficient tables produces bit-plane dependencies that neither linear cryptanalysis nor T-function DFS can decompose.
-- **Balance.** Every mask carries exactly 16 set bits; deterministic two-step divmod unranking prevents the gcd(A, B) = 66,861 anti-collapse trap without rejection sampling.
+- **Balance.** Every mask carries exactly 16 set bits (56 set bits in 168-bit mode); deterministic two-step divmod unranking prevents the gcd(A, B) = 66,861 anti-collapse trap (and in 168-bit mode, 512-bit divmod unranking prevents the `gcd(A₁₆₈, B₁₆₈) = gcd(C(168, 56), C(112, 56)) = 10,078,335,949,946,663,736 = 2³ · 3² · 19 · 29 · 31 · 59 · 61 · 67 · 71 · 73 · 79 · 83` trap, `log₂ ≈ 63.13`, `1 / gcd ≈ 9.9 × 10⁻²⁰`) without rejection sampling.
 - **Key-dependency.** A fresh mask triple is derived per chunk from the `lockSeed` cascade output, so attacker-guessed masks never amortise across chunks.
 
 Neither the combinadic unrank routing layer nor the surrounding composition layers of ITB are cryptographic primitives:
 
 - **ChainHash** composes PRF invocations with XOR feedforward between rounds — a pure composition over the underlying PRF's output, adding no cryptographic content of its own.
-- **Rank Barrier** applies the unrank-derived three-lane bit-permutation over each 48-bit input chunk via BMI2 `PEXTQ`, routing plaintext bits across the three regions via PRF-derived masks.
+- **Rank Barrier** applies the unrank-derived three-lane bit-permutation over each 48-bit input chunk via BMI2 `PEXTQ` (or over each 168-bit input chunk across three 64-bit words in 168-bit mode), routing plaintext bits across the three regions via PRF-derived masks.
 - **Pixel Barrier** applies channel XOR + 7-bit rotation + noise-bit insertion per pixel under PRF-derived per-channel parameters — bit-level routing over PRF-derived material.
 
 None of these layers create entropy; they consume the entropy delivered by the underlying PRF primitive and route it through the ITB construction. As pure combinatorial and bit-routing algorithms with no secret material of their own, they fall outside cryptographic certification regimes (Wassenaar 5A002 and national equivalents) — those regimes cover primitives and the modules built on them, not routing / composition layers over PRF output.
@@ -1266,7 +1292,7 @@ The construction addresses security across two distinct regimes:
 
 Possible formalization paths:
 
-- **Indistinguishability-based definitions (IND-CPA / IND-CCA).** Passive observation is information-theoretically secure (Theorems 1, 2). Active resistance under Crib / Full KPA and CPA/CCA is computational and PRF-conditional: the 4-factor defense (Theorem 4a; byte-splitting gcd(7, 8) = 1 acts as an auxiliary 5th factor specifically under Partial KPA) pairs PRF one-wayness with startPixel isolation, per-pixel ambiguity (Theorem 4), and the Rank Barrier's per-chunk mask space of ≈ 2^70.20 balanced partitions bound to the cipher via cascade PRF (Theorems 3a, 3b, 11; gcd anti-collapse Theorem 12).
+- **Indistinguishability-based definitions (IND-CPA / IND-CCA).** Passive observation is information-theoretically secure (Theorems 1, 2). Active resistance under Crib / Full KPA and CPA/CCA is computational and PRF-conditional: the 4-factor defense (Theorem 4a; byte-splitting gcd(7, 8) = 1 acts as an auxiliary 5th factor specifically under Partial KPA) pairs PRF one-wayness with startPixel isolation, per-pixel ambiguity (Theorem 4), and the Rank Barrier's per-chunk mask space of ≈ 2^70.20 balanced partitions (or ≈ 2^258.60 in 168-bit mode) bound to the cipher via cascade PRF (Theorems 3a, 3b, 11; gcd anti-collapse Theorem 12).
 - **Simulation-based proof.** Under passive observation, an ideal functionality returns uniform random bytes: the Pixel Barrier's output is information-theoretically indistinguishable from random (Theorem 1), with plaintext structural bias neutralized by the rotation barrier (Theorem 7), and computationally indistinguishable from a CSPRNG-generated cover under the PRF and CSPRNG assumptions.
 - **Quantitative information flow (QIF).** The per-byte noise-insertion barrier leaks 0 bits about hash output per observation under COA (Theorem 1 marginal uniformity + Theorem 2 candidate equiprobability). Under CCA, leakage is strictly bounded to 3 bits per pixel from `noiseSeed` (Theorem 6), leaving data, lock, and start channels unaffected.
 - **Ambiguity-based security (Theorems 9 and 10).** Fix key size `k` bits and container size `P` pixels. Above threshold `P_th = ⌈k / log₂ C⌉` (`C = 56` without CCA, `C = 7` under CCA), observation-consistent configurations exceed the key space: `C^P > 2^k`. Furthermore, container dimensions `(s+1) × (s+1)` where `s = ⌈√max(dataPixels, MinPixels)⌉` guarantee `gap ≥ (2s + 1) × 7` bytes of CSPRNG-seeded DRBG residue in data bit positions (Theorem 10), preserving configuration ambiguity even under CCA.

@@ -267,7 +267,7 @@ func benchEncrypt3x512CachedBatchedExt(b *testing.B, maker func() (itb.HashFunc5
 	h, bf = maker()
 	ss3.Hash, ss3.BatchHash = h, bf
 	data := generateDataExt(dataSize)
-	cfg := extTripleBenchCfg()
+	cfg := extTripleBenchCfg512()
 	b.SetBytes(int64(dataSize))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -294,7 +294,7 @@ func benchDecrypt3x512CachedBatchedExt(b *testing.B, maker func() (itb.HashFunc5
 	h, bf = maker()
 	ss3.Hash, ss3.BatchHash = h, bf
 	data := generateDataExt(dataSize)
-	cfg := extTripleBenchCfg()
+	cfg := extTripleBenchCfg512()
 	encrypted, _ := itb.Encrypt3x512Cfg(cfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
 	b.SetBytes(int64(dataSize))
 	b.ResetTimer()
@@ -1593,9 +1593,9 @@ func BenchmarkFleetGoNative_Production_168_Stream_Decrypt_64MB(b *testing.B) {
 //	ITB_WITH_MAC=true ITB_MAC_NAME=kmac256 ITB_WITH_PARALLAX=true ITB_WITH_WRAPPER=true \
 //	    go test -bench='^BenchmarkExtProduction' -run=^$ -benchtime=1x -count=1
 //
-// The BenchmarkExtTriple* and BenchmarkFleetGoNative_* cohorts are
-// unaffected — they read only ITB_NONCE_BITS (ExtTriple) or nothing at
-// all (Fleet), preserving their baselines against BENCH3.md /
+// The BenchmarkExtTriple* and BenchmarkFleetGoNative_* cohorts read
+// only ITB_NONCE_BITS, ITB_MAX_WORKERS, and (on 512-bit variants)
+// ITB_INTERLOCK, preserving their baselines against BENCH3.md /
 // bindings/BENCH.md.
 
 // extProductionEnv carries the resolved production-shape configuration

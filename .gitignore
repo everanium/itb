@@ -38,6 +38,7 @@
 /eitb
 /tools/eitb/eitb
 # Parity helper compiled binaries (built by scripts/parity/cross-build-parity.sh)
+/tools/parity/parity
 /tools/parity/parity-cgo
 /tools/parity/parity-nocgo
 /tools/parity/parity-cgo-tiered

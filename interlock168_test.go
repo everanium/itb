@@ -633,7 +633,7 @@ func TestSplitAndInterleave168AllLengths(t *testing.T) {
 	}
 }
 
-// TestEncryptDecrypt3x512Interlock168 tests end-to-end single-message,
+// TestEncryptDecrypt3x512Interlock168 tests end-to-end Single Message,
 // byte-slice streaming, and io.Reader/io.Writer streaming encryption and
 // decryption under Config{Interlock: "168"}, Blob512 persistence, and
 // rejection of Interlock: "168" on 128-bit and 256-bit entry points.
@@ -689,7 +689,7 @@ func TestEncryptDecrypt3x512Interlock168(t *testing.T) {
 			msg[i] = byte(rng.Intn(256))
 		}
 
-		// 1. Unauthenticated single-message Encrypt3x512Cfg / Decrypt3x512Cfg.
+		// 1. Unauthenticated Single Message Encrypt3x512Cfg / Decrypt3x512Cfg.
 		ct, err := Encrypt3x512Cfg(cfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, msg)
 		if err != nil {
 			t.Fatalf("Encrypt3x512Cfg(len=%d): %v", msgLen, err)
@@ -702,7 +702,7 @@ func TestEncryptDecrypt3x512Interlock168(t *testing.T) {
 			t.Fatalf("Encrypt3x512Cfg(len=%d): round-trip mismatch", msgLen)
 		}
 
-		// 2. Authenticated single-message EncryptAuthenticated3x512Cfg / DecryptAuthenticated3x512Cfg.
+		// 2. Authenticated Single Message EncryptAuthenticated3x512Cfg / DecryptAuthenticated3x512Cfg.
 		act, err := EncryptAuthenticated3x512Cfg(cfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, msg, macFunc)
 		if err != nil {
 			t.Fatalf("EncryptAuthenticated3x512Cfg(len=%d): %v", msgLen, err)

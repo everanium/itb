@@ -15,7 +15,7 @@ target CPU without side effects.
 Runs a short message bench at natural dispatch and then under
 every documented forced-tier value, one axis at a time:
 
-- `ITB_FORCE_INTERLOCK_TIER` ∈ {`avx512`, `avx512x8`, `avx2`, `sve2`, `sve`, `neon`, `scalar`}
+- `ITB_FORCE_INTERLOCK_TIER` ∈ {`avx512`, `avx512x8`, `avx2`, `bmi2`, `sve2`, `sve`, `neon`, `scalar`}
 - `ITB_FORCE_HASH_TIER` ∈ {`avx512`, `vaesavx2`, `avx2`, `vex`, `aesni`, `gpr`, `sve2`, `sve`, `neon`, `scalar`}
 - `ITB_FORCE_INTERLOCK_PRF_FILL_TIER` ∈ {`avx512`, `vaesavx2`, `avx2`, `vex`, `aesni`, `gpr`, `neon`, `scalar`}
 - `ITB_FORCE_PIXEL_TIER` ∈ {`A`, `A_NOGFNI`, `B`, `B_NOGFNI`, `C`}
@@ -68,7 +68,7 @@ INTERLOCK_TIER=natural bash scripts/diag/hash_diag.sh      # observe natural dis
 | `BENCH_TIME`        | `300ms`        | Go `-benchtime` per sample                         |
 | `BENCH_COUNT`       | `3`            | Go `-count`; samples averaged in the printed value |
 | `ITB_KEY_BITS`      | `512`          | Key width                                          |
-| `ITB_INTERLOCK`     | `""` (48)      | Interlock chunk width (`48` or `168`; `hash_diag.sh` narrows to 512-bit primitives under `168`) |
+| `ITB_INTERLOCK`     | `""` (48)      | Interlocked Barrier chunk width (`48` or `168`; `hash_diag.sh` narrows to 512-bit primitives under `168`) |
 
 The bench profile is fixed: `singlemsg-triple-nomac-v1` with
 `GOMEMLIMIT=4GiB GOGC=100` so the numbers stay comparable across

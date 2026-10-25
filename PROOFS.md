@@ -128,7 +128,7 @@ where `I(· ; ·)` denotes Shannon mutual information and `X_A` denotes the join
 
 No memory access depends on dataSeed's values. No cache line, no memory pattern, no software-observable signal.
 
-**lockSeed side-channel:** the barrier's per-chunk unrank consumes lockSeed-derived PRF output through combinadic table lookups over the `binomialC48 [49][17]uint64` table (§12 of ITB.md) with a fixed access pattern determined by loop indices, not by secret values; PEXT/PDEP kernels are constant-time by ISA specification. No secret-dependent branches or memory accesses. ∎
+**lockSeed side-channel:** the barrier's per-chunk unrank consumes lockSeed-derived PRF output through combinadic table lookups over the `binomialC48 [49][17]uint64` table (or `binomialC168 [169][57][3]uint64` and the SIMD-repacked `crow168Packed [303][64]uint64` table under `Interlock = "168"`, §12 of ITB.md) with a fixed access pattern determined by loop indices, not by secret values; PEXT/PDEP kernels are constant-time by ISA specification. No secret-dependent branches or memory accesses. ∎
 
 <a name="proof-3a-8-seed-isolation-minimality"></a>
 ## Proof 3a: 8-Seed Isolation Minimality
@@ -275,7 +275,7 @@ with 7^P (or 56^P without CCA) per-pixel encoding ambiguity as an additional fac
 
 **(3) Per-pixel ambiguity at 1:1 signal/noise.** Per [Proof 1](#proof-1-information-theoretic-barrier): `P(v | h) = 1/256` under passive observation across unknown uniform plaintext; conditional on candidate lane bits `d`, each of the two candidate byte values differing at `noisePos` occurs with `P(v | h, d) = 1/2`. Per [Proof 4](#proof-4-rotation-barrier): 7 rotation candidates remain indistinguishable after the barrier. Combined: 56 candidates per pixel (8 noisePos × 7 rotation), each equally consistent with the observation. Signal/noise ratio is 1:1 — the observation provides no ranking signal to the attacker. Formally: sup_{c,c'} Pr[c | obs] / Pr[c' | obs] = 1 — all candidates are equiprobable conditional on the observation.
 
-**(4) Rank Barrier per-chunk mask-triple isolation.** Each chunk observation admits ≈ 2^57.80 mask preimages ([Proof 11](#proof-11-48-bit-rank-barrier-mask-space-interlocked-barrier)); collapsing that ambiguity requires coupling many chunks through the shared lockSeed chain against the SAT-hostile combinadic unrank arithmetic. The mapping from a plaintext bit to the lane it lands in is unobservable without lockSeed.
+**(4) Rank Barrier per-chunk mask-triple isolation.** Each chunk observation admits ≈ 2^57.80 mask preimages under the default 48-bit barrier and ≈ 2^253.40 under the 168-bit barrier ([Proof 11](#proof-11-48-bit-rank-barrier-mask-space-interlocked-barrier)); collapsing that ambiguity requires coupling many chunks through the shared lockSeed chain against the SAT-hostile combinadic unrank arithmetic. The mapping from a plaintext bit to the lane it lands in is unobservable without lockSeed.
 
 **(5) Byte-splitting non-alignability (Partial KPA defense).** Per [SCIENCE.md § 2.10 Byte-Splitting Property](SCIENCE.md#210-byte-splitting-property): gcd(7,8)=1 guarantees every plaintext byte is split across exactly 2 channels. Under Partial KPA, where the attacker has incomplete plaintext, per-channel candidate formulation (a potential shortcut attack) is blocked because each channel depends on two bytes — missing one prevents candidate computation. Under Full KPA this shortcut is not available anyway (brute force enumerates seeds directly), so obstacle (5) has no additional defensive effect.
 
@@ -285,7 +285,7 @@ with 7^P (or 56^P without CCA) per-pixel encoding ambiguity as an additional fac
 
 **Asymmetry note.** Obstacle (1) (PRF non-invertibility) is asymmetrically privileged: a complete failure of PRF (total hash inversion) allows obstacles (2)–(5) to be resolved algorithmically via recovered seeds; the always-on Interlocked Barrier's Rank Barrier per-chunk mask permutation ([Proof 11](#proof-11-48-bit-rank-barrier-mask-space-interlocked-barrier)) similarly collapses via lockSeed recovery (cascade PRF inversion through the mask-derivation chain) or direct Full KPA observation of mask triples from plaintext-chunk to permuted-wire correspondence; whereas a complete failure of any architectural layer leaves PRF non-invertibility intact. The multi-factor property therefore protects against **partial** PRF weakening and **any degree** of architectural weakness, but not against **total** PRF inversion. ∎
 
-**SAT recovery.** SAT-based lockSeed recovery is structurally unmeasurable at attacker-realism. Any formulable SAT instance under the barrier requires granting seven of eight seeds via lab peek to strip the per-pixel stage; a granted-7/8 attacker is not the reuse-realistic attacker (who holds only the ciphertext pair and the public main nonce). Without stripping the per-pixel stage, the lockSeed → mask path runs through the two-stage cascade fill: setup derivation `K = ChainHash(0x04‖interlock_nonce, lockSeed)`, then per-chunk rank evaluation over `[0x03 ‖ LE64(groupIdx) ‖ v]` under `lockComps = [K, session components...]` with Round 1 primer round on `K` and session feed-forward (`interlock48_cascade.go`), and the instance reduces to PRF preimage recovery on the primitive, dominated by the primitive's SAT-hardness rather than the interlock's. The measurable instance and the reuse-realistic instance are disjoint by construction; the closure is PRF-conditional by construction.
+**SAT recovery.** SAT-based lockSeed recovery is structurally unmeasurable at attacker-realism. Any formulable SAT instance under the barrier requires granting seven of eight seeds via lab peek to strip the per-pixel stage; a granted-7/8 attacker is not the reuse-realistic attacker (who holds only the ciphertext pair and the public main nonce). Without stripping the per-pixel stage, the lockSeed → mask path runs through the two-stage cascade fill: setup derivation `K = ChainHash(0x04‖interlock_nonce, lockSeed)`, then per-chunk rank evaluation over `[0x03 ‖ LE64(groupIdx) ‖ v]` under `lockComps = [K, session components...]` with Round 1 primer round on `K` and session feed-forward (`interlock48_cascade.go`, `interlock168.go`), and the instance reduces to PRF preimage recovery on the primitive, dominated by the primitive's SAT-hardness rather than the interlock's. The measurable instance and the reuse-realistic instance are disjoint by construction; the closure is PRF-conditional by construction.
 
 **Dual-nonce carve-out.** Under the dual-nonce mechanism, simultaneous collision of both nonces across two messages is a degeneracy an external caller cannot reach: both nonces are drawn independently from CSPRNG per encryption with no caller-addressable override, so simultaneous collision requires a CSPRNG hardware fault. Under any partial-collision scenario (main-only or interlock-only), the un-collided axis provides fresh-nonce closure and the barrier's plaintext-recovery closure holds a fortiori.
 
@@ -382,7 +382,7 @@ Without the ability to evaluate P(observed | r = r') (requires dataSeed), the Ba
 1. Computing each region's startPixel from its startSeed' (deterministic, different from the true startPixels).
 2. Computing noisePos from noiseSeed' for each pixel (deterministic, different from true).
 3. Computing rotation and XOR from each dataSeed_i' for each pixel of region i (deterministic, different from true).
-4. Reversing the 48-bit Interlocked Barrier per-chunk mask triple derived from lockSeed' (deterministic, different from the true per-chunk permutation).
+4. Reversing the 48-bit (or 168-bit) Interlocked Barrier per-chunk mask triple derived from lockSeed' (deterministic, different from the true per-chunk permutation).
 5. Extracting, un-rotating, and XOR-decrypting 56 data bits per pixel.
 6. Interleaving the three region outputs back into a byte stream.
 
@@ -413,7 +413,7 @@ Under the random-container model, the construction provides indistinguishability
 
 The construction implements two container sizing postures:
 1. **Mode 1 (Per-Region Floor, default):** Enforces `P_region ≥ P_threshold` independently in each of the three regions. Every region independently satisfies `7^P_region > 2^k`; joint ambiguity across all three regions is `7^(3·P_region) ≫ 2^k`.
-2. **Mode 2 (Per-Container Floor):** Enforces `P_container ≥ P_threshold` jointly across the entire container. Joint container ambiguity satisfies `7^P_container > 2^k`. Because the 48-bit Rank Barrier lane permutation diffuses plaintext across regions under secret `lockSeed`, plaintext cannot be attributed to an individual region under the PRF assumption, making joint container ambiguity the governing security condition.
+2. **Mode 2 (Per-Container Floor):** Enforces `P_container ≥ P_threshold` jointly across the entire container. Joint container ambiguity satisfies `7^P_container > 2^k`. Because the 48-bit (or 168-bit) Rank Barrier lane permutation diffuses plaintext across regions under secret `lockSeed`, plaintext cannot be attributed to an individual region under the PRF assumption, making joint container ambiguity the governing security condition.
 
 **Proof.** Under CCA, each pixel has 7 rotation candidates ([Proof 4](#proof-4-rotation-barrier)). Per-region ambiguity across `P_region` pixels is `7^P_region`. The condition `7^P_region > 2^k` is equivalent to:
 
@@ -524,6 +524,14 @@ Preimage count. The unrank map `Ω_rank : [0, 2^128) → Ω_chunk` is the two-st
 
 The empirical statement is bounded: "no distinguisher reachable at attainable sample sizes", not "no bias". ∎
 
+**168-bit Interlocked Barrier (`Interlock = "168"`).** When configured with `Interlock = "168"` (requires a 512-bit primitive `areion512` or `blake2b512`; default `"48"` = `48` bits / `6` bytes → `3 × 16` bits), the identical balanced-partition and two-step unrank construction operates over `n = 168`-bit (`21`-byte) chunks partitioned into three pairwise-disjoint `56`-bit (`7`-byte) lanes `(m0, m1, m2)` and consumes the full 512-bit `lockSeed` cascade output `R ∈ [0, 2^512)` via `q = ⌊R / B₁₆₈⌋`, `idx1 = R mod B₁₆₈`, `idx0 = q mod A₁₆₈`:
+
+- `A₁₆₈ = C(168, 56) = 1,799,363,822,299,435,101,766,134,108,620,363,111,079,750,360` (`log₂ ≈ 150.33`) — choices for `m0`,
+- `B₁₆₈ = C(112, 56) = 390,590,044,887,157,789,360,330,532,465,784` (`log₂ ≈ 108.27`) — choices for `m1` from the remaining 112 bits (`m2` is the complement),
+- `|Ω_chunk,168| = A₁₆₈ · B₁₆₈ = 702,813,596,120,264,168,420,100,264,216,585,729,858,529,081,007,646,807,547,722,792,977,161,961,682,240 ≈ 2^258.60`.
+
+Each mask triple receives `⌊2^512 / (A₁₆₈ · B₁₆₈)⌋ = 19,077,331,463,075,847,632,709,418,264,551,801,233,111,994,340,630,406,080,247,337,248,653,165,811,287 ≈ 2^253.40` preimages in `[0, 2^512)` (or `+1` on the `2^512 mod (A₁₆₈ · B₁₆₈)` lowest-indexed pairs). A single 168-bit (21-byte) known-plaintext crib leaves `≈ 2^90.6` compatible mask triples, and `(A₁₆₈ · B₁₆₈)^C ≈ 2^(258.60 × C)` exceeds `2^k` at `C = 2` chunks (`42` B, `2^517.2 > 2^512`), `C = 4` chunks (`84` B, `2^1034.4 > 2^1024`), and `C = 8` chunks (`168` B, `2^2068.8 > 2^2048`). The per-chunk relative deviation is `≈ 2^-253.4`; across a maximum 64 MiB message of `3,195,661` (`≈ 2^21.61`) chunks, the accumulated deviation is bounded by `≈ 2^-231.8`, requiring `1 / ε² ≈ 2^506.8` chunk samples (`~2^485` maximum-size messages) for a statistical distinguisher. ∎
+
 ## Proof 12: gcd(A, B) Anti-Collapse Trap
 
 **Theorem.** The rejected same-rank reduction `(rank mod A, rank mod B)` reaches only `1 / gcd(A, B)` of the joint `(m0, m1)` space, where
@@ -547,6 +555,27 @@ so ≈ 99.998 % of the `A × B` mask space would be structurally excluded. An at
 **Contrast with the chosen reduction.** The two-step map `rank ↦ (⌊rank / B⌋, rank mod B)` is a bijection `[0, 2^128) → [0, ⌊2^128 / B⌋) × [0, B)`. Reducing the first component `mod A` maps each pair `(a, b)` to `≈ ⌊2^128 / (A · B)⌋ = 2^57.80` preimages, differing by at most 1 — the deviation is granularity, not a distinguisher — so every pair in the full `[0, A) × [0, B)` is reached, with the near-uniformity bound of [Proof 11](#proof-11-48-bit-rank-barrier-mask-space-interlocked-barrier). Full-space coverage is a deliberate property of the two-step reduction, not an accident.
 
 **Constant-time note.** The qmod accumulator `qmod = (qmod · 2^64 + limb) mod A` computes `⌊rank / B⌋ mod A` incrementally during schoolbook division. Reduction commutes with the Horner form of the quotient, so the two-step reduction introduces no skew beyond the documented ±1 preimage deviation. ∎
+
+**168-bit Interlocked Barrier (`Interlock = "168"`).** For `n = 168` (`A₁₆₈ = C(168, 56)`, `B₁₆₈ = C(112, 56)`), the rejected same-rank reduction `(R mod A₁₆₈, R mod B₁₆₈)` reaches only `1 / gcd(A₁₆₈, B₁₆₈)` of `Ω_chunk,168`, where
+
+```
+gcd(A₁₆₈, B₁₆₈) = gcd(C(168, 56), C(112, 56)) = 10078335949946663736 = 2³ · 3² · 19 · 29 · 31 · 59 · 61 · 67 · 71 · 73 · 79 · 83
+```
+
+(`log₂ ≈ 63.13`, `1 / 10078335949946663736 ≈ 9.9 × 10⁻²⁰`), structurally excluding all but a `9.9 × 10⁻²⁰` fraction of `A₁₆₈ × B₁₆₈` (a `63.13`-bit erosion). The two-step division-before-modulo reduction `q = ⌊R / B₁₆₈⌋, idx1 = R mod B₁₆₈, idx0 = q mod A₁₆₈` over `R ∈ [0, 2^512)` reaches the full `[0, A₁₆₈) × [0, B₁₆₈)` mask space with `⌊2^512 / (A₁₆₈ · B₁₆₈)⌋ ≈ 2^253.40` preimages per pair (differing by at most 1).
+
+| Parameter (Proofs 11–12) | `Interlock = "48"` (default) | `Interlock = "168"` (512-bit primitives) |
+|---|---|---|
+| Chunk / lanes | `48` bits (`6` B) → `3 × 16` bits (`2` B) | `168` bits (`21` B) → `3 × 56` bits (`7` B) |
+| `A` (`m0` choices) | `C(48, 16) = 2,254,848,913,647` (`log₂ ≈ 41.04`) | `C(168, 56) = 1,799,363,822,299,435,101,766,134,108,620,363,111,079,750,360` (`log₂ ≈ 150.33`) |
+| `B` (`m1` choices) | `C(32, 16) = 601,080,390` (`log₂ ≈ 29.16`) | `C(112, 56) = 390,590,044,887,157,789,360,330,532,465,784` (`log₂ ≈ 108.27`) |
+| Mask space `\|Ω_chunk\| = A · B` | `≈ 2^70.20` | `≈ 2^258.60` |
+| Anti-collapse `gcd(A, B)` | `66861 = 3² · 17 · 19 · 23` (`log₂ ≈ 16.03`, `1/gcd ≈ 1.5 × 10⁻⁵`) | `10078335949946663736 = 2³ · 3² · 19 · 29 · 31 · 59 · 61 · 67 · 71 · 73 · 79 · 83` (`log₂ ≈ 63.13`, `1/gcd ≈ 9.9 × 10⁻²⁰`) |
+| Unrank input width / preimages | `128`-bit (`⌊2^128 / (A · B)⌋ ≈ 2^57.80`) | `512`-bit (`⌊2^512 / (A₁₆₈ · B₁₆₈)⌋ ≈ 2^253.40`) |
+| Compatible masks per 1-chunk crib | `≈ 2^22.2` (`48`-bit / `6` B crib) | `≈ 2^90.6` (`168`-bit / `21` B crib) |
+| Per-chunk bias | `≈ 2^-57.8` | `≈ 2^-253.4` |
+| Max chunks in 64 MiB / accumulated bias | `11,184,812` (`≈ 2^23.42`) / `≈ 2^-34.4` | `3,195,661` (`≈ 2^21.61`) / `≈ 2^-231.8` |
+| Distinguisher sample budget (`1 / ε²`) | `≈ 2^115.6` chunks (`~2^92` max messages) | `≈ 2^506.8` chunks (`~2^485` max messages) |
 
 ---
 
