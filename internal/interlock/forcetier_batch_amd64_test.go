@@ -8,8 +8,8 @@ import (
 	"github.com/everanium/itb/internal/forcetier"
 )
 
-// TestForceInterlockTierChunkBatch asserts the batched chunk-apply flag
-// follows ITB_FORCE_INTERLOCK_TIER: cleared under avx2 and scalar (the
+// TestForceInterlockTierChunkBatch asserts the batched chunk-apply flags
+// follow ITB_FORCE_INTERLOCK_TIER: cleared under avx2 and scalar (the
 // per-chunk apply path of those tiers is reproduced), untouched under
 // the AVX-512 tokens (auto value). Skips when the variable is unset.
 func TestForceInterlockTierChunkBatch(t *testing.T) {
@@ -17,12 +17,14 @@ func TestForceInterlockTierChunkBatch(t *testing.T) {
 	case "":
 		t.Skip("ITB_FORCE_INTERLOCK_TIER unset; auto-dispatch")
 	case "avx2", "scalar":
-		if HasChunk48Batch {
-			t.Fatalf("%s: HasChunk48Batch is still set; the batched chunk-apply kernel would run", tier)
+		if HasChunk48Batch || HasChunk168Batch {
+			t.Fatalf("%s: HasChunk48Batch=%v HasChunk168Batch=%v; the batched chunk-apply kernel would run",
+				tier, HasChunk48Batch, HasChunk168Batch)
 		}
 	case "avx512", "avx512x8":
-		if HasAVX512RankMask && !HasChunk48Batch {
-			t.Fatalf("%s: HasChunk48Batch is false on an AVX-512F host", tier)
+		if HasAVX512RankMask && (!HasChunk48Batch || !HasChunk168Batch) {
+			t.Fatalf("%s: HasChunk48Batch=%v HasChunk168Batch=%v on an AVX-512F host",
+				tier, HasChunk48Batch, HasChunk168Batch)
 		}
 	}
 }

@@ -42,6 +42,7 @@ PAYLOAD="${PAYLOAD:-4MB}"
 BENCH_TIME="${BENCH_TIME:-300ms}"
 BENCH_COUNT="${BENCH_COUNT:-3}"
 KEY_BITS="${ITB_KEY_BITS:-512}"
+INTERLOCK="${ITB_INTERLOCK:-}"
 
 if [ ! -x "$BINARY" ] || [ "$REPO" -nt "$BINARY" ]; then
     ( cd "$REPO" && go test -c -o "$BINARY" github.com/everanium/itb ) 2>&1 | tail -3
@@ -50,11 +51,11 @@ fi
 model=$(awk -F': +' '/^model name/{print $2; exit}' /proc/cpuinfo 2>/dev/null || echo unknown)
 threads=$(nproc 2>/dev/null || echo "?")
 echo "tier_diag: CPU=$model ${threads}t"
-echo "  key_bits=$KEY_BITS  payload=$PAYLOAD  bench_time=$BENCH_TIME  bench_count=$BENCH_COUNT"
+echo "  key_bits=$KEY_BITS  interlock=${INTERLOCK:-48}  payload=$PAYLOAD  bench_time=$BENCH_TIME  bench_count=$BENCH_COUNT"
 echo ""
 
 BENCH_REGEX="^BenchmarkExtProductionMessage_(Encrypt|Decrypt)_${PAYLOAD}\$"
-COMMON_ENV="ITB_INNER_HASH=areion512 ITB_KEY_BITS=$KEY_BITS ITB_NONCE_BITS=512 ITB_WITH_MAC=false ITB_WITH_PARALLAX=false ITB_WITH_WRAPPER=false ITB_GOMEMLIMIT=4GiB ITB_GOGC=100"
+COMMON_ENV="ITB_INNER_HASH=areion512 ITB_KEY_BITS=$KEY_BITS ITB_NONCE_BITS=512 ITB_INTERLOCK=$INTERLOCK ITB_WITH_MAC=false ITB_WITH_PARALLAX=false ITB_WITH_WRAPPER=false ITB_GOMEMLIMIT=4GiB ITB_GOGC=100"
 
 run_bench() {
     local label="$1"

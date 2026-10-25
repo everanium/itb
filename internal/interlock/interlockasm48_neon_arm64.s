@@ -246,7 +246,7 @@ remapLoop:
 	MOVD ZR, R7
 	RET
 
-// func dumpSIMDRegs(dst *[88]uint64, avx512 bool)
+// func dumpSIMDRegs(dst *[96]uint64, avx512 bool)
 TEXT ·dumpSIMDRegs(SB), NOSPLIT, $0-9
 	MOVD dst+0(FP), R0
 	MOVD R1, 512(R0)

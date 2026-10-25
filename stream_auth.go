@@ -147,6 +147,9 @@ func EncryptStreamAuth3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, data
 	if err := validateConfigCfg(cfg); err != nil {
 		return err
 	}
+	if err := validateInterlockWidthCfg(cfg, 128); err != nil {
+		return err
+	}
 
 	streamID, err := generateStreamID()
 	if err != nil {
@@ -189,6 +192,9 @@ func DecryptStreamAuth3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, data
 	}
 	if macFunc == nil {
 		return fmt.Errorf("itb: macFunc must not be nil")
+	}
+	if err := validateInterlockWidthCfg(cfg, 128); err != nil {
+		return err
 	}
 	if len(data) == 0 {
 		return ErrEmptyInput
@@ -264,6 +270,9 @@ func EncryptStreamAuth3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, data
 	if err := validateConfigCfg(cfg); err != nil {
 		return err
 	}
+	if err := validateInterlockWidthCfg(cfg, 256); err != nil {
+		return err
+	}
 
 	streamID, err := generateStreamID()
 	if err != nil {
@@ -305,6 +314,9 @@ func DecryptStreamAuth3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, data
 	}
 	if macFunc == nil {
 		return fmt.Errorf("itb: macFunc must not be nil")
+	}
+	if err := validateInterlockWidthCfg(cfg, 256); err != nil {
+		return err
 	}
 	if len(data) == 0 {
 		return ErrEmptyInput
@@ -380,6 +392,9 @@ func EncryptStreamAuth3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, data
 	if err := validateConfigCfg(cfg); err != nil {
 		return err
 	}
+	if err := validateInterlockWidthCfg(cfg, 512); err != nil {
+		return err
+	}
 
 	streamID, err := generateStreamID()
 	if err != nil {
@@ -421,6 +436,9 @@ func DecryptStreamAuth3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, data
 	}
 	if macFunc == nil {
 		return fmt.Errorf("itb: macFunc must not be nil")
+	}
+	if err := validateInterlockWidthCfg(cfg, 512); err != nil {
+		return err
 	}
 	if len(data) == 0 {
 		return ErrEmptyInput

@@ -30,12 +30,13 @@ BENCH_COUNT="${BENCH_COUNT:-1}"
 : "${ITB_INNER_HASH:=areion512}"
 : "${ITB_KEY_BITS:=512}"
 : "${ITB_NONCE_BITS:=512}"
+: "${ITB_INTERLOCK:=}"
 : "${ITB_WITH_MAC:=false}"
 : "${ITB_WITH_PARALLAX:=false}"
 : "${ITB_WITH_WRAPPER:=false}"
 : "${ITB_GOMEMLIMIT:=1GiB}"
 : "${ITB_GOGC:=20}"
-export ITB_INNER_HASH ITB_KEY_BITS ITB_NONCE_BITS \
+export ITB_INNER_HASH ITB_KEY_BITS ITB_NONCE_BITS ITB_INTERLOCK \
     ITB_WITH_MAC ITB_WITH_PARALLAX ITB_WITH_WRAPPER \
     ITB_GOMEMLIMIT ITB_GOGC
 
@@ -71,6 +72,9 @@ if [ -n "${ITB_HASHPOOL_STARTERS:-}" ]; then
     echo "  pools=${ITB_HASHPOOL_STARTERS}"
 else
     echo "  pools=default"
+fi
+if [ -n "${ITB_INTERLOCK:-}" ]; then
+    echo "  interlock=${ITB_INTERLOCK}"
 fi
 
 # Force a fresh test cache so a prior run at the same benchtime does not

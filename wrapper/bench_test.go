@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"io"
+	"os"
 	"sync"
 	"testing"
 
@@ -93,11 +94,20 @@ func registerBenchTripleProfiles() {
 // bench cell. The Opts pin NonceBits / BarrierFill to the same values
 // the low-level wrapper benches use so throughput is comparable.
 func benchTripleInit(b *testing.B, mode, cn string) *triple.Pipeline {
+	return benchTripleInitWithInterlock(b, mode, cn, os.Getenv("ITB_INTERLOCK"))
+}
+
+func benchTripleInit168(b *testing.B, mode, cn string) *triple.Pipeline {
+	return benchTripleInitWithInterlock(b, mode, cn, "168")
+}
+
+func benchTripleInitWithInterlock(b *testing.B, mode, cn, interlock string) *triple.Pipeline {
 	b.Helper()
 	registerBenchTripleProfiles()
 	pipeline, _, err := triple.Init(benchTripleProfileName(mode, cn), triple.Opts{
 		NonceBits:   benchNonceBits,
 		BarrierFill: benchBarrierFill,
+		Interlock:   interlock,
 	})
 	if err != nil {
 		b.Fatalf("triple.Init(%s/%s): %v", mode, cn, err)
@@ -194,6 +204,24 @@ func BenchmarkMessageTriple(b *testing.B) {
 	}
 }
 
+func BenchmarkMessageTriple168(b *testing.B) {
+	plaintext := benchRandom(b, benchSingleSize)
+	for _, cn := range wrapper.CipherNames {
+		b.Run("nomac/"+cn+"/encrypt", func(b *testing.B) {
+			runMessageTriple168NoMACEncrypt(b, plaintext, cn)
+		})
+		b.Run("nomac/"+cn+"/decrypt", func(b *testing.B) {
+			runMessageTriple168NoMACDecrypt(b, plaintext, cn)
+		})
+		b.Run("auth/"+cn+"/encrypt", func(b *testing.B) {
+			runMessageTriple168AuthEncrypt(b, plaintext, cn)
+		})
+		b.Run("auth/"+cn+"/decrypt", func(b *testing.B) {
+			runMessageTriple168AuthDecrypt(b, plaintext, cn)
+		})
+	}
+}
+
 // --- Triple Pipeline Message helpers ---
 //
 // The full ITB + wrapper Single Message benches route through the
@@ -267,6 +295,70 @@ func runMessageTripleAuthDecrypt(b *testing.B, plaintext []byte, cn string) {
 	}
 }
 
+func runMessageTriple168NoMACEncrypt(b *testing.B, plaintext []byte, cn string) {
+	pipeline := benchTripleInit168(b, "singlemsg-nomac", cn)
+	defer pipeline.Close()
+	b.SetBytes(int64(len(plaintext)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := pipeline.EncryptMessage(plaintext); err != nil {
+			b.Fatalf("EncryptMessage: %v", err)
+		}
+	}
+}
+
+func runMessageTriple168NoMACDecrypt(b *testing.B, plaintext []byte, cn string) {
+	pipeline := benchTripleInit168(b, "singlemsg-nomac", cn)
+	defer pipeline.Close()
+	wire, err := pipeline.EncryptMessage(plaintext)
+	if err != nil {
+		b.Fatalf("EncryptMessage setup: %v", err)
+	}
+	b.SetBytes(int64(len(plaintext)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		pt, err := pipeline.DecryptMessage(wire)
+		if err != nil {
+			b.Fatalf("DecryptMessage: %v", err)
+		}
+		if len(pt) != len(plaintext) {
+			b.Fatalf("len mismatch: got %d want %d", len(pt), len(plaintext))
+		}
+	}
+}
+
+func runMessageTriple168AuthEncrypt(b *testing.B, plaintext []byte, cn string) {
+	pipeline := benchTripleInit168(b, "singlemsg-mac", cn)
+	defer pipeline.Close()
+	b.SetBytes(int64(len(plaintext)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := pipeline.EncryptMessage(plaintext); err != nil {
+			b.Fatalf("EncryptMessage: %v", err)
+		}
+	}
+}
+
+func runMessageTriple168AuthDecrypt(b *testing.B, plaintext []byte, cn string) {
+	pipeline := benchTripleInit168(b, "singlemsg-mac", cn)
+	defer pipeline.Close()
+	wire, err := pipeline.EncryptMessage(plaintext)
+	if err != nil {
+		b.Fatalf("EncryptMessage setup: %v", err)
+	}
+	b.SetBytes(int64(len(plaintext)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		pt, err := pipeline.DecryptMessage(wire)
+		if err != nil {
+			b.Fatalf("DecryptMessage: %v", err)
+		}
+		if len(pt) != len(plaintext) {
+			b.Fatalf("len mismatch: got %d want %d", len(pt), len(plaintext))
+		}
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Streaming — Triple Ouroboros (2 modes × outer cipher palette × 2 dirs).
 // ---------------------------------------------------------------------------
@@ -285,6 +377,24 @@ func BenchmarkStreamingTriple(b *testing.B) {
 		})
 		b.Run("noaead-io/"+cn+"/decrypt", func(b *testing.B) {
 			runNoAEADIOTripleDecrypt(b, plaintext, cn)
+		})
+	}
+}
+
+func BenchmarkStreamingTriple168(b *testing.B) {
+	plaintext := benchRandom(b, benchStreamSize)
+	for _, cn := range wrapper.CipherNames {
+		b.Run("aead-io/"+cn+"/encrypt", func(b *testing.B) {
+			runAEADIOTriple168Encrypt(b, plaintext, cn)
+		})
+		b.Run("aead-io/"+cn+"/decrypt", func(b *testing.B) {
+			runAEADIOTriple168Decrypt(b, plaintext, cn)
+		})
+		b.Run("noaead-io/"+cn+"/encrypt", func(b *testing.B) {
+			runNoAEADIOTriple168Encrypt(b, plaintext, cn)
+		})
+		b.Run("noaead-io/"+cn+"/decrypt", func(b *testing.B) {
+			runNoAEADIOTriple168Decrypt(b, plaintext, cn)
 		})
 	}
 }
@@ -327,6 +437,35 @@ func runAEADIOTripleDecrypt(b *testing.B, plaintext []byte, cn string) {
 	}
 }
 
+func runAEADIOTriple168Encrypt(b *testing.B, plaintext []byte, cn string) {
+	pipeline := benchTripleInit168(b, "streaming-aead", cn)
+	defer pipeline.Close()
+	b.SetBytes(int64(len(plaintext)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if err := pipeline.EncryptStream(bytes.NewReader(plaintext), io.Discard); err != nil {
+			b.Fatalf("EncryptStream: %v", err)
+		}
+	}
+}
+
+func runAEADIOTriple168Decrypt(b *testing.B, plaintext []byte, cn string) {
+	pipeline := benchTripleInit168(b, "streaming-aead", cn)
+	defer pipeline.Close()
+	var wireBuf bytes.Buffer
+	if err := pipeline.EncryptStream(bytes.NewReader(plaintext), &wireBuf); err != nil {
+		b.Fatalf("EncryptStream setup: %v", err)
+	}
+	wire := wireBuf.Bytes()
+	b.SetBytes(int64(len(plaintext)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if err := pipeline.DecryptStream(bytes.NewReader(wire), io.Discard); err != nil {
+			b.Fatalf("DecryptStream: %v", err)
+		}
+	}
+}
+
 // --- Streaming Non-AEAD (IO-Driven) — Triple Pipeline (Encrypt / Decrypt) ---
 
 func runNoAEADIOTripleEncrypt(b *testing.B, plaintext []byte, cn string) {
@@ -343,6 +482,35 @@ func runNoAEADIOTripleEncrypt(b *testing.B, plaintext []byte, cn string) {
 
 func runNoAEADIOTripleDecrypt(b *testing.B, plaintext []byte, cn string) {
 	pipeline := benchTripleInit(b, "streaming-noaead", cn)
+	defer pipeline.Close()
+	var wireBuf bytes.Buffer
+	if err := pipeline.EncryptStream(bytes.NewReader(plaintext), &wireBuf); err != nil {
+		b.Fatalf("EncryptStream setup: %v", err)
+	}
+	wire := wireBuf.Bytes()
+	b.SetBytes(int64(len(plaintext)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if err := pipeline.DecryptStream(bytes.NewReader(wire), io.Discard); err != nil {
+			b.Fatalf("DecryptStream: %v", err)
+		}
+	}
+}
+
+func runNoAEADIOTriple168Encrypt(b *testing.B, plaintext []byte, cn string) {
+	pipeline := benchTripleInit168(b, "streaming-noaead", cn)
+	defer pipeline.Close()
+	b.SetBytes(int64(len(plaintext)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if err := pipeline.EncryptStream(bytes.NewReader(plaintext), io.Discard); err != nil {
+			b.Fatalf("EncryptStream: %v", err)
+		}
+	}
+}
+
+func runNoAEADIOTriple168Decrypt(b *testing.B, plaintext []byte, cn string) {
+	pipeline := benchTripleInit168(b, "streaming-noaead", cn)
 	defer pipeline.Close()
 	var wireBuf bytes.Buffer
 	if err := pipeline.EncryptStream(bytes.NewReader(plaintext), &wireBuf); err != nil {

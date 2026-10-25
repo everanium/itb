@@ -77,6 +77,7 @@
 //	barrier_fill   BarrierFill          omitted when 0
 //	container_mode ContainerMode        omitted when 0
 //	drbg           DRBG                 omitted when empty (auto tier)
+//	interlock      Interlock            omitted when empty (default 48-bit)
 //	mac            MacName              omitted when empty (No MAC)
 //	tagstub        TagStubSize          omitted when 0
 //	chunk          ChunkSize            omitted when 0
@@ -137,17 +138,20 @@
 //
 // A [Pipeline] carries a private [github.com/everanium/itb.Config] so
 // two Pipelines with distinct Mode / NonceBits / BarrierFill /
-// TagStubSize / DRBG / MaxWorkers overrides coexist in the same
-// process without cross-contamination.
+// TagStubSize / DRBG / Interlock / MaxWorkers overrides coexist in the
+// same process without cross-contamination.
 // When an [Opts] field is left at zero the corresponding compile-in
 // default applies (see [github.com/everanium/itb.DefaultNonceBits] /
 // [github.com/everanium/itb.DefaultBarrierFill], and Mode 1 per-region
 // for the container floor); the value in force is snapshotted into the
 // blob at [Init] and restored by [Load], so the wire shape never depends
 // on the receiver's defaults. The container floor sizing mode, selected
-// through [Opts.Mode] (Mode 1 per-region or Mode 2 per-container), is
+// through [Opts.Mode] (Mode 1 per-region or Mode 2 per-container), and
+// the Interlocked Barrier chunk width, selected through [Opts.Interlock]
+// ("" / "48" default 48-bit, or "168" for 512-bit profiles), are
 // likewise preserved across [Pipeline.Save] / [Pipeline.Rekey] and
-// surfaced by [Inspect] as [Profile.ContainerMode]. The worker
+// surfaced by [Inspect] as [Profile.ContainerMode] and
+// [Profile.Interlock] ("" when default 48-bit). The worker
 // cap is the one runtime-mutable value: set at [Init] from
 // [Opts.MaxWorkers], auto on a loaded Pipeline, overridable at any
 // time through [Pipeline.MaxWorkers], never written to the blob.

@@ -1,16 +1,17 @@
 //go:build amd64 && !purego && !noitbasm
 
-// Package interlock holds the BMI2 PEXTQ / PDEPQ assembly implementation
-// of the per-chunk 48-bit interlock keyed bit-permutation kernels. It
-// lives in an internal subpackage because the parent `itb` package uses
-// CGO (Go's build system does not allow Go assembly files in CGO-using
-// packages), so the assembly kernel is factored out into this
-// non-CGO-using subpackage.
+// Package interlock holds the BMI2 PEXTQ / PDEPQ and SIMD assembly
+// implementations of the per-chunk 48-bit and 168-bit interlock keyed
+// bit-permutation and rank-unrank kernels. It lives in an internal
+// subpackage because the parent `itb` package uses CGO (Go's build
+// system does not allow Go assembly files in CGO-using packages), so
+// the assembly kernels are factored out into this non-CGO-using
+// subpackage.
 //
-// Only the assembly entry points and the runtime BMI2 capability flag
-// are exported. The parent package `itb` dispatches between the BMI2
-// path and the pure-Go softPEXT48 / softPDEP48 fallback based on
-// HasBMI2.
+// Only the assembly entry points and the runtime capability flags are
+// exported. The parent package `itb` dispatches between the assembly
+// paths and the pure-Go softPEXT / softPDEP and scalar unrank fallbacks
+// based on these flags.
 package interlock
 
 import (
@@ -55,8 +56,8 @@ func Chunk48Lock(x, m0, m1, m2 uint64) (l0, l1, l2 uint64)
 func Unchunk48Lock(l0, l1, l2, m0, m1, m2 uint64) (x uint64)
 
 // HasAVX512RankMask caches whether the runtime CPU supports the AVX-512F
-// feature set used by the batched 48-bit interlock mask-derivation
-// kernel (VPERMT2Q, VPCMPUQ, VPTESTMQ, mask-merged VPSUBQ / VPORQ on
+// feature set used by the batched 48-bit and 168-bit interlock mask-derivation
+// kernels (VPERMT2Q, VPCMPUQ, VPTESTMQ, mask-merged VPSUBQ / VPORQ on
 // ZMM; VPTERNLOGQ / VPSLLQ / VPSRLQ for EVEX-only constant synthesis).
 // Resolved once at init time from CPUID. Available on Intel
 // Skylake-X / Ice Lake / Rocket Lake / Sapphire Rapids+, AMD Zen 4 /

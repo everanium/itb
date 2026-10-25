@@ -54,9 +54,9 @@ var (
 	// embedded [Profile] record decodes but fails the profile field
 	// rules (the same rules [Register] applies — mode, width, key
 	// bits, palette bounds, segment-size coprimality, chunk-size
-	// ceiling, tag-stub envelope, InnerHash / MixedHashes exclusivity
-	// and width match) or disagrees with the inner blob (MAC name or
-	// key width mismatch).
+	// ceiling, tag-stub envelope, interlock width match, InnerHash /
+	// MixedHashes exclusivity and width match) or disagrees with the
+	// inner blob (MAC name, interlock mode, or key width mismatch).
 	ErrBlobMalformedRecipe = errors.New("triple: blob profile record invalid")
 
 	// ErrRecipePrimitiveUnknown is returned by [Load] when the blob's
@@ -114,6 +114,11 @@ type Opts struct {
 	// reproduced on [Load]; [Inspect] surfaces it as [Profile.ContainerMode].
 	// Distinct from [Profile.Mode] (the message / stream shape).
 	Mode int
+
+	// Interlock overrides the profile's Interlocked Barrier chunk width
+	// ("" = defer to profile default, "48" = 48-bit, "168" = 168-bit).
+	// "168" requires a 512-bit inner hash width.
+	Interlock string
 
 	// PermMaster overrides the auto-generated parallax master. When
 	// non-nil, [Init] uses these bytes directly rather than drawing
@@ -227,7 +232,8 @@ type Opts struct {
 //   - the resolved [Profile] record it was constructed from (the
 //     shape recorded in its blob);
 //   - a per-instance [github.com/everanium/itb.Config] carrying
-//     Mode / NonceBits / BarrierFill / TagStubSize / DRBG / MaxWorkers;
+//     Mode / NonceBits / BarrierFill / TagStubSize / DRBG / Interlock /
+//     MaxWorkers;
 //   - the current wrap-layer blob, returned by [Pipeline.Save];
 //   - eight typed ITB seeds (noise + lock + three data + three start)
 //     matching the profile's inner hash width;

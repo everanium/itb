@@ -244,6 +244,50 @@ func BenchmarkStreamEncryptAuth3xBatched(b *testing.B) {
 	}
 }
 
+// BenchmarkStreamEncrypt3xBatched512_168 measures per-call throughput
+// of the Non-AEAD IO-Driven 512-bit encoder path under the 168-bit
+// interlock overlay.
+func BenchmarkStreamEncrypt3xBatched512_168(b *testing.B) {
+	n, l, d1, d2, d3, s1, s2, s3 := mkTriple512ForBench(b)
+	cfg := &Config{Interlock: Interlock168}
+	pt := make([]byte, 1<<20)
+	for i := range pt {
+		pt[i] = byte(i)
+	}
+	b.SetBytes(int64(len(pt)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		var w discardWriter
+		if err := EncryptStream3xCfg(cfg, n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(pt), &w, 0); err != nil {
+			b.Fatalf("EncryptStream3xCfg: %v", err)
+		}
+	}
+}
+
+// BenchmarkStreamEncryptAuth3xBatched512_168 is the AEAD counterpart of
+// BenchmarkStreamEncrypt3xBatched512_168.
+func BenchmarkStreamEncryptAuth3xBatched512_168(b *testing.B) {
+	n, l, d1, d2, d3, s1, s2, s3 := mkTriple512ForBench(b)
+	cfg := &Config{Interlock: Interlock168}
+	var key [32]byte
+	for i := range key {
+		key[i] = byte(i * 3)
+	}
+	mac := macFuncForTest(key)
+	pt := make([]byte, 1<<20)
+	for i := range pt {
+		pt[i] = byte(i)
+	}
+	b.SetBytes(int64(len(pt)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		var w discardWriter
+		if err := EncryptStreamAuth3xCfg(cfg, n, l, d1, d2, d3, s1, s2, s3, bytes.NewReader(pt), &w, mac, 0); err != nil {
+			b.Fatalf("EncryptStreamAuth3xCfg: %v", err)
+		}
+	}
+}
+
 // mkTripleForBench mirrors mkTriple128 for a benchmark (which takes
 // *testing.B, not *testing.T).
 func mkTripleForBench(b *testing.B) (n, l, d1, d2, d3, s1, s2, s3 *Seed128) {
@@ -253,6 +297,22 @@ func mkTripleForBench(b *testing.B) (n, l, d1, d2, d3, s1, s2, s3 *Seed128) {
 		if err != nil {
 			b.Fatalf("NewSeed128: %v", err)
 		}
+		return s
+	}
+	return mk(), mk(), mk(), mk(), mk(), mk(), mk(), mk()
+}
+
+// mkTriple512ForBench mirrors mkTriple512 for a benchmark (which takes
+// *testing.B, not *testing.T).
+func mkTriple512ForBench(b *testing.B) (n, l, d1, d2, d3, s1, s2, s3 *Seed512) {
+	b.Helper()
+	mk := func() *Seed512 {
+		h, bf := makeAreionSoEM512Pair()
+		s, err := NewSeed512(512, h)
+		if err != nil {
+			b.Fatalf("NewSeed512: %v", err)
+		}
+		s.BatchHash = bf
 		return s
 	}
 	return mk(), mk(), mk(), mk(), mk(), mk(), mk(), mk()

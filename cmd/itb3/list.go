@@ -181,6 +181,7 @@ func printCatalog() {
 	fmt.Printf("KeyBits:     512, 1024, 2048  (default 1024)\n")
 	fmt.Printf("NonceBits:   128, 256, 512  (default 512)\n")
 	fmt.Printf("BarrierFill: 1, 2, 4, 8, 16, 32  (default 1)\n")
+	fmt.Printf("Interlock:   48, 168  (default 48; 168 requires 512-bit hash)\n")
 	fmt.Printf("ChunkSize:   1-64 MB  (default 16 MiB; used for aead/noaead modes)\n")
 	fmt.Printf("MACs:        %s\n", strings.Join(macNames, ", "))
 	fmt.Printf("Ciphers:     %s\n", strings.Join(cipherNames, ", "))

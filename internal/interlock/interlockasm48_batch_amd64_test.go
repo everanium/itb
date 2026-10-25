@@ -219,3 +219,136 @@ func BenchmarkUnchunk48LockBatch16(b *testing.B) {
 		}
 	})
 }
+
+type batchCase168 struct {
+	src        []byte
+	masks      [][3][3]uint64
+	p0, p1, p2 []byte
+}
+
+func newBatchCase168(rng *rand.Rand, n int) batchCase168 {
+	c := batchCase168{
+		src:   make([]byte, 21*n),
+		masks: make([][3][3]uint64, n),
+		p0:    make([]byte, 7*n),
+		p1:    make([]byte, 7*n),
+		p2:    make([]byte, 7*n),
+	}
+	rng.Read(c.src)
+	for j := 0; j < n; j++ {
+		m0, m1, m2 := randomTripleMask168(rng)
+		c.masks[j] = [3][3]uint64{m0, m1, m2}
+		var chunk [21]byte
+		copy(chunk[:], c.src[21*j:21*(j+1)])
+		l0 := softPEXT168Ref(&chunk, m0)
+		l1 := softPEXT168Ref(&chunk, m1)
+		l2 := softPEXT168Ref(&chunk, m2)
+		copy(c.p0[7*j:7*(j+1)], l0[:])
+		copy(c.p1[7*j:7*(j+1)], l1[:])
+		copy(c.p2[7*j:7*(j+1)], l2[:])
+	}
+	return c
+}
+
+// BenchmarkChunk168LockBatch8 measures the batched 168-bit forward kernel
+// over 8 chunks per call against 8 per-chunk Chunk168Lock calls and the
+// bit-serial softPEXT168Ref reference.
+func BenchmarkChunk168LockBatch8(b *testing.B) {
+	if !HasBMI2 {
+		b.Skip("BMI2 not available")
+	}
+	rng := rand.New(rand.NewSource(16821))
+	c := newBatchCase168(rng, 8)
+	p0 := make([]byte, 7*8)
+	p1 := make([]byte, 7*8)
+	p2 := make([]byte, 7*8)
+	b.Run("batch", func(b *testing.B) {
+		b.SetBytes(8 * 21)
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			Chunk168LockBatch(c.src, c.masks, p0, p1, p2)
+		}
+	})
+	b.Run("scalar", func(b *testing.B) {
+		b.SetBytes(8 * 21)
+		b.ReportAllocs()
+		var chunk [21]byte
+		var out [3][7]byte
+		for i := 0; i < b.N; i++ {
+			for j := 0; j < 8; j++ {
+				copy(chunk[:], c.src[21*j:21*(j+1)])
+				m := &c.masks[j]
+				Chunk168Lock(&chunk, m[0], m[1], m[2], &out)
+				copy(p0[7*j:7*(j+1)], out[0][:])
+				copy(p1[7*j:7*(j+1)], out[1][:])
+				copy(p2[7*j:7*(j+1)], out[2][:])
+			}
+		}
+	})
+	b.Run("soft-perchunk", func(b *testing.B) {
+		b.SetBytes(8 * 21)
+		b.ReportAllocs()
+		var chunk [21]byte
+		for i := 0; i < b.N; i++ {
+			for j := 0; j < 8; j++ {
+				copy(chunk[:], c.src[21*j:21*(j+1)])
+				m := &c.masks[j]
+				l0 := softPEXT168Ref(&chunk, m[0])
+				l1 := softPEXT168Ref(&chunk, m[1])
+				l2 := softPEXT168Ref(&chunk, m[2])
+				copy(p0[7*j:7*(j+1)], l0[:])
+				copy(p1[7*j:7*(j+1)], l1[:])
+				copy(p2[7*j:7*(j+1)], l2[:])
+			}
+		}
+	})
+}
+
+// BenchmarkUnchunk168LockBatch8 is the inverse-kernel counterpart of
+// BenchmarkChunk168LockBatch8.
+func BenchmarkUnchunk168LockBatch8(b *testing.B) {
+	if !HasBMI2 {
+		b.Skip("BMI2 not available")
+	}
+	rng := rand.New(rand.NewSource(16822))
+	c := newBatchCase168(rng, 8)
+	dst := make([]byte, 8*21)
+	b.Run("batch", func(b *testing.B) {
+		b.SetBytes(8 * 21)
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			Unchunk168LockBatch(c.p0, c.p1, c.p2, c.masks, dst)
+		}
+	})
+	b.Run("scalar", func(b *testing.B) {
+		b.SetBytes(8 * 21)
+		b.ReportAllocs()
+		var l0, l1, l2 [7]byte
+		var chunk [21]byte
+		for i := 0; i < b.N; i++ {
+			for j := 0; j < 8; j++ {
+				copy(l0[:], c.p0[7*j:7*(j+1)])
+				copy(l1[:], c.p1[7*j:7*(j+1)])
+				copy(l2[:], c.p2[7*j:7*(j+1)])
+				m := &c.masks[j]
+				Unchunk168Lock(&l0, &l1, &l2, m[0], m[1], m[2], &chunk)
+				copy(dst[21*j:21*(j+1)], chunk[:])
+			}
+		}
+	})
+	b.Run("soft-perchunk", func(b *testing.B) {
+		b.SetBytes(8 * 21)
+		b.ReportAllocs()
+		var l0, l1, l2 [7]byte
+		for i := 0; i < b.N; i++ {
+			for j := 0; j < 8; j++ {
+				copy(l0[:], c.p0[7*j:7*(j+1)])
+				copy(l1[:], c.p1[7*j:7*(j+1)])
+				copy(l2[:], c.p2[7*j:7*(j+1)])
+				m := &c.masks[j]
+				chunk := softUnchunk168Ref(l0, l1, l2, m[0], m[1], m[2])
+				copy(dst[21*j:21*(j+1)], chunk[:])
+			}
+		}
+	})
+}

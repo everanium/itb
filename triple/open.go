@@ -108,6 +108,17 @@ func openWrap(wrap blobWrapV2, masters [][]byte) (*Pipeline, error) {
 	if kb := seedKeyBits(seeds[0]); kb != resolved.KeyBits {
 		return nil, fmt.Errorf("%w: record keybits %d, inner blob key width %d", ErrBlobMalformedRecipe, resolved.KeyBits, kb)
 	}
+	recIL := resolved.Interlock
+	if recIL == itb.Interlock48 {
+		recIL = ""
+	}
+	innerIL := cfg.Interlock
+	if innerIL == itb.Interlock48 {
+		innerIL = ""
+	}
+	if recIL != innerIL {
+		return nil, fmt.Errorf("%w: record interlock %q, inner blob interlock %q", ErrBlobMalformedRecipe, resolved.Interlock, cfg.Interlock)
+	}
 
 	// Wire-shape pinning — mirrors the Init-side placement ahead of
 	// the MAC probe so the precedence chain reads Profile > MacName
@@ -120,6 +131,9 @@ func openWrap(wrap blobWrapV2, masters [][]byte) (*Pipeline, error) {
 	// The DRBG fill primitive travels in the record; the reopened
 	// Pipeline encrypts under the sender's stated choice.
 	cfg.DRBG = resolved.DRBG
+	if resolved.Interlock == itb.Interlock168 {
+		cfg.Interlock = itb.Interlock168
+	}
 
 	// Parallax build.
 	if resolved.Parallax {

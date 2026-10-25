@@ -3,11 +3,11 @@
 # and language-binding loop harnesses.
 #
 # Builds two arms of tools/loop (default CGO + SIMD assembly and
-# CGO_ENABLED=0 -tags noitbasm pure-Go fallback) and executes a 92-cell
-# stress matrix per arm (184 Go runs by default), plus an optional 20-cell
+# CGO_ENABLED=0 -tags noitbasm pure-Go fallback) and executes a 96-cell
+# stress matrix per arm (192 Go runs by default), plus an optional 20-cell
 # matrix per selected language binding (e.g. --bindings c,ada).
 #
-# Matrix coverage (92 Go cells):
+# Matrix coverage (96 Go cells):
 #   - Group 1 (16 cells): 4 (Parallax=on/off x Wrapper=on/off) x 4 surface/mode
 #     configurations (both AEAD+MAC, multi-chunk stream_one_shot,
 #     singlemsg-triple-nomac-v1, streaming-noaead-triple-v1).
@@ -18,10 +18,11 @@
 #     (128 / 256 / 512), container floor modes (Per-Region Mode 1 and
 #     Per-Container Mode 2), rotating payloads, all explicit DRBG overrides,
 #     and mixed-primitive streaming profiles.
-#   - Group 4 (16 cells): mixed-primitive Single Message and Streaming AEAD /
+#   - Group 4 (20 cells): mixed-primitive Single Message and Streaming AEAD /
 #     Non-AEAD profiles, AES-ITB profiles paired with AES-CMAC outer layers,
-#     and multi-chunk stream + message stress across AES-CMAC, ChaCha20,
-#     Areion-SoEM-256, and Areion-SoEM-512.
+#     multi-chunk stream + message stress across AES-CMAC, ChaCha20,
+#     Areion-SoEM-256, and Areion-SoEM-512, and 168-bit Interlocked Barrier
+#     cells across Areion-SoEM-512, BLAKE2b-512, and mixed width-512.
 #
 # Every cell enables periodic rekeying (--rekey-every) and blob export/import
 # cycling (--blob-cycle-every) and asserts zero data mismatches, bounded
@@ -233,7 +234,7 @@ declare -a GO_CELLS=(
   "g3_19_prof_aead_mixed|--profile streaming-aead-triple-mac-mixed-v1 --shape stream --payload-size 1MB --rekey-every 4 --blob-cycle-every 6"
   "g3_20_prof_noaead_mixed|--profile streaming-noaead-triple-mixed-v1 --shape stream_one_shot --payload-size 1MB --rekey-every 4 --blob-cycle-every 6"
 
-  # --- Group 4 (16 cells): Mixed SingleMsg/Stream, AES-ITB Profiles, and Multi-Chunk Layer Permutations ---
+  # --- Group 4 (20 cells): Mixed SingleMsg/Stream, AES-ITB Profiles, Multi-Chunk Layer Permutations & Interlock 168 ---
   "g4_01_mixed_sm_mac|--profile singlemsg-triple-mac-mixed-v1 --parallax on --wrapper on --payload-size 1MB --rekey-every 4 --blob-cycle-every 6"
   "g4_02_mixed_sm_nomac|--profile singlemsg-triple-nomac-mixed-v1 --parallax off --wrapper on --payload-size 1MB --rekey-every 4 --blob-cycle-every 6"
   "g4_03_mixed_aead_os|--profile streaming-aead-triple-mac-mixed-v1 --shape stream_one_shot --parallax on --wrapper off --chunk-size 256KB --payload-size 1MB --rekey-every 4 --blob-cycle-every 6"
@@ -253,6 +254,11 @@ declare -a GO_CELLS=(
   "g4_14_areion256_mc_p0w0|--shape both --parallax off --wrapper off --hash areion256 --mac hmac-blake3 --chunk-size 256KB --payload-size 1MB --rekey-every 4 --blob-cycle-every 6"
   "g4_15_areion512_mc_p1w0|--shape both --parallax on --wrapper off --hash areion512 --mac hmac-sha256 --chunk-size 256KB --payload-size 1MB --rekey-every 4 --blob-cycle-every 6"
   "g4_16_areion512_mc_p0w0|--shape both --parallax off --wrapper off --hash areion512 --mac hmac-blake3 --chunk-size 256KB --payload-size 1MB --rekey-every 4 --blob-cycle-every 6"
+
+  "g4_17_areion512_il168_p1w1|--shape both --parallax on --wrapper on --hash areion512 --mac hmac-blake3 --interlock 168 --chunk-size 256KB --payload-size 1MB --rekey-every 4 --blob-cycle-every 6"
+  "g4_18_blake2b512_il168_p0w0|--shape both --parallax off --wrapper off --hash blake2b512 --mac kmac256 --interlock 168 --chunk-size 256KB --payload-size 1MB --rekey-every 4 --blob-cycle-every 6"
+  "g4_19_areion512_il168_nomac|--profile singlemsg-triple-nomac-v1 --parallax on --wrapper on --hash areion512 --interlock 168 --payload-size 1MB --rekey-every 4 --blob-cycle-every 6"
+  "g4_20_mixed512_il168_sm|--profile singlemsg-triple-nomac-mixed-v1 --parallax on --wrapper on --interlock 168 --payload-size 1MB --rekey-every 4 --blob-cycle-every 6"
 )
 
 # ---------------------------------------------------------------------------

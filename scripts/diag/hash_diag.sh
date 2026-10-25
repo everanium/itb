@@ -26,6 +26,7 @@
 #   BENCH_TIME      = Go bench duration                            (default: 300ms)
 #   BENCH_COUNT     = Go bench -count (samples averaged in output) (default: 3)
 #   ITB_KEY_BITS    = 128 | 256 | 512 | 1024 | 2048                (default: 512)
+#   ITB_INTERLOCK   = "" | 48 | 168 (narrows HASHES to 512-bit under 168)
 
 set -uo pipefail
 
@@ -45,19 +46,25 @@ PAYLOAD="${PAYLOAD:-4MB}"
 BENCH_TIME="${BENCH_TIME:-300ms}"
 BENCH_COUNT="${BENCH_COUNT:-3}"
 KEY_BITS="${ITB_KEY_BITS:-512}"
+INTERLOCK="${ITB_INTERLOCK:-}"
 
-HASHES="aesitb128 areion256 areion512 blake2b256 blake2b512 blake2s blake3 aescmac siphash24 chacha20"
+if [ "$INTERLOCK" = "168" ]; then
+    HASHES="${HASHES:-areion512 blake2b512}"
+else
+    HASHES="${HASHES:-aesitb128 areion256 areion512 blake2b256 blake2b512 blake2s blake3 aescmac siphash24 chacha20}"
+fi
 NONCE_WIDTHS="128 256 512"
 
 tier_env=""
 [ "$INTERLOCK_TIER" != "natural" ] && tier_env="$tier_env ITB_FORCE_INTERLOCK_TIER=$INTERLOCK_TIER"
 [ "$PIXEL_TIER"     != "natural" ] && tier_env="$tier_env ITB_FORCE_PIXEL_TIER=$PIXEL_TIER"
 [ "$HASH_TIER"      != "natural" ] && tier_env="$tier_env ITB_FORCE_HASH_TIER=$HASH_TIER"
+[ -n "$INTERLOCK" ]                && tier_env="$tier_env ITB_INTERLOCK=$INTERLOCK"
 
 model=$(awk -F': +' '/^model name/{print $2; exit}' /proc/cpuinfo 2>/dev/null || echo unknown)
 threads=$(nproc 2>/dev/null || echo "?")
 echo "hash_diag: CPU=$model ${threads}t"
-echo "  KEY_BITS=$KEY_BITS  PAYLOAD=$PAYLOAD  BENCH_TIME=$BENCH_TIME  BENCH_COUNT=$BENCH_COUNT"
+echo "  KEY_BITS=$KEY_BITS  INTERLOCK=${INTERLOCK:-48}  PAYLOAD=$PAYLOAD  BENCH_TIME=$BENCH_TIME  BENCH_COUNT=$BENCH_COUNT"
 echo "  INTERLOCK_TIER=$INTERLOCK_TIER  PIXEL_TIER=$PIXEL_TIER  HASH_TIER=$HASH_TIER"
 echo ""
 

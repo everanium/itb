@@ -3,6 +3,7 @@
 package interlock
 
 import (
+	"bytes"
 	"encoding/binary"
 	"math/rand"
 	"testing"
@@ -324,6 +325,176 @@ func BenchmarkUnchunk48LockBatch16(b *testing.B) {
 				dst[6*j+3] = byte(x >> 24)
 				dst[6*j+4] = byte(x >> 32)
 				dst[6*j+5] = byte(x >> 40)
+			}
+		}
+	})
+}
+
+type batchCase168 struct {
+	src        []byte
+	masks      [][3][3]uint64
+	p0, p1, p2 []byte
+}
+
+func newBatchCase168(rng *rand.Rand, n int) batchCase168 {
+	c := batchCase168{
+		src:   make([]byte, 21*n),
+		masks: make([][3][3]uint64, n),
+		p0:    make([]byte, 7*n),
+		p1:    make([]byte, 7*n),
+		p2:    make([]byte, 7*n),
+	}
+	rng.Read(c.src)
+	for j := 0; j < n; j++ {
+		m0, m1, m2 := randomTripleMask168(rng)
+		c.masks[j] = [3][3]uint64{m0, m1, m2}
+		var chunk [21]byte
+		copy(chunk[:], c.src[21*j:21*(j+1)])
+		l0 := softPEXT168Ref(&chunk, m0)
+		l1 := softPEXT168Ref(&chunk, m1)
+		l2 := softPEXT168Ref(&chunk, m2)
+		copy(c.p0[7*j:7*(j+1)], l0[:])
+		copy(c.p1[7*j:7*(j+1)], l1[:])
+		copy(c.p2[7*j:7*(j+1)], l2[:])
+	}
+	return c
+}
+
+func sve2Lock168Batch(src []byte, masks [][3][3]uint64, p0, p1, p2 []byte) {
+	n := len(masks)
+	chunk168LockBatchSVE2(n, &src[0], &masks[0], &p0[0], &p1[0], &p2[0])
+}
+
+func sve2Unlock168Batch(p0, p1, p2 []byte, masks [][3][3]uint64, dst []byte) {
+	n := len(masks)
+	unchunk168LockBatchSVE2(n, &masks[0], &p0[0], &p1[0], &p2[0], &dst[0])
+}
+
+func TestChunk168LockBatchSVE2VsSoft(t *testing.T) {
+	if !HasSVE2Interlock {
+		t.Skip("SVE2 bit-permute kernel not available on this host")
+	}
+	rng := rand.New(rand.NewSource(16814))
+	const iters = 2000
+	for iter := 0; iter < iters; iter++ {
+		n := 1 + iter%16
+		c := newBatchCase168(rng, n)
+		p0 := make([]byte, 7*n)
+		p1 := make([]byte, 7*n)
+		p2 := make([]byte, 7*n)
+		sve2Lock168Batch(c.src, c.masks, p0, p1, p2)
+		if !bytes.Equal(p0, c.p0) || !bytes.Equal(p1, c.p1) || !bytes.Equal(p2, c.p2) {
+			t.Fatalf("iter=%d n=%d: sve2Lock168Batch mismatch:\n got (%x, %x, %x)\nwant (%x, %x, %x)",
+				iter, n, p0, p1, p2, c.p0, c.p1, c.p2)
+		}
+		back := make([]byte, 21*n)
+		sve2Unlock168Batch(p0, p1, p2, c.masks, back)
+		if !bytes.Equal(back, c.src) {
+			t.Fatalf("iter=%d n=%d: sve2Unlock168Batch round-trip mismatch:\n got %x\nwant %x",
+				iter, n, back, c.src)
+		}
+
+		randP0 := make([]byte, 7*n)
+		randP1 := make([]byte, 7*n)
+		randP2 := make([]byte, 7*n)
+		rng.Read(randP0)
+		rng.Read(randP1)
+		rng.Read(randP2)
+		wantDst := make([]byte, 21*n)
+		for j := 0; j < n; j++ {
+			var r0, r1, r2 [7]byte
+			copy(r0[:], randP0[7*j:7*(j+1)])
+			copy(r1[:], randP1[7*j:7*(j+1)])
+			copy(r2[:], randP2[7*j:7*(j+1)])
+			d := softUnchunk168Ref(r0, r1, r2, c.masks[j][0], c.masks[j][1], c.masks[j][2])
+			copy(wantDst[21*j:21*(j+1)], d[:])
+		}
+		gotDst := make([]byte, 21*n)
+		sve2Unlock168Batch(randP0, randP1, randP2, c.masks, gotDst)
+		if !bytes.Equal(gotDst, wantDst) {
+			t.Fatalf("iter=%d n=%d: sve2Unlock168Batch random mismatch:\n got %x\nwant %x",
+				iter, n, gotDst, wantDst)
+		}
+	}
+}
+
+// BenchmarkChunk168LockBatch8 measures the batched 168-bit forward arms
+// over 8 chunks per call against the per-chunk bit-serial reference.
+func BenchmarkChunk168LockBatch8(b *testing.B) {
+	rng := rand.New(rand.NewSource(16821))
+	c := newBatchCase168(rng, 8)
+	p0 := make([]byte, 7*8)
+	p1 := make([]byte, 7*8)
+	p2 := make([]byte, 7*8)
+	if HasSVE2Interlock {
+		b.Run("sve2", func(b *testing.B) {
+			b.SetBytes(8 * 21)
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				sve2Lock168Batch(c.src, c.masks, p0, p1, p2)
+			}
+		})
+	}
+	b.Run("go-batch", func(b *testing.B) {
+		b.SetBytes(8 * 21)
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			chunk168LockBatchGo(c.src, c.masks, p0, p1, p2)
+		}
+	})
+	b.Run("soft-perchunk", func(b *testing.B) {
+		b.SetBytes(8 * 21)
+		b.ReportAllocs()
+		var chunk [21]byte
+		for i := 0; i < b.N; i++ {
+			for j := 0; j < 8; j++ {
+				copy(chunk[:], c.src[21*j:21*(j+1)])
+				m := &c.masks[j]
+				l0 := softPEXT168Ref(&chunk, m[0])
+				l1 := softPEXT168Ref(&chunk, m[1])
+				l2 := softPEXT168Ref(&chunk, m[2])
+				copy(p0[7*j:7*(j+1)], l0[:])
+				copy(p1[7*j:7*(j+1)], l1[:])
+				copy(p2[7*j:7*(j+1)], l2[:])
+			}
+		}
+	})
+}
+
+// BenchmarkUnchunk168LockBatch8 is the inverse counterpart of
+// BenchmarkChunk168LockBatch8.
+func BenchmarkUnchunk168LockBatch8(b *testing.B) {
+	rng := rand.New(rand.NewSource(16822))
+	c := newBatchCase168(rng, 8)
+	dst := make([]byte, 8*21)
+	if HasSVE2Interlock {
+		b.Run("sve2", func(b *testing.B) {
+			b.SetBytes(8 * 21)
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				sve2Unlock168Batch(c.p0, c.p1, c.p2, c.masks, dst)
+			}
+		})
+	}
+	b.Run("go-batch", func(b *testing.B) {
+		b.SetBytes(8 * 21)
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			unchunk168LockBatchGo(c.p0, c.p1, c.p2, c.masks, dst)
+		}
+	})
+	b.Run("soft-perchunk", func(b *testing.B) {
+		b.SetBytes(8 * 21)
+		b.ReportAllocs()
+		var l0, l1, l2 [7]byte
+		for i := 0; i < b.N; i++ {
+			for j := 0; j < 8; j++ {
+				copy(l0[:], c.p0[7*j:7*(j+1)])
+				copy(l1[:], c.p1[7*j:7*(j+1)])
+				copy(l2[:], c.p2[7*j:7*(j+1)])
+				m := &c.masks[j]
+				chunk := softUnchunk168Ref(l0, l1, l2, m[0], m[1], m[2])
+				copy(dst[21*j:21*(j+1)], chunk[:])
 			}
 		}
 	})

@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"testing"
 
+	"golang.org/x/crypto/blake2b"
+
 	"github.com/everanium/itb/internal/aesitbasm"
+	"github.com/everanium/itb/internal/areionasm"
 )
 
 // Timings of the interlock PRF fill closures a lockBatchPRF48 carries.
@@ -265,4 +268,220 @@ func benchLockFillSuper16(b *testing.B, bits int) {
 	for i := 0; i < b.N; i++ {
 		bp.fillRanksSuper(&s, uint64(16*i), prf[:])
 	}
+}
+
+func makeAreion512BenchSeed(tb testing.TB, bits int) *Seed512 {
+	tb.Helper()
+	var key [64]byte
+	for i := range key {
+		key[i] = byte(0x33*i + 1)
+	}
+	h, bh := MakeAreionSoEM512HashWithKey(key)
+	seed, err := NewSeed512(bits, h)
+	if err != nil {
+		tb.Fatal(err)
+	}
+	seed.BatchHash = bh
+	seed.FusedChain = func(components []uint64, data []byte) ([8]uint64, bool) {
+		var out [8]uint64
+		if len(data) != 13 {
+			return out, false
+		}
+		areionasm.Fused512Chain13x1(&key, components, &data[0], &out)
+		return out, true
+	}
+	seed.BatchFusedChain = func(components []uint64, data *[4][]byte) ([4][8]uint64, bool) {
+		var out [4][8]uint64
+		for i := range data {
+			if len(data[i]) != 13 {
+				return out, false
+			}
+		}
+		ptrs := [4]*byte{&data[0][0], &data[1][0], &data[2][0], &data[3][0]}
+		areionasm.Fused512Chain13x4(&key, components, &ptrs, &out)
+		return out, true
+	}
+	seed.SetInterlockBatch16(func(components []uint64, groupIdxBase uint64, v uint32, out *[4][8]uint64) {
+		areionasm.Fused512Fill13x4(&key, components, groupIdxBase, v, out)
+	})
+	seed.SetInterlockBatch32(func(components []uint64, groupIdxBase uint64, v uint32, out *[8][8]uint64) {
+		areionasm.Fused512Fill13x8(&key, components, groupIdxBase, v, out)
+	})
+	return seed
+}
+
+func makeBlake2b512BenchSeed(tb testing.TB, bits int) *Seed512 {
+	tb.Helper()
+	var key [64]byte
+	for i := range key {
+		key[i] = byte(0x55*i + 3)
+	}
+	eval := func(data []byte, s [8]uint64) [8]uint64 {
+		var stack [128]byte
+		payloadLen := len(data)
+		if payloadLen < 64 {
+			payloadLen = 64
+		}
+		need := 64 + payloadLen
+		var buf []byte
+		if need <= len(stack) {
+			buf = stack[:need]
+		} else {
+			buf = make([]byte, need)
+		}
+		copy(buf[:64], key[:])
+		copy(buf[64:64+len(data)], data)
+		for i := 0; i < 8; i++ {
+			off := 64 + 8*i
+			binary.LittleEndian.PutUint64(buf[off:], binary.LittleEndian.Uint64(buf[off:])^s[i])
+		}
+		digest := blake2b.Sum512(buf)
+		var out [8]uint64
+		for i := 0; i < 8; i++ {
+			out[i] = binary.LittleEndian.Uint64(digest[8*i:])
+		}
+		return out
+	}
+	bh := func(data *[4][]byte, seeds [4][8]uint64) [4][8]uint64 {
+		var out [4][8]uint64
+		for lane := 0; lane < 4; lane++ {
+			out[lane] = eval(data[lane], seeds[lane])
+		}
+		return out
+	}
+	seed, err := NewSeed512(bits, eval)
+	if err != nil {
+		tb.Fatal(err)
+	}
+	seed.BatchHash = bh
+	return seed
+}
+
+// BenchmarkLockFillSuper512 times the 512-bit interlock PRF fill ladder
+// over 8 groups per iteration (one 168-bit superblock = 64 rank words =
+// 8 × 13-byte fill blocks) across the 512-, 1024-, and 2048-bit key
+// sizes for Areion512 (super32, super16x2, x4x2, seqx8) and BLAKE2b512
+// (x4x2, seqx8).
+func BenchmarkLockFillSuper512(b *testing.B) {
+	nonce := make([]byte, 64)
+	for i := range nonce {
+		nonce[i] = byte(i)
+	}
+	b.Run("Areion512", func(b *testing.B) {
+		for _, bits := range []int{512, 1024, 2048} {
+			b.Run(fmt.Sprintf("%dbit", bits), func(b *testing.B) {
+				seed := makeAreion512BenchSeed(b, bits)
+				bp := buildLockBatchPRF48_512(seed, nonce)
+				defer bp.wipe()
+				if bp.fillRanksSuper32 == nil || bp.fillRanksSuper == nil || bp.fillRanksX4 == nil {
+					b.Fatal("Areion512 fill hooks not attached")
+				}
+
+				// Verify all rungs agree with sequential fillRanks before timing.
+				var checkScratch lockFillScratch48
+				var got32, got16, gotX4 [64]uint64
+				var want [8]uint64
+				var checkBuf [13]byte
+				bp.fillRanksSuper32(&checkScratch, 0, got32[:])
+				bp.fillRanksSuper(&checkScratch, 0, got16[0:32])
+				bp.fillRanksSuper(&checkScratch, 4, got16[32:64])
+				bp.fillRanksX4(&checkScratch, 0, gotX4[0:32])
+				bp.fillRanksX4(&checkScratch, 4, gotX4[32:64])
+				for j := uint64(0); j < 8; j++ {
+					bp.fillRanks(checkBuf[:], j, want[:])
+					for w := 0; w < 8; w++ {
+						idx := int(8*j) + w
+						if got32[idx] != want[w] || got16[idx] != want[w] || gotX4[idx] != want[w] {
+							b.Fatalf("Areion512 %dbit group %d word %d fill rung mismatch", bits, j, w)
+						}
+					}
+				}
+
+				b.Run("super32", func(b *testing.B) {
+					var s lockFillScratch48
+					var prf [64]uint64
+					b.SetBytes(8 * 13)
+					b.ReportAllocs()
+					b.ResetTimer()
+					for i := 0; i < b.N; i++ {
+						bp.fillRanksSuper32(&s, uint64(8*i), prf[:64])
+					}
+				})
+				b.Run("super16x2", func(b *testing.B) {
+					var s lockFillScratch48
+					var prf [64]uint64
+					b.SetBytes(8 * 13)
+					b.ReportAllocs()
+					b.ResetTimer()
+					for i := 0; i < b.N; i++ {
+						g := uint64(8 * i)
+						bp.fillRanksSuper(&s, g, prf[0:32])
+						bp.fillRanksSuper(&s, g+4, prf[32:64])
+					}
+				})
+				b.Run("x4x2", func(b *testing.B) {
+					var s lockFillScratch48
+					var prf [64]uint64
+					b.SetBytes(8 * 13)
+					b.ReportAllocs()
+					b.ResetTimer()
+					for i := 0; i < b.N; i++ {
+						g := uint64(8 * i)
+						bp.fillRanksX4(&s, g, prf[0:32])
+						bp.fillRanksX4(&s, g+4, prf[32:64])
+					}
+				})
+				b.Run("seqx8", func(b *testing.B) {
+					var buf [13]byte
+					var prf [64]uint64
+					b.SetBytes(8 * 13)
+					b.ReportAllocs()
+					b.ResetTimer()
+					for i := 0; i < b.N; i++ {
+						g := uint64(8 * i)
+						for j := uint64(0); j < 8; j++ {
+							bp.fillRanks(buf[:], g+j, prf[8*j:8*j+8])
+						}
+					}
+				})
+			})
+		}
+	})
+	b.Run("BLAKE2b512", func(b *testing.B) {
+		for _, bits := range []int{512, 1024, 2048} {
+			b.Run(fmt.Sprintf("%dbit", bits), func(b *testing.B) {
+				seed := makeBlake2b512BenchSeed(b, bits)
+				bp := buildLockBatchPRF48_512(seed, nonce)
+				defer bp.wipe()
+				if bp.fillRanksX4 == nil {
+					b.Fatal("BLAKE2b512 fillRanksX4 not attached")
+				}
+				b.Run("x4x2", func(b *testing.B) {
+					var s lockFillScratch48
+					var prf [64]uint64
+					b.SetBytes(8 * 13)
+					b.ReportAllocs()
+					b.ResetTimer()
+					for i := 0; i < b.N; i++ {
+						g := uint64(8 * i)
+						bp.fillRanksX4(&s, g, prf[0:32])
+						bp.fillRanksX4(&s, g+4, prf[32:64])
+					}
+				})
+				b.Run("seqx8", func(b *testing.B) {
+					var buf [13]byte
+					var prf [64]uint64
+					b.SetBytes(8 * 13)
+					b.ReportAllocs()
+					b.ResetTimer()
+					for i := 0; i < b.N; i++ {
+						g := uint64(8 * i)
+						for j := uint64(0); j < 8; j++ {
+							bp.fillRanks(buf[:], g+j, prf[8*j:8*j+8])
+						}
+					}
+				})
+			})
+		}
+	})
 }

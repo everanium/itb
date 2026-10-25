@@ -326,6 +326,7 @@ type summaryReport struct {
 	BlobMode         int                 `json:"blob_mode"`
 	DRBG             string              `json:"drbg"`
 	DRBGAutoTier     string              `json:"drbg_auto_tier"`
+	Interlock        string              `json:"interlock"`
 	ChunkSizeBytes   int64               `json:"chunk_size_bytes"`
 	BarrierFill      int                 `json:"barrier_fill"`
 	Parallax         string              `json:"parallax"`
@@ -535,6 +536,7 @@ func printJSONSummary(r *runState, elapsed time.Duration, finalHeap uint64, fina
 		BlobMode:            r.cfg.blobMode,
 		DRBG:                r.cfg.drbg,
 		DRBGAutoTier:        itb.DRBGAutoTier(),
+		Interlock:           r.cfg.interlock,
 		ChunkSizeBytes:      r.cfg.chunkSize,
 		BarrierFill:         r.cfg.barrierFill,
 		Parallax:            onOff(r.cfg.parallax),

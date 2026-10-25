@@ -252,7 +252,7 @@ func buildTripleWire3(cfg *Config, data []byte, bp lockBatchPRF48, reserve int, 
 
 func buildTripleWire3Into(cfg *Config, dst, data []byte, bp lockBatchPRF48, reserve int, fillReserve bool, lead int, nonce, ilNonce []byte, sizeFn func(cobsLens [3]int) (width, height int)) (tp *triplePayloads, out, container []byte, width, height int, err error) {
 	defer bp.wipe()
-	laneLen := tripleLaneLen(len(data))
+	laneLen := tripleLaneLenCfg(cfg, len(data))
 	lens, offs := nonceSplit(len(ilNonce))
 
 	// Container dimensions from the COBS upper bound. sizeFn, cfg and
@@ -320,10 +320,10 @@ func buildTripleWire3Into(cfg *Config, dst, data []byte, bp lockBatchPRF48, rese
 
 	// Main goroutine — interlock split into three pooled lanes through
 	// the framed view of data (no framed or padded plaintext copy),
-	// then per-lane COBS + tail DRBG. splitForTriple48LockedInto uses
-	// its own G internal workers, so it saturates the CPU; the
-	// container DRBG goroutines above ride whatever headroom the
-	// scheduler gives them.
+	// then per-lane COBS + tail DRBG. splitForTriple48LockedInto and
+	// splitForTriple168LockedInto use their own G internal workers, so
+	// they saturate the CPU; the container DRBG goroutines above ride
+	// whatever headroom the scheduler gives them.
 	//
 	// Each lane holds its interlock-nonce fragment followed by the
 	// laneLen bytes the barrier writes. acquireBuffer hands back a
@@ -356,8 +356,13 @@ func buildTripleWire3Into(cfg *Config, dst, data []byte, bp lockBatchPRF48, rese
 		tp.bufs[i] = tp.full[i]
 	}
 
-	splitForTriple48LockedInto(cfg, data, bp,
-		lanes[0][lens[0]:], lanes[1][lens[1]:], lanes[2][lens[2]:])
+	if currentInterlockCfg(cfg) == Interlock168 {
+		splitForTriple168LockedInto(cfg, data, bp,
+			lanes[0][lens[0]:], lanes[1][lens[1]:], lanes[2][lens[2]:])
+	} else {
+		splitForTriple48LockedInto(cfg, data, bp,
+			lanes[0][lens[0]:], lanes[1][lens[1]:], lanes[2][lens[2]:])
+	}
 
 	// Consumer stage — three COBS + tail DRBG lane goroutines.
 	// Each lane's tail depends on its own COBS length, so the fused

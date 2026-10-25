@@ -1,18 +1,18 @@
 //go:build arm64 && !purego && !noitbasm
 
-// arm64 arm of package interlock: the NEON batched rank-unrank kernel
-// for the 48-bit interlock mask derivation. The per-chunk PEXT / PDEP
-// entry points (Chunk48Lock / Unchunk48Lock) stay on the pure-Go
-// softPEXT48 / softPDEP48 path of the parent package on arm64
-// (HasBMI2 is false here); the batched chunk-apply lives in
-// interlockasm48_batch_arm64.go.
+// arm64 arm of package interlock: the NEON batched rank-unrank kernels
+// for the 48-bit and 168-bit interlock mask derivation. The per-chunk
+// PEXT / PDEP entry points stay on the pure-Go softPEXT / softPDEP
+// paths of the parent package on arm64 (HasBMI2 is false here); the
+// batched chunk-apply kernels live in interlockasm48_batch_arm64.go and
+// interlockasm168_batch_arm64.go.
 package interlock
 
-// HasNEONInterlock selects the NEON 8-lane batched rank-unrank kernel
-// ([RankToMaskTripleUnrank48NEON]). Advanced SIMD is mandatory in
-// ARMv8-A, so the flag is true on every arm64 host; it exists so
-// ITB_FORCE_INTERLOCK_TIER=scalar can clear it for cross-tier parity
-// runs.
+// HasNEONInterlock selects the NEON 8-lane batched rank-unrank kernels
+// ([RankToMaskTripleUnrank48NEON] and [RankToMaskTripleUnrank168NEON]).
+// Advanced SIMD is mandatory in ARMv8-A, so the flag is true on every
+// arm64 host; it exists so ITB_FORCE_INTERLOCK_TIER=scalar can clear it
+// for cross-tier parity runs.
 var HasNEONInterlock = true
 
 // crow48Table holds C(p, 0..16) in lanes 0..16 — the canonical binomial

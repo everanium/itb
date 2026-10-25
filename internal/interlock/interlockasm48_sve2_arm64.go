@@ -5,7 +5,8 @@ package interlock
 import "github.com/everanium/itb/internal/cpuid"
 
 // HasSVE2Interlock selects the SVE2 BEXT / BDEP batched chunk-apply
-// kernels ([chunk48LockBatchSVE2] / [unchunk48LockBatchSVE2]). The two
+// kernels ([chunk48LockBatchSVE2] / [unchunk48LockBatchSVE2] and
+// [chunk168LockBatchSVE2] / [unchunk168LockBatchSVE2]). The two
 // instructions belong to the optional SVE2 bit-permute extension
 // (FEAT_SVE_BitPerm), so the gate ([cpuid.SVE2BitPerm]) requires both
 // the SVE2 base flag and the Linux HWCAP2 bit-permute bit; hosts

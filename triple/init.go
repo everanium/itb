@@ -60,6 +60,9 @@ func marshalWrap(prof Profile, inner, permMaster, wrapMaster []byte) ([]byte, er
 	if !rec.Parallax {
 		rec.ParallaxPalette, rec.ParallaxSegmentSize = nil, 0
 	}
+	if rec.Interlock == itb.Interlock48 {
+		rec.Interlock = ""
+	}
 	// Recipe is wire-only; runtime globals (NonceBits, BarrierFill)
 	// live in the inner Blob{N}.Globals snapshot and the container
 	// floor mode in the inner blob's mode field; none of them appears
@@ -108,9 +111,9 @@ const wrapMasterSize = 32
 // returned blob bytes carry the full session bundle the receiver
 // needs — the resolved [Profile] record (profile defaults with the
 // Opts overrides folded in, Name carrying the profile name, including
-// DRBG and TagStubSize) + both masters + the nested [itb.Blob{N}]
+// DRBG, Interlock, and TagStubSize) + both masters + the nested [itb.Blob{N}]
 // with the 8 seed components, per-slot PRF keys, MAC material, and
-// the Mode / NonceBits / BarrierFill snapshot. The receiver rebuilds
+// the Mode / NonceBits / BarrierFill / Interlock snapshot. The receiver rebuilds
 // an equivalent Pipeline with [Load]
 // without holding the profile literal or the Opts. Distribution of
 // the blob is the caller's responsibility — treat the blob as the
@@ -302,6 +305,9 @@ func resolveInitProfile(caller, profile string, opts Opts) (Profile, error) {
 	if err := validateResolvedDRBG(caller, resolved); err != nil {
 		return Profile{}, err
 	}
+	if err := validateResolvedInterlock(caller, resolved); err != nil {
+		return Profile{}, err
+	}
 	return resolved, nil
 }
 
@@ -365,6 +371,9 @@ func finishInit(resolved Profile, opts Opts, width int, seeds [8]any, prfKeys [8
 	// carries it into the blob and the Config consumes it on every
 	// encrypt.
 	cfg.DRBG = resolved.DRBG
+	if resolved.Interlock == itb.Interlock168 {
+		cfg.Interlock = itb.Interlock168
+	}
 
 	// Parallax build.
 	if resolved.Parallax {

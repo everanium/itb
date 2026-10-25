@@ -79,9 +79,11 @@ func resolveTriple(id TripleHandleID) (h *TripleHandle, st Status) {
 //     size (see [triple.Opts.TagStubSize]); accepted values are 0
 //     or 16..64 inclusive; absent = 0 (profile default, falling
 //     through to the MacName auto-probe or the 32-byte default).
-//   - innerHash, macName, outerCipher, drbg — canonical primitive-name
-//     overrides (drbg names the DRBG fill primitive; see
-//     [triple.Opts.DRBG]). Passed through verbatim; Go validates.
+//   - innerHash, macName, outerCipher, drbg, interlock — canonical
+//     primitive-name and mode overrides (drbg names the DRBG fill
+//     primitive; interlock selects "" / "48" / "168"; see
+//     [triple.Opts.DRBG] and [triple.Opts.Interlock]). Passed through
+//     verbatim; Go validates.
 //   - innerHashes — comma-separated eight-entry per-slot primitive
 //     constellation override for the mixed-primitive dispatch path.
 //     Slot ordering matches [triple.Opts.MixedHashes]. Exactly 8
@@ -235,6 +237,13 @@ func parseTripleOpts(query string) (opts triple.Opts, err error) {
 			opts.OuterCipher = v
 		case "drbg":
 			opts.DRBG = v
+		case "interlock":
+			switch v {
+			case "", "48", "168":
+			default:
+				return opts, fmt.Errorf("opts interlock=%q must be \"\" or one of {\"48\", \"168\"}", v)
+			}
+			opts.Interlock = v
 		case "parallaxPalette":
 			if v == "" {
 				continue

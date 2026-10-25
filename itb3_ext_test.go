@@ -61,6 +61,24 @@ func extTripleBenchCfg() *itb.Config {
 	return cfg
 }
 
+// extTripleBenchCfg512 returns extTripleBenchCfg() with the optional
+// ITB_INTERLOCK environment variable applied for 512-bit bench cells.
+func extTripleBenchCfg512() *itb.Config {
+	cfg := extTripleBenchCfg()
+	if v := os.Getenv("ITB_INTERLOCK"); v != "" {
+		cfg.Interlock = v
+	}
+	return cfg
+}
+
+// extTripleBenchCfg168 returns extTripleBenchCfg() with the 168-bit
+// interlock overlay ([itb.Interlock168]) enabled.
+func extTripleBenchCfg168() *itb.Config {
+	cfg := extTripleBenchCfg()
+	cfg.Interlock = itb.Interlock168
+	return cfg
+}
+
 // makeEightSeeds128Ext is the external-test counterpart of
 // itb_test.go:makeEightSeeds128. Constructs the eight independent
 // 128-bit ITB seeds the Triple Ouroboros API consumes (1 noise +
@@ -327,6 +345,27 @@ func BenchmarkExtTripleBLAKE2b512_512bit_Decrypt_64MB(b *testing.B) {
 	benchDecrypt3x512HookedExt(b, hashes.CipherBLAKE2b512, 512, 64<<20)
 }
 
+// --- BLAKE2b-512 (168-bit interlock) Triple Pair benches: 512-bit ITB width ---
+
+func BenchmarkExtTripleBLAKE2b512_168_512bit_Encrypt_1MB(b *testing.B) {
+	benchEncrypt3x512Interlock168HookedExt(b, hashes.CipherBLAKE2b512, 512, 1<<20)
+}
+func BenchmarkExtTripleBLAKE2b512_168_512bit_Encrypt_16MB(b *testing.B) {
+	benchEncrypt3x512Interlock168HookedExt(b, hashes.CipherBLAKE2b512, 512, 16<<20)
+}
+func BenchmarkExtTripleBLAKE2b512_168_512bit_Encrypt_64MB(b *testing.B) {
+	benchEncrypt3x512Interlock168HookedExt(b, hashes.CipherBLAKE2b512, 512, 64<<20)
+}
+func BenchmarkExtTripleBLAKE2b512_168_512bit_Decrypt_1MB(b *testing.B) {
+	benchDecrypt3x512Interlock168HookedExt(b, hashes.CipherBLAKE2b512, 512, 1<<20)
+}
+func BenchmarkExtTripleBLAKE2b512_168_512bit_Decrypt_16MB(b *testing.B) {
+	benchDecrypt3x512Interlock168HookedExt(b, hashes.CipherBLAKE2b512, 512, 16<<20)
+}
+func BenchmarkExtTripleBLAKE2b512_168_512bit_Decrypt_64MB(b *testing.B) {
+	benchDecrypt3x512Interlock168HookedExt(b, hashes.CipherBLAKE2b512, 512, 64<<20)
+}
+
 // --- BLAKE2b-256 Triple Pair benches: 1024-bit ITB width ---
 
 func BenchmarkExtTripleBLAKE2b256_1024bit_Encrypt_1MB(b *testing.B) {
@@ -369,6 +408,27 @@ func BenchmarkExtTripleBLAKE2b512_1024bit_Decrypt_64MB(b *testing.B) {
 	benchDecrypt3x512HookedExt(b, hashes.CipherBLAKE2b512, 1024, 64<<20)
 }
 
+// --- BLAKE2b-512 (168-bit interlock) Triple Pair benches: 1024-bit ITB width ---
+
+func BenchmarkExtTripleBLAKE2b512_168_1024bit_Encrypt_1MB(b *testing.B) {
+	benchEncrypt3x512Interlock168HookedExt(b, hashes.CipherBLAKE2b512, 1024, 1<<20)
+}
+func BenchmarkExtTripleBLAKE2b512_168_1024bit_Encrypt_16MB(b *testing.B) {
+	benchEncrypt3x512Interlock168HookedExt(b, hashes.CipherBLAKE2b512, 1024, 16<<20)
+}
+func BenchmarkExtTripleBLAKE2b512_168_1024bit_Encrypt_64MB(b *testing.B) {
+	benchEncrypt3x512Interlock168HookedExt(b, hashes.CipherBLAKE2b512, 1024, 64<<20)
+}
+func BenchmarkExtTripleBLAKE2b512_168_1024bit_Decrypt_1MB(b *testing.B) {
+	benchDecrypt3x512Interlock168HookedExt(b, hashes.CipherBLAKE2b512, 1024, 1<<20)
+}
+func BenchmarkExtTripleBLAKE2b512_168_1024bit_Decrypt_16MB(b *testing.B) {
+	benchDecrypt3x512Interlock168HookedExt(b, hashes.CipherBLAKE2b512, 1024, 16<<20)
+}
+func BenchmarkExtTripleBLAKE2b512_168_1024bit_Decrypt_64MB(b *testing.B) {
+	benchDecrypt3x512Interlock168HookedExt(b, hashes.CipherBLAKE2b512, 1024, 64<<20)
+}
+
 // --- BLAKE2b-256 Triple Pair benches: 2048-bit ITB width ---
 
 func BenchmarkExtTripleBLAKE2b256_2048bit_Encrypt_1MB(b *testing.B) {
@@ -409,6 +469,27 @@ func BenchmarkExtTripleBLAKE2b512_2048bit_Decrypt_16MB(b *testing.B) {
 }
 func BenchmarkExtTripleBLAKE2b512_2048bit_Decrypt_64MB(b *testing.B) {
 	benchDecrypt3x512HookedExt(b, hashes.CipherBLAKE2b512, 2048, 64<<20)
+}
+
+// --- BLAKE2b-512 (168-bit interlock) Triple Pair benches: 2048-bit ITB width ---
+
+func BenchmarkExtTripleBLAKE2b512_168_2048bit_Encrypt_1MB(b *testing.B) {
+	benchEncrypt3x512Interlock168HookedExt(b, hashes.CipherBLAKE2b512, 2048, 1<<20)
+}
+func BenchmarkExtTripleBLAKE2b512_168_2048bit_Encrypt_16MB(b *testing.B) {
+	benchEncrypt3x512Interlock168HookedExt(b, hashes.CipherBLAKE2b512, 2048, 16<<20)
+}
+func BenchmarkExtTripleBLAKE2b512_168_2048bit_Encrypt_64MB(b *testing.B) {
+	benchEncrypt3x512Interlock168HookedExt(b, hashes.CipherBLAKE2b512, 2048, 64<<20)
+}
+func BenchmarkExtTripleBLAKE2b512_168_2048bit_Decrypt_1MB(b *testing.B) {
+	benchDecrypt3x512Interlock168HookedExt(b, hashes.CipherBLAKE2b512, 2048, 1<<20)
+}
+func BenchmarkExtTripleBLAKE2b512_168_2048bit_Decrypt_16MB(b *testing.B) {
+	benchDecrypt3x512Interlock168HookedExt(b, hashes.CipherBLAKE2b512, 2048, 16<<20)
+}
+func BenchmarkExtTripleBLAKE2b512_168_2048bit_Decrypt_64MB(b *testing.B) {
+	benchDecrypt3x512Interlock168HookedExt(b, hashes.CipherBLAKE2b512, 2048, 64<<20)
 }
 
 // --- BLAKE2s-256 Triple Pair benches: 512-bit ITB width ---
@@ -768,6 +849,27 @@ func BenchmarkExtTripleAreion512_512bit_Decrypt_64MB(b *testing.B) {
 	benchDecrypt3x512HookedExt(b, hashes.CipherAreion512, 512, 64<<20)
 }
 
+// --- Areion-SoEM-512 (168-bit interlock) Triple Pair benches: 512-bit ITB width ---
+
+func BenchmarkExtTripleAreion512_168_512bit_Encrypt_1MB(b *testing.B) {
+	benchEncrypt3x512Interlock168HookedExt(b, hashes.CipherAreion512, 512, 1<<20)
+}
+func BenchmarkExtTripleAreion512_168_512bit_Encrypt_16MB(b *testing.B) {
+	benchEncrypt3x512Interlock168HookedExt(b, hashes.CipherAreion512, 512, 16<<20)
+}
+func BenchmarkExtTripleAreion512_168_512bit_Encrypt_64MB(b *testing.B) {
+	benchEncrypt3x512Interlock168HookedExt(b, hashes.CipherAreion512, 512, 64<<20)
+}
+func BenchmarkExtTripleAreion512_168_512bit_Decrypt_1MB(b *testing.B) {
+	benchDecrypt3x512Interlock168HookedExt(b, hashes.CipherAreion512, 512, 1<<20)
+}
+func BenchmarkExtTripleAreion512_168_512bit_Decrypt_16MB(b *testing.B) {
+	benchDecrypt3x512Interlock168HookedExt(b, hashes.CipherAreion512, 512, 16<<20)
+}
+func BenchmarkExtTripleAreion512_168_512bit_Decrypt_64MB(b *testing.B) {
+	benchDecrypt3x512Interlock168HookedExt(b, hashes.CipherAreion512, 512, 64<<20)
+}
+
 // --- Areion-SoEM-256 Triple Pair benches: 1024-bit ITB width ---
 
 func BenchmarkExtTripleAreion256_1024bit_Encrypt_1MB(b *testing.B) {
@@ -810,6 +912,27 @@ func BenchmarkExtTripleAreion512_1024bit_Decrypt_64MB(b *testing.B) {
 	benchDecrypt3x512HookedExt(b, hashes.CipherAreion512, 1024, 64<<20)
 }
 
+// --- Areion-SoEM-512 (168-bit interlock) Triple Pair benches: 1024-bit ITB width ---
+
+func BenchmarkExtTripleAreion512_168_1024bit_Encrypt_1MB(b *testing.B) {
+	benchEncrypt3x512Interlock168HookedExt(b, hashes.CipherAreion512, 1024, 1<<20)
+}
+func BenchmarkExtTripleAreion512_168_1024bit_Encrypt_16MB(b *testing.B) {
+	benchEncrypt3x512Interlock168HookedExt(b, hashes.CipherAreion512, 1024, 16<<20)
+}
+func BenchmarkExtTripleAreion512_168_1024bit_Encrypt_64MB(b *testing.B) {
+	benchEncrypt3x512Interlock168HookedExt(b, hashes.CipherAreion512, 1024, 64<<20)
+}
+func BenchmarkExtTripleAreion512_168_1024bit_Decrypt_1MB(b *testing.B) {
+	benchDecrypt3x512Interlock168HookedExt(b, hashes.CipherAreion512, 1024, 1<<20)
+}
+func BenchmarkExtTripleAreion512_168_1024bit_Decrypt_16MB(b *testing.B) {
+	benchDecrypt3x512Interlock168HookedExt(b, hashes.CipherAreion512, 1024, 16<<20)
+}
+func BenchmarkExtTripleAreion512_168_1024bit_Decrypt_64MB(b *testing.B) {
+	benchDecrypt3x512Interlock168HookedExt(b, hashes.CipherAreion512, 1024, 64<<20)
+}
+
 // --- Areion-SoEM-256 Triple Pair benches: 2048-bit ITB width ---
 
 func BenchmarkExtTripleAreion256_2048bit_Encrypt_1MB(b *testing.B) {
@@ -850,6 +973,27 @@ func BenchmarkExtTripleAreion512_2048bit_Decrypt_16MB(b *testing.B) {
 }
 func BenchmarkExtTripleAreion512_2048bit_Decrypt_64MB(b *testing.B) {
 	benchDecrypt3x512HookedExt(b, hashes.CipherAreion512, 2048, 64<<20)
+}
+
+// --- Areion-SoEM-512 (168-bit interlock) Triple Pair benches: 2048-bit ITB width ---
+
+func BenchmarkExtTripleAreion512_168_2048bit_Encrypt_1MB(b *testing.B) {
+	benchEncrypt3x512Interlock168HookedExt(b, hashes.CipherAreion512, 2048, 1<<20)
+}
+func BenchmarkExtTripleAreion512_168_2048bit_Encrypt_16MB(b *testing.B) {
+	benchEncrypt3x512Interlock168HookedExt(b, hashes.CipherAreion512, 2048, 16<<20)
+}
+func BenchmarkExtTripleAreion512_168_2048bit_Encrypt_64MB(b *testing.B) {
+	benchEncrypt3x512Interlock168HookedExt(b, hashes.CipherAreion512, 2048, 64<<20)
+}
+func BenchmarkExtTripleAreion512_168_2048bit_Decrypt_1MB(b *testing.B) {
+	benchDecrypt3x512Interlock168HookedExt(b, hashes.CipherAreion512, 2048, 1<<20)
+}
+func BenchmarkExtTripleAreion512_168_2048bit_Decrypt_16MB(b *testing.B) {
+	benchDecrypt3x512Interlock168HookedExt(b, hashes.CipherAreion512, 2048, 16<<20)
+}
+func BenchmarkExtTripleAreion512_168_2048bit_Decrypt_64MB(b *testing.B) {
+	benchDecrypt3x512Interlock168HookedExt(b, hashes.CipherAreion512, 2048, 64<<20)
 }
 
 // --- Dedicated lockSeed coverage, Triple Ouroboros (BLAKE3 256-bit) ---
@@ -947,6 +1091,34 @@ func BenchmarkExtTripleBLAKE3RoundTripLockSeed(b *testing.B) {
 	}
 }
 
+// BenchmarkExtTripleAreion512_168_RoundTripLockSeed measures the itb root
+// Encrypt3x512Cfg + Decrypt3x512Cfg round-trip throughput and per-iteration
+// allocation footprint under the 8-seed API with the 168-bit interlock
+// overlay ([itb.Interlock168]), 1024-bit ITB key width, and Areion-SoEM-512
+// via [hashes.NewSeed512] on a 64 MiB plaintext.
+func BenchmarkExtTripleAreion512_168_RoundTripLockSeed(b *testing.B) {
+	const (
+		bits     = 1024
+		dataSize = 64 << 20
+	)
+
+	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightHookedSeeds512Ext(b, hashes.CipherAreion512, bits)
+	cfg := extTripleBenchCfg168()
+
+	data := generateDataExt(dataSize)
+	b.SetBytes(int64(dataSize))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		encrypted, err := itb.Encrypt3x512Cfg(cfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
+		if err != nil {
+			b.Fatalf("Encrypt3x512: %v", err)
+		}
+		if _, err := itb.Decrypt3x512Cfg(cfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted); err != nil {
+			b.Fatalf("Decrypt3x512: %v", err)
+		}
+	}
+}
+
 // TestTripleLockSeedMixedPrimitive256 verifies that Triple round-trip
 // succeeds with a BLAKE2s-keyed lockSeed alongside a BLAKE3-keyed
 // noiseSeed (and BLAKE3 across the 3 dataSeeds + 3 startSeeds). The
@@ -1016,6 +1188,7 @@ func fleetBenchOpts(production bool) triple.Opts {
 		InnerHash:    "areion512",
 		KeyBits:      1024,
 		NonceBits:    512,
+		Interlock:    os.Getenv("ITB_INTERLOCK"),
 		WithParallax: &parallaxOn,
 		WithWrapper:  &wrapperOn,
 	}
@@ -1204,6 +1377,178 @@ func BenchmarkFleetGoNative_Production_Stream_Decrypt_64MB(b *testing.B) {
 	benchFleetStreamDecrypt(b, triple.ProfileStreamingAEADTripleMACV1, true, 64<<20)
 }
 
+// fleetBenchOpts168 returns fleetBenchOpts(production) with the 168-bit
+// interlock overlay ([itb.Interlock168]) enabled.
+func fleetBenchOpts168(production bool) triple.Opts {
+	opts := fleetBenchOpts(production)
+	opts.Interlock = itb.Interlock168
+	return opts
+}
+
+func fleetBenchPipeline168(b *testing.B, profile string, production bool) *triple.Pipeline {
+	b.Helper()
+	pipe, _, err := triple.Init(profile, fleetBenchOpts168(production))
+	if err != nil {
+		b.Fatalf("triple.Init(%s, 168): %v", profile, err)
+	}
+	b.Cleanup(func() { _ = pipe.Close() })
+	return pipe
+}
+
+func benchFleet168MessageEncrypt(b *testing.B, profile string, production bool, dataSize int) {
+	pipe := fleetBenchPipeline168(b, profile, production)
+	data := generateDataExt(dataSize)
+	if _, err := pipe.EncryptMessage(data); err != nil {
+		b.Fatalf("EncryptMessage warm-up: %v", err)
+	}
+	b.SetBytes(int64(dataSize))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := pipe.EncryptMessage(data); err != nil {
+			b.Fatalf("EncryptMessage: %v", err)
+		}
+	}
+}
+
+func benchFleet168MessageDecrypt(b *testing.B, profile string, production bool, dataSize int) {
+	pipe := fleetBenchPipeline168(b, profile, production)
+	data := generateDataExt(dataSize)
+	wire, err := pipe.EncryptMessage(data)
+	if err != nil {
+		b.Fatalf("EncryptMessage (pre-encrypt): %v", err)
+	}
+	b.SetBytes(int64(dataSize))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := pipe.DecryptMessage(wire); err != nil {
+			b.Fatalf("DecryptMessage: %v", err)
+		}
+	}
+}
+
+func benchFleet168StreamEncrypt(b *testing.B, profile string, production bool, dataSize int) {
+	pipe := fleetBenchPipeline168(b, profile, production)
+	data := generateDataExt(dataSize)
+	var wire bytes.Buffer
+	wire.Grow(dataSize + dataSize/4 + 65536)
+	if err := pipe.EncryptStream(bytes.NewReader(data), &wire); err != nil {
+		b.Fatalf("EncryptStream warm-up: %v", err)
+	}
+	b.SetBytes(int64(dataSize))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		wire.Reset()
+		if err := pipe.EncryptStream(bytes.NewReader(data), &wire); err != nil {
+			b.Fatalf("EncryptStream: %v", err)
+		}
+	}
+}
+
+func benchFleet168StreamDecrypt(b *testing.B, profile string, production bool, dataSize int) {
+	pipe := fleetBenchPipeline168(b, profile, production)
+	data := generateDataExt(dataSize)
+	var wireBuf bytes.Buffer
+	wireBuf.Grow(dataSize + dataSize/4 + 65536)
+	if err := pipe.EncryptStream(bytes.NewReader(data), &wireBuf); err != nil {
+		b.Fatalf("EncryptStream (pre-encrypt): %v", err)
+	}
+	wire := wireBuf.Bytes()
+	var plain bytes.Buffer
+	plain.Grow(dataSize + 65536)
+	b.SetBytes(int64(dataSize))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		plain.Reset()
+		if err := pipe.DecryptStream(bytes.NewReader(wire), &plain); err != nil {
+			b.Fatalf("DecryptStream: %v", err)
+		}
+	}
+}
+
+// --- Fleet Canonical 168 Message: Single Message No MAC, 168-bit interlock, parallax off, wrapper off ---
+
+func BenchmarkFleetGoNative_Canonical_168_Message_Encrypt_1MB(b *testing.B) {
+	benchFleet168MessageEncrypt(b, triple.ProfileSingleMsgTripleNoMACV1, false, 1<<20)
+}
+func BenchmarkFleetGoNative_Canonical_168_Message_Encrypt_16MB(b *testing.B) {
+	benchFleet168MessageEncrypt(b, triple.ProfileSingleMsgTripleNoMACV1, false, 16<<20)
+}
+func BenchmarkFleetGoNative_Canonical_168_Message_Encrypt_64MB(b *testing.B) {
+	benchFleet168MessageEncrypt(b, triple.ProfileSingleMsgTripleNoMACV1, false, 64<<20)
+}
+func BenchmarkFleetGoNative_Canonical_168_Message_Decrypt_1MB(b *testing.B) {
+	benchFleet168MessageDecrypt(b, triple.ProfileSingleMsgTripleNoMACV1, false, 1<<20)
+}
+func BenchmarkFleetGoNative_Canonical_168_Message_Decrypt_16MB(b *testing.B) {
+	benchFleet168MessageDecrypt(b, triple.ProfileSingleMsgTripleNoMACV1, false, 16<<20)
+}
+func BenchmarkFleetGoNative_Canonical_168_Message_Decrypt_64MB(b *testing.B) {
+	benchFleet168MessageDecrypt(b, triple.ProfileSingleMsgTripleNoMACV1, false, 64<<20)
+}
+
+// --- Fleet Canonical 168 Stream: Streaming Non-AEAD, 168-bit interlock, parallax off, wrapper off ---
+
+func BenchmarkFleetGoNative_Canonical_168_Stream_Encrypt_1MB(b *testing.B) {
+	benchFleet168StreamEncrypt(b, triple.ProfileStreamingNoAEADTripleV1, false, 1<<20)
+}
+func BenchmarkFleetGoNative_Canonical_168_Stream_Encrypt_16MB(b *testing.B) {
+	benchFleet168StreamEncrypt(b, triple.ProfileStreamingNoAEADTripleV1, false, 16<<20)
+}
+func BenchmarkFleetGoNative_Canonical_168_Stream_Encrypt_64MB(b *testing.B) {
+	benchFleet168StreamEncrypt(b, triple.ProfileStreamingNoAEADTripleV1, false, 64<<20)
+}
+func BenchmarkFleetGoNative_Canonical_168_Stream_Decrypt_1MB(b *testing.B) {
+	benchFleet168StreamDecrypt(b, triple.ProfileStreamingNoAEADTripleV1, false, 1<<20)
+}
+func BenchmarkFleetGoNative_Canonical_168_Stream_Decrypt_16MB(b *testing.B) {
+	benchFleet168StreamDecrypt(b, triple.ProfileStreamingNoAEADTripleV1, false, 16<<20)
+}
+func BenchmarkFleetGoNative_Canonical_168_Stream_Decrypt_64MB(b *testing.B) {
+	benchFleet168StreamDecrypt(b, triple.ProfileStreamingNoAEADTripleV1, false, 64<<20)
+}
+
+// --- Fleet Production 168 Message: Single Message MAC, 168-bit interlock, parallax on, wrapper on ---
+
+func BenchmarkFleetGoNative_Production_168_Message_Encrypt_1MB(b *testing.B) {
+	benchFleet168MessageEncrypt(b, triple.ProfileSingleMsgTripleMACV1, true, 1<<20)
+}
+func BenchmarkFleetGoNative_Production_168_Message_Encrypt_16MB(b *testing.B) {
+	benchFleet168MessageEncrypt(b, triple.ProfileSingleMsgTripleMACV1, true, 16<<20)
+}
+func BenchmarkFleetGoNative_Production_168_Message_Encrypt_64MB(b *testing.B) {
+	benchFleet168MessageEncrypt(b, triple.ProfileSingleMsgTripleMACV1, true, 64<<20)
+}
+func BenchmarkFleetGoNative_Production_168_Message_Decrypt_1MB(b *testing.B) {
+	benchFleet168MessageDecrypt(b, triple.ProfileSingleMsgTripleMACV1, true, 1<<20)
+}
+func BenchmarkFleetGoNative_Production_168_Message_Decrypt_16MB(b *testing.B) {
+	benchFleet168MessageDecrypt(b, triple.ProfileSingleMsgTripleMACV1, true, 16<<20)
+}
+func BenchmarkFleetGoNative_Production_168_Message_Decrypt_64MB(b *testing.B) {
+	benchFleet168MessageDecrypt(b, triple.ProfileSingleMsgTripleMACV1, true, 64<<20)
+}
+
+// --- Fleet Production 168 Stream: Streaming AEAD MAC, 168-bit interlock, parallax on, wrapper on ---
+
+func BenchmarkFleetGoNative_Production_168_Stream_Encrypt_1MB(b *testing.B) {
+	benchFleet168StreamEncrypt(b, triple.ProfileStreamingAEADTripleMACV1, true, 1<<20)
+}
+func BenchmarkFleetGoNative_Production_168_Stream_Encrypt_16MB(b *testing.B) {
+	benchFleet168StreamEncrypt(b, triple.ProfileStreamingAEADTripleMACV1, true, 16<<20)
+}
+func BenchmarkFleetGoNative_Production_168_Stream_Encrypt_64MB(b *testing.B) {
+	benchFleet168StreamEncrypt(b, triple.ProfileStreamingAEADTripleMACV1, true, 64<<20)
+}
+func BenchmarkFleetGoNative_Production_168_Stream_Decrypt_1MB(b *testing.B) {
+	benchFleet168StreamDecrypt(b, triple.ProfileStreamingAEADTripleMACV1, true, 1<<20)
+}
+func BenchmarkFleetGoNative_Production_168_Stream_Decrypt_16MB(b *testing.B) {
+	benchFleet168StreamDecrypt(b, triple.ProfileStreamingAEADTripleMACV1, true, 16<<20)
+}
+func BenchmarkFleetGoNative_Production_168_Stream_Decrypt_64MB(b *testing.B) {
+	benchFleet168StreamDecrypt(b, triple.ProfileStreamingAEADTripleMACV1, true, 64<<20)
+}
+
 // --- Production-shape benches: full env-var surface, Triple facade ---
 //
 // The BenchmarkExtProduction_* cohort exercises the shipped Triple
@@ -1222,6 +1567,7 @@ func BenchmarkFleetGoNative_Production_Stream_Decrypt_64MB(b *testing.B) {
 //	ITB_INNER_HASH    (areion512)   inner ITB hash primitive name
 //	ITB_KEY_BITS      (1024)        per-seed key width in bits
 //	ITB_NONCE_BITS    (512)         on-wire nonce width in bits
+//	ITB_INTERLOCK     (profile def) interlock width ("48" or "168")
 //	ITB_WITH_PARALLAX (true)        parallax layer toggle
 //	ITB_WITH_WRAPPER  (true)        wrapper (Outer cipher) toggle
 //	ITB_WITH_MAC      (true)        MAC toggle (drives profile choice)
@@ -1261,6 +1607,7 @@ type extProductionEnv struct {
 	innerHash    string
 	keyBits      int
 	nonceBits    int
+	interlock    string
 	withParallax bool
 	withWrapper  bool
 	withMAC      bool
@@ -1315,6 +1662,7 @@ func resolveExtProductionEnv(surface string) extProductionEnv {
 		innerHash:    extProductionEnvString("ITB_INNER_HASH", "areion512"),
 		keyBits:      extProductionEnvInt("ITB_KEY_BITS", 1024),
 		nonceBits:    extProductionEnvInt("ITB_NONCE_BITS", 512),
+		interlock:    extProductionEnvString("ITB_INTERLOCK", ""),
 		withParallax: extProductionEnvBool("ITB_WITH_PARALLAX", true),
 		withWrapper:  extProductionEnvBool("ITB_WITH_WRAPPER", true),
 		withMAC:      extProductionEnvBool("ITB_WITH_MAC", true),
@@ -1347,6 +1695,7 @@ func (e extProductionEnv) opts() triple.Opts {
 		InnerHash:    e.innerHash,
 		KeyBits:      e.keyBits,
 		NonceBits:    e.nonceBits,
+		Interlock:    e.interlock,
 		WithParallax: &parallaxOn,
 		WithWrapper:  &wrapperOn,
 		MacName:      e.macName,
@@ -1366,9 +1715,40 @@ func (e extProductionEnv) logf(b *testing.B) {
 	if _, dup := extProductionLogged.LoadOrStore(name, struct{}{}); dup {
 		return
 	}
-	b.Logf("ExtProduction cfg: profile=%s inner=%s keyBits=%d nonceBits=%d parallax=%v wrapper=%v mac=%v macName=%q",
-		e.profile, e.innerHash, e.keyBits, e.nonceBits,
+	b.Logf("ExtProduction cfg: profile=%s inner=%s keyBits=%d nonceBits=%d interlock=%q parallax=%v wrapper=%v mac=%v macName=%q",
+		e.profile, e.innerHash, e.keyBits, e.nonceBits, e.interlock,
 		e.withParallax, e.withWrapper, e.withMAC, e.macName)
+}
+
+// extProductionSkipIf168Incompatible skips the benchmark when the
+// resolved environment requests 168-bit Interlocked Barrier together
+// with a non-512-bit inner hash or profile. This lets broad regex sweeps
+// (e.g. ITB_INNER_HASH=blake3 go test -bench=BenchmarkExtProduction) skip
+// the 168-bit cohort cleanly rather than failing with b.Fatalf.
+func extProductionSkipIf168Incompatible(b *testing.B, env extProductionEnv) {
+	b.Helper()
+	if env.interlock != itb.Interlock168 {
+		return
+	}
+	if prof, err := triple.Lookup(env.profile); err == nil {
+		if prof.MixedHashes[0] != "" {
+			if prof.Width != 512 {
+				b.Skipf("skipping 168-bit interlock bench for non-512-bit mixed profile=%s (width=%d)", env.profile, prof.Width)
+			}
+			return
+		}
+		effHash := env.innerHash
+		if effHash == "" {
+			effHash = prof.InnerHash
+		}
+		if spec, ok := hashes.Find(effHash); ok && int(spec.Width) != 512 {
+			b.Skipf("skipping 168-bit interlock bench for non-512-bit ITB_INNER_HASH=%s", effHash)
+		}
+		return
+	}
+	if spec, ok := hashes.Find(env.innerHash); ok && int(spec.Width) != 512 {
+		b.Skipf("skipping 168-bit interlock bench for non-512-bit ITB_INNER_HASH=%s", env.innerHash)
+	}
 }
 
 // extProductionPipeline constructs the bench [triple.Pipeline] against
@@ -1378,6 +1758,7 @@ func (e extProductionEnv) logf(b *testing.B) {
 func extProductionPipeline(b *testing.B, surface string) *triple.Pipeline {
 	b.Helper()
 	env := resolveExtProductionEnv(surface)
+	extProductionSkipIf168Incompatible(b, env)
 	env.logf(b)
 	pipe, _, err := triple.Init(env.profile, env.opts())
 	if err != nil {
@@ -1602,6 +1983,219 @@ func BenchmarkExtProductionStream_Decrypt_64MB(b *testing.B) {
 	benchExtProductionStreamDecrypt(b, 64<<20)
 }
 
+// extProduction168Pipeline constructs the bench [triple.Pipeline] against
+// the environment-derived profile + Opts with Interlock pinned to
+// [itb.Interlock168].
+func extProduction168Pipeline(b *testing.B, surface string) *triple.Pipeline {
+	b.Helper()
+	env := resolveExtProductionEnv(surface)
+	env.interlock = itb.Interlock168
+	extProductionSkipIf168Incompatible(b, env)
+	env.logf(b)
+	pipe, _, err := triple.Init(env.profile, env.opts())
+	if err != nil {
+		b.Fatalf("triple.Init(%s, 168): %v", env.profile, err)
+	}
+	b.Cleanup(func() { _ = pipe.Close() })
+	return pipe
+}
+
+func benchExtProduction168MessageEncrypt(b *testing.B, dataSize int) {
+	pipe := extProduction168Pipeline(b, "message")
+	data := generateDataExt(dataSize)
+	if _, err := pipe.EncryptMessage(data); err != nil {
+		b.Fatalf("EncryptMessage warm-up: %v", err)
+	}
+	b.SetBytes(int64(dataSize))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := pipe.EncryptMessage(data); err != nil {
+			b.Fatalf("EncryptMessage: %v", err)
+		}
+	}
+}
+
+func benchExtProduction168MessageDecrypt(b *testing.B, dataSize int) {
+	pipe := extProduction168Pipeline(b, "message")
+	data := generateDataExt(dataSize)
+	wire, err := pipe.EncryptMessage(data)
+	if err != nil {
+		b.Fatalf("EncryptMessage (pre-encrypt): %v", err)
+	}
+	b.SetBytes(int64(dataSize))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := pipe.DecryptMessage(wire); err != nil {
+			b.Fatalf("DecryptMessage: %v", err)
+		}
+	}
+}
+
+func benchExtProduction168StreamEncrypt(b *testing.B, dataSize int) {
+	pipe := extProduction168Pipeline(b, "stream")
+	data := generateDataExt(dataSize)
+	var wire bytes.Buffer
+	wire.Grow(dataSize + dataSize/4 + 65536)
+	if err := pipe.EncryptStream(bytes.NewReader(data), &wire); err != nil {
+		b.Fatalf("EncryptStream warm-up: %v", err)
+	}
+	b.SetBytes(int64(dataSize))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		wire.Reset()
+		if err := pipe.EncryptStream(bytes.NewReader(data), &wire); err != nil {
+			b.Fatalf("EncryptStream: %v", err)
+		}
+	}
+}
+
+func benchExtProduction168StreamDecrypt(b *testing.B, dataSize int) {
+	pipe := extProduction168Pipeline(b, "stream")
+	data := generateDataExt(dataSize)
+	var wireBuf bytes.Buffer
+	wireBuf.Grow(dataSize + dataSize/4 + 65536)
+	if err := pipe.EncryptStream(bytes.NewReader(data), &wireBuf); err != nil {
+		b.Fatalf("EncryptStream (pre-encrypt): %v", err)
+	}
+	wire := wireBuf.Bytes()
+	var plain bytes.Buffer
+	plain.Grow(dataSize + 65536)
+	b.SetBytes(int64(dataSize))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		plain.Reset()
+		if err := pipe.DecryptStream(bytes.NewReader(wire), &plain); err != nil {
+			b.Fatalf("DecryptStream: %v", err)
+		}
+	}
+}
+
+// --- ExtProduction168 Message: env-derived Single Message profile with 168-bit interlock ---
+
+func BenchmarkExtProduction168Message_Encrypt_4KB(b *testing.B) {
+	benchExtProduction168MessageEncrypt(b, 4<<10)
+}
+func BenchmarkExtProduction168Message_Encrypt_64KB(b *testing.B) {
+	benchExtProduction168MessageEncrypt(b, 64<<10)
+}
+func BenchmarkExtProduction168Message_Encrypt_512KB(b *testing.B) {
+	benchExtProduction168MessageEncrypt(b, 512<<10)
+}
+func BenchmarkExtProduction168Message_Encrypt_1MB(b *testing.B) {
+	benchExtProduction168MessageEncrypt(b, 1<<20)
+}
+func BenchmarkExtProduction168Message_Encrypt_4MB(b *testing.B) {
+	benchExtProduction168MessageEncrypt(b, 4<<20)
+}
+func BenchmarkExtProduction168Message_Encrypt_8MB(b *testing.B) {
+	benchExtProduction168MessageEncrypt(b, 8<<20)
+}
+func BenchmarkExtProduction168Message_Encrypt_16MB(b *testing.B) {
+	benchExtProduction168MessageEncrypt(b, 16<<20)
+}
+func BenchmarkExtProduction168Message_Encrypt_32MB(b *testing.B) {
+	benchExtProduction168MessageEncrypt(b, 32<<20)
+}
+func BenchmarkExtProduction168Message_Encrypt_48MB(b *testing.B) {
+	benchExtProduction168MessageEncrypt(b, 48<<20)
+}
+func BenchmarkExtProduction168Message_Encrypt_64MB(b *testing.B) {
+	benchExtProduction168MessageEncrypt(b, 64<<20)
+}
+func BenchmarkExtProduction168Message_Decrypt_4KB(b *testing.B) {
+	benchExtProduction168MessageDecrypt(b, 4<<10)
+}
+func BenchmarkExtProduction168Message_Decrypt_64KB(b *testing.B) {
+	benchExtProduction168MessageDecrypt(b, 64<<10)
+}
+func BenchmarkExtProduction168Message_Decrypt_512KB(b *testing.B) {
+	benchExtProduction168MessageDecrypt(b, 512<<10)
+}
+func BenchmarkExtProduction168Message_Decrypt_1MB(b *testing.B) {
+	benchExtProduction168MessageDecrypt(b, 1<<20)
+}
+func BenchmarkExtProduction168Message_Decrypt_4MB(b *testing.B) {
+	benchExtProduction168MessageDecrypt(b, 4<<20)
+}
+func BenchmarkExtProduction168Message_Decrypt_8MB(b *testing.B) {
+	benchExtProduction168MessageDecrypt(b, 8<<20)
+}
+func BenchmarkExtProduction168Message_Decrypt_16MB(b *testing.B) {
+	benchExtProduction168MessageDecrypt(b, 16<<20)
+}
+func BenchmarkExtProduction168Message_Decrypt_32MB(b *testing.B) {
+	benchExtProduction168MessageDecrypt(b, 32<<20)
+}
+func BenchmarkExtProduction168Message_Decrypt_48MB(b *testing.B) {
+	benchExtProduction168MessageDecrypt(b, 48<<20)
+}
+func BenchmarkExtProduction168Message_Decrypt_64MB(b *testing.B) {
+	benchExtProduction168MessageDecrypt(b, 64<<20)
+}
+
+// --- ExtProduction168 Stream: env-derived Streaming profile with 168-bit interlock ---
+
+func BenchmarkExtProduction168Stream_Encrypt_4KB(b *testing.B) {
+	benchExtProduction168StreamEncrypt(b, 4<<10)
+}
+func BenchmarkExtProduction168Stream_Encrypt_64KB(b *testing.B) {
+	benchExtProduction168StreamEncrypt(b, 64<<10)
+}
+func BenchmarkExtProduction168Stream_Encrypt_512KB(b *testing.B) {
+	benchExtProduction168StreamEncrypt(b, 512<<10)
+}
+func BenchmarkExtProduction168Stream_Encrypt_1MB(b *testing.B) {
+	benchExtProduction168StreamEncrypt(b, 1<<20)
+}
+func BenchmarkExtProduction168Stream_Encrypt_4MB(b *testing.B) {
+	benchExtProduction168StreamEncrypt(b, 4<<20)
+}
+func BenchmarkExtProduction168Stream_Encrypt_8MB(b *testing.B) {
+	benchExtProduction168StreamEncrypt(b, 8<<20)
+}
+func BenchmarkExtProduction168Stream_Encrypt_16MB(b *testing.B) {
+	benchExtProduction168StreamEncrypt(b, 16<<20)
+}
+func BenchmarkExtProduction168Stream_Encrypt_32MB(b *testing.B) {
+	benchExtProduction168StreamEncrypt(b, 32<<20)
+}
+func BenchmarkExtProduction168Stream_Encrypt_48MB(b *testing.B) {
+	benchExtProduction168StreamEncrypt(b, 48<<20)
+}
+func BenchmarkExtProduction168Stream_Encrypt_64MB(b *testing.B) {
+	benchExtProduction168StreamEncrypt(b, 64<<20)
+}
+func BenchmarkExtProduction168Stream_Decrypt_4KB(b *testing.B) {
+	benchExtProduction168StreamDecrypt(b, 4<<10)
+}
+func BenchmarkExtProduction168Stream_Decrypt_64KB(b *testing.B) {
+	benchExtProduction168StreamDecrypt(b, 64<<10)
+}
+func BenchmarkExtProduction168Stream_Decrypt_512KB(b *testing.B) {
+	benchExtProduction168StreamDecrypt(b, 512<<10)
+}
+func BenchmarkExtProduction168Stream_Decrypt_1MB(b *testing.B) {
+	benchExtProduction168StreamDecrypt(b, 1<<20)
+}
+func BenchmarkExtProduction168Stream_Decrypt_4MB(b *testing.B) {
+	benchExtProduction168StreamDecrypt(b, 4<<20)
+}
+func BenchmarkExtProduction168Stream_Decrypt_8MB(b *testing.B) {
+	benchExtProduction168StreamDecrypt(b, 8<<20)
+}
+func BenchmarkExtProduction168Stream_Decrypt_16MB(b *testing.B) {
+	benchExtProduction168StreamDecrypt(b, 16<<20)
+}
+func BenchmarkExtProduction168Stream_Decrypt_32MB(b *testing.B) {
+	benchExtProduction168StreamDecrypt(b, 32<<20)
+}
+func BenchmarkExtProduction168Stream_Decrypt_48MB(b *testing.B) {
+	benchExtProduction168StreamDecrypt(b, 48<<20)
+}
+func BenchmarkExtProduction168Stream_Decrypt_64MB(b *testing.B) {
+	benchExtProduction168StreamDecrypt(b, 64<<20)
+}
+
 // --- KMAC256 Triple facade benches: canonical cipher, MAC dimension ---
 //
 // Where the ExtTriple benches sweep the inner-hash primitive
@@ -1625,6 +2219,7 @@ func kmacBenchPipeline(b *testing.B, profile string) *triple.Pipeline {
 		InnerHash:    "areion512",
 		KeyBits:      1024,
 		NonceBits:    512,
+		Interlock:    os.Getenv("ITB_INTERLOCK"),
 		MacName:      "kmac256",
 		WithParallax: &off,
 		WithWrapper:  &off,
@@ -1708,3 +2303,109 @@ func BenchmarkExtKMAC256_Stream_Encrypt_64MB(b *testing.B) { benchKMAC256StreamE
 func BenchmarkExtKMAC256_Stream_Decrypt_1MB(b *testing.B)  { benchKMAC256StreamDecrypt(b, 1<<20) }
 func BenchmarkExtKMAC256_Stream_Decrypt_16MB(b *testing.B) { benchKMAC256StreamDecrypt(b, 16<<20) }
 func BenchmarkExtKMAC256_Stream_Decrypt_64MB(b *testing.B) { benchKMAC256StreamDecrypt(b, 64<<20) }
+
+// kmacBenchPipeline168 builds the canonical KMAC256 bench Pipeline with
+// the 168-bit interlock overlay ([itb.Interlock168]) enabled.
+func kmacBenchPipeline168(b *testing.B, profile string) *triple.Pipeline {
+	b.Helper()
+	off := false
+	p, _, err := triple.Init(profile, triple.Opts{
+		InnerHash:    "areion512",
+		KeyBits:      1024,
+		NonceBits:    512,
+		Interlock:    itb.Interlock168,
+		MacName:      "kmac256",
+		WithParallax: &off,
+		WithWrapper:  &off,
+	})
+	if err != nil {
+		b.Fatalf("triple.Init(%s, 168): %v", profile, err)
+	}
+	return p
+}
+
+func benchKMAC256_168_MsgEncrypt(b *testing.B, size int) {
+	p := kmacBenchPipeline168(b, triple.ProfileSingleMsgTripleMACV1)
+	defer p.Close()
+	plain := bytes.Repeat([]byte{0xA7}, size)
+	b.SetBytes(int64(size))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := p.EncryptMessage(plain); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func benchKMAC256_168_MsgDecrypt(b *testing.B, size int) {
+	p := kmacBenchPipeline168(b, triple.ProfileSingleMsgTripleMACV1)
+	defer p.Close()
+	plain := bytes.Repeat([]byte{0xA7}, size)
+	wire, err := p.EncryptMessage(plain)
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.SetBytes(int64(size))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := p.DecryptMessage(wire); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func benchKMAC256_168_StreamEncrypt(b *testing.B, size int) {
+	p := kmacBenchPipeline168(b, triple.ProfileStreamingAEADTripleMACV1)
+	defer p.Close()
+	plain := bytes.Repeat([]byte{0xA7}, size)
+	b.SetBytes(int64(size))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if err := p.EncryptStream(bytes.NewReader(plain), io.Discard); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func benchKMAC256_168_StreamDecrypt(b *testing.B, size int) {
+	p := kmacBenchPipeline168(b, triple.ProfileStreamingAEADTripleMACV1)
+	defer p.Close()
+	plain := bytes.Repeat([]byte{0xA7}, size)
+	var wire bytes.Buffer
+	if err := p.EncryptStream(bytes.NewReader(plain), &wire); err != nil {
+		b.Fatal(err)
+	}
+	b.SetBytes(int64(size))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if err := p.DecryptStream(bytes.NewReader(wire.Bytes()), io.Discard); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkExtKMAC256_168_Msg_Encrypt_1MB(b *testing.B)  { benchKMAC256_168_MsgEncrypt(b, 1<<20) }
+func BenchmarkExtKMAC256_168_Msg_Encrypt_16MB(b *testing.B) { benchKMAC256_168_MsgEncrypt(b, 16<<20) }
+func BenchmarkExtKMAC256_168_Msg_Encrypt_64MB(b *testing.B) { benchKMAC256_168_MsgEncrypt(b, 64<<20) }
+func BenchmarkExtKMAC256_168_Msg_Decrypt_1MB(b *testing.B)  { benchKMAC256_168_MsgDecrypt(b, 1<<20) }
+func BenchmarkExtKMAC256_168_Msg_Decrypt_16MB(b *testing.B) { benchKMAC256_168_MsgDecrypt(b, 16<<20) }
+func BenchmarkExtKMAC256_168_Msg_Decrypt_64MB(b *testing.B) { benchKMAC256_168_MsgDecrypt(b, 64<<20) }
+
+func BenchmarkExtKMAC256_168_Stream_Encrypt_1MB(b *testing.B) {
+	benchKMAC256_168_StreamEncrypt(b, 1<<20)
+}
+func BenchmarkExtKMAC256_168_Stream_Encrypt_16MB(b *testing.B) {
+	benchKMAC256_168_StreamEncrypt(b, 16<<20)
+}
+func BenchmarkExtKMAC256_168_Stream_Encrypt_64MB(b *testing.B) {
+	benchKMAC256_168_StreamEncrypt(b, 64<<20)
+}
+func BenchmarkExtKMAC256_168_Stream_Decrypt_1MB(b *testing.B) {
+	benchKMAC256_168_StreamDecrypt(b, 1<<20)
+}
+func BenchmarkExtKMAC256_168_Stream_Decrypt_16MB(b *testing.B) {
+	benchKMAC256_168_StreamDecrypt(b, 16<<20)
+}
+func BenchmarkExtKMAC256_168_Stream_Decrypt_64MB(b *testing.B) {
+	benchKMAC256_168_StreamDecrypt(b, 64<<20)
+}

@@ -128,13 +128,13 @@ func containerSizeAuth3_512Cfg(cfg *Config, noiseSeed *Seed512, dataSeed1, dataS
 
 // Encrypt3x512Cfg encrypts data as one Single Message using Triple
 // Ouroboros with 8 seeds (512-bit variant). Plaintext is partitioned
-// across 3 lanes by the 48-bit Interlocked Barrier, each encrypted
-// into 1/3 of the pixel data with independent dataSeed and startSeed,
-// sharing noiseSeed. The lockSeed keys the 48-bit interlock overlay's
-// per-chunk bit-permutation derivation, bound to a second,
-// independently drawn interlock nonce that travels split across the
-// three interlocked lanes rather than in the header. Output format is
-// the Single Message wire:
+// across 3 lanes by the 48-bit (default) or 168-bit ([Config.Interlock]
+// = "168") Interlocked Barrier, each encrypted into 1/3 of the pixel
+// data with independent dataSeed and startSeed, sharing noiseSeed. The
+// lockSeed keys the interlock overlay's per-chunk bit-permutation
+// derivation, bound to a second, independently drawn interlock nonce
+// that travels split across the three interlocked lanes rather than in
+// the header. Output format is the Single Message wire:
 //
 //	[prefix(32)][main nonce][W][H][W×H×8 pixels]
 //
@@ -193,6 +193,9 @@ func encrypt3x512CfgInto(cfg *Config, dst []byte, noiseSeed, lockSeed, dataSeed1
 		return nil, fmt.Errorf("itb: data too large: %d bytes (max %d)", len(data), maxDataSize)
 	}
 	if err := validateConfigCfg(cfg); err != nil {
+		return nil, err
+	}
+	if err := validateInterlockWidthCfg(cfg, 512); err != nil {
 		return nil, err
 	}
 	if err := validateTagStubSizeCfg(cfg); err != nil {
@@ -267,6 +270,9 @@ func decryptMsg3x512CfgInto(cfg *Config, dst []byte, noiseSeed, lockSeed, dataSe
 	if err := checkEightSeeds512(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
 		return nil, err
 	}
+	if err := validateInterlockWidthCfg(cfg, 512); err != nil {
+		return nil, err
+	}
 	if len(fileData) == 0 {
 		return nil, ErrEmptyInput
 	}
@@ -292,6 +298,9 @@ func decrypt3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dat
 
 func decrypt3x512CfgInto(cfg *Config, dst []byte, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed512, fileData []byte) ([]byte, error) {
 	if err := checkEightSeeds512(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
+		return nil, err
+	}
+	if err := validateInterlockWidthCfg(cfg, 512); err != nil {
 		return nil, err
 	}
 	if len(fileData) == 0 {
@@ -396,5 +405,8 @@ func decrypt3x512CfgInto(cfg *Config, dst []byte, noiseSeed, lockSeed, dataSeed1
 	defer secureWipe(ilNonce)
 	bp := buildLockBatchPRF48_512Cfg(cfg, lockSeed, ilNonce)
 	defer bp.wipe()
+	if currentInterlockCfg(cfg) == Interlock168 {
+		return interleaveForTriple168LockedCfgInto(cfg, dst, lanes[0], lanes[1], lanes[2], bp), nil
+	}
 	return interleaveForTriple48LockedCfgInto(cfg, dst, lanes[0], lanes[1], lanes[2], bp), nil
 }

@@ -102,10 +102,12 @@ func TestTripleStackZeroization(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
 		innerHash string
+		interlock string
 	}{
-		{"W128_AESCMAC", "aescmac"},
-		{"W256_BLAKE2b256", "blake2b256"},
-		{"W512_BLAKE2b512", "blake2b512"},
+		{"W128_AESCMAC", "aescmac", ""},
+		{"W256_BLAKE2b256", "blake2b256", ""},
+		{"W512_BLAKE2b512", "blake2b512", ""},
+		{"W512_BLAKE2b512_IL168", "blake2b512", "168"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			permMaster := make([]byte, 32)
@@ -121,6 +123,7 @@ func TestTripleStackZeroization(t *testing.T) {
 			winInit := captureTripleStackResidue(t, func() {
 				pipe, blob, initErr = Init(ProfileStreamingAEADTripleMACV1, Opts{
 					InnerHash:  tc.innerHash,
+					Interlock:  tc.interlock,
 					PermMaster: permMaster,
 					WrapMaster: wrapMaster,
 				})
@@ -234,6 +237,7 @@ func TestTripleStackZeroization(t *testing.T) {
 				var ikBlob []byte
 				ikPipe, ikBlob, ikErr = InitKeys(ProfileStreamingAEADTripleMACV1, Opts{
 					InnerHash: tc.innerHash,
+					Interlock: tc.interlock,
 				}, masters)
 				clear(ikBlob)
 			})

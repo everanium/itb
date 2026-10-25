@@ -3,10 +3,10 @@
 package interlock
 
 // HasNEONInterlock is always false on non-arm64 / purego / noitbasm.
-const HasNEONInterlock = false
+var HasNEONInterlock = false
 
 // HasSVE2Interlock is always false on non-arm64 / purego / noitbasm.
-const HasSVE2Interlock = false
+var HasSVE2Interlock = false
 
 // RankToMaskTripleUnrank48NEON should never be called when
 // HasNEONInterlock is false — the parent package's dispatch routes to

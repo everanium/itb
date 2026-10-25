@@ -42,7 +42,8 @@
 # Interlock-tier axis: ITB_FORCE_INTERLOCK_TIER sweeps the 48-bit
 # interlock rank-mask / apply kernel tiers on two lockSeed widths
 # (areion512 for the x4 fill, aesitb128 for the batch-16 fill that
-# reaches the 16-lane unrank pass).
+# reaches the 16-lane unrank pass), and the 168-bit interlock tiers on
+# areion512 and blake2b512 (Section 4b).
 #
 # Working directory tmp/parity/ is under the repo's gitignored tmp/ tree;
 # nothing produced by this script lands in the tracked working set.
@@ -50,7 +51,7 @@
 set -eu
 set -o pipefail
 
-REPO="${HOME}/go/src/itb"
+REPO="${REPO:-$(cd "$(dirname "$0")/../.." && pwd)}"
 cd "$REPO"
 
 # Build both arms — always fresh so a stale binary cannot mask a
@@ -405,6 +406,60 @@ done
 done
 
 # ---------------------------------------------------------------------------
+# Section 4b — 168-bit interlock-tier sweep × nonce widths on 512-bit hashes.
+# Forces the 168-bit interlock rank-mask / chunk168 tier on the cgo arm
+# against the scalar-forced nocgo arm, both directions, across areion512
+# and blake2b512. 7 tiers × 2 hashes × 48 = 672 cells.
+# ---------------------------------------------------------------------------
+IL168HASHES=(areion512 blake2b512)
+IL168_CELLS=$(( ${#ILTIERS[@]} * ${#IL168HASHES[@]} * ${#NONCEBITS[@]} * ${#SIZES[@]} * 2 ))
+
+for ILHASH in "${IL168HASHES[@]}"; do
+    ILPROFILE="parity-${ILHASH}-v1"
+    for NB in "${NONCEBITS[@]}"; do
+        SEED="$WORKDIR/seed-${ILHASH}-il168-nb${NB}.blob"
+        ./tools/parity/parity-cgo -mode=init \
+            -profile="$ILPROFILE" -hash="$ILHASH" -seed-file="$SEED" -nonce-bits="$NB" -interlock=168
+    done
+    for ILT in "${ILTIERS[@]}"; do
+        for NB in "${NONCEBITS[@]}"; do
+            SEED="$WORKDIR/seed-${ILHASH}-il168-nb${NB}.blob"
+
+            for SIZE in "${SIZES[@]}"; do
+                PLAIN="$WORKDIR/plain-${ILHASH}-${SIZE}.bin"
+                PLAIN_HASH=$(sha256sum "$PLAIN" | awk '{print $1}')
+
+                WIRE1="$WORKDIR/wire-il168-${ILHASH}-${SIZE}-nb${NB}-${ILT}.bin"
+                BACK1="$WORKDIR/back-il168-${ILHASH}-${SIZE}-nb${NB}-${ILT}-nocgo.bin"
+                ITB_FORCE_INTERLOCK_TIER="$ILT" ./tools/parity/parity-cgo -mode=encrypt \
+                    -profile="$ILPROFILE" -hash="$ILHASH" -seed-file="$SEED" -nonce-bits="$NB" -interlock=168 \
+                    -in="$PLAIN" -out="$WIRE1"
+                ITB_FORCE_INTERLOCK_TIER=scalar ./tools/parity/parity-nocgo -mode=decrypt \
+                    -profile="$ILPROFILE" -hash="$ILHASH" -seed-file="$SEED" -nonce-bits="$NB" -interlock=168 \
+                    -in="$WIRE1" -out="$BACK1"
+                if [ "$(sha256sum "$BACK1" | awk '{print $1}')" != "$PLAIN_HASH" ]; then
+                    echo "FAIL: il168 iltier=$ILT hash=$ILHASH encrypt=cgo decrypt=nocgo-scalar size=$SIZE nb=$NB"
+                    FAIL=$((FAIL + 1))
+                fi
+
+                WIRE2="$WORKDIR/wire-il168-${ILHASH}-${SIZE}-nb${NB}-scalar-vs-${ILT}.bin"
+                BACK2="$WORKDIR/back-il168-${ILHASH}-${SIZE}-nb${NB}-${ILT}-cgo.bin"
+                ITB_FORCE_INTERLOCK_TIER=scalar ./tools/parity/parity-nocgo -mode=encrypt \
+                    -profile="$ILPROFILE" -hash="$ILHASH" -seed-file="$SEED" -nonce-bits="$NB" -interlock=168 \
+                    -in="$PLAIN" -out="$WIRE2"
+                ITB_FORCE_INTERLOCK_TIER="$ILT" ./tools/parity/parity-cgo -mode=decrypt \
+                    -profile="$ILPROFILE" -hash="$ILHASH" -seed-file="$SEED" -nonce-bits="$NB" -interlock=168 \
+                    -in="$WIRE2" -out="$BACK2"
+                if [ "$(sha256sum "$BACK2" | awk '{print $1}')" != "$PLAIN_HASH" ]; then
+                    echo "FAIL: il168 iltier=$ILT hash=$ILHASH encrypt=nocgo-scalar decrypt=cgo size=$SIZE nb=$NB"
+                    FAIL=$((FAIL + 1))
+                fi
+            done
+        done
+    done
+done
+
+# ---------------------------------------------------------------------------
 # Section 5 — KMAC256 MAC Authenticated matrix. One canonical inner
 # hash (areion512) under the parity-mac-* profile (MAC pinned to
 # kmac256); two arm pairings per size:
@@ -628,9 +683,9 @@ done
 echo "---"
 echo "skipped: $SKIPPED_PAIRS (hash, arm) pairs / $SKIPPED_CELLS cells (no such arm — see SKIP lines)"
 echo "skipped: $FILL_SKIPPED_PAIRS (hash, fill-tier) pairs / $FILL_SKIPPED_CELLS cells (no such kernel — see SKIP lines)"
-TOTAL=$(( CELLS + TIER_CELLS + ARM_CELLS + IL_CELLS + MAC_CELLS + FILL_CELLS ))
+TOTAL=$(( CELLS + TIER_CELLS + ARM_CELLS + IL_CELLS + IL168_CELLS + MAC_CELLS + FILL_CELLS ))
 if [ "$FAIL" -eq 0 ]; then
-    echo "PASS: $CELLS host-tier + $TIER_CELLS forced-pixel-tier + $ARM_CELLS forced-hash-arm + $IL_CELLS interlock-tier + $MAC_CELLS kmac-mac + $FILL_CELLS batch-16-fill = $TOTAL cells"
+    echo "PASS: $CELLS host-tier + $TIER_CELLS forced-pixel-tier + $ARM_CELLS forced-hash-arm + $IL_CELLS interlock-tier + $IL168_CELLS interlock168-tier + $MAC_CELLS kmac-mac + $FILL_CELLS batch-16-fill = $TOTAL cells"
     exit 0
 fi
 echo "FAIL: $FAIL of $TOTAL cells failed"

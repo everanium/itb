@@ -303,6 +303,9 @@ func EncryptStream3xCfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, 
 	if err := validateConfigCfg(cfg); err != nil {
 		return err
 	}
+	if err := validateInterlockWidthCfg(cfg, width); err != nil {
+		return err
+	}
 	cs, err := validateChunkSize(chunkSize)
 	if err != nil {
 		return err
@@ -356,6 +359,9 @@ func EncryptStream3xCfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, 
 func DecryptStream3xCfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 any, src io.Reader, dst io.Writer) error {
 	width, err := dispatchWidthTriple(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3)
 	if err != nil {
+		return err
+	}
+	if err := validateInterlockWidthCfg(cfg, width); err != nil {
 		return err
 	}
 	ptPtr, ptBuf := acquireStage(DefaultChunkSize)
@@ -416,6 +422,9 @@ func EncryptStreamAuth3xCfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSee
 		return fmt.Errorf("itb: macFunc must not be nil")
 	}
 	if err := validateConfigCfg(cfg); err != nil {
+		return err
+	}
+	if err := validateInterlockWidthCfg(cfg, width); err != nil {
 		return err
 	}
 	cs, err := validateChunkSize(chunkSize)
@@ -527,6 +536,9 @@ func DecryptStreamAuth3xCfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSee
 	}
 	if mac == nil {
 		return fmt.Errorf("itb: macFunc must not be nil")
+	}
+	if err := validateInterlockWidthCfg(cfg, width); err != nil {
+		return err
 	}
 
 	// Every record is a 32-byte prefix followed by one chunk: the

@@ -165,9 +165,10 @@ func (p *Pipeline) SaveF(path string) error {
 // [Profile] record — every structural field the sender's Pipeline was
 // built with, Init-time Opts overrides folded in, Name carrying the
 // sender's profile label. [Profile.NonceBits], [Profile.BarrierFill],
-// and [Profile.ContainerMode] are additionally populated from the blob's
-// inner snapshot (a lightweight read of the integer fields — nothing
-// else in the inner blob is decoded). No Pipeline is opened.
+// [Profile.ContainerMode], and (when omitted from the outer profile
+// record) [Profile.Interlock] are additionally populated from the blob's
+// inner snapshot (a lightweight read of the globals and mode fields —
+// nothing else in the inner blob is decoded). No Pipeline is opened.
 //
 // Inspect is a pure decode: it does not read the profile registry,
 // does not probe primitive availability, does not run the profile
@@ -206,13 +207,17 @@ func Inspect(blob []byte) (Profile, error) {
 	var innerProbe struct {
 		Mode    int `json:"mode"`
 		Globals struct {
-			NonceBits   int `json:"nonce_bits"`
-			BarrierFill int `json:"barrier_fill"`
+			NonceBits   int    `json:"nonce_bits"`
+			BarrierFill int    `json:"barrier_fill"`
+			Interlock   string `json:"interlock"`
 		} `json:"globals"`
 	}
 	if err := json.Unmarshal(wrap.Inner, &innerProbe); err == nil {
 		prof.NonceBits = innerProbe.Globals.NonceBits
 		prof.BarrierFill = innerProbe.Globals.BarrierFill
+		if prof.Interlock == "" && innerProbe.Globals.Interlock == itb.Interlock168 {
+			prof.Interlock = innerProbe.Globals.Interlock
+		}
 		if innerProbe.Mode == 0 {
 			prof.ContainerMode = 1
 		} else {

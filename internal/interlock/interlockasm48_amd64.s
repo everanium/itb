@@ -299,7 +299,7 @@ m0Solo:
 	VZEROUPPER
 	RET
 
-// func dumpSIMDRegs(dst *[88]uint64, avx512 bool)
+// func dumpSIMDRegs(dst *[96]uint64, avx512 bool)
 TEXT ·dumpSIMDRegs(SB), NOSPLIT, $0-9
 	MOVQ dst+0(FP), AX
 	MOVQ CX, 512(AX)
@@ -313,6 +313,7 @@ TEXT ·dumpSIMDRegs(SB), NOSPLIT, $0-9
 	MOVQ R12, 576(AX)
 	MOVQ R13, 584(AX)
 	MOVQ R15, 592(AX)
+	MOVQ BX, 600(AX)
 	MOVOU X0, 0(AX)
 	MOVOU X1, 16(AX)
 	MOVOU X2, 32(AX)
@@ -366,6 +367,7 @@ dumpDone:
 	PXOR X14, X14
 	PXOR X15, X15
 	XORQ AX, AX
+	XORQ BX, BX
 	XORQ CX, CX
 	XORQ DX, DX
 	XORQ SI, SI

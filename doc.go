@@ -129,7 +129,8 @@
 // A nil [*Config] falls through to the compile-in defaults
 // ([DefaultNonceBits] / [DefaultBarrierFill] and runtime.NumCPU for
 // parallelism). A non-nil cfg overrides NonceBits, BarrierFill, Mode,
-// TagStubSize, MaxWorkers, and MACIncremental on a per-call basis;
+// TagStubSize, MaxWorkers, MACIncremental, DRBG, and Interlock on a
+// per-call basis;
 // multiple encryptors with distinct configurations coexist in one
 // process without any shared mutable state. Valid NonceBits: 0 (default
 // 512), 128, 256, 512. Valid BarrierFill: 0 (default 1), 1, 2, 4, 8, 16,
@@ -140,6 +141,8 @@
 // ChaCha20 otherwise) or the name of an installed DRBG fill primitive:
 // "aesitb128", "csprng", or a keystream-eligible registry primitive by
 // its registry name once package ctr is linked (see [Config.DRBG]).
+// Valid Interlock: "" or "48" (default 48-bit) or "168" (168-bit, for
+// 512-bit Triple entry points; see [Config.Interlock]).
 //
 // # Wire format
 //

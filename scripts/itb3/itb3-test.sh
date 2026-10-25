@@ -36,6 +36,7 @@ echo "=== 1. version / catalog / list subcommands ==="
 "$BIN" catalog  | grep -q "Modes:"
 "$BIN" catalog  | grep -q "Profiles:"
 "$BIN" catalog  | grep -q "DRBG:"
+"$BIN" catalog  | grep -q "Interlock:"
 "$BIN" hashes   | grep -q "areion512"
 "$BIN" macs     | grep -q "kmac256"
 "$BIN" ciphers  | grep -q "blake3"
@@ -61,6 +62,7 @@ grep -q "^key_bits: 1024$"             "$tmp/session.inspect"
 grep -q "^mac_name: (none)$"           "$tmp/session.inspect"
 grep -q "^container_mode: per-region (1)$" "$tmp/session.inspect"
 grep -q "^drbg: (auto: "               "$tmp/session.inspect"
+grep -q "^interlock: 48 (default)$"    "$tmp/session.inspect"
 grep -q "^wrapper: false$"          "$tmp/session.inspect"
 grep -q "^parallax: false$"         "$tmp/session.inspect"
 "$BIN" verify "$tmp/session.blob"
@@ -80,6 +82,14 @@ echo "=== 2c. roundtrip: drbg operator selection ==="
 "$BIN" decrypt "$tmp/drbg.blob" -i "$tmp/drbg.cipher" -o "$tmp/drbg.dec"
 cmp "$tmp/plain.txt" "$tmp/drbg.dec"
 "$BIN" verify "$tmp/drbg.blob"
+
+echo "=== 2d. roundtrip: interlock 168 (512-bit hash) ==="
+"$BIN" genblob nomac areion512 --interlock 168 -o "$tmp/il168.blob"
+"$BIN" inspect "$tmp/il168.blob" | grep -q "^interlock: 168$"
+"$BIN" encrypt "$tmp/il168.blob" -i "$tmp/plain.txt" -o "$tmp/il168.cipher"
+"$BIN" decrypt "$tmp/il168.blob" -i "$tmp/il168.cipher" -o "$tmp/il168.dec"
+cmp "$tmp/plain.txt" "$tmp/il168.dec"
+"$BIN" verify "$tmp/il168.blob"
 
 echo "=== 3. roundtrip: mac mode + genblob to stdout ==="
 "$BIN" genblob mac areion512 -k 1024 -m hmac-blake3 -o "$tmp/mac.blob"
@@ -178,6 +188,10 @@ expect_fail 1 "unknown mixed pseudonym"  "$BIN" genblob nomac mixed999
 expect_fail 1 "--blob-mode 0 out of range" "$BIN" genblob nomac blake3 --blob-mode 0
 expect_fail 1 "--blob-mode 3 out of range" "$BIN" genblob nomac blake3 --blob-mode 3
 expect_fail 1 "--drbg invalid"             "$BIN" genblob nomac blake3 --drbg invalid_drbg
+expect_fail 1 "--interlock invalid"        "$BIN" genblob nomac areion512 --interlock 96
+expect_fail 1 "--interlock 168 on 256-bit" "$BIN" genblob nomac blake3 --interlock 168
+expect_fail 1 "--interlock 168 on 128-bit" "$BIN" genblob nomac aesitb128 --interlock 168
+expect_fail 1 "--interlock 168 on mixed256" "$BIN" genblob nomac mixed256 --interlock 168
 
 echo "=== 10. blob rejection: schema version / malformed / missing (exit 2) ==="
 printf '{"v":1,"p":"singlemsg-triple-mac-v1","ib":"e30=","wp":true,"ww":true}' > "$tmp/v1.blob"

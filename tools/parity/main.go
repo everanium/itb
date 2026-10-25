@@ -11,9 +11,9 @@
 //
 // Flags:
 //
-//	parity -mode=init    -profile=P -hash=H -seed-file=S [-nonce-bits=N]
-//	parity -mode=encrypt -profile=P -hash=H -seed-file=S -in=plain.bin -out=wire.bin [-nonce-bits=N]
-//	parity -mode=decrypt -profile=P -hash=H -seed-file=S -in=wire.bin  -out=back.bin [-nonce-bits=N]
+//	parity -mode=init    -profile=P -hash=H -seed-file=S [-nonce-bits=N] [-interlock=48|168]
+//	parity -mode=encrypt -profile=P -hash=H -seed-file=S -in=plain.bin -out=wire.bin [-nonce-bits=N] [-interlock=48|168]
+//	parity -mode=decrypt -profile=P -hash=H -seed-file=S -in=wire.bin  -out=back.bin [-nonce-bits=N] [-interlock=48|168]
 //
 // -nonce-bits (default 512) selects the on-wire nonce width (128 |
 // 256 | 512) passed to [triple.Init] by -mode=init. The nonce width
@@ -109,6 +109,7 @@ func run(args []string) int {
 	inFile := fs.String("in", "", "-mode=encrypt|decrypt: input path")
 	outFile := fs.String("out", "", "-mode=encrypt|decrypt: output path")
 	nonceBits := fs.Int("nonce-bits", 512, "on-wire nonce width in bits (128 | 256 | 512)")
+	interlock := fs.String("interlock", "", "Interlocked Barrier chunk width (empty/48 default | 168 for 512-bit hashes)")
 
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -133,7 +134,7 @@ func run(args []string) int {
 
 	switch *mode {
 	case "init":
-		if err := doInit(*profile, *hash, *seedFile, *nonceBits); err != nil {
+		if err := doInit(*profile, *hash, *seedFile, *nonceBits, *interlock); err != nil {
 			fmt.Fprintf(os.Stderr, "parity: init: %v\n", err)
 			return 1
 		}
@@ -206,8 +207,8 @@ func ensureProfile(profileName, hashName string) error {
 // consume the same blob, so both arms observe the identical seed state.
 // nonceBits selects the on-wire nonce width embedded into the session blob;
 // subsequent encrypt / decrypt calls reconstruct this width via [triple.Load].
-func doInit(profileName, hashName, seedPath string, nonceBits int) error {
-	pipe, blob, err := triple.Init(profileName, triple.Opts{NonceBits: nonceBits})
+func doInit(profileName, hashName, seedPath string, nonceBits int, interlock string) error {
+	pipe, blob, err := triple.Init(profileName, triple.Opts{NonceBits: nonceBits, Interlock: interlock})
 	if err != nil {
 		return fmt.Errorf("triple.Init(%q): %w", profileName, err)
 	}

@@ -3,6 +3,7 @@
 package interlock
 
 import (
+	"bytes"
 	"math/rand"
 	"runtime"
 	"runtime/debug"
@@ -353,6 +354,44 @@ func TestFusedKernelsLeaveNoSecretInFrame(t *testing.T) {
 		}
 	})
 
+	t.Run("RankToMaskTripleUnrank168NEON", func(t *testing.T) {
+		rng := rand.New(rand.NewSource(205))
+		idx0 := new([3][8]uint64)
+		idx1 := new([2][8]uint64)
+		out := new([3][3][8]uint64)
+		for j := 0; j < 8; j++ {
+			v0 := randomIdx0_168(rng)
+			v1 := randomIdx1_168(rng)
+			idx0[0][j] = v0[0]
+			idx0[1][j] = v0[1]
+			idx0[2][j] = v0[2]
+			idx1[0][j] = v1[0]
+			idx1[1][j] = v1[1]
+		}
+		if w := captureInterlockFrameAndRegResidue(func() {
+			RankToMaskTripleUnrank168NEON(idx0, idx1, out)
+		}, res); w == 0 {
+			t.Fatal("RankToMaskTripleUnrank168NEON: probe missed stack window")
+		}
+		const dom2 = (uint64(1) << 40) - 1
+		var targets []uint64
+		for j := 0; j < 8; j++ {
+			m1Local := refUnrank168([3]uint64{idx1[0][j], idx1[1][j], 0}, 56, 112)
+			targets = append(targets,
+				idx0[0][j], idx0[1][j], idx0[2][j],
+				idx1[0][j], idx1[1][j],
+				m1Local[0], m1Local[1],
+				^out[0][0][j], ^out[0][1][j], (^out[0][2][j])&dom2,
+				out[0][0][j], out[0][1][j], out[0][2][j],
+				out[1][0][j], out[1][1][j], out[1][2][j],
+				out[2][0][j], out[2][1][j], out[2][2][j],
+			)
+		}
+		if word, off, found := scanForInterlockWords(res, targets); found {
+			t.Fatalf("RankToMaskTripleUnrank168NEON leaked word %#016x at offset %d (window=%d)", word, off, interlockResidueWindow)
+		}
+	})
+
 	if HasSVE2Interlock {
 		t.Run("Chunk48LockBatchSVE2_And_Unchunk48LockBatchSVE2", func(t *testing.T) {
 			rng := rand.New(rand.NewSource(106))
@@ -393,5 +432,110 @@ func TestFusedKernelsLeaveNoSecretInFrame(t *testing.T) {
 				t.Fatalf("unchunk48LockBatchSVE2 leaked word %#016x at offset %d (window=%d)", word, off, interlockResidueWindow)
 			}
 		})
+
+		t.Run("Chunk168LockBatchSVE2_And_Unchunk168LockBatchSVE2", func(t *testing.T) {
+			rng := rand.New(rand.NewSource(206))
+			const n = 8
+			src := make([]byte, 21*n)
+			dst := make([]byte, 21*n)
+			p0 := make([]byte, 7*n)
+			p1 := make([]byte, 7*n)
+			p2 := make([]byte, 7*n)
+			masks := make([][3][3]uint64, n)
+			var targets []uint64
+			for j := 0; j < n; j++ {
+				for b := 0; b < 21; b++ {
+					src[21*j+b] = byte(rng.Uint32() | 1)
+				}
+				var x0, x1, x2 uint64
+				for i := 0; i < 8; i++ {
+					x0 |= uint64(src[21*j+i]) << (8 * i)
+					x1 |= uint64(src[21*j+8+i]) << (8 * i)
+				}
+				for i := 0; i < 5; i++ {
+					x2 |= uint64(src[21*j+16+i]) << (8 * i)
+				}
+				m0, m1, m2 := randomTripleMask168(rng)
+				masks[j] = [3][3]uint64{m0, m1, m2}
+				targets = append(targets,
+					x0, x1, x2,
+					m0[0], m0[1], m0[2],
+					m1[0], m1[1], m1[2],
+					m2[0], m2[1], m2[2],
+				)
+			}
+			if w := captureInterlockFrameAndRegResidue(func() {
+				chunk168LockBatchSVE2(n, &src[0], &masks[0], &p0[0], &p1[0], &p2[0])
+			}, res); w == 0 {
+				t.Fatal("chunk168LockBatchSVE2: probe missed stack window")
+			}
+			for j := 0; j < n; j++ {
+				var l0, l1, l2 uint64
+				for i := 0; i < 7; i++ {
+					l0 |= uint64(p0[7*j+i]) << (8 * i)
+					l1 |= uint64(p1[7*j+i]) << (8 * i)
+					l2 |= uint64(p2[7*j+i]) << (8 * i)
+				}
+				targets = append(targets, l0, l1, l2)
+			}
+			if word, off, found := scanForInterlockWords(res, targets); found {
+				t.Fatalf("chunk168LockBatchSVE2 leaked word %#016x at offset %d (window=%d)", word, off, interlockResidueWindow)
+			}
+			if w := captureInterlockFrameAndRegResidue(func() {
+				unchunk168LockBatchSVE2(n, &masks[0], &p0[0], &p1[0], &p2[0], &dst[0])
+			}, res); w == 0 {
+				t.Fatal("unchunk168LockBatchSVE2: probe missed stack window")
+			}
+			if word, off, found := scanForInterlockWords(res, targets); found {
+				t.Fatalf("unchunk168LockBatchSVE2 leaked word %#016x at offset %d (window=%d)", word, off, interlockResidueWindow)
+			}
+		})
+	}
+}
+
+func TestChunk168LockBatchGoVsSoft(t *testing.T) {
+	chunk168LockBatchGo(nil, nil, nil, nil, nil)
+	unchunk168LockBatchGo(nil, nil, nil, nil, nil)
+
+	rng := rand.New(rand.NewSource(16899))
+	i0s := boundaryIdx0Vectors()
+	i1s := boundaryIdx1Vectors()
+	var bMasks [][3][3]uint64
+	for _, v0 := range i0s {
+		for _, v1 := range i1s {
+			m0, m1, m2 := refTriple168(v0, v1)
+			bMasks = append(bMasks, [3][3]uint64{m0, m1, m2})
+		}
+	}
+	for iter := 0; iter < 200; iter++ {
+		m0, m1, m2 := randomTripleMask168(rng)
+		bMasks = append(bMasks, [3][3]uint64{m0, m1, m2})
+	}
+
+	n := len(bMasks)
+	src := make([]byte, 21*n)
+	rng.Read(src)
+	gotP0 := make([]byte, 7*n)
+	gotP1 := make([]byte, 7*n)
+	gotP2 := make([]byte, 7*n)
+	chunk168LockBatchGo(src, bMasks, gotP0, gotP1, gotP2)
+
+	for j := 0; j < n; j++ {
+		var chunk [21]byte
+		copy(chunk[:], src[21*j:21*(j+1)])
+		w0 := softPEXT168Ref(&chunk, bMasks[j][0])
+		w1 := softPEXT168Ref(&chunk, bMasks[j][1])
+		w2 := softPEXT168Ref(&chunk, bMasks[j][2])
+		if !bytes.Equal(gotP0[7*j:7*(j+1)], w0[:]) ||
+			!bytes.Equal(gotP1[7*j:7*(j+1)], w1[:]) ||
+			!bytes.Equal(gotP2[7*j:7*(j+1)], w2[:]) {
+			t.Fatalf("chunk168LockBatchGo mismatch at j=%d", j)
+		}
+	}
+
+	gotBack := make([]byte, 21*n)
+	unchunk168LockBatchGo(gotP0, gotP1, gotP2, bMasks, gotBack)
+	if !bytes.Equal(gotBack, src) {
+		t.Fatalf("unchunk168LockBatchGo round-trip mismatch")
 	}
 }

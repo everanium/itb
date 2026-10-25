@@ -34,6 +34,7 @@ type genblobOpts struct {
 	barrierFill int
 	blobMode    int
 	drbg        string
+	interlock   string
 	mac         string
 	palette     []string
 	segment     int
@@ -103,6 +104,8 @@ Flag semantics:
                   the auto tier (AES-256-CTR where the host has hardware
                   AES, ChaCha20 otherwise). The choice travels in the
                   blob's recipe.
+    --interlock 48|168  Interlocked Barrier chunk width (default 48;
+                  168 requires a 512-bit hash or mixed512).
     -o <file>     Output file (created with mode 0600). Omitted → stdout.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			set := genblobFlagsSet{
@@ -126,6 +129,7 @@ Flag semantics:
 	f.StringVarP(&opts.wrapper, "wrapper", "w", "", "wrapper outer cipher")
 	f.IntVar(&opts.blobMode, "blob-mode", 1, "container floor sizing mode — 1 (per-region, default) | 2 (per-container)")
 	f.StringVar(&opts.drbg, "drbg", "", "DRBG fill primitive name (see itb3 drbgs); empty = auto tier")
+	f.StringVar(&opts.interlock, "interlock", "", "Interlocked Barrier chunk width — 48 (default) | 168 (requires 512-bit hash)")
 	f.StringVarP(&opts.output, "output", "o", "", "output blob file (default stdout)")
 	return cmd
 }
@@ -169,6 +173,9 @@ func runGenblob(modeArg string, hashArg string, opts genblobOpts, set genblobFla
 	if err := validateBarrierFill(opts.barrierFill); err != nil {
 		return usageErr("genblob", "%v", err)
 	}
+	if err := validateInterlock(opts.interlock); err != nil {
+		return usageErr("genblob", "%v", err)
+	}
 	if isStreaming && set.chunk {
 		if err := validateChunkSizeMB(opts.chunkSizeMB); err != nil {
 			return usageErr("genblob", "%v", err)
@@ -181,6 +188,9 @@ func runGenblob(modeArg string, hashArg string, opts genblobOpts, set genblobFla
 	width, innerHash, mixedHashes, err := resolveHashPositional(hashArg)
 	if err != nil {
 		return usageErr("genblob", "%v", err)
+	}
+	if opts.interlock == "168" && width != 512 {
+		return usageErr("genblob", "--interlock 168 requires a 512-bit hash (got %q, width %d)", hashArg, width)
 	}
 
 	// MAC primitive.
@@ -263,6 +273,7 @@ func runGenblob(modeArg string, hashArg string, opts genblobOpts, set genblobFla
 		NonceBits:   opts.nonceBits,
 		BarrierFill: opts.barrierFill,
 		DRBG:        opts.drbg,
+		Interlock:   opts.interlock,
 	})
 	if err != nil {
 		return runtimeErr("genblob", "triple.Init: %v", err)
@@ -406,6 +417,15 @@ func validateBarrierFill(b int) error {
 		return nil
 	}
 	return fmt.Errorf("barrier %d not in {1, 2, 4, 8, 16, 32}", b)
+}
+
+// validateInterlock enforces the CLI-visible Interlock enum.
+func validateInterlock(v string) error {
+	switch v {
+	case "", "48", "168":
+		return nil
+	}
+	return fmt.Errorf("--interlock must be 48 or 168, got %q", v)
 }
 
 // validateChunkSizeMB enforces the CLI-visible ChunkSize range (1..64 MB).

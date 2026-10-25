@@ -50,6 +50,9 @@ func encryptAuthenticated3x256CfgInto(cfg *Config, dst []byte, lead int, noiseSe
 	if err := validateConfigCfg(cfg); err != nil {
 		return nil, err
 	}
+	if err := validateInterlockWidthCfg(cfg, 256); err != nil {
+		return nil, err
+	}
 	// The streamID is drawn only once the inputs have passed the checks
 	// above; the chunk body re-runs them, which is cheap.
 	streamID, err := generateStreamID()
@@ -82,6 +85,9 @@ func DecryptAuthenticated3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, d
 // but reuses dst when cap(dst) is sufficient to hold the recovered plaintext.
 func decryptAuthenticated3x256CfgInto(cfg *Config, dst []byte, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed256, fileData []byte, macFunc MACFunc) ([]byte, error) {
 	if err := checkEightSeeds256(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
+		return nil, err
+	}
+	if err := validateInterlockWidthCfg(cfg, 256); err != nil {
 		return nil, err
 	}
 	if macFunc == nil {
@@ -158,6 +164,9 @@ func encryptStreamAuthenticated3x256CfgInto(cfg *Config, dst []byte, noiseSeed, 
 		return nil, fmt.Errorf("itb: data too large: %d bytes (max %d)", len(data), maxDataSize)
 	}
 	if err := validateConfigCfg(cfg); err != nil {
+		return nil, err
+	}
+	if err := validateInterlockWidthCfg(cfg, 256); err != nil {
 		return nil, err
 	}
 
@@ -252,6 +261,9 @@ func DecryptStreamAuthenticated3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSe
 
 func decryptStreamAuthenticated3x256CfgInto(cfg *Config, dst []byte, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed256, chunkData []byte, macFunc MACFunc, streamID [32]byte, chunkPrefix []byte, cumulativePixelOffset uint64, requireFinal bool) ([]byte, bool, error) {
 	if err := checkEightSeeds256(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
+		return nil, false, err
+	}
+	if err := validateInterlockWidthCfg(cfg, 256); err != nil {
 		return nil, false, err
 	}
 	if macFunc == nil {

@@ -23,18 +23,19 @@ func TestForceInterlockTierApplied(t *testing.T) {
 		if !HasSVE2Interlock {
 			t.Skip("sve2 tier not executable on this host / build")
 		}
-		if !HasNEONInterlock || !HasChunk48Batch {
-			t.Fatalf("sve2: HasNEONInterlock=%v HasChunk48Batch=%v, want both true", HasNEONInterlock, HasChunk48Batch)
+		if !HasNEONInterlock || !HasChunk48Batch || !HasChunk168Batch {
+			t.Fatalf("sve2: HasNEONInterlock=%v HasChunk48Batch=%v HasChunk168Batch=%v, want all true",
+				HasNEONInterlock, HasChunk48Batch, HasChunk168Batch)
 		}
 	case "neon", "sve":
-		if !HasNEONInterlock || !HasChunk48Batch || HasSVE2Interlock {
-			t.Fatalf("%s: HasNEONInterlock=%v HasChunk48Batch=%v HasSVE2Interlock=%v, want true/true/false",
-				tier, HasNEONInterlock, HasChunk48Batch, HasSVE2Interlock)
+		if !HasNEONInterlock || !HasChunk48Batch || !HasChunk168Batch || HasSVE2Interlock {
+			t.Fatalf("%s: HasNEONInterlock=%v HasChunk48Batch=%v HasChunk168Batch=%v HasSVE2Interlock=%v, want true/true/true/false",
+				tier, HasNEONInterlock, HasChunk48Batch, HasChunk168Batch, HasSVE2Interlock)
 		}
 	case "scalar":
-		if HasNEONInterlock || HasChunk48Batch || HasSVE2Interlock {
-			t.Fatalf("scalar: HasNEONInterlock=%v HasChunk48Batch=%v HasSVE2Interlock=%v, want all false",
-				HasNEONInterlock, HasChunk48Batch, HasSVE2Interlock)
+		if HasNEONInterlock || HasChunk48Batch || HasChunk168Batch || HasSVE2Interlock {
+			t.Fatalf("scalar: HasNEONInterlock=%v HasChunk48Batch=%v HasChunk168Batch=%v HasSVE2Interlock=%v, want all false",
+				HasNEONInterlock, HasChunk48Batch, HasChunk168Batch, HasSVE2Interlock)
 		}
 	case "avx512", "avx512x8", "avx2":
 		t.Skipf("%s tier keeps auto-dispatch on arm64", tier)

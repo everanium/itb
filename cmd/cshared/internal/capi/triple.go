@@ -596,6 +596,9 @@ func mapTripleError(err error) Status {
 	if strings.Contains(msg, "mixedHashes") {
 		return tripleErr(StatusBadInput, msg)
 	}
+	if strings.Contains(msg, "opts.Interlock=") || strings.Contains(msg, "Interlock=") || strings.Contains(msg, "cfg.Interlock=") {
+		return tripleErr(StatusBadInput, msg)
+	}
 	// InitKeys master-key length validation errors.
 	if strings.Contains(msg, "InitKeys:") {
 		return tripleErr(StatusBadInput, msg)

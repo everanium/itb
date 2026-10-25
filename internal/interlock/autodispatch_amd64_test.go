@@ -23,6 +23,7 @@ func TestAutoDispatchFollowsBMI2(t *testing.T) {
 	}{
 		{"HasBMI2", HasBMI2, cpuid.BMI2},
 		{"HasChunk48Batch", HasChunk48Batch, cpuid.BMI2},
+		{"HasChunk168Batch", HasChunk168Batch, cpuid.BMI2},
 		{"HasAVX512RankMask", HasAVX512RankMask, cpuid.AVX512F && cpuid.BMI2},
 		{"HasAVX2RankMask", HasAVX2RankMask, cpuid.AVX2 && cpuid.BMI2 && !cpuid.AVX512F},
 		{"UseUnrank16", UseUnrank16, cpuid.AVX512F && cpuid.BMI2},

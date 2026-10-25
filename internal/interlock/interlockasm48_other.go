@@ -3,12 +3,12 @@
 // Stub package on platforms without the BMI2 PEXTQ / PDEPQ assembly
 // path. arm64 builds carry their own NEON rank-mask and SVE2 BEXT /
 // BDEP chunk-apply kernels (see the _arm64 files); on every other
-// platform the parent `itb` package uses its portable Go softPEXT48 /
-// softPDEP48 fallback and nothing here is exercised.
+// platform the parent `itb` package uses its portable Go softPEXT /
+// softPDEP fallback and nothing here is exercised.
 package interlock
 
 // HasBMI2 is always false outside amd64.
-const HasBMI2 = false
+var HasBMI2 = false
 
 // Chunk48Lock should never be called on non-amd64 builds — the parent
 // package's dispatch routes to the portable Go fallback when HasBMI2
@@ -23,7 +23,7 @@ func Unchunk48Lock(l0, l1, l2, m0, m1, m2 uint64) (x uint64) {
 }
 
 // HasAVX512RankMask is always false on non-amd64 / purego / noitbasm.
-const HasAVX512RankMask = false
+var HasAVX512RankMask = false
 
 // RankToMaskTripleUnrank48 should never be called when
 // HasAVX512RankMask is false — the parent package's dispatch routes
@@ -34,7 +34,7 @@ func RankToMaskTripleUnrank48(idx0 *[8]uint64, idx1 *[8]uint32, out *[3][8]uint6
 }
 
 // HasAVX2RankMask is always false on non-amd64 / purego / noitbasm.
-const HasAVX2RankMask = false
+var HasAVX2RankMask = false
 
 // RankToMaskTripleUnrank48AVX2 should never be called when
 // HasAVX2RankMask is false — the parent package's dispatch routes to

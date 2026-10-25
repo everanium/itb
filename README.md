@@ -201,11 +201,11 @@ Blob profile (no cipher surface; used by `Init` / `Rekey` to bundle session stat
 
 The single-primitive Triple, blob, and mixed-primitive profiles default to **parallax on (Pre-inner ciphers) + wrapper (Outer cipher) on**; AES-ITB-128 native profiles keep parallax and wrapper off, but can be used in conjunction with other PRF-grade primitives. Both toggles are opt-out via `triple.Opts` on the overlay-enabled profiles. Every seed component, PRF key, MAC key, and wrapper master is drawn from `crypto/rand` at `Init` time (or derived deterministically from eight caller-supplied master keys via `InitKeys`).
 
-**The user's story.** Call `triple.Init(profile, opts)` to receive a `*triple.Pipeline` plus a `blob` byte slice. **The blob is the full session bundle** — the resolved `triple.Profile` record (the recipe: mode, width, primitives, key width, MAC, outer cipher, palette, chunk / segment sizes, layer toggles, and the sender's profile label), both masters, and the inner Blob{N} carrying the 8-seed components + per-slot PRF keys + optional MAC material + the `ContainerMode` / `NonceBits` / `BarrierFill` snapshot. Ship the blob to the receiver out-of-band; the receiver calls `triple.Load(blob)` (or `triple.LoadF(path)` for a blob on disk) and reconstructs the same Pipeline from the recipe alone — no profile registration is needed on the receiving side, and no `Opts` are accepted because every structural field is fixed by the blob. Alternatively, when both peers already hold eight shared master keys (`masters [8][]byte`), call `triple.InitKeys(profile, opts, masters)` on each side to derive an identical `*triple.Pipeline` and `blob` deterministically via per-slot KDF without transmitting the session blob (the eight master keys must come from independent entropy or key-agreement sources — never derive all eight keys from a single secret or a single KDF parent key). Both sides then encrypt / decrypt against their Pipeline. The per-machine worker cap is the one runtime knob and is set after construction via `pipe.MaxWorkers(n)`.
+**The user's story.** Call `triple.Init(profile, opts)` to receive a `*triple.Pipeline` plus a `blob` byte slice. **The blob is the full session bundle** — the resolved `triple.Profile` record (the recipe: mode, width, primitives, key width, MAC, outer cipher, palette, chunk / segment sizes, layer toggles, interlock width, and the sender's profile label), both masters, and the inner Blob{N} carrying the 8-seed components + per-slot PRF keys + optional MAC material + the `ContainerMode` / `NonceBits` / `BarrierFill` / `Interlock` snapshot. Ship the blob to the receiver out-of-band; the receiver calls `triple.Load(blob)` (or `triple.LoadF(path)` for a blob on disk) and reconstructs the same Pipeline from the recipe alone — no profile registration is needed on the receiving side, and no `Opts` are accepted because every structural field is fixed by the blob. Alternatively, when both peers already hold eight shared master keys (`masters [8][]byte`), call `triple.InitKeys(profile, opts, masters)` on each side to derive an identical `*triple.Pipeline` and `blob` deterministically via per-slot KDF without transmitting the session blob (the eight master keys must come from independent entropy or key-agreement sources — never derive all eight keys from a single secret or a single KDF parent key). Both sides then encrypt / decrypt against their Pipeline. The per-machine worker cap is the one runtime knob and is set after construction via `pipe.MaxWorkers(n)`.
 
 **Blob persistence and inspection.** `pipe.Save()` returns a copy of the Pipeline's current blob (the bytes `Init` handed back, or the refreshed bytes after `Rekey` / a master override at `Load`); `pipe.SaveF(path)` writes it with mode `0600` (the containing directory must already exist). `triple.LoadF(path)` is the file-side counterpart of `Load`. `triple.Inspect(blob)` decodes the embedded `Profile` record without constructing a Pipeline — a pure metadata read that touches neither the profile registry nor the primitive registries. `Load` accepts an optional trailing `(permMaster, wrapMaster)` pair to swap the masters at reopen time (rekey-on-import); the blob `Save()` returns afterwards carries the overridden masters. A blob whose wrap-layer schema version is not the current one is refused with `triple.ErrBlobVersion`; a recipe naming a primitive absent from the local registries is refused with `triple.ErrRecipePrimitiveUnknown`.
 
-**Command-line utility — `itb3`.** [`cmd/itb3`](cmd/itb3/) ships an openssl-style CLI over the same `triple/` surface. `itb3 genblob <mode> <hash> [--blob-mode 1|2]` generates a session blob (written with mode `0600` when `-o` is used; `--blob-mode` selects Mode 1 per-region default or Mode 2 per-container compact sizing); `itb3 encrypt` / `decrypt` / `rekey` / `inspect` / `verify` operate on a saved blob via `triple.LoadF`, and `itb3 profiles` lists the registered profile catalogue. Payloads pass through files (`-i` / `-o`) or via stdin / stdout. See [`cmd/itb3/README.md`](cmd/itb3/README.md) for the full subcommand reference.
+**Command-line utility — `itb3`.** [`cmd/itb3`](cmd/itb3/) ships an openssl-style CLI over the same `triple/` surface. `itb3 genblob <mode> <hash> [--blob-mode 1|2] [--interlock 48|168]` generates a session blob (written with mode `0600` when `-o` is used; `--blob-mode` selects Mode 1 per-region default or Mode 2 per-container compact sizing; `--interlock` selects the 48-bit default or the 168-bit Interlocked Barrier for 512-bit hashes); `itb3 encrypt` / `decrypt` / `rekey` / `inspect` / `verify` operate on a saved blob via `triple.LoadF`, and `itb3 profiles` lists the registered profile catalogue. Payloads pass through files (`-i` / `-o`) or via stdin / stdout. See [`cmd/itb3/README.md`](cmd/itb3/README.md) for the full subcommand reference.
 
 ### Triple 1 — Single Message with MAC
 
@@ -534,6 +534,10 @@ enc, blob, err := triple.Init(triple.ProfileStreamingAEADTripleMACV1, triple.Opt
     // 1 = per-region, 2 = per-container (Mode 2 per-container).
     Mode: 1,
 
+    // Interlocked Barrier chunk width: "" or "48" = default 48-bit,
+    // "168" = 168-bit (requires a 512-bit hash primitive).
+    Interlock: "48",
+
     // Externally-supplied masters (e.g. ML-KEM decapsulation output);
     // nil = auto-generate via crypto/rand.
     PermMaster: permKeyFromKEM, // 32+ bytes
@@ -580,6 +584,7 @@ Any field left at its zero value defers to the resolved profile's default; a nil
 | Field | Accepted value | Notes |
 |---|---|---|
 | `Mode` | `1` \| `2` (or `0` = default) | Container floor sizing mode; `0` = default (Mode 1 per-region), `1` = per-region, `2` = per-container (compact VPN tunnel mode). The resolved value travels in the session blob's inner snapshot and is reproduced on `Load`; `Inspect` surfaces it as `Profile.ContainerMode`. |
+| `Interlock` | `"48"` \| `"168"` (or `""` = default) | Interlocked Barrier chunk width; `""` or `"48"` = default 48-bit (6-byte chunk, 3 × 16-bit lanes), `"168"` = 168-bit (21-byte chunk, 3 × 56-bit lanes; requires a 512-bit inner hash or mixed profile). The resolved non-default value (`"168"`) travels in the session blob's recipe and inner snapshot, is reproduced on `Load`, and is surfaced by `Inspect` as `Profile.Interlock` (`""` for default 48-bit). |
 | `PermMaster` | `[]byte`, ≥ 32 bytes (or nil) | Externally-supplied parallax master (e.g. ML-KEM output); nil = crypto/rand auto-generate. |
 | `WrapMaster` | `[]byte`, ≥ 32 bytes (or nil) | Externally-supplied wrapper master; nil = crypto/rand auto-generate. |
 | `WithParallax` | `*bool` (nil / &false / &true) | Three-state override; nil = profile default (on for every shipped profile). |
@@ -610,6 +615,12 @@ aesitb128  areion256  areion512  blake2b256  blake2b512  blake2s  blake3  aescma
 
 ```
 aesitb128  areion256  areion512  blake2b256  blake2b512  blake2s  blake3  aescmac  siphash24  chacha20  csprng
+```
+
+**168-bit Interlock primitive names.** `Interlock: "168"` requires a 512-bit inner primitive across all eight seed slots (`InnerHash` or every `MixedHashes` entry); 128-bit and 256-bit primitives are rejected at `Register`, `Init`, and `Load`:
+
+```
+areion512  blake2b512
 ```
 
 **Name reuse across layers.** The string `"aescmac"` names two different primitives depending on which field it appears in:
@@ -647,7 +658,7 @@ Name rules for `Register`:
 - Must not start with one of the reserved shipped-catalogue prefixes: `singlemsg-`, `streaming-`, `blob-`. User profiles pick a distinct prefix (organisation tag, application name).
 - Must not already be registered; re-registration returns `triple.ErrProfileExists`.
 
-Every `triple.Profile` field is validated fail-fast before the registration lands: `Mode` in the shipped set (`singlemsg-mac` / `singlemsg-nomac` / `streaming-aead` / `streaming-noaead` / `blob-only`); `Width` in {128, 256, 512}; `InnerHash` resolves via `hashes.Find` to a Spec whose width matches `Width` (single-primitive dispatch), OR `MixedHashes` populates all 8 slots with primitives whose width matches `Width` and `InnerHash` is empty (mixed-primitive dispatch — the two paths are mutually exclusive); `KeyBits` a positive multiple of `Width`; `MacName` (when non-empty) in `macs.Registry`; `OuterCipher` in `wrapper.CipherNames` when `Wrapper` is true; every `ParallaxPalette` entry in `wrapper.CipherNames` and the palette size in [`parallax.MinPaletteSize`, `parallax.MaxPaletteSize`] when `Parallax` is true; `ChunkSize` / `ParallaxSegmentSize` non-negative (zero defers to the compile-in default); `TagStubSize` zero or in [16, 64]; `DRBG` empty or the name of an installed DRBG fill primitive. The same field rules are re-applied by `Load` to the recipe carried in a blob (a failure surfaces as `triple.ErrBlobMalformedRecipe`). `Register` is safe under concurrent invocation with itself, `Init`, `Lookup`, and `Profiles`.
+Every `triple.Profile` field is validated fail-fast before the registration lands: `Mode` in the shipped set (`singlemsg-mac` / `singlemsg-nomac` / `streaming-aead` / `streaming-noaead` / `blob-only`); `Width` in {128, 256, 512}; `InnerHash` resolves via `hashes.Find` to a Spec whose width matches `Width` (single-primitive dispatch), OR `MixedHashes` populates all 8 slots with primitives whose width matches `Width` and `InnerHash` is empty (mixed-primitive dispatch — the two paths are mutually exclusive); `KeyBits` a positive multiple of `Width`; `MacName` (when non-empty) in `macs.Registry`; `OuterCipher` in `wrapper.CipherNames` when `Wrapper` is true; every `ParallaxPalette` entry in `wrapper.CipherNames` and the palette size in [`parallax.MinPaletteSize`, `parallax.MaxPaletteSize`] when `Parallax` is true; `ChunkSize` / `ParallaxSegmentSize` non-negative (zero defers to the compile-in default); `TagStubSize` zero or in [16, 64]; `DRBG` empty or the name of an installed DRBG fill primitive; `Interlock` empty, `"48"`, or `"168"` (requiring `Width == 512`). The same field rules are re-applied by `Load` to the recipe carried in a blob (a failure surfaces as `triple.ErrBlobMalformedRecipe`). `Register` is safe under concurrent invocation with itself, `Init`, `Lookup`, and `Profiles`.
 
 `triple.Profile` encodes to and decodes from JSON (`MarshalJSON` / `UnmarshalJSON`) under one documented key set — the same codec that carries the record inside the blob, that `Inspect` returns, and that the C ABI `ITB_Triple_Register` / `ITB_Triple_Inspect` entries exchange as their JSON payload.
 
@@ -776,13 +787,14 @@ Selected `*itb.Config` fields:
 | Field | Type | Default | Accepted values / Description |
 |---|---|---|---|
 | `Mode` | `int` | `1` (per-region) | Container floor sizing mode: `0` or `1` = Mode 1 per-region (default); `2` = Mode 2 per-container (compact VPN tunnel mode). Out-of-range values return `ErrBlobModeMismatch`. |
+| `Interlock` | `string` | `""` (`"48"`, 48-bit) | Interlocked Barrier chunk width: `""` or `"48"` = 48-bit default (6-byte chunk); `"168"` = 168-bit (21-byte chunk, 512-bit Triple entry points only). Unknown values or `"168"` on 128/256-bit entry points are rejected fail-fast. |
 | `NonceBits` | `int` | `512` (`DefaultNonceBits`) | On-wire nonce width (`128` / `256` / `512`). |
 | `BarrierFill` | `int` | `1` (`DefaultBarrierFill`) | DRBG barrier fill margin in pixels (`1` / `2` / `4` / `8` / `16` / `32`). |
 | `MaxWorkers` | `int` | `runtime.NumCPU` | Goroutine concurrency cap (`1` .. `256`). |
 | `TagStubSize` | `int` | `32` | No MAC DRBG dummy stub reservation in bytes (`0` or `16` .. `64`). |
 | `DRBG` | `string` | `""` (auto tier) | DRBG fill primitive: `""` = AES-256-CTR where the host has hardware AES, ChaCha20 otherwise; `"aesitb128"` = the AES-ITB noise filler; `"csprng"` = unexpanded `crypto/rand.Read`; or a keystream-eligible registry primitive by name (installed by package `ctr`). An unknown name is rejected by every `Cfg` encrypt entry point and `Export3Cfg`; decrypt never consults it. |
 
-The same `Mode` setting governs seed export options (`itb.Blob128Opts`, `itb.Blob256Opts`, `itb.Blob512Opts`) on `Export3Cfg`.
+The same `Mode` setting governs seed export options (`itb.Blob128Opts`, `itb.Blob256Opts`, `itb.Blob512Opts`) on `Export3Cfg`, and `itb.Blob512Opts` additionally accepts `Interlock`.
 
 ### Low-Level 1 — Single Message with MAC
 

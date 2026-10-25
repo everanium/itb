@@ -195,6 +195,9 @@ func encrypt3x256CfgInto(cfg *Config, dst []byte, noiseSeed, lockSeed, dataSeed1
 	if err := validateConfigCfg(cfg); err != nil {
 		return nil, err
 	}
+	if err := validateInterlockWidthCfg(cfg, 256); err != nil {
+		return nil, err
+	}
 	if err := validateTagStubSizeCfg(cfg); err != nil {
 		return nil, err
 	}
@@ -267,6 +270,9 @@ func decryptMsg3x256CfgInto(cfg *Config, dst []byte, noiseSeed, lockSeed, dataSe
 	if err := checkEightSeeds256(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
 		return nil, err
 	}
+	if err := validateInterlockWidthCfg(cfg, 256); err != nil {
+		return nil, err
+	}
 	if len(fileData) == 0 {
 		return nil, ErrEmptyInput
 	}
@@ -292,6 +298,9 @@ func decrypt3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dat
 
 func decrypt3x256CfgInto(cfg *Config, dst []byte, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed256, fileData []byte) ([]byte, error) {
 	if err := checkEightSeeds256(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
+		return nil, err
+	}
+	if err := validateInterlockWidthCfg(cfg, 256); err != nil {
 		return nil, err
 	}
 	if len(fileData) == 0 {

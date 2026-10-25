@@ -63,7 +63,8 @@ and DRBG barrier fill margin — the sender's Pipeline runs with,
 populated from the blob's inner Blob{N} snapshot), `container_mode`,
 `drbg` (the DRBG fill primitive the recipe states; `(auto: <cipher> on
 this host)` when the blob leaves the choice to the auto tier, which
-each host resolves for itself at encryption time), `mac_name`
+each host resolves for itself at encryption time), `interlock`
+(`48 (default)` or `168`), `mac_name`
 (`(none)` for a No MAC profile), `tag_stub_size` when set,
 `chunk_size` for streaming modes (`(default)` when the profile
 inherits the compile-in default), `wrapper` / `wrapper_cipher`,
@@ -88,6 +89,9 @@ inherits the compile-in default), `wrapper` / `wrapper_cipher`,
   reopened from the blob encrypts under it. When `--drbg` is omitted,
   the `drbg` recipe key is absent and the auto tier applies
   (AES-256-CTR where the host has hardware AES, ChaCha20 otherwise).
+- `genblob --interlock 48|168` selects the Interlocked Barrier chunk
+  width (`48` default; `168` requires a 512-bit hash or `mixed512` and
+  is recorded in the blob's recipe under `"interlock":"168"`).
 - `-o` writes the blob to disk with mode `0600`; every read path
   loads it via `triple.LoadF`. The blob carries the resolved
   `triple.Profile` record — the shipped-catalogue prefix reserved for

@@ -796,6 +796,9 @@ func (p *Pipeline) resolveBarrierFill(maxBarrierFill int) int {
 
 func (p *Pipeline) chunkWireSize(chunkPlainLen, bf int) int {
 	laneLen := 2 * ((chunkPlainLen + 4 + 5) / 6)
+	if (p.cfg != nil && p.cfg.Interlock == itb.Interlock168) || p.resolved.Interlock == itb.Interlock168 {
+		laneLen = 7 * ((chunkPlainLen + 4 + 20) / 21)
+	}
 	nonceLen := itb.DefaultNonceBits / 8
 	if p.cfg != nil && p.cfg.NonceBits > 0 {
 		nonceLen = p.cfg.NonceBits / 8

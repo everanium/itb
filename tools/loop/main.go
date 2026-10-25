@@ -35,7 +35,9 @@
 // [github.com/everanium/itb/triple.Opts] knobs; --blob-mode selects the
 // container floor sizing mode (1 per-region, 2 per-container) at
 // pipeline initialization; --drbg names the DRBG
-// fill primitive (empty = the profile's auto tier); --gomaxprocs pins CPU
+// fill primitive (empty = the profile's auto tier); --interlock selects
+// the Interlocked Barrier chunk width (48 default, 168 for 512-bit
+// primitives); --gomaxprocs pins CPU
 // parallelism; --payload-mode swaps the plaintext content policy
 // (rotating CSPRNG refills or degenerate byte patterns — pattern modes
 // trade the cross-worker buffer distinctness above for content
@@ -212,6 +214,7 @@ type config struct {
 	chunkSize      int64  // 0 = profile default
 	barrierFill    int    // 0 = profile default
 	drbg           string // DRBG fill primitive; "" = profile default (auto tier)
+	interlock      string // Interlocked Barrier chunk width: "" | "48" | "168"
 	gomaxprocs     int    // 0 = inherit from the environment
 	rekeyEvery     int64  // per-worker iterations between Rekey calls; 0 = never
 	blobCycleEvery int64  // per-worker iterations between blob reopen cycles; 0 = never
@@ -379,6 +382,9 @@ func run() int {
 	if cfg.drbg != "" {
 		overridesLine += fmt.Sprintf(" drbg=%s", cfg.drbg)
 	}
+	if cfg.interlock != "" {
+		overridesLine += fmt.Sprintf(" interlock=%s", cfg.interlock)
+	}
 	logf("%s", overridesLine)
 	logf("policy: microbatch-tiers=%s hashpool-starters=%s",
 		policyLabel(os.Getenv("ITB_MICROBATCH_TIERS")), policyLabel(os.Getenv("ITB_HASHPOOL_STARTERS")))
@@ -399,6 +405,7 @@ func run() int {
 		NonceBits:    cfg.nonceBits,
 		BarrierFill:  cfg.barrierFill,
 		DRBG:         cfg.drbg,
+		Interlock:    cfg.interlock,
 		ChunkSize:    int(cfg.chunkSize),
 	}
 	r.streamProfile = triple.ProfileStreamingAEADTripleMACV1
@@ -606,6 +613,7 @@ func parseFlags(argv []string) (config, error) {
 		chunkSizeStr   = fs.String("chunk-size", "0", "streaming chunk-size budget (e.g. 4MB); 0 = profile default; inert for pure message shape")
 		barrierFill    = fs.Int("barrier-fill", 0, "DRBG barrier fill margin: 1 | 2 | 4 | 8 | 16 | 32; 0 = profile default (1)")
 		drbgName       = fs.String("drbg", "", "DRBG fill primitive name (see itb3 drbgs); empty = profile default (auto tier)")
+		interlock      = fs.String("interlock", "", "Interlocked Barrier chunk width: 48 | 168; empty = profile default (48; 168 requires 512-bit hash)")
 		gomaxprocs     = fs.Int("gomaxprocs", 0, "Go runtime GOMAXPROCS override; 0 = inherit from the environment")
 		rekeyEvery     = fs.Int64("rekey-every", 0, "rotate the parallax + wrapper masters via Rekey every N iterations per worker; 0 = never")
 		blobCycleEvery = fs.Int64("blob-cycle-every", 0, "reopen each pipeline from its session blob every N iterations per worker; 0 = never")
@@ -635,6 +643,7 @@ func parseFlags(argv []string) (config, error) {
 		blobMode:       *blobMode,
 		barrierFill:    *barrierFill,
 		drbg:           *drbgName,
+		interlock:      *interlock,
 		gomaxprocs:     *gomaxprocs,
 		rekeyEvery:     *rekeyEvery,
 		blobCycleEvery: *blobCycleEvery,
@@ -732,6 +741,11 @@ func parseFlags(argv []string) (config, error) {
 	if !drbg.Known(cfg.drbg) {
 		return config{}, fmt.Errorf("--drbg must name a DRBG fill primitive (see itb3 drbgs), got %q", cfg.drbg)
 	}
+	switch cfg.interlock {
+	case "", "48", "168":
+	default:
+		return config{}, fmt.Errorf("--interlock must be 48 | 168 (or empty = profile default), got %q", cfg.interlock)
+	}
 	cfg.chunkSize, err = parseSize(*chunkSizeStr)
 	if err != nil {
 		return config{}, fmt.Errorf("--chunk-size: %v", err)
@@ -784,6 +798,9 @@ func logPipelineInitialised(profile string, blob []byte) {
 	}
 	if rec.DRBG != "" {
 		initLine += fmt.Sprintf(" drbg=%s", rec.DRBG)
+	}
+	if rec.Interlock != "" {
+		initLine += fmt.Sprintf(" interlock=%s", rec.Interlock)
 	}
 	logf("%s", initLine)
 }

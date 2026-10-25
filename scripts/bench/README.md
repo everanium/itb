@@ -144,6 +144,7 @@ Additional isolation policies compose the same env vars in obvious ways — e.g.
 | `ITB_INNER_HASH`        | `areion512` | Canonical bench profile knobs      |
 | `ITB_KEY_BITS`          | `512`   |                                        |
 | `ITB_NONCE_BITS`        | `512`   |                                        |
+| `ITB_INTERLOCK`         | `""` (48) | Interlocked Barrier chunk width (`48` or `168`; `168` requires a 512-bit `ITB_INNER_HASH`) |
 | `ITB_WITH_MAC`          | `false` |                                        |
 | `ITB_WITH_PARALLAX`     | `false` |                                        |
 | `ITB_WITH_WRAPPER`      | `false` |                                        |

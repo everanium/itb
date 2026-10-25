@@ -1010,3 +1010,75 @@ func TestBlobExportRejectsModeOutOfRange(t *testing.T) {
 		t.Fatalf("receiver Mode = %d after rejected exports, want 0", bSrc.Mode)
 	}
 }
+
+// TestBlob512ExportImportInterlock168 verifies that Interlock: "168"
+// supplied via Blob512Opts or Config is emitted into globals.interlock,
+// sets b.Interlock = "168" on export and import, normalizes "48" to "",
+// and rejects unknown values with ErrInterlockWidthMismatch.
+func TestBlob512ExportImportInterlock168(t *testing.T) {
+	ks := makeAreion512Keys(t, 8)
+	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeed512Triple(t, ks)
+
+	// Subtest A: via Blob512Opts.Interlock = "168"
+	{
+		cfg := &itb.Config{NonceBits: itb.DefaultNonceBits, BarrierFill: 1}
+		bSrc := &itb.Blob512{}
+		data, err := bSrc.Export3Cfg(cfg,
+			ks[0], ks[2], ks[3], ks[4], ks[5], ks[6], ks[7],
+			ns, ds1, ds2, ds3, ss1, ss2, ss3,
+			itb.Blob512Opts{KeyL: ks[1], LS: ls, Interlock: "168"},
+		)
+		if err != nil {
+			t.Fatalf("Export3Cfg(Opts.Interlock=168): %v", err)
+		}
+		if bSrc.Interlock != "168" {
+			t.Fatalf("bSrc.Interlock = %q, want \"168\"", bSrc.Interlock)
+		}
+		fresh := &itb.Config{}
+		bDst := &itb.Blob512{}
+		if err := bDst.Import3Cfg(data, fresh); err != nil {
+			t.Fatalf("Import3Cfg: %v", err)
+		}
+		if bDst.Interlock != "168" || fresh.Interlock != "168" {
+			t.Fatalf("imported bDst.Interlock=%q fresh.Interlock=%q, want \"168\"/\"168\"", bDst.Interlock, fresh.Interlock)
+		}
+	}
+
+	// Subtest B: via Blob512Opts.Interlock = "48" (normalizes to "")
+	{
+		cfg := &itb.Config{NonceBits: itb.DefaultNonceBits, BarrierFill: 1, Interlock: "168"}
+		bSrc := &itb.Blob512{}
+		data, err := bSrc.Export3Cfg(cfg,
+			ks[0], ks[2], ks[3], ks[4], ks[5], ks[6], ks[7],
+			ns, ds1, ds2, ds3, ss1, ss2, ss3,
+			itb.Blob512Opts{KeyL: ks[1], LS: ls, Interlock: "48"},
+		)
+		if err != nil {
+			t.Fatalf("Export3Cfg(Opts.Interlock=48): %v", err)
+		}
+		if bSrc.Interlock != "" {
+			t.Fatalf("bSrc.Interlock = %q, want \"\"", bSrc.Interlock)
+		}
+		fresh := &itb.Config{}
+		bDst := &itb.Blob512{}
+		if err := bDst.Import3Cfg(data, fresh); err != nil {
+			t.Fatalf("Import3Cfg: %v", err)
+		}
+		if bDst.Interlock != "" || fresh.Interlock != "" {
+			t.Fatalf("imported bDst.Interlock=%q fresh.Interlock=%q, want \"\"/\"\"", bDst.Interlock, fresh.Interlock)
+		}
+	}
+
+	// Subtest C: invalid Blob512Opts.Interlock rejected
+	{
+		bSrc := &itb.Blob512{}
+		_, err := bSrc.Export3Cfg(&itb.Config{NonceBits: itb.DefaultNonceBits},
+			ks[0], ks[2], ks[3], ks[4], ks[5], ks[6], ks[7],
+			ns, ds1, ds2, ds3, ss1, ss2, ss3,
+			itb.Blob512Opts{KeyL: ks[1], LS: ls, Interlock: "96"},
+		)
+		if err == nil {
+			t.Fatal("Export3Cfg(Opts.Interlock=96): got nil, want error")
+		}
+	}
+}

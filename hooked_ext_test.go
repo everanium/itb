@@ -117,7 +117,7 @@ func benchDecrypt3x256HookedExt(b *testing.B, name string, bits, dataSize int) {
 func benchEncrypt3x512HookedExt(b *testing.B, name string, bits, dataSize int) {
 	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightHookedSeeds512Ext(b, name, bits)
 	data := generateDataExt(dataSize)
-	cfg := extTripleBenchCfg()
+	cfg := extTripleBenchCfg512()
 	b.SetBytes(int64(dataSize))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -128,7 +128,33 @@ func benchEncrypt3x512HookedExt(b *testing.B, name string, bits, dataSize int) {
 func benchDecrypt3x512HookedExt(b *testing.B, name string, bits, dataSize int) {
 	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightHookedSeeds512Ext(b, name, bits)
 	data := generateDataExt(dataSize)
-	cfg := extTripleBenchCfg()
+	cfg := extTripleBenchCfg512()
+	encrypted, _ := itb.Encrypt3x512Cfg(cfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
+	b.SetBytes(int64(dataSize))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = itb.Decrypt3x512Cfg(cfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, encrypted)
+	}
+}
+
+// benchEncrypt3x512Interlock168HookedExt / benchDecrypt3x512Interlock168HookedExt
+// are the 168-bit interlock counterparts of benchEncrypt3x512HookedExt /
+// benchDecrypt3x512HookedExt.
+func benchEncrypt3x512Interlock168HookedExt(b *testing.B, name string, bits, dataSize int) {
+	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightHookedSeeds512Ext(b, name, bits)
+	data := generateDataExt(dataSize)
+	cfg := extTripleBenchCfg168()
+	b.SetBytes(int64(dataSize))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = itb.Encrypt3x512Cfg(cfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
+	}
+}
+
+func benchDecrypt3x512Interlock168HookedExt(b *testing.B, name string, bits, dataSize int) {
+	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightHookedSeeds512Ext(b, name, bits)
+	data := generateDataExt(dataSize)
+	cfg := extTripleBenchCfg168()
 	encrypted, _ := itb.Encrypt3x512Cfg(cfg, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, data)
 	b.SetBytes(int64(dataSize))
 	b.ResetTimer()

@@ -25,6 +25,9 @@ import (
 //     [16, 64].
 //   - DRBG: "" = the auto tier of internal/drbg; otherwise the name of
 //     the DRBG fill primitive.
+//   - Interlock: "" or "48" = the default 48-bit (6-byte chunk, 2-byte lane)
+//     Interlock; "168" = the 168-bit (21-byte chunk, 7-byte lane) Interlock
+//     (supported only on 512-bit Triple entry points).
 //
 // A nil *Config passed to a Cfg-suffixed entry point behaves as an
 // all-zero Config — every field falls back to the compile-in default
@@ -38,6 +41,11 @@ type Config struct {
 	// 0 or 1 = per-region container floor (default);
 	// 2 = per-container container floor (network tunnel / VPN compact mode).
 	Mode int
+
+	// Interlock selects the Interlocked Barrier chunk width:
+	// "" or "48" = 48-bit (6-byte chunk -> 3 x 2-byte lanes, default);
+	// "168"      = 168-bit (21-byte chunk -> 3 x 7-byte lanes, requires 512-bit inner width).
+	Interlock string
 
 	// MACIncremental is the optional multi-slice MAC arm consulted by
 	// the authenticated entry points. When non-nil it must compute the
@@ -84,6 +92,20 @@ type Config struct {
 	DRBG string
 }
 
+const (
+	// Interlock48 is the default 48-bit (6-byte chunk -> 3 x 2-byte lanes)
+	// Interlocked Barrier width.
+	Interlock48 = "48"
+
+	// Interlock168 is the 168-bit (21-byte chunk -> 3 x 7-byte lanes)
+	// Interlocked Barrier width (requires 512-bit inner hash width).
+	Interlock168 = "168"
+
+	// DefaultInterlock is the Interlocked Barrier width used when
+	// [Config.Interlock] is left empty.
+	DefaultInterlock = Interlock48
+)
+
 // DefaultNonceBits is the nonce width in bits used when [Config.NonceBits]
 // is left at zero. Derived from [NonceSize] * 8 = 512 bits — chosen so
 // the birthday-bound on collision under fresh-nonce generation is beyond
@@ -129,6 +151,25 @@ func currentContainerModeCfg(cfg *Config) int {
 		return blobModePerContainer
 	}
 	return blobModePerRegion
+}
+
+// currentInterlockCfg returns the Interlocked Barrier width token ("48" or "168")
+// the caller should use. Consults cfg when non-nil and the Interlock field is
+// non-empty; otherwise falls back to [DefaultInterlock] ("48").
+func currentInterlockCfg(cfg *Config) string {
+	if cfg != nil && cfg.Interlock != "" {
+		return cfg.Interlock
+	}
+	return DefaultInterlock
+}
+
+// tripleLaneLenCfg returns the per-lane byte length for an L-byte plaintext
+// under the configured Interlocked Barrier width.
+func tripleLaneLenCfg(cfg *Config, L int) int {
+	if currentInterlockCfg(cfg) == Interlock168 {
+		return tripleLaneLen168(L)
+	}
+	return tripleLaneLen(L)
 }
 
 // generateNonceCfg returns a fresh cryptographic nonce of the

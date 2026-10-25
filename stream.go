@@ -107,6 +107,9 @@ func EncryptStream3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed
 	if err := validateConfigCfg(cfg); err != nil {
 		return err
 	}
+	if err := validateInterlockWidthCfg(cfg, 128); err != nil {
+		return err
+	}
 	if err := validateTagStubSizeCfg(cfg); err != nil {
 		return err
 	}
@@ -134,6 +137,9 @@ func EncryptStream3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed
 // prefix ahead of every chunk; empty data returns [ErrEmptyInput].
 func DecryptStream3x128Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed128, data []byte, emit func(chunk []byte) error) error {
 	if err := checkEightSeeds128(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
+		return err
+	}
+	if err := validateInterlockWidthCfg(cfg, 128); err != nil {
 		return err
 	}
 	if len(data) == 0 {
@@ -181,6 +187,9 @@ func EncryptStream3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed
 	if err := validateConfigCfg(cfg); err != nil {
 		return err
 	}
+	if err := validateInterlockWidthCfg(cfg, 256); err != nil {
+		return err
+	}
 	if err := validateTagStubSizeCfg(cfg); err != nil {
 		return err
 	}
@@ -208,6 +217,9 @@ func EncryptStream3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed
 // contract.
 func DecryptStream3x256Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed256, data []byte, emit func(chunk []byte) error) error {
 	if err := checkEightSeeds256(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
+		return err
+	}
+	if err := validateInterlockWidthCfg(cfg, 256); err != nil {
 		return err
 	}
 	if len(data) == 0 {
@@ -255,6 +267,9 @@ func EncryptStream3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed
 	if err := validateConfigCfg(cfg); err != nil {
 		return err
 	}
+	if err := validateInterlockWidthCfg(cfg, 512); err != nil {
+		return err
+	}
 	if err := validateTagStubSizeCfg(cfg); err != nil {
 		return err
 	}
@@ -282,6 +297,9 @@ func EncryptStream3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed
 // contract.
 func DecryptStream3x512Cfg(cfg *Config, noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3 *Seed512, data []byte, emit func(chunk []byte) error) error {
 	if err := checkEightSeeds512(noiseSeed, lockSeed, dataSeed1, dataSeed2, dataSeed3, startSeed1, startSeed2, startSeed3); err != nil {
+		return err
+	}
+	if err := validateInterlockWidthCfg(cfg, 512); err != nil {
 		return err
 	}
 	if len(data) == 0 {

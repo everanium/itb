@@ -143,6 +143,9 @@ func Register(name string, p Profile) error {
 	// lock — a defensive copy of ParallaxPalette avoids caller-side
 	// mutation leaking into the registry.
 	p.Name = name
+	if p.Interlock == "48" {
+		p.Interlock = ""
+	}
 	if len(p.ParallaxPalette) > 0 {
 		p.ParallaxPalette = append([]string(nil), p.ParallaxPalette...)
 	}
@@ -340,6 +343,15 @@ func validateProfileFields(p Profile) error {
 	if p.TagStubSize != 0 && (p.TagStubSize < 16 || p.TagStubSize > 64) {
 		return fmt.Errorf("triple: Register: TagStubSize=%d must be 0 or in [16, 64]", p.TagStubSize)
 	}
+	switch p.Interlock {
+	case "", "48":
+	case "168":
+		if p.Width != 512 {
+			return fmt.Errorf("triple: Register: Interlock %q requires Width 512 (profile Width is %d)", p.Interlock, p.Width)
+		}
+	default:
+		return fmt.Errorf("triple: Register: Interlock %q not in {\"\", \"48\", \"168\"}", p.Interlock)
+	}
 	return nil
 }
 
@@ -426,6 +438,11 @@ func validateOptsCommon(caller string, opts Opts) error {
 	if opts.ParallaxSegmentSize > parallax.MaxSegmentSize {
 		return fmt.Errorf("triple: %s: opts.ParallaxSegmentSize=%d exceeds parallax.MaxSegmentSize=%d",
 			caller, opts.ParallaxSegmentSize, parallax.MaxSegmentSize)
+	}
+	switch opts.Interlock {
+	case "", "48", "168":
+	default:
+		return fmt.Errorf("triple: %s: opts.Interlock=%q must be \"\" or one of {\"48\", \"168\"}", caller, opts.Interlock)
 	}
 	return nil
 }
@@ -537,6 +554,32 @@ func validateResolvedDRBG(caller string, r Profile) error {
 		return fmt.Errorf("%w: drbg %q (%s; want one of %v)", ErrRecipePrimitiveUnknown, r.DRBG, caller, drbg.Names())
 	}
 	return nil
+}
+
+// validateResolvedInterlock enforces that Interlock="168" is only paired
+// with a 512-bit inner hash width.
+func validateResolvedInterlock(caller string, r Profile) error {
+	switch r.Interlock {
+	case "", "48":
+		return nil
+	case "168":
+		effWidth := r.Width
+		if !isMixedProfile(r) && r.InnerHash != "" {
+			if spec, ok := hashes.Find(r.InnerHash); ok {
+				effWidth = int(spec.Width)
+			}
+		} else if isMixedProfile(r) && r.MixedHashes[0] != "" {
+			if spec, ok := hashes.Find(r.MixedHashes[0]); ok {
+				effWidth = int(spec.Width)
+			}
+		}
+		if effWidth != 512 {
+			return fmt.Errorf("triple: %s: Interlock=%q requires 512-bit inner hash width (got %d-bit)", caller, r.Interlock, effWidth)
+		}
+		return nil
+	default:
+		return fmt.Errorf("triple: %s: Interlock=%q must be \"\" or one of {\"48\", \"168\"}", caller, r.Interlock)
+	}
 }
 
 // seedMinKeyBits mirrors the [github.com/everanium/itb.NewSeed{128,

@@ -899,10 +899,11 @@ func TestFusedKernelsLeaveNoSecretInFrame(t *testing.T) {
 				t.Fatalf("Chunk48Lock leaked word %#016x in register snapshot at offset %d", word, off)
 			}
 			if w := captureInterlockFrameAndRegResidue(func() {
-				back = Unchunk48Lock(l0, l1, l2, m0, m1, m2)
+				back = Unchunk48Lock(l0, l1, l2, m0, m1, m2) ^ 1
 			}, res, cpuid.AVX512F); w == 0 {
 				t.Fatal("Unchunk48Lock: probe missed stack window")
 			}
+			back ^= 1
 			if back != x {
 				t.Fatalf("Unchunk48Lock round-trip mismatch: got %#x, want %#x", back, x)
 			}
@@ -948,6 +949,120 @@ func TestFusedKernelsLeaveNoSecretInFrame(t *testing.T) {
 				t.Fatalf("unchunk48LockBatch leaked word %#016x at offset %d (window=%d)", word, off, interlockResidueWindow)
 			}
 		})
+
+		t.Run("Chunk168Lock_And_Unchunk168Lock", func(t *testing.T) {
+			rng := rand.New(rand.NewSource(201))
+			var src, back [21]byte
+			for i := range src {
+				src[i] = byte(rng.Uint32() | 1)
+			}
+			var x0, x1, x2 uint64
+			for i := 0; i < 8; i++ {
+				x0 |= uint64(src[i]) << (8 * i)
+				x1 |= uint64(src[8+i]) << (8 * i)
+			}
+			for i := 0; i < 5; i++ {
+				x2 |= uint64(src[16+i]) << (8 * i)
+			}
+			m0, m1, m2 := randomTripleMask168(rng)
+			var out [3][7]byte
+			if w := captureInterlockFrameAndRegResidue(func() {
+				Chunk168Lock(&src, m0, m1, m2, &out)
+			}, res, cpuid.AVX512F); w == 0 {
+				t.Fatal("Chunk168Lock: probe missed stack window")
+			}
+			var l0, l1, l2 uint64
+			for i := 0; i < 7; i++ {
+				l0 |= uint64(out[0][i]) << (8 * i)
+				l1 |= uint64(out[1][i]) << (8 * i)
+				l2 |= uint64(out[2][i]) << (8 * i)
+			}
+			targets := []uint64{
+				x0, x1, x2,
+				l0, l1, l2,
+				m0[0], m0[1], m0[2],
+				m1[0], m1[1], m1[2],
+				m2[0], m2[1], m2[2],
+			}
+			if word, off, found := scanForInterlockWords(res, []uint64{x0, x1, x2, l0, l1, l2}); found {
+				t.Fatalf("Chunk168Lock leaked chunk/lane word %#016x at offset %d (window=%d)", word, off, interlockResidueWindow)
+			}
+			if word, off, found := scanForInterlockWordsInRegs(res, targets); found {
+				t.Fatalf("Chunk168Lock leaked word %#016x in register snapshot at offset %d", word, off)
+			}
+			if w := captureInterlockFrameAndRegResidue(func() {
+				Unchunk168Lock(&out[0], &out[1], &out[2], m0, m1, m2, &back)
+			}, res, cpuid.AVX512F); w == 0 {
+				t.Fatal("Unchunk168Lock: probe missed stack window")
+			}
+			if back != src {
+				t.Fatalf("Unchunk168Lock round-trip mismatch: got %x, want %x", back, src)
+			}
+			if word, off, found := scanForInterlockWords(res, []uint64{x0, x1, x2, l0, l1, l2}); found {
+				t.Fatalf("Unchunk168Lock leaked chunk/lane word %#016x at offset %d (window=%d)", word, off, interlockResidueWindow)
+			}
+			if word, off, found := scanForInterlockWordsInRegs(res, targets); found {
+				t.Fatalf("Unchunk168Lock leaked word %#016x in register snapshot at offset %d", word, off)
+			}
+		})
+
+		t.Run("Chunk168LockBatch_And_Unchunk168LockBatch", func(t *testing.T) {
+			rng := rand.New(rand.NewSource(202))
+			const n = 8
+			src := make([]byte, 21*n)
+			dst := make([]byte, 21*n)
+			p0 := make([]byte, 7*n)
+			p1 := make([]byte, 7*n)
+			p2 := make([]byte, 7*n)
+			masks := make([][3][3]uint64, n)
+			var targets []uint64
+			for j := 0; j < n; j++ {
+				for b := 0; b < 21; b++ {
+					src[21*j+b] = byte(rng.Uint32() | 1)
+				}
+				var x0, x1, x2 uint64
+				for i := 0; i < 8; i++ {
+					x0 |= uint64(src[21*j+i]) << (8 * i)
+					x1 |= uint64(src[21*j+8+i]) << (8 * i)
+				}
+				for i := 0; i < 5; i++ {
+					x2 |= uint64(src[21*j+16+i]) << (8 * i)
+				}
+				m0, m1, m2 := randomTripleMask168(rng)
+				masks[j] = [3][3]uint64{m0, m1, m2}
+				targets = append(targets,
+					x0, x1, x2,
+					m0[0], m0[1], m0[2],
+					m1[0], m1[1], m1[2],
+					m2[0], m2[1], m2[2],
+				)
+			}
+			if w := captureInterlockFrameAndRegResidue(func() {
+				chunk168LockBatch(n, &src[0], &masks[0], &p0[0], &p1[0], &p2[0])
+			}, res, cpuid.AVX512F); w == 0 {
+				t.Fatal("chunk168LockBatch: probe missed stack window")
+			}
+			for j := 0; j < n; j++ {
+				var l0, l1, l2 uint64
+				for i := 0; i < 7; i++ {
+					l0 |= uint64(p0[7*j+i]) << (8 * i)
+					l1 |= uint64(p1[7*j+i]) << (8 * i)
+					l2 |= uint64(p2[7*j+i]) << (8 * i)
+				}
+				targets = append(targets, l0, l1, l2)
+			}
+			if word, off, found := scanForInterlockWords(res, targets); found {
+				t.Fatalf("chunk168LockBatch leaked word %#016x at offset %d (window=%d)", word, off, interlockResidueWindow)
+			}
+			if w := captureInterlockFrameAndRegResidue(func() {
+				unchunk168LockBatch(n, &masks[0], &p0[0], &p1[0], &p2[0], &dst[0])
+			}, res, cpuid.AVX512F); w == 0 {
+				t.Fatal("unchunk168LockBatch: probe missed stack window")
+			}
+			if word, off, found := scanForInterlockWords(res, targets); found {
+				t.Fatalf("unchunk168LockBatch leaked word %#016x at offset %d (window=%d)", word, off, interlockResidueWindow)
+			}
+		})
 	}
 
 	if cpuid.AVX2 && cpuid.BMI2 {
@@ -974,6 +1089,45 @@ func TestFusedKernelsLeaveNoSecretInFrame(t *testing.T) {
 			}
 			if word, off, found := scanForInterlockWords(res, targets); found {
 				t.Fatalf("RankToMaskTripleUnrank48AVX2 leaked word %#016x at offset %d (window=%d)", word, off, interlockResidueWindow)
+			}
+		})
+
+		t.Run("RankToMaskTripleUnrank168AVX2", func(t *testing.T) {
+			defer forceAVX2RankMask(t)()
+			rng := rand.New(rand.NewSource(203))
+			idx0 := new([3][8]uint64)
+			idx1 := new([2][8]uint64)
+			out := new([3][3][8]uint64)
+			for j := 0; j < 8; j++ {
+				v0 := randomIdx0_168(rng)
+				v1 := randomIdx1_168(rng)
+				idx0[0][j] = v0[0]
+				idx0[1][j] = v0[1]
+				idx0[2][j] = v0[2]
+				idx1[0][j] = v1[0]
+				idx1[1][j] = v1[1]
+			}
+			if w := captureInterlockFrameAndRegResidue(func() {
+				RankToMaskTripleUnrank168AVX2(idx0, idx1, out)
+			}, res, false); w == 0 {
+				t.Fatal("RankToMaskTripleUnrank168AVX2: probe missed stack window")
+			}
+			const dom2 = (uint64(1) << 40) - 1
+			var targets []uint64
+			for j := 0; j < 8; j++ {
+				m1Local := refUnrank168([3]uint64{idx1[0][j], idx1[1][j], 0}, 56, 112)
+				targets = append(targets,
+					idx0[0][j], idx0[1][j], idx0[2][j],
+					idx1[0][j], idx1[1][j],
+					m1Local[0], m1Local[1],
+					^out[0][0][j], ^out[0][1][j], (^out[0][2][j])&dom2,
+					out[0][0][j], out[0][1][j], out[0][2][j],
+					out[1][0][j], out[1][1][j], out[1][2][j],
+					out[2][0][j], out[2][1][j], out[2][2][j],
+				)
+			}
+			if word, off, found := scanForInterlockWords(res, targets); found {
+				t.Fatalf("RankToMaskTripleUnrank168AVX2 leaked word %#016x at offset %d (window=%d)", word, off, interlockResidueWindow)
 			}
 		})
 	}
@@ -1026,6 +1180,44 @@ func TestFusedKernelsLeaveNoSecretInFrame(t *testing.T) {
 			}
 			if word, off, found := scanForInterlockWords(res, targets); found {
 				t.Fatalf("RankToMaskTripleUnrank48x16 leaked word %#016x at offset %d (window=%d)", word, off, interlockResidueWindow)
+			}
+		})
+
+		t.Run("RankToMaskTripleUnrank168AVX512", func(t *testing.T) {
+			rng := rand.New(rand.NewSource(204))
+			idx0 := new([3][8]uint64)
+			idx1 := new([2][8]uint64)
+			out := new([3][3][8]uint64)
+			for j := 0; j < 8; j++ {
+				v0 := randomIdx0_168(rng)
+				v1 := randomIdx1_168(rng)
+				idx0[0][j] = v0[0]
+				idx0[1][j] = v0[1]
+				idx0[2][j] = v0[2]
+				idx1[0][j] = v1[0]
+				idx1[1][j] = v1[1]
+			}
+			if w := captureInterlockFrameAndRegResidue(func() {
+				RankToMaskTripleUnrank168(idx0, idx1, out)
+			}, res, true); w == 0 {
+				t.Fatal("RankToMaskTripleUnrank168: probe missed stack window")
+			}
+			const dom2 = (uint64(1) << 40) - 1
+			var targets []uint64
+			for j := 0; j < 8; j++ {
+				m1Local := refUnrank168([3]uint64{idx1[0][j], idx1[1][j], 0}, 56, 112)
+				targets = append(targets,
+					idx0[0][j], idx0[1][j], idx0[2][j],
+					idx1[0][j], idx1[1][j],
+					m1Local[0], m1Local[1],
+					^out[0][0][j], ^out[0][1][j], (^out[0][2][j])&dom2,
+					out[0][0][j], out[0][1][j], out[0][2][j],
+					out[1][0][j], out[1][1][j], out[1][2][j],
+					out[2][0][j], out[2][1][j], out[2][2][j],
+				)
+			}
+			if word, off, found := scanForInterlockWords(res, targets); found {
+				t.Fatalf("RankToMaskTripleUnrank168 leaked word %#016x at offset %d (window=%d)", word, off, interlockResidueWindow)
 			}
 		})
 	}

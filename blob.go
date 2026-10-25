@@ -168,15 +168,16 @@ type blobV1 struct {
 	Globals blobGlobalsV1 `json:"globals"`
 }
 
-// blobGlobalsV1 captures the sender's per-instance nonce / barrier
-// configuration at the moment of Export3Cfg. Import3Cfg copies the
-// captured NonceBits / BarrierFill into the caller's *Config. The
-// worker cap ([Config.MaxWorkers]) is per-machine performance tuning,
-// not wire shape, and has no key here — the strict decoder rejects
-// one like any unknown key.
+// blobGlobalsV1 captures the sender's per-instance nonce / barrier /
+// interlock configuration at the moment of Export3Cfg. Import3Cfg
+// copies the captured NonceBits / BarrierFill / Interlock into the
+// caller's *Config. The worker cap ([Config.MaxWorkers]) is
+// per-machine performance tuning, not wire shape, and has no key
+// here — the strict decoder rejects one like any unknown key.
 type blobGlobalsV1 struct {
-	NonceBits   int `json:"nonce_bits"`
-	BarrierFill int `json:"barrier_fill"`
+	NonceBits   int    `json:"nonce_bits"`
+	BarrierFill int    `json:"barrier_fill"`
+	Interlock   string `json:"interlock,omitempty"`
 }
 
 // componentsToStrings encodes a uint64 slice as decimal-string
@@ -305,13 +306,15 @@ func validateSeedComponentsLen(got, want int) error {
 // canonical per-region floor, 2 is the per-container compact floor.
 // Export3Cfg emits 1 by default (or 2 when Opts.Mode or Config.Mode is
 // set to 2); Import3Cfg accepts 1 or 2 and reports back whichever the
-// blob carried.
+// blob carried. [Blob512.Interlock] reports the Interlocked Barrier
+// chunk width ("168" when 168-bit, "" when default 48-bit).
 //
 // Not safe for concurrent invocation — Export3Cfg / Import3Cfg
 // calls on the same Blob512 instance must be serialised by the
 // caller.
 type Blob512 struct {
-	Mode int
+	Mode      int
+	Interlock string
 
 	// Hash key bytes.
 	KeyN  [64]byte
@@ -355,6 +358,10 @@ type Blob512Opts struct {
 	// Mode selects the container floor sizing mode: 0 or 1 = per-region (default),
 	// 2 = per-container.
 	Mode int
+
+	// Interlock selects the Interlocked Barrier chunk width: "" or "48" = 48-bit
+	// (default), "168" = 168-bit.
+	Interlock string
 }
 
 // ───────────────────────────────────────────────────────────────────
@@ -476,21 +483,26 @@ type Blob128Opts struct {
 // caller must supply a non-nil Config.
 var ErrBlobNilCfg = errors.New("itb: blob: Cfg entry point requires non-nil *Config")
 
-// snapshotGlobalsV1FromCfg reads the per-instance nonce / barrier
-// configuration from a caller-supplied *Config. The public Export3Cfg
-// entry points reject nil before reaching this helper (see
+// snapshotGlobalsV1FromCfg reads the per-instance nonce / barrier /
+// interlock configuration from a caller-supplied *Config. The public
+// Export3Cfg entry points reject nil before reaching this helper (see
 // [ErrBlobNilCfg]). [Config.MaxWorkers] is not snapshotted.
 func snapshotGlobalsV1FromCfg(cfg *Config) blobGlobalsV1 {
+	var il string
+	if cfg.Interlock == Interlock168 {
+		il = Interlock168
+	}
 	return blobGlobalsV1{
 		NonceBits:   cfg.NonceBits,
 		BarrierFill: cfg.BarrierFill,
+		Interlock:   il,
 	}
 }
 
 // applyGlobalsV1ToCfg validates the captured globals and writes them
 // into a caller-supplied *Config. No process-wide state is mutated.
 //
-// Any out-of-range NonceBits / BarrierFill value yields
+// Any out-of-range NonceBits / BarrierFill / Interlock value yields
 // [ErrBlobMalformed] before any field is written, so a malformed
 // blob does not leave a partially-populated Config behind.
 //
@@ -511,8 +523,18 @@ func applyGlobalsV1ToCfg(g blobGlobalsV1, cfg *Config) error {
 	default:
 		return ErrBlobMalformed
 	}
+	switch g.Interlock {
+	case "", Interlock48, Interlock168:
+	default:
+		return ErrBlobMalformed
+	}
 	cfg.NonceBits = g.NonceBits
 	cfg.BarrierFill = g.BarrierFill
+	if g.Interlock == Interlock168 {
+		cfg.Interlock = Interlock168
+	} else {
+		cfg.Interlock = ""
+	}
 	return nil
 }
 
@@ -523,9 +545,9 @@ func applyGlobalsV1ToCfg(g blobGlobalsV1, cfg *Config) error {
 // Export3Cfg packs the 8-seed Triple constellation, per-slot hash
 // keys, dedicated lockSeed, and optional MAC material into
 // a self-describing JSON blob, capturing the per-instance
-// NonceBits / BarrierFill from the caller-supplied *Config into the
-// blob's globals section. The worker cap is not wire state and is
-// not emitted.
+// NonceBits / BarrierFill / Interlock from the caller-supplied
+// *Config into the blob's globals section. The worker cap is not wire
+// state and is not emitted.
 //
 // A nil cfg returns [ErrBlobNilCfg] — the Cfg-aware entry point
 // requires per-instance isolation, so the caller must supply a
@@ -602,6 +624,21 @@ func (b *Blob512) Export3Cfg(
 		mode = cfg.Mode
 	}
 
+	interlock := ""
+	if o.Interlock != "" {
+		if o.Interlock != Interlock48 && o.Interlock != Interlock168 {
+			return nil, fmt.Errorf("itb: Blob512Opts.Interlock=%q must be \"\" or one of {%q, %q}", o.Interlock, Interlock48, Interlock168)
+		}
+		if o.Interlock == Interlock168 {
+			interlock = Interlock168
+		}
+	} else if cfg != nil && cfg.Interlock == Interlock168 {
+		interlock = Interlock168
+	}
+
+	globals := snapshotGlobalsV1FromCfg(cfg)
+	globals.Interlock = interlock
+
 	blob := blobV1{
 		Version: blobVersionV1,
 		Mode:    mode,
@@ -620,7 +657,7 @@ func (b *Blob512) Export3Cfg(
 		SS1:     componentsToStrings(ss1.Components),
 		SS2:     componentsToStrings(ss2.Components),
 		SS3:     componentsToStrings(ss3.Components),
-		Globals: snapshotGlobalsV1FromCfg(cfg),
+		Globals: globals,
 	}
 
 	if o.LS != nil {
@@ -635,6 +672,7 @@ func (b *Blob512) Export3Cfg(
 		blob.MACName = o.MACName
 	}
 	b.Mode = mode
+	b.Interlock = interlock
 	return json.Marshal(blob)
 }
 
@@ -804,6 +842,7 @@ func (b *Blob512) Import3Cfg(data []byte, cfg *Config) error {
 
 	*b = Blob512{}
 	b.Mode = blob.Mode
+	b.Interlock = cfg.Interlock
 	b.KeyN = keyN
 	b.KeyD1 = keyD1
 	b.KeyD2 = keyD2
@@ -870,6 +909,9 @@ func (b *Blob256) Export3Cfg(
 		return nil, ErrBlobNilCfg
 	}
 	if err := validateConfigCfg(cfg); err != nil {
+		return nil, err
+	}
+	if err := validateInterlockWidthCfg(cfg, 256); err != nil {
 		return nil, err
 	}
 	if len(opts) > 1 {
@@ -1093,6 +1135,9 @@ func (b *Blob256) Import3Cfg(data []byte, cfg *Config) error {
 		}
 	}
 
+	if blob.Globals.Interlock == Interlock168 {
+		return ErrBlobMalformed
+	}
 	if err := applyGlobalsV1ToCfg(blob.Globals, cfg); err != nil {
 		return err
 	}
@@ -1150,6 +1195,9 @@ func (b *Blob128) Export3Cfg(
 		return nil, ErrBlobNilCfg
 	}
 	if err := validateConfigCfg(cfg); err != nil {
+		return nil, err
+	}
+	if err := validateInterlockWidthCfg(cfg, 128); err != nil {
 		return nil, err
 	}
 	if len(opts) > 1 {
@@ -1385,6 +1433,9 @@ func (b *Blob128) Import3Cfg(data []byte, cfg *Config) error {
 		}
 	}
 
+	if blob.Globals.Interlock == Interlock168 {
+		return ErrBlobMalformed
+	}
 	if err := applyGlobalsV1ToCfg(blob.Globals, cfg); err != nil {
 		return err
 	}

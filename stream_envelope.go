@@ -58,7 +58,8 @@ func validateTagStubSizeCfg(cfg *Config) error {
 }
 
 // validateConfigCfg rejects an out-of-range [Config.NonceBits],
-// [Config.BarrierFill], or [Config.MaxWorkers] before any wire is
+// [Config.BarrierFill], [Config.MaxWorkers], [Config.Mode],
+// [Config.DRBG], or [Config.Interlock] before any wire is
 // produced or persisted. Accepted values:
 //
 //   - NonceBits: 0 (defer to [DefaultNonceBits]) or 128 / 256 / 512.
@@ -79,6 +80,9 @@ func validateTagStubSizeCfg(cfg *Config) error {
 //     Export3Cfg entries raise for an out-of-range Opts.Mode and the
 //     Import3Cfg entries raise for an out-of-range blob mode, so one
 //     condition carries one error identity whichever side set it.
+//   - DRBG: "" (auto tier) or one of [drbg.Names].
+//   - Interlock: "" (default 48-bit), [Interlock48] ("48"), or
+//     [Interlock168] ("168").
 //
 // Consulted by every Cfg-aware Encrypt entry point in the itb-root
 // package and by every [Blob128.Export3Cfg] / [Blob256.Export3Cfg] /
@@ -109,6 +113,26 @@ func validateConfigCfg(cfg *Config) error {
 	}
 	if !drbg.Known(cfg.DRBG) {
 		return fmt.Errorf("itb: cfg.DRBG=%q is not an installed DRBG fill primitive (want \"\" or one of %v)", cfg.DRBG, drbg.Names())
+	}
+	switch cfg.Interlock {
+	case "", Interlock48, Interlock168:
+	default:
+		return fmt.Errorf("itb: cfg.Interlock=%q must be \"\" or one of {%q, %q}", cfg.Interlock, Interlock48, Interlock168)
+	}
+	return nil
+}
+
+// validateInterlockWidthCfg validates cfg.Interlock and enforces that
+// Interlock168 is only used with 512-bit inner hash width.
+func validateInterlockWidthCfg(cfg *Config, width int) error {
+	if cfg == nil || cfg.Interlock == "" || cfg.Interlock == Interlock48 {
+		return nil
+	}
+	if cfg.Interlock != Interlock168 {
+		return fmt.Errorf("itb: cfg.Interlock=%q must be \"\" or one of {%q, %q}", cfg.Interlock, Interlock48, Interlock168)
+	}
+	if width != 512 {
+		return fmt.Errorf("itb: cfg.Interlock=%q requires 512-bit inner hash width (got %d-bit)", cfg.Interlock, width)
 	}
 	return nil
 }

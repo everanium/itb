@@ -220,6 +220,11 @@ type Profile struct {
 	// survives Save / Load / Rekey. The decrypt path never consults it.
 	DRBG string
 
+	// Interlock selects the Interlocked Barrier chunk width:
+	// "" or "48" = 48-bit (6-byte chunk -> 3 x 2-byte lanes, default);
+	// "168"      = 168-bit (21-byte chunk -> 3 x 7-byte lanes, requires Width == 512).
+	Interlock string
+
 	// MacName is the MAC primitive name (e.g. "hmac-blake3"). Empty
 	// for No MAC modes; otherwise must resolve via
 	// [github.com/everanium/itb/macs.Find].
@@ -600,6 +605,12 @@ func resolveProfile(prof Profile, opts Opts) Profile {
 	if opts.DRBG != "" {
 		out.DRBG = opts.DRBG
 	}
+	if opts.Interlock != "" {
+		out.Interlock = opts.Interlock
+	}
+	if out.Interlock == itb.Interlock48 {
+		out.Interlock = ""
+	}
 	if opts.OuterCipher != "" {
 		out.OuterCipher = opts.OuterCipher
 	}
@@ -654,6 +665,7 @@ type profileWire struct {
 	BarrierFill         int      `json:"barrier_fill,omitempty"`
 	ContainerMode       int      `json:"container_mode,omitempty"`
 	DRBG                string   `json:"drbg,omitempty"`
+	Interlock           string   `json:"interlock,omitempty"`
 	MacName             string   `json:"mac,omitempty"`
 	TagStubSize         int      `json:"tagstub,omitempty"`
 	ChunkSize           int      `json:"chunk,omitempty"`
@@ -673,6 +685,10 @@ type profileWire struct {
 // No semantic validation is applied by the codec; field rules are
 // enforced by [Register] and [Load].
 func (p Profile) MarshalJSON() ([]byte, error) {
+	il := p.Interlock
+	if il == itb.Interlock48 {
+		il = ""
+	}
 	w := profileWire{
 		Name:                p.Name,
 		Mode:                p.Mode,
@@ -683,6 +699,7 @@ func (p Profile) MarshalJSON() ([]byte, error) {
 		BarrierFill:         p.BarrierFill,
 		ContainerMode:       p.ContainerMode,
 		DRBG:                p.DRBG,
+		Interlock:           il,
 		MacName:             p.MacName,
 		TagStubSize:         p.TagStubSize,
 		ChunkSize:           p.ChunkSize,
@@ -737,6 +754,7 @@ func (p *Profile) UnmarshalJSON(data []byte) error {
 		BarrierFill:         w.BarrierFill,
 		ContainerMode:       w.ContainerMode,
 		DRBG:                w.DRBG,
+		Interlock:           w.Interlock,
 		MacName:             w.MacName,
 		TagStubSize:         w.TagStubSize,
 		ChunkSize:           w.ChunkSize,
@@ -745,6 +763,9 @@ func (p *Profile) UnmarshalJSON(data []byte) error {
 		Parallax:            w.Parallax,
 		ParallaxPalette:     w.ParallaxPalette,
 		ParallaxSegmentSize: w.ParallaxSegmentSize,
+	}
+	if out.Interlock == itb.Interlock48 {
+		out.Interlock = ""
 	}
 	if len(w.MixedHashes) == 8 {
 		copy(out.MixedHashes[:], w.MixedHashes)

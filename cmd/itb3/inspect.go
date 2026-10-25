@@ -92,6 +92,11 @@ func renderInspect(prof triple.Profile, blobLen int, out io.Writer) {
 	} else {
 		fmt.Fprintf(out, "drbg: (auto: %s on this host)\n", itb.DRBGAutoTier())
 	}
+	if prof.Interlock != "" {
+		fmt.Fprintf(out, "interlock: %s\n", prof.Interlock)
+	} else {
+		fmt.Fprintln(out, "interlock: 48 (default)")
+	}
 	if prof.MacName != "" {
 		fmt.Fprintf(out, "mac_name: %s\n", prof.MacName)
 	} else {

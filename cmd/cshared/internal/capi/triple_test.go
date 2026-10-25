@@ -1028,3 +1028,98 @@ func TestTripleInitKeysCapi(t *testing.T) {
 		t.Fatalf("identical masters: got %v, want StatusBadInput (%s)", st, LastError())
 	}
 }
+
+// TestTripleInitInterlock168Capi verifies the interlock= query-string option
+// on TripleInit, Inspect, Load, single-message and streaming round-trips,
+// and rejection of non-512-bit or unknown interlock values.
+func TestTripleInitInterlock168Capi(t *testing.T) {
+	blobBuf := make([]byte, 1<<15)
+	sID, blobLen, st := TripleInit(triple.ProfileSingleMsgTripleMACV1, "innerHash=blake2b512&interlock=168", blobBuf)
+	if st != StatusOK {
+		t.Fatalf("TripleInit(blake2b512, interlock=168): %v (%s)", st, LastError())
+	}
+	defer FreeTriple(sID)
+
+	inspBuf := make([]byte, 4096)
+	inspLen, st := TripleInspect(blobBuf[:blobLen], inspBuf)
+	if st != StatusOK {
+		t.Fatalf("TripleInspect: %v (%s)", st, LastError())
+	}
+	var prof triple.Profile
+	if err := json.Unmarshal(inspBuf[:inspLen], &prof); err != nil {
+		t.Fatalf("TripleInspect unmarshal: %v", err)
+	}
+	if prof.Interlock != "168" || prof.InnerHash != "blake2b512" {
+		t.Fatalf("TripleInspect got Interlock=%q InnerHash=%q, want 168 / blake2b512", prof.Interlock, prof.InnerHash)
+	}
+
+	rID, st := TripleLoad(blobBuf[:blobLen])
+	if st != StatusOK {
+		t.Fatalf("TripleLoad: %v (%s)", st, LastError())
+	}
+	defer FreeTriple(rID)
+
+	pt := triplePlaintext(t, 2048)
+	wireBuf := make([]byte, len(pt)+64<<10)
+	wLen, st := TripleEncryptMessage(sID, pt, wireBuf)
+	if st != StatusOK {
+		t.Fatalf("TripleEncryptMessage: %v (%s)", st, LastError())
+	}
+	ptOut := make([]byte, len(pt)+1024)
+	pLen, st := TripleDecryptMessage(rID, wireBuf[:wLen], ptOut)
+	if st != StatusOK {
+		t.Fatalf("TripleDecryptMessage: %v (%s)", st, LastError())
+	}
+	if !bytes.Equal(ptOut[:pLen], pt) {
+		t.Fatalf("168-bit single-message round-trip mismatch")
+	}
+
+	// Streaming round-trip with areion512 + interlock=168.
+	sStreamID, sBlobLen, st := TripleInit(triple.ProfileStreamingAEADTripleMACV1, "innerHash=areion512&interlock=168", blobBuf)
+	if st != StatusOK {
+		t.Fatalf("TripleInit streaming(areion512, interlock=168): %v (%s)", st, LastError())
+	}
+	defer FreeTriple(sStreamID)
+	rStreamID, st := TripleLoad(blobBuf[:sBlobLen])
+	if st != StatusOK {
+		t.Fatalf("TripleLoad streaming: %v (%s)", st, LastError())
+	}
+	defer FreeTriple(rStreamID)
+	wLen, st = TripleEncryptStream(sStreamID, pt, wireBuf)
+	if st != StatusOK {
+		t.Fatalf("TripleEncryptStream: %v (%s)", st, LastError())
+	}
+	pLen, st = TripleDecryptStream(rStreamID, wireBuf[:wLen], ptOut)
+	if st != StatusOK {
+		t.Fatalf("TripleDecryptStream: %v (%s)", st, LastError())
+	}
+	if !bytes.Equal(ptOut[:pLen], pt) {
+		t.Fatalf("168-bit streaming round-trip mismatch")
+	}
+
+	// Reject interlock=168 on 128-bit hash.
+	if _, _, st := TripleInit(triple.ProfileSingleMsgTripleMACV1, "innerHash=siphash24&interlock=168", blobBuf); st != StatusBadInput {
+		t.Fatalf("TripleInit 128-bit + interlock=168: got %v, want StatusBadInput", st)
+	}
+	// Reject interlock=168 on 256-bit hash.
+	if _, _, st := TripleInit(triple.ProfileSingleMsgTripleMACV1, "innerHash=areion256&interlock=168", blobBuf); st != StatusBadInput {
+		t.Fatalf("TripleInit 256-bit + interlock=168: got %v, want StatusBadInput", st)
+	}
+	// Reject unknown interlock value.
+	if _, _, st := TripleInit(triple.ProfileSingleMsgTripleMACV1, "innerHash=blake2b512&interlock=96", blobBuf); st != StatusBadInput {
+		t.Fatalf("TripleInit interlock=96: got %v, want StatusBadInput", st)
+	}
+	// Reject tampered blob with interlock=96 -> StatusBlobMalformedRecipe.
+	badIL := tripleEditRecord(t, blobBuf[:sBlobLen], func(p map[string]any) { p["interlock"] = "96" })
+	if _, st := TripleLoad(badIL); st != StatusBlobMalformedRecipe {
+		t.Fatalf("TripleLoad tampered interlock=96: got %v, want StatusBlobMalformedRecipe (%s)", st, LastError())
+	}
+	// Reject tampered blob with hash=siphash24 + width=128 + il=168 -> StatusBlobMalformedRecipe.
+	badWidth := tripleEditRecord(t, blobBuf[:sBlobLen], func(p map[string]any) {
+		p["hash"] = "siphash24"
+		p["width"] = 128
+	})
+	if _, st := TripleLoad(badWidth); st != StatusBlobMalformedRecipe {
+		t.Fatalf("TripleLoad tampered hash=siphash24 + il=168: got %v, want StatusBlobMalformedRecipe (%s)", st, LastError())
+	}
+}
