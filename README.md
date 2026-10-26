@@ -74,8 +74,8 @@ The Core API and the Go C ABI are consolidated around the `triple/` facade and t
 
 | Native | Status | Features | Tests | Packages |
 |---|---|---|---|---|
-| Go Native | Shipped | `triple/` facade + Cfg-only Low-Level | Passing on Intel Rocket Lake reference host | 1 Nov 2026 |
-| C ABI (`cmd/cshared`) | Shipped | `ITB_Triple_*` exports + Cfg-aware capi header | Passing on Intel Rocket Lake reference host | 1 Nov 2026 |
+| Go Native | Shipped | `triple/` facade + Cfg-only Low-Level | Cross-platform & cross-binding verified | 1 Nov 2026 |
+| C ABI (`cmd/cshared`) | Shipped | `ITB_Triple_*` exports + Cfg-aware capi header | Cross-platform & cross-binding verified | 1 Nov 2026 |
 | Wire Format | Frozen | ChainHash & Rank Barrier (48-bit) & Pixel Barrier | Cross-platform & cross-binding verified | 1 Nov 2026 |
 
 <!-- preserved-verbatim: cross-platform verification block; do not paraphrase; re-runs after bindings rework produce fresh numbers -->
