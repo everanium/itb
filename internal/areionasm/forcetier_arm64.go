@@ -3,6 +3,7 @@
 package areionasm
 
 import (
+	"github.com/everanium/areion"
 	"github.com/everanium/itb/internal/cpuid"
 	"github.com/everanium/itb/internal/forcetier"
 )
@@ -32,15 +33,19 @@ func init() {
 func applyHashTier() {
 	switch forcetier.HashTier() {
 	case "":
+		_ = areion.SetTier("auto")
 	case "neon", "sve2", "sve":
 		if !cpuid.ARMAES {
 			forcetier.Warnf("areionasm: %s tier needs the ARM crypto extension; keeping auto-dispatch", forcetier.HashTier())
 			return
 		}
+		_ = areion.SetTier("arm64")
 		HasARMAESBatched, FusedHasARMAES, HasARMAESX16 = true, true, true
 	case "scalar":
+		_ = areion.SetTier("purego")
 		HasARMAESBatched, FusedHasARMAES, HasARMAESX16 = false, false, false
 	case "gpr":
+		_ = areion.SetTier("purego")
 		forcetier.Warnf("areionasm: no gpr arm; keeping auto-dispatch")
 	default:
 		forcetier.Warnf("areionasm: %s tier is amd64-only; keeping auto-dispatch", forcetier.HashTier())

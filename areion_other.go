@@ -8,6 +8,10 @@ import (
 	"github.com/everanium/areion"
 )
 
+func areionSoEMBatchedDirect() bool {
+	return true
+}
+
 // On non-amd64 / non-arm64 platforms (or under the `purego` / `noitbasm`
 // build tags) there is no VAES or ARM Crypto Extension assembly; the
 // 4-way batched permutations dispatch directly to the portable Go

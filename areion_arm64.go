@@ -10,6 +10,10 @@ import (
 	"github.com/everanium/itb/internal/areionasm"
 )
 
+func areionSoEMBatchedDirect() bool {
+	return areionasm.HasARMAESBatched
+}
+
 // On arm64 with the ARM Crypto Extension, the 4-way batched permutex
 // dispatches to a single Plan9 ASM block in `internal/areionasm/areion_arm64.s`,
 // running 4 independent ARM Crypto Extension AES chains per call.

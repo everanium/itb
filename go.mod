@@ -4,7 +4,7 @@ go 1.27
 
 require (
 	github.com/dchest/siphash v1.2.3
-	github.com/everanium/areion v0.1.2
+	github.com/everanium/areion v0.1.4
 	github.com/klauspost/cpuid/v2 v2.2.10
 	github.com/spf13/cobra v1.10.2
 	github.com/zeebo/blake3 v0.2.4

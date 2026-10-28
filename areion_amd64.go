@@ -10,6 +10,13 @@ import (
 	"github.com/everanium/itb/internal/areionasm"
 )
 
+func areionSoEMBatchedDirect() bool {
+	if areionasm.HasVAESAVX2NoAVX512 && !areionasm.FusedHasVAESAVX2 {
+		return false
+	}
+	return areionasm.HasVAESAVX512 || areionasm.HasVAESAVX2NoAVX512 || areionasm.HasAVXAESNIBatched || areionasm.HasAESNIBatched || areion.TierCode() == areion.TierPureGo
+}
+
 // areionSoEM256Permutex4SoA runs the two permutations of the
 // Areion-SoEM-256 4-way batched PRF over caller-prepared SoA half-states:
 //

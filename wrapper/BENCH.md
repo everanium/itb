@@ -49,8 +49,8 @@ Column abbreviations in the Full ITB + wrapper tables: **IO** = IO-Driven (`io.R
 
 | Cipher | `Wrap` (alloc) MB/s | `WrapInPlace` (no output-buffer alloc) MB/s |
 |---|---|---|
-| **Areion-SoEM-256** | 2227 | 4917 |
-| **Areion-SoEM-512** | 2374 | 4907 |
+| **Areion-SoEM-256** | 2439 | 4491 |
+| **Areion-SoEM-512** | 2413 | 4631 |
 | **BLAKE2b-256** | 1830 | 3266 |
 | **BLAKE2b-512** | 2236 | 5157 |
 | **BLAKE2s** | 2315 | 5103 |
@@ -69,8 +69,8 @@ Numbers below route through `triple.Pipeline` (Single Message via `EncryptMessag
 
 | Cipher | No MAC Enc | No MAC Dec | MAC Enc | MAC Dec |
 |---|---:|---:|---:|---:|
-| **Areion-SoEM-256** | 301 | 307 | 286 | 294 |
-| **Areion-SoEM-512** | 312 | 309 | 285 | 272 |
+| **Areion-SoEM-256** | 291 | 286 | 259 | 261 |
+| **Areion-SoEM-512** | 294 | 284 | 264 | 257 |
 | **BLAKE2b-256** | 310 | 236 | 282 | 293 |
 | **BLAKE2b-512** | 304 | 321 | 281 | 286 |
 | **BLAKE2s** | 316 | 314 | 280 | 284 |
@@ -83,8 +83,8 @@ Numbers below route through `triple.Pipeline` (Single Message via `EncryptMessag
 
 | Cipher | AEAD IO Enc | AEAD IO Dec |
 |---|---:|---:|
-| **Areion-SoEM-256** | 275 | 276 |
-| **Areion-SoEM-512** | 271 | 290 |
+| **Areion-SoEM-256** | 250 | 257 |
+| **Areion-SoEM-512** | 255 | 249 |
 | **BLAKE2b-256** | 258 | 276 |
 | **BLAKE2b-512** | 262 | 279 |
 | **BLAKE2s** | 282 | 289 |
@@ -97,8 +97,8 @@ Numbers below route through `triple.Pipeline` (Single Message via `EncryptMessag
 
 | Cipher | IO Enc | IO Dec |
 |---|---:|---:|
-| **Areion-SoEM-256** | 303 | 311 |
-| **Areion-SoEM-512** | 298 | 302 |
+| **Areion-SoEM-256** | 263 | 286 |
+| **Areion-SoEM-512** | 269 | 294 |
 | **BLAKE2b-256** | 261 | 298 |
 | **BLAKE2b-512** | 309 | 314 |
 | **BLAKE2s** | 308 | 322 |

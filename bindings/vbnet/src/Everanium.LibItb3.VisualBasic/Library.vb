@@ -7,7 +7,7 @@
 Public Module Library
 
     ''' <summary>The binding's own version.</summary>
-    Public Const BindingVersion As String = "0.8.1"
+    Public Const BindingVersion As String = "0.8.2"
 
     ''' <summary>Sets the Go runtime's soft heap limit in bytes and
     ''' returns the previous limit. A negative value queries without

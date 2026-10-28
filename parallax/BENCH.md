@@ -39,8 +39,8 @@ Each row uses a homogeneous palette of N=9 copies of the named primitive across 
 
 | Primitive | S=17 | S=251 | S=1031 | S=4093 | S=16381 | S=65521 |
 |---|---:|---:|---:|---:|---:|---:|
-| Areion-SoEM-256 | 1126 | 2064 | 2229 | 2380 | **2391** | 2270 |
-| Areion-SoEM-512 | 806 | 2022 | 2225 | 2238 | **2269** | 2187 |
+| Areion-SoEM-256 | 1035 | 2200 | 2214 | 2465 | **2492** | 2346 |
+| Areion-SoEM-512 | 847 | 1984 | 2283 | 2396 | **2443** | 2424 |
 | BLAKE2b-256 | 609 | 1745 | 1813 | 2117 | **2233** | 2030 |
 | BLAKE2b-512 | 568 | 1646 | 2039 | 2230 | 2494 | **2656** |
 | BLAKE2s | 664 | 1667 | 1989 | 2602 | 2610 | **2683** |
@@ -49,7 +49,7 @@ Each row uses a homogeneous palette of N=9 copies of the named primitive across 
 | SipHash-2-4 | 1186 | 2419 | 2528 | 2706 | 2747 | **2803** |
 | ChaCha20 | 1002 | 2108 | 2688 | 2810 | 2901 | **3016** |
 
-Throughput amortises sharply between S=17 and S=251 (1.7–2.9×) and a further 1.1–1.6× through S=4093 for most primitives, then plateaus. SipHash-2-4 is essentially flat above S=251 — its per-segment fixed cost is already negligible at small widths. Areion-SoEM-256, Areion-SoEM-512, and BLAKE2b-256 peak at S=16381 and sit slightly lower at S=65521 (−4 % to −9 %), whereas the remaining six primitives continue climbing to their row maxima at S=65521.
+Throughput amortises sharply between S=17 and S=251 (1.7–2.9×) and a further 1.1–1.6× through S=4093 for most primitives, then plateaus. SipHash-2-4 is essentially flat above S=251 — its per-segment fixed cost is already negligible at small widths. Areion-SoEM-256, Areion-SoEM-512, and BLAKE2b-256 peak at S=16381 and sit slightly lower at S=65521 (−1 % to −9 %), whereas the remaining six primitives continue climbing to their row maxima at S=65521.
 
 `EncryptInPlace` tracks `Encrypt` closely across the matrix — mean signed delta ≈ −3 %, p90 |delta| ≈ 17 % — reflecting that the in-place wire build plus the slice-copy-back accounts for the same byte movement as the allocate-and-return path. The in-place variant retains caller-owned buffer lifetime without trading away throughput.
 
@@ -59,8 +59,8 @@ How throughput scales as the plaintext grows. Sub-bench: `BenchmarkParallaxPerPr
 
 | Primitive | 1 KiB | 64 KiB | 1 MiB | 4 MiB | 16 MiB |
 |---|---:|---:|---:|---:|---:|
-| Areion-SoEM-256 | 95 | 558 | 990 | 2380 | **3548** |
-| Areion-SoEM-512 | 80 | 548 | 1082 | 2238 | **3670** |
+| Areion-SoEM-256 | 101 | 576 | 1191 | 2465 | **3671** |
+| Areion-SoEM-512 | 84 | 555 | 1082 | 2396 | **3613** |
 | BLAKE2b-256 | 144 | 525 | 1127 | 2117 | **3066** |
 | BLAKE2b-512 | 164 | 619 | 1168 | 2230 | **3635** |
 | BLAKE2s | 168 | 646 | 1188 | 2602 | **3633** |
@@ -77,8 +77,8 @@ Streaming emits one frame per chunk; each frame is one `EncryptInto` call's outp
 
 | Primitive | 64 KiB | 256 KiB | 1 MiB | 4 MiB | 16 MiB | 64 MiB |
 |---|---:|---:|---:|---:|---:|---:|
-| Areion-SoEM-256 | 2086 | 2244 | 2211 | 2373 | **2787** | 2650 |
-| Areion-SoEM-512 | 1972 | 2159 | 2179 | 2693 | 2589 | **2840** |
+| Areion-SoEM-256 | 2168 | 2464 | 2348 | **2930** | 2584 | 2906 |
+| Areion-SoEM-512 | 2319 | 2324 | 2114 | **2978** | 2463 | 2736 |
 | BLAKE2b-256 | 1899 | 1994 | 1841 | 2108 | 2593 | **2801** |
 | BLAKE2b-512 | 2206 | 2159 | 2344 | 2812 | 2691 | **2913** |
 | BLAKE2s | 2218 | 2147 | 2330 | 2576 | **2805** | 2719 |
@@ -95,8 +95,8 @@ A 4 MiB plaintext at the default 16 MiB chunkSize emits exactly one frame per en
 
 | Primitive | EncryptWriter | EncryptReader | DecryptWriter | DecryptReader | `OneShotEncrypt` |
 |---|---:|---:|---:|---:|---:|
-| Areion-SoEM-256 | 2168 | 2430 | **2446** | 1623 | 2122 |
-| Areion-SoEM-512 | 2140 | 2260 | **2411** | 1929 | 2254 |
+| Areion-SoEM-256 | 2500 | 2591 | **2719** | 2139 | 2702 |
+| Areion-SoEM-512 | 2434 | **2716** | 2682 | 2079 | 2303 |
 | BLAKE2b-256 | 1793 | 2047 | **2285** | 1705 | 2093 |
 | BLAKE2b-512 | 1896 | 1987 | **2615** | 1864 | 2124 |
 | BLAKE2s | 1970 | 2322 | 2628 | 1973 | **2665** |
@@ -105,7 +105,7 @@ A 4 MiB plaintext at the default 16 MiB chunkSize emits exactly one frame per en
 | SipHash-2-4 | 2102 | 2746 | 2946 | 2179 | **2999** |
 | ChaCha20 | 2398 | 2654 | 2564 | 2271 | **3028** |
 
-DecryptWriter and `OneShotEncrypt` are the fastest shapes across the matrix: DecryptWriter leads five primitives (1.07–1.40× over EncryptWriter across all rows) while `OneShotEncrypt` leads BLAKE2s (2665), BLAKE3 (3001), SipHash-2-4 (2999), and ChaCha20 (3028). Among incremental streaming shapes, DecryptWriter leads eight primitives; ChaCha20 is the exception where EncryptReader (2654) edges past DecryptWriter (2564). The in-place decrypt path avoids the wire-buffer accumulation the encrypt writer performs. `OneShotEncrypt` typically edges past EncryptWriter (no per-chunk envelope); Areion-SoEM-256 is the exception where EncryptWriter narrowly leads (2168 vs 2122). The gap converges within a few percent for the Areion family and ChaCha20 once the chunk grows past 16 MiB.
+DecryptWriter, EncryptReader, and `OneShotEncrypt` are the fastest shapes across the matrix: DecryptWriter leads four primitives (1.07–1.40× over EncryptWriter across all rows), EncryptReader leads Areion-SoEM-512 (2716 vs 2682), and `OneShotEncrypt` leads BLAKE2s (2665), BLAKE3 (3001), SipHash-2-4 (2999), and ChaCha20 (3028). Among incremental streaming shapes, DecryptWriter leads seven primitives while EncryptReader edges past DecryptWriter on Areion-SoEM-512 (2716 vs 2682) and ChaCha20 (2654 vs 2564). The in-place decrypt path avoids the wire-buffer accumulation the encrypt writer performs. `OneShotEncrypt` typically edges past EncryptWriter (no per-chunk envelope); Areion-SoEM-512 is the exception where EncryptWriter narrowly leads (2434 vs 2303). The gap converges within a few percent for the Areion family and ChaCha20 once the chunk grows past 16 MiB.
 
 ## Palette-size sweep (Single Message, S=4093, 4 MiB, Encrypt)
 
@@ -130,7 +130,7 @@ Throughput depends much more on which primitives populate the slots than on the 
 |---|---|---:|
 | fast-mix | `aescmac, siphash24, chacha20, blake3, aescmac` | **2386** |
 | balanced | `aescmac, chacha20, blake3, blake2s, siphash24` | 2204 |
-| slow-mix | `blake2b256, blake2b512, blake2s, areion256, areion512` | 2202 |
+| slow-mix | `blake2b256, blake2b512, blake2s, areion256, areion512` | 2210 |
 
 fast-mix beats slow-mix by ~8 % at fixed N=5. The choice of which primitives populate the palette is the load-bearing knob, not the count.
 

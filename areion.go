@@ -273,6 +273,10 @@ func AreionSoEM256x4(keys *[4][64]byte, inputs *[4][32]byte) (out [4][32]byte) {
 }
 
 func areionSoEM256x4Into(keys *[4][64]byte, inputs, out *[4][32]byte) {
+	if areionSoEMBatchedDirect() {
+		*out = areion.SoEM256x4(keys, inputs)
+		return
+	}
 	// Build state1 = input ⊕ key[0:32] and state2 = input ⊕ key[32:64]
 	// for every lane, **directly in SoA Block4 layout** so the
 	// downstream kernel runs without a separate pack pass.
@@ -442,6 +446,10 @@ func AreionSoEM512x4(keys *[4][128]byte, inputs *[4][64]byte) (out [4][64]byte) 
 }
 
 func areionSoEM512x4Into(keys *[4][128]byte, inputs, out *[4][64]byte) {
+	if areionSoEMBatchedDirect() {
+		*out = areion.SoEM512x4(keys, inputs)
+		return
+	}
 	// SoA-direct build of state1, state2 — same shape as the 256-bit
 	// counterpart, scaled to four Block4 buffers per state (b0..b3
 	// holding AES blocks 0..3 of every lane). Skips the AoS pack/

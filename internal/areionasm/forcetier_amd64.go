@@ -3,6 +3,7 @@
 package areionasm
 
 import (
+	"github.com/everanium/areion"
 	"github.com/everanium/itb/internal/cpuid"
 	"github.com/everanium/itb/internal/forcetier"
 )
@@ -47,11 +48,14 @@ func init() {
 // The arm64 tokens (neon / sve2 / sve) keep auto-dispatch with a note.
 func applyHashTier() {
 	switch forcetier.HashTier() {
+	case "":
+		_ = areion.SetTier("auto")
 	case "avx512":
 		if !cpuid.VAESZMM {
 			forcetier.Warnf("areionasm: avx512 tier needs VAES+AVX-512; keeping auto-dispatch")
 			return
 		}
+		_ = areion.SetTier("avx512")
 		HasVAESAVX512, HasVAESAVX2NoAVX512, HasAVXAESNIBatched, HasAESNIBatched, HasARMAESBatched = true, false, false, false, false
 		FusedHasVAESAVX512, FusedHasVAESAVX2, FusedHasAVXAESNI, FusedHasAESNI = true, false, false, false
 		HasVAESAVX512X16, HasVAESAVX2X16, HasAVXAESNIX16, HasAESNIX16 = true, false, false, false
@@ -60,6 +64,7 @@ func applyHashTier() {
 			forcetier.Warnf("areionasm: vaesavx2 tier needs VAES+AVX2; keeping auto-dispatch")
 			return
 		}
+		_ = areion.SetTier("vaesavx2")
 		HasVAESAVX512, HasVAESAVX2NoAVX512, HasAVXAESNIBatched, HasAESNIBatched, HasARMAESBatched = false, true, false, false, false
 		FusedHasVAESAVX512, FusedHasVAESAVX2, FusedHasAVXAESNI, FusedHasAESNI = false, true, false, false
 		HasVAESAVX512X16, HasVAESAVX2X16, HasAVXAESNIX16, HasAESNIX16 = false, true, false, false
@@ -68,6 +73,7 @@ func applyHashTier() {
 			forcetier.Warnf("areionasm: avx2 tier needs VAES+AVX2; keeping auto-dispatch")
 			return
 		}
+		_ = areion.SetTier("vaesavx2")
 		HasVAESAVX512, HasVAESAVX2NoAVX512, HasAVXAESNIBatched, HasAESNIBatched, HasARMAESBatched = false, true, false, false, false
 		FusedHasVAESAVX512, FusedHasVAESAVX2, FusedHasAVXAESNI, FusedHasAESNI = false, false, false, false
 		HasVAESAVX512X16, HasVAESAVX2X16, HasAVXAESNIX16, HasAESNIX16 = false, false, false, false
@@ -76,6 +82,7 @@ func applyHashTier() {
 			forcetier.Warnf("areionasm: vex tier needs AVX+AES-NI; keeping auto-dispatch")
 			return
 		}
+		_ = areion.SetTier("vex")
 		HasVAESAVX512, HasVAESAVX2NoAVX512, HasAVXAESNIBatched, HasAESNIBatched, HasARMAESBatched = false, false, true, false, false
 		FusedHasVAESAVX512, FusedHasVAESAVX2, FusedHasAVXAESNI, FusedHasAESNI = false, false, true, false
 		HasVAESAVX512X16, HasVAESAVX2X16, HasAVXAESNIX16, HasAESNIX16 = false, false, true, false
@@ -84,14 +91,17 @@ func applyHashTier() {
 			forcetier.Warnf("areionasm: aesni tier needs AES-NI; keeping auto-dispatch")
 			return
 		}
+		_ = areion.SetTier("aesni")
 		HasVAESAVX512, HasVAESAVX2NoAVX512, HasAVXAESNIBatched, HasAESNIBatched, HasARMAESBatched = false, false, false, true, false
 		FusedHasVAESAVX512, FusedHasVAESAVX2, FusedHasAVXAESNI, FusedHasAESNI = false, false, false, true
 		HasVAESAVX512X16, HasVAESAVX2X16, HasAVXAESNIX16, HasAESNIX16 = false, false, false, true
 	case "gpr":
+		_ = areion.SetTier("purego")
 		forcetier.Warnf("areionasm: no gpr arm; keeping auto-dispatch")
 	case "neon", "sve2", "sve":
 		forcetier.Warnf("areionasm: %s tier is arm64-only; keeping auto-dispatch", forcetier.HashTier())
 	case "scalar":
+		_ = areion.SetTier("purego")
 		HasVAESAVX512, HasVAESAVX2NoAVX512, HasAVXAESNIBatched, HasAESNIBatched, HasARMAESBatched = false, false, false, false, false
 		FusedHasVAESAVX512, FusedHasVAESAVX2, FusedHasAVXAESNI, FusedHasAESNI = false, false, false, false
 		HasVAESAVX512X16, HasVAESAVX2X16, HasAVXAESNIX16, HasAESNIX16 = false, false, false, false
