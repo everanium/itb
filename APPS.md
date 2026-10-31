@@ -10,7 +10,7 @@
 
 ## 1. Architectural Rule: Never Transmit the Secret Session Blob
 
-The byte slice returned by `triple.Init()`, `triple.InitKeys()`, `Pipeline.Save()`, and `Pipeline.Rekey()` is a **secret persistence bundle** (`blobWrapV2`). Alongside the outer profile recipe, it embeds the complete inner `Blob{N}` state: all eight seeds' `Components` tables, the eight per-slot PRF keys, the authentication MAC key, `PermMaster`, and `WrapMaster`.
+The byte slice returned by `triple.Init()`, `triple.InitKeys()`, `Pipeline.Save()`, and `Pipeline.Rekey()` is a **secret persistence bundle**. Alongside the outer profile recipe, it embeds the complete inner `Blob{N}` state: all eight seeds' `Components` tables, the eight per-slot PRF keys, the authentication MAC key, `PermMaster`, and `WrapMaster`.
 
 > **Critical rule for networked applications.** Never transmit the session blob over a network socket or store it on an untrusted relay server — even inside an encrypted transport. Concentrating all eight seed components and layer masters into a single network payload creates a single point of compromise. The session blob exists strictly for local disk persistence via `Pipeline.SaveF` / `triple.LoadF` (`0600` permissions).
 
@@ -78,7 +78,7 @@ Channel 2: HQC-1        ──► kem[2] ──► kdf.Derive("blake2b512", kem[
 ### Security under a 2-of-3 Asymmetric Break
 
 - **All-or-Nothing Seed Secrecy**: Because every `masters[slot]` (`slot = 0..7`) is the bitwise XOR of `subsetPRK[slotSubsets[slot]]` and three per-slot 512-bit pseudorandom outputs produced by `"blake3"` on `kem[0]`, `"areion512"` on `kem[1]`, and `"blake2b512"` on `kem[2]`, under the PRF assumption on the unbroken channel's KDF, an adversary who completely breaks **any two of the three** KEMs still faces an independent 512-bit pseudorandom mask from the unbroken third KEM on **every single slot**.
-- **All-or-Nothing Layer Master Secrecy**: Inside `triple.InitKeys`, when `Opts.PermMaster` and `Opts.WrapMaster` are omitted, `PermMaster`, `WrapMaster`, and `macKey` are automatically derived via an 8-way XOR fold across all eight slot KDF outputs (`deriveCombinedKey`). Consequently, every inner seed, Parallax schedule, Wrapper key, and MAC key inherits the full 3-of-3 asymmetric security bound.
+- **All-or-Nothing Layer Master Secrecy**: Inside `triple.InitKeys`, when `Opts.PermMaster` and `Opts.WrapMaster` are omitted, `PermMaster`, `WrapMaster`, and `macKey` are automatically derived via an 8-way XOR fold across all eight slot KDF outputs. Consequently, every inner seed, Parallax schedule, Wrapper key, and MAC key inherits the full 3-of-3 asymmetric security bound.
 
 ---
 
