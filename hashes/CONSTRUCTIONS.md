@@ -31,8 +31,8 @@ Listed in canonical primitive order. Below-spec lab helpers (CRC128, FNV-1a, MD5
 | # | Registry name | Native width | Underlying primitive | Construction shape |
 |---|---|---|---|---|
 | 1 | `aesitb128` | 128 | AES-ITB-128 (ITB-native reduced-round AES chain, `aesitb.go` + `internal/aesitbasm`) | CBC-MAC-style chain absorption over public AES rounds (one per block + two finalising rounds), keyed through the initial state; NUMS round constants (π words); intentionally Non-PRF, inner-role only (Rank Barrier + Pixel Barrier) |
-| 2 | `areion256` | 256 | AreionSoEM-256 (`github.com/everanium/areion`; SoEM22, two Areion permutations) | CBC-MAC with SoEM-256 as keyed round function |
-| 3 | `areion512` | 512 | AreionSoEM-512 (`github.com/everanium/areion`; SoEM22, two Areion permutations) | CBC-MAC with SoEM-512 as keyed round function |
+| 2 | `areion256` | 256 | Areion-SoEM-256 (`github.com/everanium/areion`; SoEM22, two Areion permutations) | CBC-MAC with SoEM-256 as keyed round function |
+| 3 | `areion512` | 512 | Areion-SoEM-512 (`github.com/everanium/areion`; SoEM22, two Areion permutations) | CBC-MAC with SoEM-512 as keyed round function |
 | 4 | `blake2b256` | 256 | BLAKE2b-256 unkeyed (`x/crypto/blake2b`) | Prepend-key MAC with seed XOR into data prefix |
 | 5 | `blake2b512` | 512 | BLAKE2b-512 unkeyed (`x/crypto/blake2b`) | Prepend-key MAC, scaled to 64-byte key + 512-bit output |
 | 6 | `blake2s` | 256 | BLAKE2s-256 unkeyed (`x/crypto/blake2s`) | Prepend-key MAC with seed XOR into data prefix |
@@ -83,7 +83,7 @@ Empirical validation of the cascade dissolving every standalone break at `r ≥ 
 
 ### Areion-SoEM-256 (registry: `areion256`)
 
-**Underlying primitive.** AreionSoEM-256: the Sum of Even-Mansour SoEM22 of Chen–Lambooij–Mennink (CRYPTO 2019; ePrint 2019/554, Eq. (4)) over two AES-round-based Areion-256 permutations,
+**Underlying primitive.** Areion-SoEM-256: the Sum of Even-Mansour SoEM22 of Chen–Lambooij–Mennink (CRYPTO 2019; ePrint 2019/554, Eq. (4)) over two AES-round-based Areion-256 permutations,
 
     F(k1, k2, m) = P1(m ⊕ k1) ⊕ P2(m ⊕ k2) ⊕ k1 ⊕ k2
 
@@ -120,7 +120,7 @@ The security argument does not regress relative to a sponge framing. CBC-MAC ove
 
 ### Areion-SoEM-512 (registry: `areion512`)
 
-**Underlying primitive.** AreionSoEM-512: SoEM22 over two Areion-512 permutations (`P1` under the published constants, `P2` under the second table), the same shape as AreionSoEM-256 at `n = 512`.
+**Underlying primitive.** Areion-SoEM-512: SoEM22 over two Areion-512 permutations (`P1` under the published constants, `P2` under the second table), the same shape as Areion-SoEM-256 at `n = 512`.
 
 **Construction.** Identical shape to Areion-SoEM-256 — CBC-MAC with the SoEM-512 keyed function (a PRF, not a permutation) as the round function. Scaled to a 64-byte fixed key, 64-byte state, 56-byte chunks per round (8 bytes reserved for the length tag), and 512-bit output. Defined in `itb/areion.go::MakeAreionSoEM512HashWithKey` (re-exported via `hashes/areion512.go`).
 
