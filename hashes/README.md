@@ -36,13 +36,13 @@ In FFI-stable index order:
 | 0 | `aesitb128` | 128 | `HashFunc128` (paired with `BatchHashFunc128`) — ITB-native inner-role only (Non-PRF standalone, safe under the compound defence stack) |
 | 1 | `areion256` | 256 | `HashFunc256` (paired with `BatchHashFunc256`) |
 | 2 | `areion512` | 512 | `HashFunc512` (paired with `BatchHashFunc512`) |
-| 3 | `blake2b256` | 256 | `HashFunc256` |
-| 4 | `blake2b512` | 512 | `HashFunc512` |
-| 5 | `blake2s` | 256 | `HashFunc256` |
-| 6 | `blake3` | 256 | `HashFunc256` |
-| 7 | `aescmac` | 128 | `HashFunc128` (cached AES-NI block) |
-| 8 | `siphash24` | 128 | `HashFunc128` (uncached — pure function) |
-| 9 | `chacha20` | 256 | `HashFunc256` |
+| 3 | `blake2b256` | 256 | `HashFunc256` (paired with `BatchHashFunc256`) |
+| 4 | `blake2b512` | 512 | `HashFunc512` (paired with `BatchHashFunc512`) |
+| 5 | `blake2s` | 256 | `HashFunc256` (paired with `BatchHashFunc256`) |
+| 6 | `blake3` | 256 | `HashFunc256` (paired with `BatchHashFunc256`) |
+| 7 | `aescmac` | 128 | `HashFunc128` (paired with `BatchHashFunc128`; cached AES-NI block) |
+| 8 | `siphash24` | 128 | `HashFunc128` (paired with `BatchHashFunc128`; uncached — pure function) |
+| 9 | `chacha20` | 256 | `HashFunc256` (paired with `BatchHashFunc256`) |
 
 The order is FFI-stable; the shipped roster is exposed through
 `ITB_Triple_HashNames` in the shared library and re-ordering would
@@ -487,11 +487,17 @@ closure (no key tuple element):
 | `Areion256Pair(...key)`       | `Areion256PairWithKey(key)`     |
 | `Areion512Pair(...key)`       | `Areion512PairWithKey(key)`     |
 | `BLAKE2b256(...key)`          | `BLAKE2b256WithKey(key)`        |
+| `BLAKE2b256Pair(...key)`      | `BLAKE2b256PairWithKey(key)`    |
 | `BLAKE2b512(...key)`          | `BLAKE2b512WithKey(key)`        |
+| `BLAKE2b512Pair(...key)`      | `BLAKE2b512PairWithKey(key)`    |
 | `BLAKE2s(...key)`             | `BLAKE2sWithKey(key)`           |
+| `BLAKE2s256Pair(...key)`      | `BLAKE2s256PairWithKey(key)`    |
 | `BLAKE3(...key)`              | `BLAKE3WithKey(key)`            |
+| `BLAKE3256Pair(...key)`       | `BLAKE3256PairWithKey(key)`     |
 | `AESCMAC(...key)`             | `AESCMACWithKey(key)`           |
+| `AESCMACPair(...key)`         | `AESCMACPairWithKey(key)`       |
 | `ChaCha20(...key)`            | `ChaCha20WithKey(key)`          |
+| `ChaCha20256Pair(...key)`     | `ChaCha20256PairWithKey(key)`   |
 
 Each `*WithKey` constructor accepts a fixed-size array matching the primitive's native key width. `SipHash24` / `SipHash24Pair()` is not in the table because the seed components themselves are the entire SipHash key (`SipHash24Pair()` takes no argument and returns a 2-tuple without a key; serializing the seed components is sufficient, so both the variadic and `WithKey` forms would be no-ops).
 
