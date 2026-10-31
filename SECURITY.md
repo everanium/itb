@@ -17,7 +17,7 @@
 | `main` (HEAD) | ✓ |
 | earlier tagged releases | — |
 
-**Reporting a vulnerability.** Private reports preferred via [GitHub Security Advisories](https://github.com/everanium/itb/security/advisories/new). Discord channel for coordination: [discord.gg/wRYF8shHpd](https://discord.gg/wRYF8shHpd). Email contact is intentionally not published — Discord and Security Advisories cover both informal triage and formal disclosure.
+**Reporting a vulnerability.** Private reports preferred via [GitHub Security Advisories](https://github.com/everanium/itb/security/advisories/new) or by email at `andrew@encloud.blue`. Discord channel for coordination: [discord.gg/wRYF8shHpd](https://discord.gg/wRYF8shHpd).
 
 **Triage and response.** Best-effort triage within 14 days. Pre-release status means no SLA or commercial support is implied. Responses are individually authored, not template-driven.
 
