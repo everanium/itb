@@ -232,7 +232,8 @@ emitted records:
 - `redteam_cpa_broken_test.go` — fresh-nonce CPA matrix (`itb/cpa_broken/`).
 - `redteam_near_identical_fresh_test.go` — fresh-nonce cross-message
   near-identical pair matrix (`itb/near_identical_fresh/`).
-- `redteam_noisepos_cca_test.go` — noise-position observations under
+- `redteam_noisepos_cca_test.go` / `redteam_noisepos_cca_queries_test.go` —
+  noise-position observations and early-stop oracle query budget under
   MAC + Reveal (CCA) on authenticated wires.
 - `redteam_interlock_nonce_recovery_test.go` — attacker-side interlock-nonce
   handling across the three interlocked container lanes.

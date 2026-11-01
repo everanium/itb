@@ -231,7 +231,7 @@ ITB_RELATED_NONCE_DUAL_SCENARIO_C_LOWENT_RECOVERY=1 go test -tags redteam -run T
 
 Under MAC + Reveal an attacker who submits altered ciphertexts learns the noise position of every physical pixel by single-bit flips: flipping the noise bit of a channel byte leaves the decoded payload and the MAC intact, while flipping any other bit fails authentication. Pixel boundaries (8 bytes each, right after the header) and region boundaries (`third = W·H / 3`) are public, so the oracle yields three per-region arrays of 3-bit positions. The noise counter is not restarted per region and the position is `noiseFold3(h[0] + rotl64(h[1], 1))` over both words of the noise seed's output, so the three arrays are disjoint stretches of one position sequence.
 
-`redteam_noisepos_cca_test.go` runs two attacks against real `EncryptAuthenticated3x128Cfg` wires (35×35 container, 1024-bit keys, 128-bit nonce, 10 messages per primitive, every pixel resolved to exactly one accepted flip), using only the oracle's accept / reject answers, the header and public parameters; true start offsets enter the final report only. **Region alignment** searches for a cyclic shift under which two regions' arrays coincide and, when region 3 is one pixel longer, for the window that pins both absolute start offsets; a control layout whose noise counter restarts at 0 in every region recovers the offset exactly. **Public-part match** assumes the position splits into a seed-only 3-bit constant XOR the position computed with an all-zero seed, as a GF(2)-linear primitive's hash output does, and enumerates the constant and `startPixel_i` per region.
+`redteam_noisepos_cca_test.go` runs two attacks against real `EncryptAuthenticated3x128Cfg` wires (35×35 container, 1024-bit keys, 128-bit nonce, 10 messages per primitive, every pixel resolved to exactly one accepted flip across all 8 channel-0 bits, 8P = 9,800 queries/wire; `redteam_noisepos_cca_queries_test.go` measures the early-stop query budget stopping at the first accepted flip, averaging ~4.375 queries/pixel or ~5,359 queries/wire across N = 100 trials, range ~5,130–5,550), using only the oracle's accept / reject answers, the header and public parameters; true start offsets enter the final report only. **Region alignment** searches for a cyclic shift under which two regions' arrays coincide and, when region 3 is one pixel longer, for the window that pins both absolute start offsets; a control layout whose noise counter restarts at 0 in every region recovers the offset exactly. **Public-part match** assumes the position splits into a seed-only 3-bit constant XOR the position computed with an all-zero seed, as a GF(2)-linear primitive's hash output does, and enumerates the constant and `startPixel_i` per region.
 
 | Primitive | Relative / absolute offset exact | True-shift match (chance 0.125) | Public-part match: startPixel exact |
 |---|---|---|---|
@@ -248,9 +248,11 @@ Ordered by PRF-spectrum contrast, not by the canonical primitive order.
 go test -tags redteam -run 'TestRedTeamNoisePosCCA' -v -count=1 ./
 ITB_REDTEAM_NOISEPOS_HASH=crc128 ITB_REDTEAM_NOISEPOS_TRIALS=10 \
     go test -tags redteam -run 'TestRedTeamNoisePosCCALinearMatch' -v -count=1 ./
+ITB_REDTEAM_NOISEPOS_TRIALS=100 \
+    go test -tags redteam -run 'TestRedTeamNoisePosCCAQueryStats' -v -count=1 ./
 ```
 
-`ITB_REDTEAM_NOISEPOS_HASH` takes a comma list of `siphash`, `aesitb128`, `fnv1a`, `crc128`; `ITB_REDTEAM_NOISEPOS_TRIALS` (default 4) and `ITB_REDTEAM_NOISEPOS_SIZE` (default 1500 bytes) set the sample; JSON summaries (`region_alignment.json`, `linear_match.json`) are written to the probe output directory (configurable via `REDTEAM_NOISEPOS_CCA_OUTPUT_DIR`).
+`ITB_REDTEAM_NOISEPOS_HASH` takes a comma list of `siphash`, `aesitb128`, `fnv1a`, `crc128`; `ITB_REDTEAM_NOISEPOS_TRIALS` (default 4 for the alignment / linear-match probes, 100 for the query-budget probe) and `ITB_REDTEAM_NOISEPOS_SIZE` (default 1500 bytes) set the sample; JSON summaries (`region_alignment.json`, `linear_match.json`, `query_stats.json`) are written to the probe output directory (configurable via `REDTEAM_NOISEPOS_CCA_OUTPUT_DIR`).
 
 ## Broken-primitive stress — CRC128 and FNV-1a
 
