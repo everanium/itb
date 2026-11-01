@@ -313,9 +313,17 @@ func TestFusedKernelsLeaveNoSecretInFrame(t *testing.T) {
 func dumpSIMDRegs(dst *[88]uint64, avx512 bool)
 func dirtySIMDRegForTest(masked uint64)
 
+//go:norace
+func dumpSIMDRegsAVX512(dst *[88]uint64) { dumpSIMDRegs(dst, true) }
+
+//go:norace
+func dumpSIMDRegsNoAVX512(dst *[88]uint64) { dumpSIMDRegs(dst, false) }
+
 func init() {
-	dumpSIMDRegsHook = func(dst *[88]uint64) {
-		dumpSIMDRegs(dst, cpuid.AVX512F)
+	if cpuid.AVX512F {
+		dumpSIMDRegsHook = dumpSIMDRegsAVX512
+	} else {
+		dumpSIMDRegsHook = dumpSIMDRegsNoAVX512
 	}
 	dirtySIMDRegHook = dirtySIMDRegForTest
 }

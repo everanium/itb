@@ -177,7 +177,7 @@ func BLAKE3WithKey(key [32]byte) itb.HashFunc256 {
 		evalBLAKE3WithKey(pool, template, data, &seed, &res)
 		clear(seed[:])
 		runtime.KeepAlive(&seed)
-		wipe.CallStack2K([9][8]uint64{})
+		wipe.CallStack4K([9][8]uint64{})
 		return res
 	}
 }
@@ -232,7 +232,7 @@ func BLAKE3256PairWithKey(fixedKey [32]byte) (itb.HashFunc256, itb.BatchHashFunc
 		evalBLAKE3WithKey(pool, template, data, &seed, &res)
 		clear(seed[:])
 		runtime.KeepAlive(&seed)
-		wipe.CallStack2K([9][8]uint64{})
+		wipe.CallStack4K([9][8]uint64{})
 		return res
 	}
 	batched := func(data *[4][]byte, seeds [4][4]uint64) [4][4]uint64 {
@@ -240,7 +240,7 @@ func BLAKE3256PairWithKey(fixedKey [32]byte) (itb.HashFunc256, itb.BatchHashFunc
 		evalBLAKE3Batch(pool, template, data, &seeds, &out)
 		clear(seeds[:])
 		runtime.KeepAlive(&seeds)
-		wipe.CallStack2K([9][8]uint64{})
+		wipe.CallStack4K([9][8]uint64{})
 		return out
 	}
 	return single, batched

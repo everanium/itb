@@ -37,7 +37,7 @@ Listed in canonical primitive order. Below-spec lab helpers (CRC128, FNV-1a, MD5
 | 5 | `blake2b512` | 512 | BLAKE2b-512 unkeyed (`x/crypto/blake2b`) | Prepend-key MAC, scaled to 64-byte key + 512-bit output |
 | 6 | `blake2s` | 256 | BLAKE2s-256 unkeyed (`x/crypto/blake2s`) | Prepend-key MAC with seed XOR into data prefix |
 | 7 | `blake3` | 256 | BLAKE3 keyed (`zeebo/blake3.NewKeyed`) | Native keyed BLAKE3 + seed XOR mix |
-| 8 | `aescmac` | 128 | AES-128 (`crypto/aes`) | AES-128-CBC-MAC with length-tag fold into seed prefix |
+| 8 | `aescmac` | 128 | AES-128 (`github.com/everanium/areion`; `hashes/internal/aescmacasm`) | AES-128-CBC-MAC with length-tag fold into seed prefix |
 | 9 | `siphash24` | 128 | SipHash-2-4 (`dchest/siphash`) | Direct call — seed components are the SipHash key |
 | 10 | `chacha20` | 256 | ChaCha20 block function in its HChaCha20 form (RFC 8439 § 2.3 permutation, `internal/chacha20asm`) | HChaCha20 chain — 15-byte slot blocks through the counter / nonce words, each output keying the next block |
 
@@ -191,7 +191,7 @@ This native-keyed-mode use is enabled by BLAKE3's clone-friendly hasher API: `te
 
 ### AES-CMAC (registry: `aescmac`)
 
-**Underlying primitive.** AES-128 (`crypto/aes`).
+**Underlying primitive.** AES-128 (`github.com/everanium/areion`; `hashes/internal/aescmacasm`, pinned by the package tests to `crypto/aes`).
 
 **Construction.** AES-128-CBC-MAC with a length-tag fold into the seed prefix. Defined in `aescmac.go::AESCMACWithKey`.
 

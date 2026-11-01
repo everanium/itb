@@ -1,18 +1,14 @@
 package ctr
 
 import (
-	"crypto/aes"
-	"crypto/cipher"
 	"encoding/binary"
 	"fmt"
 	"io"
-	"reflect"
 	"runtime"
-	"unsafe"
 
+	"github.com/everanium/areion"
 	"github.com/everanium/itb/hashes"
 	"github.com/everanium/itb/internal/chacha20ctr"
-	"github.com/everanium/itb/internal/wipe"
 )
 
 // ResettableKeystream is a Keystream whose internal counter can be
@@ -87,110 +83,20 @@ func NewResettableAt(name string, key, nonce []byte, byteOffset int) (Resettable
 	return ks, nil
 }
 
-// aesResettable wraps a crypto/cipher.Stream over AES-128 alongside the
-// cached cipher.Block and the original 16-byte nonce. ResetCounter
-// rebuilds the inner Stream at the IV positioned by blockOff blocks past
-// the nonce, then discards the intra-block remainder; the cipher.Block
-// is reused so AES key expansion runs once per construction.
+const aesBlockSize = 16
+
+// aesResettable implements NIST SP 800-38A AES-128 in counter mode over
+// the pre-expanded 11-round key schedule using areion.AES128CTRXOR.
+// ResetCounter repositions the 128-bit big-endian block counter in O(1)
+// and pre-populates the intra-block remainder without re-running key
+// expansion or allocating heap state.
 type aesResettable struct {
-	block            cipher.Block
-	nonce            [aes.BlockSize]byte
-	nonceHi          uint64
-	nonceLo          uint64
-	iv               [aes.BlockSize]byte
-	scratch          [aes.BlockSize]byte
-	stream           cipher.Stream
-	streamAlt        cipher.Stream
-	streamDirectSize int
-	fastReset        bool
-}
-
-func detectStreamDirectSize(s *cipher.Stream) int {
-	if s == nil || *s == nil {
-		return 0
-	}
-	rv := reflect.ValueOf(*s)
-	if rv.Kind() != reflect.Struct || rv.NumField() != 1 {
-		return 0
-	}
-	f := rv.Field(0)
-	if f.Kind() != reflect.Pointer || f.IsNil() {
-		return 0
-	}
-	elem := f.Type().Elem()
-	if elem.Kind() != reflect.Struct {
-		return 0
-	}
-	for i := 0; i < elem.NumField(); i++ {
-		switch elem.Field(i).Type.Kind() {
-		case reflect.Pointer, reflect.Slice, reflect.Interface, reflect.Map, reflect.Chan, reflect.Func:
-			return 0
-		}
-	}
-	ifaceWords := (*[2]unsafe.Pointer)(unsafe.Pointer(s))
-	if ifaceWords[1] != f.UnsafePointer() {
-		return 0
-	}
-	return int(elem.Size())
-}
-
-var (
-	aesCTRDirectSize int
-	aesCTRFastReset  bool
-)
-
-func init() {
-	var zeroKey [16]byte
-	block, err := aes.NewCipher(zeroKey[:])
-	if err != nil {
-		return
-	}
-	const (
-		probeHi = uint64(0x0102030405060708)
-		probeLo = uint64(0x090a0b0c0d0e0f10)
-	)
-	var probeIV [aes.BlockSize]byte
-	binary.BigEndian.PutUint64(probeIV[0:8], probeHi)
-	binary.BigEndian.PutUint64(probeIV[8:16], probeLo)
-	s := cipher.NewCTR(block, probeIV[:])
-	sz := detectStreamDirectSize(&s)
-	aesCTRDirectSize = sz
-	if sz >= 24 && sz <= 512+24 {
-		p := (*[2]unsafe.Pointer)(unsafe.Pointer(&s))[1]
-		if p != nil {
-			schedLen := sz - 24
-			tail := (*[3]uint64)(unsafe.Add(p, schedLen))
-			if tail[0] == probeLo && tail[1] == probeHi && tail[2] == 0 {
-				var z [5]byte
-				s.XORKeyStream(z[:], z[:])
-				clear(z[:])
-				if tail[0] == probeLo && tail[1] == probeHi && tail[2] == 5 {
-					aesCTRFastReset = true
-				}
-			}
-			b := unsafe.Slice((*byte)(p), sz)
-			clear(b)
-			runtime.KeepAlive(b)
-		}
-	}
-	wipe.StructPtr(s)
-	wipe.StructPtr(block)
-}
-
-func (a *aesResettable) wipeStream() {
-	if a.stream == nil {
-		return
-	}
-	if a.streamDirectSize > 0 {
-		p := (*[2]unsafe.Pointer)(unsafe.Pointer(&a.stream))[1]
-		if p != nil {
-			b := unsafe.Slice((*byte)(p), a.streamDirectSize)
-			clear(b)
-			runtime.KeepAlive(b)
-			return
-		}
-	}
-	wipe.StructPtr(a.stream)
+	nonce      [aesBlockSize]byte
+	rk         [11][16]byte
+	blockOff   uint64
+	keystrm    [aesBlockSize]byte
+	keystrmOff int
+	keystrmLen int
 }
 
 func newAESResettable(key, nonce []byte) (*aesResettable, error) {
@@ -201,107 +107,87 @@ func newAESResettableAt(key, nonce []byte, byteOffset int) (*aesResettable, erro
 	if len(key) != 16 {
 		return nil, fmt.Errorf("ctr: aes-128-ctr key must be 16 bytes, got %d", len(key))
 	}
-	if len(nonce) != aes.BlockSize {
-		return nil, fmt.Errorf("ctr: aes-128-ctr nonce must be %d bytes, got %d", aes.BlockSize, len(nonce))
+	if len(nonce) != aesBlockSize {
+		return nil, fmt.Errorf("ctr: aes-128-ctr nonce must be %d bytes, got %d", aesBlockSize, len(nonce))
 	}
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		return nil, err
-	}
-	a := &aesResettable{
-		block:            block,
-		nonceHi:          binary.BigEndian.Uint64(nonce[0:8]),
-		nonceLo:          binary.BigEndian.Uint64(nonce[8:16]),
-		streamDirectSize: aesCTRDirectSize,
-	}
+	a := &aesResettable{}
 	copy(a.nonce[:], nonce)
-
-	s0 := cipher.NewCTR(block, a.nonce[:])
-	if aesCTRFastReset {
-		p0 := (*[2]unsafe.Pointer)(unsafe.Pointer(&s0))[1]
-		if p0 != nil {
-			schedLen := aesCTRDirectSize - 24
-			a.fastReset = true
-			tail0 := (*[3]uint64)(unsafe.Add(p0, schedLen))
-			tail0[0] = a.nonceLo
-			tail0[1] = a.nonceHi
-			tail0[2] = uint64(byteOffset)
-			a.stream = s0
-			return a, nil
+	var k [16]byte
+	copy(k[:], key)
+	areion.ExpandKey128(&k, &a.rk)
+	clear(k[:])
+	runtime.KeepAlive(&k)
+	if byteOffset != 0 {
+		if err := a.ResetCounter(byteOffset); err != nil {
+			_ = a.Close()
+			return nil, err
 		}
-	}
-
-	if byteOffset == 0 {
-		a.stream = s0
-		return a, nil
-	}
-	a.stream = s0
-	a.wipeStream()
-	blockOff := uint64(byteOffset / aes.BlockSize)
-	intra := byteOffset % aes.BlockSize
-	ivAtInto(&a.iv, a.nonce[:], blockOff)
-	a.stream = cipher.NewCTR(block, a.iv[:])
-	clear(a.iv[:])
-	if intra > 0 {
-		z := a.scratch[:intra]
-		a.stream.XORKeyStream(z, z)
-		clear(z)
 	}
 	return a, nil
 }
 
 func (a *aesResettable) XORKeyStream(dst, src []byte) {
-	a.stream.XORKeyStream(dst, src)
+	if len(dst) < len(src) {
+		panic("ctr/aes: short dst")
+	}
+	if len(src) == 0 {
+		return
+	}
+	if a.keystrmLen > 0 {
+		take := a.keystrmLen
+		if take > len(src) {
+			take = len(src)
+		}
+		ksSlice := a.keystrm[a.keystrmOff : a.keystrmOff+take]
+		for i := 0; i < take; i++ {
+			dst[i] = src[i] ^ ksSlice[i]
+		}
+		clear(ksSlice)
+		a.keystrmOff += take
+		a.keystrmLen -= take
+		src = src[take:]
+		dst = dst[take:]
+	}
+	if nBlocks := len(src) / aesBlockSize; nBlocks > 0 {
+		adv := nBlocks * aesBlockSize
+		areion.AES128CTRXOR(&a.rk, dst[:adv], src[:adv], &a.nonce, a.blockOff)
+		a.blockOff += uint64(nBlocks)
+		src = src[adv:]
+		dst = dst[adv:]
+	}
+	if rem := len(src); rem > 0 {
+		a.keystrm = [aesBlockSize]byte{}
+		areion.AES128CTRXOR(&a.rk, a.keystrm[:], a.keystrm[:], &a.nonce, a.blockOff)
+		a.blockOff++
+		for i := 0; i < rem; i++ {
+			dst[i] = src[i] ^ a.keystrm[i]
+		}
+		clear(a.keystrm[:rem])
+		a.keystrmOff = rem
+		a.keystrmLen = aesBlockSize - rem
+	}
 }
 
 func (a *aesResettable) ResetCounter(byteOffset int) error {
 	if byteOffset < 0 {
 		return fmt.Errorf("ctr: negative byteOffset %d", byteOffset)
 	}
-	if a.fastReset {
-		if a.streamAlt == nil {
-			s1 := cipher.NewCTR(a.block, a.nonce[:])
-			a.wipeStream()
-			a.streamAlt = s1
-			a.stream = s1
-		}
-		p := (*[2]unsafe.Pointer)(unsafe.Pointer(&a.stream))[1]
-		schedLen := a.streamDirectSize - 24
-		tail := (*[3]uint64)(unsafe.Add(p, schedLen))
-		tail[0] = a.nonceLo
-		tail[1] = a.nonceHi
-		tail[2] = uint64(byteOffset)
-		return nil
-	}
-	blockOff := uint64(byteOffset / aes.BlockSize)
-	intra := byteOffset % aes.BlockSize
-	ivAtInto(&a.iv, a.nonce[:], blockOff)
-	a.wipeStream()
-	a.stream = cipher.NewCTR(a.block, a.iv[:])
-	clear(a.iv[:])
-	if intra > 0 {
-		z := a.scratch[:intra]
-		a.stream.XORKeyStream(z, z)
-		clear(z)
+	clear(a.keystrm[:])
+	a.blockOff = uint64(byteOffset / aesBlockSize)
+	a.keystrmOff = 0
+	a.keystrmLen = 0
+	if intra := byteOffset % aesBlockSize; intra > 0 {
+		areion.AES128CTRXOR(&a.rk, a.keystrm[:], a.keystrm[:], &a.nonce, a.blockOff)
+		a.blockOff++
+		clear(a.keystrm[:intra])
+		a.keystrmOff = intra
+		a.keystrmLen = aesBlockSize - intra
 	}
 	return nil
 }
 
 func (a *aesResettable) Close() error {
-	clear(a.nonce[:])
-	a.nonceHi = 0
-	a.nonceLo = 0
-	clear(a.iv[:])
-	clear(a.scratch[:])
-	a.wipeStream()
-	if a.streamAlt != nil {
-		a.stream = a.streamAlt
-		a.wipeStream()
-		a.streamAlt = nil
-	}
-	wipe.StructPtr(a.block)
-	a.stream = nil
-	a.block = nil
+	*a = aesResettable{}
 	runtime.KeepAlive(a)
 	return nil
 }

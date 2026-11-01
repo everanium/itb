@@ -3,26 +3,10 @@ package ctr
 import (
 	"bytes"
 	"io"
-	"reflect"
 	"testing"
-	"unsafe"
 
 	"github.com/everanium/itb/hashes"
 )
-
-func extractInnerStructView(v any) reflect.Value {
-	rv := reflect.ValueOf(v)
-	if rv.Kind() == reflect.Pointer && !rv.IsNil() {
-		return reflect.NewAt(rv.Type().Elem(), unsafe.Pointer(rv.Pointer())).Elem()
-	}
-	if rv.Kind() == reflect.Struct && rv.NumField() > 0 && rv.Field(0).Kind() == reflect.Pointer {
-		f := rv.Field(0)
-		if !f.IsNil() {
-			return reflect.NewAt(f.Type().Elem(), unsafe.Pointer(f.Pointer())).Elem()
-		}
-	}
-	return reflect.Value{}
-}
 
 func TestCTRCloseAndKeystreamBufferZeroization(t *testing.T) {
 	ciphers := []string{
@@ -87,12 +71,10 @@ func TestCTRCloseAndKeystreamBufferZeroization(t *testing.T) {
 			dst := make([]byte, len(src))
 			s1.XORKeyStream(dst, src)
 
-			var preResetAESStream reflect.Value
 			switch impl := s1.(type) {
 			case *aesResettable:
-				preResetAESStream = extractInnerStructView(impl.stream)
-				if !preResetAESStream.IsValid() || preResetAESStream.IsZero() {
-					t.Fatal("expected non-zero inner *aes.CTR state before ResetCounter")
+				if !allZeroBytes(impl.keystrm[:5]) {
+					t.Fatalf("aesResettable consumed keystream bytes [0:5] not zeroed: %x", impl.keystrm[:5])
 				}
 			case *sipCTR:
 				if !allZeroBytes(impl.keystrm[:5]) {
@@ -112,20 +94,11 @@ func TestCTRCloseAndKeystreamBufferZeroization(t *testing.T) {
 				}
 			}
 
-			// ResetCounter must clear any buffered keystream bytes and wipe old *aes.CTR.
+			// ResetCounter must clear any buffered keystream bytes and reposition cleanly.
 			if r, ok := s1.(ResettableKeystream); ok {
 				if err := r.ResetCounter(13); err != nil {
 					t.Fatalf("ResetCounter(%q): %v", name, err)
 				}
-			}
-			if preResetAESStream.IsValid() && !preResetAESStream.IsZero() {
-				t.Fatal("old *aes.CTR struct inside cipher.aesCtrWrapper was not zeroed on ResetCounter")
-			}
-
-			var preCloseAESStream, preCloseAESBlock reflect.Value
-			if impl, ok := s1.(*aesResettable); ok {
-				preCloseAESStream = extractInnerStructView(impl.stream)
-				preCloseAESBlock = extractInnerStructView(impl.block)
 			}
 
 			// Close must zero all internal state.
@@ -138,14 +111,8 @@ func TestCTRCloseAndKeystreamBufferZeroization(t *testing.T) {
 				if !allZeroBytes(impl.nonce[:]) {
 					t.Fatalf("aesResettable nonce not zeroed on Close: %x", impl.nonce)
 				}
-				if impl.block != nil || impl.stream != nil {
-					t.Fatal("aesResettable block/stream not nilled on Close")
-				}
-				if !preCloseAESStream.IsValid() || !preCloseAESStream.IsZero() {
-					t.Fatal("inner *aes.CTR struct inside cipher.aesCtrWrapper was not zeroed on Close")
-				}
-				if !preCloseAESBlock.IsValid() || !preCloseAESBlock.IsZero() {
-					t.Fatal("inner *aes.Block struct was not zeroed on Close")
+				if impl.rk != ([11][16]byte{}) || !allZeroBytes(impl.keystrm[:]) {
+					t.Fatal("aesResettable state not zeroed on Close")
 				}
 			case *sipCTR:
 				if impl.k0 != 0 || impl.k1 != 0 || !allZeroBytes(impl.keystrm[:]) {

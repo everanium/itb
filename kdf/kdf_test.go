@@ -33,12 +33,18 @@ func TestCMACRFC4493(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	mac := newCMAC(block)
+	var wantL [16]byte
+	block.Encrypt(wantL[:], wantL[:])
+	wantK1 := dbl128(wantL)
+	mac := newCMAC(key)
+	if mac.k1 != wantK1 {
+		t.Fatalf("K1 mismatch against crypto/aes: got %x, want %x", mac.k1, wantK1)
+	}
 
-	if got := hex.EncodeToString(mac.k1); got != "fbeed618357133667c85e08f7236a8de" {
+	if got := hex.EncodeToString(mac.k1[:]); got != "fbeed618357133667c85e08f7236a8de" {
 		t.Errorf("K1 = %s, want fbeed618357133667c85e08f7236a8de", got)
 	}
-	if got := hex.EncodeToString(mac.k2); got != "f7ddac306ae266ccf90bc11ee46d513b" {
+	if got := hex.EncodeToString(mac.k2[:]); got != "f7ddac306ae266ccf90bc11ee46d513b" {
 		t.Errorf("K2 = %s, want f7ddac306ae266ccf90bc11ee46d513b", got)
 	}
 

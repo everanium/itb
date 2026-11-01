@@ -1,13 +1,10 @@
 package hashes
 
 import (
-	"crypto/aes"
-	"crypto/cipher"
 	"crypto/rand"
 	"encoding/binary"
 	"fmt"
 	"runtime"
-	"unsafe"
 
 	"github.com/everanium/areion"
 	"github.com/everanium/itb"
@@ -17,17 +14,17 @@ import (
 )
 
 //go:noinline
-func evalAESCMACWithKey(block cipher.Block, data []byte, seed0, seed1 uint64) (uint64, uint64) {
+func evalAESCMACWithKey(rk *[11][16]byte, data []byte, seed0, seed1 *uint64) (uint64, uint64) {
 	lenTag := uint64(len(data))
 	var b1 [16]byte
-	binary.LittleEndian.PutUint64(b1[0:], seed0^lenTag)
-	binary.LittleEndian.PutUint64(b1[8:], seed1^lenTag)
+	binary.LittleEndian.PutUint64(b1[0:], *seed0^lenTag)
+	binary.LittleEndian.PutUint64(b1[8:], *seed1^lenTag)
 	firstBlockLen := len(data)
 	if firstBlockLen > 16 {
 		firstBlockLen = 16
 	}
 	absorbXOR(b1[:firstBlockLen], data[:firstBlockLen])
-	aesEncryptNoescape(block, &b1)
+	areion.AES128EncryptBlock(rk, &b1, &b1)
 
 	for off := 16; off < len(data); off += 16 {
 		end := off + 16
@@ -35,7 +32,7 @@ func evalAESCMACWithKey(block cipher.Block, data []byte, seed0, seed1 uint64) (u
 			end = len(data)
 		}
 		absorbXOR(b1[:end-off], data[off:end])
-		aesEncryptNoescape(block, &b1)
+		areion.AES128EncryptBlock(rk, &b1, &b1)
 	}
 	lo := binary.LittleEndian.Uint64(b1[:8])
 	hi := binary.LittleEndian.Uint64(b1[8:])
@@ -92,19 +89,20 @@ func evalAESCMACBatch(rk *[11][16]byte, data *[4][]byte, seeds *[4][2]uint64, ou
 //
 // Construction:
 //
-//   - key (16 bytes) is loaded once into a cipher.Block (AES-NI
-//     hardware path on amd64 / arm64 hosts that expose the AES round
-//     instructions; software AES fallback otherwise);
+//   - key (16 bytes) is expanded once into the 11 AES-128 round keys
+//     via areion.ExpandKey128 and evaluated via areion.AES128EncryptBlock
+//     (AES-NI / ARMv8 Crypto Extension hardware path on amd64 / arm64
+//     hosts that expose the AES round instructions; constant-time
+//     bitsliced Boyar–Peralta fallback otherwise);
 //   - per call: seed0 and seed1 are folded with a 64-bit length
 //     tag (seed0^lenTag, seed1^lenTag) to initialize the 16-byte
 //     state, the first data bytes (up to 16) are XOR'd on top and
 //     encrypted; remaining 16-byte data chunks are XOR'd into state
 //     and encrypted; the final 16-byte block is returned as (lo64, hi64).
 //
-// The cipher.Block is shared across all invocations of the closure
-// (it carries no per-call state), so concurrent goroutines may call
-// the returned function in parallel — Go's stdlib AES Encrypt path
-// is reentrant.
+// The expanded round-key schedule is shared across all invocations of
+// the closure (it carries no per-call state), so concurrent goroutines
+// may call the returned function in parallel.
 func AESCMAC(key ...[16]byte) (itb.HashFunc128, [16]byte) {
 	var aesKey [16]byte
 	if len(key) > 0 {
@@ -118,13 +116,19 @@ func AESCMAC(key ...[16]byte) (itb.HashFunc128, [16]byte) {
 // AESCMACWithKey returns the AESCMAC closure built around a caller-
 // supplied 16-byte key, intended for serialization paths where the
 // fixed key must persist across processes (Encrypt today / Decrypt
-// tomorrow).
+// tomorrow). It expands the 11 AES-128 round keys once via
+// areion.ExpandKey128 and evaluates blocks via areion.AES128EncryptBlock
+// on stack-resident [16]byte buffers with zero heap allocations.
 func AESCMACWithKey(aesKey [16]byte) itb.HashFunc128 {
-	block, _ := aes.NewCipher(aesKey[:])
+	var rk [11][16]byte
+	areion.ExpandKey128(&aesKey, &rk)
 	clear(aesKey[:])
 	runtime.KeepAlive(&aesKey)
 	return func(data []byte, seed0, seed1 uint64) (uint64, uint64) {
-		lo, hi := evalAESCMACWithKey(block, data, seed0, seed1)
+		lo, hi := evalAESCMACWithKey(&rk, data, &seed0, &seed1)
+		seed0, seed1 = 0, 0
+		runtime.KeepAlive(&seed0)
+		runtime.KeepAlive(&seed1)
 		wipe.CallStack512B()
 		return lo, hi
 	}
@@ -153,23 +157,6 @@ func absorbXOR(dst, src []byte) {
 	for ; i < n; i++ {
 		dst[i] ^= src[i]
 	}
-}
-
-// noescape hides a pointer from escape analysis. Standard Go runtime
-// trick — safe when the callee does not retain the pointer.
-//
-//go:nosplit
-func noescape(p unsafe.Pointer) unsafe.Pointer {
-	x := uintptr(p)
-	return unsafe.Pointer(x ^ 0)
-}
-
-// aesEncryptNoescape calls block.Encrypt without escaping the buffer
-// to the heap. cipher.Block.Encrypt is documented to not retain slice
-// references, so this is safe.
-func aesEncryptNoescape(block cipher.Block, buf *[16]byte) {
-	dst := (*[16]byte)(noescape(unsafe.Pointer(buf)))
-	block.Encrypt(dst[:], dst[:])
 }
 
 // AESCMACPair returns a fresh (single, batched) AES-CMAC-128 hash
@@ -212,22 +199,24 @@ func AESCMACPair(key ...[16]byte) (itb.HashFunc128, itb.BatchHashFunc128, [16]by
 // (falling back to four single calls on ragged lane lengths) and is
 // bit-exact with four single calls on every input.
 func AESCMACPairWithKey(aesKey [16]byte) (itb.HashFunc128, itb.BatchHashFunc128) {
-	block, _ := aes.NewCipher(aesKey[:])
-	single := func(data []byte, seed0, seed1 uint64) (uint64, uint64) {
-		lo, hi := evalAESCMACWithKey(block, data, seed0, seed1)
-		wipe.CallStack512B()
-		return lo, hi
-	}
 	var rk [11][16]byte
 	areion.ExpandKey128(&aesKey, &rk)
 	clear(aesKey[:])
 	runtime.KeepAlive(&aesKey)
+	single := func(data []byte, seed0, seed1 uint64) (uint64, uint64) {
+		lo, hi := evalAESCMACWithKey(&rk, data, &seed0, &seed1)
+		seed0, seed1 = 0, 0
+		runtime.KeepAlive(&seed0)
+		runtime.KeepAlive(&seed1)
+		wipe.CallStack512B()
+		return lo, hi
+	}
 	batched := func(data *[4][]byte, seeds [4][2]uint64) [4][2]uint64 {
 		var out [4][2]uint64
 		n := len(data[0])
 		if len(data[1]) != n || len(data[2]) != n || len(data[3]) != n {
 			for lane := 0; lane < 4; lane++ {
-				out[lane][0], out[lane][1] = evalAESCMACWithKey(block, data[lane], seeds[lane][0], seeds[lane][1])
+				out[lane][0], out[lane][1] = evalAESCMACWithKey(&rk, data[lane], &seeds[lane][0], &seeds[lane][1])
 			}
 		} else {
 			evalAESCMACBatch(&rk, data, &seeds, &out)

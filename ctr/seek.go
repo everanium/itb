@@ -2,7 +2,6 @@ package ctr
 
 import (
 	"fmt"
-	"runtime"
 
 	"github.com/everanium/itb/hashes"
 	"github.com/everanium/itb/internal/hashprf"
@@ -24,41 +23,6 @@ func streamBlockSize(name string) (int, error) {
 	}
 }
 
-// ivAtInto writes into iv the 16-byte AES-CTR IV positioned blockOff blocks
-// past nonce, i.e. nonce interpreted as a big-endian 128-bit counter plus
-// blockOff. This matches crypto/cipher CTR's whole-IV big-endian increment, so
-// the keystream from cipher.NewCTR(block, iv[:]) equals the original stream's
-// block b.
-func ivAtInto(iv *[16]byte, nonce []byte, blockOff uint64) {
-	copy(iv[:], nonce)
-	carry := blockOff
-	for i := 15; i >= 0 && carry > 0; i-- {
-		sum := uint64(iv[i]) + (carry & 0xff)
-		iv[i] = byte(sum)
-		carry = (carry >> 8) + (sum >> 8)
-	}
-}
-
-// discard advances a keystream by n bytes by XORing a stack scratch buffer
-// through it and wiping the buffer before return.
-func discard(ks Keystream, n int) {
-	if n <= 0 {
-		return
-	}
-	var zBuf [256]byte
-	for n > 0 {
-		step := n
-		if step > len(zBuf) {
-			step = len(zBuf)
-		}
-		z := zBuf[:step]
-		ks.XORKeyStream(z, z)
-		n -= step
-	}
-	clear(zBuf[:])
-	runtime.KeepAlive(&zBuf)
-}
-
 // NewAt returns a keystream positioned so its first output byte is the byte at
 // byteOffset of the (name, key, nonce) stream produced by New. It lets one
 // logical stream be XORed in parallel: each worker seeks to its chunk's byte
@@ -78,9 +42,6 @@ func NewAt(name string, key, nonce []byte, byteOffset int) (Keystream, error) {
 		return nil, err
 	}
 
-	// AES-CTR cannot be re-seeked after construction; build it with an
-	// offset IV instead via newAESResettableAt so the returned Keystream
-	// also implements io.Closer.
 	if name == hashes.CipherAES128CTR {
 		ks, err := newAESResettableAt(key, nonce, byteOffset)
 		if err != nil {

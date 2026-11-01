@@ -143,7 +143,7 @@ func BLAKE2b512WithKey(b2key [64]byte) itb.HashFunc512 {
 		evalBLAKE2b512WithKey(pool, &b2key, data, &seed, &res)
 		clear(seed[:])
 		runtime.KeepAlive(&seed)
-		wipe.CallStack512B()
+		wipe.CallStack2K([9][8]uint64{})
 		return res
 	}
 }
@@ -200,7 +200,7 @@ func blake2b512PairFromKeyPtr(k *[64]byte) (itb.HashFunc512, itb.BatchHashFunc51
 		evalBLAKE2b512WithKey(pool, k, data, &seed, &res)
 		clear(seed[:])
 		runtime.KeepAlive(&seed)
-		wipe.CallStack512B()
+		wipe.CallStack2K([9][8]uint64{})
 		return res
 	}
 	batched := func(data *[4][]byte, seeds [4][8]uint64) [4][8]uint64 {
@@ -208,7 +208,7 @@ func blake2b512PairFromKeyPtr(k *[64]byte) (itb.HashFunc512, itb.BatchHashFunc51
 		evalBLAKE2b512Batch(pool, k, data, &seeds, &out)
 		clear(seeds[:])
 		runtime.KeepAlive(&seeds)
-		wipe.CallStack512B()
+		wipe.CallStack2K([9][8]uint64{})
 		return out
 	}
 	return single, batched

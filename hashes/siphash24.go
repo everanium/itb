@@ -9,6 +9,7 @@ import (
 	"github.com/everanium/itb/hashes/internal/siphashasm"
 	"github.com/everanium/itb/internal/forcetier"
 	"github.com/everanium/itb/internal/siphash24"
+	"github.com/everanium/itb/internal/wipe"
 )
 
 // SipHash24 returns a SipHash-2-4 itb.HashFunc128 closure.
@@ -24,9 +25,20 @@ import (
 //
 // No WithKey variant — the seed components are the entire SipHash key.
 // Long-lived seed serialization is a matter of saving Components only.
+//
+//go:noinline
+func evalSipHash24Single(data []byte, seed0, seed1 *uint64) (uint64, uint64) {
+	return siphash24.Hash128(*seed0, *seed1, data)
+}
+
 func SipHash24() itb.HashFunc128 {
 	return func(data []byte, seed0, seed1 uint64) (uint64, uint64) {
-		return siphash24.Hash128(seed0, seed1, data)
+		lo, hi := evalSipHash24Single(data, &seed0, &seed1)
+		seed0, seed1 = 0, 0
+		runtime.KeepAlive(&seed0)
+		runtime.KeepAlive(&seed1)
+		wipe.CallStack512B()
+		return lo, hi
 	}
 }
 
@@ -45,15 +57,22 @@ func SipHash24() itb.HashFunc128 {
 // through the fused hooks the name-keyed constructors install, which
 // intercept before either arm is called; see
 // [Spec.FusedChainHash128].
+//
+//go:noinline
+func evalSipHash24Batch(data *[4][]byte, seeds *[4][2]uint64, out *[4][2]uint64) {
+	for lane := 0; lane < 4; lane++ {
+		out[lane][0], out[lane][1] = siphash24.Hash128(seeds[lane][0], seeds[lane][1], data[lane])
+	}
+}
+
 func SipHash24Pair() (itb.HashFunc128, itb.BatchHashFunc128) {
 	single := SipHash24()
 	batched := func(data *[4][]byte, seeds [4][2]uint64) [4][2]uint64 {
 		var out [4][2]uint64
-		for lane := 0; lane < 4; lane++ {
-			out[lane][0], out[lane][1] = siphash24.Hash128(seeds[lane][0], seeds[lane][1], data[lane])
-		}
+		evalSipHash24Batch(data, &seeds, &out)
 		clear(seeds[:])
 		runtime.KeepAlive(&seeds)
+		wipe.CallStack512B()
 		return out
 	}
 	return single, batched

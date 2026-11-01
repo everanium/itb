@@ -56,6 +56,7 @@ func residueProbe(fn func(), res []uint64, regs *[80]uint64) {
 	}
 }
 
+//go:norace
 //go:noinline
 func residueDeep(fn func(), i int, regs *[80]uint64) byte {
 	var pad [residuePad]byte
@@ -66,6 +67,13 @@ func residueDeep(fn func(), i int, regs *[80]uint64) byte {
 }
 
 var residueSink uint64
+var dirtyKeccakRegArg uint64
+
+//go:norace
+//go:noinline
+func runDirtyKeccakRegForTest() {
+	dirtySIMDRegForTest(dirtyKeccakRegArg)
+}
 
 //go:noinline
 func leakyKeccakFrame(s *[25]uint64, i int) {
@@ -109,7 +117,8 @@ func TestFusedKernelsLeaveNoSecretInFrame(t *testing.T) {
 
 	// Negative control 2: post-RET register snapshot sees leaked XMM and GPR.
 	regSecret := secret[0]
-	negReg := stackResidue(func() { dirtySIMDRegForTest(regSecret ^ 0x5555555555555555) })
+	dirtyKeccakRegArg = regSecret ^ 0x5555555555555555
+	negReg := stackResidue(runDirtyKeccakRegForTest)
 	regHits := 0
 	for _, w := range negReg[residueWindow/8:] {
 		if w == regSecret {

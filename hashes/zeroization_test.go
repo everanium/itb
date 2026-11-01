@@ -18,7 +18,7 @@ const (
 	hashResidueSentinel = uint64(0x5A5A5A5A5A5A5A5A)
 )
 
-func captureHashStackResidue(t *testing.T, fn func()) []uint64 {
+func captureHashStackResidue(t *testing.T, fn func() uintptr) []uint64 {
 	t.Helper()
 	defer debug.SetGCPercent(debug.SetGCPercent(-1))
 	res := make([]uint64, hashResidueWindow/8)
@@ -49,24 +49,33 @@ func hashResidueGrow(i int) byte {
 }
 
 //go:noinline
-func hashResidueProbe(fn func(), res []uint64) {
+func hashResidueMark() uintptr {
+	var marker uint64
+	return uintptr(unsafe.Pointer(&marker))
+}
+
+//go:noinline
+func hashResidueProbe(fn func() uintptr, res []uint64) {
 	var anchor uint64
 	top := unsafe.Add(unsafe.Pointer(&anchor), -hashResidueGap)
-	for i := range res {
+	fillWords := (hashResiduePad + 1024 + hashResidueWindow) / 8
+	for i := 0; i < fillWords; i++ {
 		*(*uint64)(unsafe.Add(top, -8*(i+1))) = hashResidueSentinel
 	}
-	hashResidueDeep(fn, 0)
+	calleeSP, sink := hashResidueDeep(fn, 0)
+	runtime.KeepAlive(sink)
+	scanTop := unsafe.Add(unsafe.Pointer(&anchor), int(calleeSP+24-uintptr(unsafe.Pointer(&anchor))))
 	for i := range res {
-		res[i] = *(*uint64)(unsafe.Add(top, -8*(i+1)))
+		res[i] = *(*uint64)(unsafe.Add(scanTop, -8*(i+1)))
 	}
 }
 
 //go:noinline
-func hashResidueDeep(fn func(), i int) byte {
+func hashResidueDeep(fn func() uintptr, i int) (uintptr, byte) {
 	var pad [hashResiduePad]byte
 	pad[i] = 1
-	fn()
-	return pad[(i+7)%len(pad)]
+	sp := fn()
+	return sp, pad[(i+7)%len(pad)]
 }
 
 //go:noinline
@@ -100,8 +109,10 @@ func TestHashesStackAndPoolZeroization(t *testing.T) {
 	}
 
 	// Negative control: verify captureHashStackResidue detects an unzeroed word.
-	negWin := captureHashStackResidue(t, func() {
+	negWin := captureHashStackResidue(t, func() uintptr {
+		sp := hashResidueMark()
 		_ = leakyHashSecretFrame(seed256[:])
+		return sp
 	})
 	foundNeg := false
 	for _, w := range negWin {
@@ -159,109 +170,179 @@ func TestHashesStackAndPoolZeroization(t *testing.T) {
 
 	t.Run("AESITB128PairWithKey", func(t *testing.T) {
 		single, batched := AESITB128PairWithKey(key16)
-		win := captureHashStackResidue(t, func() {
+		win1 := captureHashStackResidue(t, func() uintptr {
+			sp := hashResidueMark()
 			_, _ = single(data, seed256[0], seed256[1])
+			return sp
+		})
+		checkWin(t, "AESITB128PairWithKey/single", win1)
+		win4 := captureHashStackResidue(t, func() uintptr {
+			sp := hashResidueMark()
 			out := batched(&lanes, seeds128)
 			clear(out[:])
+			return sp
 		})
-		checkWin(t, "AESITB128PairWithKey", win)
+		checkWin(t, "AESITB128PairWithKey/batched", win4)
 	})
 
 	t.Run("Areion256PairWithKey", func(t *testing.T) {
 		single, batched := Areion256PairWithKey(key32)
-		win := captureHashStackResidue(t, func() {
+		win1 := captureHashStackResidue(t, func() uintptr {
+			sp := hashResidueMark()
 			out1 := single(data, seed256)
 			clear(out1[:])
+			return sp
+		})
+		checkWin(t, "Areion256PairWithKey/single", win1)
+		win4 := captureHashStackResidue(t, func() uintptr {
+			sp := hashResidueMark()
 			out4 := batched(&lanes, seeds256)
 			clear(out4[:])
+			return sp
 		})
-		checkWin(t, "Areion256PairWithKey", win)
+		checkWin(t, "Areion256PairWithKey/batched", win4)
 	})
 
 	t.Run("Areion512PairWithKey", func(t *testing.T) {
 		single, batched := Areion512PairWithKey(key64)
-		win := captureHashStackResidue(t, func() {
+		win1 := captureHashStackResidue(t, func() uintptr {
+			sp := hashResidueMark()
 			out1 := single(data, seed512)
 			clear(out1[:])
+			return sp
+		})
+		checkWin(t, "Areion512PairWithKey/single", win1)
+		win4 := captureHashStackResidue(t, func() uintptr {
+			sp := hashResidueMark()
 			out4 := batched(&lanes, seeds512)
 			clear(out4[:])
+			return sp
 		})
-		checkWin(t, "Areion512PairWithKey", win)
+		checkWin(t, "Areion512PairWithKey/batched", win4)
 	})
 
 	t.Run("BLAKE2b256PairWithKey", func(t *testing.T) {
 		single, batched := BLAKE2b256PairWithKey(key32)
-		win := captureHashStackResidue(t, func() {
+		win1 := captureHashStackResidue(t, func() uintptr {
+			sp := hashResidueMark()
 			out1 := single(data, seed256)
 			clear(out1[:])
+			return sp
+		})
+		checkWin(t, "BLAKE2b256PairWithKey/single", win1)
+		win4 := captureHashStackResidue(t, func() uintptr {
+			sp := hashResidueMark()
 			out4 := batched(&lanes, seeds256)
 			clear(out4[:])
+			return sp
 		})
-		checkWin(t, "BLAKE2b256PairWithKey", win)
+		checkWin(t, "BLAKE2b256PairWithKey/batched", win4)
 	})
 
 	t.Run("BLAKE2b512PairWithKey", func(t *testing.T) {
 		single, batched := BLAKE2b512PairWithKey(key64)
-		win := captureHashStackResidue(t, func() {
+		win1 := captureHashStackResidue(t, func() uintptr {
+			sp := hashResidueMark()
 			out1 := single(data, seed512)
 			clear(out1[:])
+			return sp
+		})
+		checkWin(t, "BLAKE2b512PairWithKey/single", win1)
+		win4 := captureHashStackResidue(t, func() uintptr {
+			sp := hashResidueMark()
 			out4 := batched(&lanes, seeds512)
 			clear(out4[:])
+			return sp
 		})
-		checkWin(t, "BLAKE2b512PairWithKey", win)
+		checkWin(t, "BLAKE2b512PairWithKey/batched", win4)
 	})
 
 	t.Run("BLAKE2s256PairWithKey", func(t *testing.T) {
 		single, batched := BLAKE2s256PairWithKey(key32)
-		win := captureHashStackResidue(t, func() {
+		win1 := captureHashStackResidue(t, func() uintptr {
+			sp := hashResidueMark()
 			out1 := single(data, seed256)
 			clear(out1[:])
+			return sp
+		})
+		checkWin(t, "BLAKE2s256PairWithKey/single", win1)
+		win4 := captureHashStackResidue(t, func() uintptr {
+			sp := hashResidueMark()
 			out4 := batched(&lanes, seeds256)
 			clear(out4[:])
+			return sp
 		})
-		checkWin(t, "BLAKE2s256PairWithKey", win)
+		checkWin(t, "BLAKE2s256PairWithKey/batched", win4)
 	})
 
 	t.Run("BLAKE3256PairWithKey", func(t *testing.T) {
 		single, batched := BLAKE3256PairWithKey(key32)
-		win := captureHashStackResidue(t, func() {
+		win1 := captureHashStackResidue(t, func() uintptr {
+			sp := hashResidueMark()
 			out1 := single(data, seed256)
 			clear(out1[:])
+			return sp
+		})
+		checkWin(t, "BLAKE3256PairWithKey/single", win1)
+		win4 := captureHashStackResidue(t, func() uintptr {
+			sp := hashResidueMark()
 			out4 := batched(&lanes, seeds256)
 			clear(out4[:])
+			return sp
 		})
-		checkWin(t, "BLAKE3256PairWithKey", win)
+		checkWin(t, "BLAKE3256PairWithKey/batched", win4)
 	})
 
 	t.Run("AESCMACPairWithKey", func(t *testing.T) {
 		single, batched := AESCMACPairWithKey(key16)
-		win := captureHashStackResidue(t, func() {
+		win1 := captureHashStackResidue(t, func() uintptr {
+			sp := hashResidueMark()
 			_, _ = single(data, seed256[0], seed256[1])
+			return sp
+		})
+		checkWin(t, "AESCMACPairWithKey/single", win1)
+		win4 := captureHashStackResidue(t, func() uintptr {
+			sp := hashResidueMark()
 			out4 := batched(&lanes, seeds128)
 			clear(out4[:])
+			return sp
 		})
-		checkWin(t, "AESCMACPairWithKey", win)
+		checkWin(t, "AESCMACPairWithKey/batched", win4)
 	})
 
 	t.Run("SipHash24Pair", func(t *testing.T) {
 		single, batched := SipHash24Pair()
-		win := captureHashStackResidue(t, func() {
+		win1 := captureHashStackResidue(t, func() uintptr {
+			sp := hashResidueMark()
 			_, _ = single(data, seed256[0], seed256[1])
+			return sp
+		})
+		checkWin(t, "SipHash24Pair/single", win1)
+		win4 := captureHashStackResidue(t, func() uintptr {
+			sp := hashResidueMark()
 			out4 := batched(&lanes, seeds128)
 			clear(out4[:])
+			return sp
 		})
-		checkWin(t, "SipHash24Pair", win)
+		checkWin(t, "SipHash24Pair/batched", win4)
 	})
 
 	t.Run("ChaCha20256PairWithKey", func(t *testing.T) {
 		single, batched := ChaCha20256PairWithKey(key32)
-		win := captureHashStackResidue(t, func() {
+		win1 := captureHashStackResidue(t, func() uintptr {
+			sp := hashResidueMark()
 			out1 := single(data, seed256)
 			clear(out1[:])
+			return sp
+		})
+		checkWin(t, "ChaCha20256PairWithKey/single", win1)
+		win4 := captureHashStackResidue(t, func() uintptr {
+			sp := hashResidueMark()
 			out4 := batched(&lanes, seeds256)
 			clear(out4[:])
+			return sp
 		})
-		checkWin(t, "ChaCha20256PairWithKey", win)
+		checkWin(t, "ChaCha20256PairWithKey/batched", win4)
 	})
 
 	t.Run("ChainAbsorbBuilders", func(t *testing.T) {
@@ -286,26 +367,53 @@ func TestHashesStackAndPoolZeroization(t *testing.T) {
 		arx256 := BuildARXChainAbsorb256(sha256.Sum256, key32[:])
 		arx512 := BuildARXChainAbsorb512(sha512.Sum512, key64[:])
 
-		win := captureHashStackResidue(t, func() {
-			_, _ = cbc128(data, seed256[0], seed256[1])
-			o256 := cbc256(data, seed256)
-			clear(o256[:])
-			o512 := cbc512(data, seed512)
-			clear(o512[:])
-
-			_, _ = sp128(data, seed256[0], seed256[1])
-			o256 = sp256(data, seed256)
-			clear(o256[:])
-			o512 = sp512(data, seed512)
-			clear(o512[:])
-
-			_, _ = arx128(data, seed256[0], seed256[1])
-			o256 = arx256(data, seed256)
-			clear(o256[:])
-			o512 = arx512(data, seed512)
-			clear(o512[:])
-		})
-		checkWin(t, "ChainAbsorbBuilders", win)
+		for _, b128 := range []struct {
+			name string
+			fn   func([]byte, uint64, uint64) (uint64, uint64)
+		}{
+			{"cbc128", cbc128},
+			{"sp128", sp128},
+			{"arx128", arx128},
+		} {
+			win := captureHashStackResidue(t, func() uintptr {
+				sp := hashResidueMark()
+				_, _ = b128.fn(data, seed256[0], seed256[1])
+				return sp
+			})
+			checkWin(t, "ChainAbsorbBuilders/"+b128.name, win)
+		}
+		for _, b256 := range []struct {
+			name string
+			fn   func([]byte, [4]uint64) [4]uint64
+		}{
+			{"cbc256", cbc256},
+			{"sp256", sp256},
+			{"arx256", arx256},
+		} {
+			win := captureHashStackResidue(t, func() uintptr {
+				sp := hashResidueMark()
+				o256 := b256.fn(data, seed256)
+				clear(o256[:])
+				return sp
+			})
+			checkWin(t, "ChainAbsorbBuilders/"+b256.name, win)
+		}
+		for _, b512 := range []struct {
+			name string
+			fn   func([]byte, [8]uint64) [8]uint64
+		}{
+			{"cbc512", cbc512},
+			{"sp512", sp512},
+			{"arx512", arx512},
+		} {
+			win := captureHashStackResidue(t, func() uintptr {
+				sp := hashResidueMark()
+				o512 := b512.fn(data, seed512)
+				clear(o512[:])
+				return sp
+			})
+			checkWin(t, "ChainAbsorbBuilders/"+b512.name, win)
+		}
 
 		// Verify BuildSpongeChainAbsorb* and BuildARXChainAbsorb* clone fixedKey so caller clear(key) does not alter output.
 		kSp := append([]byte(nil), key16[:]...)

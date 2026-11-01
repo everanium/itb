@@ -1,7 +1,6 @@
 package ctr
 
 import (
-	"crypto/aes"
 	"encoding/binary"
 	"fmt"
 	"runtime"
@@ -44,7 +43,7 @@ func KeySize(name string) (int, error) {
 func NonceSize(name string) (int, error) {
 	switch name {
 	case hashes.CipherAES128CTR:
-		return aes.BlockSize, nil // 16
+		return aesBlockSize, nil // 16
 	case hashes.CipherSipHash24:
 		return 16, nil
 	case hashes.CipherChaCha20:

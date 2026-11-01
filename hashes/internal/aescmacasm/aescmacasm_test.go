@@ -146,8 +146,12 @@ func TestScheduleMatchesCipher(t *testing.T) {
 		rand.Read(key[:])
 		rand.Read(pt[:])
 		s := NewSchedule(key)
+		block, err := aes.NewCipher(key[:])
+		if err != nil {
+			t.Fatal(err)
+		}
 		var want [16]byte
-		s.block.Encrypt(want[:], pt[:])
+		block.Encrypt(want[:], pt[:])
 		got := softAES128(&s.roundKeys, pt)
 		if got != want {
 			t.Fatalf("iter %d: schedule-driven encryption %x != crypto/aes %x", iter, got, want)

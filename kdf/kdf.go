@@ -1,7 +1,6 @@
 package kdf
 
 import (
-	"crypto/aes"
 	"encoding/binary"
 	"fmt"
 	"runtime"
@@ -87,23 +86,17 @@ func deriveAESCMAC(master []byte, label string, outLen int) ([]byte, error) {
 	if len(master) < aescmacKeySize {
 		return nil, fmt.Errorf("kdf: aescmac master must be at least %d bytes, got %d", aescmacKeySize, len(master))
 	}
-	block, err := aes.NewCipher(master[:aescmacKeySize])
-	if err != nil {
-		return nil, fmt.Errorf("kdf: aescmac key setup: %w", err)
-	}
-	mac := newCMAC(block)
+	mac := newCMAC(master[:aescmacKeySize])
 	prf := func(in []byte) []byte {
 		return mac.sum(in)
 	}
-	out := sp800108CounterMode(prf, aes.BlockSize, []byte(label), outLen)
+	out := sp800108CounterMode(prf, aescmacKeySize, []byte(label), outLen)
 	// The CMAC subkeys and AES round-key schedule are derived from the
 	// master; zero them once the derivation is done.
-	clear(mac.k1)
-	clear(mac.k2)
-	runtime.KeepAlive(mac.k1)
-	runtime.KeepAlive(mac.k2)
-	wipe.StructPtr(block)
-	mac.block = nil
+	clear(mac.rk[:])
+	clear(mac.k1[:])
+	clear(mac.k2[:])
+	runtime.KeepAlive(&mac)
 	return out, nil
 }
 

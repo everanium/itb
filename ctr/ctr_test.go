@@ -2,6 +2,8 @@ package ctr
 
 import (
 	"bytes"
+	"crypto/aes"
+	"crypto/cipher"
 	"crypto/rand"
 	"testing"
 
@@ -354,5 +356,60 @@ func TestChaCha20LastBlockAndOverflow(t *testing.T) {
 	}()
 	if !panicked {
 		t.Fatal("expected panic on XORKeyStream past block 2^32 - 1")
+	}
+}
+
+func TestAES128CTRStdlibParity(t *testing.T) {
+	key := []byte{
+		0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6,
+		0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf, 0x4f, 0x3c,
+	}
+	nonces := [][]byte{
+		{
+			0xf0, 0xf1, 0xf2, 0xf3, 0xf4, 0xf5, 0xf6, 0xf7,
+			0xf8, 0xf9, 0xfa, 0xfb, 0xfc, 0xfd, 0xfe, 0xff,
+		},
+		{
+			0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+			0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xfe,
+		},
+	}
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		t.Fatalf("aes.NewCipher: %v", err)
+	}
+	for _, nonce := range nonces {
+		pt := mustRead(t, 523)
+		want := make([]byte, len(pt))
+		cipher.NewCTR(block, nonce).XORKeyStream(want, pt)
+
+		got := make([]byte, len(pt))
+		ks := newKS(t, hashes.CipherAES128CTR, key, nonce)
+		ks.XORKeyStream(got, pt)
+		if !bytes.Equal(got, want) {
+			t.Fatalf("AES-128-CTR full stream mismatch for nonce %x", nonce)
+		}
+
+		rks, err := NewResettable(hashes.CipherAES128CTR, key, nonce)
+		if err != nil {
+			t.Fatalf("NewResettable: %v", err)
+		}
+		for _, off := range []int{0, 1, 5, 15, 16, 17, 31, 32, 48, 63, 64, 65, 199, 500} {
+			if err := rks.ResetCounter(off); err != nil {
+				t.Fatalf("ResetCounter(%d): %v", off, err)
+			}
+			sub := make([]byte, len(pt)-off)
+			rks.XORKeyStream(sub, pt[off:])
+			if !bytes.Equal(sub, want[off:]) {
+				t.Fatalf("AES-128-CTR ResetCounter(%d) mismatch for nonce %x", off, nonce)
+			}
+		}
+		allocs := testing.AllocsPerRun(100, func() {
+			_ = rks.ResetCounter(17)
+			rks.XORKeyStream(got[:256], pt[:256])
+		})
+		if allocs != 0 {
+			t.Fatalf("AES-128-CTR ResetCounter+XORKeyStream allocated %.2f objects, want 0", allocs)
+		}
 	}
 }

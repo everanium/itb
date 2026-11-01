@@ -34,39 +34,52 @@
 // blocks. The construction is bit-exact with the closure the parent
 // package builds around the same key (hashes.AESCMACWithKey); the
 // reference implementations in this package ([ChainAbsorb] for one
-// round, [ScalarFusedChain] for the cascade) run over crypto/aes, and
-// every assembly tier of every family is pinned to them by the
-// in-package parity tests. Kernels read exactly the per-lane input
-// length — the tail block is assembled from 4-byte (20 / 36 / 68) or
-// 8+4+1-byte (13) loads — because callers hand over buffers sized to the
-// shape with no slack.
+// round, [ScalarFusedChain] and [scalarFusedBatch] for the cascade)
+// evaluate AES-128 via [areion.AES128EncryptBlock] and
+// [areion.AES128Encrypt4Blocks], and every assembly tier of every family
+// is pinned to them (and to crypto/aes) by the in-package parity tests.
+// Kernels read exactly the per-lane input length — the tail block is
+// assembled from 4-byte (20 / 36 / 68) or 8+4+1-byte (13) loads —
+// because callers hand over buffers sized to the shape with no slack.
 package aescmacasm
 
 import (
-	"crypto/aes"
-	"crypto/cipher"
 	"encoding/binary"
 	"runtime"
+
+	"github.com/everanium/areion"
 )
 
 // Schedule carries one AES-128 key in the two forms the package
-// consumes: the 176-byte forward round-key schedule the kernels read
-// (see [ExpandKeyAES128]) and the crypto/aes block the pure-Go reference
-// runs. A Schedule is built once per key ([NewSchedule]) and shared by
+// consumes: the 176-byte forward round-key schedule the assembly kernels
+// read (see [ExpandKeyAES128]) and the 11 × 16-byte round-key array the
+// [areion.AES128EncryptBlock] and [areion.AES128Encrypt4Blocks] evaluators
+// read. A Schedule is built once per key ([NewSchedule]) and shared by
 // every call, so neither path allocates per invocation; it carries no
 // per-call state and may be used concurrently.
 type Schedule struct {
 	roundKeys [176]byte
-	block     cipher.Block
+	rk        [11][16]byte
 }
 
 // NewSchedule expands key into a [Schedule].
 func NewSchedule(key [16]byte) *Schedule {
-	block, err := aes.NewCipher(key[:])
-	if err != nil {
-		panic(err)
+	var s Schedule
+	s.roundKeys = ExpandKeyAES128(key)
+	areion.ExpandKey128(&key, &s.rk)
+	clear(key[:])
+	runtime.KeepAlive(&key)
+	return &s
+}
+
+// Reset zeroes the expanded round-key schedules held in s.
+func (s *Schedule) Reset() {
+	if s == nil {
+		return
 	}
-	return &Schedule{roundKeys: ExpandKeyAES128(key), block: block}
+	clear(s.roundKeys[:])
+	clear(s.rk[:])
+	runtime.KeepAlive(s)
 }
 
 // absorb13Block is the template of the 13-byte fill block zero-padded
@@ -87,9 +100,10 @@ var laneIdxZ = [4][8]uint64{
 	{12, 0, 13, 0, 14, 0, 15, 0},
 }
 
-// ChainAbsorb is the pure-Go reference for one lane and one seed pair —
-// the closure body of hashes.AESCMACWithKey over the schedule's
-// crypto/aes block. Every kernel tier is checked against it.
+// ChainAbsorb is the single-lane reference for one lane and one seed
+// pair — the closure body of hashes.AESCMACWithKey over the schedule's
+// expanded round keys via [areion.AES128EncryptBlock]. Every kernel tier
+// is checked against it.
 func ChainAbsorb(s *Schedule, data []byte, seed0, seed1 uint64) (uint64, uint64) {
 	lenTag := uint64(len(data))
 	var state [16]byte
@@ -102,7 +116,7 @@ func ChainAbsorb(s *Schedule, data []byte, seed0, seed1 uint64) (uint64, uint64)
 	for i := 0; i < first; i++ {
 		state[i] ^= data[i]
 	}
-	s.block.Encrypt(state[:], state[:])
+	areion.AES128EncryptBlock(&s.rk, &state, &state)
 	for off := 16; off < len(data); off += 16 {
 		end := off + 16
 		if end > len(data) {
@@ -111,7 +125,7 @@ func ChainAbsorb(s *Schedule, data []byte, seed0, seed1 uint64) (uint64, uint64)
 		for i := 0; i < end-off; i++ {
 			state[i] ^= data[off+i]
 		}
-		s.block.Encrypt(state[:], state[:])
+		areion.AES128EncryptBlock(&s.rk, &state, &state)
 	}
 	lo, hi := binary.LittleEndian.Uint64(state[:8]), binary.LittleEndian.Uint64(state[8:])
 	clear(state[:])

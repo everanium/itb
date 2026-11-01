@@ -4,6 +4,8 @@ import (
 	"encoding/binary"
 	"runtime"
 	"unsafe"
+
+	"github.com/everanium/areion"
 )
 
 // Fused cascade kernels evaluate the whole ChainHash128 cascade of the
@@ -38,9 +40,70 @@ func ScalarFusedChain(s *Schedule, components []uint64, data []byte) (uint64, ui
 }
 
 func scalarFusedBatch(s *Schedule, components []uint64, dataPtrs *[4]*byte, n int, out *[4][2]uint64) {
-	for lane := 0; lane < 4; lane++ {
-		out[lane][0], out[lane][1] = ScalarFusedChain(s, components, unsafe.Slice(dataPtrs[lane], n))
+	if len(components) < 2 {
+		*out = [4][2]uint64{}
+		return
 	}
+	var lanes [4][]byte
+	if n > 0 {
+		for lane := 0; lane < 4; lane++ {
+			if dataPtrs[lane] != nil {
+				lanes[lane] = unsafe.Slice(dataPtrs[lane], n)
+			}
+		}
+	}
+	lenTag := uint64(n)
+	first := n
+	if first > 16 {
+		first = 16
+	}
+	var states areion.Block4
+	var prev0, prev1 [4]uint64
+	for idx := 0; idx+1 < len(components); idx += 2 {
+		c0, c1 := components[idx], components[idx+1]
+		for lane := 0; lane < 4; lane++ {
+			lOff := lane * 16
+			s0 := prev0[lane] ^ c0 ^ lenTag
+			s1 := prev1[lane] ^ c1 ^ lenTag
+			binary.LittleEndian.PutUint64(states[lOff:lOff+8], s0)
+			binary.LittleEndian.PutUint64(states[lOff+8:lOff+16], s1)
+			d := lanes[lane]
+			for i := 0; i < first; i++ {
+				states[lOff+i] ^= d[i]
+			}
+		}
+		areion.AES128Encrypt4Blocks(&s.rk, &states, &states)
+		for off := 16; off < n; off += 16 {
+			end := off + 16
+			if end > n {
+				end = n
+			}
+			chunkLen := end - off
+			for lane := 0; lane < 4; lane++ {
+				lOff := lane * 16
+				d := lanes[lane][off:end]
+				for i := 0; i < chunkLen; i++ {
+					states[lOff+i] ^= d[i]
+				}
+			}
+			areion.AES128Encrypt4Blocks(&s.rk, &states, &states)
+		}
+		for lane := 0; lane < 4; lane++ {
+			lOff := lane * 16
+			prev0[lane] = binary.LittleEndian.Uint64(states[lOff : lOff+8])
+			prev1[lane] = binary.LittleEndian.Uint64(states[lOff+8 : lOff+16])
+		}
+	}
+	for lane := 0; lane < 4; lane++ {
+		out[lane][0] = prev0[lane]
+		out[lane][1] = prev1[lane]
+	}
+	clear(states[:])
+	clear(prev0[:])
+	clear(prev1[:])
+	runtime.KeepAlive(&states)
+	runtime.KeepAlive(&prev0)
+	runtime.KeepAlive(&prev1)
 }
 
 func scalarFusedSingle(s *Schedule, components []uint64, data *byte, n int, out *[2]uint64) {
@@ -62,13 +125,17 @@ func validComponents(components []uint64) bool {
 // the cascade is the plain chain-absorb of each fill block under that
 // pair.
 func scalarFusedX16(s *Schedule, components []uint64, groupIdxBase uint64, v uint32, out *[16][2]uint64) {
-	var buf [13]byte
-	for i := 0; i < 16; i++ {
-		buf[0] = 0x03
-		binary.LittleEndian.PutUint64(buf[1:9], groupIdxBase+uint64(i))
-		binary.LittleEndian.PutUint32(buf[9:13], v)
-		out[i][0], out[i][1] = ScalarFusedChain(s, components, buf[:])
+	var bufs [4][13]byte
+	dataPtrs := [4]*byte{&bufs[0][0], &bufs[1][0], &bufs[2][0], &bufs[3][0]}
+	for g := 0; g < 4; g++ {
+		base := groupIdxBase + uint64(4*g)
+		for lane := 0; lane < 4; lane++ {
+			bufs[lane][0] = 0x03
+			binary.LittleEndian.PutUint64(bufs[lane][1:9], base+uint64(lane))
+			binary.LittleEndian.PutUint32(bufs[lane][9:13], v)
+		}
+		scalarFusedBatch(s, components, &dataPtrs, 13, (*[4][2]uint64)(out[4*g:4*g+4]))
 	}
-	clear(buf[:])
-	runtime.KeepAlive(&buf)
+	clear(bufs[:])
+	runtime.KeepAlive(&bufs)
 }

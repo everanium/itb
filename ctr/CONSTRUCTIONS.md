@@ -15,7 +15,7 @@ For the standards' own conformance, refer to the upstream specifications and lib
 - `github.com/everanium/itb/hashes` — the registry Areion-SoEM-256 / Areion-SoEM-512 keyed hashes.
 - RFC 7693 — the BLAKE2 keyed-hash mode (BLAKE2b / BLAKE2s).
 - `github.com/zeebo/blake3` — BLAKE3 keyed mode.
-- NIST FIPS-197 — the AES block cipher (`crypto/aes`); NIST SP 800-38A — Counter (CTR) block-cipher mode of operation.
+- NIST FIPS-197 — the AES-128 block cipher (`github.com/everanium/areion`, bit-exact with `crypto/aes`); NIST SP 800-38A — Counter (CTR) block-cipher mode of operation (bit-exact with `crypto/cipher.NewCTR`).
 - `github.com/dchest/siphash` — SipHash-2-4 test vectors.
 - RFC 8439 — ChaCha20 (bit-exact with `golang.org/x/crypto/chacha20`; SIMD-accelerated on x86-64 AVX-512 / AVX2 and ARM64 NEON, with portable Go fallback).
 
@@ -29,7 +29,7 @@ For the standards' own conformance, refer to the upstream specifications and lib
 | `blake2b512` | native keyed BLAKE2b-512 (RFC 7693), 64-byte output | PRF-counter mode | 64 B (collision bound 2^256) | 32 bytes | 16 bytes |
 | `blake2s` | native keyed BLAKE2s-256 (RFC 7693), 32-byte output | PRF-counter mode | 32 B (collision bound 2^128) | 32 bytes | 16 bytes |
 | `blake3` | native keyed BLAKE3, 32-byte output | PRF-counter mode | 32 B (collision bound 2^128) | 32 bytes | 16 bytes |
-| `aescmac` | AES-128 (`crypto/aes`) | AES-128 in CTR mode (`crypto/cipher.NewCTR`) | 16 B (NIST CTR, AES-NI accelerated) | 16 bytes | 16 bytes |
+| `aescmac` | AES-128 (`github.com/everanium/areion`) | AES-128 in CTR mode (`areion.AES128CTRXOR`, bit-exact with `crypto/cipher.NewCTR`) | 16 B (NIST CTR, hardware-accelerated) | 16 bytes | 16 bytes |
 | `siphash24` | SipHash-2-4, 128-bit output (`github.com/dchest/siphash`) | PRF-counter mode | 16 B (collision bound 2^64) | 16 bytes | 16 bytes |
 | `chacha20` | ChaCha20 (RFC 8439) | RFC 8439 ChaCha20 keystream | 64 B (standard RFC 8439 stream, SIMD-accelerated) | 32 bytes | 12 bytes |
 
@@ -85,17 +85,17 @@ Each keystream block hashes a 24-byte PRF input (`nonce(16) || LE64(counter)`) a
 
 ## AES-128-CTR (registry: `aescmac`)
 
-**Underlying primitive.** AES-128 (`crypto/aes`).
+**Underlying primitive.** AES-128 (`github.com/everanium/areion`, bit-exact with `crypto/aes`).
 
-**Construction.** AES-128 in NIST SP 800-38A Counter (CTR) mode, via `crypto/cipher.NewCTR` over a `crypto/aes` block cipher.
+**Construction.** AES-128 in NIST SP 800-38A Counter (CTR) mode, via `areion.ExpandKey128` and `areion.AES128CTRXOR` (bit-exact with `crypto/cipher.NewCTR` over `crypto/aes`).
 
-1. The 16-byte key is the AES-128 key (`aes.NewCipher(key)`).
-2. The 16-byte nonce is the CTR initial counter block — the IV passed to `cipher.NewCTR(block, nonce)`.
-3. `XORKeyStream` produces the keystream by encrypting successive counter blocks under AES-128 and XORing the result over the input; the standard library advances the 128-bit counter internally.
+1. The 16-byte key is expanded once into the 11 AES-128 round keys (`areion.ExpandKey128`).
+2. The 16-byte nonce is the CTR initial counter block (IV).
+3. `XORKeyStream` produces the keystream by encrypting successive 128-bit big-endian counter blocks under AES-128 and XORing the result over the input (`areion.AES128CTRXOR`).
 
 **Counter-injection structure.** Each 16-byte counter block enters once at initial round-key whitening (`block_i ⊕ k_0`) and traverses 10 invertible AES rounds whitened by expanded subkeys `k_1..k_10`, with no per-round counter re-injection and no post-round feed-forward. Unlike the feed-forward PRF-counter constructions, the map `block_i ↦ AES_K(block_i)` is a bijective pseudorandom permutation over 128-bit blocks whose keystream security up to the `2^64`-block birthday bound reduces directly to the PRP assumption on AES-128.
 
-**Standards posture.** This is the stdlib's CTR mode over the stdlib's AES; it is standard NIST CTR mode end to end. On hosts with the AES instruction set (`crypto/aes` AES-NI on x86, the ARM Crypto Extension on ARM64) the block calls are hardware-accelerated.
+**Standards posture.** Standard NIST SP 800-38A CTR mode over FIPS-197 AES-128, verified bit-for-bit against the standard library's `crypto/cipher.NewCTR` over `crypto/aes`. On hosts with AES instructions (`AES-NI` / `VAES` on x86-64, ARMv8 Crypto Extensions on ARM64) the block calls are hardware-accelerated; software builds use a constant-time bitsliced Boyar–Peralta circuit.
 
 **Stream shape.** AES is a pseudorandom permutation, so each counter value yields a distinct 16-byte keystream block; there is no keystream-block collision until the 128-bit counter space is exhausted. This is the standard CTR-mode property.
 

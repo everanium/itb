@@ -354,7 +354,14 @@ const (
 // never moved) between the sentinel fill, the call and the read-back.
 var dumpSIMDRegsHook func(dst *[88]uint64)
 var dirtySIMDRegHook func(masked uint64)
+var dirtySIMDRegArg uint64
 var genericResidueSink uint64
+
+//go:norace
+//go:noinline
+func runDirtySIMDRegHook() {
+	dirtySIMDRegHook(dirtySIMDRegArg)
+}
 
 //go:noinline
 func leakyGenericFrame(secret uint64, i int) {
@@ -379,7 +386,8 @@ func checkResidueNegativeControls(t *testing.T) {
 		t.Fatal("negative control: stack-residue probe did not see secret stored by leakyGenericFrame")
 	}
 	if dirtySIMDRegHook != nil {
-		resReg := stackResidue(func() { dirtySIMDRegHook(secret ^ 0x5555555555555555) })
+		dirtySIMDRegArg = secret ^ 0x5555555555555555
+		resReg := stackResidue(runDirtySIMDRegHook)
 		regHits := 0
 		for _, w := range resReg[residueWindow/8:] {
 			if w == secret {
@@ -437,6 +445,7 @@ func residueProbe(fn func(), res []uint64, regs *[88]uint64) {
 // residueDeep calls fn below a residuePad-byte frame, so fn's frame and
 // the kernel's frame below it fall inside the window.
 //
+//go:norace
 //go:noinline
 func residueDeep(fn func(), i int, regs *[88]uint64) byte {
 	var pad [residuePad]byte

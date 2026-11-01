@@ -55,7 +55,7 @@ Column abbreviations in the Full ITB + wrapper tables: **IO** = IO-Driven (`io.R
 | **BLAKE2b-512** | 2236 | 5157 |
 | **BLAKE2s** | 2315 | 5103 |
 | **BLAKE3** | 2355 | 5688 |
-| **AES-128-CTR** | 2501 | 5882 |
+| **AES-128-CTR** | 2561 | 5937 |
 | **SipHash-2-4** | 2148 | 5858 |
 | **ChaCha20** | 2294 | 5656 |
 

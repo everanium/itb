@@ -107,9 +107,10 @@ func TestFusedKernelsLeaveNoKeyInFrame(t *testing.T) {
 func dumpSIMDRegs(dst *[88]uint64, avx512 bool)
 func dirtySIMDRegForTest(masked uint64)
 
+//go:norace
+func dumpSIMDRegsNoAVX512(dst *[88]uint64) { dumpSIMDRegs(dst, false) }
+
 func init() {
-	dumpSIMDRegsHook = func(dst *[88]uint64) {
-		dumpSIMDRegs(dst, false)
-	}
+	dumpSIMDRegsHook = dumpSIMDRegsNoAVX512
 	dirtySIMDRegHook = dirtySIMDRegForTest
 }

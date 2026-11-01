@@ -38,16 +38,33 @@ func pxResidueGrow(i int) byte {
 	return pad[(i+1)%len(pad)]
 }
 
+var (
+	pxResidueSink     uint64
+	pxResidueCalleeSP uintptr
+)
+
+//go:noinline
+func pxResidueMark() {
+	var marker uint64
+	pxResidueCalleeSP = uintptr(unsafe.Pointer(&marker))
+}
+
 //go:noinline
 func pxResidueProbe(fn func(), res []uint64) {
 	var anchor uint64
 	top := unsafe.Add(unsafe.Pointer(&anchor), -pxResidueGap)
-	for i := range res {
+	fillWords := (pxResiduePad + 2048 + pxResidueWindow) / 8
+	for i := 0; i < fillWords; i++ {
 		*(*uint64)(unsafe.Add(top, -8*(i+1))) = pxResidueSentinel
 	}
+	pxResidueCalleeSP = 0
 	pxResidueDeep(fn, 0)
+	scanTop := top
+	if pxResidueCalleeSP != 0 {
+		scanTop = unsafe.Add(unsafe.Pointer(&anchor), int(pxResidueCalleeSP+24-uintptr(unsafe.Pointer(&anchor))))
+	}
 	for i := range res {
-		res[i] = *(*uint64)(unsafe.Add(top, -8*(i+1)))
+		res[i] = *(*uint64)(unsafe.Add(scanTop, -8*(i+1)))
 	}
 }
 
@@ -58,8 +75,6 @@ func pxResidueDeep(fn func(), i int) byte {
 	fn()
 	return pad[(i+7)%len(pad)]
 }
-
-var pxResidueSink uint64
 
 //go:noinline
 func simHash128Stack(r0, r1 uint64) (uint64, uint64) {
@@ -809,6 +824,7 @@ func TestBlobExportImportZeroization(t *testing.T) {
 	var b512 Blob512
 	var rawBlob []byte
 	resExp := pxStackResidue(func() {
+		pxResidueMark()
 		var expErr error
 		rawBlob, expErr = b512.Export3Cfg(
 			cfg512,
@@ -824,6 +840,7 @@ func TestBlobExportImportZeroization(t *testing.T) {
 
 	// Error path on Export3Cfg (nil seed): must also leave no stack residue.
 	resExpErr := pxStackResidue(func() {
+		pxResidueMark()
 		_, _ = b512.Export3Cfg(
 			cfg512,
 			keyN, keyD1, keyD2, keyD3, keyS1, keyS2, keyS3,
@@ -836,6 +853,7 @@ func TestBlobExportImportZeroization(t *testing.T) {
 	// 3. Verify Import3Cfg leaves no component or key residue on the stack on error.
 	corruptRaw := strings.Replace(string(rawBlob), `"ss3":[`, `"ss3":["not_a_decimal_uint64",`, 1)
 	resImpErr := pxStackResidue(func() {
+		pxResidueMark()
 		var imp Blob512
 		_ = imp.Import3Cfg([]byte(corruptRaw), cfg512)
 	})
@@ -995,54 +1013,65 @@ func TestAreionAndAESITBClosureStackZeroization(t *testing.T) {
 		fn   func()
 	}{
 		{"Areion256/1lane/20B", func() {
+			pxResidueMark()
 			r := h256(msg20, seed4)
 			pxResidueSink = r[0]
 			clear(r[:])
 		}},
 		{"Areion256/1lane/47B", func() {
+			pxResidueMark()
 			r := h256(msg47, seed4)
 			pxResidueSink = r[0]
 			clear(r[:])
 		}},
 		{"Areion256/4lane/20B", func() {
+			pxResidueMark()
 			r := b256(&msgs20, seeds4)
 			pxResidueSink = r[0][0]
 			clear(r[:])
 		}},
 		{"Areion256/4lane/47B", func() {
+			pxResidueMark()
 			r := b256(&msgs47, seeds4)
 			pxResidueSink = r[0][0]
 			clear(r[:])
 		}},
 		{"Areion512/1lane/20B", func() {
+			pxResidueMark()
 			r := h512(msg20, seed8)
 			pxResidueSink = r[0]
 			clear(r[:])
 		}},
 		{"Areion512/1lane/47B", func() {
+			pxResidueMark()
 			r := h512(msg47, seed8)
 			pxResidueSink = r[0]
 			clear(r[:])
 		}},
 		{"Areion512/4lane/20B", func() {
+			pxResidueMark()
 			r := b512(&msgs20, seeds8)
 			pxResidueSink = r[0][0]
 			clear(r[:])
 		}},
 		{"Areion512/4lane/47B", func() {
+			pxResidueMark()
 			r := b512(&msgs47, seeds8)
 			pxResidueSink = r[0][0]
 			clear(r[:])
 		}},
 		{"AESITB128/1lane/20B", func() {
+			pxResidueMark()
 			lo, hi := h128(msg20, seed4[0], seed4[1])
 			pxResidueSink = lo ^ hi
 		}},
 		{"AESITB128/1lane/47B", func() {
+			pxResidueMark()
 			lo, hi := h128(msg47, seed4[0], seed4[1])
 			pxResidueSink = lo ^ hi
 		}},
 		{"AESITB128/4lane/20B", func() {
+			pxResidueMark()
 			r := b128(&msgs20, seeds2)
 			pxResidueSink = r[0][0]
 			clear(r[:])

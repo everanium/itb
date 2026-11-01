@@ -84,16 +84,19 @@ func aesITB128GenericHash(fixedKey [16]byte) HashFunc128 {
 
 func aesITB128GenericHashFromKeyPtr(fixedKey *[16]byte) HashFunc128 {
 	return func(data []byte, seed0, seed1 uint64) (uint64, uint64) {
-		lo, hi := evalAESITB128Single(fixedKey, data, seed0, seed1)
+		lo, hi := evalAESITB128Single(fixedKey, data, &seed0, &seed1)
+		seed0, seed1 = 0, 0
+		runtime.KeepAlive(&seed0)
+		runtime.KeepAlive(&seed1)
 		wipe.CallStack512B()
 		return lo, hi
 	}
 }
 
 //go:noinline
-func evalAESITB128Single(fixedKey *[16]byte, data []byte, seed0, seed1 uint64) (uint64, uint64) {
+func evalAESITB128Single(fixedKey *[16]byte, data []byte, seed0, seed1 *uint64) (uint64, uint64) {
 	_ = aesITBRoundConstants[0]
-	return aesitbasm.ChainAbsorb(fixedKey, data, seed0, seed1)
+	return aesitbasm.ChainAbsorb(fixedKey, data, *seed0, *seed1)
 }
 
 //go:noinline
