@@ -8,5 +8,5 @@
 import ITB.Thresholds
 import ITB.RankBarrier
 import ITB.PixelBarrier
-import ITB.SplitRank168
+import ITB.SplitRank
 import ITB.SeedIsolation

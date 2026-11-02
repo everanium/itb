@@ -1,11 +1,12 @@
 /-
-  Formal verification of the 168-bit Rank Barrier multi-limb reciprocal division
-  constants and single-correction exactness theorems for `divmodStepB168`,
-  `modStepA168`, and `splitRank168` in `interlock168_rank_split.go` (Proofs 11 and 12).
+  Formal verification of the 48-bit and 168-bit Rank Barrier reciprocal division
+  constants and single-correction exactness theorems for `divB`, `modA`,
+  `splitRank48Recip`, `divmodStepB168`, `modStepA168`, and `splitRank168` in
+  `interlock48_rank_split.go` and `interlock168_rank_split.go` (Proofs 11 and 12).
 -/
 import ITB.RankBarrier
 
-namespace ITB.SplitRank168
+namespace ITB.SplitRank
 
 open ITB.RankBarrier
 
@@ -256,4 +257,4 @@ theorem modA48_single_correction_exact (X : Nat) (hX : X < 2 ^ 64) :
   exact single_correction_exact interlockA48 (2 ^ 105) interlockA48Recip X (X * interlockA48Recip)
     hmu (Nat.le_refl _) h_under
 
-end ITB.SplitRank168
+end ITB.SplitRank
