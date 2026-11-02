@@ -79,6 +79,7 @@ Channel 2: HQC-1        ──► kem[2] ──► kdf.Derive("blake2b512", kem[
 
 - **All-or-Nothing Seed Secrecy**: Because every `masters[slot]` (`slot = 0..7`) is the bitwise XOR of `subsetPRK[slotSubsets[slot]]` and three per-slot 512-bit pseudorandom outputs produced by `"blake3"` on `kem[0]`, `"areion512"` on `kem[1]`, and `"blake2b512"` on `kem[2]`, under the PRF assumption on the unbroken channel's KDF, an adversary who completely breaks **any two of the three** KEMs still faces an independent 512-bit pseudorandom mask from the unbroken third KEM on **every single slot**.
 - **All-or-Nothing Layer Master Secrecy**: Inside `triple.InitKeys`, when `Opts.PermMaster` and `Opts.WrapMaster` are omitted, `PermMaster`, `WrapMaster`, and `macKey` are automatically derived via an 8-way XOR fold across all eight slot KDF outputs. Consequently, every inner seed, Parallax schedule, Wrapper key, and MAC key inherits the full 3-of-3 asymmetric security bound.
+- **Machine-Checked Application Blueprint Verification**: The combinatorial `2^3 - 1 = 7` subset partition, Stage A / Stage B KDF domain separation, 2-of-3 all-or-nothing bijections (`deriveSeeds3to8` and `deriveRatchetRoot`), 3-part configuration slicing (`splitProfile3` / `joinProfile3`), and schema clamping (`min(appVer_A, appVer_B)`) are machine-checked in Lean 4 in [`lean/Apps/README.md`](lean/Apps/README.md) ([`lean/Apps/ThreeToEight.lean`](lean/Apps/ThreeToEight.lean)). Note that `lean/Apps/` verifies only this reference application integration scheme and is separate from the core ITB cipher specification.
 
 ---
 
@@ -475,3 +476,10 @@ func main() {
 	fmt.Printf("OK: %s | %s (fragment size=%dB)\n", string(pt), string(pt2), len(cfgParts[0]))
 }
 ```
+
+---
+
+## See also
+
+- [lean/Apps/README.md](lean/Apps/README.md) ([`lean/Apps/ThreeToEight.lean`](lean/Apps/ThreeToEight.lean)) — Standalone Lean 4 formal verification of the reference application blueprint in this guide (not part of the core ITB cipher construction).
+
