@@ -99,6 +99,11 @@ bindings/python/dist/
 *.mod
 !go.mod
 
+# Lean 4 build cache and artifacts
+/lean/.lake/
+/lean/build/
+/lean/lake-manifest.json
+
 # OS
 .DS_Store
 Thumbs.db

@@ -6,7 +6,7 @@
 
 **No bespoke cryptography.** ITB composes established, standardized primitives rather than introducing new cryptographic designs. Security properties and regulatory status are inherited from the underlying primitives; see [README.md](README.md) for jurisdictional certification details.
 
-Formal security proofs for the ITB (Information-Theoretic Barrier) symmetric cipher construction.
+Formal security proofs for the ITB (Information-Theoretic Barrier) symmetric cipher construction. For the machine-checked Lean 4 formalization of these theorems and barrier constants, see [lean/README.md](lean/README.md).
 
 ## Notation
 

@@ -18,7 +18,7 @@ The construction exhibits **ambiguity-based security**: the number of observatio
 
 All core operations are elementary: XOR, bitwise AND, modular reduction, and bit shifts, executed without secret-dependent table lookups or field inversions. The security architecture composes around a pluggable PRF hash function; the construction's own operations are elementary, while the closures under KPA/CPA/CCA remain computational and PRF-conditional on the primitive.
 
-**Companion documents.** For the accessible-explanation narrative of the construction, see [ITB.md](ITB.md). For the formal proof set (Theorems referenced throughout), see [PROOFS.md](PROOFS.md). For the empirical audit-suite verdicts, see [REDTEAM.md](REDTEAM.md). For the ChainHash trapdoor analysis on non-cryptographic primitives, see [HARNESS.md](HARNESS.md).
+**Companion documents.** For the accessible-explanation narrative of the construction, see [ITB.md](ITB.md). For the formal proof set (Theorems referenced throughout), see [PROOFS.md](PROOFS.md) and the machine-checked Lean 4 formalization in [lean/README.md](lean/README.md). For the empirical audit-suite verdicts, see [REDTEAM.md](REDTEAM.md). For the ChainHash trapdoor analysis on non-cryptographic primitives, see [HARNESS.md](HARNESS.md).
 
 ## 1. Construction
 

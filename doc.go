@@ -185,9 +185,11 @@
 //
 // # See also
 //
+//   - APPS.md — application architecture guide (`InitKeys`, `Inspect`, 3-KEM ratcheting).
 //   - FAQ.md — cryptanalytic walkthroughs.
 //   - ITB.md — accessible explanation of how the barrier works.
 //   - PROOFS.md — formal security proofs.
+//   - lean/README.md — machine-checked Lean 4 formal verification suite.
 //   - SCIENCE.md — architectural argument.
 //   - SECURITY.md — threat-model reference.
 //   - HWTHREATS.md — hardware-level threat boundary.

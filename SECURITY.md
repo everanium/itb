@@ -6,7 +6,7 @@
 
 **No bespoke cryptography.** ITB composes established, standardized primitives rather than introducing new cryptographic designs. Security properties and regulatory status are inherited from the underlying primitives; see [README.md](README.md) for jurisdictional certification details.
 
-**Companion document to [SCIENCE.md](SCIENCE.md).** This file is the audit-oriented operational reference — composition modes matrix, cross-scheme comparisons, deployment threat model, design-rationale tables, compliance framing, and the explicit non-closed threats list. The formal construction and proofs live in [SCIENCE.md](SCIENCE.md) and [PROOFS.md](PROOFS.md); the accessible-explanation narrative lives in [ITB.md](ITB.md). Sections cross-referenced below point to the authoritative source for each topic.
+**Companion document to [SCIENCE.md](SCIENCE.md).** This file is the audit-oriented operational reference — composition modes matrix, cross-scheme comparisons, deployment threat model, design-rationale tables, compliance framing, and the explicit non-closed threats list. The formal construction and proofs live in [SCIENCE.md](SCIENCE.md), [PROOFS.md](PROOFS.md), and the machine-checked Lean 4 suite in [lean/README.md](lean/README.md); the accessible-explanation narrative lives in [ITB.md](ITB.md). Sections cross-referenced below point to the authoritative source for each topic.
 
 ## Security Policy
 

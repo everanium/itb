@@ -64,6 +64,8 @@ A parameterized symmetric cipher construction library for Go that suppresses has
 
 **[Why KPA and advanced attacks are addressed by the barrier](SCIENCE.md)**
 
+**[Machine-checked Lean 4 formal verification suite](lean/README.md)**
+
 **[Scientific paper (Preprint)](https://doi.org/10.5281/zenodo.19229395)**
 
 **[Discord](https://discord.gg/wRYF8shHpd)**
@@ -1325,6 +1327,7 @@ Per-binding examples ship in each binding's own directory under `bindings/<lang>
 - [FAQ.md](FAQ.md) — Analytical and empirical walkthrough of broken primitives under the shipped barrier (8-bit total PRF failure inversion in `nullHash`, `quadHash`, `trainHash`, and 64-bit algebraic stress controls in `jokeHash`, `CRC128`, `FNV-1a`).
 - [ITB.md](ITB.md) — How the barrier works (accessible explanation) and shipped feature reference.
 - [PROOFS.md](PROOFS.md) — Formal security proofs.
+- [lean/README.md](lean/README.md) — Machine-checked Lean 4 formalization of the ITB security proofs and barrier constants.
 - [SCIENCE.md](SCIENCE.md) — Scientific analysis and formal security arguments.
 - [SECURITY.md](SECURITY.md) — Security reference tables.
 - [HWTHREATS.md](HWTHREATS.md) — Hardware-level threat analysis (Spectre, Meltdown, Rowhammer, etc.).
