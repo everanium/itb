@@ -66,6 +66,8 @@ A parameterized symmetric cipher construction library for Go that suppresses has
 
 **[Machine-checked Lean 4 formal verification suite](lean/README.md)**
 
+**[Post-quantum and combinatorial cryptanalysis](POSTQUANTUM.md)**
+
 **[Scientific paper (Preprint)](https://doi.org/10.5281/zenodo.19229395)**
 
 **[Discord](https://discord.gg/wRYF8shHpd)**
@@ -1329,6 +1331,7 @@ Per-binding examples ship in each binding's own directory under `bindings/<lang>
 - [PROOFS.md](PROOFS.md) — Formal security proofs.
 - [lean/README.md](lean/README.md) — Machine-checked Lean 4 formalization of the ITB security proofs and barrier constants.
 - [SCIENCE.md](SCIENCE.md) — Scientific analysis and formal security arguments.
+- [POSTQUANTUM.md](POSTQUANTUM.md) — Post-quantum and combinatorial cryptanalysis of the Rank Barrier and Pixel Barrier.
 - [SECURITY.md](SECURITY.md) — Security reference tables.
 - [HWTHREATS.md](HWTHREATS.md) — Hardware-level threat analysis (Spectre, Meltdown, Rowhammer, etc.).
 - [HARNESS.md](HARNESS.md) — Adversarial testing methodology and calibration.

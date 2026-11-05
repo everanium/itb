@@ -415,3 +415,19 @@ ITB allows custom hash primitives through two native extension points:
 - Registration is immutable: names cannot be overwritten or redefined once registered.
 
 For complete examples and implementation guidelines, see [README.md § Custom user-supplied hashes](README.md#custom-user-supplied-hashes) and [hashes/README.md](hashes/README.md).
+
+---
+
+## References
+
+- Claude E. Shannon, "Communication Theory of Secrecy Systems", Bell System Technical Journal, Vol. 28, No. 4, pp. 656–715, 1949, DOI: [10.1002/j.1538-7305.1949.tb00928.x](https://doi.org/10.1002/j.1538-7305.1949.tb00928.x) ([PDF](https://pages.cs.wisc.edu/~rist/642-spring-2014/shannon-secrecy.pdf)).
+- Rolf Landauer, "Irreversibility and Heat Generation in the Computing Process", IBM Journal of Research and Development, Vol. 5, No. 3, pp. 183–191, 1961, DOI: [10.1147/rd.53.0183](https://doi.org/10.1147/rd.53.0183).
+- Derrick H. Lehmer, "Teaching Combinatorial Tricks to a Computer", Proc. Symposia in Applied Mathematics, Vol. 10 (Combinatorial Analysis), pp. 179–193, American Mathematical Society, 1960, DOI: [10.1090/psapm/010/0113289](https://doi.org/10.1090/psapm/010/0113289).
+- Billy P. Buckles and Matthew Lybanon, "Algorithm 515: Generation of a Vector from the Lexicographical Index [G6]", ACM Transactions on Mathematical Software, Vol. 3, No. 2, pp. 180–182, 1977, DOI: [10.1145/355732.355739](https://doi.org/10.1145/355732.355739).
+- Stuart Cheshire and Mary Baker, "Consistent Overhead Byte Stuffing", IEEE/ACM Transactions on Networking, Vol. 7, No. 2, pp. 159–172, 1999, DOI: [10.1109/90.769765](https://doi.org/10.1109/90.769765) ([PDF](http://www.stuartcheshire.org/papers/cobsforton.pdf)).
+- Lov K. Grover, "A fast quantum mechanical algorithm for database search", Proc. 28th Annual ACM Symposium on Theory of Computing (STOC '96), pp. 212–219, 1996, DOI: [10.1145/237814.237866](https://doi.org/10.1145/237814.237866) ([arXiv:quant-ph/9605043](https://arxiv.org/abs/quant-ph/9605043)).
+- Daniel R. Simon, "On the Power of Quantum Computation", SIAM Journal on Computing, Vol. 26, No. 5, pp. 1474–1483, 1997, DOI: [10.1137/S0097539796298637](https://doi.org/10.1137/S0097539796298637).
+- Gilles Brassard, Peter Høyer, and Alain Tapp, "Quantum Cryptanalysis of Hash and Claw-Free Functions", LATIN '98: Theoretical Informatics, LNCS Vol. 1380, pp. 163–169, Springer, 1998, DOI: [10.1007/BFb0054319](https://doi.org/10.1007/BFb0054319) ([arXiv:quant-ph/9705002](https://arxiv.org/abs/quant-ph/9705002)).
+- Ange Albertini, Jean-Philippe Aumasson, Maria Eichlseder, Florian Mendel, and Martin Schläffer, "Malicious Hashing: Eve's Variant of SHA-1", Selected Areas in Cryptography – SAC 2014, LNCS Vol. 8781, pp. 1–19, Springer, 2014, DOI: [10.1007/978-3-319-13051-4_1](https://doi.org/10.1007/978-3-319-13051-4_1) ([ePrint 2014/694](https://eprint.iacr.org/2014/694)).
+- Arnaud Bannier, Nicolas Bodin, and Eric Filiol, "Partition-Based Trapdoor Ciphers", IACR Cryptology ePrint Archive, Paper 2016/493, 2016 ([ePrint 2016/493](https://eprint.iacr.org/2016/493)); and Arnaud Bannier and Eric Filiol, "Mathematical Backdoors in Symmetric Encryption Systems — Proposal for a Backdoored AES-like Block Cipher (BEA-1)", 2017, DOI: [10.48550/arXiv.1702.06475](https://doi.org/10.48550/arXiv.1702.06475) ([arXiv:1702.06475](https://arxiv.org/abs/1702.06475)).
+- Aina Niemetz and Mathias Preiner, "Bitwuzla", Computer Aided Verification – CAV 2023, LNCS Vol. 13965, pp. 3–17, Springer, 2023, DOI: [10.1007/978-3-031-37703-7_1](https://doi.org/10.1007/978-3-031-37703-7_1).

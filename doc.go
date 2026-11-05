@@ -191,6 +191,7 @@
 //   - PROOFS.md — formal security proofs.
 //   - lean/README.md — machine-checked Lean 4 formal verification suite.
 //   - SCIENCE.md — architectural argument.
+//   - POSTQUANTUM.md — post-quantum and combinatorial cryptanalysis.
 //   - SECURITY.md — threat-model reference.
 //   - HWTHREATS.md — hardware-level threat boundary.
 //   - HARNESS.md — adversarial testing methodology and calibration.

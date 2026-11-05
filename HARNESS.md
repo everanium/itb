@@ -668,3 +668,22 @@ The MAC + Reveal noise-position attacks ([REDTEAM.md — CCA](REDTEAM.md#cca--no
 ITB_REDTEAM_NOISEPOS_HASH=aesitb128 ITB_REDTEAM_NOISEPOS_TRIALS=10 \
     go test -tags redteam -run 'TestRedTeamNoisePosCCA' -v -count=1 ./
 ```
+
+---
+
+## References
+
+- Kenneth G. Paterson, "Imprimitive Permutation Groups and Trapdoors in Iterated Block Ciphers", Fast Software Encryption (FSE '99), LNCS Vol. 1636, pp. 201–214, Springer, 1999, DOI: [10.1007/3-540-48519-8_15](https://doi.org/10.1007/3-540-48519-8_15).
+- Ange Albertini, Jean-Philippe Aumasson, Maria Eichlseder, Florian Mendel, and Martin Schläffer, "Malicious Hashing: Eve's Variant of SHA-1", Selected Areas in Cryptography – SAC 2014, LNCS Vol. 8781, pp. 1–19, Springer, 2014, DOI: [10.1007/978-3-319-13051-4_1](https://doi.org/10.1007/978-3-319-13051-4_1) ([ePrint 2014/694](https://eprint.iacr.org/2014/694)).
+- Arnaud Bannier, Nicolas Bodin, and Eric Filiol, "Partition-Based Trapdoor Ciphers", IACR Cryptology ePrint Archive, Paper 2016/493, 2016 ([ePrint 2016/493](https://eprint.iacr.org/2016/493)); and Arnaud Bannier and Eric Filiol, "Mathematical Backdoors in Symmetric Encryption Systems — Proposal for a Backdoored AES-like Block Cipher (BEA-1)", 2017, DOI: [10.48550/arXiv.1702.06475](https://doi.org/10.48550/arXiv.1702.06475) ([arXiv:1702.06475](https://arxiv.org/abs/1702.06475)).
+- Vladimir S. Anashin, "Uniformly distributed sequences of p-adic integers", Mathematical Notes, Vol. 55, No. 2, pp. 109–133, 1994, DOI: [10.1007/BF02113290](https://doi.org/10.1007/BF02113290).
+- Alexander Klimov and Adi Shamir, "A New Class of Invertible Mappings", Cryptographic Hardware and Embedded Systems – CHES 2002, LNCS Vol. 2523, pp. 470–483, Springer, 2002, DOI: [10.1007/3-540-36400-5_34](https://doi.org/10.1007/3-540-36400-5_34) ([ePrint 2002/091](https://eprint.iacr.org/2002/091)).
+- Alexander Klimov and Adi Shamir, "Cryptographic Applications of T-Functions", Selected Areas in Cryptography – SAC 2003, LNCS Vol. 3006, pp. 248–261, Springer, 2004, DOI: [10.1007/978-3-540-24654-1_18](https://doi.org/10.1007/978-3-540-24654-1_18).
+- Joan Daemen, Lars Knudsen, and Vincent Rijmen, "The Block Cipher Square", Fast Software Encryption – FSE '97, LNCS Vol. 1267, pp. 149–165, Springer, 1997, DOI: [10.1007/BFb0052343](https://doi.org/10.1007/BFb0052343).
+- Aina Niemetz and Mathias Preiner, "Bitwuzla", Computer Aided Verification – CAV 2023, LNCS Vol. 13965, pp. 3–17, Springer, 2023, DOI: [10.1007/978-3-031-37703-7_1](https://doi.org/10.1007/978-3-031-37703-7_1).
+- Leonardo de Moura and Nikolaj Bjørner, "Z3: An Efficient SMT Solver", Tools and Algorithms for the Construction and Analysis of Systems – TACAS 2008, LNCS Vol. 4963, pp. 337–340, Springer, 2008, DOI: [10.1007/978-3-540-78800-3_24](https://doi.org/10.1007/978-3-540-78800-3_24).
+- Mate Soos, Karsten Nohl, and Claude Castelluccia, "Extending SAT Solvers to Cryptographic Problems", Theory and Applications of Satisfiability Testing – SAT 2009, LNCS Vol. 5584, pp. 244–257, Springer, 2009, DOI: [10.1007/978-3-642-02777-2_24](https://doi.org/10.1007/978-3-642-02777-2_24).
+- Andrew Rukhin et al., "A Statistical Test Suite for Random and Pseudorandom Number Generators for Cryptographic Applications", NIST Special Publication 800-22 Rev. 1a, April 2010, DOI: [10.6028/NIST.SP.800-22r1a](https://doi.org/10.6028/NIST.SP.800-22r1a).
+- Chris Doty-Humphrey, "Practically Random: C++ library of statistical tests for RNGs (PractRand)", [pracrand.sourceforge.net](https://pracrand.sourceforge.net/).
+- Stuart Cheshire and Mary Baker, "Consistent Overhead Byte Stuffing", IEEE/ACM Transactions on Networking, Vol. 7, No. 2, pp. 159–172, 1999, DOI: [10.1109/90.769765](https://doi.org/10.1109/90.769765) ([PDF](http://www.stuartcheshire.org/papers/cobsforton.pdf)).
+- Jean-Philippe Aumasson and Daniel J. Bernstein, "SipHash: a fast short-input PRF", Progress in Cryptology – INDOCRYPT 2012, LNCS Vol. 7668, pp. 489–508, Springer, 2012, DOI: [10.1007/978-3-642-34931-7_28](https://doi.org/10.1007/978-3-642-34931-7_28) ([ePrint 2012/351](https://eprint.iacr.org/2012/351)).

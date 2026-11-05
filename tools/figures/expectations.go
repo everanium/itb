@@ -657,36 +657,100 @@ func Registry(f *Figures) []Expectation {
 	// The leading digit in these patterns separates the two mask-space
 	// exponents that share one spelling; a drift past that digit reports
 	// NOT FOUND, which fails the check as a STALE figure would.
-	for _, file := range []string{"SCIENCE.md", "PROOFS.md", "SECURITY.md", "ITB.md", "README.md", "FAQ.md", "REDTEAM.md", "HWTHREATS.md", "doc.go"} {
+	_, a512G1 := bruteForce(m1[512].P, 512, 2)
+	_, a512G2 := bruteForce(m1[512].P, 512, 1)
+	_, a2048G1 := bruteForce(m1[2048].P, 2048, 2)
+	_, a2048G2 := bruteForce(m1[2048].P, 2048, 1)
+	g512_1 := "2^" + fixed(math.Round(a512G1), 0)
+	g512_2 := "2^" + fixed(math.Round(a512G2), 0)
+	g2048_1 := "2^" + fixed(math.Round(a2048G1), 0)
+	g2048_2 := "2^" + fixed(math.Round(a2048G2), 0)
+	add(
+		// ----- POSTQUANTUM.md -----------------------------------------
+		expect("POSTQUANTUM.md", `conservative Grover work factor is .√P × 2\^keyBits. \(.~`+p2+`. at 1024-bit keys for Mode 2 .P = `+num+`. and theoretical floor .P = `+num+`.; .~`+p2+`. at Mode 1 .P = `+num+`.\)`,
+			w("grover2_m2", bG1), w("m2_P", plain(b.P)), w("theo_P", plain(t.P)), w("grover2_m1", aG1), w("m1_P", plain(a.P))),
+		expect("POSTQUANTUM.md", `giving a conservative Grover work factor of .√P × 2\^\(keyBits/2\). \(.~`+p2+`. at 1024-bit keys for Mode 2 .P = `+num+`. and .P = `+num+`.; .~`+p2+`. at Mode 1 .P = `+num+`.\)`,
+			w("grover1_m2", bG2), w("m2_P", plain(b.P)), w("theo_P", plain(t.P)), w("grover1_m1", aG2), w("m1_P", plain(a.P))),
+		expect("POSTQUANTUM.md", `^\| Core ITB \(`+"`No MAC`"+`\) \| .* \| `+"`~"+p2+"`"+` \| `+"`~"+p2+"`"+` \| `+"`~"+p2+"`"+` \| `+"`~"+p2+"`"+` \|`,
+			w("grover2_512_m1", g512_1), w("grover2_m2", bG1), w("grover2_m1", aG1), w("grover2_2048_m1", g2048_1)),
+		expect("POSTQUANTUM.md", `^\| `+"`MAC \\+ Silent Drop`"+` \[1\] \| .* \| `+"`~"+p2+"`"+` \| `+"`~"+p2+"`"+` \| `+"`~"+p2+"`"+` \| `+"`~"+p2+"`"+` \|`,
+			w("grover2_512_m1", g512_1), w("grover2_m2", bG1), w("grover2_m1", aG1), w("grover2_2048_m1", g2048_1)),
+		expect("POSTQUANTUM.md", `^\| `+"`MAC \\+ Reveal`"+` \[2\] \| .* \| `+"`~"+p2+"`"+` \| `+"`~"+p2+"`"+` \| `+"`~"+p2+"`"+` \| `+"`~"+p2+"`"+` \|`,
+			w("grover1_512_m1", g512_2), w("grover1_m2", bG2), w("grover1_m1", aG2), w("grover1_2048_m1", g2048_2)),
+		expect("POSTQUANTUM.md", `^\|Ω_chunk\| = A · B = `+num+`\s+≈\s+`+p2d+`$`,
+			w("AB", commaBig(f.AB)), w("log2_AB", "2^"+log2AB)),
+		expect("POSTQUANTUM.md", `^\|Ω_chunk,168\| = A₁₆₈ · B₁₆₈ = `+num+`\s+≈\s+`+p2d+`$`,
+			w("AB168", commaBig(f.AB168)), w("log2_AB168", "2^"+log2AB168)),
+		expect("POSTQUANTUM.md", `.⌊2\^128 / \(A · B\)⌋ = `+num+` ≈ `+p2d+`. distinct 128-bit PRF output preimages`,
+			w("preimages", commaBig(f.Preimages)), w("log2_preimages", "2^"+log2Pre)),
+		expect("POSTQUANTUM.md", `.⌊2\^512 / \(A₁₆₈ · B₁₆₈\)⌋ = `+num+` ≈ `+p2d+`. distinct 512-bit PRF output preimages`,
+			w("preimages168", commaBig(f.Preimages168)), w("log2_preimages168", "2^"+log2Pre168)),
+		expect("POSTQUANTUM.md", `^\- \*\*Mode 1 \(`+"`"+num+x+num+"`"+`, `+"`P = "+num+"`"+`\):\*\* Noise barrier `+"`2\\^\\(8P\\) = "+p2+"`"+`; encoding ambiguity `+"`56\\^P ≈ "+p2+"`"+` \(without CCA\) and `+"`7\\^P ≈ "+p2+"`"+` \(under CCA\); configuration space `+"`2\\^\\(62P\\) = "+p2+"`"+`\.$`,
+			w("m1_side", plain(a.Side)), w("m1_side", plain(a.Side)), w("m1_P", plain(a.P)),
+			w("noise_m1", pow2(noiseBarrier(a.P))), w("nocca_m1", pow2(nocca(a.P))), w("cca_m1", pow2(cca(a.P))), w("config_m1", pow2(configMap(a.P)))),
+		expect("POSTQUANTUM.md", `^\- \*\*Mode 2 \(`+"`"+num+x+num+"`"+`, `+"`P = "+num+"`"+`\):\*\* Noise barrier `+"`2\\^\\(8P\\) = "+p2+"`"+`; encoding ambiguity `+"`56\\^P ≈ "+p2+"`"+` \(without CCA\) and `+"`7\\^P ≈ "+p2+"`"+` \(under CCA\); configuration space `+"`2\\^\\(62P\\) = "+p2+"`"+`\.$`,
+			w("m2_side", plain(b.Side)), w("m2_side", plain(b.Side)), w("m2_P", plain(b.P)),
+			w("noise_m2", pow2(noiseBarrier(b.P))), w("nocca_m2", pow2(nocca(b.P))), w("cca_m2", pow2(cca(b.P))), w("config_m2", pow2(configMap(b.P)))),
+		expect("POSTQUANTUM.md", `^\- \*\*Theoretical single-region floor \(`+"`"+num+x+num+"`"+`, `+"`P = "+num+"`"+`\):\*\* Noise barrier `+"`2\\^\\(8P\\) = "+p2+"`"+`; encoding ambiguity `+"`56\\^P ≈ "+p2+"`"+` \(without CCA\) and `+"`7\\^P ≈ "+p2+"`"+` \(under CCA\); configuration space `+"`2\\^\\(62P\\) = "+p2+"`"+`\.$`,
+			w("theo_side", plain(t.Side)), w("theo_side", plain(t.Side)), w("theo_P", plain(t.P)),
+			w("noise_theo", pow2(noiseBarrier(t.P))), w("nocca_theo", pow2(nocca(t.P))), w("cca_theo", pow2(cca(t.P))), w("config_theo", pow2(configMap(t.P)))),
+		expect("POSTQUANTUM.md", `queries across .P = `+num+`. pixels vs\. .8P = `+num+`. exhaustive.*This leaks .`+num+`. bits per pixel \(.`+dec+` %. of the `+num+`-bit per-pixel configuration\)`,
+			w("m1_P", plain(a.P)), w("noise_m1_exp", comma(noiseBarrier(a.P))),
+			w("noise_config_bits", plain(itb.NoiseConfigBits)), w("cca_leak_pct", ccaLeak), w("config_bits", plain(itb.NoiseConfigBits+itb.DataConfigBits))),
+		expect("POSTQUANTUM.md", `^\| Composition Mode \| .* \| 1024-bit Key \(Mode 2 .P = `+num+`. / Floor .P = `+num+`.\) \| 1024-bit Key \(Mode 1 .P = `+num+`.\) \|`,
+			w("m2_P", plain(b.P)), w("theo_P", plain(t.P)), w("m1_P", plain(a.P))),
+		expect("POSTQUANTUM.md", `\(default .DefaultNonceBits = `+num+`. bits each\)`,
+			w("nonce_bits", plain(f.NonceBits))),
+		expect("POSTQUANTUM.md", `.A = C\(48, 16\) = `+num+`. \(.log₂ ≈ `+dec+`.\).*and .m_1. is drawn from the .B = C\(32, 16\) = `+num+`. \(.log₂ ≈ `+dec+`.\)`,
+			w("A", commaBig(f.A)), w("log2_A", fixed(f.Log2A, 2)), w("B", commaBig(f.B)), w("log2_B", fixed(f.Log2B, 2))),
+		expect("POSTQUANTUM.md", `.A₁₆₈ = C\(168, 56\) = `+num+`. \(.log₂ ≈ `+dec+`.\) and .m_1. from .B₁₆₈ = C\(112, 56\) = `+num+`. \(.log₂ ≈ `+dec+`.\)`,
+			w("A168", commaBig(f.A168)), w("log2_A168", log2A168), w("B168", commaBig(f.B168)), w("log2_B168", log2B168)),
+		sweep("POSTQUANTUM.md", `(2\^22\.\d)\b`, w("masks_per_crib", crib48)),
+		expect("POSTQUANTUM.md", `maximum 64 MiB message of .`+num+` ≈ `+p2d+`. chunks\).*chunks \(.~`+p2+`. maximum-size messages\) in 48-bit mode`,
+			w("max_chunks", comma(f.MaxChunks)), w("log2_chunks", "2^"+chunks), w("log2_messages", "2^"+fixed(math.Round(f.Log2Messages), 0))),
+		expect("POSTQUANTUM.md", `product space .\(A · B\)\^C ≈ 2\^\((\d+\.\d+) × C\). in 48-bit mode and .\(A₁₆₈ · B₁₆₈\)\^C ≈ 2\^\((\d+\.\d+) × C\). in 168-bit mode — which already exceeds .2\^512. at .C = 2. chunks \(.42. B, .`+p2d+` > 2\^512.\), .2\^1024. at .C = 4. chunks \(.84. B, .`+p2d+` > 2\^1024.\), and .2\^2048. at .C = 8. chunks \(.168. B, .`+p2d+` > 2\^2048.`,
+			w("log2_AB", log2AB), w("log2_AB168", log2AB168),
+			w("log2_AB168_x2", "2^"+fixed(2*f.Log2AB168, 1)), w("log2_AB168_x4", "2^"+fixed(4*f.Log2AB168, 1)), w("log2_AB168_x8", "2^"+fixed(8*f.Log2AB168, 1))),
+		expect("POSTQUANTUM.md", `enforces .P ≥ MinPixels = ⌈k / log₂ 7⌉. \(.`+num+`., .`+num+`., .`+num+`. pixels for .k = 512, 1024, 2048. under CCA; vs\. .⌈k / log₂ 56⌉ = `+num+`, `+num+`, `+num+`. pixels without CCA\)`,
+			w("minpixels_512", plain(f.MinPixels[512])), w("minpixels_1024", plain(mp)), w("minpixels_2048", plain(f.MinPixels[2048])),
+			w("threshold_nocca_512", plain(f.ThresholdNoCCA[512])), w("threshold_nocca_1024", plain(f.ThresholdNoCCA[1024])), w("threshold_nocca_2048", plain(f.ThresholdNoCCA[2048]))),
+		expect("POSTQUANTUM.md", `\(.≥ `+num+`. bytes at Mode 2 .P = `+num+`., .≥ `+num+`. bytes at Mode 1 .P = `+num+`., .≥ `+num+`. bytes at .P = `+num+`., \[Proof 10\]`,
+			w("m2_residue", plain(b.Residue)), w("m2_P", plain(b.P)),
+			w("m1_residue", plain(a.Residue)), w("m1_P", plain(a.P)),
+			w("theo_residue", plain(t.Residue)), w("theo_P", plain(t.P))),
+		expect("POSTQUANTUM.md", `^\| \*\*Grover Seed Search \(Full-Container Verification\)\*\* \| .* \| .√P × 2\^keyBits. \(.MAC \+ Silent Drop. \[1\], .~`+p2+`.–.`+p2+`. at 1024-bit\); .√P × 2\^\(keyBits/2\). \(.MAC \+ Reveal., .~`+p2+`.–.`+p2+`. at 1024-bit\) \|$`,
+			w("grover2_m2", bG1), w("grover2_m1", aG1), w("grover1_m2", bG2), w("grover1_m1", aG2)),
+	)
+	for _, file := range []string{"SCIENCE.md", "PROOFS.md", "SECURITY.md", "ITB.md", "README.md", "FAQ.md", "REDTEAM.md", "HWTHREATS.md", "POSTQUANTUM.md", "doc.go"} {
 		add(sweep(file, `(2\^7\d\.\d\d)`, w("log2_AB", "2^"+log2AB)))
 	}
-	for _, file := range []string{"SCIENCE.md", "PROOFS.md", "SECURITY.md", "ITB.md", "FAQ.md", "REDTEAM.md"} {
+	for _, file := range []string{"SCIENCE.md", "PROOFS.md", "SECURITY.md", "ITB.md", "FAQ.md", "REDTEAM.md", "POSTQUANTUM.md"} {
 		add(sweep(file, `(2\^5\d\.\d\d)`, w("log2_preimages", "2^"+log2Pre)))
 	}
-	for _, file := range []string{"SCIENCE.md", "PROOFS.md", "ITB.md", "FAQ.md", "REDTEAM.md"} {
+	for _, file := range []string{"SCIENCE.md", "PROOFS.md", "ITB.md", "FAQ.md", "REDTEAM.md", "POSTQUANTUM.md"} {
 		add(sweep(file, `(2\^-5\d\.\d)\b`, w("bias", "2^"+bias)))
 	}
-	for _, file := range []string{"SCIENCE.md", "PROOFS.md", "ITB.md", "REDTEAM.md"} {
+	for _, file := range []string{"SCIENCE.md", "PROOFS.md", "ITB.md", "REDTEAM.md", "POSTQUANTUM.md"} {
 		add(sweep(file, `(2\^-3\d\.\d)\b`, w("accum_bias", "2^"+accum)))
 		add(sweep(file, `(2\^1\d\d\.\d)\b`, w("sample_budget", "2^"+budget)))
 	}
-	for _, file := range []string{"SCIENCE.md", "PROOFS.md", "SECURITY.md"} {
+	for _, file := range []string{"SCIENCE.md", "PROOFS.md", "SECURITY.md", "POSTQUANTUM.md"} {
 		add(sweep(file, `~(2\^3\d\d)\b`, w("landauer", pow2(landauerExp))))
 	}
-	for _, file := range []string{"SCIENCE.md", "ITB.md", "README.md", "FAQ.md", "REDTEAM.md", "SECURITY.md"} {
+	for _, file := range []string{"SCIENCE.md", "ITB.md", "README.md", "FAQ.md", "REDTEAM.md", "SECURITY.md", "POSTQUANTUM.md"} {
 		add(sweep(file, `\b(66,\d{3})\b`, w("gcd", comma(gcd))))
 	}
 	for _, file := range []string{"PROOFS.md", "REDTEAM.md", "HARNESS.md"} {
 		add(sweep(file, `\b(66\d{3})\b`, w("gcd", plain(gcd))))
 	}
-	for _, file := range []string{"SCIENCE.md", "PROOFS.md", "SECURITY.md", "ITB.md", "README.md", "KERNELS.md", "HWTHREATS.md"} {
+	for _, file := range []string{"SCIENCE.md", "PROOFS.md", "SECURITY.md", "ITB.md", "README.md", "KERNELS.md", "HWTHREATS.md", "POSTQUANTUM.md"} {
 		add(sweep(file, `(2\^258\.\d\d)`, w("log2_AB168", "2^"+log2AB168)))
 	}
-	for _, file := range []string{"SCIENCE.md", "PROOFS.md", "SECURITY.md", "ITB.md", "README.md"} {
+	for _, file := range []string{"SCIENCE.md", "PROOFS.md", "SECURITY.md", "ITB.md", "README.md", "POSTQUANTUM.md"} {
 		add(sweep(file, `(2\^253\.\d\d)`, w("log2_preimages168", "2^"+log2Pre168)))
 		add(sweep(file, `(2\^21\.\d\d)\b`, w("log2_chunks168", "2^"+chunks168)))
 	}
-	for _, file := range []string{"SCIENCE.md", "PROOFS.md", "ITB.md", "README.md"} {
+	for _, file := range []string{"SCIENCE.md", "PROOFS.md", "ITB.md", "README.md", "POSTQUANTUM.md"} {
 		add(sweep(file, `(2\^-253\.\d)\b`, w("bias168", "2^"+bias168)))
 		add(sweep(file, `(2\^-231\.\d)\b`, w("accum_bias168", "2^"+accum168)))
 		add(sweep(file, `(2\^506\.\d)\b`, w("sample_budget168", "2^"+budget168)))
@@ -694,7 +758,7 @@ func Registry(f *Figures) []Expectation {
 		add(sweep(file, `(2\^90\.\d)\b`, w("masks_per_crib168", crib168)))
 		add(sweep(file, `\b(3,195,\d{3})\b`, w("max_chunks168", comma(f.MaxChunks168))))
 	}
-	for _, file := range []string{"SCIENCE.md", "SECURITY.md", "ITB.md", "README.md"} {
+	for _, file := range []string{"SCIENCE.md", "SECURITY.md", "ITB.md", "README.md", "POSTQUANTUM.md"} {
 		add(sweep(file, `\b(10,078,335,949,946,663,\d{3})\b`, w("gcd168", gcd168Comma)))
 	}
 	add(sweep("PROOFS.md", `\b(10078335949946663\d{3})\b`, w("gcd168", gcd168Plain)))

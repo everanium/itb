@@ -345,3 +345,14 @@ As established in [Proof 4a](PROOFS.md#proof-4a-multi-factor-full-kpa-resistance
 
 The construction has one fundamental assumption boundary: **total PRF failure or starvation of the underlying primitive** (as demonstrated by the 8-bit `nullHash`, `quadHash`, and `trainHash` controls in Questions 1–3). Should any shipped primitive suffer a cryptanalytic break, ITB provides primitive agility via `hashes.Register` and `triple.Register` without altering the wire format or barrier architecture. Formal derivations are provided in [PROOFS.md](PROOFS.md) and empirical harnesses in [REDTEAM.md](REDTEAM.md).
 
+---
+
+## References
+
+- Vladimir S. Anashin, "Uniformly distributed sequences of p-adic integers", Mathematical Notes, Vol. 55, No. 2, pp. 109–133, 1994, DOI: [10.1007/BF02113290](https://doi.org/10.1007/BF02113290).
+- Alexander Klimov and Adi Shamir, "A New Class of Invertible Mappings", Cryptographic Hardware and Embedded Systems – CHES 2002, LNCS Vol. 2523, pp. 470–483, Springer, 2002, DOI: [10.1007/3-540-36400-5_34](https://doi.org/10.1007/3-540-36400-5_34) ([ePrint 2002/091](https://eprint.iacr.org/2002/091)).
+- Alexander Klimov and Adi Shamir, "Cryptographic Applications of T-Functions", Selected Areas in Cryptography – SAC 2003, LNCS Vol. 3006, pp. 248–261, Springer, 2004, DOI: [10.1007/978-3-540-24654-1_18](https://doi.org/10.1007/978-3-540-24654-1_18).
+- Aina Niemetz and Mathias Preiner, "Bitwuzla", Computer Aided Verification – CAV 2023, LNCS Vol. 13965, pp. 3–17, Springer, 2023, DOI: [10.1007/978-3-031-37703-7_1](https://doi.org/10.1007/978-3-031-37703-7_1).
+- Stuart Cheshire and Mary Baker, "Consistent Overhead Byte Stuffing", IEEE/ACM Transactions on Networking, Vol. 7, No. 2, pp. 159–172, 1999, DOI: [10.1109/90.769765](https://doi.org/10.1109/90.769765) ([PDF](http://www.stuartcheshire.org/papers/cobsforton.pdf)).
+- Jean-Philippe Aumasson and Daniel J. Bernstein, "SipHash: a fast short-input PRF", Progress in Cryptology – INDOCRYPT 2012, LNCS Vol. 7668, pp. 489–508, Springer, 2012, DOI: [10.1007/978-3-642-34931-7_28](https://doi.org/10.1007/978-3-642-34931-7_28) ([ePrint 2012/351](https://eprint.iacr.org/2012/351)).
+

@@ -176,10 +176,13 @@ All fallback paths enforce register-only, branchless evaluation over secret inpu
 
 ## References
 
-- [Spectre](https://spectreattack.com/) — Kocher et al., 2018
-- [Meltdown](https://meltdownattack.com/) — Lipp et al., 2018
-- [Downfall / GDS](https://downfall.page/) — Moghimi, 2023
-- [Hertzbleed](https://hertzbleed.com/) — Wang et al., 2022
-- [Zenbleed](https://lock.cmpxchg8b.com/zenbleed.html) — Ormandy, 2023
-- [Rowhammer](https://googleprojectzero.blogspot.com/2015/03/exploiting-dram-rowhammer-bug-to-gain.html) — Seaborn & Dullien, 2015
-- [Training Solo](https://www.vusec.net/projects/training-solo/) — VUSec, 2025
+- Paul Kocher et al., "Spectre Attacks: Exploiting Speculative Execution", 2019 IEEE Symposium on Security and Privacy (S&P), pp. 1–19, 2019, DOI: [10.1109/SP.2019.00002](https://doi.org/10.1109/SP.2019.00002) ([spectreattack.com](https://spectreattack.com/), [arXiv:1801.01203](https://arxiv.org/abs/1801.01203)).
+- Moritz Lipp et al., "Meltdown: Reading Kernel Memory from User Space", 27th USENIX Security Symposium (USENIX Security 18), pp. 973–990, 2018 (Communications of the ACM, Vol. 63, No. 6, pp. 46–56, 2020), DOI: [10.1145/3357033](https://doi.org/10.1145/3357033) ([meltdownattack.com](https://meltdownattack.com/), [arXiv:1801.01207](https://arxiv.org/abs/1801.01207)).
+- Johannes Wikner and Kaveh Razavi, "RETBLEED: Arbitrary Speculative Code Execution with Return Instructions", 31st USENIX Security Symposium (USENIX Security 22), pp. 3825–3842, 2022 ([COMSEC](https://comsec.ethz.ch/research/microarch/retbleed/), [USENIX](https://www.usenix.org/conference/usenixsecurity22/presentation/wikner)).
+- Daniel Moghimi, "Downfall: Exploiting Speculative Data Gathering", 32nd USENIX Security Symposium (USENIX Security 23), pp. 7179–7193, 2023 ([downfall.page](https://downfall.page/), [USENIX](https://www.usenix.org/conference/usenixsecurity23/presentation/moghimi)).
+- Yingchen Wang, Riccardo Paccagnella, Elizabeth Tang He, Hovav Shacham, Christopher W. Fletcher, and David Kohlbrenner, "Hertzbleed: Turning Power Side-Channel Attacks Into Remote Timing Attacks on x86", 31st USENIX Security Symposium (USENIX Security 22), pp. 679–697, 2022 ([hertzbleed.com](https://www.hertzbleed.com/)).
+- Tavis Ormandy, "Zenbleed (CVE-2023-20593)", Google Information Security, July 2023 ([Advisory](https://lock.cmpxchg8b.com/zenbleed.html)).
+- Yoongu Kim et al., "Flipping Bits in Memory Without Accessing Them: An Experimental Study of DRAM Disturbance Errors", 41st ACM/IEEE International Symposium on Computer Architecture (ISCA 2014), pp. 361–372, 2014, DOI: [10.1109/ISCA.2014.6853210](https://doi.org/10.1109/ISCA.2014.6853210); and Mark Seaborn and Thomas Dullien, "Exploiting the DRAM rowhammer bug to gain kernel privileges", Google Project Zero, March 2015 ([Project Zero](https://googleprojectzero.blogspot.com/2015/03/exploiting-dram-rowhammer-bug-to-gain.html)).
+- Sandro Rüegge, Johannes Wikner, and Kaveh Razavi, "Training Solo: On-the-Fly Speculative Execution Attacks", VUSec / COMSEC, May 2025 ([vusec.net](https://www.vusec.net/projects/training-solo/)).
+- Joan Boyar and René Peralta, "A New Combinational Logic Minimization Technique with Applications to Cryptology", Experimental Algorithms – SEA 2010, LNCS Vol. 6049, pp. 178–189, Springer, 2010, DOI: [10.1007/978-3-642-13193-6_16](https://doi.org/10.1007/978-3-642-13193-6_16) ([ePrint 2009/191](https://eprint.iacr.org/2009/191)); and "A Small Depth-16 Circuit for the AES S-Box", IFIP SEC 2012, IFIP AICT Vol. 376, pp. 287–298, Springer, 2012, DOI: [10.1007/978-3-642-30436-1_24](https://doi.org/10.1007/978-3-642-30436-1_24) ([ePrint 2011/332](https://eprint.iacr.org/2011/332)).
+- Donald E. Knuth, "The Art of Computer Programming, Volume 2: Seminumerical Algorithms", 3rd ed., Addison-Wesley Professional, 1997, § 4.3.1 (Algorithm D), ISBN 978-0-201-89684-8 ([Author page](https://www-cs-faculty.stanford.edu/~knuth/taocp.html)).
