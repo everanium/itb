@@ -327,18 +327,23 @@ theorem nonceSplit_shipped_widths :
   decide
 
 /--
-  Per-lane alignment asymmetry induced by the default 512-bit (`64`-byte) `interlock_nonce`
-  fragments `(22, 21, 21)` prepended ahead of the Rank Barrier lane payloads:
+  Per-lane alignment asymmetry induced by all three shipped `interlock_nonce` widths
+  (`64` B `= (22, 21, 21)` at 512-bit, `32` B `= (11, 11, 10)` at 256-bit, `16` B `= (6, 5, 5)` at 128-bit)
+  prepended ahead of the Rank Barrier lane payloads:
   - Under `Interlock = "48"` (`2` bytes per lane per chunk, `7` bytes per pixel):
-    `22 % 2 = 0` vs `21 % 2 = 1` (Lane 0 and Lanes 1–2 have opposite 16-bit lane parity),
-    and `22 % 7 = 1` vs `21 % 7 = 0` (Lane 0 shifts pixel alignment by `+1 mod 7` relative to Lanes 1–2).
+    `l0 % 2 ≠ l2 % 2` (`22 % 2 ≠ 21 % 2`, `11 % 2 ≠ 10 % 2`, `6 % 2 ≠ 5 % 2`, opposite 16-bit lane parity),
+    and `l0 % 7 ≠ l2 % 7` (`22 % 7 ≠ 21 % 7`, `11 % 7 ≠ 10 % 7`, `6 % 7 ≠ 5 % 7`, `+1 mod 7` pixel shift).
   - Under `Interlock = "168"` (`7` bytes per lane per chunk, `7` bytes per pixel):
-    `22 % 7 = 1` vs `21 % 7 = 0` (Lane 0 shifts every 7-byte lane word and pixel boundary by `+1 mod 7`
-    relative to Lanes 1–2).
+    `l0 % 7 ≠ l2 % 7` across all three widths (`22 % 7 = 1 ≠ 21 % 7 = 0`, `11 % 7 = 4 ≠ 10 % 7 = 3`,
+    `6 % 7 = 6 ≠ 5 % 7 = 5`), shifting 7-byte lane words and pixel boundaries by `+1 mod 7`.
 -/
 theorem nonceSplit_64_lane_alignment_asymmetry :
     22 % 2 = 0 ∧ 21 % 2 = 1 ∧ 22 % 2 ≠ 21 % 2 ∧
-    22 % 7 = 1 ∧ 21 % 7 = 0 ∧ 22 % 7 ≠ 21 % 7 := by
+    22 % 7 = 1 ∧ 21 % 7 = 0 ∧ 22 % 7 ≠ 21 % 7 ∧
+    11 % 2 = 1 ∧ 10 % 2 = 0 ∧ 11 % 2 ≠ 10 % 2 ∧
+    11 % 7 = 4 ∧ 10 % 7 = 3 ∧ 11 % 7 ≠ 10 % 7 ∧
+    6 % 2 = 0  ∧ 5 % 2 = 1  ∧ 6 % 2 ≠ 5 % 2 ∧
+    6 % 7 = 6  ∧ 5 % 7 = 5  ∧ 6 % 7 ≠ 5 % 7 := by
   decide
 
 /--
