@@ -15,6 +15,36 @@ ITB_NONCE_BITS=512 ITB_GOMEMLIMIT=4GiB ITB_GOGC=100 \
   go test -bench='BenchmarkExtTriple.*_(1MB|16MB|64MB)$' -run='^$' -benchtime=5s -count=1
 ```
 
+## ITB Triple 168-bit Interlock (512-bit Primitives)
+
+Reproduction:
+
+```sh
+ITB_NONCE_BITS=512 ITB_GOMEMLIMIT=4GiB ITB_GOGC=100 \
+  go test -bench='BenchmarkExtTriple.*_168_.*_(1MB|16MB|64MB)$' -run='^$' -benchtime=5s -count=1
+```
+
+| Host | Hash | Width | ITB Width | Crypto | Encrypt 1 MB | Encrypt 16 MB | Encrypt 64 MB | Decrypt 1 MB | Decrypt 16 MB | Decrypt 64 MB |
+|---|---|---|---|---|---|---|---|---|---|---|
+| **Intel 11700K** | **Areion-SoEM-512** | 512 | 512 | PRF | - | - | - | - | - | - |
+| **Intel 11700K** | **BLAKE2b-512** | 512 | 512 | PRF | - | - | - | - | - | - |
+| **Intel 11700K** | **Areion-SoEM-512** | 512 | 1024 | PRF | - | - | - | - | - | - |
+| **Intel 11700K** | **BLAKE2b-512** | 512 | 1024 | PRF | - | - | - | - | - | - |
+| **Intel 11700K** | **Areion-SoEM-512** | 512 | 2048 | PRF | - | - | - | - | - | - |
+| **Intel 11700K** | **BLAKE2b-512** | 512 | 2048 | PRF | - | - | - | - | - | - |
+| **AMD 9655P** | **Areion-SoEM-512** | 512 | 512 | PRF | 706 | 1173 | 1323 | 796 | 1385 | 1494 |
+| **AMD 9655P** | **BLAKE2b-512** | 512 | 512 | PRF | 626 | 1060 | 1123 | 689 | 1177 | 1238 |
+| **AMD 9655P** | **Areion-SoEM-512** | 512 | 1024 | PRF | 663 | 1131 | 1214 | 763 | 1293 | 1395 |
+| **AMD 9655P** | **BLAKE2b-512** | 512 | 1024 | PRF | 544 | 871 | 943 | 587 | 972 | 1027 |
+| **AMD 9655P** | **Areion-SoEM-512** | 512 | 2048 | PRF | 620 | 1008 | 1074 | 663 | 1143 | 1195 |
+| **AMD 9655P** | **BLAKE2b-512** | 512 | 2048 | PRF | 457 | 656 | 732 | 481 | 724 | 786 |
+| **Graviton 4** | **Areion-SoEM-512** | 512 | 512 | PRF | 90 | 91 | 90 | 91 | 91 | 91 |
+| **Graviton 4** | **BLAKE2b-512** | 512 | 512 | PRF | 60 | 60 | 61 | 61 | 61 | 61 |
+| **Graviton 4** | **Areion-SoEM-512** | 512 | 1024 | PRF | 80 | 81 | 81 | 82 | 83 | 82 |
+| **Graviton 4** | **BLAKE2b-512** | 512 | 1024 | PRF | 44 | 44 | 44 | 44 | 44 | 45 |
+| **Graviton 4** | **Areion-SoEM-512** | 512 | 2048 | PRF | 68 | 68 | 68 | 69 | 69 | 69 |
+| **Graviton 4** | **BLAKE2b-512** | 512 | 2048 | PRF | 28 | 28 | 29 | 28 | 29 | 29 |
+
 ## Intel Core i7-11700K 8C/16HT
 
 The AES-ITB-128 rows appear here, in the AMD EPYC 9655P section further down, and in the ARM64 Graviton 4 section.
