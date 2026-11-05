@@ -16,7 +16,7 @@ This is not encryption layered on top, but absorption — the random container f
 
 Under passive observation, this property is computation-model-independent: no amount of computational power can extract information that is not present in the observation.
 
-**Formal basis:** `∀v, ∀h : ∃(c, d) : embed(c, h, d) = v` — for every observed byte value and every possible hash output, there exists a container byte and data configuration that produces that exact observation (see [Proof 1](PROOFS.md#proof-1-information-theoretic-barrier), [SCIENCE.md § 2.1 Theorem 1](SCIENCE.md#21-information-theoretic-barrier-theorem-1), and [SECURITY.md § 4](SECURITY.md#4-information-theoretic-barrier-metrics)).
+**Formal basis:** `∀v, ∀h : ∃(c, d) : embed(c, h, d) = v` — for every observed byte value and every possible hash output, there exists a container byte and data configuration that produces that exact observation (see [Proof 1](PROOFS.md#proof-1-information-theoretic-barrier), [lean/README.md](lean/README.md), [SCIENCE.md § 2.1 Theorem 1](SCIENCE.md#21-information-theoretic-barrier-theorem-1), and [SECURITY.md § 4](SECURITY.md#4-information-theoretic-barrier-metrics)).
 
 ## 2. Two Independent Sources of Randomness
 

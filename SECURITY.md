@@ -15,7 +15,7 @@
 | Version | Supported |
 |---|---|
 | `main` (HEAD) | ✓ |
-| earlier tagged releases | — |
+| latest tagged releases | ✓ |
 
 **Reporting a vulnerability.** Private reports preferred via [GitHub Security Advisories](https://github.com/everanium/itb/security/advisories/new) or by email at `andrew@encloud.blue`. Discord channel for coordination: [discord.gg/wRYF8shHpd](https://discord.gg/wRYF8shHpd).
 

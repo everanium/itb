@@ -343,7 +343,7 @@ As established in [Proof 4a](PROOFS.md#proof-4a-multi-factor-full-kpa-resistance
 
 ### Residual Risk
 
-The construction has one fundamental assumption boundary: **total PRF failure or starvation of the underlying primitive** (as demonstrated by the 8-bit `nullHash`, `quadHash`, and `trainHash` controls in Questions 1–3). Should any shipped primitive suffer a cryptanalytic break, ITB provides primitive agility via `hashes.Register` and `triple.Register` without altering the wire format or barrier architecture. Formal derivations are provided in [PROOFS.md](PROOFS.md) and empirical harnesses in [REDTEAM.md](REDTEAM.md).
+The construction has one fundamental assumption boundary: **total PRF failure or starvation of the underlying primitive** (as demonstrated by the 8-bit `nullHash`, `quadHash`, and `trainHash` controls in Questions 1–3). Should any shipped primitive suffer a cryptanalytic break, ITB provides primitive agility via `hashes.Register` and `triple.Register` without altering the wire format or barrier architecture. Formal derivations are provided in [PROOFS.md](PROOFS.md) (machine-checked in Lean 4 in [lean/README.md](lean/README.md)) and empirical harnesses in [REDTEAM.md](REDTEAM.md).
 
 ---
 

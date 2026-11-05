@@ -508,13 +508,12 @@ For per-platform microarchitecture dispatch (AVX-512 / AVX2 / AES-NI / NEON / SV
 ## 7. Research Directions
 
 - Formal simulation-based proof of hash independence in the ideal cipher model.
-- Formal analysis of MAC-Inside-Encrypt composition with ITB.
 - Formal comparison with Threefish-1024 security margins and performance.
 - Precise formalization of ambiguity-based security in Shannon's framework and its relationship to Cachin's steganographic security.
 
 ### Scope and Maturity Disclaimer
 
-ITB is a new construction without prior peer review or independent cryptanalysis. The primary contribution is theoretical: demonstrating that Full KPA resistance is 4-factor under the PRF assumption (5-factor under Partial KPA) — PRF non-invertibility closes the candidate-verification step, while architectural layers (the Rank Barrier's per-chunk mask permutation of ≈ 2^70.20 balanced partitions in 48-bit mode or ≈ 2^258.60 in 168-bit mode, 8-seed isolation with independent startSeeds, and per-pixel 7-rotation × 8-noisePos encoding ambiguity; plus byte-splitting under Partial KPA) deny the point of application. PRF and barrier are complementary, neither sufficient alone (see [Proof 4a](PROOFS.md#proof-4a-multi-factor-full-kpa-resistance)). Performance is not a design goal.
+ITB is a new construction without prior peer review or independent cryptanalysis (the core mathematical, combinatorial, and bit-vector theorems of Proofs 1–12 are machine-checked in Lean 4 in [lean/README.md](lean/README.md)). The primary contribution is theoretical: demonstrating that Full KPA resistance is 4-factor under the PRF assumption (5-factor under Partial KPA) — PRF non-invertibility closes the candidate-verification step, while architectural layers (the Rank Barrier's per-chunk mask permutation of ≈ 2^70.20 balanced partitions in 48-bit mode or ≈ 2^258.60 in 168-bit mode, 8-seed isolation with independent startSeeds, and per-pixel 7-rotation × 8-noisePos encoding ambiguity; plus byte-splitting under Partial KPA) deny the point of application. PRF and barrier are complementary, neither sufficient alone (see [Proof 4a](PROOFS.md#proof-4a-multi-factor-full-kpa-resistance)). Performance is not a design goal.
 
 The ITB construction does not claim to be the most secure symmetric cipher construction, nor that the analysis is exhaustive. As a first publication, the construction may contain overlooked vulnerabilities at two levels:
 

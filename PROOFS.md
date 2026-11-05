@@ -133,7 +133,7 @@ No memory access depends on dataSeed's values. No cache line, no memory pattern,
 <a name="proof-3a-8-seed-isolation-minimality"></a>
 ## Proof 3a: 8-Seed Isolation Minimality
 
-**Theorem.** 8 independent seeds — one per derivation domain — are the minimum configuration such that compromise of any single domain provides zero information about the remaining domains, under the documented attack surfaces (CCA for noise positions, cache side-channel for start pixels). Any layout with fewer seeds merges at least two domains onto one seed and creates cross-domain or cross-region leakage. This has not been independently verified.
+**Theorem.** 8 independent seeds — one per derivation domain — are the minimum configuration such that compromise of any single domain provides zero information about the remaining domains, under the documented attack surfaces (CCA for noise positions, cache side-channel for start pixels). Any layout with fewer seeds merges at least two domains onto one seed and creates cross-domain or cross-region leakage. Machine-checked in Lean 4 ([lean/README.md](lean/README.md)).
 
 **Proof.**
 
@@ -200,7 +200,7 @@ Every layout with at most 7 seeds merges at least two of the 8 domains (pigeonho
 
 ## Proof 3b: ChainHash Full Component Utilization
 
-**Theorem.** For any PRF-grade hash function H (which satisfies avalanche), ChainHash(data, S) with S = (s₀, s₁, ..., s_{n-1}) depends on all n components. No component can be changed without affecting the final output. This has not been independently verified.
+**Theorem.** For any PRF-grade hash function H (which satisfies avalanche), ChainHash(data, S) with S = (s₀, s₁, ..., s_{n-1}) depends on all n components. No component can be changed without affecting the final output. Machine-checked in Lean 4 ([lean/README.md](lean/README.md)).
 
 **Proof.** By contradiction. Suppose component s_k (0 ≤ k ≤ n-1) does not influence the final output h_{n-1}.
 
