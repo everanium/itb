@@ -659,9 +659,9 @@ func Registry(f *Figures) []Expectation {
 	// NOT FOUND, which fails the check as a STALE figure would.
 	add(
 		// ----- POSTQUANTUM.md -----------------------------------------
-		expect("POSTQUANTUM.md", `conservative Grover work factor is .√P × 2\^keyBits. \(~`+p2+` at 1024-bit keys for Mode 2 .P = `+num+`. and theoretical floor .P = `+num+`.; ~`+p2+` at Mode 1 .P = `+num+`.\)`,
+		expect("POSTQUANTUM.md", `conservative Grover work factor is .√P × 2\^keyBits. \(~`+p2+` at 1024-bit keys for Mode 2 P = `+num+` and theoretical floor P = `+num+`; ~`+p2+` at Mode 1 P = `+num+`\)`,
 			w("grover2_m2", bG1), w("m2_P", plain(b.P)), w("theo_P", plain(t.P)), w("grover2_m1", aG1), w("m1_P", plain(a.P))),
-		expect("POSTQUANTUM.md", `giving a conservative Grover work factor of .√P × 2\^\(keyBits/2\). \(~`+p2+` at 1024-bit keys for Mode 2 .P = `+num+`. and .P = `+num+`.; ~`+p2+` at Mode 1 .P = `+num+`.\)`,
+		expect("POSTQUANTUM.md", `giving a conservative Grover work factor of .√P × 2\^\(keyBits/2\). \(~`+p2+` at 1024-bit keys for Mode 2 P = `+num+` and P = `+num+`; ~`+p2+` at Mode 1 P = `+num+`\)`,
 			w("grover1_m2", bG2), w("m2_P", plain(b.P)), w("theo_P", plain(t.P)), w("grover1_m1", aG2), w("m1_P", plain(a.P))),
 		expect("POSTQUANTUM.md", `^\| Core ITB \(No MAC\) \| .* \| ~`+p2+` \| ~`+p2+` \|`,
 			w("grover2_m2", bG1), w("grover2_m1", aG1)),
@@ -712,7 +712,7 @@ func Registry(f *Figures) []Expectation {
 			w("m2_residue", plain(b.Residue)), w("m2_P", plain(b.P)),
 			w("m1_residue", plain(a.Residue)), w("m1_P", plain(a.P)),
 			w("theo_residue", plain(t.Residue)), w("theo_P", plain(t.P))),
-		expect("POSTQUANTUM.md", `^\| \*\*Grover Seed Search \(Full-Container Verification\)\*\* \| .* \| .√P × 2\^keyBits. \(Core ITB Full KPA / MAC \+ Silent Drop \[1\], ~`+p2+`–`+p2+` at 1024-bit\); .√P × 2\^\(keyBits/2\). \(MAC \+ Reveal, ~`+p2+`–`+p2+` at 1024-bit\) \|$`,
+		expect("POSTQUANTUM.md", `^\| \*\*Grover Seed Search \(Full-Container Verification\)\*\* \| .* \| √P × 2\^keyBits \(Core ITB Full KPA / MAC \+ Silent Drop \[1\], ~`+p2+`–`+p2+` at 1024-bit\); √P × 2\^\(keyBits/2\) \(MAC \+ Reveal, ~`+p2+`–`+p2+` at 1024-bit\) \|$`,
 			w("grover2_m2", bG1), w("grover2_m1", aG1), w("grover1_m2", bG2), w("grover1_m1", aG2)),
 	)
 	for _, file := range []string{"SCIENCE.md", "PROOFS.md", "SECURITY.md", "ITB.md", "README.md", "FAQ.md", "REDTEAM.md", "HWTHREATS.md", "POSTQUANTUM.md", "doc.go"} {
