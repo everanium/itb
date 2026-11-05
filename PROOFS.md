@@ -336,7 +336,7 @@ This proof applies to the MAC + Reveal mode only. Under Core ITB and MAC + Silen
 
 **Step 3: Response is binary.** Each query yields exactly 1 bit of information. The response classifies the flipped bit as noise or data.
 
-**Step 4: Classification determines noisePos.** For each channel byte (8 bits), exactly 1 produces "accept" (noise) and 7 produce "reject" (data). The position of the "accept" bit is noisePos. Per pixel: 8 channels share the same noisePos → 8 queries per pixel suffice (testing each bit position in any single channel; all channels share the same noisePos).
+**Step 4: Classification determines noisePos.** For each channel byte (8 bits), exactly 1 produces "accept" (noise) and 7 produce "reject" (data). The position of the "accept" bit is noisePos. Per pixel: 8 channels share the same noisePos → 8 queries per pixel suffice in the worst case (~4.375 on average when stopping at the first accepted flip and inferring the 8th bit by elimination, or ~5,359 queries across a 35 × 35 = 1225-pixel Mode 1 container versus the 8P = 9,800 exhaustive bound; testing bit positions in any single channel suffices because all channels share the same noisePos).
 
 **Step 5: No further information.** After classification, the attacker knows noisePos for each pixel (3 bits from noiseSeed). The 7 data bit positions are known, but their VALUES are protected by per-bit XOR:
 - Each data bit = `rotate(plaintext_bit ⊕ xor_mask_bit, r)`
