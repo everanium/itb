@@ -1325,7 +1325,7 @@ Per-binding examples ship in each binding's own directory under `bindings/<lang>
 
 ## See also
 
-- [APPS.md](APPS.md) — Application architecture guide: end-to-end chat with 3-KEM epoch ratcheting, 3-of-3 configuration splitting, and zero-blob key agreement via `InitKeys` and `Inspect`.
+- [APPS.md](APPS.md) — Application architecture guide: end-to-end chat with 3-to-8 Multi-KEM epoch ratcheting, 3-of-3 configuration splitting, and zero-blob key agreement via `InitKeys` and `Inspect`.
 - [FAQ.md](FAQ.md) — Analytical and empirical walkthrough of broken primitives under the shipped barrier (8-bit total PRF failure inversion in `nullHash`, `quadHash`, `trainHash`, and 64-bit algebraic stress controls in `jokeHash`, `CRC128`, `FNV-1a`).
 - [ITB.md](ITB.md) — How the barrier works (accessible explanation) and shipped feature reference.
 - [PROOFS.md](PROOFS.md) — Formal security proofs.
