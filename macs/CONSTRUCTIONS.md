@@ -102,3 +102,15 @@ The registry name is nonetheless kept as `hmac-blake3` for two reasons. First, *
 ITB's MAC-Inside-Encrypt construction places the 32-byte tag **inside** the encrypted container, where the Pixel Barrier dispersal already destroys any lane payload / tag boundary an attacker could see (the tag is appended to the post-Rank-Barrier lane payload before pixel encoding). The surrounding ITB construction therefore takes care of placement-hiding, per-message freshness (a fresh nonce for every message, so no two wires repeat; rejecting a replayed wire needs receiver-side state, which ITB does not keep; within a stream, the MAC binds every chunk to its stream ID, offset and final flag, so a chunk replayed, reordered or spliced from another stream fails verification), and the bounded CCA leak of the MAC Authenticated shapes (at most the per-pixel noise position, [Proof 6](../PROOFS.md#proof-6-cca-leak-upper-bound), under the PRF assumption on the MAC), which means the MAC primitive itself only has to be a sound keyed PRF. Every shipped MAC meets that bar under standard assumptions, and the selection spans independent primitive families (Keccak-sponge, SHA-2 Merkle-Damgård, BLAKE3 tree) so a structural weakness discovered in one family leaves the remaining families unaffected.
 
 The C shared-library ABI exports a curated, non-pluggable set serving the FFI / mobile distribution. In Go-native environments, custom MACs can be plugged via `macs.Register` and `macs.BuildHMAC` / `macs.BuildKeyedHash`, or supplied as a custom `itb.MACFunc` directly.
+
+---
+
+## References
+
+- John Kelsey, Shu-jen Chang, and Ray Perlner, "SHA-3 Derived Functions: cSHAKE, KMAC, TupleHash and ParallelHash", NIST Special Publication 800-185, December 2016, DOI: [10.6028/NIST.SP.800-185](https://doi.org/10.6028/NIST.SP.800-185).
+- National Institute of Standards and Technology, "SHA-3 Standard: Permutation-Based Hash and Extendable-Output Functions", FIPS PUB 202, August 2015, DOI: [10.6028/NIST.FIPS.202](https://doi.org/10.6028/NIST.FIPS.202).
+- Hugo Krawczyk, Mihir Bellare, and Ran Canetti, "HMAC: Keyed-Hashing for Message Authentication", IETF RFC 2104, February 1997, DOI: [10.17487/RFC2104](https://doi.org/10.17487/RFC2104) ([RFC Editor](https://www.rfc-editor.org/rfc/rfc2104)).
+- National Institute of Standards and Technology, "The Keyed-Hash Message Authentication Code (HMAC)", FIPS PUB 198-1, July 2008, DOI: [10.6028/NIST.FIPS.198-1](https://doi.org/10.6028/NIST.FIPS.198-1).
+- National Institute of Standards and Technology, "Secure Hash Standard (SHS)", FIPS PUB 180-4, August 2015, DOI: [10.6028/NIST.FIPS.180-4](https://doi.org/10.6028/NIST.FIPS.180-4).
+- Magnus Nyström, "Identifiers and Test Vectors for HMAC-SHA-224, HMAC-SHA-256, HMAC-SHA-384, and HMAC-SHA-512", IETF RFC 4231, December 2005, DOI: [10.17487/RFC4231](https://doi.org/10.17487/RFC4231) ([RFC Editor](https://www.rfc-editor.org/rfc/rfc4231)).
+- Jack O'Connor, Jean-Philippe Aumasson, Samuel Neves, and Zooko Wilcox-O'Hearn, "BLAKE3: one function, fast everywhere", Technical Specification, January 2020 ([PDF](https://github.com/BLAKE3-team/BLAKE3-specs/raw/master/blake3.pdf)).

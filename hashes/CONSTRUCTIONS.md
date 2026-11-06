@@ -274,7 +274,7 @@ The registry names (`aescmac`, `chacha20`, `blake2b256`, ...) are short identifi
 
 ## Why use builders for custom user primitives
 
-Beyond the shipped primitives, [`builders.go`](builders.go) exposes four generic chain-absorb builder families (`Build{CBCMAC,Sponge,ARX,HMAC}ChainAbsorb{128,256,512}`; see [`README.md` § Pluggable PRF builders](README.md#pluggable-prf-builders) for API signatures and usage examples) for safely wrapping user-supplied PRFs. The builders exist to close a specific silent-failure mode in pluggable PRF integration.
+Beyond the shipped primitives, [`builders.go`](builders.go) exposes four generic chain-absorb builder families (`Build{CBCMAC,Sponge,ARX,HMAC}ChainAbsorb{128,256,512}`; see [`README.md` § Custom user-primitive builders](README.md#custom-user-primitive-builders) for API signatures and usage examples) for safely wrapping user-supplied PRFs. The builders exist to close a specific silent-failure mode in pluggable PRF integration.
 
 ### The trap — silent nonce truncation
 
@@ -351,3 +351,23 @@ The builders are an **additive** safety layer for the pluggable PRF surface. The
 - The pluggable-primitive use case has a documented reference approach guaranteeing complete input absorption without relying on ad-hoc closure implementations.
 
 The KAT-test surface in `builders_test.go` includes a "full nonce absorption" check that verifies every byte of a 68-byte input affects the digest output, providing automated regression detection if the builders are ever modified in a way that reintroduces silent truncation.
+
+---
+
+## References
+
+- National Institute of Standards and Technology, "Advanced Encryption Standard (AES)", FIPS PUB 197, November 2001 (updated May 2023), DOI: [10.6028/NIST.FIPS.197-upd1](https://doi.org/10.6028/NIST.FIPS.197-upd1).
+- Joan Daemen, Lars Knudsen, and Vincent Rijmen, "The Block Cipher Square", Fast Software Encryption – FSE '97, LNCS Vol. 1267, pp. 149–165, Springer, 1997, DOI: [10.1007/BFb0052343](https://doi.org/10.1007/BFb0052343).
+- Takanori Isobe, Ryoma Ito, Fukang Liu, Kazuhiko Minematsu, Motoki Nakahashi, Kosei Sakamoto, and Rentaro Shiba, "Areion: Highly-Efficient Permutations and Its Applications to Hash Functions for Short Input", IACR Transactions on Cryptographic Hardware and Embedded Systems (TCHES), Vol. 2023, No. 2, pp. 115–154, 2023, DOI: [10.46586/tches.v2023.i2.115-154](https://doi.org/10.46586/tches.v2023.i2.115-154) ([ePrint 2023/794](https://eprint.iacr.org/2023/794)).
+- Yu Long Chen, Eran Lambooij, and Bart Mennink, "How to Build Pseudorandom Functions From Public Random Permutations", Advances in Cryptology – CRYPTO 2019, LNCS Vol. 11692, pp. 266–293, Springer, 2019, DOI: [10.1007/978-3-030-26948-7_10](https://doi.org/10.1007/978-3-030-26948-7_10) ([ePrint 2019/554](https://eprint.iacr.org/2019/554)).
+- Mihir Bellare, Joe Kilian, and Phillip Rogaway, "The Security of the Cipher Block Chaining Message Authentication Code", Journal of Computer and System Sciences, Vol. 61, No. 3, pp. 362–399, 2000 (preliminary version in CRYPTO '94, LNCS Vol. 839, pp. 341–358, 1994), DOI: [10.1006/jcss.1999.1694](https://doi.org/10.1006/jcss.1999.1694).
+- Erez Petrank and Charles Rackoff, "CBC MAC for Real-Time Data Sources", Journal of Cryptology, Vol. 13, No. 3, pp. 315–338, 2000, DOI: [10.1007/s001450010002](https://doi.org/10.1007/s001450010002) ([ePrint 1997/010](https://eprint.iacr.org/1997/010)).
+- Markku-Juhani O. Saarinen and Jean-Philippe Aumasson, "The BLAKE2 Cryptographic Hash and Message Authentication Code (MAC)", IETF RFC 7693, November 2015, DOI: [10.17487/RFC7693](https://doi.org/10.17487/RFC7693) ([RFC Editor](https://www.rfc-editor.org/rfc/rfc7693), [ePrint 2013/322](https://eprint.iacr.org/2013/322)).
+- Eli Biham and Orr Dunkelman, "A Framework for Iterative Hash Functions – HAIFA", Second NIST Cryptographic Hash Workshop, 2006 ([ePrint 2007/278](https://eprint.iacr.org/2007/278)).
+- Jack O'Connor, Jean-Philippe Aumasson, Samuel Neves, and Zooko Wilcox-O'Hearn, "BLAKE3: one function, fast everywhere", Technical Specification, January 2020 ([PDF](https://github.com/BLAKE3-team/BLAKE3-specs/raw/master/blake3.pdf)).
+- Morris Dworkin, "Recommendation for Block Cipher Modes of Operation: The CMAC Mode for Authentication", NIST Special Publication 800-38B, May 2005, DOI: [10.6028/NIST.SP.800-38B](https://doi.org/10.6028/NIST.SP.800-38B).
+- Jun-Hyuk Song, Radha Poovendran, Jicheol Lee, and Tetsu Iwata, "The AES-CMAC Algorithm", IETF RFC 4493, June 2006, DOI: [10.17487/RFC4493](https://doi.org/10.17487/RFC4493) ([RFC Editor](https://www.rfc-editor.org/rfc/rfc4493)).
+- Jean-Philippe Aumasson and Daniel J. Bernstein, "SipHash: a fast short-input PRF", Progress in Cryptology – INDOCRYPT 2012, LNCS Vol. 7668, pp. 489–508, Springer, 2012, DOI: [10.1007/978-3-642-34931-7_28](https://doi.org/10.1007/978-3-642-34931-7_28) ([ePrint 2012/351](https://eprint.iacr.org/2012/351)).
+- Yoav Nir and Adam Langley, "ChaCha20 and Poly1305 for IETF Protocols", IETF RFC 8439, June 2018, DOI: [10.17487/RFC8439](https://doi.org/10.17487/RFC8439) ([RFC Editor](https://www.rfc-editor.org/rfc/rfc8439)).
+- Scott Arciszewski, "XChaCha: eXtended-nonce ChaCha and AEAD_XChaCha20_Poly1305", IETF Internet-Draft `draft-irtf-cfrg-xchacha-03`, January 2020 ([IETF Datatracker](https://datatracker.ietf.org/doc/html/draft-irtf-cfrg-xchacha-03)).
+- Mihir Bellare, Ran Canetti, and Hugo Krawczyk, "Pseudorandom Functions Revisited: The Cascade Construction and Its Concrete Security", Proc. 37th Annual Symposium on Foundations of Computer Science (FOCS '96), pp. 514–523, IEEE, 1996, DOI: [10.1109/SFCS.1996.548510](https://doi.org/10.1109/SFCS.1996.548510).

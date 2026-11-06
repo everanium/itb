@@ -101,3 +101,10 @@ lake build
 - [SECURITY.md](../SECURITY.md) — Threat model and composition modes reference.
 - [ITB.md](../ITB.md) — Accessible explanation of the barrier architecture.
 - [README.md](../README.md) — Main project overview and API documentation.
+
+---
+
+## References
+
+- Leonardo de Moura and Sebastian Ullrich, "The Lean 4 Theorem Prover and Programming Language", Automated Deduction – CADE 28, LNCS Vol. 12699, pp. 625–635, Springer, 2021, DOI: [10.1007/978-3-030-79876-5_37](https://doi.org/10.1007/978-3-030-79876-5_37) ([PDF](https://lean-lang.org/papers/lean4.pdf)).
+

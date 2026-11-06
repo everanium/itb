@@ -123,3 +123,20 @@ The keyed mode here is the upstream **standard keyed PRF** (RFC 7693 keyed BLAKE
 **Labels are public.** In all constructions the label is a public domain-separation input. It feeds the SP 800-108 Label field (the SP 800-108 constructions) or the XChaCha20 nonce (`chacha20`). Its only requirement is distinctness per intended subkey; it carries no secrecy requirement.
 
 **Standards posture.** Only `aescmac` is a NIST-standard KDF over a NIST-standard PRF end to end. The Areion-SoEM, BLAKE, and SipHash constructions use the NIST-standard SP 800-108 mode over a non-NIST PRF; `chacha20` is a sound non-NIST keystream KDF. These distinctions are stated so an integrator selecting a construction for a regulated context knows which one inherits NIST conformance and which do not.
+
+---
+
+## References
+
+- Lily Chen, "Recommendation for Key Derivation Using Pseudorandom Functions", NIST Special Publication 800-108 Rev. 1, August 2022, DOI: [10.6028/NIST.SP.800-108r1-upd1](https://doi.org/10.6028/NIST.SP.800-108r1-upd1).
+- Takanori Isobe, Ryoma Ito, Fukang Liu, Kazuhiko Minematsu, Motoki Nakahashi, Kosei Sakamoto, and Rentaro Shiba, "Areion: Highly-Efficient Permutations and Its Applications to Hash Functions for Short Input", IACR Transactions on Cryptographic Hardware and Embedded Systems (TCHES), Vol. 2023, No. 2, pp. 115–154, 2023, DOI: [10.46586/tches.v2023.i2.115-154](https://doi.org/10.46586/tches.v2023.i2.115-154) ([ePrint 2023/794](https://eprint.iacr.org/2023/794)).
+- Yu Long Chen, Eran Lambooij, and Bart Mennink, "How to Build Pseudorandom Functions From Public Random Permutations", Advances in Cryptology – CRYPTO 2019, LNCS Vol. 11692, pp. 266–293, Springer, 2019, DOI: [10.1007/978-3-030-26948-7_10](https://doi.org/10.1007/978-3-030-26948-7_10) ([ePrint 2019/554](https://eprint.iacr.org/2019/554)).
+- National Institute of Standards and Technology, "Secure Hash Standard (SHS)", FIPS PUB 180-4, August 2015, DOI: [10.6028/NIST.FIPS.180-4](https://doi.org/10.6028/NIST.FIPS.180-4).
+- Markku-Juhani O. Saarinen and Jean-Philippe Aumasson, "The BLAKE2 Cryptographic Hash and Message Authentication Code (MAC)", IETF RFC 7693, November 2015, DOI: [10.17487/RFC7693](https://doi.org/10.17487/RFC7693) ([RFC Editor](https://www.rfc-editor.org/rfc/rfc7693), [ePrint 2013/322](https://eprint.iacr.org/2013/322)).
+- Jack O'Connor, Jean-Philippe Aumasson, Samuel Neves, and Zooko Wilcox-O'Hearn, "BLAKE3: one function, fast everywhere", Technical Specification, January 2020 ([PDF](https://github.com/BLAKE3-team/BLAKE3-specs/raw/master/blake3.pdf)).
+- National Institute of Standards and Technology, "Advanced Encryption Standard (AES)", FIPS PUB 197, November 2001 (updated May 2023), DOI: [10.6028/NIST.FIPS.197-upd1](https://doi.org/10.6028/NIST.FIPS.197-upd1).
+- Morris Dworkin, "Recommendation for Block Cipher Modes of Operation: The CMAC Mode for Authentication", NIST Special Publication 800-38B, May 2005, DOI: [10.6028/NIST.SP.800-38B](https://doi.org/10.6028/NIST.SP.800-38B).
+- Jun-Hyuk Song, Radha Poovendran, Jicheol Lee, and Tetsu Iwata, "The AES-CMAC Algorithm", IETF RFC 4493, June 2006, DOI: [10.17487/RFC4493](https://doi.org/10.17487/RFC4493) ([RFC Editor](https://www.rfc-editor.org/rfc/rfc4493)).
+- Jean-Philippe Aumasson and Daniel J. Bernstein, "SipHash: a fast short-input PRF", Progress in Cryptology – INDOCRYPT 2012, LNCS Vol. 7668, pp. 489–508, Springer, 2012, DOI: [10.1007/978-3-642-34931-7_28](https://doi.org/10.1007/978-3-642-34931-7_28) ([ePrint 2012/351](https://eprint.iacr.org/2012/351)).
+- Yoav Nir and Adam Langley, "ChaCha20 and Poly1305 for IETF Protocols", IETF RFC 8439, June 2018, DOI: [10.17487/RFC8439](https://doi.org/10.17487/RFC8439) ([RFC Editor](https://www.rfc-editor.org/rfc/rfc8439)).
+- Scott Arciszewski, "XChaCha: eXtended-nonce ChaCha and AEAD_XChaCha20_Poly1305", IETF Internet-Draft `draft-irtf-cfrg-xchacha-03`, January 2020 ([IETF Datatracker](https://datatracker.ietf.org/doc/html/draft-irtf-cfrg-xchacha-03)).

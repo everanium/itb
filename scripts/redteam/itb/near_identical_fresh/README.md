@@ -113,12 +113,12 @@ via `REDTEAM_NEAR_IDENTICAL_FRESH_OUTPUT_DIR`.
 
 - The nonce-reuse Layer A verdict on the same near-identical pair
   shape (Layer A histogram under **forced nonce reuse**) is in
-  [`REDTEAM.md § Nonce reuse (lab-only)`](../../../../REDTEAM.md) —
+  [`REDTEAM.md § Nonce reuse (lab-only)`](../../../../REDTEAM.md#nonce-reuse-lab-only) —
   byte-equal rate `0.019`–`0.063` (`4.9×`–`16×` floor) at 128–512 B on
   the near-identical pair shape.
 - The fresh-nonce CPA single-message wire result (FNV-1a↔BLAKE3
   homogeneity on chosen-plaintext single messages) is in
-  [`REDTEAM.md § Fresh-nonce CPA under FNV-1a on every seed role`](../../../../REDTEAM.md).
+  [`REDTEAM.md § Fresh-nonce CPA under FNV-1a on every seed role`](../../../../REDTEAM.md#fresh-nonce-cpa-under-fnv-1a-on-every-seed-role).
 - This probe extends the fresh-nonce CPA closure to the
   cross-message pair-distinguisher surface — a distinct
   traffic-analysis capability the single-message wire test does not

@@ -673,7 +673,6 @@ ITB_REDTEAM_NOISEPOS_HASH=aesitb128 ITB_REDTEAM_NOISEPOS_TRIALS=10 \
 
 ## References
 
-- Kenneth G. Paterson, "Imprimitive Permutation Groups and Trapdoors in Iterated Block Ciphers", Fast Software Encryption (FSE '99), LNCS Vol. 1636, pp. 201–214, Springer, 1999, DOI: [10.1007/3-540-48519-8_15](https://doi.org/10.1007/3-540-48519-8_15).
 - Ange Albertini, Jean-Philippe Aumasson, Maria Eichlseder, Florian Mendel, and Martin Schläffer, "Malicious Hashing: Eve's Variant of SHA-1", Selected Areas in Cryptography – SAC 2014, LNCS Vol. 8781, pp. 1–19, Springer, 2014, DOI: [10.1007/978-3-319-13051-4_1](https://doi.org/10.1007/978-3-319-13051-4_1) ([ePrint 2014/694](https://eprint.iacr.org/2014/694)).
 - Arnaud Bannier, Nicolas Bodin, and Eric Filiol, "Partition-Based Trapdoor Ciphers", IACR Cryptology ePrint Archive, Paper 2016/493, 2016 ([ePrint 2016/493](https://eprint.iacr.org/2016/493)); and Arnaud Bannier and Eric Filiol, "Mathematical Backdoors in Symmetric Encryption Systems — Proposal for a Backdoored AES-like Block Cipher (BEA-1)", 2017, DOI: [10.48550/arXiv.1702.06475](https://doi.org/10.48550/arXiv.1702.06475) ([arXiv:1702.06475](https://arxiv.org/abs/1702.06475)).
 - Vladimir S. Anashin, "Uniformly distributed sequences of p-adic integers", Mathematical Notes, Vol. 55, No. 2, pp. 109–133, 1994, DOI: [10.1007/BF02113290](https://doi.org/10.1007/BF02113290).

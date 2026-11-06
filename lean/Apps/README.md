@@ -41,3 +41,10 @@ lake build Apps
 ## See also
 
 - [APPS.md](../../APPS.md) — Reference application integration guide (key establishment, session management, and configuration synchronization).
+
+---
+
+## References
+
+- Leonardo de Moura and Sebastian Ullrich, "The Lean 4 Theorem Prover and Programming Language", Automated Deduction – CADE 28, LNCS Vol. 12699, pp. 625–635, Springer, 2021, DOI: [10.1007/978-3-030-79876-5_37](https://doi.org/10.1007/978-3-030-79876-5_37) ([PDF](https://lean-lang.org/papers/lean4.pdf)).
+
