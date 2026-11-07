@@ -193,7 +193,7 @@ Output: [prefix(32)][main_nonce][W][H][container] (uniform random bytes)
 
 To resist chosen-ciphertext ambiguity reduction, the minimum pixel count enforces `MinPixels = ⌈keyBits / log₂7⌉` (183 / 365 / 730 pixels for 512 / 1024 / 2048-bit keys), ensuring `7^P > 2^keyBits`. Container sizing operates under two modes:
 
-- **Mode 1 (Per-Region, default):** Each of the three regions independently satisfies `MinPixels`. Small messages clamp to `3 × MinPixels` data pixels, yielding a 35 × 35 container (1,225 pixels) at 1024-bit keys.
+- **Mode 1 (Per-Region, default):** Each of the three regions independently satisfies `MinPixels`. Small messages clamp to `3 × MinPixels` data pixels, yielding a 35 × 35 container (1225 pixels) at 1024-bit keys.
 - **Mode 2 (Per-Container, compact mode):** The ambiguity floor is evaluated jointly across the container (`totalPixels = max(3 × maxDataThirdPixels, MinPixels)`). Small messages clamp to `MinPixels` total pixels, yielding a 21 × 21 container (441 pixels) at 1024-bit keys, reducing wire overhead for MTU-constrained networks.
 
 Both modes converge to identical dimensions once payload volume exceeds the floor. Decoders parse `W` and `H` directly from the frame header; decryption is mode-independent and handles ciphertexts from either mode without configuration.
@@ -419,7 +419,7 @@ Unlike AES or ChaCha20 where testing a key takes nanoseconds on a single block, 
 
 | Data size | P (pixels) | Time per attempt | vs AES |
 |---|---|---|---|
-| Min container (**Mode 1**, payload ≤ ~7.9 KB, 1024-bit key) | 1,225 | ~196 µs | ~196,000× slower |
+| Min container (**Mode 1**, payload ≤ ~7.9 KB, 1024-bit key) | 1225 | ~196 µs | ~196,000× slower |
 | Min container (**Mode 2**, payload ≤ ~2.6 KB, 1024-bit key) | 441 | ~70 µs | ~70,000× slower |
 | 4 MB | 603,729 | ~96 ms | ~96 million× slower |
 | 16 MB | 2,411,809 | ~385 ms | ~385 million× slower |

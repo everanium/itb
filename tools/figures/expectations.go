@@ -168,10 +168,10 @@ func Registry(f *Figures) []Expectation {
 		// Barrier strength table (1024-bit key): Mode 2 | Mode 1 | theoretical.
 		expect("SCIENCE.md", `^\| Container dimensions \| `+dimsP+` \| `+dimsP+` \| `+dimsP+` \|$`,
 			w("m2_side", plain(b.Side)), w("m2_side", plain(b.Side)), w("m2_P", plain(b.P)),
-			w("m1_side", plain(a.Side)), w("m1_side", plain(a.Side)), w("m1_P", comma(a.P)),
+			w("m1_side", plain(a.Side)), w("m1_side", plain(a.Side)), w("m1_P", plain(a.P)),
 			w("theo_side", plain(t.Side)), w("theo_side", plain(t.Side)), w("theo_P", plain(t.P))),
 		expect("SCIENCE.md", `^\| MinPixels enforcement \| `+num+` joint → `+num+` \| 3`+x+num+` = `+num+` → `+num+` \| `+num+` → `+num+` \|$`,
-			w("minpixels_1024", plain(mp)), w("m2_P", plain(b.P)), w("minpixels_1024", plain(mp)), w("m1_floor_px", comma(a.FloorPixels)), w("m1_P", comma(a.P)), w("minpixels_1024", plain(mp)), w("theo_P", plain(t.P))),
+			w("minpixels_1024", plain(mp)), w("m2_P", plain(b.P)), w("minpixels_1024", plain(mp)), w("m1_floor_px", plain(a.FloorPixels)), w("m1_P", plain(a.P)), w("minpixels_1024", plain(mp)), w("theo_P", plain(t.P))),
 		expect("SCIENCE.md", `^\| Noise barrier \(2\^\(8P\)\) \| `+p2+` \| `+p2+` \| `+p2+` \|$`,
 			w("noise_m2", pow2(noiseBarrier(b.P))), w("noise_m1", pow2(noiseBarrier(a.P))), w("noise_theo", pow2(noiseBarrier(t.P)))),
 		expect("SCIENCE.md", `^\| Encoding ambiguity 56\^P \(No CCA\) \| `+p2+` \| `+p2+` \| `+p2+` \|$`,
@@ -209,7 +209,7 @@ func Registry(f *Figures) []Expectation {
 			w(fmt.Sprintf("m2_side_%d", k), plain(m2[k].Side)), w(fmt.Sprintf("m2_side_%d", k), plain(m2[k].Side)), w(fmt.Sprintf("m2_P_%d", k), plain(m2[k].P))}
 		wants = append(wants, mtuW...)
 		wants = append(wants,
-			w(fmt.Sprintf("m1_side_%d", k), plain(m1[k].Side)), w(fmt.Sprintf("m1_side_%d", k), plain(m1[k].Side)), w(fmt.Sprintf("m1_P_%d", k), comma(m1[k].P)),
+			w(fmt.Sprintf("m1_side_%d", k), plain(m1[k].Side)), w(fmt.Sprintf("m1_side_%d", k), plain(m1[k].Side)), w(fmt.Sprintf("m1_P_%d", k), plain(m1[k].P)),
 			w(fmt.Sprintf("m2_wire_%d", k), comma(m2[k].Wire)), w(fmt.Sprintf("m1_wire_%d", k), comma(m1[k].Wire)),
 			w(fmt.Sprintf("m2_vs_m1_%d", k), pct(m1[k].Wire, m2[k].Wire)+"%"))
 		if k == 512 {
@@ -250,9 +250,9 @@ func Registry(f *Figures) []Expectation {
 		// takes the Mode 2 measured fit while the two containers coincide.
 		expect("SCIENCE.md", `^\| Theoretical single-region floor \(~`+dec+` KB\) \|`, w("theo_max_payload_kb", theoPayloadKB)),
 		ambRow(`\*\*Mode 2\*\* container floor \(payload ≤ ~[\d.]+ KB\)`, b.P, plain),
-		ambRow(`\*\*Mode 1\*\* container floor \(payload ≤ ~[\d.]+ KB\)`, a.P, comma),
+		ambRow(`\*\*Mode 1\*\* container floor \(payload ≤ ~[\d.]+ KB\)`, a.P, plain),
 		ambRow(`Theoretical single-region floor \(~[\d.]+ KB\)`, t.P, plain),
-		ambRow(`64 KB`, s64k.P, comma),
+		ambRow(`64 KB`, s64k.P, plain),
 		ambRow(`1 MB`, s1m.P, comma),
 		expect("SCIENCE.md", "At 64 KB, encoding ambiguity alone is `"+p2+"`, whose exponent is "+dec+`× the 1024-bit key-space exponent. No computational model can perform \*\*blind enumeration\*\* of `+"`"+p2+"`",
 			w("cca_64KiB", pow2(cca(s64k.P))), w("cca_64KiB_vs_key", fixed(float64(cca(s64k.P))/1024, 1)), w("cca_64KiB", pow2(cca(s64k.P)))),
@@ -443,7 +443,7 @@ func Registry(f *Figures) []Expectation {
 		expect("ITB.md", `\(`+num+` / `+num+` / `+num+` pixels for 512 / 1024 / 2048-bit keys\)`,
 			w("minpixels_512", plain(f.MinPixels[512])), w("minpixels_1024", plain(mp)), w("minpixels_2048", plain(f.MinPixels[2048]))),
 		expect("ITB.md", `Small messages clamp to .3 × MinPixels. data pixels, yielding a `+num+x+num+` container \(`+num+` pixels\) at 1024-bit keys`,
-			w("m1_side", plain(a.Side)), w("m1_side", plain(a.Side)), w("m1_P", comma(a.P))),
+			w("m1_side", plain(a.Side)), w("m1_side", plain(a.Side)), w("m1_P", plain(a.P))),
 		expect("ITB.md", `Small messages clamp to .MinPixels. total pixels, yielding a `+num+x+num+` container \(`+num+` pixels\) at 1024-bit keys`,
 			w("m2_side", plain(b.Side)), w("m2_side", plain(b.Side)), w("m2_P", plain(b.P))),
 		expect("ITB.md", "At 1024-bit keys \\(`MinPixels = "+num+"`\\), \\*\\*Mode 1\\*\\* \\(per-region, `3"+x+num+" = "+num+"` pixels, `s = "+num+"`, container `"+num+x+num+" = "+num+"` pixels\\) yields `gap ≥ "+num+" bytes`; \\*\\*Mode 2\\*\\* \\(per-container, `totalPixels = "+num+"`, `s = "+num+"`, container `"+num+x+num+" = "+num+"` pixels\\) yields `gap ≥ "+num+" bytes`",
@@ -502,7 +502,7 @@ func Registry(f *Figures) []Expectation {
 			w("sample_budget", "2^"+budget), w("log2_messages", "2^"+fixed(math.Round(f.Log2Messages), 0)),
 			w("sample_budget168", "2^"+budget168), w("log2_messages168", msgs168)),
 		expect("ITB.md", "requires `2\\^\\(62·P\\)` attempts \\(≈ "+p2+" for 1024-bit keys\\)", w("config_m1", pow2(configMap(a.P)))),
-		expect("ITB.md", `^\| Min container \(\*\*Mode 1\*\*, payload ≤ ~`+dec+` KB, 1024-bit key\) \| `+num+` \|`, w("m1_max_payload_kb", kb(a.MaxPayload)), w("m1_P", comma(a.P))),
+		expect("ITB.md", `^\| Min container \(\*\*Mode 1\*\*, payload ≤ ~`+dec+` KB, 1024-bit key\) \| `+num+` \|`, w("m1_max_payload_kb", kb(a.MaxPayload)), w("m1_P", plain(a.P))),
 		expect("ITB.md", `^\| Min container \(\*\*Mode 2\*\*, payload ≤ ~`+dec+` KB, 1024-bit key\) \| `+num+` \|`, w("m2_max_payload_kb", kb(b.MaxPayload)), w("m2_P", plain(b.P))),
 		expect("ITB.md", `^\| 4 MB \| `+num+` \|`, w("P_4MiB", comma(s4m.P))),
 		expect("ITB.md", `^\| 16 MB \| `+num+` \|`, w("P_16MiB", comma(s16m.P))),
