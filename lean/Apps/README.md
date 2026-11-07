@@ -1,5 +1,11 @@
 ## Reference Application Blueprint — Lean 4 Verification (`APPS.md`)
 
+<p align="center">
+  <code>f<sub>total</sub> = f<sub>pixel</sub> ∘ f<sub>traj</sub> ∘ f<sub>cobs</sub> ∘ f<sub>slot</sub> ∘ f<sub>rank</sub> &nbsp;&nbsp;⟹&nbsp;&nbsp; f<sub>total</sub><sup>−1</sup> ∘ f<sub>total</sub> = id</code>
+  <br>
+  <em>Geometric Bijection</em>
+</p>
+
 Machine-checked formal verification in **Lean 4** (`leanprover/lean4:v4.35.0`) of the reference application-level **`3-to-8` Multi-KEM Key Agreement** (`deriveSeeds3to8`), **3-of-3 Intra-Epoch Ratchet Root** (`deriveRatchetRoot`), **3-Part Configuration Slicing** (`splitProfile3` / `joinProfile3`), and **Downgrade-Safe Schema Clamping** (`min(appVer_A, appVer_B)`) presented in [`../../APPS.md`](../../APPS.md).
 
 > **Scope note:** This subdirectory verifies **only the reference application integration blueprint** illustrated in [`../../APPS.md`](../../APPS.md). It is **not** part of the core ITB symmetric cipher specification; the core cipher construction is independent of how callers provision keys or negotiate application profiles.
