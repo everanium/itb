@@ -94,7 +94,7 @@ inherits the compile-in default), `wrapper` / `wrapper_cipher`,
   is recorded in the blob's recipe under `"interlock":"168"`).
 - `encrypt --desync on|off` and `decrypt --desync on|off` (or the
   environment variable `ITB_BARRIERS_DESYNC=off`) control the
-  Desynchronized Interlocked Barrier (`Desync`, default `on`).
+  Desynchronized Interlocked Barrier (`--desync`, default `on`).
   **WARNING: DO NOT DISABLE DESYNC FOR PRODUCTION USE — FOR SYNCHRONOUS
   WIRE CONVERSION / DECRYPTION AND RESEARCH BASELINES ONLY.**
 - `-o` writes the blob to disk with mode `0600`; every read path

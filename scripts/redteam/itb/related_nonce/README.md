@@ -50,10 +50,10 @@ each of the 8 shipped seed roles:
 
 | Seed role  | Derivation           | Nonce buf layout             | Output consumed as |
 |------------|----------------------|------------------------------|--------------------|
-| noiseSeed  | `blockHash*(buf, base_i + p)` | `noiseCounter (4 LE) \|\| main_nonce` (`20 / 36 / 68 B`, not restarted per region) | per-pixel `noisePos = noiseFold3(h[0] + rotl64(h[1], 1))` |
-| dataSeed_i | `blockHash*(buf, p)` | `pixIdx (4 LE) \|\| main_nonce` (`20 / 36 / 68 B`) | per-pixel `dataRotation` + `channelXOR` per region |
-| startSeed_i| `ChainHash*(buf)`    | `0x02 \|\| main_nonce` and `0x05 \|\| main_nonce` (`17 / 33 / 65 B`) | `startPixel = h.lo % totalPixels` per region and Layer I sub-region schedule $\Pi_r$ (`subregionAddr` / `effectiveStartPixel` via `fullWidthFold`) |
-| lockSeed   | `deriveInterLockSeed`| `0x04 \|\| interlock_nonce` (`17 / 33 / 65 B`, feeding `13 B` `0x03` rank fill and `0x06` `Desync` slot shifts) | full-width Rank Barrier per-chunk mask key and Layer II cross-lane slot shifts $\Sigma_\ell$ (`laneSlotShift` via `fullWidthFold`) |
+| noiseSeed  | blockHash*(buf, base_i + p) | noiseCounter (4 LE) \|\| main_nonce (20 / 36 / 68 B, not restarted per region) | per-pixel noisePos = noiseFold3(h[0] + rotl64(h[1], 1)) |
+| dataSeed_i | blockHash*(buf, p) | pixIdx (4 LE) \|\| main_nonce (20 / 36 / 68 B) | per-pixel dataRotation + channelXOR per region |
+| startSeed_i| ChainHash*(buf)    | 0x02 \|\| main_nonce and 0x05 \|\| main_nonce (17 / 33 / 65 B) | startPixel = h.lo % totalPixels per region and Layer I sub-region schedule Π_r (subregionAddr / effectiveStartPixel via fullWidthFold) |
+| lockSeed   | deriveInterLockSeed| 0x04 \|\| interlock_nonce (17 / 33 / 65 B, feeding 13 B 0x03 rank fill and 0x06 Layer II slot shifts) | full-width Rank Barrier per-chunk mask key and Layer II cross-lane slot shifts Σ_ℓ (laneSlotShift via fullWidthFold) |
 
 Every one of the 8 seeds consumes the nonce pair (`setBrokenTestNonce` perturbs both `main_nonce` and `interlock_nonce` jointly). A 1-bit nonce Δ perturbs
 ALL 8 seed-derived outputs simultaneously — fundamentally different
@@ -76,27 +76,27 @@ decision path.
 The barrier's related-nonce diffusion property is **full
 absorption**:
 
-- **CRC128 matrix (24 cells)**: χ² 236.1 – 295.4, mean 259.4. Every
+- **CRC128 matrix (24 cells)**: χ² 224.9 – 310.0, mean 260.7. Every
   cell inside the df=255 uniform band (theoretical mean 255, one-sided
-  3σ top ≈ 323). Δ_over_no-Δ-floor: -42.2M (five orders of magnitude
+  3σ top ≈ 323). Δ_over_no-Δ-floor: -42.1M (five orders of magnitude
   below floor).
-- **FNV-1a matrix (24 cells)**: χ² 221.2 – 307.5, mean 257.2. Every
-  cell inside the df=255 uniform band. Δ_over_no-Δ-floor: -42.2M.
-- **No-Δ floor reference (Rank 2 methodology)**: CRC128 42.11M,
-  FNV-1a 42.23M — matches the related-seed floor within 1 %.
-- **Rank 2 lockSeed axis contrast**: CRC128 lockSeed-axis peak was 825.6,
-  FNV-1a 459.6. Rank 3 nonce Δ is TIGHTER than the Rank 2 lockSeed axis
-  (max 295 vs 826 CRC128, max 308 vs 460 FNV-1a) — consistent with the
+- **FNV-1a matrix (24 cells)**: χ² 229.4 – 289.8, mean 261.7. Every
+  cell inside the df=255 uniform band. Δ_over_no-Δ-floor: -42.0M.
+- **No-Δ floor reference (Rank 2 methodology)**: CRC128 42.09M,
+  FNV-1a 41.98M — matches the related-seed floor within 1 %.
+- **Rank 2 lockSeed axis contrast**: CRC128 lockSeed-axis peak was 357.1,
+  FNV-1a 337.4. Rank 3 nonce Δ is TIGHTER than the Rank 2 lockSeed axis
+  (max 310.0 vs 357.1 CRC128, max 289.8 vs 337.4 FNV-1a) — consistent with the
   "SUPERSET" prediction that the additional 7 seed-derivation
   perturbations further randomise touched-pixel bytes on top of the
   lockSeed-routed interlock re-derivation.
 
 Δ pattern sensitivity is negligible: max χ² across the six systematic
-bit positions varies by 4-9 % within each primitive — none of
+bit positions varies by 7-9 % within each primitive — none of
 {bit_low, byte_msb, word_boundary, bit_mid, byte_high_lsb, bit_high}
 is dominant. Plaintext-kind sensitivity is negligible as well: random
-and ASCII plaintexts produce comparable χ² per primitive (mean 258 vs
-256 CRC128, 252 vs 244 FNV-1a).
+and ASCII plaintexts produce comparable χ² per primitive (mean 263.4 vs
+258.0 CRC128, 259.6 vs 263.9 FNV-1a).
 
 ## Reproduction
 

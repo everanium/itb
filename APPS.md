@@ -43,14 +43,14 @@ In networked protocols such as end-to-end encrypted (E2EE) messaging, peers esta
 
 | Slot Index | Canonical Seed Role | Subsystem Function |
 |---|---|---|
-| `masters[0]` | `noiseSeed` | Per-pixel 3-bit noise-position selector (`noiseFold3`, per-pixel `LE32(idx) ‖ nonce`) |
-| `masters[1]` | `lockSeed` | Per-chunk **Rank Barrier** permutation (`48`-bit or `168`-bit under `Interlock = "168"`, tags `0x03` / `0x04`) and Layer II cross-lane chunk-slot desynchronization (`Desync`, tag `0x06`) |
-| `masters[2]` | `dataSeed1` | Region 0 **Pixel Barrier** channel XOR and bit-rotation stream (per-pixel `LE32(idx) ‖ nonce`) |
-| `masters[3]` | `dataSeed2` | Region 1 **Pixel Barrier** channel XOR and bit-rotation stream (per-pixel `LE32(idx) ‖ nonce`) |
-| `masters[4]` | `dataSeed3` | Region 2 **Pixel Barrier** channel XOR and bit-rotation stream (per-pixel `LE32(idx) ‖ nonce`) |
-| `masters[5]` | `startSeed1` | Region 0 container start-pixel offset (`0x02`) and Layer I dynamic sub-region trajectory schedule (`Desync`, tag `0x05`) |
-| `masters[6]` | `startSeed2` | Region 1 container start-pixel offset (`0x02`) and Layer I dynamic sub-region trajectory schedule (`Desync`, tag `0x05`) |
-| `masters[7]` | `startSeed3` | Region 2 container start-pixel offset (`0x02`) and Layer I dynamic sub-region trajectory schedule (`Desync`, tag `0x05`) |
+| masters[0] | noiseSeed | Per-pixel 3-bit noise-position selector (noiseFold3, per-pixel LE32(idx) ‖ nonce) |
+| masters[1] | lockSeed | Per-chunk **Rank Barrier** permutation (48-bit or 168-bit under Interlock = "168", tags 0x03 / 0x04) and Layer II cross-lane chunk-slot desynchronization (tag 0x06) |
+| masters[2] | dataSeed1 | Region 0 **Pixel Barrier** channel XOR and bit-rotation stream (per-pixel LE32(idx) ‖ nonce) |
+| masters[3] | dataSeed2 | Region 1 **Pixel Barrier** channel XOR and bit-rotation stream (per-pixel LE32(idx) ‖ nonce) |
+| masters[4] | dataSeed3 | Region 2 **Pixel Barrier** channel XOR and bit-rotation stream (per-pixel LE32(idx) ‖ nonce) |
+| masters[5] | startSeed1 | Region 0 container start-pixel offset (0x02) and Layer I dynamic sub-region trajectory schedule (tag 0x05) |
+| masters[6] | startSeed2 | Region 1 container start-pixel offset (0x02) and Layer I dynamic sub-region trajectory schedule (tag 0x05) |
+| masters[7] | startSeed3 | Region 2 container start-pixel offset (0x02) and Layer I dynamic sub-region trajectory schedule (tag 0x05) |
 
 Running eight separate asymmetric key exchanges per epoch is prohibitive in packet size and latency. Instead, an application runs **three parallel asymmetric KEM channels** chosen from mathematically orthogonal hardness assumptions and expands their three shared secrets into `masters[0..7]` through a two-stage **`3-to-8` Tri-KDF XOR-Fold**:
 

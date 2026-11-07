@@ -275,7 +275,7 @@ def pixelPostCCAConfigs : Nat := 7 * 2 ^ 56
 def pixelBitFieldSpace : Nat := 2 ^ 62
 
 /--
-  Exact integer brackets for the per-pixel semantic configuration spaces (`SCIENCE.md § 1.2.2`,
+  Exact integer brackets for the per-pixel semantic configuration spaces (`SCIENCE.md § 1.2.3`,
   `SECURITY.md § 3`):
   - Pre-CCA semantic configurations: `8 * 7 * 2^56 = 4035225266123964416`, satisfying
     `2^61 < pixelSemanticConfigs < 2^62` (`log₂(56 · 2^56) ≈ 61.807` bits, within the 62-bit field `2^62`).

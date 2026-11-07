@@ -173,21 +173,21 @@ func Registry(f *Figures) []Expectation {
 			w("theo_side", plain(t.Side)), w("theo_side", plain(t.Side)), w("theo_P", plain(t.P))),
 		expect("SCIENCE.md", `^\| MinPixels enforcement \| `+num+` joint → `+num+` \| 3`+x+num+` = `+num+` → `+num+` \| `+num+` → `+num+` \|$`,
 			w("minpixels_1024", plain(mp)), w("m2_P", plain(b.P)), w("minpixels_1024", plain(mp)), w("m1_floor_px", comma(a.FloorPixels)), w("m1_P", comma(a.P)), w("minpixels_1024", plain(mp)), w("theo_P", plain(t.P))),
-		expect("SCIENCE.md", "^\\| Noise barrier \\(`2\\^\\(8P\\)`\\) \\| "+p2+` \| `+p2+` \| `+p2+` \|$`,
+		expect("SCIENCE.md", `^\| Noise barrier \(2\^\(8P\)\) \| `+p2+` \| `+p2+` \| `+p2+` \|$`,
 			w("noise_m2", pow2c(noiseBarrier(b.P))), w("noise_m1", pow2c(noiseBarrier(a.P))), w("noise_theo", pow2c(noiseBarrier(t.P)))),
-		expect("SCIENCE.md", "^\\| Encoding ambiguity `56\\^P` \\(No CCA\\) \\| "+p2+` \| `+p2+` \| `+p2+` \|$`,
+		expect("SCIENCE.md", `^\| Encoding ambiguity 56\^P \(No CCA\) \| `+p2+` \| `+p2+` \| `+p2+` \|$`,
 			w("nocca_m2", pow2c(nocca(b.P))), w("nocca_m1", pow2c(nocca(a.P))), w("nocca_theo", pow2c(nocca(t.P)))),
-		expect("SCIENCE.md", "^\\| Encoding ambiguity `7\\^P` \\(Under CCA\\) \\| "+p2+` \| `+p2+` \| `+p2+` \|$`,
+		expect("SCIENCE.md", `^\| Encoding ambiguity 7\^P \(Under CCA\) \| `+p2+` \| `+p2+` \| `+p2+` \|$`,
 			w("cca_m2", pow2c(cca(b.P))), w("cca_m1", pow2c(cca(a.P))), w("cca_theo", pow2c(cca(t.P)))),
 		expect("SCIENCE.md", `^\| DRBG residue \(Theorem 10\) \| ≥ `+num+` bytes \(s = `+num+`; `+num+` B at floor\) \| ≥ `+num+` bytes \(s = `+num+`; `+num+` B at floor\) \| ≥ `+num+` bytes \(s = `+num+`; `+num+` B at floor\) \|$`,
 			w("m2_residue", plain(b.Residue)), w("m2_s", plain(b.Side-1)), w("m2_residue_floor", plain(b.ResidueAtFloor)),
 			w("m1_residue", plain(a.Residue)), w("m1_s", plain(a.Side-1)), w("m1_residue_floor", plain(a.ResidueAtFloor)),
 			w("theo_residue", plain(t.Residue)), w("theo_s", plain(t.Side-1)), w("theo_residue_floor", plain(t.ResidueAtFloor))),
-		expect("SCIENCE.md", "^\\| Config map space \\(`2\\^\\(62P\\)`\\) \\| "+p2+` \| `+p2+` \| `+p2+` \|$`,
+		expect("SCIENCE.md", `^\| Config map space \(2\^\(62P\)\) \| `+p2+` \| `+p2+` \| `+p2+` \|$`,
 			w("config_m2", pow2c(configMap(b.P))), w("config_m1", pow2c(configMap(a.P))), w("config_theo", pow2c(configMap(t.P)))),
-		expect("SCIENCE.md", `^\| Mask-space cardinality \(`+"`"+`A₁₆₈ · B₁₆₈`+"`"+`, 168-bit\) \| ≈ `+p2d+` \| ≈ `+p2d+` \| ≈ `+p2d+` \|$`,
+		expect("SCIENCE.md", `^\| Mask-space cardinality \(A₁₆₈ · B₁₆₈, 168-bit\) \| ≈ `+p2d+` \| ≈ `+p2d+` \| ≈ `+p2d+` \|$`,
 			w("log2_AB168", "2^"+log2AB168), w("log2_AB168", "2^"+log2AB168), w("log2_AB168", "2^"+log2AB168)),
-		expect("SCIENCE.md", `^\| PRF-preimages per mask triple \(168-bit, `+"`"+`2\^512`+"`"+`\) \| ≈ `+p2d+` \| ≈ `+p2d+` \| ≈ `+p2d+` \|$`,
+		expect("SCIENCE.md", `^\| PRF-preimages per mask triple \(168-bit, 2\^512\) \| ≈ `+p2d+` \| ≈ `+p2d+` \| ≈ `+p2d+` \|$`,
 			w("log2_preimages168", "2^"+log2Pre168), w("log2_preimages168", "2^"+log2Pre168), w("log2_preimages168", "2^"+log2Pre168)),
 		expect("SCIENCE.md", `^\| Distinguisher sample budget \(168-bit\) \| ≈ `+p2d+` chunks \(~`+p2+` msgs\) \| ≈ `+p2d+` chunks \(~`+p2+` msgs\) \| ≈ `+p2d+` chunks \(~`+p2+` msgs\) \|$`,
 			w("sample_budget168", "2^"+budget168), w("log2_messages168", msgs168),
@@ -238,7 +238,7 @@ func Registry(f *Figures) []Expectation {
 			w(fmt.Sprintf("minpixels_%d", k), plain(f.MinPixels[k])), w(fmt.Sprintf("minpixels_kb_%d", k), kb(f.MinPixels[k]*itb.DataBitsPerChannel))))
 	}
 	ambRow := func(label string, P int, pf func(int) string) Expectation {
-		return expect("SCIENCE.md", `^\| `+label+` \| `+num+" \\| `"+p2+"` \\| "+dec+"× \\| `"+p2+"` \\| "+dec+`× \|$`,
+		return expect("SCIENCE.md", `^\| `+label+` \| `+num+" \\| "+p2+" \\| "+dec+"× \\| "+p2+" \\| "+dec+`× \|$`,
 			w("P", pf(P)), w("cca", pow2c(cca(P))), w("cca_vs_key", ratioBare(float64(cca(P))/1024)),
 			w("nocca", pow2c(nocca(P))), w("nocca_vs_key", ratioBare(float64(nocca(P))/1024)))
 	}
@@ -257,7 +257,7 @@ func Registry(f *Figures) []Expectation {
 		ambRow(`1 MB`, s1m.P, comma),
 		expect("SCIENCE.md", "At 64 KB, encoding ambiguity alone is `"+p2+"`, whose exponent is "+dec+`× the 1024-bit key-space exponent. No computational model can perform \*\*blind enumeration\*\* of `+"`"+p2+"`",
 			w("cca_64KiB", pow2c(cca(s64k.P))), w("cca_64KiB_vs_key", fixed(float64(cca(s64k.P))/1024, 1)), w("cca_64KiB", pow2c(cca(s64k.P)))),
-		expect("SCIENCE.md", "At 64 MB \\(`P ≈ "+dec+" × 10⁶`\\), each candidate costs ~"+num+" million hash calls",
+		expect("SCIENCE.md", "At 64 MB \\(`P ≈ "+dec+" × 10⁶`\\), each candidate costs ~"+num+" million pixel-level hash calls",
 			w("P_64MiB_sci", fixed(float64(s64m.P)/1e6, 1)), w("hash_calls_64MiB_millions", plain(int(math.Round(float64(s64m.P*2*chainRounds(1024))/1e6))))),
 		expect("SCIENCE.md", "Wire format: `prefix \\("+num+" bytes\\) ‖ main_nonce \\(N bytes\\) ‖ W \\(2 bytes\\) ‖ H \\(2 bytes\\) ‖ W × H × 8 raw RGBWYOPA` for a Single Message, with one chunk header of `N \\+ 4` bytes \\(`N` = the configured nonce width in bytes; default `DefaultNonceBits = "+num+"` bits, `N = "+num+"`\\)",
 			w("prefix", plain(f.Prefix)), w("nonce_bits", plain(f.NonceBits)), w("nonce_bytes", plain(f.NonceBytes))),
@@ -314,7 +314,7 @@ func Registry(f *Figures) []Expectation {
 			w("cca_leak_pct", fixed(100*float64(itb.NoiseConfigBits)/float64(itb.NoiseConfigBits+itb.DataConfigBits), 1))),
 	)
 	for _, k := range []int{1024, 2048} {
-		add(expect("PROOFS.md", fmt.Sprintf("^\\| %d-bit \\| `P_region ≥ ", k)+num+" pixels` \\| `P_region ≥ "+num+" pixels` \\|$",
+		add(expect("PROOFS.md", fmt.Sprintf(`^\| %d-bit \| P_region ≥ `, k)+num+` pixels \| P_region ≥ `+num+` pixels \|$`,
 			w(fmt.Sprintf("minpixels_%d", k), plain(f.MinPixels[k])), w(fmt.Sprintf("threshold_nocca_%d", k), plain(f.ThresholdNoCCA[k]))))
 	}
 	add(
@@ -354,25 +354,25 @@ func Registry(f *Figures) []Expectation {
 			w("gcd168", gcd168Plain), w("gcd168_factors", f.GCD168Factors)),
 		expect("PROOFS.md", `^\(.log₂ ≈ `+dec+`., .1 / `+num+` ≈ ([\d.]+ × 10⁻..).\), structurally excluding all but a .([\d.]+ × 10⁻..). fraction of .A₁₆₈ × B₁₆₈. \(a .`+dec+`.-bit erosion\).*with .⌊2\^512 / \(A₁₆₈ · B₁₆₈\)⌋ ≈ `+p2d+`. preimages per pair`,
 			w("log2_gcd168", log2GCD168), w("gcd168", gcd168Plain), w("inv_gcd168", sci(invGCD168, 1)), w("inv_gcd168", sci(invGCD168, 1)), w("log2_gcd168", log2GCD168), w("log2_preimages168", "2^"+log2Pre168)),
-		expect("PROOFS.md", `^\| .A. \(.m0. choices\) \| .C\(48, 16\) = `+num+`. \(.log₂ ≈ `+dec+`.\) \| .C\(168, 56\) = `+num+`. \(.log₂ ≈ `+dec+`.\) \|$`,
+		expect("PROOFS.md", `^\| A \(m0 choices\) \| C\(48, 16\) = `+num+` \(log₂ ≈ `+dec+`\) \| C\(168, 56\) = `+num+` \(log₂ ≈ `+dec+`\) \|$`,
 			w("A", commaBig(f.A)), w("log2_A", fixed(f.Log2A, 2)), w("A168", commaBig(f.A168)), w("log2_A168", log2A168)),
-		expect("PROOFS.md", `^\| .B. \(.m1. choices\) \| .C\(32, 16\) = `+num+`. \(.log₂ ≈ `+dec+`.\) \| .C\(112, 56\) = `+num+`. \(.log₂ ≈ `+dec+`.\) \|$`,
+		expect("PROOFS.md", `^\| B \(m1 choices\) \| C\(32, 16\) = `+num+` \(log₂ ≈ `+dec+`\) \| C\(112, 56\) = `+num+` \(log₂ ≈ `+dec+`\) \|$`,
 			w("B", commaBig(f.B)), w("log2_B", fixed(f.Log2B, 2)), w("B168", commaBig(f.B168)), w("log2_B168", log2B168)),
-		expect("PROOFS.md", `^\| Mask space .\\\|Ω_chunk\\\| = A · B. \| .≈ `+p2d+`. \| .≈ `+p2d+`. \|$`,
+		expect("PROOFS.md", `^\| Mask space \\\|Ω_chunk\\\| = A · B \| ≈ `+p2d+` \| ≈ `+p2d+` \|$`,
 			w("log2_AB", "2^"+log2AB), w("log2_AB168", "2^"+log2AB168)),
-		expect("PROOFS.md", `^\| Anti-collapse .gcd\(A, B\). \| .`+num+` = (.+?). \(.log₂ ≈ `+dec+`., .1/gcd ≈ ([\d.]+ × 10⁻.).\) \| .`+num+` = (.+?). \(.log₂ ≈ `+dec+`., .1/gcd ≈ ([\d.]+ × 10⁻..).\) \|$`,
+		expect("PROOFS.md", `^\| Anti-collapse gcd\(A, B\) \| `+num+` = (.+?) \(log₂ ≈ `+dec+`, 1/gcd ≈ ([\d.]+ × 10⁻.)\) \| `+num+` = (.+?) \(log₂ ≈ `+dec+`, 1/gcd ≈ ([\d.]+ × 10⁻..)\) \|$`,
 			w("gcd", plain(gcd)), w("gcd_factors", f.GCDFactors), w("log2_gcd", fixed(f.Log2GCD, 2)), w("inv_gcd", sci(invGCD, 1)),
 			w("gcd168", gcd168Plain), w("gcd168_factors", f.GCD168Factors), w("log2_gcd168", log2GCD168), w("inv_gcd168", sci(invGCD168, 1))),
-		expect("PROOFS.md", `^\| Unrank input width / preimages \| .128.-bit \(.⌊2\^128 / \(A · B\)⌋ ≈ `+p2d+`.\) \| .512.-bit \(.⌊2\^512 / \(A₁₆₈ · B₁₆₈\)⌋ ≈ `+p2d+`.\) \|$`,
+		expect("PROOFS.md", `^\| Unrank input width / preimages \| 128-bit \(⌊2\^128 / \(A · B\)⌋ ≈ `+p2d+`\) \| 512-bit \(⌊2\^512 / \(A₁₆₈ · B₁₆₈\)⌋ ≈ `+p2d+`\) \|$`,
 			w("log2_preimages", "2^"+log2Pre), w("log2_preimages168", "2^"+log2Pre168)),
-		expect("PROOFS.md", `^\| Compatible masks per 1-chunk crib \| .≈ `+p2d+`. \(.48.-bit / .6. B crib\) \| .≈ `+p2d+`. \(.168.-bit / .21. B crib\) \|$`,
+		expect("PROOFS.md", `^\| Compatible masks per 1-chunk crib \| ≈ `+p2d+` \(48-bit / 6 B crib\) \| ≈ `+p2d+` \(168-bit / 21 B crib\) \|$`,
 			w("masks_per_crib", crib48), w("masks_per_crib168", crib168)),
-		expect("PROOFS.md", `^\| Per-chunk bias \| .≈ (2\^-\d+\.\d). \| .≈ (2\^-\d+\.\d). \|$`,
+		expect("PROOFS.md", `^\| Per-chunk bias \| ≈ (2\^-\d+\.\d) \| ≈ (2\^-\d+\.\d) \|$`,
 			w("bias", "2^"+bias), w("bias168", "2^"+bias168)),
-		expect("PROOFS.md", `^\| Max chunks in 64 MiB / accumulated bias \| .`+num+`. \(.≈ `+p2d+`.\) / .≈ (2\^-\d+\.\d). \| .`+num+`. \(.≈ `+p2d+`.\) / .≈ (2\^-\d+\.\d). \|$`,
+		expect("PROOFS.md", `^\| Max chunks in 64 MiB / accumulated bias \| `+num+` \(≈ `+p2d+`\) / ≈ (2\^-\d+\.\d) \| `+num+` \(≈ `+p2d+`\) / ≈ (2\^-\d+\.\d) \|$`,
 			w("max_chunks", comma(f.MaxChunks)), w("log2_chunks", "2^"+chunks), w("accum_bias", "2^"+accum),
 			w("max_chunks168", comma(f.MaxChunks168)), w("log2_chunks168", "2^"+chunks168), w("accum_bias168", "2^"+accum168)),
-		expect("PROOFS.md", `^\| Distinguisher sample budget \(.1 / ε².\) \| .≈ `+p2d+`. chunks \(.~`+p2+`. max messages\) \| .≈ `+p2d+`. chunks \(.~`+p2+`. max messages\) \|$`,
+		expect("PROOFS.md", `^\| Distinguisher sample budget \(1 / ε²\) \| ≈ `+p2d+` chunks \(~`+p2+` max messages\) \| ≈ `+p2d+` chunks \(~`+p2+` max messages\) \|$`,
 			w("sample_budget", "2^"+budget), w("log2_messages", "2^"+fixed(math.Round(f.Log2Messages), 0)),
 			w("sample_budget168", "2^"+budget168), w("log2_messages168", msgs168)),
 		expect("PROOFS.md", `removes noise bits \(`+dec+`% of container\)\. The remaining `+dec+`% contains data bits`,
@@ -480,26 +480,26 @@ func Registry(f *Figures) []Expectation {
 			w("accum_bias168", "2^"+accum168)),
 		expect("ITB.md", `^- \*\*Statistical distinguisher sample budget \(.1 / ε².\):\*\* .≈ `+p2d+`. chunk samples \(.~`+p2+`. maximum-size 64 MiB messages\)\.$`,
 			w("sample_budget168", "2^"+budget168), w("log2_messages168", msgs168)),
-		expect("ITB.md", `^\| \*\*Choice count .A. \(.m0.\)\*\* \| .C\(48, 16\) = `+num+`. \(.log₂ ≈ `+dec+`.\) \| .C\(168, 56\) ≈ ([\d.]+ × 10..). \(.log₂ ≈ `+dec+`.\) \|$`,
+		expect("ITB.md", `^\| \*\*Choice count A \(m0\)\*\* \| C\(48, 16\) = `+num+` \(log₂ ≈ `+dec+`\) \| C\(168, 56\) ≈ ([\d.]+ × 10..) \(log₂ ≈ `+dec+`\) \|$`,
 			w("A", commaBig(f.A)), w("log2_A", fixed(f.Log2A, 2)), w("A168_sci", sci(math.Exp2(f.Log2A168), 2)), w("log2_A168", log2A168)),
-		expect("ITB.md", `^\| \*\*Choice count .B. \(.m1.\)\*\* \| .C\(32, 16\) = `+num+`. \(.log₂ ≈ `+dec+`.\) \| .C\(112, 56\) ≈ ([\d.]+ × 10..). \(.log₂ ≈ `+dec+`.\) \|$`,
+		expect("ITB.md", `^\| \*\*Choice count B \(m1\)\*\* \| C\(32, 16\) = `+num+` \(log₂ ≈ `+dec+`\) \| C\(112, 56\) ≈ ([\d.]+ × 10..) \(log₂ ≈ `+dec+`\) \|$`,
 			w("B", commaBig(f.B)), w("log2_B", fixed(f.Log2B, 2)), w("B168_sci", sci(math.Exp2(f.Log2B168), 2)), w("log2_B168", log2B168)),
-		expect("ITB.md", `^\| \*\*Mask space .\\\|Ω_chunk\\\| = A · B.\*\* \| .≈ `+p2d+`. \| .≈ `+p2d+`.`,
+		expect("ITB.md", `^\| \*\*Mask space \\\|Ω_chunk\\\| = A · B\*\* \| ≈ `+p2d+` \| ≈ `+p2d,
 			w("log2_AB", "2^"+log2AB), w("log2_AB168", "2^"+log2AB168)),
-		expect("ITB.md", `^\| \*\*Anti-collapse .gcd\(A, B\).\*\* \| .`+num+`. \(.log₂ ≈ `+dec+`., .1/gcd ≈ ([\d.]+ × 10⁻.).\) \| .`+num+`. \(.log₂ ≈ `+dec+`., .1/gcd ≈ ([\d.]+ × 10⁻..).\) \|$`,
+		expect("ITB.md", `^\| \*\*Anti-collapse gcd\(A, B\)\*\* \| `+num+` \(log₂ ≈ `+dec+`, 1/gcd ≈ ([\d.]+ × 10⁻.)\) \| `+num+` \(log₂ ≈ `+dec+`, 1/gcd ≈ ([\d.]+ × 10⁻..)\) \|$`,
 			w("gcd", comma(gcd)), w("log2_gcd", fixed(f.Log2GCD, 2)), w("inv_gcd", sci(invGCD, 1)),
 			w("gcd168", gcd168Comma), w("log2_gcd168", log2GCD168), w("inv_gcd168", sci(invGCD168, 1))),
-		expect("ITB.md", `^\| \*\*Preimages per mask triple\*\* \| .⌊2\^128 / \(A · B\)⌋ ≈ `+p2d+`. \| .⌊2\^512 / \(A₁₆₈ · B₁₆₈\)⌋ ≈ `+p2d+`. \|$`,
+		expect("ITB.md", `^\| \*\*Preimages per mask triple\*\* \| ⌊2\^128 / \(A · B\)⌋ ≈ `+p2d+` \| ⌊2\^512 / \(A₁₆₈ · B₁₆₈\)⌋ ≈ `+p2d+` \|$`,
 			w("log2_preimages", "2^"+log2Pre), w("log2_preimages168", "2^"+log2Pre168)),
-		expect("ITB.md", `^\| \*\*Compatible masks per crib chunk\*\* \| .≈ `+p2d+`. \(.≈ `+p2+`.\) \| .≈ `+p2d+`. \(.≈ `+p2+`.\) \|$`,
+		expect("ITB.md", `^\| \*\*Compatible masks per crib chunk\*\* \| ≈ `+p2d+` \(≈ `+p2+`\) \| ≈ `+p2d+` \(≈ `+p2+`\) \|$`,
 			w("masks_per_crib", crib48), w("masks_per_crib_floor", crib48Floor), w("masks_per_crib168", crib168), w("masks_per_crib168_floor", crib168Floor)),
-		expect("ITB.md", `^\| \*\*Per-chunk bias\*\* \| .≈ (2\^-\d+\.\d). \| .≈ (2\^-\d+\.\d). \|$`,
+		expect("ITB.md", `^\| \*\*Per-chunk bias\*\* \| ≈ (2\^-\d+\.\d) \| ≈ (2\^-\d+\.\d) \|$`,
 			w("bias", "2^"+bias), w("bias168", "2^"+bias168)),
-		expect("ITB.md", `^\| \*\*Max chunks in 64 MiB message\*\* \| .`+num+`. \(.≈ `+p2d+`.\) \| .`+num+`. \(.≈ `+p2d+`.\) \|$`,
+		expect("ITB.md", `^\| \*\*Max chunks in 64 MiB message\*\* \| `+num+` \(≈ `+p2d+`\) \| `+num+` \(≈ `+p2d+`\) \|$`,
 			w("max_chunks", comma(f.MaxChunks)), w("log2_chunks", "2^"+chunks), w("max_chunks168", comma(f.MaxChunks168)), w("log2_chunks168", "2^"+chunks168)),
-		expect("ITB.md", `^\| \*\*Accumulated bias \(64 MiB\)\*\* \| .≈ (2\^-\d+\.\d). \| .≈ (2\^-\d+\.\d). \|$`,
+		expect("ITB.md", `^\| \*\*Accumulated bias \(64 MiB\)\*\* \| ≈ (2\^-\d+\.\d) \| ≈ (2\^-\d+\.\d) \|$`,
 			w("accum_bias", "2^"+accum), w("accum_bias168", "2^"+accum168)),
-		expect("ITB.md", `^\| \*\*Distinguisher sample budget \(.1/ε².\)\*\* \| .~`+p2d+`. chunks \(.~`+p2+`. max messages\) \| .≈ `+p2d+`. chunks \(.~`+p2+`. max messages;`,
+		expect("ITB.md", `^\| \*\*Distinguisher sample budget \(1/ε²\)\*\* \| ~`+p2d+` chunks \(~`+p2+` max messages\) \| ≈ `+p2d+` chunks \(~`+p2+` max messages;`,
 			w("sample_budget", "2^"+budget), w("log2_messages", "2^"+fixed(math.Round(f.Log2Messages), 0)),
 			w("sample_budget168", "2^"+budget168), w("log2_messages168", msgs168)),
 		expect("ITB.md", "requires `2\\^\\(62·P\\)` attempts \\(≈ "+p2+" for 1024-bit keys\\)", w("config_m1", pow2(configMap(a.P)))),
@@ -545,12 +545,21 @@ func Registry(f *Figures) []Expectation {
 			w("expansion_m1_2500B", ex(a.Wire, 2500, 0)), w("expansion_m1_500B", ex(a.Wire, 500, 0)),
 			w("expansion_m2_2500B", ex(b.Wire, 2500, 1)), w("expansion_m2_500B", ex(b.Wire, 500, 0))),
 		expect("README.md", `^\| Key space \| Up to `+p2+` \|$`, w("max_key_space", pow2(itb.MaxKeyBits))),
-		expect("README.md", `^\| \*\*Rank Barrier \(168-bit Interlock\)\*\* \| 21-byte chunk → 3 × 56-bit lanes; .C\(168,56\)·C\(112,56\) ≈ `+p2d+`. mask space; bias .≈ (2\^-\d+\.\d).;`,
+		expect("README.md", `^\| \*\*Desynchronized Interlocked Barrier\*\* \| Layer I \(0x05 on startSeed1\.\.3\) dynamic K_r sub-region trajectories \(≈ `+p2d+` Mode 2 / ≈ `+p2d+` Mode 1 at K_r = 8 on 1024-bit ITB floors\) \+ Layer II \(0x06 on lockSeed\) cross-lane slot desynchronization \(β_0 ≠ β_1, \\\|Ω_chunk\\\| · M\^3 ≈ `+p2d+`–`+p2d+` in 48-bit and ≈ `+p2d+`–`+p2d+` in 168-bit, or ≈ `+p2d+`–`+p2d+` and ≈ `+p2d+`–`+p2d+` with 4 B fold at 1024-bit ITB floors\); 0 B wire overhead \| Stable \|$`,
+			w("desync_traj_mode2_k8", "2^166.98"), w("desync_traj_mode1_k8", "2^224.04"),
+			w("desync_lane48_mode2", "2^96.91"), w("desync_lane48_mode1", "2^101.53"),
+			w("desync_lane168_mode2", "2^279.89"), w("desync_lane168_mode1", "2^284.51"),
+			w("desync_lane48_fold_mode2", "2^128.91"), w("desync_lane48_fold_mode1", "2^133.53"),
+			w("desync_lane168_fold_mode2", "2^311.89"), w("desync_lane168_fold_mode1", "2^316.51")),
+		expect("README.md", `^\| \*\*Rank Barrier \(168-bit Interlock\)\*\* \| 21-byte chunk → 3 × 56-bit lanes; C\(168,56\)·C\(112,56\) ≈ `+p2d+` mask space; bias ≈ (2\^-\d+\.\d);`,
 			w("log2_AB168", "2^"+log2AB168), w("bias168", "2^"+bias168)),
-		expect("README.md", `^\| \*\*Rank Barrier \(48-bit Interlock, default\)\*\* \| 6-byte chunk → 3 × 16-bit lanes; .C\(48,16\)·C\(32,16\) ≈ `+p2d+`. mask space; bias .≈ (2\^-\d+\.\d).;`,
+		expect("README.md", `^\| \*\*Rank Barrier \(48-bit Interlock, default\)\*\* \| 6-byte chunk → 3 × 16-bit lanes; C\(48,16\)·C\(32,16\) ≈ `+p2d+` mask space; bias ≈ (2\^-\d+\.\d);`,
 			w("log2_AB", "2^"+log2AB), w("bias", "2^"+bias)),
-		expect("README.md", `^\| Rank Barrier \| Always on; per-chunk 48-bit keyed permutation over three regions \(.C\(48, 16\) · C\(32, 16\) ≈ `+p2d+`. balanced partitions, bias .≈ (2\^-\d+\.\d).\), or optional 168-bit permutation for 512-bit primitives \(.C\(168, 56\) · C\(112, 56\) ≈ `+p2d+`. balanced partitions, bias .≈ (2\^-\d+\.\d).\) \|$`,
+		expect("README.md", `^\| Rank Barrier \| Per-chunk 48-bit keyed permutation over three regions \(C\(48, 16\) · C\(32, 16\) ≈ `+p2d+` balanced partitions, bias ≈ (2\^-\d+\.\d)\), or optional 168-bit permutation for 512-bit primitives \(C\(168, 56\) · C\(112, 56\) ≈ `+p2d+` balanced partitions, bias ≈ (2\^-\d+\.\d)\) \|$`,
 			w("log2_AB", "2^"+log2AB), w("bias", "2^"+bias), w("log2_AB168", "2^"+log2AB168), w("bias168", "2^"+bias168)),
+		expect("README.md", `^\| Pixel Barrier \| `+num+`-channel RGBWYOPA pixels \(`+num+` data bits \+ `+num+` noise bits per pixel across `+num+` channels, with per-pixel `+num+`-bit XOR masking, secret `+num+`-way bit rotation yielding 7\^P CCA-surviving configurations, and CSPRNG-seeded DRBG noise; Mode 1 per-region and Mode 2 per-container ambiguity floors\) \|$`,
+			w("channels", plain(itb.Channels)), w("data_bits_per_pixel", plain(itb.DataBitsPerPixel)), w("noise_bits_per_pixel", plain(itb.Channels)),
+			w("channels", plain(itb.Channels)), w("data_bits_per_pixel", plain(itb.DataBitsPerPixel)), w("rotation_way", plain(itb.DataBitsPerChannel))),
 		expect("README.md", `The partition constants are .A₁₆₈ = C\(168, 56\) = `+num+`. \(.log₂ ≈ `+dec+`.\) and .B₁₆₈ = C\(112, 56\) = `+num+`. \(.log₂ ≈ `+dec+`.\), yielding a per-chunk mask space of .\|Ω_chunk,168\| = A₁₆₈ · B₁₆₈ = `+num+` ≈ `+p2d+`. balanced partitions\. With .⌊2\^512 / \(A₁₆₈ · B₁₆₈\)⌋ ≈ `+p2d+`. preimages per mask triple, the per-chunk bias is .≈ (2\^-\d+\.\d). \(.≈ (2\^-\d+\.\d). accumulated across a maximum 64 MiB message of .`+num+` ≈ `+p2d+`. chunks, requiring .1 / ε² ≈ `+p2d+`. chunk samples or .~`+p2+`. maximum-size messages for a statistical distinguisher\), and a single 168-bit \(21-byte\) crib leaves .≈ `+p2d+`. \(.≈ `+p2+`.\) compatible mask triples\.`,
 			w("A168", commaBig(f.A168)), w("log2_A168", log2A168), w("B168", commaBig(f.B168)), w("log2_B168", log2B168),
 			w("AB168", commaBig(f.AB168)), w("log2_AB168", "2^"+log2AB168), w("log2_preimages168", "2^"+log2Pre168),
@@ -721,7 +730,7 @@ func Registry(f *Figures) []Expectation {
 	for _, file := range []string{"SCIENCE.md", "PROOFS.md", "SECURITY.md", "ITB.md", "FAQ.md", "REDTEAM.md", "POSTQUANTUM.md"} {
 		add(sweep(file, `(2\^5\d\.\d\d)`, w("log2_preimages", "2^"+log2Pre)))
 	}
-	for _, file := range []string{"SCIENCE.md", "PROOFS.md", "ITB.md", "FAQ.md", "REDTEAM.md", "POSTQUANTUM.md"} {
+	for _, file := range []string{"SCIENCE.md", "PROOFS.md", "ITB.md", "README.md", "FAQ.md", "REDTEAM.md", "POSTQUANTUM.md"} {
 		add(sweep(file, `(2\^-5\d\.\d)\b`, w("bias", "2^"+bias)))
 	}
 	for _, file := range []string{"SCIENCE.md", "PROOFS.md", "ITB.md", "REDTEAM.md", "POSTQUANTUM.md"} {
@@ -760,13 +769,17 @@ func Registry(f *Figures) []Expectation {
 		add(sweep(file, `\b(3,176,\d{3})\b`, w("entry_pixels_mode2", "3,176,523")))
 		add(sweep(file, `\b(68,083,\d{3})\b`, w("entry_pixels_mode1", "68,083,776")))
 	}
-	for _, file := range []string{"SCIENCE.md", "PROOFS.md", "SECURITY.md", "ITB.md", "POSTQUANTUM.md"} {
+	for _, file := range []string{"SCIENCE.md", "PROOFS.md", "SECURITY.md", "ITB.md", "POSTQUANTUM.md", "README.md", "REDTEAM.md"} {
 		add(sweep(file, `(2\^166\.\d\d)`, w("desync_traj_mode2_k8", "2^166.98")))
 		add(sweep(file, `(2\^224\.\d\d)`, w("desync_traj_mode1_k8", "2^224.04")))
 		add(sweep(file, `(2\^96\.\d\d)`, w("desync_lane48_mode2", "2^96.91")))
 		add(sweep(file, `(2\^101\.\d\d)`, w("desync_lane48_mode1", "2^101.53")))
+		add(sweep(file, `(2\^128\.\d\d)`, w("desync_lane48_fold_mode2", "2^128.91")))
+		add(sweep(file, `(2\^133\.\d\d)`, w("desync_lane48_fold_mode1", "2^133.53")))
 		add(sweep(file, `(2\^279\.\d\d)`, w("desync_lane168_mode2", "2^279.89")))
 		add(sweep(file, `(2\^284\.\d\d)`, w("desync_lane168_mode1", "2^284.51")))
+		add(sweep(file, `(2\^311\.\d\d)`, w("desync_lane168_fold_mode2", "2^311.89")))
+		add(sweep(file, `(2\^316\.\d\d)`, w("desync_lane168_fold_mode1", "2^316.51")))
 	}
 	add(
 		expect("lean/README.md",
@@ -776,7 +789,7 @@ func Registry(f *Figures) []Expectation {
 			w("lean_total_theorems", "270"),
 		),
 		expect("lean/README.md",
-			`\[`+"`ITB/Desync\\.lean`"+`\]\(ITB/Desync\.lean\) \(`+"`"+num+"`"+` theorems\)`,
+			`\[ITB/Desync\.lean\]\(ITB/Desync\.lean\) \(`+num+` theorems\)`,
 			w("lean_desync_theorems", "40"),
 		),
 	)

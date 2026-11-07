@@ -1,7 +1,7 @@
 ## ITB Related-Seed Differential Verification
 
 Related-seed differential diffusion of the shipped Triple Ouroboros +
-always-on 48-bit Interlocked Barrier + 8 mandatory seeds API, measured
+48-bit Interlocked Barrier + 8 mandatory seeds API, measured
 as the ciphertext-XOR byte-histogram χ² of a pair of encrypts that
 differ in one seed bit. Primitives under test: **CRC128** and **FNV-1a** on all 8
 seed roles (below-spec lab controls; each seed still gets an independent
@@ -58,9 +58,9 @@ JSON records for later cross-check, never in a decision path.
 The barrier's related-seed diffusion property is **confined to
 the lockSeed axis**:
 
-- **lockSeed axis, both primitives**: χ² ≈ 300-800 across the Δ
+- **lockSeed axis, both primitives**: χ² ≈ 236–357 across the Δ
   patterns the primitive carries into the masks and both plaintext
-  kinds — within a few multiples of the df=255 uniform band top. A 1-bit
+  kinds — within the df=255 uniform band (or just above its one-sided 3σ top ≈ 323). A 1-bit
   Δ on lockSeed re-derives the interlock's per-chunk permutation and Layer II cross-lane slot shifts
   entirely, avalanching the plaintext-byte-to-region split and
   randomising every touched pixel byte's 7 data bits. The bit_high
@@ -68,22 +68,21 @@ the lockSeed axis**:
   ChainHash round) is a null Δ under FNV-1a on the `0x04 → 0x03 / 0x06` cascade path: the flip
   survives `deriveInterLockSeed` at bit 127 and is cancelled when the
   `[K ‖ components]` cascade XORs the flipped component back in at its
-  last round, so that cell sits at the no-Δ floor (42.2M), not above it.
-  On the per-pixel dataSeed_i and `deriveStartPixel` (`0x02`) paths bit_high is a null Δ for both
-  primitives (`hLo` alone is consumed on those paths, whereas `Desync` Layer I `0x05` and Layer II `0x06` fold both `(hLo, hHi)` words via `fullWidthFold`; neither lab primitive
-  carries a high-word change into the low word); on the noiseSeed axis
+  last round, so that cell sits at the no-Δ floor (42.09M / 42.03M), not above it.
+  On the per-pixel dataSeed_i path bit_high is a null Δ for both
+  primitives (`hLo` alone is consumed on the per-pixel data path, sitting at 42.12M / 42.13M, whereas on `startSeed_i` Layer I `0x05` folds both `(hLo, hHi)` words via `fullWidthFold` without a cancelling primer round, diffusing `bit_high` on `startSeed_i` down to 18.57M–18.73M alongside `bit0` and `bit_mid`); on the noiseSeed axis
   the position mixes both words, so the same flip moves every noise
-  position and lands below the floor.
+  position and lands below the floor (5.88M–15.98M).
 - **Every other seed axis** (noiseSeed / dataSeed_i / startSeed_i):
-  χ² 6-42M range. **The no-Δ architectural floor** measured by
+  χ² 5.88M–42.13M range. **The no-Δ architectural floor** measured by
   `TestRedTeamRelatedSeedNoDeltaFloor` under identical seeds is
-  CRC128 42.2M / FNV-1a 42.2M. The per-axis peak does NOT exceed the
-  floor; Δ patterns that randomise the touched-region data bits
-  (bit0 / bit_mid) drop χ² BELOW the floor by diluting the noiseMask
+  CRC128 42.03M / FNV-1a 42.01M. The per-axis peak does NOT exceed the
+  floor within statistical variance; Δ patterns that randomise the touched-region data bits
+  (`bit0` / `bit_mid` on `dataSeed_i`, and all three Δ patterns on `startSeed_i`) drop χ² BELOW the floor (~18.6M–18.8M) by diluting the noiseMask
   signal, and every noiseSeed cell sits below the floor because the Δ
   moves the noise position of every pixel. No excess-over-floor signal
   on any non-lockSeed axis for either primitive.
-- **Positive control**: CRC128 42.5M / FNV-1a 42.6M via
+- **Positive control**: CRC128 42.53M / FNV-1a 42.63M via
   `process128Cfg` (one region, no barrier); the probe is sensitive.
 
 ## Reproduction

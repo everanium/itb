@@ -30,7 +30,7 @@ The tree splits into two compatibility bands:
   attribution source `redteam_broken_test.go` cites when it ports
   logic.
 
-The wire header shape is not a band discriminator. The always-on
+The wire header shape is not a band discriminator. The
 Interlocked Barrier and the 8-seed constellation are.
 
 The empirical validation for the shipped construction itself is
@@ -135,7 +135,7 @@ model. Reproduction commands are cited from REDTEAM.md.
 
 These consume the shipped wire directly — the corpus generator is
 `TestRedTeamGenerateTripleMassive` in `redteam_kl_test.go`, which emits
-on the shipped Triple + always-on Interlocked Barrier container.
+on the shipped Triple + Interlocked Barrier container.
 
 - `kl_massive.py` — KL floor on one large encryption, idealised
   alignment (startPixel read from the `.pixel` sidecar, plaintext XOR).

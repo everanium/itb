@@ -266,3 +266,7 @@ The package does not address master-key distribution; `GenerateMasterKey` exists
 - Not an integrity layer — see [Threat model](#threat-model).
 - Not a cryptographic upgrade over its strongest palette member — the contribution is vendor and jurisdictional diversity plus per-slot subkey isolation under `palette[0]` (see [What parallax does](#what-parallax-does)).
 - Not a substitute for ITB's content-deniability. ITB still provides the unconditional content-deniability against a wire-side adversary; parallax adds vendor-diversity on top of that property when configured with a mixed palette.
+
+## References
+
+- Ronald A. Fisher and Frank Yates, "Statistical Tables for Biological, Agricultural and Medical Research", Oliver and Boyd, 1938; Richard Durstenfeld, "Algorithm 235: Random permutation", Communications of the ACM, Vol. 7, No. 7, p. 420, July 1964, DOI: [10.1145/364520.364540](https://doi.org/10.1145/364520.364540).

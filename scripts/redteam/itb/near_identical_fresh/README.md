@@ -1,6 +1,6 @@
 ## ITB Fresh-Nonce Near-Identical Distinguisher Verification
 
-Empirical re-verification of the shipped (Triple Ouroboros + always-on
+Empirical re-verification of the shipped (Triple Ouroboros +
 48-bit Interlocked Barrier + 8-seed constellation) construction against
 a **cross-message near-identical distinguisher under fresh nonces**.
 Primitive under test: **FNV-1a** on all 8 seed roles (one below-spec
@@ -67,7 +67,7 @@ accumulates:
 The JSON record emitted to
 `~/scratch/redteam/near_identical_fresh/near_identical_fresh_matrix.json`
 also includes the nonce-reuse
-Layer A near-identical baseline at 512 B (~17.995× the 1/256 floor)
+Layer A near-identical baseline at 512 B (~18.0× the 1/256 floor)
 for a direct nonce-reuse vs fresh-nonce contrast.
 
 ## Attacker-realism scoping
@@ -114,7 +114,7 @@ via `REDTEAM_NEAR_IDENTICAL_FRESH_OUTPUT_DIR`.
 - The nonce-reuse Layer A verdict on the same near-identical pair
   shape (Layer A histogram under **forced nonce reuse**) is in
   [`REDTEAM.md § Nonce reuse (lab-only)`](../../../../REDTEAM.md#nonce-reuse-lab-only) —
-  byte-equal rate `0.019`–`0.063` (`4.9×`–`16×` floor) at 128–512 B on
+  byte-equal rate `0.027`–`0.070` (`6.8×`–`17.8×` floor) at 128–512 B on
   the near-identical pair shape.
 - The fresh-nonce CPA single-message wire result (FNV-1a↔BLAKE3
   homogeneity on chosen-plaintext single messages) is in

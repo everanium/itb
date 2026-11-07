@@ -563,7 +563,7 @@ theorem proof3b_xor_cancelling_two_rounds {Data : Type} {w : Nat}
 /-! ## Two-Stage Cascade Fill Round Counts (`4/8/16` vs `5/9/17`) and Primer Round Binding -/
 
 /--
-  Pixel Barrier `ChainHash` round count (`r = keyBits / width`), matching `SCIENCE.md § 1.2.1`.
+  Pixel Barrier `ChainHash` round count (`r = keyBits / width`), matching `SCIENCE.md § 1.2.3`.
 -/
 def pixelCascadeRounds (keyBits width : Nat) : Nat :=
   keyBits / width
@@ -576,7 +576,7 @@ def interlockCascadeRounds (keyBits width : Nat) : Nat :=
   1 + keyBits / width
 
 /--
-  Round-count invariant (`SCIENCE.md § 1.2.1`): the Rank Barrier cascade fill is
+  Round-count invariant (`SCIENCE.md § 1.2.2`): the Rank Barrier cascade fill is
   strictly 1 round deeper than the Pixel Barrier cascade for every `keyBits` and `width`.
 -/
 theorem interlockCascadeRounds_eq_succ (keyBits width : Nat) :
@@ -586,7 +586,7 @@ theorem interlockCascadeRounds_eq_succ (keyBits width : Nat) :
 
 /--
   Exact shipped `ChainHash` round counts across `keyBits ∈ {512, 1024, 2048}` and
-  `width ∈ {128, 256, 512}` (`SCIENCE.md § 1.2.1`):
+  `width ∈ {128, 256, 512}` (`SCIENCE.md § 1.2.2`):
   - Width 128: Pixel Barrier `(4, 8, 16)` vs Rank Barrier `(5, 9, 17)`.
   - Width 256: Pixel Barrier `(2, 4, 8)` vs Rank Barrier `(3, 5, 9)`.
   - Width 512: Pixel Barrier `(1, 2, 4)` vs Rank Barrier `(2, 3, 5)`.

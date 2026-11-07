@@ -1,6 +1,6 @@
 ## ITB FNV-1a SAT Verification
 
-Empirical re-verification of the shipped (Triple Ouroboros + always-on
+Empirical re-verification of the shipped (Triple Ouroboros +
 48-bit Interlocked Barrier + 8-seed constellation) construction against
 the FNV-1a lo-lane Full KPA SAT attack
 (`scripts/redteam/itb/theory/fnv1a/sat_harness_4round.py`). That attack

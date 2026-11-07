@@ -26,7 +26,12 @@
 
 ---
 
-A parameterized symmetric cipher construction library for Go that suppresses hash output under passive observation through independent barrier mechanisms: **noise insertion** (a random container filled by `internal/drbg` — CSPRNG-seeded noise from the operator-selected DRBG fill primitive, AES-256-CTR by default where hardware AES is present and ChaCha20 otherwise — makes hash output unobservable), **encoding ambiguity** (secret rotation yields 7^P unverifiable configurations that survive CCA), and the **Interlocked Barrier** (the composite pair of the **Rank Barrier** — a per-chunk PRF-keyed three-region bit-permutation operating at 48-bit chunk width by default with a per-chunk mask space of ≈ 2^70.20 balanced partitions executed in ~3 cycles in constant time via BMI2 PEXTQ/PDEPQ, or an optional 168-bit chunk width for 512-bit primitives with a per-chunk mask space of `C(168, 56) · C(112, 56) ≈ 2^258.60` balanced partitions — and the **Pixel Barrier** — per-pixel channel XOR masking, rotation, and noise insertion, operating together as the **Desynchronized Interlocked Barrier** (**Desync**) with Layer I dynamic sub-region pixel trajectory desynchronization under domain tag `0x05` and Layer II cross-lane chunk-slot desynchronization under domain tag `0x06`, adding zero wire overhead; see [SCIENCE.md § 1.2.3](SCIENCE.md#123-desynchronized-interlocked-barrier-desync) and [`lean/ITB/Desync.lean`](lean/ITB/Desync.lean)). 8-seed isolation ensures compromise of any one domain provides zero information about the others.
+A parameterized symmetric cipher construction library for Go that suppresses hash output under passive observation through the **Desynchronized Interlocked Barrier** — the composite pair of two mutually reinforcing barriers with zero wire overhead (see [SCIENCE.md § 1.2.1](SCIENCE.md#121-desynchronized-interlocked-barrier) and [`lean/ITB/Desync.lean`](lean/ITB/Desync.lean)):
+
+- **Pixel Barrier with Layer I Sub-Region Desynchronization (`0x05`)**: each 8-channel RGBWYOPA pixel embeds 56 data bits (7 data bits + 1 noise bit per channel) with per-pixel 56-bit XOR masking and secret 7-way bit rotation (7^P encoding ambiguity surviving CCA) plus CSPRNG-seeded container noise (`internal/drbg` — AES-256-CTR by default where hardware AES is present and ChaCha20 otherwise — makes hash output unobservable), while each of the 3 regions is partitioned into K_r dynamic sub-regions (2^126–2^206 3-region trajectory space on the 1024-bit ITB Mode 2 floor, ≈ 2^166.98 at K_r = 8; and 2^224–2^445 on the Mode 1 floor, ≈ 2^224.04 at K_r = 8).
+- **Rank Barrier with Layer II Cross-Lane Desynchronization (`0x06`)**: a constant-time PRF-keyed three-region bit-permutation (C(48, 16) · C(32, 16) ≈ 2^70.20 balanced partitions per 48-bit chunk executed in ~3 cycles via BMI2 PEXTQ/PDEPQ, or C(168, 56) · C(112, 56) ≈ 2^258.60 per 168-bit chunk for 512-bit primitives) combined with fixed-point-free cross-lane chunk-slot desynchronization (× M^3, raising single-chunk ambiguity at the 1024-bit ITB floors to ≈ 2^96.91–2^101.53, or ≈ 2^128.91–2^133.53 with the 4-byte interlock-nonce fold in 48-bit mode, and ≈ 2^279.89–2^284.51, or ≈ 2^311.89–2^316.51 with fold in 168-bit mode).
+
+**8-seed isolation** across pairwise-distinct domain tags ensures compromise of any one domain provides zero information about the others.
 
 **Ambiguity-Based Security.** The number of observation-consistent **configurations** grows with data size — a property orthogonal to Shannon's key-entropy bound (distinct from Shannon's perfect-secrecy relationship on plaintext entropy; not a violation of it). The Interlocked Barrier (Rank Barrier + Pixel Barrier) converts known-plaintext cryptanalysis from a computational-hardness problem into an instance-formulation one under the PRF assumption: a known-plaintext crib reaches neither a fixed lane position (Rank Barrier) nor an observable byte (Pixel Barrier).
 
@@ -34,26 +39,26 @@ A parameterized symmetric cipher construction library for Go that suppresses has
 
 | Feature / Component | Key Properties | Status |
 |---|---|---|
-| **Rank Barrier (168-bit Interlock)** | 21-byte chunk → 3 × 56-bit lanes; `C(168,56)·C(112,56) ≈ 2^258.60` mask space; bias `≈ 2^-253.4`; 512-bit primitives | Experimental |
-| **Rank Barrier (48-bit Interlock, default)** | 6-byte chunk → 3 × 16-bit lanes; `C(48,16)·C(32,16) ≈ 2^70.20` mask space; bias `≈ 2^-57.8`; all 128/256/512-bit primitives | Stable |
-| **Pixel Barrier (8-channel RGBWYOPA)** | 56 data bits + 8 noise bits per pixel; `7^P` CCA ambiguity; Mode 1 & Mode 2 container floors | Stable |
-| **Desynchronized Interlocked Barrier (Desync)** | Layer I (`0x05` on `startSeed1..3`) dynamic `K_r` sub-region trajectories (`≈ 2^166.98` Mode 2 / `≈ 2^224.04` Mode 1 at `K_r = 8`) + Layer II (`0x06` on `lockSeed`) cross-lane slot desynchronization (`β_0 ≠ β_1`, `\|Ω_chunk\| · M^3 ≈ 2^96.91`–`2^101.53` in `"48"` and `≈ 2^279.89`–`2^284.51` in `"168"`); `0` B wire overhead | Stable |
-| **AES-ITB-128** (`aesitb128`) | 128-bit reduced-round AES CBC-MAC chain (inner-role Non-PRF + DRBG fill) | Stable |
-| **Areion-SoEM-256** (`areion256`) | 256-bit CBC-MAC over SoEM22 wide-block PRF (~170-bit bound) | Stable |
-| **Areion-SoEM-512** (`areion512`) | 512-bit CBC-MAC over SoEM22 wide-block PRF (~341-bit bound) | Stable |
-| **BLAKE2b-256** (`blake2b256`) | 256-bit ARX prepend-key MAC & RFC 7693 keyed PRF | Stable |
-| **BLAKE2b-512** (`blake2b512`) | 512-bit ARX prepend-key MAC & RFC 7693 keyed PRF | Stable |
-| **BLAKE2s** (`blake2s`) | 256-bit ARX prepend-key MAC & RFC 7693 keyed PRF | Stable |
-| **BLAKE3** (`blake3`) | 256-bit ARX native keyed BLAKE3 PRF with seed XOR mix | Stable |
-| **AES-CMAC** (`aescmac`) | 128-bit AES-128-CBC-MAC (inner), RFC 4493 CMAC (KDF) & SP 800-38A CTR stream cipher | Stable |
-| **SipHash-2-4** (`siphash24`) | 128-bit ARX keyed PRF (SipHash-2-4-128) | Stable |
-| **ChaCha20** (`chacha20`) | 256-bit HChaCha20 cascade PRF (inner), RFC 8439 stream cipher & XChaCha20 KDF | Stable |
-| **MACs** (`macs/`) | 32-byte tag MAC-Inside-Encrypt factories (NIST SP 800-185, RFC 2104 & native keyed PRF) | Stable |
-| **Parallax** (`parallax/`) | Pre-inner horizontal segment multiplexing across a counter-mode cipher palette | Stable |
-| **Wrapper** (`wrapper/`) | Format-deniability outer counter-mode keystream envelope over the ITB container | Stable |
-| **DRBG** (`internal/drbg`) | CSPRNG-seeded noise-container filler (AES-256-CTR / RFC 8439 ChaCha20 auto-tiering) | Stable |
-| **KDF** (`kdf/`) | NIST SP 800-108r1 Counter Mode & XChaCha20 keystream subkey derivation | Stable |
-| **CTR** (`ctr/`) | Seekable PRF-counter, NIST SP 800-38A AES-128-CTR & RFC 8439 keystream factories | Stable |
+| **Desynchronized Interlocked Barrier** | Layer I (0x05 on startSeed1..3) dynamic K_r sub-region trajectories (≈ 2^166.98 Mode 2 / ≈ 2^224.04 Mode 1 at K_r = 8 on 1024-bit ITB floors) + Layer II (0x06 on lockSeed) cross-lane slot desynchronization (β_0 ≠ β_1, \|Ω_chunk\| · M^3 ≈ 2^96.91–2^101.53 in 48-bit and ≈ 2^279.89–2^284.51 in 168-bit, or ≈ 2^128.91–2^133.53 and ≈ 2^311.89–2^316.51 with 4 B fold at 1024-bit ITB floors); 0 B wire overhead | Stable |
+| **Rank Barrier (168-bit Interlock)** | 21-byte chunk → 3 × 56-bit lanes; C(168,56)·C(112,56) ≈ 2^258.60 mask space; bias ≈ 2^-253.4; 512-bit primitives | Stable |
+| **Rank Barrier (48-bit Interlock, default)** | 6-byte chunk → 3 × 16-bit lanes; C(48,16)·C(32,16) ≈ 2^70.20 mask space; bias ≈ 2^-57.8; all 128/256/512-bit primitives | Stable |
+| **Pixel Barrier (8-channel RGBWYOPA)** | 56 data bits + 8 noise bits per pixel; 7^P CCA ambiguity; Mode 1 & Mode 2 container floors | Stable |
+| **AES-ITB-128** (aesitb128) | 128-bit reduced-round AES CBC-MAC chain (inner-role Non-PRF + DRBG fill) | Stable |
+| **Areion-SoEM-256** (areion256) | 256-bit CBC-MAC over SoEM22 wide-block PRF (~170-bit bound) | Stable |
+| **Areion-SoEM-512** (areion512) | 512-bit CBC-MAC over SoEM22 wide-block PRF (~341-bit bound) | Stable |
+| **BLAKE2b-256** (blake2b256) | 256-bit ARX prepend-key MAC & RFC 7693 keyed PRF | Stable |
+| **BLAKE2b-512** (blake2b512) | 512-bit ARX prepend-key MAC & RFC 7693 keyed PRF | Stable |
+| **BLAKE2s** (blake2s) | 256-bit ARX prepend-key MAC & RFC 7693 keyed PRF | Stable |
+| **BLAKE3** (blake3) | 256-bit ARX native keyed BLAKE3 PRF with seed XOR mix | Stable |
+| **AES-CMAC** (aescmac) | 128-bit AES-128-CBC-MAC (inner), RFC 4493 CMAC (KDF) & SP 800-38A CTR stream cipher | Stable |
+| **SipHash-2-4** (siphash24) | 128-bit ARX keyed PRF (SipHash-2-4-128) | Stable |
+| **ChaCha20** (chacha20) | 256-bit HChaCha20 cascade PRF (inner), RFC 8439 stream cipher & XChaCha20 KDF | Stable |
+| **MACs** (macs/) | 32-byte tag MAC-Inside-Encrypt factories (NIST SP 800-185, RFC 2104 & native keyed PRF) | Stable |
+| **Parallax** (parallax/) | Pre-inner horizontal segment multiplexing across a counter-mode cipher palette | Stable |
+| **Wrapper** (wrapper/) | Format-deniability outer counter-mode keystream envelope over the ITB container | Stable |
+| **DRBG** (internal/drbg) | CSPRNG-seeded noise-container filler (AES-256-CTR / RFC 8439 ChaCha20 auto-tiering) | Stable |
+| **KDF** (kdf/) | NIST SP 800-108r1 Counter Mode & XChaCha20 keystream subkey derivation | Stable |
+| **CTR** (ctr/) | Seekable PRF-counter, NIST SP 800-38A AES-128-CTR & RFC 8439 keystream factories | Stable |
 
 **[Quick Start](#quick-start)**
 
@@ -75,15 +80,15 @@ A parameterized symmetric cipher construction library for Go that suppresses has
 
 ## Status
 
-The Core API and the Go C ABI are consolidated around the `triple/` facade and the Cfg-only Low-Level surface. The always-on Interlocked Barrier (48-bit by default, with an optional 168-bit mode for 512-bit primitives) is engaged unconditionally on every call and its adversarial re-verification is documented in [REDTEAM.md](REDTEAM.md).
+The Core API and the Go C ABI are consolidated around the `triple/` facade and the Cfg-only Low-Level surface. The Interlocked Barrier (48-bit by default, with an optional 168-bit mode for 512-bit primitives) is engaged on every call and its adversarial re-verification is documented in [REDTEAM.md](REDTEAM.md).
 
 ### Library
 
 | Native | Status | Features | Tests | Packages |
 |---|---|---|---|---|
-| Go Native | Shipped | `triple/` facade + Cfg-only Low-Level | Cross-platform & cross-binding verified | 1 Nov 2026 |
-| C ABI (`cmd/cshared`) | Shipped | `ITB_Triple_*` exports + Cfg-aware capi header | Cross-platform & cross-binding verified | 1 Nov 2026 |
-| Wire Format | Frozen | ChainHash, Rank Barrier (48-bit), Pixel Barrier & Desync | Cross-platform & cross-binding verified | 1 Nov 2026 |
+| Go Native | Shipped | triple/ facade + Cfg-only Low-Level | Cross-platform & cross-binding verified | 1 Nov 2026 |
+| C ABI (cmd/cshared) | Shipped | ITB_Triple_* exports + Cfg-aware capi header | Cross-platform & cross-binding verified | 1 Nov 2026 |
+| Wire Format | Frozen | ChainHash, Desynchronized Interlocked Barrier (Rank Barrier & Pixel Barrier) | Cross-platform & cross-binding verified | 1 Nov 2026 |
 
 <!-- preserved-verbatim: cross-platform verification block; do not paraphrase; re-runs after bindings rework produce fresh numbers -->
 
@@ -115,9 +120,9 @@ ITB ships two pixel-processing backends selected automatically at compile time, 
 
 | Mode | Command | Pixel Processing | Requirements |
 |---|---|---|---|
-| **CGO (default)** | <code>-buildmode=c-shared</code> | C with runtime-dispatched SIMD tiers | GCC 8+ with binutils 2.30+, or Clang 8+ (GFNI intrinsics and mnemonics); runtime SIMD auto-dispatch on any x86-64 host |
-| **No ITB ASM** (CGO) | <code>-buildmode=c-shared&nbsp;-tags=noitbasm</code> | C with SIMD auto-vectorization; ITB-native ASM off, upstream stdlib ASM on | Same C compiler floor as above |
-| **Pure Go** | `CGO_ENABLED=0 ...` | Portable Go pipeline (`process_generic.go`) | None (any GOOS / GOARCH the Go compiler supports) |
+| **CGO (default)** | -buildmode=c-shared | C with runtime-dispatched SIMD tiers | GCC 8+ with binutils 2.30+, or Clang 8+ (GFNI intrinsics and mnemonics); runtime SIMD auto-dispatch on any x86-64 host |
+| **No ITB ASM** (CGO) | -buildmode=c-shared&nbsp;-tags=noitbasm | C with SIMD auto-vectorization; ITB-native ASM off, upstream stdlib ASM on | Same C compiler floor as above |
+| **Pure Go** | CGO_ENABLED=0 ... | Portable Go pipeline (process_generic.go) | None (any GOOS / GOARCH the Go compiler supports) |
 
 ### CPU baseline for the shipped assembly kernels
 
@@ -1202,7 +1207,7 @@ This is best read as **local key evolution** — each round derives a fresh effe
 | 256-bit | 4 | **2** | **3** (1 primer + 2 session) | **2** |
 | 512-bit | 8 | **1** | **2** (1 primer + 1 session) | **1** |
 
-**What ChainHash does and does not include.** ChainHash returns the full native-width block. The narrowing is not part of ChainHash: the per-pixel encoder consumes only the low word (`hLo` / `h[0]`) and discards the rest, while the Interlocked Barrier's per-chunk mask draw consumes the full 128-bit `HashFunc128` output pair `(lo, hi)` as the rank input to `rankToMaskTriple48` in the default 48-bit mode (or the full 512-bit `HashFunc512` digest `[8]uint64` as the rank input to `rankToMaskTriple168` in 168-bit mode) — every word is load-bearing. In the **Desynchronized Interlocked Barrier** (**Desync**), the Layer I sub-region schedule derivation (`subregionAddr`, `effectiveStartPixel`, domain tag `0x05` on `startSeed1..3`) and the Layer II cross-lane slot desynchronization derivation (`laneSlotShift`, domain tag `0x06` on `lockComps`) fold every 128-bit output pair `(hLo, hHi)` through the 128-bit Feistel-like bijection `fullWidthFold(hLo, hHi)` (`w_0 = (hLo + rotl64(hHi, 25) + rotl64(hHi, 53)) mod 2^64`, `w_1 = hHi ⊕ rotl64(w_0, 19) ⊕ rotl64(w_0, 41)`), guaranteeing that all 128 output bits and every 64-bit seed component (all 16 components at 1024-bit keys; `8..32` across `512..2048`-bit keys) participate bijectively with `0.00` bits of entropy loss across all production PRFs (`fullWidthFold_bijection`, `fullWidthFold_preserves_prf_cardinality`, `fullWidthFold_fnv1a_dead_zone_coverage`, `fullWidthFold_crc128_dual_lane_sensitivity`, `fullWidthFold_non_affine_gf2` in [`lean/ITB/Desync.lean`](lean/ITB/Desync.lean)). So the output narrowing at 128 / 256 / 512-bit is a Pixel Barrier choice layered on top of ChainHash, not a property of ChainHash itself. Under the PRF assumption any consistent subset of a PRF's output is itself a PRF on those bits.
+**What ChainHash does and does not include.** ChainHash returns the full native-width block. The narrowing is not part of ChainHash: the per-pixel encoder consumes only the low word (`hLo` / `h[0]`) and discards the rest, while the Interlocked Barrier's per-chunk mask draw consumes the full 128-bit `HashFunc128` output pair `(lo, hi)` as the rank input to `rankToMaskTriple48` in the default 48-bit mode (or the full 512-bit `HashFunc512` digest `[8]uint64` as the rank input to `rankToMaskTriple168` in 168-bit mode) — every word is load-bearing. In the **Desynchronized Interlocked Barrier**, the Layer I sub-region schedule derivation (`subregionAddr`, `effectiveStartPixel`, domain tag `0x05` on `startSeed1..3`) and the Layer II cross-lane slot desynchronization derivation (`laneSlotShift`, domain tag `0x06` on `lockComps`) fold every 128-bit output pair `(hLo, hHi)` through the 128-bit Feistel-like bijection `fullWidthFold(hLo, hHi)` (`w_0 = (hLo + rotl64(hHi, 25) + rotl64(hHi, 53)) mod 2^64`, `w_1 = hHi ⊕ rotl64(w_0, 19) ⊕ rotl64(w_0, 41)`), guaranteeing that all 128 output bits and every 64-bit seed component (all 16 components at 1024-bit keys; `8..32` across `512..2048`-bit keys) participate bijectively with `0.00` bits of entropy loss across all production PRFs (`fullWidthFold_bijection`, `fullWidthFold_preserves_prf_cardinality`, `fullWidthFold_fnv1a_dead_zone_coverage`, `fullWidthFold_crc128_dual_lane_sensitivity`, `fullWidthFold_non_affine_gf2` in [`lean/ITB/Desync.lean`](lean/ITB/Desync.lean)). So the output narrowing at 128 / 256 / 512-bit is a Pixel Barrier choice layered on top of ChainHash, not a property of ChainHash itself. Under the PRF assumption any consistent subset of a PRF's output is itself a PRF on those bits.
 
 ## Wire format
 
@@ -1257,25 +1262,26 @@ The 8 mandatory seeds are drawn as independent CSPRNG components; the API surfac
 | Grover resistance | √P × 2^keyBits (Core ITB / MAC + Silent Drop) to √P × 2^(keyBits/2) (MAC + Reveal) |
 | Plausible deniability | Core ITB / MAC + Silent Drop (wrong seed → garbage indistinguishable from valid plaintext) |
 | Encoding ambiguity | Every mode (7^P unverifiable rotation combinations, surviving CCA; DRBG residue adds independent ambiguity in data positions) |
-| Rank Barrier | Always on; per-chunk 48-bit keyed permutation over three regions (`C(48, 16) · C(32, 16) ≈ 2^70.20` balanced partitions, bias `≈ 2^-57.8`), or optional 168-bit permutation for 512-bit primitives (`C(168, 56) · C(112, 56) ≈ 2^258.60` balanced partitions, bias `≈ 2^-253.4`) |
-| Desynchronized Interlocked Barrier (Desync) | Always on (`0` B wire overhead): **Layer I** (`0x05` on `startSeed1..3` via `fullWidthFold`) partitions each region into `K_r ∈ [6, 10]` (Mode 2) or `K_r ∈ [8, 16]` (Mode 1) jittered, Fisher-Yates-permuted sub-regions with independent local starting offsets (`≈ 2^166.98` 3-region trajectories at `K_r = 8` on the Mode 2 floor and `≈ 2^224.04` on the Mode 1 floor; `> 2^145` / `> 2^198` after oracle disclosure of `Π_r(0)`); **Layer II** (`0x06` on `lockComps` via `fullWidthFold`) permutes the `M` pre-COBS chunk slots across lanes with guaranteed distinct cyclic shifts `β_0 ≠ β_1 ⟹ μ_0(j) ≠ μ_1(j) ⟹ Σ_0(j) ≠ Σ_1(j)`, yielding a single-chunk cross-lane slot-matching space of `\|Ω_chunk\| · M^3 ≈ 2^96.91`–`2^101.53` in `"48"` and `≈ 2^279.89`–`2^284.51` in `"168"` at Mode 2 / Mode 1 floors |
-| 8-seed isolation | Every mode (noiseSeed, lockSeed, dataSeed1..3, startSeed1..3 independent across pairwise-distinct domain tags `0x01..0x06`) |
+| Desynchronized Interlocked Barrier | Zero wire overhead (0 B): **Layer I** (0x05 on startSeed1..3 via fullWidthFold) partitions each region into K_r ∈ [6, 10] (Mode 2) or K_r ∈ [8, 16] (Mode 1) jittered, Fisher-Yates-permuted sub-regions with independent local starting offsets (≈ 2^166.98 3-region trajectories at K_r = 8 on the 1024-bit ITB Mode 2 floor and ≈ 2^224.04 on the Mode 1 floor; > 2^145 / > 2^198 after oracle disclosure of Π_r(0)); **Layer II** (0x06 on lockComps via fullWidthFold) permutes the M pre-COBS chunk slots across lanes with guaranteed distinct cyclic shifts β_0 ≠ β_1 ⟹ μ_0(j) ≠ μ_1(j) ⟹ Σ_0(j) ≠ Σ_1(j), yielding a single-chunk cross-lane slot-matching space of \|Ω_chunk\| · M^3 ≈ 2^96.91–2^101.53 in 48-bit and ≈ 2^279.89–2^284.51 in 168-bit (or ≈ 2^128.91–2^133.53 and ≈ 2^311.89–2^316.51 with the 4-byte fold) at the 1024-bit ITB Mode 2 / Mode 1 floors |
+| Rank Barrier | Per-chunk 48-bit keyed permutation over three regions (C(48, 16) · C(32, 16) ≈ 2^70.20 balanced partitions, bias ≈ 2^-57.8), or optional 168-bit permutation for 512-bit primitives (C(168, 56) · C(112, 56) ≈ 2^258.60 balanced partitions, bias ≈ 2^-253.4) |
+| Pixel Barrier | 8-channel RGBWYOPA pixels (56 data bits + 8 noise bits per pixel across 8 channels, with per-pixel 56-bit XOR masking, secret 7-way bit rotation yielding 7^P CCA-surviving configurations, and CSPRNG-seeded DRBG noise; Mode 1 per-region and Mode 2 per-container ambiguity floors) |
+| 8-seed isolation | Every mode (noiseSeed, lockSeed, dataSeed1..3, startSeed1..3 independent across pairwise-distinct domain tags 0x02..0x06 and per-pixel counter domains) |
 | Oracle-free deniability | Core ITB / MAC + Silent Drop; MAC + Reveal has a CCA oracle bounded to the noise-position channel (Proof 6) |
-| Known-plaintext resistance (Crib / Full / Partial KPA) | Under the PRF assumption and fresh nonces, closed at the instance-formulation layer by the barrier's per-chunk ≈ 2^70.20 mask space (`≈ 2^258.60` in 168-bit mode) + Layer II `M^3` cross-lane slot desynchronization (`0x06`, `β_0 ≠ β_1`) + per-chunk PRF independence + Layer I 3-region dynamic sub-region trajectory space (`0x05`, `≈ 2^166.98` Mode 2 / `≈ 2^224.04` Mode 1 at `K_r = 8`) + 8-seed isolation (architectural claim) |
-| Chosen-plaintext resistance | Under the PRF assumption and fresh nonces, the always-on keyed permutation plus fresh per-message draws leave ciphertext at the statistical floor (architectural claim) |
+| Known-plaintext resistance (Crib / Full / Partial KPA) | Under the PRF assumption and fresh nonces, closed at the instance-formulation layer by the barrier's per-chunk ≈ 2^70.20 mask space (≈ 2^258.60 in 168-bit mode) + Layer II M^3 cross-lane slot desynchronization (0x06, β_0 ≠ β_1) + per-chunk PRF independence + Layer I 3-region dynamic sub-region trajectory space (0x05, ≈ 2^166.98 Mode 2 / ≈ 2^224.04 Mode 1 at K_r = 8 on 1024-bit ITB floors) + 8-seed isolation (architectural claim) |
+| Chosen-plaintext resistance | Under the PRF assumption and fresh nonces, the keyed permutation plus fresh per-message draws leave ciphertext at the statistical floor (architectural claim) |
 | Noise insertion | Core ITB / MAC + Silent Drop; bypassed via CCA in MAC + Reveal (DRBG residue in data positions survives) |
 | Hash function requirement | PRF required; PRF and barrier are complementary — neither sufficient alone; NPRF permitted subject to strict quality requirements |
-| Nonce | 128/256/512-bit per-message nonce, drawn internally from `crypto/rand` on every call (default 512-bit) |
+| Nonce | 128/256/512-bit per-message nonce, drawn internally from crypto/rand on every call (default 512-bit) |
 | Nonce reuse | Not architecturally closed by the barrier; closure of the CPA / KPA families is conditional on fresh nonces. The shipped API generates the nonce internally per call, which prevents caller-side reuse |
 | Storage overhead | ~1.15-1.30× from ~10 KB to 64 MiB at 1024-bit keys (~4-20× Mode 1 / ~1.5-7× Mode 2 for 0.5-2.5 KB payloads) |
 
 ### Interlocked Barrier — composite defense architecture (Rank Barrier + Pixel Barrier)
 
-The always-on Rank Barrier is driven by a **combinadic unrank** step: a public, deterministic combinatorial algorithm that transforms one 128-bit PRF output (from the per-group `lockSeed` cascade under domain tag `0x03`, keyed by the per-container `0x04` derivation with a dedicated primer round 1 on intermediate key `K`) into a pairwise-disjoint balanced three-lane bit-permutation over each 48-bit input chunk (`C(48, 16) · C(32, 16) ≈ 2^70.20` balanced partitions, per-chunk bias `≈ 2^-57.8`). Every region receives exactly 16 bits from each 48-bit chunk via its assigned mask; the three masks together cover the full 48 bits with no overlap. On x86-64, execution is accelerated via three BMI2 `PEXTQ` instructions for compression into lanes and three `PDEPQ` instructions for reassembly in ~3 cycles in constant time.
+The **Desynchronized Interlocked Barrier** ([SCIENCE.md § 1.2.1](SCIENCE.md#121-desynchronized-interlocked-barrier), [`lean/ITB/Desync.lean`](lean/ITB/Desync.lean)) combines both barriers with two zero-overhead combinatorial index permutations keyed through the 128-bit bijection `fullWidthFold(hLo, hHi)`: **Layer I** (`subregionAddr`, domain tag `0x05` on `startSeed1..3`) partitions each region `r ∈ {0, 1, 2}` into `K_r ∈ [6, 10]` (Mode 2) or `K_r ∈ [8, 16]` (Mode 1) disjoint sub-regions with telescopic boundary jitter (`∑ M_{r,k} = P_r`), Fisher-Yates sub-region permutation `τ_r ∈ S_{K_r}`, and independent local starting pixels `s_{r,k} ∈ [0, M_{r,k})` (`effectiveStartPixel`), yielding a 3-region trajectory space of `(2^7 · 8! · 18^8)^3 ≈ 2^166.98` at `K_r = 8` on the 1024-bit ITB Mode 2 floor (`> 2^145` after oracle disclosure of `Π_r(0)`, and `> 2^104` at `K_r = 6`) and `(4^7 · 8! · 51^8)^3 ≈ 2^224.04` at `K_r = 8` on the 1024-bit ITB Mode 1 floor (`> 2^198` after oracle disclosure of `Π_r(0)`, and up to `> 2^445` at `K_r = 16`); **Layer II** (`laneSlotShift`, domain tag `0x06` on `lockComps`) permutes the `M` pre-COBS chunk slots of `(p0, p1, p2)` with guaranteed distinct cyclic shifts `β_0 ≠ β_1 ⟹ μ_0(j) ≠ μ_1(j) ⟹ Σ_0(j) ≠ Σ_1(j)`, ensuring that the three fragments at every slot `j` originate from at least two distinct plaintext chunks across `M^3` cross-lane slot triples per chunk.
+
+The Rank Barrier is driven by a **combinadic unrank** step: a public, deterministic combinatorial algorithm that transforms one 128-bit PRF output (from the per-group `lockSeed` cascade under domain tag `0x03`, keyed by the per-container `0x04` derivation with a dedicated primer round 1 on intermediate key `K`) into a pairwise-disjoint balanced three-lane bit-permutation over each 48-bit input chunk (`C(48, 16) · C(32, 16) ≈ 2^70.20` balanced partitions, per-chunk bias `≈ 2^-57.8`). Every region receives exactly 16 bits from each 48-bit chunk via its assigned mask; the three masks together cover the full 48 bits with no overlap. On x86-64, execution is accelerated via three BMI2 `PEXTQ` instructions for compression into lanes and three `PDEPQ` instructions for reassembly in ~3 cycles in constant time.
 
 When configured with `Interlock: "168"` (available for 512-bit primitives `areion512` and `blake2b512`), the Rank Barrier operates over 168-bit (21-byte) chunks split into 3 × 56-bit (7-byte) lanes using the full 512-bit `lockSeed` cascade output (`2^512`). The partition constants are `A₁₆₈ = C(168, 56) = 1,799,363,822,299,435,101,766,134,108,620,363,111,079,750,360` (`log₂ ≈ 150.33`) and `B₁₆₈ = C(112, 56) = 390,590,044,887,157,789,360,330,532,465,784` (`log₂ ≈ 108.27`), yielding a per-chunk mask space of `|Ω_chunk,168| = A₁₆₈ · B₁₆₈ = 702,813,596,120,264,168,420,100,264,216,585,729,858,529,081,007,646,807,547,722,792,977,161,961,682,240 ≈ 2^258.60` balanced partitions. With `⌊2^512 / (A₁₆₈ · B₁₆₈)⌋ ≈ 2^253.40` preimages per mask triple, the per-chunk bias is `≈ 2^-253.4` (`≈ 2^-231.8` accumulated across a maximum 64 MiB message of `3,195,661 ≈ 2^21.61` chunks, requiring `1 / ε² ≈ 2^506.8` chunk samples or `~2^485` maximum-size messages for a statistical distinguisher), and a single 168-bit (21-byte) crib leaves `≈ 2^90.6` (`≈ 2^90`) compatible mask triples.
-
-The **Desynchronized Interlocked Barrier** (**Desync**, [SCIENCE.md § 1.2.3](SCIENCE.md#123-desynchronized-interlocked-barrier-desync), [`lean/ITB/Desync.lean`](lean/ITB/Desync.lean)) combines both barriers with two zero-overhead combinatorial index permutations keyed through the 128-bit bijection `fullWidthFold(hLo, hHi)`: **Layer I** (`subregionAddr`, domain tag `0x05` on `startSeed1..3`) partitions each region `r ∈ {0, 1, 2}` into `K_r ∈ [6, 10]` (Mode 2) or `K_r ∈ [8, 16]` (Mode 1) disjoint sub-regions with telescopic boundary jitter (`∑ M_{r,k} = P_r`), Fisher-Yates sub-region permutation `τ_r ∈ S_{K_r}`, and independent local starting pixels `s_{r,k} ∈ [0, M_{r,k})` (`effectiveStartPixel`), yielding a 3-region trajectory space of `(2^7 · 8! · 18^8)^3 ≈ 2^166.98` at `K_r = 8` on the Mode 2 floor (`> 2^145` after oracle disclosure of `Π_r(0)`, and `> 2^104` at `K_r = 6`) and `(4^7 · 8! · 51^8)^3 ≈ 2^224.04` at `K_r = 8` on the Mode 1 floor (`> 2^198` after oracle disclosure of `Π_r(0)`, and up to `> 2^445` at `K_r = 16`); **Layer II** (`laneSlotShift`, domain tag `0x06` on `lockComps`) permutes the `M` pre-COBS chunk slots of `(p0, p1, p2)` with guaranteed distinct cyclic shifts `β_0 ≠ β_1 ⟹ μ_0(j) ≠ μ_1(j) ⟹ Σ_0(j) ≠ Σ_1(j)`, ensuring that the three fragments at every slot `j` originate from at least two distinct plaintext chunks across `M^3` cross-lane slot triples per chunk.
 
 Four architectural properties emerge simultaneously from the same layer:
 
@@ -1287,9 +1293,9 @@ Four architectural properties emerge simultaneously from the same layer:
 Neither the combinadic unrank routing layer nor the surrounding composition layers of ITB are cryptographic primitives:
 
 - **ChainHash** composes PRF invocations with XOR feedforward between rounds — a pure composition over the underlying PRF's output, adding no cryptographic content of its own.
+- **Desynchronized Interlocked Barrier** permutes sub-region pixel trajectories (`0x05`) and pre-COBS lane chunk slots (`0x06`) under PRF-derived schedules folded via the 128-bit bijection `fullWidthFold(hLo, hHi)` — pure index-routing permutations with zero wire overhead.
 - **Rank Barrier** applies the unrank-derived three-lane bit-permutation over each 48-bit input chunk via BMI2 `PEXTQ` (or over each 168-bit input chunk across three 64-bit words in 168-bit mode), routing plaintext bits across the three regions via PRF-derived masks.
 - **Pixel Barrier** applies channel XOR + 7-bit rotation + noise-bit insertion per pixel under PRF-derived per-channel parameters — bit-level routing over PRF-derived material.
-- **Desynchronized Interlocked Barrier (Desync)** permutes sub-region pixel trajectories (`0x05`) and pre-COBS lane chunk slots (`0x06`) under PRF-derived schedules folded via the 128-bit bijection `fullWidthFold(hLo, hHi)` — pure index-routing permutations with zero wire overhead.
 
 None of these layers create entropy; they consume the entropy delivered by the underlying PRF primitive and route it through the ITB construction. As pure combinatorial and bit-routing algorithms with no secret material of their own, they fall outside cryptographic certification regimes (Wassenaar 5A002 and national equivalents) — those regimes cover primitives and the modules built on them, not routing / composition layers over PRF output.
 
@@ -1336,7 +1342,7 @@ Per-binding examples ship in each binding's own directory under `bindings/<lang>
 - [PROOFS.md](PROOFS.md) — Formal security proofs.
 - [lean/README.md](lean/README.md) — Machine-checked Lean 4 formalization of the ITB security proofs and barrier constants.
 - [SCIENCE.md](SCIENCE.md) — Scientific analysis and formal security arguments.
-- [POSTQUANTUM.md](POSTQUANTUM.md) — Post-quantum and combinatorial cryptanalysis of the Rank Barrier, Pixel Barrier, and Desynchronized Interlocked Barrier (`Desync`).
+- [POSTQUANTUM.md](POSTQUANTUM.md) — Post-quantum and combinatorial cryptanalysis of the Desynchronized Interlocked Barrier, Rank Barrier, and Pixel Barrier.
 - [SECURITY.md](SECURITY.md) — Security reference tables.
 - [HWTHREATS.md](HWTHREATS.md) — Hardware-level threat analysis (Spectre, Meltdown, Rowhammer, etc.).
 - [HARNESS.md](HARNESS.md) — Adversarial testing methodology and calibration.
