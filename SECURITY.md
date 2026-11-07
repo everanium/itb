@@ -4,6 +4,12 @@
 >
 > PRF-grade hash functions are **required**. No warranty is provided.
 
+<p align="center">
+  <code>f<sub>total</sub> = f<sub>pixel</sub> ∘ f<sub>traj</sub> ∘ f<sub>cobs</sub> ∘ f<sub>desync2</sub> ∘ f<sub>rank</sub> &nbsp;&nbsp;⟹&nbsp;&nbsp; f<sub>total</sub><sup>−1</sup> ∘ f<sub>total</sub> = id</code>
+  <br>
+  <em>Geometric Bijection</em>
+</p>
+
 **No bespoke cryptography.** ITB composes established, standardized primitives rather than introducing new cryptographic designs. Security properties and regulatory status are inherited from the underlying primitives; see [README.md](README.md) for jurisdictional certification details.
 
 **Companion document to [SCIENCE.md](SCIENCE.md).** This file is the audit-oriented operational reference — composition modes matrix, cross-scheme comparisons, deployment threat model, design-rationale tables, compliance framing, and the explicit non-closed threats list. The formal construction and proofs live in [SCIENCE.md](SCIENCE.md), [PROOFS.md](PROOFS.md), and the machine-checked Lean 4 suite in [lean/README.md](lean/README.md); the accessible-explanation narrative lives in [ITB.md](ITB.md). Sections cross-referenced below point to the authoritative source for each topic.

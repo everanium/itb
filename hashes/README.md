@@ -4,6 +4,12 @@
 >
 > PRF-grade hash functions are **required**. No warranty is provided.
 
+<p align="center">
+  <code>f<sub>total</sub> = f<sub>pixel</sub> ∘ f<sub>traj</sub> ∘ f<sub>cobs</sub> ∘ f<sub>desync2</sub> ∘ f<sub>rank</sub> &nbsp;&nbsp;⟹&nbsp;&nbsp; f<sub>total</sub><sup>−1</sup> ∘ f<sub>total</sub> = id</code>
+  <br>
+  <em>Geometric Bijection</em>
+</p>
+
 **No bespoke cryptography.** ITB composes established, standardized primitives rather than introducing new cryptographic designs. Security properties and regulatory status are inherited from the underlying primitives; see [README.md](../README.md) for jurisdictional certification details.
 
 > **See [CONSTRUCTIONS.md](CONSTRUCTIONS.md) for the per-primitive construction descriptions.** Several wrappers diverge from the canonical RFC / NIST form of the underlying primitive in deliberate, documented ways — the registry names (`aescmac`, `chacha20`, `blake2b256`, ...) are short identifiers, not assertions of conformance with the RFC / NIST specification of the same name. Read CONSTRUCTIONS.md before assuming RFC compatibility.

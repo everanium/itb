@@ -4,6 +4,12 @@
 >
 > PRF-grade hash functions are **required**. No warranty is provided.
 
+<p align="center">
+  <code>f<sub>total</sub> = f<sub>pixel</sub> ∘ f<sub>traj</sub> ∘ f<sub>cobs</sub> ∘ f<sub>desync2</sub> ∘ f<sub>rank</sub> &nbsp;&nbsp;⟹&nbsp;&nbsp; f<sub>total</sub><sup>−1</sup> ∘ f<sub>total</sub> = id</code>
+  <br>
+  <em>Geometric Bijection</em>
+</p>
+
 **No bespoke cryptography.** ITB composes established, standardized primitives rather than introducing new cryptographic designs. Security properties and regulatory status are inherited from the underlying primitives; see [README.md](../README.md) for jurisdictional certification details.
 
 This document describes how each supported `Derive` construction turns a key-derivation key (the **master**) and a public **label** into an `outLen`-byte subkey. Each registry name maps to a standard, separately analysable construction. The registry names are short identifiers; this document states the exact byte layout each supported primitive computes.

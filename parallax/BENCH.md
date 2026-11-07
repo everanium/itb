@@ -4,6 +4,12 @@
 >
 > PRF-grade hash functions are **required**. No warranty is provided.
 
+<p align="center">
+  <code>f<sub>total</sub> = f<sub>pixel</sub> ∘ f<sub>traj</sub> ∘ f<sub>cobs</sub> ∘ f<sub>desync2</sub> ∘ f<sub>rank</sub> &nbsp;&nbsp;⟹&nbsp;&nbsp; f<sub>total</sub><sup>−1</sup> ∘ f<sub>total</sub> = id</code>
+  <br>
+  <em>Geometric Bijection</em>
+</p>
+
 **No bespoke cryptography.** ITB composes established, standardized primitives rather than introducing new cryptographic designs. Security properties and regulatory status are inherited from the underlying primitives; see [README.md](../README.md) for jurisdictional certification details.
 
 Throughput benchmarks for the `parallax` horizontal-multiplexing layer (fixed-size segment XOR under a per-message keyed schedule over [`ctr`](../ctr/) keystreams derived via [`kdf`](../kdf/), dispatched across up to `min(GOMAXPROCS, 32)` workers above `parallelThreshold`; see [README.md](./README.md) for the wire formats, threat model, and API).

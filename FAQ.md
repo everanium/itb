@@ -4,6 +4,12 @@
 >
 > PRF-grade hash functions are **required**. No warranty is provided.
 
+<p align="center">
+  <code>f<sub>total</sub> = f<sub>pixel</sub> ∘ f<sub>traj</sub> ∘ f<sub>cobs</sub> ∘ f<sub>desync2</sub> ∘ f<sub>rank</sub> &nbsp;&nbsp;⟹&nbsp;&nbsp; f<sub>total</sub><sup>−1</sup> ∘ f<sub>total</sub> = id</code>
+  <br>
+  <em>Geometric Bijection</em>
+</p>
+
 **No bespoke cryptography.** ITB composes established, standardized primitives rather than introducing new cryptographic designs. Security properties and regulatory status are inherited from the underlying primitives; see [README.md](README.md) for jurisdictional certification details.
 
 This document is an analytical and empirical companion to [REDTEAM.md](REDTEAM.md), [SCIENCE.md](SCIENCE.md), and [PROOFS.md](PROOFS.md). It evaluates how the shipped **Triple Ouroboros** and **Interlocked Barrier** architecture behaves when instantiated with deliberately broken, non-cryptographic hash functions across two distinct regimes:
