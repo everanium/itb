@@ -770,13 +770,15 @@ func Registry(f *Figures) []Expectation {
 		add(sweep(file, `\b(3,176,\d{3})\b`, w("entry_pixels_mode2", "3,176,523")))
 		add(sweep(file, `\b(68,083,\d{3})\b`, w("entry_pixels_mode1", "68,083,776")))
 	}
-	for _, file := range []string{"SCIENCE.md", "PROOFS.md", "SECURITY.md", "ITB.md", "POSTQUANTUM.md", "README.md", "REDTEAM.md"} {
+	for _, file := range []string{"SCIENCE.md", "PROOFS.md", "SECURITY.md", "ITB.md", "POSTQUANTUM.md", "README.md", "REDTEAM.md", "FAQ.md"} {
 		add(sweep(file, `(2\^166\.\d\d)`, w("desync_traj_mode2_k8", "2^166.98")))
 		add(sweep(file, `(2\^224\.\d\d)`, w("desync_traj_mode1_k8", "2^224.04")))
 		add(sweep(file, `(2\^96\.\d\d)`, w("desync_lane48_mode2", "2^96.91")))
 		add(sweep(file, `(2\^101\.\d\d)`, w("desync_lane48_mode1", "2^101.53")))
 		add(sweep(file, `(2\^128\.\d\d)`, w("desync_lane48_fold_mode2", "2^128.91")))
 		add(sweep(file, `(2\^133\.\d\d)`, w("desync_lane48_fold_mode1", "2^133.53")))
+	}
+	for _, file := range []string{"SCIENCE.md", "PROOFS.md", "SECURITY.md", "ITB.md", "POSTQUANTUM.md", "README.md", "REDTEAM.md"} {
 		add(sweep(file, `(2\^279\.\d\d)`, w("desync_lane168_mode2", "2^279.89")))
 		add(sweep(file, `(2\^284\.\d\d)`, w("desync_lane168_mode1", "2^284.51")))
 		add(sweep(file, `(2\^311\.\d\d)`, w("desync_lane168_fold_mode2", "2^311.89")))
