@@ -76,7 +76,7 @@ A parameterized symmetric cipher construction library for Go that suppresses has
 
 **[Why KPA and advanced attacks are addressed by the barrier](SCIENCE.md)**
 
-**[Machine-checked Lean 4 formal verification suite](lean/README.md)**
+**[Machine-checked Lean 4 formal verification suite (mathematical theorems & executable Core ITB pipeline specification)](lean/README.md)**
 
 **[Post-quantum and combinatorial cryptanalysis](POSTQUANTUM.md)**
 
@@ -1314,7 +1314,7 @@ The construction addresses security across two distinct regimes:
 - **Standard AEAD model (MAC Authenticated).** Standard binary accept/reject semantics: authentic messages verify; tampered or unauthenticated ciphertexts are rejected. Under CCA (MAC + Reveal), the oracle leaks at most 3 bits per pixel (`noisePos`, Theorem 6); 8-seed isolation (Theorem 3) shields `dataSeed`, `lockSeed`, and `startSeed` from leakage.
 - **Plausible deniability model (Core ITB / MAC + Silent Drop, Theorem 8).** The adversary always receives output without an accept/reject signal. Decryption produces a **spectrum of plausibility**: every candidate key yields syntactically valid COBS-decoded output, and without external redundancy, wrong-key candidates cannot be ranked against the true plaintext.
 
-Formalization pillars (with `270` core mathematical, combinatorial, and bit-vector theorems — `239` across six `ITB/*.lean` core modules including `40` in `ITB/Desync.lean`, plus `31` in `Apps/ThreeToEight.lean` — machine-checked in Lean 4 in [lean/README.md](lean/README.md)):
+Formalization pillars (with `270` core mathematical, combinatorial, and bit-vector theorems — `239` across six `ITB/*.lean` core modules including `40` in `ITB/Desync.lean`, plus `31` in `Apps/ThreeToEight.lean` — accompanied by `73` additional theorems and Go wire-parity KATs across the three end-to-end executable **Core ITB** pipeline specification modules `ITB/PipelineSpec128.lean`, `ITB/PipelineSpec256.lean`, and `ITB/PipelineSpec512.lean`, machine-checked in Lean 4 in [lean/README.md](lean/README.md)):
 
 - **Indistinguishability-based definitions (IND-CPA / IND-CCA).** Passive observation is information-theoretically secure (Theorems 1, 2). Active resistance under Crib / Full KPA and CPA/CCA is computational and PRF-conditional: the 4-factor defense (Theorem 4a; byte-splitting gcd(7, 8) = 1 acts as an auxiliary 5th factor specifically under Partial KPA) pairs PRF one-wayness with startPixel isolation and **Layer I** dynamic sub-region trajectory desynchronization (`0x05`), per-pixel ambiguity (Theorem 4), and the Rank Barrier's per-chunk mask space of ≈ 2^70.20 balanced partitions (or ≈ 2^258.60 in 168-bit mode) plus **Layer II** cross-lane chunk-slot desynchronization (`0x06`, `β_0 ≠ β_1`) bound to the cipher via cascade PRF (Theorems 3a, 3b, 11; gcd anti-collapse Theorem 12).
 - **Simulation-based proof.** Under passive observation, an ideal functionality returns uniform random bytes: the Pixel Barrier's output is information-theoretically indistinguishable from random (Theorem 1), with plaintext structural bias neutralized by the rotation barrier (Theorem 7), and computationally indistinguishable from a CSPRNG-generated cover under the PRF and CSPRNG assumptions.
@@ -1346,7 +1346,7 @@ Per-binding examples ship in each binding's own directory under `bindings/<lang>
 - [FAQ.md](FAQ.md) — Analytical and empirical walkthrough of broken primitives under the shipped barrier (8-bit total PRF failure inversion in `nullHash`, `quadHash`, `trainHash`, and 64-bit algebraic stress controls in `jokeHash`, `CRC128`, `FNV-1a`).
 - [ITB.md](ITB.md) — How the barrier works (accessible explanation) and shipped feature reference.
 - [PROOFS.md](PROOFS.md) — Formal security proofs.
-- [lean/README.md](lean/README.md) — Machine-checked Lean 4 formalization of the ITB security proofs and barrier constants.
+- [lean/README.md](lean/README.md) — Machine-checked Lean 4 formalization of the ITB security proofs, barrier constants, and end-to-end executable **Core ITB** pipeline specification (`PipelineSpec128`, `PipelineSpec256`, `PipelineSpec512`).
 - [SCIENCE.md](SCIENCE.md) — Scientific analysis and formal security arguments.
 - [POSTQUANTUM.md](POSTQUANTUM.md) — Post-quantum and combinatorial cryptanalysis of the Desynchronized Interlocked Barrier, Rank Barrier, and Pixel Barrier.
 - [SECURITY.md](SECURITY.md) — Security reference tables.

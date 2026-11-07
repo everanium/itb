@@ -262,7 +262,7 @@ Below is the structural analysis of the four principal paradigms from TAOCP Volu
 
 - [SCIENCE.md](SCIENCE.md) — Formal mathematical specification, multi-factor KPA analysis, and ambiguity-based security framework
 - [PROOFS.md](PROOFS.md) — Complete formal proofs (Proofs 1–12, MAC-Inside-Encrypt composition, and Nonce Uniqueness)
-- [lean/README.md](lean/README.md) — Machine-checked Lean 4 formal verification suite (zero `axiom`, zero `sorry`)
+- [lean/README.md](lean/README.md) — Machine-checked Lean 4 formal verification suite (mathematical theorems & executable **Core ITB** pipeline specification; zero `axiom`, zero `sorry`)
 - [SECURITY.md](SECURITY.md) — Composition modes matrix, CCA leak bounds, and explicit threat-model boundaries
 - [REDTEAM.md](REDTEAM.md) — Empirical cryptanalytic audit suite (wire distinguisher, dual-slot nonce reuse, and FNV-1a lo-lane SAT stress tests)
 - [HWTHREATS.md](HWTHREATS.md) — Constant-time instruction inventory and hardware side-channel mitigation analysis
