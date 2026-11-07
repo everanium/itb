@@ -84,7 +84,7 @@ module Loop
     ["blob-cycle-every", "int", INT64, 0,
      "reopen each pipeline from its session blob every N iterations per worker; 0 = never"],
     ["blob-mode", "int", INT, 1,
-     "container floor sizing mode: 1 (per-region, default) | 2 (per-container)"],
+     "container floor sizing mode: 1 (per-region, default) | 2 (per-container) | 3 (gauss-posit)"],
     ["chunk-size", "string", STRING, "0",
      "streaming chunk-size budget (e.g. 4MB); 0 = profile default; inert for pure message shape"],
     ["drbg", "string", STRING, "",
@@ -394,8 +394,9 @@ module Loop
         return [-1, nil]
       end
       cfg.blob_mode = raw["blob-mode"]
-      unless [1, 2].include?(cfg.blob_mode)
-        err("--blob-mode must be 1 (per-region) | 2 (per-container), got #{cfg.blob_mode}")
+      unless [1, 2, 3].include?(cfg.blob_mode)
+        err("--blob-mode must be 1 (per-region) | 2 (per-container) | 3 (gauss-posit), " \
+            "got #{cfg.blob_mode}")
         return [-1, nil]
       end
       cfg.barrier_fill = raw["barrier-fill"]
@@ -513,7 +514,7 @@ module Loop
         "mac=#{record_str(record, 'mac')} " \
         "parallax=#{Loop.on_off(record.fetch('parallax', false) == true)} " \
         "wrapper=#{Loop.on_off(record.fetch('wrapper', false) == true)}" \
-        "#{record['container_mode'] == 2 ? ' container-mode=2' : ''}" \
+        "#{[2, 3].include?(record['container_mode']) ? " container-mode=#{record['container_mode']}" : ''}" \
         "#{record_str(record, 'drbg') == '-' ? '' : " drbg=#{record['drbg']}"}" \
         "#{record_str(record, 'interlock') == '-' ? '' : " interlock=#{record['interlock']}"}"
       )

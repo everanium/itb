@@ -94,7 +94,7 @@ final class Config
     public $keyBits = 0;
     /** 0 = profile default. */
     public $nonceBits = 0;
-    /** Container floor sizing mode: 1 (per-region, default) | 2 (per-container). */
+    /** Container floor sizing mode: 1 (per-region, default) | 2 (per-container) | 3 (gauss-posit). */
     public $blobMode = 1;
     /** 0 = profile default. */
     public $chunkSize = 0;

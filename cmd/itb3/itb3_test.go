@@ -258,12 +258,54 @@ func TestGenblobBlobMode2AndInspect(t *testing.T) {
 	if !strings.Contains(buf.String(), "container_mode: per-region (1)") {
 		t.Fatalf("inspectText does not contain 'container_mode: per-region (1)':\n%s", buf.String())
 	}
+
+	// Verify Mode 3 (gauss-posit) genblob, inspect, and round-trip
+	pathMode3 := filepath.Join(dir, "mode3.blob")
+	opts3 := genblobOpts{
+		keyBits:     512,
+		nonceBits:   512,
+		barrierFill: 1,
+		blobMode:    3,
+		output:      pathMode3,
+	}
+	if err := runGenblob("nomac", "areion256", opts3, genblobFlagsSet{}); err != nil {
+		t.Fatalf("runGenblob mode=3: %v", err)
+	}
+	blob3, err := os.ReadFile(pathMode3)
+	if err != nil {
+		t.Fatalf("ReadFile mode=3: %v", err)
+	}
+	prof3, err := triple.Inspect(blob3)
+	if err != nil {
+		t.Fatalf("Inspect mode=3: %v", err)
+	}
+	if prof3.ContainerMode != 3 {
+		t.Fatalf("prof3.ContainerMode = %d, want 3", prof3.ContainerMode)
+	}
+	buf.Reset()
+	renderInspect(prof3, len(blob3), &buf)
+	if !strings.Contains(buf.String(), "container_mode: gauss-posit (3)") {
+		t.Fatalf("inspectText does not contain 'container_mode: gauss-posit (3)':\n%s", buf.String())
+	}
+	pipe3, err := triple.LoadF(pathMode3)
+	if err != nil {
+		t.Fatalf("LoadF mode=3: %v", err)
+	}
+	defer pipe3.Close()
+	ct3, err := pipe3.EncryptMessage(plain)
+	if err != nil {
+		t.Fatalf("EncryptMessage mode=3: %v", err)
+	}
+	got3, err := pipe3.DecryptMessage(ct3)
+	if err != nil || !bytes.Equal(plain, got3) {
+		t.Fatalf("DecryptMessage mode=3: err=%v, got=%q", err, got3)
+	}
 }
 
 // TestGenblobRejectsBlobModeOutOfRange pins the --blob-mode gate: 0 and
-// 3 are usage errors (exit 1) raised before any pipeline is built.
+// 4 are usage errors (exit 1) raised before any pipeline is built.
 func TestGenblobRejectsBlobModeOutOfRange(t *testing.T) {
-	for _, mode := range []int{0, 3} {
+	for _, mode := range []int{0, 4} {
 		opts := genblobOpts{keyBits: 512, nonceBits: 512, barrierFill: 1, blobMode: mode}
 		err := runGenblob("nomac", "blake3", opts, genblobFlagsSet{})
 		var ce *cliError
@@ -600,5 +642,31 @@ func TestDesyncFlag(t *testing.T) {
 	const wantWarn = "WARNING: DO NOT DISABLE DESYNC FOR PRODUCTION USE"
 	if !strings.Contains(encHelp, wantWarn) || !strings.Contains(decHelp, wantWarn) {
 		t.Fatalf("help output missing %q", wantWarn)
+	}
+
+	// 5. Mode 3 (Gauss-Posit) blob rejects --desync off on both encrypt and decrypt.
+	blob3Path := filepath.Join(dir, "session_m3.blob")
+	opts3 := genblobOpts{
+		keyBits:     512,
+		nonceBits:   128,
+		barrierFill: 1,
+		blobMode:    3,
+		mac:         "hmac-sha256",
+		output:      blob3Path,
+	}
+	if err := runGenblob("mac", "blake3", opts3, genblobFlagsSet{mac: true}); err != nil {
+		t.Fatalf("runGenblob Mode 3: %v", err)
+	}
+	ct3Path := filepath.Join(dir, "ct_m3.bin")
+	if err := runEncrypt(blob3Path, encryptOpts{inputPath: plainPath, outputPath: ct3Path}); err != nil {
+		t.Fatalf("runEncrypt Mode 3 default: %v", err)
+	}
+	errEnc3Off := runEncrypt(blob3Path, encryptOpts{inputPath: plainPath, outputPath: filepath.Join(dir, "bad_enc3.bin"), desync: "off"})
+	if !errors.As(errEnc3Off, &ce) || ce.code != exitRuntime || !strings.Contains(ce.msg, "Mode 3 (Gauss-Posit) is incompatible with ITB_BARRIERS_DESYNC=off") {
+		t.Fatalf("encrypt --desync off on Mode 3 blob: got %v, want exit %d mentioning Mode 3 incompatibility", errEnc3Off, exitRuntime)
+	}
+	errDec3Off := runDecrypt(blob3Path, decryptOpts{inputPath: ct3Path, outputPath: filepath.Join(dir, "bad_dec3.bin"), desync: "off"})
+	if !errors.As(errDec3Off, &ce) || ce.code != exitRuntime || !strings.Contains(ce.msg, "Mode 3 (Gauss-Posit) is incompatible with ITB_BARRIERS_DESYNC=off") {
+		t.Fatalf("decrypt --desync off on Mode 3 blob: got %v, want exit %d mentioning Mode 3 incompatibility", errDec3Off, exitRuntime)
 	}
 }

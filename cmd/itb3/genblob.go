@@ -98,8 +98,8 @@ Flag semantics:
                   <= 65535); presets: 17, 257, 4093, 16381, 65531.
                   Requires -p to be present.
     -w <cipher>   Wrapper outer cipher — single name from ciphers.
-    --blob-mode 1|2   Container floor sizing mode (default 1 =
-                  per-region; 2 = per-container).
+    --blob-mode 1|2|3 Container floor sizing mode (default 1 =
+                  per-region; 2 = per-container; 3 = gauss-posit).
     --drbg <name> DRBG fill primitive (see itb3 drbgs); omitted =
                   the auto tier (AES-256-CTR where the host has hardware
                   AES, ChaCha20 otherwise). The choice travels in the
@@ -127,7 +127,7 @@ Flag semantics:
 	f.StringSliceVarP(&opts.palette, "palette", "p", nil, "parallax palette (comma-list)")
 	f.IntVarP(&opts.segment, "segment", "s", parallax.DefaultSegmentSize, "parallax segment size (positive, coprime-504)")
 	f.StringVarP(&opts.wrapper, "wrapper", "w", "", "wrapper outer cipher")
-	f.IntVar(&opts.blobMode, "blob-mode", 1, "container floor sizing mode — 1 (per-region, default) | 2 (per-container)")
+	f.IntVar(&opts.blobMode, "blob-mode", 1, "container floor sizing mode — 1 (per-region, default) | 2 (per-container) | 3 (gauss-posit)")
 	f.StringVar(&opts.drbg, "drbg", "", "DRBG fill primitive name (see itb3 drbgs); empty = auto tier")
 	f.StringVar(&opts.interlock, "interlock", "", "Interlocked Barrier chunk width — 48 (default) | 168 (requires 512-bit hash)")
 	f.StringVarP(&opts.output, "output", "o", "", "output blob file (default stdout)")
@@ -138,8 +138,8 @@ Flag semantics:
 // the flag-parsing side stays boilerplate and the crypto path is
 // linear.
 func runGenblob(modeArg string, hashArg string, opts genblobOpts, set genblobFlagsSet) error {
-	if opts.blobMode != 1 && opts.blobMode != 2 {
-		return usageErr("genblob", "--blob-mode must be 1 (per-region) or 2 (per-container), got %d", opts.blobMode)
+	if opts.blobMode != 1 && opts.blobMode != 2 && opts.blobMode != 3 {
+		return usageErr("genblob", "--blob-mode must be 1 (per-region), 2 (per-container), or 3 (gauss-posit), got %d", opts.blobMode)
 	}
 	if !drbg.Known(opts.drbg) {
 		return usageErr("genblob", "--drbg must name a DRBG fill primitive (see itb3 drbgs), got %q", opts.drbg)

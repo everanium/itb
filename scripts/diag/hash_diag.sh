@@ -46,6 +46,7 @@ PAYLOAD="${PAYLOAD:-4MB}"
 BENCH_TIME="${BENCH_TIME:-300ms}"
 BENCH_COUNT="${BENCH_COUNT:-3}"
 KEY_BITS="${ITB_KEY_BITS:-512}"
+CONTAINER_MODE="${ITB_CONTAINER_MODE:-}"
 INTERLOCK="${ITB_INTERLOCK:-}"
 
 if [ "$INTERLOCK" = "168" ]; then
@@ -59,6 +60,7 @@ tier_env=""
 [ "$INTERLOCK_TIER" != "natural" ] && tier_env="$tier_env ITB_FORCE_INTERLOCK_TIER=$INTERLOCK_TIER"
 [ "$PIXEL_TIER"     != "natural" ] && tier_env="$tier_env ITB_FORCE_PIXEL_TIER=$PIXEL_TIER"
 [ "$HASH_TIER"      != "natural" ] && tier_env="$tier_env ITB_FORCE_HASH_TIER=$HASH_TIER"
+[ -n "$CONTAINER_MODE" ]           && tier_env="$tier_env ITB_CONTAINER_MODE=$CONTAINER_MODE"
 [ -n "$INTERLOCK" ]                && tier_env="$tier_env ITB_INTERLOCK=$INTERLOCK"
 
 model=$(awk -F': +' '/^model name/{print $2; exit}' /proc/cpuinfo 2>/dev/null || echo unknown)

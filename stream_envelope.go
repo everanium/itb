@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/everanium/itb/internal/drbg"
+	"github.com/everanium/itb/internal/forcetier"
 )
 
 // nomacTagStubSizeCfg returns the number of bytes the No MAC Encrypt3x
@@ -90,6 +91,9 @@ func validateTagStubSizeCfg(cfg *Config) error {
 // receiver's import path uses [applyGlobalsV1ToCfg] for the same
 // enum checks so a poisoned blob never lands.
 func validateConfigCfg(cfg *Config) error {
+	if err := validateDesyncModeCfg(cfg); err != nil {
+		return err
+	}
 	if cfg == nil {
 		return nil
 	}
@@ -107,7 +111,7 @@ func validateConfigCfg(cfg *Config) error {
 		return fmt.Errorf("itb: cfg.MaxWorkers=%d must be >= 0", cfg.MaxWorkers)
 	}
 	switch cfg.Mode {
-	case 0, 1, 2:
+	case 0, 1, 2, 3:
 	default:
 		return fmt.Errorf("%w (cfg.Mode=%d)", ErrBlobModeMismatch, cfg.Mode)
 	}
@@ -122,9 +126,22 @@ func validateConfigCfg(cfg *Config) error {
 	return nil
 }
 
+// validateDesyncModeCfg rejects Mode 3 (Gauss-Posit) when
+// ITB_BARRIERS_DESYNC=off is set, because Gauss-Posit sub-region chord
+// modulation requires active Layer I/II desynchronization.
+func validateDesyncModeCfg(cfg *Config) error {
+	if currentContainerModeCfg(cfg) == blobModeGaussPosit && forcetier.BarriersDesyncOff() {
+		return fmt.Errorf("itb: Mode 3 (Gauss-Posit) is incompatible with ITB_BARRIERS_DESYNC=off")
+	}
+	return nil
+}
+
 // validateInterlockWidthCfg validates cfg.Interlock and enforces that
 // Interlock168 is only used with 512-bit inner hash width.
 func validateInterlockWidthCfg(cfg *Config, width int) error {
+	if err := validateDesyncModeCfg(cfg); err != nil {
+		return err
+	}
 	if cfg == nil || cfg.Interlock == "" || cfg.Interlock == Interlock48 {
 		return nil
 	}

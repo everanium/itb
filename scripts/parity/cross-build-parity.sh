@@ -12,11 +12,14 @@
 # the cross matrix forces the two implementations to agree on the
 # sampled mapping.
 #
-# Fixture matrix reuses the standard edge-case set:
-#   1  6  7  56  1024  65535  1048576  16777231
-# — bytes that exercise the sub-pixel, single-pixel, single-8-pixel-batch,
-# non-8-multiple, single-chunk (< 16 MiB), and multi-chunk (16 MiB + 15 B)
-# handoffs.
+# Fixture matrix reuses the compact edge-case set:
+#   1  56  1024  65535  524288  1048576
+# — bytes that exercise the sub-pixel (1), single-8-pixel-batch (56),
+# tier-1 microBatch (1024), non-8-multiple / tier-2 microBatch transition
+# (65535), 512 KiB (524288), and 1 MiB multi-microBatch (1048576) handoffs
+# without multi-gigabyte disk write amplification. (Sub-chunk and single-chunk
+# boundaries 6, 20, 21, 22, 41, 42, 43, 63, 64 are covered by Section 4b and
+# tools/parity selftest).
 #
 # Nonce-width axis: the nonce width determines the per-pixel buf shape
 # the inner hash absorbs (nonce bytes + 4 → 20 / 36 / 68 bytes, the
@@ -45,8 +48,9 @@
 # reaches the 16-lane unrank pass), and the 168-bit interlock tiers on
 # areion512 and blake2b512 (Section 4b).
 #
-# Working directory tmp/parity/ is under the repo's gitignored tmp/ tree;
-# nothing produced by this script lands in the tracked working set.
+# Working directory defaults to ${TMPDIR:-/tmp}/itb-parity (overridable via
+# PARITY_WORK_DIR) so transient ciphertexts live in tmpfs rather than wearing
+# the repository's backing SSD, and nothing lands in the tracked working set.
 
 set -eu
 set -o pipefail
@@ -74,19 +78,22 @@ CGO_ENABLED=1 CGO_CFLAGS="-DITB_PARITY_TIER_OVERRIDE" \
 CGO_ENABLED=0 go build -tags noitbasm \
     -o tools/parity/parity-nocgo-noasm                    ./tools/parity
 
-# Fixture matrix. Covers sub-pixel (1), single-pixel (6, 7), single-8-pixel
-# batch boundary (56), and multi-chunk transitions (65535, 1048576,
-# 16777231). 16777231 = 16 MiB + 15 B — one full chunk (DefaultChunkSize
-# = 16 MiB) plus a short remainder chunk.
-SIZES=(1 6 7 56 1024 65535 1048576 16777231)
+# Fixture matrix. Covers sub-pixel (1), single-8-pixel batch boundary (56),
+# tier-1 microBatch (1024), odd 64 KiB - 1 tail & tier-2 microBatch transition
+# (65535), 512 KiB (524288), and 1 MiB multi-microBatch (1048576).
+SIZES=(1 56 1024 65535 524288 1048576)
 
 # Nonce-width matrix. 128 / 256 / 512 bits map to the 20- / 36- /
 # 68-byte per-pixel buf shapes, exercising every specialised
 # fused cascade kernel shape.
 NONCEBITS=(128 256 512)
 
-WORKDIR="$REPO/tmp/parity"
+WORKDIR="${PARITY_WORK_DIR:-${TMPDIR:-/tmp}/itb-parity}"
 mkdir -p "$WORKDIR"
+WIRE1="$WORKDIR/wire1.bin"
+BACK1="$WORKDIR/back1.bin"
+WIRE2="$WORKDIR/wire2.bin"
+BACK2="$WORKDIR/back2.bin"
 
 # Canonical PRF-grade hash roster. Order matches
 # github.com/everanium/itb/hashes.Registry so the sweep visits every
@@ -112,12 +119,12 @@ for NB in "${NONCEBITS[@]}"; do
 
         for SIZE in "${SIZES[@]}"; do
             PLAIN="$WORKDIR/plain-${HASH}-${SIZE}.bin"
-            head -c "$SIZE" /dev/urandom > "$PLAIN"
+            if [ ! -f "$PLAIN" ]; then
+                head -c "$SIZE" /dev/urandom > "$PLAIN"
+            fi
             PLAIN_HASH=$(sha256sum "$PLAIN" | awk '{print $1}')
 
             # Direction 1: encrypt=cgo, decrypt=nocgo.
-            WIRE1="$WORKDIR/wire-${HASH}-${SIZE}-nb${NB}-cgo.bin"
-            BACK1="$WORKDIR/back-${HASH}-${SIZE}-nb${NB}-nocgo.bin"
             ./tools/parity/parity-cgo   -mode=encrypt \
                 -profile="$PROFILE" -hash="$HASH" -seed-file="$SEED" -nonce-bits="$NB" \
                 -in="$PLAIN" -out="$WIRE1"
@@ -131,8 +138,6 @@ for NB in "${NONCEBITS[@]}"; do
             fi
 
             # Direction 2: encrypt=nocgo, decrypt=cgo.
-            WIRE2="$WORKDIR/wire-${HASH}-${SIZE}-nb${NB}-nocgo.bin"
-            BACK2="$WORKDIR/back-${HASH}-${SIZE}-nb${NB}-cgo.bin"
             ./tools/parity/parity-nocgo -mode=encrypt \
                 -profile="$PROFILE" -hash="$HASH" -seed-file="$SEED" -nonce-bits="$NB" \
                 -in="$PLAIN" -out="$WIRE2"
@@ -179,8 +184,6 @@ for TIER in "${TIER_MATRIX[@]}"; do
                 PLAIN="$WORKDIR/plain-${HASH}-${SIZE}.bin"
                 PLAIN_HASH=$(sha256sum "$PLAIN" | awk '{print $1}')
 
-                WIRE1="$WORKDIR/wire-${HASH}-${SIZE}-nb${NB}-tier${TIER}.bin"
-                BACK1="$WORKDIR/back-${HASH}-${SIZE}-nb${NB}-tier${TIER}-nocgo.bin"
                 ITB_FORCE_PIXEL_TIER="$TIER" ./tools/parity/parity-cgo-tiered -mode=encrypt \
                     -profile="$PROFILE" -hash="$HASH" -seed-file="$SEED" -nonce-bits="$NB" \
                     -in="$PLAIN" -out="$WIRE1"
@@ -192,8 +195,6 @@ for TIER in "${TIER_MATRIX[@]}"; do
                     FAIL=$((FAIL + 1))
                 fi
 
-                WIRE2="$WORKDIR/wire-${HASH}-${SIZE}-nb${NB}-nocgo-vs-tier${TIER}.bin"
-                BACK2="$WORKDIR/back-${HASH}-${SIZE}-nb${NB}-nocgo-vs-tier${TIER}-cgo.bin"
                 ./tools/parity/parity-nocgo -mode=encrypt \
                     -profile="$PROFILE" -hash="$HASH" -seed-file="$SEED" -nonce-bits="$NB" \
                     -in="$PLAIN" -out="$WIRE2"
@@ -318,8 +319,6 @@ for ARM in "${HASHARMS[@]}"; do
                 PLAIN_HASH=$(sha256sum "$PLAIN" | awk '{print $1}')
 
                 # Direction 1: encrypt=cgo+forced arm, decrypt=nocgo+scalar.
-                WIRE1="$WORKDIR/wire-${HASH}-${SIZE}-nb${NB}-arm${ARM}.bin"
-                BACK1="$WORKDIR/back-${HASH}-${SIZE}-nb${NB}-arm${ARM}-nocgo.bin"
                 env $(arm_env "$ARM") ./tools/parity/parity-cgo -mode=encrypt \
                     -profile="$PROFILE" -hash="$HASH" -seed-file="$SEED" -nonce-bits="$NB" \
                     -in="$PLAIN" -out="$WIRE1"
@@ -333,8 +332,6 @@ for ARM in "${HASHARMS[@]}"; do
                 ARM_CELLS=$((ARM_CELLS + 1))
 
                 # Direction 2: encrypt=nocgo+scalar, decrypt=cgo+forced arm.
-                WIRE2="$WORKDIR/wire-${HASH}-${SIZE}-nb${NB}-scalar-vs-arm${ARM}.bin"
-                BACK2="$WORKDIR/back-${HASH}-${SIZE}-nb${NB}-arm${ARM}-cgo.bin"
                 ITB_FORCE_HASH_TIER=scalar ./tools/parity/parity-nocgo -mode=encrypt \
                     -profile="$PROFILE" -hash="$HASH" -seed-file="$SEED" -nonce-bits="$NB" \
                     -in="$PLAIN" -out="$WIRE2"
@@ -376,8 +373,6 @@ for ILT in "${ILTIERS[@]}"; do
             PLAIN="$WORKDIR/plain-${ILHASH}-${SIZE}.bin"
             PLAIN_HASH=$(sha256sum "$PLAIN" | awk '{print $1}')
 
-            WIRE1="$WORKDIR/wire-il-${ILHASH}-${SIZE}-nb${NB}-${ILT}.bin"
-            BACK1="$WORKDIR/back-il-${ILHASH}-${SIZE}-nb${NB}-${ILT}-nocgo.bin"
             ITB_FORCE_INTERLOCK_TIER="$ILT" ./tools/parity/parity-cgo -mode=encrypt \
                 -profile="$ILPROFILE" -hash="$ILHASH" -seed-file="$SEED" -nonce-bits="$NB" \
                 -in="$PLAIN" -out="$WIRE1"
@@ -389,8 +384,6 @@ for ILT in "${ILTIERS[@]}"; do
                 FAIL=$((FAIL + 1))
             fi
 
-            WIRE2="$WORKDIR/wire-il-${ILHASH}-${SIZE}-nb${NB}-scalar-vs-${ILT}.bin"
-            BACK2="$WORKDIR/back-il-${ILHASH}-${SIZE}-nb${NB}-${ILT}-cgo.bin"
             ITB_FORCE_INTERLOCK_TIER=scalar ./tools/parity/parity-nocgo -mode=encrypt \
                 -profile="$ILPROFILE" -hash="$ILHASH" -seed-file="$SEED" -nonce-bits="$NB" \
                 -in="$PLAIN" -out="$WIRE2"
@@ -434,8 +427,6 @@ for ILHASH in "${IL168HASHES[@]}"; do
                 PLAIN="$WORKDIR/plain-${ILHASH}-${SIZE}.bin"
                 PLAIN_HASH=$(sha256sum "$PLAIN" | awk '{print $1}')
 
-                WIRE1="$WORKDIR/wire-il168-${ILHASH}-${SIZE}-nb${NB}-${ILT}.bin"
-                BACK1="$WORKDIR/back-il168-${ILHASH}-${SIZE}-nb${NB}-${ILT}-nocgo.bin"
                 ITB_FORCE_INTERLOCK_TIER="$ILT" ./tools/parity/parity-cgo -mode=encrypt \
                     -profile="$ILPROFILE" -hash="$ILHASH" -seed-file="$SEED" -nonce-bits="$NB" -interlock=168 \
                     -in="$PLAIN" -out="$WIRE1"
@@ -447,8 +438,6 @@ for ILHASH in "${IL168HASHES[@]}"; do
                     FAIL=$((FAIL + 1))
                 fi
 
-                WIRE2="$WORKDIR/wire-il168-${ILHASH}-${SIZE}-nb${NB}-scalar-vs-${ILT}.bin"
-                BACK2="$WORKDIR/back-il168-${ILHASH}-${SIZE}-nb${NB}-${ILT}-cgo.bin"
                 ITB_FORCE_INTERLOCK_TIER=scalar ./tools/parity/parity-nocgo -mode=encrypt \
                     -profile="$ILPROFILE" -hash="$ILHASH" -seed-file="$SEED" -nonce-bits="$NB" -interlock=168 \
                     -in="$PLAIN" -out="$WIRE2"
@@ -480,8 +469,6 @@ for SPEC in "${IL168_TAIL_SPECS[@]}"; do
         PLAIN_HASH=$(sha256sum "$PLAIN" | awk '{print $1}')
 
         for ILT in "${ILTIERS[@]}"; do
-            WIRE1="$WORKDIR/wire-il168-tail-${TAG}-${SIZE}-${ILT}.bin"
-            BACK1="$WORKDIR/back-il168-tail-${TAG}-${SIZE}-${ILT}-nocgo.bin"
             ITB_FORCE_INTERLOCK_TIER="$ILT" ./tools/parity/parity-cgo -mode=encrypt \
                 -profile="$ILPROFILE" -hash="$ILHASH" -seed-file="$SEED" -nonce-bits=512 -interlock=168 \
                 -in="$PLAIN" -out="$WIRE1"
@@ -493,8 +480,6 @@ for SPEC in "${IL168_TAIL_SPECS[@]}"; do
                 FAIL=$((FAIL + 1))
             fi
 
-            WIRE2="$WORKDIR/wire-il168-tail-${TAG}-${SIZE}-scalar-vs-${ILT}.bin"
-            BACK2="$WORKDIR/back-il168-tail-${TAG}-${SIZE}-${ILT}-cgo.bin"
             ITB_FORCE_INTERLOCK_TIER=scalar ./tools/parity/parity-nocgo -mode=encrypt \
                 -profile="$ILPROFILE" -hash="$ILHASH" -seed-file="$SEED" -nonce-bits=512 -interlock=168 \
                 -in="$PLAIN" -out="$WIRE2"
@@ -536,8 +521,6 @@ for SIZE in "${SIZES[@]}"; do
         ENC_ARM="${PAIR%%:*}"
         DEC_ARM="${PAIR##*:}"
 
-        WIRE1="$WORKDIR/wire-mac-${SIZE}-${ENC_ARM}.bin"
-        BACK1="$WORKDIR/back-mac-${SIZE}-${DEC_ARM}.bin"
         ./tools/parity/$ENC_ARM -mode=encrypt \
             -profile="$MAC_PROFILE" -hash="$MAC_HASH" -seed-file="$MAC_SEED" \
             -in="$PLAIN" -out="$WIRE1"
@@ -549,8 +532,6 @@ for SIZE in "${SIZES[@]}"; do
             FAIL=$((FAIL + 1))
         fi
 
-        WIRE2="$WORKDIR/wire-mac-${SIZE}-${DEC_ARM}.bin"
-        BACK2="$WORKDIR/back-mac-${SIZE}-${ENC_ARM}.bin"
         ./tools/parity/$DEC_ARM -mode=encrypt \
             -profile="$MAC_PROFILE" -hash="$MAC_HASH" -seed-file="$MAC_SEED" \
             -in="$PLAIN" -out="$WIRE2"
@@ -638,8 +619,6 @@ for RUNG in "${FILLRUNGS[@]}"; do
                 PLAIN_HASH=$(sha256sum "$PLAIN" | awk '{print $1}')
 
                 # Direction 1: encrypt cgo + rung disarmed, decrypt nocgo + scalar.
-                WIRE1="$WORKDIR/wire-fill-${HASH}-${SIZE}-nb${NB}-rung${RUNG}.bin"
-                BACK1="$WORKDIR/back-fill-${HASH}-${SIZE}-nb${NB}-rung${RUNG}-nocgo.bin"
                 env $(rung_env "$RUNG") ./tools/parity/parity-cgo -mode=encrypt \
                     -profile="$PROFILE" -hash="$HASH" -seed-file="$SEED" -nonce-bits="$NB" \
                     -in="$PLAIN" -out="$WIRE1"
@@ -654,8 +633,6 @@ for RUNG in "${FILLRUNGS[@]}"; do
                 FILL_CELLS=$((FILL_CELLS + 1))
 
                 # Direction 2: encrypt nocgo + scalar, decrypt cgo + rung disarmed.
-                WIRE2="$WORKDIR/wire-fill-${HASH}-${SIZE}-nb${NB}-scalar-vs-rung${RUNG}.bin"
-                BACK2="$WORKDIR/back-fill-${HASH}-${SIZE}-nb${NB}-rung${RUNG}-cgo.bin"
                 ITB_FORCE_HASH_TIER=scalar ITB_FORCE_INTERLOCK_PRF_FILL_TIER=scalar \
                     ./tools/parity/parity-nocgo -mode=encrypt \
                     -profile="$PROFILE" -hash="$HASH" -seed-file="$SEED" -nonce-bits="$NB" \
@@ -695,8 +672,6 @@ for FT in "${FILLTIERS[@]}"; do
                 PLAIN_HASH=$(sha256sum "$PLAIN" | awk '{print $1}')
 
                 # Direction 1: encrypt cgo + forced fill-tier, decrypt nocgo + scalar.
-                WIRE1="$WORKDIR/wire-filltier-${HASH}-${SIZE}-nb${NB}-${FT}.bin"
-                BACK1="$WORKDIR/back-filltier-${HASH}-${SIZE}-nb${NB}-${FT}-nocgo.bin"
                 ITB_FORCE_INTERLOCK_PRF_FILL_TIER="$FT" ./tools/parity/parity-cgo -mode=encrypt \
                     -profile="$PROFILE" -hash="$HASH" -seed-file="$SEED" -nonce-bits="$NB" \
                     -in="$PLAIN" -out="$WIRE1"
@@ -711,8 +686,6 @@ for FT in "${FILLTIERS[@]}"; do
                 FILL_CELLS=$((FILL_CELLS + 1))
 
                 # Direction 2: encrypt nocgo + scalar, decrypt cgo + forced fill-tier.
-                WIRE2="$WORKDIR/wire-filltier-${HASH}-${SIZE}-nb${NB}-scalar-vs-${FT}.bin"
-                BACK2="$WORKDIR/back-filltier-${HASH}-${SIZE}-nb${NB}-${FT}-cgo.bin"
                 ITB_FORCE_HASH_TIER=scalar ITB_FORCE_INTERLOCK_PRF_FILL_TIER=scalar \
                     ./tools/parity/parity-nocgo -mode=encrypt \
                     -profile="$PROFILE" -hash="$HASH" -seed-file="$SEED" -nonce-bits="$NB" \
@@ -730,12 +703,160 @@ for FT in "${FILLTIERS[@]}"; do
     done
 done
 
+# ---------------------------------------------------------------------------
+# Section 7 — Mode 3 (Gauss-Posit) cross-build & cross-tier matrix.
+# Exercises the 56x28 = 1568-pixel (6272-byte) Posit(16,1)/Quire(256)
+# container floor across all three hash widths (aesitb128, areion256,
+# areion512), both initialization paths (-container-mode=3 via Opts.Mode=3
+# and ITB_CONTAINER_MODE=3 environment variable), all five C pixel tiers
+# (A / A_NOGFNI / B / B_NOGFNI / C) against pure-Go scalar, 168-bit
+# interlock on 512-bit primitives, and KMAC256 MAC authentication across
+# parity-cgo <-> parity-nocgo-noasm.
+# Uses the full SIZES ladder (1 56 1024 65535 524288 1048576) so both the
+# 56x28 floor (sizes <= 1024) and the above-floor multi-microBatch regimes
+# are verified end-to-end.
+# ---------------------------------------------------------------------------
+M3_SIZES=("${SIZES[@]}")
+M3_CELLS=0
+
+# Sub-section 7a — 3 hash widths × 3 nonce widths × 5 C pixel tiers vs scalar,
+# testing both -container-mode=3 (Opts.Mode=3) and ITB_CONTAINER_MODE=3 env.
+M3_SPECS=(
+    "aesitb128:flag"
+    "areion256:env"
+    "areion512:flag"
+    "areion512:env"
+)
+
+for SPEC in "${M3_SPECS[@]}"; do
+    HASH="${SPEC%%:*}"
+    INIT_VIA="${SPEC##*:}"
+    PROFILE="parity-${HASH}-v1"
+
+    for NB in "${NONCEBITS[@]}"; do
+        SEED="$WORKDIR/seed-m3-${HASH}-${INIT_VIA}-nb${NB}.blob"
+        if [ "$INIT_VIA" = "env" ]; then
+            ITB_CONTAINER_MODE=3 ./tools/parity/parity-cgo -mode=init \
+                -profile="$PROFILE" -hash="$HASH" -seed-file="$SEED" -nonce-bits="$NB"
+        else
+            ./tools/parity/parity-cgo -mode=init \
+                -profile="$PROFILE" -hash="$HASH" -seed-file="$SEED" -nonce-bits="$NB" -container-mode=3
+        fi
+        WANT_FLOOR=$(( 6272 + 32 + 4 + NB / 8 ))
+
+        for TIER in "${TIER_MATRIX[@]}"; do
+            for SIZE in "${M3_SIZES[@]}"; do
+                PLAIN="$WORKDIR/plain-${HASH}-${SIZE}.bin"
+                PLAIN_HASH=$(sha256sum "$PLAIN" | awk '{print $1}')
+
+                # Direction 1: encrypt cgo-tiered, decrypt nocgo scalar (with ITB_CONTAINER_MODE unset).
+                ITB_FORCE_PIXEL_TIER="$TIER" ./tools/parity/parity-cgo-tiered -mode=encrypt \
+                    -profile="$PROFILE" -hash="$HASH" -seed-file="$SEED" -nonce-bits="$NB" \
+                    -in="$PLAIN" -out="$WIRE1"
+                if [ "$SIZE" -le 1024 ]; then
+                    GOT_LEN=$(wc -c < "$WIRE1" | tr -d ' ')
+                    if [ "$GOT_LEN" -ne "$WANT_FLOOR" ]; then
+                        echo "FAIL: mode3 wire floor len=$GOT_LEN want=$WANT_FLOOR hash=$HASH via=$INIT_VIA size=$SIZE nb=$NB"
+                        FAIL=$((FAIL + 1))
+                    fi
+                fi
+                ITB_FORCE_HASH_TIER=scalar ITB_FORCE_INTERLOCK_TIER=scalar \
+                    ./tools/parity/parity-nocgo -mode=decrypt \
+                    -profile="$PROFILE" -hash="$HASH" -seed-file="$SEED" -nonce-bits="$NB" \
+                    -in="$WIRE1" -out="$BACK1"
+                if [ "$(sha256sum "$BACK1" | awk '{print $1}')" != "$PLAIN_HASH" ]; then
+                    echo "FAIL: mode3 tier=$TIER via=$INIT_VIA encrypt=cgo decrypt=nocgo-scalar hash=$HASH size=$SIZE nb=$NB"
+                    FAIL=$((FAIL + 1))
+                fi
+                M3_CELLS=$((M3_CELLS + 1))
+
+                # Direction 2: encrypt nocgo scalar, decrypt cgo-tiered.
+                ITB_FORCE_HASH_TIER=scalar ITB_FORCE_INTERLOCK_TIER=scalar \
+                    ./tools/parity/parity-nocgo -mode=encrypt \
+                    -profile="$PROFILE" -hash="$HASH" -seed-file="$SEED" -nonce-bits="$NB" \
+                    -in="$PLAIN" -out="$WIRE2"
+                if [ "$SIZE" -le 1024 ]; then
+                    GOT_LEN=$(wc -c < "$WIRE2" | tr -d ' ')
+                    if [ "$GOT_LEN" -ne "$WANT_FLOOR" ]; then
+                        echo "FAIL: mode3 nocgo wire floor len=$GOT_LEN want=$WANT_FLOOR hash=$HASH via=$INIT_VIA size=$SIZE nb=$NB"
+                        FAIL=$((FAIL + 1))
+                    fi
+                fi
+                ITB_FORCE_PIXEL_TIER="$TIER" ./tools/parity/parity-cgo-tiered -mode=decrypt \
+                    -profile="$PROFILE" -hash="$HASH" -seed-file="$SEED" -nonce-bits="$NB" \
+                    -in="$WIRE2" -out="$BACK2"
+                if [ "$(sha256sum "$BACK2" | awk '{print $1}')" != "$PLAIN_HASH" ]; then
+                    echo "FAIL: mode3 tier=$TIER via=$INIT_VIA encrypt=nocgo-scalar decrypt=cgo hash=$HASH size=$SIZE nb=$NB"
+                    FAIL=$((FAIL + 1))
+                fi
+                M3_CELLS=$((M3_CELLS + 1))
+            done
+        done
+    done
+done
+
+# Sub-section 7b — Mode 3 + 168-bit interlock & KMAC256 MAC across parity-cgo <-> parity-nocgo-noasm.
+M3_EXTRA_SPECS=(
+    "parity-areion512-il168-v1:areion512:168:flag"
+    "parity-blake2b512-il168-v1:blake2b512:168:env"
+    "parity-mac-areion512-v1:areion512:48:flag"
+    "parity-mac-areion512-v1:areion512:48:env"
+)
+
+for ESPEC in "${M3_EXTRA_SPECS[@]}"; do
+    IFS=':' read -r EPROF EHASH EIL EVIA <<< "$ESPEC"
+    ESEED="$WORKDIR/seed-m3-extra-${EPROF}-${EIL}-${EVIA}.blob"
+    if [ "$EVIA" = "env" ]; then
+        ITB_CONTAINER_MODE=3 ./tools/parity/parity-cgo -mode=init \
+            -profile="$EPROF" -hash="$EHASH" -seed-file="$ESEED" -nonce-bits=512 -interlock="$EIL"
+    else
+        ./tools/parity/parity-cgo -mode=init \
+            -profile="$EPROF" -hash="$EHASH" -seed-file="$ESEED" -nonce-bits=512 -interlock="$EIL" -container-mode=3
+    fi
+
+    for SIZE in "${M3_SIZES[@]}"; do
+        PLAIN="$WORKDIR/plain-${EHASH}-${SIZE}.bin"
+        PLAIN_HASH=$(sha256sum "$PLAIN" | awk '{print $1}')
+
+        ./tools/parity/parity-cgo -mode=encrypt \
+            -profile="$EPROF" -hash="$EHASH" -seed-file="$ESEED" -nonce-bits=512 -interlock="$EIL" \
+            -in="$PLAIN" -out="$WIRE1"
+        if [ "$SIZE" -le 1024 ]; then
+            GOT_LEN=$(wc -c < "$WIRE1" | tr -d ' ')
+            if [ "$GOT_LEN" -ne 6372 ]; then
+                echo "FAIL: mode3 extra wire floor len=$GOT_LEN want=6372 prof=$EPROF via=$EVIA size=$SIZE"
+                FAIL=$((FAIL + 1))
+            fi
+        fi
+        ./tools/parity/parity-nocgo-noasm -mode=decrypt \
+            -profile="$EPROF" -hash="$EHASH" -seed-file="$ESEED" -nonce-bits=512 -interlock="$EIL" \
+            -in="$WIRE1" -out="$BACK1"
+        if [ "$(sha256sum "$BACK1" | awk '{print $1}')" != "$PLAIN_HASH" ]; then
+            echo "FAIL: mode3 extra prof=$EPROF il=$EIL via=$EVIA encrypt=cgo decrypt=nocgo-noasm size=$SIZE"
+            FAIL=$((FAIL + 1))
+        fi
+        M3_CELLS=$((M3_CELLS + 1))
+
+        ./tools/parity/parity-nocgo-noasm -mode=encrypt \
+            -profile="$EPROF" -hash="$EHASH" -seed-file="$ESEED" -nonce-bits=512 -interlock="$EIL" \
+            -in="$PLAIN" -out="$WIRE2"
+        ./tools/parity/parity-cgo -mode=decrypt \
+            -profile="$EPROF" -hash="$EHASH" -seed-file="$ESEED" -nonce-bits=512 -interlock="$EIL" \
+            -in="$WIRE2" -out="$BACK2"
+        if [ "$(sha256sum "$BACK2" | awk '{print $1}')" != "$PLAIN_HASH" ]; then
+            echo "FAIL: mode3 extra prof=$EPROF il=$EIL via=$EVIA encrypt=nocgo-noasm decrypt=cgo size=$SIZE"
+            FAIL=$((FAIL + 1))
+        fi
+        M3_CELLS=$((M3_CELLS + 1))
+    done
+done
+
 echo "---"
 echo "skipped: $SKIPPED_PAIRS (hash, arm) pairs / $SKIPPED_CELLS cells (no such arm — see SKIP lines)"
 echo "skipped: $FILL_SKIPPED_PAIRS (hash, fill-tier) pairs / $FILL_SKIPPED_CELLS cells (no such kernel — see SKIP lines)"
-TOTAL=$(( CELLS + TIER_CELLS + ARM_CELLS + IL_CELLS + IL168_CELLS + MAC_CELLS + FILL_CELLS ))
+TOTAL=$(( CELLS + TIER_CELLS + ARM_CELLS + IL_CELLS + IL168_CELLS + MAC_CELLS + FILL_CELLS + M3_CELLS ))
 if [ "$FAIL" -eq 0 ]; then
-    echo "PASS: $CELLS host-tier + $TIER_CELLS forced-pixel-tier + $ARM_CELLS forced-hash-arm + $IL_CELLS interlock-tier + $IL168_CELLS interlock168-tier + $MAC_CELLS kmac-mac + $FILL_CELLS batch-16-fill = $TOTAL cells"
+    echo "PASS: $CELLS host-tier + $TIER_CELLS forced-pixel-tier + $ARM_CELLS forced-hash-arm + $IL_CELLS interlock-tier + $IL168_CELLS interlock168-tier + $MAC_CELLS kmac-mac + $FILL_CELLS batch-16-fill + $M3_CELLS mode3-posit = $TOTAL cells"
     exit 0
 fi
 echo "FAIL: $FAIL of $TOTAL cells failed"

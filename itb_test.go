@@ -850,10 +850,11 @@ func TestContainerSizePerRegionVsPerContainer(t *testing.T) {
 		keyBits int
 		wantW1  int // Mode 1 grid side (small payload)
 		wantW2  int // Mode 2 grid side (small payload)
+		wantW3  int // Mode 3 grid side (small payload)
 	}{
-		{512, 25, 15},
-		{1024, 35, 21},
-		{2048, 48, 29},
+		{512, 25, 15, 20},
+		{1024, 35, 21, 28},
+		{2048, 48, 29, 39},
 	} {
 		t.Run(fmt.Sprintf("%d-bit", tc.keyBits), func(t *testing.T) {
 			n, l, d1, d2, d3, s1, s2, s3 := makeEightSeeds512(tc.keyBits, makeBlake2bHash512())
@@ -870,6 +871,12 @@ func TestContainerSizePerRegionVsPerContainer(t *testing.T) {
 			w2, h2 := containerSize3_512Cfg(cfg2, n, d1, d2, d3, s1, s2, s3, cobsLensSmall)
 			if w2 != tc.wantW2 || h2 != tc.wantW2 {
 				t.Fatalf("Mode 2 small container = %dx%d, want %dx%d", w2, h2, tc.wantW2, tc.wantW2)
+			}
+
+			cfg3 := &Config{Mode: 3}
+			w3, h3 := containerSize3_512Cfg(cfg3, n, d1, d2, d3, s1, s2, s3, cobsLensSmall)
+			if w3 != tc.wantW3 || h3 != tc.wantW3 {
+				t.Fatalf("Mode 3 small container = %dx%d, want %dx%d", w3, h3, tc.wantW3, tc.wantW3)
 			}
 		})
 	}
@@ -975,8 +982,8 @@ func TestContainerSizeMode2Transition(t *testing.T) {
 // raise for the same condition.
 func TestConfigModeOutOfRangeIsBlobModeMismatch(t *testing.T) {
 	ns, ls, ds1, ds2, ds3, ss1, ss2, ss3 := makeEightSeeds512(512, makeBlake2bHash512())
-	_, err := Encrypt3x512Cfg(&Config{Mode: 3}, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, []byte("x"))
+	_, err := Encrypt3x512Cfg(&Config{Mode: 4}, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, []byte("x"))
 	if !errors.Is(err, ErrBlobModeMismatch) {
-		t.Fatalf("Encrypt3x512Cfg(Mode=3): %v, want ErrBlobModeMismatch", err)
+		t.Fatalf("Encrypt3x512Cfg(Mode=4): %v, want ErrBlobModeMismatch", err)
 	}
 }

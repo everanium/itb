@@ -303,6 +303,11 @@ main = hspec $ do
       inspected2 <- inspect b2
       inspected2 `shouldSatisfy` isInfixOf "\"container_mode\":2"
       freePipeline s2
+      s3 <- initPipeline "singlemsg-triple-mac-v1" (mode 3)
+      b3 <- save s3
+      inspected3 <- inspect b3
+      inspected3 `shouldSatisfy` isInfixOf "\"container_mode\":3"
+      freePipeline s3
 
     it "profiles lists the catalogue sorted and each name resolves" $ do
       names <- profiles

@@ -232,8 +232,111 @@ func (s *Seed512) deriveSubregionScheduleBody(nonce []byte, startPixel, totalPix
 	return sched
 }
 
+// deriveSubregionSchedulePosit derives the Mode 3 Layer I (0x05) Gauss-Posit
+// sub-region schedule for a 128-bit startSeed over fixed-length buffers
+// [0x05 || nonce].
+func (s *Seed128) deriveSubregionSchedulePosit(nonce []byte, startPixel, totalPixels int) subregionSchedule {
+	wipePixelCallStack([9][8]uint64{})
+	sched := s.deriveSubregionSchedulePositBody(nonce, startPixel, totalPixels)
+	wipePixelCallStack([9][8]uint64{})
+	return sched
+}
+
+//go:noinline
+func (s *Seed128) deriveSubregionSchedulePositBody(nonce []byte, startPixel, totalPixels int) subregionSchedule {
+	var stackBuf [1 + maxDesyncNonceBytes]byte
+	buf := stackBuf[:1+len(nonce)]
+	buf[0] = 0x05
+	copy(buf[1:], nonce)
+	last := len(buf) - 1
+	baseByte := nonce[len(nonce)-1]
+	var w [8]uint64
+	for j := 0; j < 4; j++ {
+		buf[last] = baseByte ^ byte(j)
+		lo, hi := s.ChainHash128(buf)
+		w[2*j], w[2*j+1] = fullWidthFold(lo, hi)
+	}
+	sched := buildSubregionSchedulePosit(startPixel, totalPixels, w)
+	clear(w[:])
+	clear(stackBuf[:])
+	runtime.KeepAlive(&w)
+	runtime.KeepAlive(&stackBuf)
+	return sched
+}
+
+// deriveSubregionSchedulePosit derives the Mode 3 Layer I (0x05) Gauss-Posit
+// sub-region schedule for a 256-bit startSeed over fixed-length buffers
+// [0x05 || nonce].
+func (s *Seed256) deriveSubregionSchedulePosit(nonce []byte, startPixel, totalPixels int) subregionSchedule {
+	wipePixelCallStack256([9][8]uint64{})
+	sched := s.deriveSubregionSchedulePositBody(nonce, startPixel, totalPixels)
+	wipePixelCallStack256([9][8]uint64{})
+	return sched
+}
+
+//go:noinline
+func (s *Seed256) deriveSubregionSchedulePositBody(nonce []byte, startPixel, totalPixels int) subregionSchedule {
+	var stackBuf [1 + maxDesyncNonceBytes]byte
+	buf := stackBuf[:1+len(nonce)]
+	buf[0] = 0x05
+	copy(buf[1:], nonce)
+	last := len(buf) - 1
+	baseByte := nonce[len(nonce)-1]
+	var w [8]uint64
+	for j := 0; j < 2; j++ {
+		buf[last] = baseByte ^ byte(j)
+		h := s.ChainHash256(buf)
+		w[4*j], w[4*j+1] = fullWidthFold(h[0], h[1])
+		w[4*j+2], w[4*j+3] = fullWidthFold(h[2], h[3])
+		clear(h[:])
+		runtime.KeepAlive(&h)
+	}
+	sched := buildSubregionSchedulePosit(startPixel, totalPixels, w)
+	clear(w[:])
+	clear(stackBuf[:])
+	runtime.KeepAlive(&w)
+	runtime.KeepAlive(&stackBuf)
+	return sched
+}
+
+// deriveSubregionSchedulePosit derives the Mode 3 Layer I (0x05) Gauss-Posit
+// sub-region schedule for a 512-bit startSeed over the fixed-length buffer
+// [0x05 || nonce].
+func (s *Seed512) deriveSubregionSchedulePosit(nonce []byte, startPixel, totalPixels int) subregionSchedule {
+	wipePixelCallStack512([9][8]uint64{})
+	sched := s.deriveSubregionSchedulePositBody(nonce, startPixel, totalPixels)
+	wipePixelCallStack512([9][8]uint64{})
+	return sched
+}
+
+//go:noinline
+func (s *Seed512) deriveSubregionSchedulePositBody(nonce []byte, startPixel, totalPixels int) subregionSchedule {
+	var stackBuf [1 + maxDesyncNonceBytes]byte
+	buf := stackBuf[:1+len(nonce)]
+	buf[0] = 0x05
+	copy(buf[1:], nonce)
+	h := s.ChainHash512(buf)
+	var w [8]uint64
+	for i := 0; i < 4; i++ {
+		w[2*i], w[2*i+1] = fullWidthFold(h[2*i], h[2*i+1])
+	}
+	clear(h[:])
+	runtime.KeepAlive(&h)
+	sched := buildSubregionSchedulePosit(startPixel, totalPixels, w)
+	clear(w[:])
+	clear(stackBuf[:])
+	runtime.KeepAlive(&w)
+	runtime.KeepAlive(&stackBuf)
+	return sched
+}
+
 func processSubregions128(cfg *Config, noiseSeed, dataSeed, startSeed *Seed128, nonce []byte, container []byte, data []byte, startPixel, totalPixels, dataPixels, totalBits, microBatch int, encode bool, numWorkers int, noiseBase int) {
-	sched := startSeed.deriveSubregionSchedule(nonce, startPixel, totalPixels)
+	var sched subregionSchedule
+	if currentContainerModeCfg(cfg) == blobModeGaussPosit {
+		sched = startSeed.deriveSubregionSchedulePosit(nonce, startPixel, totalPixels)
+	} else {
+		sched = startSeed.deriveSubregionSchedule(nonce, startPixel, totalPixels)
+	}
 	defer func() {
 		sched = subregionSchedule{}
 		runtime.KeepAlive(&sched)
@@ -263,7 +366,12 @@ func processSubregions128(cfg *Config, noiseSeed, dataSeed, startSeed *Seed128, 
 }
 
 func processSubregions256(cfg *Config, noiseSeed, dataSeed, startSeed *Seed256, nonce []byte, container []byte, data []byte, startPixel, totalPixels, dataPixels, totalBits, microBatch int, encode bool, numWorkers int, noiseBase int) {
-	sched := startSeed.deriveSubregionSchedule(nonce, startPixel, totalPixels)
+	var sched subregionSchedule
+	if currentContainerModeCfg(cfg) == blobModeGaussPosit {
+		sched = startSeed.deriveSubregionSchedulePosit(nonce, startPixel, totalPixels)
+	} else {
+		sched = startSeed.deriveSubregionSchedule(nonce, startPixel, totalPixels)
+	}
 	defer func() {
 		sched = subregionSchedule{}
 		runtime.KeepAlive(&sched)
@@ -293,7 +401,12 @@ func processSubregions256(cfg *Config, noiseSeed, dataSeed, startSeed *Seed256, 
 }
 
 func processSubregions512(cfg *Config, noiseSeed, dataSeed, startSeed *Seed512, nonce []byte, container []byte, data []byte, startPixel, totalPixels, dataPixels, totalBits, microBatch int, encode bool, numWorkers int, noiseBase int) {
-	sched := startSeed.deriveSubregionSchedule(nonce, startPixel, totalPixels)
+	var sched subregionSchedule
+	if currentContainerModeCfg(cfg) == blobModeGaussPosit {
+		sched = startSeed.deriveSubregionSchedulePosit(nonce, startPixel, totalPixels)
+	} else {
+		sched = startSeed.deriveSubregionSchedule(nonce, startPixel, totalPixels)
+	}
 	defer func() {
 		sched = subregionSchedule{}
 		runtime.KeepAlive(&sched)

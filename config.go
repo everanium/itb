@@ -3,6 +3,7 @@ package itb
 import (
 	"crypto/rand"
 	"fmt"
+	"os"
 	"slices"
 )
 
@@ -142,15 +143,36 @@ func currentBarrierFillCfg(cfg *Config) int {
 	return DefaultBarrierFill
 }
 
+// envContainerMode resolves the ITB_CONTAINER_MODE environment variable
+// fallback ("2" -> per-container, "3" -> gauss-posit, otherwise 1 ->
+// per-region) consulted when Config.Mode is left at 0.
+func envContainerMode() int {
+	switch os.Getenv("ITB_CONTAINER_MODE") {
+	case "2":
+		return blobModePerContainer
+	case "3":
+		return blobModeGaussPosit
+	default:
+		return blobModePerRegion
+	}
+}
+
 // currentContainerModeCfg returns the container floor sizing mode the
 // caller should use. Consults cfg when non-nil and the Mode field
-// carries blobModePerContainer (2); otherwise falls back to
-// blobModePerRegion (1).
+// carries an explicit mode in {1, 2, 3}; otherwise falls back to
+// [envContainerMode] (1 by default, or 2 / 3 when ITB_CONTAINER_MODE is set).
 func currentContainerModeCfg(cfg *Config) int {
-	if cfg != nil && cfg.Mode == blobModePerContainer {
-		return blobModePerContainer
+	if cfg != nil {
+		switch cfg.Mode {
+		case blobModePerRegion:
+			return blobModePerRegion
+		case blobModePerContainer:
+			return blobModePerContainer
+		case blobModeGaussPosit:
+			return blobModeGaussPosit
+		}
 	}
-	return blobModePerRegion
+	return envContainerMode()
 }
 
 // currentInterlockCfg returns the Interlocked Barrier width token ("48" or "168")

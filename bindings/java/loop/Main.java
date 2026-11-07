@@ -208,7 +208,8 @@ public final class Main {
                         return true;
                     }),
             new Flag("blob-mode", "int",
-                    "container floor sizing mode: 1 (per-region, default) | 2 (per-container)",
+                    "container floor sizing mode: 1 (per-region, default) | 2 (per-container)"
+                            + " | 3 (gauss-posit)",
                     false, defaultOf(d.blobMode),
                     (f, s) -> {
                         Long v = storeInt(s);
@@ -663,9 +664,9 @@ public final class Main {
                     + " default), got " + f.nonceBits);
             return new Parsed(null, 2);
         }
-        if (f.blobMode != 1 && f.blobMode != 2) {
-            System.err.println("loop: --blob-mode must be 1 (per-region) | 2 (per-container), got "
-                    + f.blobMode);
+        if (f.blobMode != 1 && f.blobMode != 2 && f.blobMode != 3) {
+            System.err.println("loop: --blob-mode must be 1 (per-region) | 2 (per-container)"
+                    + " | 3 (gauss-posit), got " + f.blobMode);
             return new Parsed(null, 2);
         }
         if (f.barrierFill != 0 && f.barrierFill != 1 && f.barrierFill != 2 && f.barrierFill != 4
@@ -920,8 +921,9 @@ public final class Main {
                 + " mac=" + dash(rec.mac())
                 + " parallax=" + onOff(rec.parallax())
                 + " wrapper=" + onOff(rec.wrapper())
-                + (rec.containerMode() != null && rec.containerMode() == 2
-                        ? " container-mode=2" : "")
+                + (rec.containerMode() != null
+                        && (rec.containerMode() == 2 || rec.containerMode() == 3)
+                        ? " container-mode=" + rec.containerMode() : "")
                 + (rec.drbg().isEmpty() ? "" : " drbg=" + rec.drbg())
                 + (rec.interlock().isEmpty() ? "" : " interlock=" + rec.interlock()));
     }

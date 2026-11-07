@@ -54,8 +54,8 @@ var shippedWidths = func() []int {
 // Key sizes the documentation tabulates, in canonical order.
 var keySizes = []int{512, 1024, 2048}
 
-// Container floor sizing modes: 1 = per-region, 2 = per-container.
-var modes = []int{1, 2}
+// Container floor sizing modes: 1 = per-region, 2 = per-container, 3 = Gauss-Posit.
+var modes = []int{1, 2, 3}
 
 // Landauer bound on irreversible enumeration, as SCIENCE.md § 4
 // derives it: erasing one bit at the cosmic microwave background
@@ -363,8 +363,11 @@ func measureFloor(f *Figures, s [8]*itb.Seed512, mode int) (FloorFigures, error)
 	}
 	minPx := s[0].MinPixels()
 	floorPx := minPx
-	if mode == 1 {
+	switch mode {
+	case 1:
 		floorPx = 3 * minPx
+	case 3:
+		floorPx = gaussCircleFloor(3 * minPx)
 	}
 	ff := FloorFigures{
 		Container:      base,
@@ -513,6 +516,16 @@ func theoreticalFloor(minPx int) FloorFigures {
 		Residue:        (2*s + 1) * itb.DataBitsPerChannel,
 		ResidueAtFloor: (side*side - minPx) * itb.DataBitsPerChannel,
 	}
+}
+
+// gaussCircleFloor computes the Mode 3 inscribed Gauss-circle container floor
+// `⌊(2 * threeMinPx) / π_posit(es=2)⌋ + 1`, where `π_posit(es=2)` has exact
+// rational significand `0xc90fdaa22168c238 * 2^-62`.
+func gaussCircleFloor(threeMinPx int) int {
+	const piPosit2NormM = 0xc90fdaa22168c238 // normM of positPi(2) at 2^-62
+	num := new(big.Int).Lsh(big.NewInt(int64(2*threeMinPx)), 62)
+	den := new(big.Int).SetUint64(piPosit2NormM)
+	return int(new(big.Int).Quo(num, den).Int64()) + 1
 }
 
 // rankBarrier derives the Rank Barrier mask-space constants (Proof 11,

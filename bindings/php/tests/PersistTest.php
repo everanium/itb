@@ -147,6 +147,11 @@ final class PersistTest extends TestCase
         $record = Itb::inspect($pipe->save());
         $pipe->free();
         $this->assertSame(2, $record['container_mode']);
+
+        $p3 = Itb::create(self::PROFILE, ['mode' => 3]);
+        $record3 = Itb::inspect($p3->save());
+        $p3->free();
+        $this->assertSame(3, $record3['container_mode']);
     }
 
     public function testMaxWorkers(): void

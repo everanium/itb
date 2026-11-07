@@ -103,6 +103,11 @@ class PersistTest {
             assertTrue(prof.toJson().contains("\"nonce_bits\":256"));
             assertTrue(prof.toJson().contains("\"barrier_fill\":4"));
         }
+        try (Pipeline p = Pipeline.init("streaming-aead-triple-mac-v1", new Opts().withMode(3))) {
+            Profile prof = Pipeline.inspect(p.save());
+            assertEquals(Integer.valueOf(3), prof.containerMode());
+            assertTrue(prof.toJson().contains("\"container_mode\":3"));
+        }
 
         // The registry entry is the recipe alone — neither field is
         // part of it, so both read as absent rather than as zero.

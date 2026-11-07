@@ -401,7 +401,7 @@ def _z3_rotate7(z3, v, r_sym):
     — BV(8) shift-by-BV(8) bit-blasts as a full 3-level barrel shifter
     ×2 (one for left, one for right), which generates more gates than
     the 7-way If-cascade below. Reverted. If-cascade confirmed as
-    the best tested form on Bitwuzla 0.9 for this rotation.
+    the best tested form on Bitwuzla for this rotation.
     """
     If = z3.If
     # Produce each of 7 candidates and select via If cascade.

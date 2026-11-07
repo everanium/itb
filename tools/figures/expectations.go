@@ -25,12 +25,18 @@ const (
 func Registry(f *Figures) []Expectation {
 	m1 := map[int]FloorFigures{}
 	m2 := map[int]FloorFigures{}
+	m3 := map[int]FloorFigures{}
 	for _, k := range keySizes {
 		m1[k] = f.Floor[k][1]
 		m2[k] = f.Floor[k][2]
+		m3[k] = f.Floor[k][3]
 	}
 	// The 1024-bit key is the documentation's worked example.
-	a, b, t := m1[1024], m2[1024], f.Theoretical[1024]
+	a, b, c, t := m1[1024], m2[1024], m3[1024], f.Theoretical[1024]
+	m1Wire128 := f.Prefix + f.HeaderSizes[128] + a.P*itb.Channels
+	m3Wire128 := f.Prefix + f.HeaderSizes[128] + c.P*itb.Channels
+	m3SaveBytes := a.Wire - c.Wire
+	m3SavePct128 := fixed(100*float64(m1Wire128-m3Wire128)/float64(m1Wire128), 1)
 	mp := f.MinPixels[1024]
 	size := map[string]SizeRow{}
 	for _, r := range f.Sizes {
@@ -784,16 +790,109 @@ func Registry(f *Figures) []Expectation {
 		add(sweep(file, `(2\^311\.\d\d)`, w("desync_lane168_fold_mode2", "2^311.89")))
 		add(sweep(file, `(2\^316\.\d\d)`, w("desync_lane168_fold_mode1", "2^316.51")))
 	}
+	for _, file := range []string{"SCIENCE.md", "PROOFS.md", "SECURITY.md", "README.md", "lean/README.md"} {
+		add(sweep(file, `(2\^187\.\d\d)`, w("desync_traj_mode3_k8", "2^187.16")))
+		add(sweep(file, `(2\^99\.\d\d)`, w("desync_lane48_mode3", "2^99.54")))
+		add(sweep(file, `(2\^282\.\d\d)`, w("desync_lane168_mode3", "2^282.52")))
+	}
+	for _, file := range []string{"SCIENCE.md", "PROOFS.md", "SECURITY.md", "README.md", "lean/README.md"} {
+		add(sweep(file, `(2\^131\.\d\d)`, w("desync_lane48_fold_mode3", "2^131.54")))
+		add(sweep(file, `(2\^314\.\d\d)`, w("desync_lane168_fold_mode3", "2^314.52")))
+	}
+	for _, file := range []string{"SCIENCE.md", "PROOFS.md", "SECURITY.md", "lean/README.md"} {
+		add(sweep(file, `\b(17,847,\d{3})\b`, w("entry_pixels_mode3", "17,847,702")))
+	}
 	add(
+		// ----- Mode 3 (Gauss-Posit) container floors & theorem counts -----
+		expect("README.md",
+			`^- \*\*Gauss-Posit Container and Trajectory Mode \(Mode 3, `+"`0x05`"+`\)\*\*: an inscribed Gauss-circle container floor \(⌊\(6 · MinPixels\) / π_posit\(es=2\)⌋ \+ 1 = `+num+` / `+num+` / `+num+` pixels, yielding `+num+x+num+` = `+num+` / `+num+x+num+` = `+num+` / `+num+x+num+` = `+num+` pixel containers and a `+dec+`% wire floor reduction vs \*\*Mode 1\*\* at 1024-bit keys, ~`+dec+` KB vs ~`+dec+` KB\)`,
+			w("m3_floor_px_512", plain(m3[512].FloorPixels)), w("m3_floor_px_1024", plain(c.FloorPixels)), w("m3_floor_px_2048", plain(m3[2048].FloorPixels)),
+			w("m3_side_512", plain(m3[512].Side)), w("m3_side_512", plain(m3[512].Side)), w("m3_P_512", plain(m3[512].P)),
+			w("m3_side_1024", plain(c.Side)), w("m3_side_1024", plain(c.Side)), w("m3_P_1024", plain(c.P)),
+			w("m3_side_2048", plain(m3[2048].Side)), w("m3_side_2048", plain(m3[2048].Side)), w("m3_P_2048", plain(m3[2048].P)),
+			w("m3_save_pct_128", m3SavePct128), w("m3_wire_kb_1024", kb(c.Wire)), w("m1_wire_kb_1024", kb(a.Wire)),
+		),
+		expect("README.md",
+			`^- \*\*Mode 3: Gauss-Posit \(inscribed Gauss-circle floor \+ posit64/quire512 trajectory\)\.\*\* The three-region floor is scaled by the Gauss-circle ratio .⌊\(6 · MinPixels\) / π_posit\(es=2\)⌋ \+ 1. \(`+num+` / `+num+` / `+num+` pixels for 512 / 1024 / 2048-bit keys\) and rounded up to the smallest square plus the barrier margin: .⌈√`+num+`⌉ = `+num+` → \(`+num+` \+ 1\)² = `+num+x+num+` = `+num+`. px \(~`+dec+` KB\) at 512-bit keys, .⌈√`+num+`⌉ = `+num+` → \(`+num+` \+ 1\)² = `+num+x+num+` = `+num+`. px \(~`+dec+` KB, `+dec+`% smaller than the ~`+dec+` KB of \*\*Mode 1\*\*\) at 1024-bit keys, and .⌈√`+num+`⌉ = `+num+` → \(`+num+` \+ 1\)² = `+num+x+num+` = `+num+`. px \(~`+dec+` KB\) at 2048-bit keys`,
+			w("m3_floor_px_512", plain(m3[512].FloorPixels)), w("m3_floor_px_1024", plain(c.FloorPixels)), w("m3_floor_px_2048", plain(m3[2048].FloorPixels)),
+			w("m3_floor_px_512", plain(m3[512].FloorPixels)), w("m3_raw_512", plain(m3[512].RawSquare)), w("m3_raw_512", plain(m3[512].RawSquare)), w("m3_side_512", plain(m3[512].Side)), w("m3_side_512", plain(m3[512].Side)), w("m3_P_512", plain(m3[512].P)), w("m3_wire_kb_512", kb(m3[512].Wire)),
+			w("m3_floor_px_1024", plain(c.FloorPixels)), w("m3_raw_1024", plain(c.RawSquare)), w("m3_raw_1024", plain(c.RawSquare)), w("m3_side_1024", plain(c.Side)), w("m3_side_1024", plain(c.Side)), w("m3_P_1024", plain(c.P)), w("m3_wire_kb_1024", kb(c.Wire)), w("m3_save_pct_128", m3SavePct128), w("m1_wire_kb_1024", kb(a.Wire)),
+			w("m3_floor_px_2048", plain(m3[2048].FloorPixels)), w("m3_raw_2048", plain(m3[2048].RawSquare)), w("m3_raw_2048", plain(m3[2048].RawSquare)), w("m3_side_2048", plain(m3[2048].Side)), w("m3_side_2048", plain(m3[2048].Side)), w("m3_P_2048", plain(m3[2048].P)), w("m3_wire_kb_2048", kb(m3[2048].Wire)),
+		),
+		expect("README.md",
+			"Formalization pillars \\(with `"+num+"` core mathematical, combinatorial, and bit-vector theorems — `"+num+"` across six `ITB/\\*\\.lean` core modules including `"+num+"` in `ITB/Desync\\.lean`, plus `"+num+"` in `Apps/ThreeToEight\\.lean` — accompanied by `"+num+"` \\*\\*Mode 3\\*\\* Gauss-Posit theorems in `ITB/Posit\\.lean` and `"+num+"` additional theorems",
+			w("lean_total_theorems", "270"), w("lean_core_theorems", "239"), w("lean_desync_theorems", "40"), w("lean_kdf_theorems", "31"), w("lean_posit_theorems", "30"), w("lean_pipeline_theorems", "92"),
+		),
+		expect("ITB.md",
+			`yielding a `+num+`-pixel floor and a `+num+x+num+` = `+num+`-pixel container or ~`+dec+` KB wire floor at 1024-bit keys — `+dec+`% smaller than \*\*Mode 1\*\* while keeping `+num+` pixels per region and ≥ `+num+` bytes of guaranteed DRBG residue, or `+num+` bytes at the `+num+`-pixel floor`,
+			w("m3_floor_px", plain(c.FloorPixels)), w("m3_side", plain(c.Side)), w("m3_side", plain(c.Side)), w("m3_P", plain(c.P)), w("m3_wire_kb", kb(c.Wire)),
+			w("m3_save_pct_128", m3SavePct128), w("m3_P0", plain(c.P/3)), w("m3_residue", plain(c.Residue)), w("m3_residue_floor", plain(c.ResidueAtFloor)), w("m3_floor_px", plain(c.FloorPixels)),
+		),
+		expect("PROOFS.md",
+			`^\*\*Mode 3 \(Gauss-Posit\) Container Floor and Trajectory Variant\.\*\*.*⌊\(6 · MinPixels\) / π_posit\(es=2\)⌋ \+ 1 = `+num+` / `+num+` / `+num+` pixels at 512 / 1024 / 2048-bit keys, yielding `+num+x+num+` = `+num+`, `+num+x+num+` = `+num+`, and `+num+x+num+` = `+num+` pixel containers with `+"`DefaultBarrierFill = "+num+"`"+`, or `+num+` B vs `+num+` B in \*\*Mode 1\*\* at 1024-bit keys and 128-bit nonce and `+num+` B vs `+num+` B at 512-bit nonce, saving `+num+` B or `+dec+`% wire overhead with ≥ `+num+` B guaranteed DRBG residue and `+num+` B actual residue at the `+num+`-pixel floor.*encoding ambiguity 7\^`+num+` ≈ `+p2+` under CCA and 56\^`+num+` ≈ `+p2+` without CCA`,
+			w("m3_floor_px_512", plain(m3[512].FloorPixels)), w("m3_floor_px_1024", plain(c.FloorPixels)), w("m3_floor_px_2048", plain(m3[2048].FloorPixels)),
+			w("m3_side_512", plain(m3[512].Side)), w("m3_side_512", plain(m3[512].Side)), w("m3_P_512", plain(m3[512].P)),
+			w("m3_side_1024", plain(c.Side)), w("m3_side_1024", plain(c.Side)), w("m3_P_1024", plain(c.P)),
+			w("m3_side_2048", plain(m3[2048].Side)), w("m3_side_2048", plain(m3[2048].Side)), w("m3_P_2048", plain(m3[2048].P)),
+			w("barrier_fill", plain(f.BarrierFill)),
+			w("m3_wire_128", plain(m3Wire128)), w("m1_wire_128", plain(m1Wire128)), w("m3_wire_512", plain(c.Wire)), w("m1_wire_512", plain(a.Wire)),
+			w("m3_save_bytes", plain(m3SaveBytes)), w("m3_save_pct_128", m3SavePct128),
+			w("m3_residue", plain(c.Residue)), w("m3_residue_floor", plain(c.ResidueAtFloor)), w("m3_floor_px_1024", plain(c.FloorPixels)),
+			w("m3_P_1024", plain(c.P)), w("cca_m3", pow2(cca(c.P))), w("m3_P_1024", plain(c.P)), w("nocca_m3", pow2(nocca(c.P))),
+		),
+		expect("SCIENCE.md",
+			`^3\. \*\*Mode 3 \(Gauss-Posit\) Inscribed Circle Floor.*yielding `+num+`, `+num+`, and `+num+` px at 512 / 1024 / 2048-bit keys, and `+num+x+num+` = `+num+`, `+num+x+num+` = `+num+`, and `+num+x+num+` = `+num+` px containers with `+"`DefaultBarrierFill = "+num+"`"+`; `+num+` B vs `+num+` B wire floor at 1024-bit keys and 128-bit nonce, or `+num+` B vs `+num+` B at 512-bit nonce, saving `+num+` B / `+dec+`%.*≥ `+num+` B guaranteed / `+num+` B actual DRBG residue at the `+num+`-px floor`,
+			w("m3_floor_px_512", plain(m3[512].FloorPixels)), w("m3_floor_px_1024", plain(c.FloorPixels)), w("m3_floor_px_2048", plain(m3[2048].FloorPixels)),
+			w("m3_side_512", plain(m3[512].Side)), w("m3_side_512", plain(m3[512].Side)), w("m3_P_512", plain(m3[512].P)),
+			w("m3_side_1024", plain(c.Side)), w("m3_side_1024", plain(c.Side)), w("m3_P_1024", plain(c.P)),
+			w("m3_side_2048", plain(m3[2048].Side)), w("m3_side_2048", plain(m3[2048].Side)), w("m3_P_2048", plain(m3[2048].P)),
+			w("barrier_fill", plain(f.BarrierFill)),
+			w("m3_wire_128", plain(m3Wire128)), w("m1_wire_128", plain(m1Wire128)), w("m3_wire_512", plain(c.Wire)), w("m1_wire_512", plain(a.Wire)),
+			w("m3_save_bytes", plain(m3SaveBytes)), w("m3_save_pct_128", m3SavePct128),
+			w("m3_residue", plain(c.Residue)), w("m3_residue_floor", plain(c.ResidueAtFloor)), w("m3_floor_px_1024", plain(c.FloorPixels)),
+		),
+		expect("SECURITY.md",
+			`^\*\*Note on Mode 3 \(Gauss-Posit\)\.\*\*.*⌊\(6 × `+num+`\) / π_posit\(es=2\)⌋ \+ 1 = `+num+` → `+num+x+num+` \(P = `+num+`, P_0 = P_1 = `+num+`, P_2 = `+num+`\) with `+"`DefaultBarrierFill = "+num+"`"+` \(`+num+` B wire floor at 128-bit nonce vs `+num+` B in \*\*Mode 1\*\*, or `+num+` B vs `+num+` B at 512-bit nonce, saving `+num+` B / `+dec+`%\): noise barrier 2\^\(8P\) = `+p2+` \(`+dec+`× the `+p2+` Landauer exponent\); encoding ambiguity 56\^`+num+` ≈ `+p2+` \(No CCA\) and 7\^`+num+` ≈ `+p2+` \(Under CCA\); guaranteed DRBG residue ≥ `+num+` bytes \(s = `+num+`, `+num+` bytes at the `+num+`-pixel floor\); config map space 2\^\(62P\) = `+p2,
+			w("minpixels_1024", plain(mp)), w("m3_floor_px", plain(c.FloorPixels)), w("m3_side", plain(c.Side)), w("m3_side", plain(c.Side)), w("m3_P", plain(c.P)),
+			w("m3_P0", plain(c.P/3)), w("m3_P2", plain(c.P-2*(c.P/3))), w("barrier_fill", plain(f.BarrierFill)),
+			w("m3_wire_128", plain(m3Wire128)), w("m1_wire_128", plain(m1Wire128)), w("m3_wire_512", plain(c.Wire)), w("m1_wire_512", plain(a.Wire)),
+			w("m3_save_bytes", plain(m3SaveBytes)), w("m3_save_pct_128", m3SavePct128),
+			w("noise_m3", pow2(noiseBarrier(c.P))), w("noise_m3_vs_landauer", landauer(noiseBarrier(c.P))), w("landauer", pow2(landauerExp)),
+			w("m3_P", plain(c.P)), w("nocca_m3", pow2(nocca(c.P))), w("m3_P", plain(c.P)), w("cca_m3", pow2(cca(c.P))),
+			w("m3_residue", plain(c.Residue)), w("m3_s", plain(c.Side-1)), w("m3_residue_floor", plain(c.ResidueAtFloor)), w("m3_floor_px", plain(c.FloorPixels)),
+			w("config_m3", pow2(configMap(c.P))),
+		),
+		expect("FAQ.md",
+			"machine-checked across "+num+" core theorems plus "+num+" \\*\\*Mode 3\\*\\* Gauss-Posit theorems in `ITB/Posit\\.lean` and "+num+" executable \\*\\*Core ITB\\*\\* pipeline specification",
+			w("lean_total_theorems", "270"), w("lean_posit_theorems", "30"), w("lean_pipeline_theorems", "92"),
+		),
 		expect("lean/README.md",
-			"`"+num+"` theorems across the six `ITB/\\*\\.lean` core modules, plus `"+num+"` theorems in `Apps/ThreeToEight\\.lean`, totaling `"+num+"` machine-checked theorems",
+			"`"+num+"` theorems across the six `ITB/\\*\\.lean` core modules, plus `"+num+"` theorems in `Apps/ThreeToEight\\.lean`, totaling `"+num+"` machine-checked theorems; accompanied by `"+num+"` \\*\\*Mode 3\\*\\* Gauss-Posit theorems in \\[`ITB/Posit\\.lean`\\]\\(ITB/Posit\\.lean\\) and `"+num+"` additional pipeline specification",
 			w("lean_core_theorems", "239"),
 			w("lean_kdf_theorems", "31"),
 			w("lean_total_theorems", "270"),
+			w("lean_posit_theorems", "30"),
+			w("lean_pipeline_theorems", "92"),
 		),
 		expect("lean/README.md",
 			`\[ITB/Desync\.lean\]\(ITB/Desync\.lean\) \(`+num+` theorems\)`,
 			w("lean_desync_theorems", "40"),
+		),
+		expect("lean/README.md",
+			`\[ITB/Posit\.lean\]\(ITB/Posit\.lean\) \(`+num+` theorems & Go KATs\)`,
+			w("lean_posit_theorems", "30"),
+		),
+		expect("lean/README.md",
+			`\[ITB/PipelineSpec128\.lean\]\(ITB/PipelineSpec128\.lean\) \(`+num+` theorems & Go wire KATs\)`,
+			w("lean_pipeline128_theorems", "30"),
+		),
+		expect("lean/README.md",
+			`\[ITB/PipelineSpec256\.lean\]\(ITB/PipelineSpec256\.lean\) \(`+num+` theorems & Go wire KATs\)`,
+			w("lean_pipeline256_theorems", "30"),
+		),
+		expect("lean/README.md",
+			`\[ITB/PipelineSpec512\.lean\]\(ITB/PipelineSpec512\.lean\) \(`+num+` theorems & Go wire KATs\)`,
+			w("lean_pipeline512_theorems", "32"),
 		),
 	)
 	return exps

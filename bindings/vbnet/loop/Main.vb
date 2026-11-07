@@ -305,7 +305,7 @@ Friend Module Program
                 False, "",
                 Function(f, s) TryLong(s, f.BlobCycleEvery)),
             New Flag("blob-mode", "int",
-                "container floor sizing mode: 1 (per-region, default) | 2 (per-container)",
+                "container floor sizing mode: 1 (per-region, default) | 2 (per-container) | 3 (gauss-posit)",
                 False, DefaultOf(d.BlobMode),
                 Function(f, s) TryLong(s, f.BlobMode)),
             New Flag("chunk-size", "string",
@@ -657,8 +657,8 @@ Friend Module Program
             Return Reject("--nonce-bits must be 128 | 256 | 512 (or 0 = profile default), got " &
                           Dx(f.NonceBits))
         End If
-        If f.BlobMode <> 1 AndAlso f.BlobMode <> 2 Then
-            Return Reject("--blob-mode must be 1 (per-region) | 2 (per-container), got " &
+        If f.BlobMode <> 1 AndAlso f.BlobMode <> 2 AndAlso f.BlobMode <> 3 Then
+            Return Reject("--blob-mode must be 1 (per-region) | 2 (per-container) | 3 (gauss-posit), got " &
                           Dx(f.BlobMode))
         End If
         If Array.IndexOf({0L, 1L, 2L, 4L, 8L, 16L, 32L}, f.BarrierFill) < 0 Then
@@ -821,7 +821,7 @@ Friend Module Program
                 " barrier-fill=" & If(rec.BarrierFill.HasValue, rec.BarrierFill.Value, 0).ToString(Inv) &
                 " chunk-size=" & rec.Chunk.ToString(Inv) & " mac=" & Dash(rec.Mac) &
                 " parallax=" & OnOff(rec.Parallax) & " wrapper=" & OnOff(rec.Wrapper) &
-                If(rec.ContainerMode.HasValue AndAlso rec.ContainerMode.Value = 2, " container-mode=2", "") &
+                If(rec.ContainerMode.HasValue AndAlso (rec.ContainerMode.Value = 2 OrElse rec.ContainerMode.Value = 3), " container-mode=" & rec.ContainerMode.Value.ToString(Inv), "") &
                 If(String.IsNullOrEmpty(rec.Drbg), "", " drbg=" & rec.Drbg) &
                 If(String.IsNullOrEmpty(rec.Interlock), "", " interlock=" & rec.Interlock))
     End Sub

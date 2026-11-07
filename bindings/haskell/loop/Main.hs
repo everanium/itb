@@ -103,7 +103,7 @@ flags =
   , Flag "blob-cycle-every" "int" KInt64
       "reopen each pipeline from its session blob every N iterations per worker; 0 = never" "0"
   , Flag "blob-mode" "int" KInt
-      "container floor sizing mode: 1 (per-region, default) | 2 (per-container)" "1"
+      "container floor sizing mode: 1 (per-region, default) | 2 (per-container) | 3 (gauss-posit)" "1"
   , Flag "chunk-size" "string" KString
       "streaming chunk-size budget (e.g. 4MB); 0 = profile default; inert for pure message shape" "0"
   , Flag "drbg" "string" KString
@@ -283,8 +283,8 @@ stageC raw = do
   need (nonceBits `elem` [0, 128, 256, 512])
     ("--nonce-bits must be 128 | 256 | 512 (or 0 = profile default), got " ++ show nonceBits)
   let blobMode = intOf raw "blob-mode"
-  need (blobMode `elem` [1, 2])
-    ("--blob-mode must be 1 (per-region) | 2 (per-container), got " ++ show blobMode)
+  need (blobMode `elem` [1, 2, 3])
+    ("--blob-mode must be 1 (per-region) | 2 (per-container) | 3 (gauss-posit), got " ++ show blobMode)
   let barrierFill = intOf raw "barrier-fill"
   need (barrierFill `elem` [0, 1, 2, 4, 8, 16, 32])
     ("--barrier-fill must be 1 | 2 | 4 | 8 | 16 | 32 (or 0 = profile default), got "
@@ -529,7 +529,8 @@ logPipelineInitialised profile blob = do
         ++ " mac=" ++ recordStr json "mac"
         ++ " parallax=" ++ onOff (recordBool json "parallax")
         ++ " wrapper=" ++ onOff (recordBool json "wrapper")
-        ++ (if recordInt json "container_mode" == "2" then " container-mode=2" else "")
+        ++ (let cm = recordInt json "container_mode"
+            in if cm == "2" || cm == "3" then " container-mode=" ++ cm else "")
         ++ (case recordStr json "drbg" of
               "-" -> ""
               d -> " drbg=" ++ d)

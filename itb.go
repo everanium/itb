@@ -133,7 +133,8 @@ func headerSizeCfg(cfg *Config) int { return currentNonceSizeCfg(cfg) + 4 }
 // the ambiguity floor is evaluated jointly across the container.
 // Consults [currentBarrierFillCfg] for the DRBG barrier margin.
 func calcContainerSize3Cfg(cfg *Config, cobsLens [3]int, minPxNoise int, minPxData [3]int, minPxStart [3]int) (width, height int) {
-	if currentContainerModeCfg(cfg) == blobModePerContainer {
+	mode := currentContainerModeCfg(cfg)
+	if mode == blobModePerContainer || mode == blobModeGaussPosit {
 		maxDataThirdPixels := 0
 		for i := 0; i < 3; i++ {
 			needed := cobsLens[i] + 1 // +1 for null terminator
@@ -155,8 +156,12 @@ func calcContainerSize3Cfg(cfg *Config, cobsLens [3]int, minPxNoise int, minPxDa
 
 		totalDataPixels := 3 * maxDataThirdPixels
 		totalPixels := totalDataPixels
-		if totalPixels < minPxJoint {
-			totalPixels = minPxJoint
+		floorPx := minPxJoint
+		if mode == blobModeGaussPosit {
+			floorPx = positGaussCircleFloor(3 * minPxJoint)
+		}
+		if totalPixels < floorPx {
+			totalPixels = floorPx
 		}
 
 		side := 1

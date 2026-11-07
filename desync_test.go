@@ -440,6 +440,9 @@ func TestDesyncPreBodyWipePreventsStackSplit(t *testing.T) {
 		{"Seed128.deriveSubregionSchedule", func() { _ = s128.deriveSubregionSchedule(nonce, 0, 408) }},
 		{"Seed256.deriveSubregionSchedule", func() { _ = s256.deriveSubregionSchedule(nonce, 0, 408) }},
 		{"Seed512.deriveSubregionSchedule", func() { _ = s512.deriveSubregionSchedule(nonce, 0, 408) }},
+		{"Seed128.deriveSubregionSchedulePosit", func() { _ = s128.deriveSubregionSchedulePosit(nonce, 0, 408) }},
+		{"Seed256.deriveSubregionSchedulePosit", func() { _ = s256.deriveSubregionSchedulePosit(nonce, 0, 408) }},
+		{"Seed512.deriveSubregionSchedulePosit", func() { _ = s512.deriveSubregionSchedulePosit(nonce, 0, 408) }},
 		{"evalDesyncWords", func() { _ = evalDesyncWords(bp) }},
 	}
 

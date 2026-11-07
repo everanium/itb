@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"os"
 	"runtime"
 
 	"github.com/everanium/itb"
@@ -351,7 +352,14 @@ func finishInit(resolved Profile, opts Opts, width int, seeds [8]any, prfKeys [8
 	// per-Pipeline override semantic is preserved: any field the caller
 	// left at zero simply picks up the compile-in default at Init time.
 	if cfg.Mode == 0 {
-		cfg.Mode = 1
+		switch os.Getenv("ITB_CONTAINER_MODE") {
+		case "2":
+			cfg.Mode = 2
+		case "3":
+			cfg.Mode = 3
+		default:
+			cfg.Mode = 1
+		}
 	}
 	if cfg.NonceBits == 0 {
 		cfg.NonceBits = itb.DefaultNonceBits

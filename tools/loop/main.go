@@ -210,7 +210,7 @@ type config struct {
 	profile        string // non-empty = exercise this single registered profile
 	keyBits        int    // 0 = profile default
 	nonceBits      int    // 0 = profile default
-	blobMode       int    // container floor sizing mode: 1 (per-region, default) | 2 (per-container)
+	blobMode       int    // container floor sizing mode: 1 (per-region, default) | 2 (per-container) | 3 (gauss-posit)
 	chunkSize      int64  // 0 = profile default
 	barrierFill    int    // 0 = profile default
 	drbg           string // DRBG fill primitive; "" = profile default (auto tier)
@@ -609,7 +609,7 @@ func parseFlags(argv []string) (config, error) {
 		profile        = fs.String("profile", "", "exercise this single registered triple profile (overrides --shape with the profile's surface); empty = shape-based profile pair")
 		keyBits        = fs.Int("key-bits", 0, "per-seed key width in bits: 512 | 1024 | 2048; 0 = profile default (1024)")
 		nonceBits      = fs.Int("nonce-bits", 0, "on-wire nonce width in bits: 128 | 256 | 512; 0 = profile default (512)")
-		blobMode       = fs.Int("blob-mode", 1, "container floor sizing mode: 1 (per-region, default) | 2 (per-container)")
+		blobMode       = fs.Int("blob-mode", 1, "container floor sizing mode: 1 (per-region, default) | 2 (per-container) | 3 (gauss-posit)")
 		chunkSizeStr   = fs.String("chunk-size", "0", "streaming chunk-size budget (e.g. 4MB); 0 = profile default; inert for pure message shape")
 		barrierFill    = fs.Int("barrier-fill", 0, "DRBG barrier fill margin: 1 | 2 | 4 | 8 | 16 | 32; 0 = profile default (1)")
 		drbgName       = fs.String("drbg", "", "DRBG fill primitive name (see itb3 drbgs); empty = profile default (auto tier)")
@@ -729,9 +729,9 @@ func parseFlags(argv []string) (config, error) {
 		return config{}, fmt.Errorf("--nonce-bits must be 128 | 256 | 512 (or 0 = profile default), got %d", cfg.nonceBits)
 	}
 	switch cfg.blobMode {
-	case 1, 2:
+	case 1, 2, 3:
 	default:
-		return config{}, fmt.Errorf("--blob-mode must be 1 (per-region) | 2 (per-container), got %d", cfg.blobMode)
+		return config{}, fmt.Errorf("--blob-mode must be 1 (per-region) | 2 (per-container) | 3 (gauss-posit), got %d", cfg.blobMode)
 	}
 	switch cfg.barrierFill {
 	case 0, 1, 2, 4, 8, 16, 32:
@@ -793,7 +793,7 @@ func logPipelineInitialised(profile string, blob []byte) {
 	initLine := fmt.Sprintf("pipeline initialised: profile=%s blob=%d bytes hash=%s key-bits=%d nonce-bits=%d barrier-fill=%d chunk-size=%d mac=%s parallax=%s wrapper=%s",
 		profile, len(blob), dash(rec.InnerHash), rec.KeyBits, rec.NonceBits, rec.BarrierFill,
 		rec.ChunkSize, dash(rec.MacName), onOff(rec.Parallax), onOff(rec.Wrapper))
-	if rec.ContainerMode == 2 {
+	if rec.ContainerMode == 2 || rec.ContainerMode == 3 {
 		initLine += fmt.Sprintf(" container-mode=%d", rec.ContainerMode)
 	}
 	if rec.DRBG != "" {

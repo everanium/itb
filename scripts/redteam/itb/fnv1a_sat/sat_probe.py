@@ -39,7 +39,7 @@ Encoding (per pixel p in [0, n_pixels)):
             ∈ {candidate_xor_mask56 for (np, r) in 56}
             AND rotation constraint fnv_chain_lo % 7 == r.
 
-Solver: Bitwuzla 0.9.x, native bitvector reasoning (no CDCL over Z3
+Solver: Bitwuzla, native bitvector reasoning (no CDCL over Z3
 clauses). Multi-pixel joint SAT chains the same 4 seed_lo lanes across
 constraints; a truly satisfying assignment requires all N pixels'
 recovered xor_mask56 values to lie on the same FNV chain. Under

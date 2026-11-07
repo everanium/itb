@@ -76,6 +76,9 @@
       (is (= 2 (:container-mode prof)))
       (is (= 256 (:nonce-bits prof)))
       (is (= 4 (:barrier-fill prof)))))
+  (with-open [pipe (itb/init "streaming-aead-triple-mac-v1" {:mode 3})]
+    (let [prof (itb/inspect (itb/save pipe))]
+      (is (= 3 (:container-mode prof)))))
   ;; The registry entry is the recipe alone — neither key is part of
   ;; it, so both read as absent rather than as zero.
   (let [registry (itb/lookup "streaming-aead-triple-mac-v1")]

@@ -372,7 +372,7 @@ final class Main {
                 false, '',
                 { RawFlags f, String s -> Long v = storeInt(s); if (v == null) { return false }; f.blobCycleEvery = v; true } as Closure<Boolean>),
             new Flag('blob-mode', 'int',
-                'container floor sizing mode: 1 (per-region, default) | 2 (per-container)',
+                'container floor sizing mode: 1 (per-region, default) | 2 (per-container) | 3 (gauss-posit)',
                 false, defaultOfLong(d.blobMode),
                 { RawFlags f, String s -> Long v = storeInt(s); if (v == null) { return false }; f.blobMode = v; true } as Closure<Boolean>),
             new Flag('chunk-size', 'string',
@@ -699,8 +699,8 @@ final class Main {
                     "default), got ${f.nonceBits}")
             return new Parsed(null, 2)
         }
-        if (f.blobMode != 1L && f.blobMode != 2L) {
-            System.err.println('loop: --blob-mode must be 1 (per-region) | 2 (per-container), ' +
+        if (f.blobMode != 1L && f.blobMode != 2L && f.blobMode != 3L) {
+            System.err.println('loop: --blob-mode must be 1 (per-region) | 2 (per-container) | 3 (gauss-posit), ' +
                     "got ${f.blobMode}")
             return new Parsed(null, 2)
         }
@@ -923,7 +923,7 @@ final class Main {
                 " mac=${dash(rec.mac())}" +
                 " parallax=${onOff(rec.parallax())}" +
                 " wrapper=${onOff(rec.wrapper())}" +
-                (rec.containerMode() != null && rec.containerMode() == 2 ? ' container-mode=2' : '') +
+                (rec.containerMode() != null && (rec.containerMode() == 2 || rec.containerMode() == 3) ? " container-mode=${rec.containerMode()}" : '') +
                 (rec.drbg().isEmpty() ? '' : " drbg=${rec.drbg()}") +
                 (rec.interlock().isEmpty() ? '' : " interlock=${rec.interlock()}"))
     }

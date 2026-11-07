@@ -75,6 +75,14 @@ echo "=== 2b. roundtrip: blob-mode 2 (VPN floor / per-container) ==="
 cmp "$tmp/plain.txt" "$tmp/mode2.dec"
 "$BIN" verify "$tmp/mode2.blob"
 
+echo "=== 2b2. roundtrip: blob-mode 3 (Gauss-Posit inscribed circle) ==="
+"$BIN" genblob nomac blake3 --blob-mode 3 -o "$tmp/mode3.blob"
+"$BIN" inspect "$tmp/mode3.blob" | grep -q "^container_mode: gauss-posit (3)$"
+"$BIN" encrypt "$tmp/mode3.blob" -i "$tmp/plain.txt" -o "$tmp/mode3.cipher"
+"$BIN" decrypt "$tmp/mode3.blob" -i "$tmp/mode3.cipher" -o "$tmp/mode3.dec"
+cmp "$tmp/plain.txt" "$tmp/mode3.dec"
+"$BIN" verify "$tmp/mode3.blob"
+
 echo "=== 2c. roundtrip: drbg operator selection ==="
 "$BIN" genblob nomac siphash24 --drbg csprng -o "$tmp/drbg.blob"
 "$BIN" inspect "$tmp/drbg.blob" | grep -q "^drbg: csprng$"
@@ -205,7 +213,7 @@ expect_fail 1 "-s without -p"            "$BIN" genblob nomac blake3 -s 257
 expect_fail 1 "segment not coprime-504"  "$BIN" genblob nomac blake3 -p aescmac,chacha20,siphash24 -s 256
 expect_fail 1 "unknown mixed pseudonym"  "$BIN" genblob nomac mixed999
 expect_fail 1 "--blob-mode 0 out of range" "$BIN" genblob nomac blake3 --blob-mode 0
-expect_fail 1 "--blob-mode 3 out of range" "$BIN" genblob nomac blake3 --blob-mode 3
+expect_fail 1 "--blob-mode 4 out of range" "$BIN" genblob nomac blake3 --blob-mode 4
 expect_fail 1 "--drbg invalid"             "$BIN" genblob nomac blake3 --drbg invalid_drbg
 expect_fail 1 "--interlock invalid"        "$BIN" genblob nomac areion512 --interlock 96
 expect_fail 1 "--interlock 168 on 256-bit" "$BIN" genblob nomac blake3 --interlock 168

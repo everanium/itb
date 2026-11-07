@@ -36,6 +36,7 @@ A parameterized symmetric cipher construction library for Go that suppresses has
 
 - **Pixel Barrier with Layer I Sub-Region Desynchronization (`0x05`)**: each 8-channel RGBWYOPA pixel embeds 56 data bits (7 data bits + 1 noise bit per channel) with per-pixel 56-bit XOR masking and secret 7-way bit rotation (7^P encoding ambiguity surviving CCA) plus CSPRNG-seeded container noise (`internal/drbg` — AES-256-CTR by default where hardware AES is present and ChaCha20 otherwise — makes hash output unobservable), while each of the 3 regions is partitioned into K_r dynamic sub-regions (2^126–2^206 3-region trajectory space on the 1024-bit ITB **Mode 2** floor, ≈ 2^166.98 at K_r = 8; and 2^224–2^445 on the **Mode 1** floor, ≈ 2^224.04 at K_r = 8).
 - **Rank Barrier with Layer II Cross-Lane Desynchronization (`0x06`)**: a constant-time PRF-keyed three-region bit-permutation (C(48, 16) · C(32, 16) ≈ 2^70.20 balanced partitions per 48-bit chunk executed in ~3 cycles via BMI2 PEXTQ/PDEPQ, or C(168, 56) · C(112, 56) ≈ 2^258.60 per 168-bit chunk for 512-bit primitives) combined with fixed-point-free cross-lane chunk-slot desynchronization (× M^3, raising single-chunk ambiguity at the 1024-bit ITB floors to ≈ 2^96.91–2^101.53, or ≈ 2^128.91–2^133.53 with the 4-byte interlock-nonce fold in 48-bit mode, and ≈ 2^279.89–2^284.51, or ≈ 2^311.89–2^316.51 with fold in 168-bit mode).
+- **Gauss-Posit Container and Trajectory Mode (Mode 3, `0x05`)**: an inscribed Gauss-circle container floor (⌊(6 · MinPixels) / π_posit(es=2)⌋ + 1 = 350 / 698 / 1395 pixels, yielding 20 × 20 = 400 / 28 × 28 = 784 / 39 × 39 = 1521 pixel containers and a 35.8% wire floor reduction vs **Mode 1** at 1024-bit keys, ~6.4 KB vs ~9.9 KB) paired with secret-regime posit64(es) (es ∈ {1, 2, 3}) and exact 512-bit quire arithmetic that derives a per-region secret circle constant π_{K,r} and partitions each region along discrete Gauss semicircle chords (≈ 2^187.16 3-region trajectory space at K_r = 8 on the 1024-bit floor, > 2^162 for fixed initial entry pixel Π_r(0), with ≈ 2^99.54 / ≈ 2^131.54 in 48-bit and ≈ 2^282.52 / ≈ 2^314.52 in 168-bit single-chunk cross-lane slot-matching spaces), preventing IEEE-754 float64 approximation and algebraic SAT/SMT/Gröbner solver formulation.
 
 **8-seed isolation** across pairwise-distinct domain tags ensures compromise of any one domain provides zero information about the others.
 
@@ -48,7 +49,7 @@ A parameterized symmetric cipher construction library for Go that suppresses has
 | **Desynchronized Interlocked Barrier** | **Layer I** (0x05 on startSeed1..3) dynamic K_r sub-region trajectories (≈ 2^166.98 **Mode 2** / ≈ 2^224.04 **Mode 1** at K_r = 8 on 1024-bit ITB floors) + **Layer II** (0x06 on lockSeed) cross-lane slot desynchronization (β_0 ≠ β_1, \|Ω_chunk\| · M^3 ≈ 2^96.91–2^101.53 in 48-bit and ≈ 2^279.89–2^284.51 in 168-bit, or ≈ 2^128.91–2^133.53 and ≈ 2^311.89–2^316.51 with 4 B fold at 1024-bit ITB floors); 0 B wire overhead | Stable |
 | **Rank Barrier (168-bit Interlock)** | 21-byte chunk → 3 × 56-bit lanes; C(168,56)·C(112,56) ≈ 2^258.60 mask space; bias ≈ 2^-253.4; 512-bit primitives | Stable |
 | **Rank Barrier (48-bit Interlock, default)** | 6-byte chunk → 3 × 16-bit lanes; C(48,16)·C(32,16) ≈ 2^70.20 mask space; bias ≈ 2^-57.8; all 128/256/512-bit primitives | Stable |
-| **Pixel Barrier (8-channel RGBWYOPA)** | 56 data bits + 8 noise bits per pixel; 7^P CCA ambiguity; **Mode 1** & **Mode 2** container floors | Stable |
+| **Pixel Barrier (8-channel RGBWYOPA)** | 56 data bits + 8 noise bits per pixel; 7^P CCA ambiguity; **Mode 1**, **Mode 2** & **Mode 3** (Gauss-Posit) container floors | Stable |
 | **AES-ITB-128** (aesitb128) | 128-bit reduced-round AES CBC-MAC chain (inner-role Non-PRF + DRBG fill) | Stable |
 | **Areion-SoEM-256** (areion256) | 256-bit CBC-MAC over SoEM22 wide-block PRF (~170-bit bound) | Stable |
 | **Areion-SoEM-512** (areion512) | 512-bit CBC-MAC over SoEM22 wide-block PRF (~341-bit bound) | Stable |
@@ -107,6 +108,7 @@ Full matrix:
 - 13 shipped profiles (6 Single Message, 6 Streaming, 1 blob-only)
 - 1 sample file (`tools/eitb/in-file.txt`, 4 KiB, deterministic)
 - **13872 cells PASS** (12 cipher-carrying profiles × 34 × 34); 1156 cells N/A (blob-only profile intentionally exposes no cipher surface); 0 FAIL across the full 15028-cell matrix
+- **8124 cells PASS** across the 7-section C ↔ pure-Go cross-build & SIMD tier parity matrix (`scripts/parity/cross-build-parity.sh`: 360 host-tier + 1800 forced-pixel-tier + 2880 forced-hash-arm + 576 interlock-tier + 1104 interlock168-tier + 24 kmac-mac + 612 batch-16-fill + 768 mode3-posit); 0 FAIL
 
 **All features fully implemented.** Every binding is a thin proxy over the same `ITB_Triple_*` FFI surface and exposes both shapes uniformly — Single Message and Streaming, AEAD and Non-AEAD — with the stream pump adapted to each language's native IO idiom (`io.Reader` / `io.Writer` in Go, the equivalent stream abstraction per language).
 
@@ -169,6 +171,10 @@ itb.SetGCPercent(100)
 ### Nonce width
 
 `ITB_NONCE_BITS=512` sets the default on-wire nonce width in bits at process init (accepted values: `128` / `256` / `512`). Per-Pipeline overrides live in `triple.Opts.NonceBits` on the facade side and in the `*itb.Config.NonceBits` field on the Low-Level side; the env value is the compile-in default when neither override is supplied.
+
+### Container mode
+
+`ITB_CONTAINER_MODE=1` sets the process-wide default container floor and **Layer I** (`0x05`) trajectory mode at process init (accepted values: `1` / `2` / `3` or `mode1` / `mode2` / `mode3` / `posit` / `gauss-posit`; default `1`). Per-Pipeline overrides in `triple.Opts.Mode`, `*itb.Config.Mode`, and `Blob*Opts.Mode` take precedence when explicitly set (`1`, `2`, or `3`).
 
 ### Tests
 
@@ -248,7 +254,7 @@ The single-primitive Triple, blob, and mixed-primitive profiles default to **par
 
 **Blob persistence and inspection.** `pipe.Save()` returns a copy of the Pipeline's current blob (the bytes `Init` handed back, or the refreshed bytes after `Rekey` / a master override at `Load`); `pipe.SaveF(path)` writes it with mode `0600` (the containing directory must already exist). `triple.LoadF(path)` is the file-side counterpart of `Load`. `triple.Inspect(blob)` decodes the embedded `Profile` record without constructing a Pipeline — a pure metadata read that touches neither the profile registry nor the primitive registries. `Load` accepts an optional trailing `(permMaster, wrapMaster)` pair to swap the masters at reopen time (rekey-on-import); the blob `Save()` returns afterwards carries the overridden masters. A blob whose wrap-layer schema version is not the current one is refused with `triple.ErrBlobVersion`; a recipe naming a primitive absent from the local registries is refused with `triple.ErrRecipePrimitiveUnknown`.
 
-**Command-line utility — `itb3`.** [`cmd/itb3`](cmd/itb3/) ships an openssl-style CLI over the same `triple/` surface. `itb3 genblob <mode> <hash> [--blob-mode 1|2] [--interlock 48|168]` generates a session blob (written with mode `0600` when `-o` is used; `--blob-mode` selects **Mode 1** per-region default or **Mode 2** per-container compact sizing; `--interlock` selects the 48-bit default or the 168-bit Interlocked Barrier for 512-bit hashes); `itb3 encrypt` / `decrypt` / `rekey` / `inspect` / `verify` operate on a saved blob via `triple.LoadF` (`encrypt`, `decrypt`, and `verify` also accept `[--desync on|off]` / `ITB_BARRIERS_DESYNC` for synchronous wire conversion), and `itb3 profiles` lists the registered profile catalogue. Payloads pass through files (`-i` / `-o`) or via stdin / stdout. See [`cmd/itb3/README.md`](cmd/itb3/README.md) for the full subcommand reference.
+**Command-line utility — `itb3`.** [`cmd/itb3`](cmd/itb3/) ships an openssl-style CLI over the same `triple/` surface. `itb3 genblob <mode> <hash> [--blob-mode 1|2|3] [--interlock 48|168]` generates a session blob (written with mode `0600` when `-o` is used; `--blob-mode` selects **Mode 1** per-region default, **Mode 2** per-container compact sizing, or **Mode 3** Gauss-Posit sizing and trajectory derivation; `--interlock` selects the 48-bit default or the 168-bit Interlocked Barrier for 512-bit hashes); `itb3 encrypt` / `decrypt` / `rekey` / `inspect` / `verify` operate on a saved blob via `triple.LoadF` (`encrypt`, `decrypt`, and `verify` also accept `[--desync on|off]` / `ITB_BARRIERS_DESYNC` for synchronous wire conversion), and `itb3 profiles` lists the registered profile catalogue. Payloads pass through files (`-i` / `-o`) or via stdin / stdout. See [`cmd/itb3/README.md`](cmd/itb3/README.md) for the full subcommand reference.
 
 ### Triple 1 — Single Message with MAC
 
@@ -573,8 +579,8 @@ The 4 examples above pass `triple.Opts{}` (all profile defaults). Every `triple.
 
 ```go
 enc, blob, err := triple.Init(triple.ProfileStreamingAEADTripleMACV1, triple.Opts{
-    // Container floor sizing mode: 0 = default (Mode 1 per-region),
-    // 1 = per-region, 2 = per-container (Mode 2 per-container).
+    // Container floor sizing mode: 0 = default (Mode 1 per-region, or ITB_CONTAINER_MODE),
+    // 1 = per-region, 2 = per-container (Mode 2), 3 = Gauss-Posit (Mode 3).
     Mode: 1,
 
     // Interlocked Barrier chunk width: "" or "48" = default 48-bit,
@@ -626,7 +632,7 @@ Any field left at its zero value defers to the resolved profile's default; a nil
 
 | Field | Accepted value | Notes |
 |---|---|---|
-| `Mode` | `1` \| `2` (or `0` = default) | Container floor sizing mode; `0` = default (**Mode 1** per-region), `1` = per-region, `2` = per-container (compact VPN tunnel mode). The resolved value travels in the session blob's inner snapshot and is reproduced on `Load`; `Inspect` surfaces it as `Profile.ContainerMode`. |
+| `Mode` | `1` \| `2` \| `3` (or `0` = default) | Container floor sizing mode; `0` = default (**Mode 1** per-region, or `ITB_CONTAINER_MODE`), `1` = per-region, `2` = per-container (compact VPN tunnel mode), `3` = Gauss-Posit (**Mode 3** inscribed Gauss-circle floor and posit64/quire512 **Layer I** chord schedule). The resolved value travels in the session blob's inner snapshot and is reproduced on `Load`; `Inspect` surfaces it as `Profile.ContainerMode`. |
 | `Interlock` | `"48"` \| `"168"` (or `""` = default) | Interlocked Barrier chunk width; `""` or `"48"` = default 48-bit (6-byte chunk, 3 × 16-bit lanes), `"168"` = 168-bit (21-byte chunk, 3 × 56-bit lanes; requires a 512-bit inner hash or mixed profile). The resolved non-default value (`"168"`) travels in the session blob's recipe and inner snapshot, is reproduced on `Load`, and is surfaced by `Inspect` as `Profile.Interlock` (`""` for default 48-bit). |
 | `PermMaster` | `[]byte`, ≥ 32 bytes (or nil) | Externally-supplied parallax master (e.g. ML-KEM output); nil = crypto/rand auto-generate. |
 | `WrapMaster` | `[]byte`, ≥ 32 bytes (or nil) | Externally-supplied wrapper master; nil = crypto/rand auto-generate. |
@@ -646,7 +652,7 @@ Any field left at its zero value defers to the resolved profile's default; a nil
 | `ParallaxPalette` | slice of primitive names from the set below | Empty = profile default palette. Order matters — parallax dispatches per-segment by slot. |
 | `ParallaxSegmentSize` | `int` in `[1, 65535]`, coprime to `504` (not divisible by 2, 3, or 7); or `0` = default | Default `4093`. Recommended values: primes such as `4093` / `4099` / `4111` / `4127`; composite values are accepted provided they are coprime to 504. |
 
-**Container mode lifecycle.** Container floor sizing is selectable at `triple.Init` via `Opts.Mode` (1 for per-region, 2 for per-container; 0 selects the default **Mode 1**). `triple.Register` rejects any profile with non-zero `ContainerMode`, as the setting resides inside the session blob's inner snapshot rather than the profile definition. The resolved mode is restored on `triple.Load` and inspected via `triple.Inspect`. Command-line generation selects the mode via `itb3 genblob --blob-mode 1|2`.
+**Container mode lifecycle.** Container floor sizing is selectable at `triple.Init` via `Opts.Mode` (1 for per-region, 2 for per-container, 3 for Gauss-Posit; 0 selects the default **Mode 1** — or the `ITB_CONTAINER_MODE` env default). `triple.Register` rejects any profile with non-zero `ContainerMode`, as the setting resides inside the session blob's inner snapshot rather than the profile definition. The resolved mode is restored on `triple.Load` and inspected via `triple.Inspect`. Command-line generation selects the mode via `itb3 genblob --blob-mode 1|2|3`.
 
 **Shipped primitive names.** The single canonical registry (`hashes/registry.go` — `hashes.Registry`, the `hashes.Cipher*` name constants, and the `hashes.Names()` snapshot that `wrapper.CipherNames` mirrors) uses the same string alphabet for `InnerHash`, `OuterCipher`, and each `ParallaxPalette` entry, excluding `aesitb128` which is not supported by parallax and wrapper:
 
@@ -829,7 +835,7 @@ Selected `*itb.Config` fields:
 
 | Field | Type | Default | Accepted values / Description |
 |---|---|---|---|
-| `Mode` | `int` | `1` (per-region) | Container floor sizing mode: `0` or `1` = **Mode 1** per-region (default); `2` = **Mode 2** per-container (compact VPN tunnel mode). Out-of-range values return `ErrBlobModeMismatch`. |
+| `Mode` | `int` | `1` (per-region) | Container floor sizing mode: `0` or `1` = **Mode 1** per-region (default); `2` = **Mode 2** per-container (compact VPN tunnel mode); `3` = **Mode 3** Gauss-Posit (inscribed Gauss-circle floor + posit64(es)/quire512 **Layer I** chord schedule; default when `Mode == 0` is overridden by `ITB_CONTAINER_MODE`). Out-of-range values return `ErrBlobModeMismatch`. |
 | `Interlock` | `string` | `""` (`"48"`, 48-bit) | Interlocked Barrier chunk width: `""` or `"48"` = 48-bit default (6-byte chunk); `"168"` = 168-bit (21-byte chunk, 512-bit Triple entry points only). Unknown values or `"168"` on 128/256-bit entry points are rejected fail-fast. |
 | `NonceBits` | `int` | `512` (`DefaultNonceBits`) | On-wire nonce width (`128` / `256` / `512`). |
 | `BarrierFill` | `int` | `1` (`DefaultBarrierFill`) | DRBG barrier fill margin in pixels (`1` / `2` / `4` / `8` / `16` / `32`). |
@@ -1235,10 +1241,11 @@ Default nonce size is 512 bits (64 bytes) — chosen so the birthday-bound on co
 
 ## Minimum container size
 
-ITB enforces two container floor sizing modes:
+ITB enforces three container floor sizing modes:
 
 - **Mode 1: Per-Region (default).** Each of the three regions independently reaches the ambiguity floor (365 pixels for 1024-bit keys). Total container pixels equal `3 × per-region floor` (1095 pixels for 1024-bit keys), rounded up to the smallest square by side length plus the DRBG barrier margin (`DefaultBarrierFill = 1`): `⌈√1095⌉ = 34 → (34 + 1)² = 35 × 35 = 1225` pixels (~9.9 KB ciphertext).
 - **Mode 2: Per-Container (compact VPN tunnel mode).** The ambiguity floor is evaluated jointly across the whole container (365 pixels for 1024-bit keys). Container dimensions round up to the smallest square plus the barrier margin: `⌈√365⌉ = 20 → 20 × 20 = 400` raw square floor (365 → 400), which with barrier fill becomes `(20 + 1)² = 21 × 21 = 441` pixels (~3.6 KB ciphertext). This reduces datagram overhead for packet-oriented network tunnels.
+- **Mode 3: Gauss-Posit (inscribed Gauss-circle floor + posit64/quire512 trajectory).** The three-region floor is scaled by the Gauss-circle ratio `⌊(6 · MinPixels) / π_posit(es=2)⌋ + 1` (350 / 698 / 1395 pixels for 512 / 1024 / 2048-bit keys) and rounded up to the smallest square plus the barrier margin: `⌈√350⌉ = 19 → (19 + 1)² = 20 × 20 = 400` px (~3.3 KB) at 512-bit keys, `⌈√698⌉ = 27 → (27 + 1)² = 28 × 28 = 784` px (~6.4 KB, 35.8% smaller than the ~9.9 KB of **Mode 1**) at 1024-bit keys, and `⌈√1395⌉ = 38 → (38 + 1)² = 39 × 39 = 1521` px (~12.3 KB) at 2048-bit keys, while **Layer I** (`0x05`) derives a per-region secret circle constant `π_{K,r}` and partitions each region along discrete Gauss semicircle chords via secret-regime `posit64(es)` (`es ∈ {1, 2, 3}`) and exact 512-bit quire arithmetic.
 
 | Key size | Ambiguity floor | **Mode 1** Per-Region (side²) | **Mode 1** Wire Floor | **Mode 2** Per-Container (side²) | **Mode 2** Wire Floor |
 |---|---|---|---|---|---|
@@ -1246,9 +1253,9 @@ ITB enforces two container floor sizing modes:
 | 1024 bits | 365 px | 35 × 35 = 1225 px | ~9.9 KB | 21 × 21 = 441 px | ~3.6 KB |
 | 2048 bits | 730 px | 48 × 48 = 2304 px | ~18.5 KB | 29 × 29 = 841 px | ~6.8 KB |
 
-**Wire interoperability.** The on-wire header `[main_nonce][W][H]` following the 32-byte prefix self-describes container geometry; decryption consumes dimensions directly from the header without prior mode negotiation. A **Mode 1** Pipeline decrypts **Mode 2** ciphertexts, and a **Mode 2** Pipeline decrypts **Mode 1** ciphertexts. Once payload size exceeds the floor, container dimensions in both modes converge.
+**Wire interoperability.** The on-wire header `[main_nonce][W][H]` following the 32-byte prefix self-describes container geometry; decryption consumes dimensions directly from the header without prior mode negotiation. A **Mode 1** Pipeline decrypts **Mode 2** ciphertexts, and a **Mode 2** Pipeline decrypts **Mode 1** ciphertexts, whereas **Mode 3** binds container geometry and **Layer I** (`0x05`) chord derivation to `posit64(es)` + `quire512` (recorded in the session blob's `ContainerMode`). Once payload size exceeds the floor, container dimensions across modes converge.
 
-**Selection.** Mode is selected via `triple.Opts.Mode`, `*itb.Config.Mode`, `Blob*Opts.Mode` or `itb3 genblob <mode> <hash> --blob-mode 1|2` (1 = per-region, 2 = per-container; 0 = default; out-of-range returns `ErrBlobModeMismatch`). `itb3 inspect` reports the resolved setting under `container_mode`.
+**Selection.** Mode is selected via `triple.Opts.Mode`, `*itb.Config.Mode`, `Blob*Opts.Mode`, `ITB_CONTAINER_MODE=1|2|3`, or `itb3 genblob <mode> <hash> --blob-mode 1|2|3` (1 = per-region, 2 = per-container, 3 = Gauss-Posit; 0 = default; out-of-range returns `ErrBlobModeMismatch`). `itb3 inspect` reports the resolved setting under `container_mode`.
 
 ## Integrity (MAC-Inside-Encrypt)
 
@@ -1314,7 +1321,7 @@ The construction addresses security across two distinct regimes:
 - **Standard AEAD model (MAC Authenticated).** Standard binary accept/reject semantics: authentic messages verify; tampered or unauthenticated ciphertexts are rejected. Under CCA (MAC + Reveal), the oracle leaks at most 3 bits per pixel (`noisePos`, Theorem 6); 8-seed isolation (Theorem 3) shields `dataSeed`, `lockSeed`, and `startSeed` from leakage.
 - **Plausible deniability model (Core ITB / MAC + Silent Drop, Theorem 8).** The adversary always receives output without an accept/reject signal. Decryption produces a **spectrum of plausibility**: every candidate key yields syntactically valid COBS-decoded output, and without external redundancy, wrong-key candidates cannot be ranked against the true plaintext.
 
-Formalization pillars (with `270` core mathematical, combinatorial, and bit-vector theorems — `239` across six `ITB/*.lean` core modules including `40` in `ITB/Desync.lean`, plus `31` in `Apps/ThreeToEight.lean` — accompanied by `73` additional theorems and Go wire-parity KATs across the three end-to-end executable **Core ITB** pipeline specification modules `ITB/PipelineSpec128.lean`, `ITB/PipelineSpec256.lean`, and `ITB/PipelineSpec512.lean`, machine-checked in Lean 4 in [lean/README.md](lean/README.md)):
+Formalization pillars (with `270` core mathematical, combinatorial, and bit-vector theorems — `239` across six `ITB/*.lean` core modules including `40` in `ITB/Desync.lean`, plus `31` in `Apps/ThreeToEight.lean` — accompanied by `30` **Mode 3** Gauss-Posit theorems in `ITB/Posit.lean` and `92` additional theorems and Go wire-parity KATs across the three end-to-end executable **Core ITB** pipeline specification modules `ITB/PipelineSpec128.lean`, `ITB/PipelineSpec256.lean`, and `ITB/PipelineSpec512.lean`, machine-checked in Lean 4 in [lean/README.md](lean/README.md)):
 
 - **Indistinguishability-based definitions (IND-CPA / IND-CCA).** Passive observation is information-theoretically secure (Theorems 1, 2). Active resistance under Crib / Full KPA and CPA/CCA is computational and PRF-conditional: the 4-factor defense (Theorem 4a; byte-splitting gcd(7, 8) = 1 acts as an auxiliary 5th factor specifically under Partial KPA) pairs PRF one-wayness with startPixel isolation and **Layer I** dynamic sub-region trajectory desynchronization (`0x05`), per-pixel ambiguity (Theorem 4), and the Rank Barrier's per-chunk mask space of ≈ 2^70.20 balanced partitions (or ≈ 2^258.60 in 168-bit mode) plus **Layer II** cross-lane chunk-slot desynchronization (`0x06`, `β_0 ≠ β_1`) bound to the cipher via cascade PRF (Theorems 3a, 3b, 11; gcd anti-collapse Theorem 12).
 - **Simulation-based proof.** Under passive observation, an ideal functionality returns uniform random bytes: the Pixel Barrier's output is information-theoretically indistinguishable from random (Theorem 1), with plaintext structural bias neutralized by the rotation barrier (Theorem 7), and computationally indistinguishable from a CSPRNG-generated cover under the PRF and CSPRNG assumptions.

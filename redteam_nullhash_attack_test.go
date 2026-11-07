@@ -151,7 +151,12 @@ func nullHashBuildRegionPerms128(slot, w int, mainNonce []byte) (spMax int, spCo
 		startSeed.Components[0] = uint64(spConst>>8) | (uint64(slot) << 8)
 		startSeed.Components[1] = uint64(spConst & 0xFF)
 		sp := startSeed.deriveStartPixel(mainNonce, w)
-		sched := startSeed.deriveSubregionSchedule(mainNonce, sp, w)
+		var sched subregionSchedule
+		if currentContainerModeCfg(nil) == blobModeGaussPosit {
+			sched = startSeed.deriveSubregionSchedulePosit(mainNonce, sp, w)
+		} else {
+			sched = startSeed.deriveSubregionSchedule(mainNonce, sp, w)
+		}
 		row := perms[spv*w : (spv+1)*w]
 		for step := 0; step < sched.k; step++ {
 			logStart := sched.logOff[step]

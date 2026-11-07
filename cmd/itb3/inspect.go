@@ -80,6 +80,8 @@ func renderInspect(prof triple.Profile, blobLen int, out io.Writer) {
 	fmt.Fprintf(out, "nonce_bits: %d\n", prof.NonceBits)
 	fmt.Fprintf(out, "barrier_fill: %d\n", prof.BarrierFill)
 	switch prof.ContainerMode {
+	case 3:
+		fmt.Fprintf(out, "container_mode: gauss-posit (3)\n")
 	case 2:
 		fmt.Fprintf(out, "container_mode: per-container (2)\n")
 	case 1:

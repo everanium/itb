@@ -163,7 +163,7 @@ data Config = Config
   , cfgProfile        :: !String       -- ^ empty = shape-based profile pair
   , cfgKeyBits        :: !Int          -- ^ 0 = profile default
   , cfgNonceBits      :: !Int          -- ^ 0 = profile default
-  , cfgBlobMode       :: !Int          -- ^ container floor sizing mode: 1 (per-region, default) | 2 (per-container)
+  , cfgBlobMode       :: !Int          -- ^ container floor sizing mode: 1 (per-region, default) | 2 (per-container) | 3 (gauss-posit)
   , cfgChunkSize      :: !Int64        -- ^ 0 = profile default
   , cfgBarrierFill    :: !Int          -- ^ 0 = profile default
   , cfgDrbg           :: !String       -- ^ DRBG fill primitive; empty = profile default (auto tier)

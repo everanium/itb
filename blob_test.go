@@ -728,7 +728,7 @@ func TestBlobImportModeDiscriminator(t *testing.T) {
 	}
 
 	for _, w := range widths {
-		for _, mode := range []int{1, 2} {
+		for _, mode := range []int{1, 2, 3} {
 			t.Run(w.label+"/accepts_mode_"+strconv.Itoa(mode), func(t *testing.T) {
 				cfg := &itb.Config{}
 				err := w.newFn().Import3Cfg(body(mode), cfg)
@@ -740,7 +740,7 @@ func TestBlobImportModeDiscriminator(t *testing.T) {
 				}
 			})
 		}
-		for _, mode := range []int{0, 3, 4, -1} {
+		for _, mode := range []int{0, 4, 5, -1} {
 			t.Run(w.label+"/rejects_mode_"+strconv.Itoa(mode), func(t *testing.T) {
 				cfg := &itb.Config{}
 				err := w.newFn().Import3Cfg(body(mode), cfg)
@@ -923,71 +923,73 @@ func TestBlobExportMode2OtherWidths(t *testing.T) {
 		}
 		return probe.Mode
 	}
-	t.Run("256", func(t *testing.T) {
-		mkSeed := func() (*itb.Seed256, [32]byte) {
-			fn, batch, key := hashes.BLAKE3256Pair()
-			s, _ := itb.NewSeed256(1024, fn)
-			s.BatchHash = batch
-			return s, key
-		}
-		ns, keyN := mkSeed()
-		ls, keyL := mkSeed()
-		ds1, keyD1 := mkSeed()
-		ds2, keyD2 := mkSeed()
-		ds3, keyD3 := mkSeed()
-		ss1, keyS1 := mkSeed()
-		ss2, keyS2 := mkSeed()
-		ss3, keyS3 := mkSeed()
-		bSrc := &itb.Blob256{}
-		data, err := bSrc.Export3Cfg(&itb.Config{NonceBits: itb.DefaultNonceBits, BarrierFill: 1},
-			keyN, keyD1, keyD2, keyD3, keyS1, keyS2, keyS3,
-			ns, ds1, ds2, ds3, ss1, ss2, ss3, itb.Blob256Opts{KeyL: keyL, LS: ls, Mode: 2})
-		if err != nil {
-			t.Fatalf("Export3Cfg: %v", err)
-		}
-		fresh := &itb.Config{}
-		bDst := &itb.Blob256{}
-		if err := bDst.Import3Cfg(data, fresh); err != nil {
-			t.Fatalf("Import3Cfg: %v", err)
-		}
-		if bSrc.Mode != 2 || probeMode(t, data) != 2 || bDst.Mode != 2 || fresh.Mode != 2 {
-			t.Fatalf("mode: src %d json %d dst %d cfg %d, want 2 everywhere", bSrc.Mode, probeMode(t, data), bDst.Mode, fresh.Mode)
-		}
-	})
-	t.Run("128", func(t *testing.T) {
-		mkSeed := func() (*itb.Seed128, []byte) {
-			fn, key := hashes.AESCMAC()
-			s, _ := itb.NewSeed128(1024, fn)
-			return s, key[:]
-		}
-		ns, keyN := mkSeed()
-		ls, keyL := mkSeed()
-		ds1, keyD1 := mkSeed()
-		ds2, keyD2 := mkSeed()
-		ds3, keyD3 := mkSeed()
-		ss1, keyS1 := mkSeed()
-		ss2, keyS2 := mkSeed()
-		ss3, keyS3 := mkSeed()
-		bSrc := &itb.Blob128{}
-		data, err := bSrc.Export3Cfg(&itb.Config{NonceBits: itb.DefaultNonceBits, BarrierFill: 1},
-			keyN, keyD1, keyD2, keyD3, keyS1, keyS2, keyS3,
-			ns, ds1, ds2, ds3, ss1, ss2, ss3, itb.Blob128Opts{KeyL: keyL, LS: ls, Mode: 2})
-		if err != nil {
-			t.Fatalf("Export3Cfg: %v", err)
-		}
-		fresh := &itb.Config{}
-		bDst := &itb.Blob128{}
-		if err := bDst.Import3Cfg(data, fresh); err != nil {
-			t.Fatalf("Import3Cfg: %v", err)
-		}
-		if bSrc.Mode != 2 || probeMode(t, data) != 2 || bDst.Mode != 2 || fresh.Mode != 2 {
-			t.Fatalf("mode: src %d json %d dst %d cfg %d, want 2 everywhere", bSrc.Mode, probeMode(t, data), bDst.Mode, fresh.Mode)
-		}
-	})
+	for _, targetMode := range []int{2, 3} {
+		t.Run("256", func(t *testing.T) {
+			mkSeed := func() (*itb.Seed256, [32]byte) {
+				fn, batch, key := hashes.BLAKE3256Pair()
+				s, _ := itb.NewSeed256(1024, fn)
+				s.BatchHash = batch
+				return s, key
+			}
+			ns, keyN := mkSeed()
+			ls, keyL := mkSeed()
+			ds1, keyD1 := mkSeed()
+			ds2, keyD2 := mkSeed()
+			ds3, keyD3 := mkSeed()
+			ss1, keyS1 := mkSeed()
+			ss2, keyS2 := mkSeed()
+			ss3, keyS3 := mkSeed()
+			bSrc := &itb.Blob256{}
+			data, err := bSrc.Export3Cfg(&itb.Config{NonceBits: itb.DefaultNonceBits, BarrierFill: 1},
+				keyN, keyD1, keyD2, keyD3, keyS1, keyS2, keyS3,
+				ns, ds1, ds2, ds3, ss1, ss2, ss3, itb.Blob256Opts{KeyL: keyL, LS: ls, Mode: targetMode})
+			if err != nil {
+				t.Fatalf("Export3Cfg: %v", err)
+			}
+			fresh := &itb.Config{}
+			bDst := &itb.Blob256{}
+			if err := bDst.Import3Cfg(data, fresh); err != nil {
+				t.Fatalf("Import3Cfg: %v", err)
+			}
+			if bSrc.Mode != targetMode || probeMode(t, data) != targetMode || bDst.Mode != targetMode || fresh.Mode != targetMode {
+				t.Fatalf("mode: src %d json %d dst %d cfg %d, want %d everywhere", bSrc.Mode, probeMode(t, data), bDst.Mode, fresh.Mode, targetMode)
+			}
+		})
+		t.Run("128", func(t *testing.T) {
+			mkSeed := func() (*itb.Seed128, []byte) {
+				fn, key := hashes.AESCMAC()
+				s, _ := itb.NewSeed128(1024, fn)
+				return s, key[:]
+			}
+			ns, keyN := mkSeed()
+			ls, keyL := mkSeed()
+			ds1, keyD1 := mkSeed()
+			ds2, keyD2 := mkSeed()
+			ds3, keyD3 := mkSeed()
+			ss1, keyS1 := mkSeed()
+			ss2, keyS2 := mkSeed()
+			ss3, keyS3 := mkSeed()
+			bSrc := &itb.Blob128{}
+			data, err := bSrc.Export3Cfg(&itb.Config{NonceBits: itb.DefaultNonceBits, BarrierFill: 1},
+				keyN, keyD1, keyD2, keyD3, keyS1, keyS2, keyS3,
+				ns, ds1, ds2, ds3, ss1, ss2, ss3, itb.Blob128Opts{KeyL: keyL, LS: ls, Mode: targetMode})
+			if err != nil {
+				t.Fatalf("Export3Cfg: %v", err)
+			}
+			fresh := &itb.Config{}
+			bDst := &itb.Blob128{}
+			if err := bDst.Import3Cfg(data, fresh); err != nil {
+				t.Fatalf("Import3Cfg: %v", err)
+			}
+			if bSrc.Mode != targetMode || probeMode(t, data) != targetMode || bDst.Mode != targetMode || fresh.Mode != targetMode {
+				t.Fatalf("mode: src %d json %d dst %d cfg %d, want %d everywhere", bSrc.Mode, probeMode(t, data), bDst.Mode, fresh.Mode, targetMode)
+			}
+		})
+	}
 }
 
 // TestBlobExportRejectsModeOutOfRange pins the export-side gate: an
-// Opts.Mode outside {1, 2} and a Config.Mode outside {0, 1, 2} both
+// Opts.Mode outside {1, 2, 3} and a Config.Mode outside {0, 1, 2, 3} both
 // surface as ErrBlobModeMismatch, and the receiver struct is left
 // untouched.
 func TestBlobExportRejectsModeOutOfRange(t *testing.T) {
@@ -996,15 +998,15 @@ func TestBlobExportRejectsModeOutOfRange(t *testing.T) {
 	bSrc := &itb.Blob512{}
 	_, err := bSrc.Export3Cfg(&itb.Config{NonceBits: itb.DefaultNonceBits},
 		ks[0], ks[2], ks[3], ks[4], ks[5], ks[6], ks[7],
-		ns, ds1, ds2, ds3, ss1, ss2, ss3, itb.Blob512Opts{KeyL: ks[1], LS: ls, Mode: 3})
+		ns, ds1, ds2, ds3, ss1, ss2, ss3, itb.Blob512Opts{KeyL: ks[1], LS: ls, Mode: 4})
 	if !errors.Is(err, itb.ErrBlobModeMismatch) {
-		t.Fatalf("Export3Cfg(Opts.Mode=3): %v, want ErrBlobModeMismatch", err)
+		t.Fatalf("Export3Cfg(Opts.Mode=4): %v, want ErrBlobModeMismatch", err)
 	}
-	_, err = bSrc.Export3Cfg(&itb.Config{NonceBits: itb.DefaultNonceBits, Mode: 3},
+	_, err = bSrc.Export3Cfg(&itb.Config{NonceBits: itb.DefaultNonceBits, Mode: 4},
 		ks[0], ks[2], ks[3], ks[4], ks[5], ks[6], ks[7],
 		ns, ds1, ds2, ds3, ss1, ss2, ss3, itb.Blob512Opts{KeyL: ks[1], LS: ls})
 	if !errors.Is(err, itb.ErrBlobModeMismatch) {
-		t.Fatalf("Export3Cfg(Config.Mode=3): %v, want ErrBlobModeMismatch", err)
+		t.Fatalf("Export3Cfg(Config.Mode=4): %v, want ErrBlobModeMismatch", err)
 	}
 	if bSrc.Mode != 0 {
 		t.Fatalf("receiver Mode = %d after rejected exports, want 0", bSrc.Mode)

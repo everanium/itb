@@ -95,14 +95,15 @@ func decodeBlobStrict(data []byte, out *blobV1) error {
 // control and per-instance Config wiring.
 
 // ErrBlobModeMismatch is returned when a container sizing mode is
-// outside {1, 2}: by [Blob128.Import3Cfg] / [Blob256.Import3Cfg] /
+// outside {1, 2, 3}: by [Blob128.Import3Cfg] / [Blob256.Import3Cfg] /
 // [Blob512.Import3Cfg] for the mode a JSON blob carries, by the
 // Export3Cfg counterparts for an out-of-range Opts.Mode, and (wrapped)
 // by the Cfg-aware entry points for an out-of-range [Config.Mode].
 // The mode selects the container geometry — 1 = per-region floor
-// (default), 2 = per-container floor — and says nothing about the
+// (default), 2 = per-container floor, 3 = inscribed Gauss circle Posit
+// floor with Posit chord slicing — and says nothing about the
 // seed material, so an unknown value is refused rather than mapped.
-var ErrBlobModeMismatch = errors.New("itb: blob mode mismatch (expected mode=1 for per-region or mode=2 for per-container)")
+var ErrBlobModeMismatch = errors.New("itb: blob mode mismatch (expected mode=1 for per-region, mode=2 for per-container, or mode=3 for gauss-posit)")
 
 // ErrBlobMalformed is returned when the JSON blob fails to parse
 // or carries fields outside the documented shape (zero-length
@@ -128,11 +129,17 @@ const blobVersionV1 = 1
 // formula the blob uses: 1 is the shipped per-region floor (enforced
 // independently within each third), 2 is the per-container floor
 // (enforced jointly across the container for network tunnel / VPN
-// compact sizing).
+// compact sizing), and 3 is the inscribed Gauss circle Posit floor with
+// Posit chord sub-region slicing.
 const (
 	blobModePerRegion    = 1
 	blobModePerContainer = 2
+	blobModeGaussPosit   = 3
 )
+
+func isValidBlobMode(m int) bool {
+	return m == blobModePerRegion || m == blobModePerContainer || m == blobModeGaussPosit
+}
 
 // blobV1 is the JSON-encoded shape shared by every width. uint64
 // components are serialised as decimal strings (avoiding JSON's
@@ -612,16 +619,17 @@ func (b *Blob512) Export3Cfg(
 		}
 	}
 
-	// cfg.Mode is within {0, 1, 2} here — validateConfigCfg ran above
+	// cfg.Mode is within {0, 1, 2, 3} here — validateConfigCfg ran above
 	// — so only the explicit Opts override needs the gate.
-	mode := blobModePerRegion
+	mode := currentContainerModeCfg(cfg)
 	if o.Mode != 0 {
-		if o.Mode != blobModePerRegion && o.Mode != blobModePerContainer {
+		if !isValidBlobMode(o.Mode) {
 			return nil, ErrBlobModeMismatch
 		}
 		mode = o.Mode
-	} else if cfg != nil && cfg.Mode != 0 {
-		mode = cfg.Mode
+	}
+	if err := validateDesyncModeCfg(&Config{Mode: mode}); err != nil {
+		return nil, err
 	}
 
 	interlock := ""
@@ -745,8 +753,11 @@ func (b *Blob512) Import3Cfg(data []byte, cfg *Config) error {
 	if blob.Version > blobVersionV1 {
 		return ErrBlobVersionTooNew
 	}
-	if blob.Mode != blobModePerRegion && blob.Mode != blobModePerContainer {
+	if !isValidBlobMode(blob.Mode) {
 		return ErrBlobModeMismatch
+	}
+	if err := validateDesyncModeCfg(&Config{Mode: blob.Mode}); err != nil {
+		return err
 	}
 	// KeyBits pre-validation — mirrors the [NewSeed512] /
 	// [SeedFromComponents512] contract at the Import boundary so a
@@ -936,16 +947,17 @@ func (b *Blob256) Export3Cfg(
 		}
 	}
 
-	// cfg.Mode is within {0, 1, 2} here — validateConfigCfg ran above
+	// cfg.Mode is within {0, 1, 2, 3} here — validateConfigCfg ran above
 	// — so only the explicit Opts override needs the gate.
-	mode := blobModePerRegion
+	mode := currentContainerModeCfg(cfg)
 	if o.Mode != 0 {
-		if o.Mode != blobModePerRegion && o.Mode != blobModePerContainer {
+		if !isValidBlobMode(o.Mode) {
 			return nil, ErrBlobModeMismatch
 		}
 		mode = o.Mode
-	} else if cfg != nil && cfg.Mode != 0 {
-		mode = cfg.Mode
+	}
+	if err := validateDesyncModeCfg(&Config{Mode: mode}); err != nil {
+		return nil, err
 	}
 
 	blob := blobV1{
@@ -1045,8 +1057,11 @@ func (b *Blob256) Import3Cfg(data []byte, cfg *Config) error {
 	if blob.Version > blobVersionV1 {
 		return ErrBlobVersionTooNew
 	}
-	if blob.Mode != blobModePerRegion && blob.Mode != blobModePerContainer {
+	if !isValidBlobMode(blob.Mode) {
 		return ErrBlobModeMismatch
+	}
+	if err := validateDesyncModeCfg(&Config{Mode: blob.Mode}); err != nil {
+		return err
 	}
 	// KeyBits pre-validation — mirrors the [NewSeed256] /
 	// [SeedFromComponents256] contract at the Import boundary so a
@@ -1222,16 +1237,17 @@ func (b *Blob128) Export3Cfg(
 		}
 	}
 
-	// cfg.Mode is within {0, 1, 2} here — validateConfigCfg ran above
+	// cfg.Mode is within {0, 1, 2, 3} here — validateConfigCfg ran above
 	// — so only the explicit Opts override needs the gate.
-	mode := blobModePerRegion
+	mode := currentContainerModeCfg(cfg)
 	if o.Mode != 0 {
-		if o.Mode != blobModePerRegion && o.Mode != blobModePerContainer {
+		if !isValidBlobMode(o.Mode) {
 			return nil, ErrBlobModeMismatch
 		}
 		mode = o.Mode
-	} else if cfg != nil && cfg.Mode != 0 {
-		mode = cfg.Mode
+	}
+	if err := validateDesyncModeCfg(&Config{Mode: mode}); err != nil {
+		return nil, err
 	}
 
 	blob := blobV1{
@@ -1335,8 +1351,11 @@ func (b *Blob128) Import3Cfg(data []byte, cfg *Config) error {
 	if blob.Version > blobVersionV1 {
 		return ErrBlobVersionTooNew
 	}
-	if blob.Mode != blobModePerRegion && blob.Mode != blobModePerContainer {
+	if !isValidBlobMode(blob.Mode) {
 		return ErrBlobModeMismatch
+	}
+	if err := validateDesyncModeCfg(&Config{Mode: blob.Mode}); err != nil {
+		return err
 	}
 	// KeyBits pre-validation — mirrors the [NewSeed128] /
 	// [SeedFromComponents128] contract at the Import boundary so a

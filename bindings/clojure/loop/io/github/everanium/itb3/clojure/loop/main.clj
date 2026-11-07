@@ -120,7 +120,7 @@
     :suffix ""
     :store (store-long :blob-cycle-every)}
    {:name "blob-mode" :type "int"
-    :help "container floor sizing mode: 1 (per-region, default) | 2 (per-container)"
+    :help "container floor sizing mode: 1 (per-region, default) | 2 (per-container) | 3 (gauss-posit)"
     :suffix (default-suffix-num (:blob-mode raw-defaults))
     :store (store-long :blob-mode)}
    {:name "chunk-size" :type "string"
@@ -385,8 +385,8 @@
         _ (when-not (one-of [0 128 256 512] (:nonce-bits raw))
             (invalid! (str "--nonce-bits must be 128 | 256 | 512 (or 0 = profile default), got "
                            (:nonce-bits raw))))
-        _ (when-not (one-of [1 2] (:blob-mode raw))
-            (invalid! (str "--blob-mode must be 1 (per-region) | 2 (per-container), got "
+        _ (when-not (one-of [1 2 3] (:blob-mode raw))
+            (invalid! (str "--blob-mode must be 1 (per-region) | 2 (per-container) | 3 (gauss-posit), got "
                            (:blob-mode raw))))
         _ (when-not (one-of [0 1 2 4 8 16 32] (:barrier-fill raw))
             (invalid! (str "--barrier-fill must be 1 | 2 | 4 | 8 | 16 | 32 "
@@ -550,7 +550,8 @@
                            " mac=" (dash (:mac record))
                            " parallax=" (state/on-off (:parallax? record))
                            " wrapper=" (state/on-off (:wrapper? record))
-                           (when (= 2 (:container-mode record)) " container-mode=2")
+                           (when (or (= 2 (:container-mode record)) (= 3 (:container-mode record)))
+                             (str " container-mode=" (:container-mode record)))
                            (when (seq (:drbg record)) (str " drbg=" (:drbg record)))
                            (when (seq (:interlock record)) (str " interlock=" (:interlock record))))))))
 

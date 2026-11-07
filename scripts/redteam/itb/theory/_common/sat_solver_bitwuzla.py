@@ -23,7 +23,7 @@ Pattern (consumer side):
         timeout_sec=300,
     )
 
-`bitwuzla` CLI (>= 0.5.0) must be on PATH (`yay -S bitwuzla` on Arch).
+`bitwuzla` CLI must be on PATH (`yay -S bitwuzla` on Arch).
 
 A near-identical private copy of this routine lives inline in
 scripts/redteam/itb/theory/fnv1a/sat_harness_4round.py for reproducibility

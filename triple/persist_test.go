@@ -1559,13 +1559,13 @@ func TestInitOptsMode(t *testing.T) {
 	}
 
 	// Out-of-range mode rejected fail-fast
-	for _, badMode := range []int{-1, 3, 99} {
+	for _, badMode := range []int{-1, 4, 99} {
 		_, _, err := Init(ProfileSingleMsgTripleMACV1, Opts{Mode: badMode})
 		if err == nil {
 			t.Fatalf("Init(Mode: %d) unexpectedly succeeded", badMode)
 		}
-		if !strings.Contains(err.Error(), "must be 0 or one of {1, 2}") {
-			t.Fatalf("Init(Mode: %d) error = %q, want message containing 'must be 0 or one of {1, 2}'", badMode, err.Error())
+		if !strings.Contains(err.Error(), "must be 0 or one of {1, 2, 3}") {
+			t.Fatalf("Init(Mode: %d) error = %q, want message containing 'must be 0 or one of {1, 2, 3}'", badMode, err.Error())
 		}
 	}
 }

@@ -86,6 +86,11 @@ let ``inspect carries the runtime globals, lookup does not`` () =
      Assert.Contains("\"nonce_bits\":256", prof.ToJson())
      Assert.Contains("\"barrier_fill\":4", prof.ToJson()))
 
+    (use pipe3 = unwrap (Pipeline.init "streaming-aead-triple-mac-v1" (Opts.empty |> Opts.withMode 3L))
+     let prof3 = unwrap (Pipeline.inspect (unwrap (Pipeline.save pipe3)))
+     Assert.Equal(System.Nullable 3, prof3.ContainerMode)
+     Assert.Contains("\"container_mode\":3", prof3.ToJson()))
+
     // The registry entry is the recipe alone — neither field is part
     // of it, so both read as absent rather than as zero.
     let registry = unwrap (Pipeline.lookup "streaming-aead-triple-mac-v1")

@@ -107,6 +107,10 @@ func Print(out *os.File, f *Figures) {
 	for _, k := range keySizes {
 		row(k, pct(f.Floor[k][1].Wire, f.Floor[k][2].Wire)+"%")
 	}
+	row("Mode 3 vs Mode 1 wire")
+	for _, k := range keySizes {
+		row(k, pct(f.Floor[k][1].Wire, f.Floor[k][3].Wire)+"%")
+	}
 	row("512-bit Mode 2 at 1460 B payload", dims(f.MTU512.Side), f.MTU512.P, fmt.Sprintf("%d B", f.MTU512.Wire))
 
 	section("Data-size rows (1024-bit key, Mode 1)")
@@ -120,28 +124,29 @@ func Print(out *os.File, f *Figures) {
 	row("expansion min over [10,000 B, 64 MiB]", "≥ "+fixed(f.ExpansionMin, 4), "≤ "+fixed(f.ExpansionMinEnd, 4)+" (at 64 MiB)")
 
 	section("Barrier strength at the 1024-bit floors")
-	a, b, t := f.Floor[1024][1], f.Floor[1024][2], f.Theoretical[1024]
-	row("metric", "Mode 2", "Mode 1", "theoretical")
-	row("container", dims(b.Side), dims(a.Side), dims(t.Side))
-	row("P", b.P, a.P, t.P)
-	row("noise barrier 2^(8P)", pow2(noiseBarrier(b.P)), pow2(noiseBarrier(a.P)), pow2(noiseBarrier(t.P)))
-	row("margin over 2^1024", pow2(noiseBarrier(b.P)-1024), pow2(noiseBarrier(a.P)-1024), pow2(noiseBarrier(t.P)-1024))
-	row("56^P", pow2(log2Pow(56, b.P)), pow2(log2Pow(56, a.P)), pow2(log2Pow(56, t.P)))
-	row("7^P", pow2(log2Pow(7, b.P)), pow2(log2Pow(7, a.P)), pow2(log2Pow(7, t.P)))
-	row("config map 2^(62P)", pow2(configMap(b.P)), pow2(configMap(a.P)), pow2(configMap(t.P)))
-	row("residue ≥ / at floor", fmt.Sprintf("%d / %d", b.Residue, b.ResidueAtFloor), fmt.Sprintf("%d / %d", a.Residue, a.ResidueAtFloor), fmt.Sprintf("%d / %d", t.Residue, t.ResidueAtFloor))
+	a, b, c, t := f.Floor[1024][1], f.Floor[1024][2], f.Floor[1024][3], f.Theoretical[1024]
+	row("metric", "Mode 2", "Mode 3", "Mode 1", "theoretical")
+	row("container", dims(b.Side), dims(c.Side), dims(a.Side), dims(t.Side))
+	row("P", b.P, c.P, a.P, t.P)
+	row("noise barrier 2^(8P)", pow2(noiseBarrier(b.P)), pow2(noiseBarrier(c.P)), pow2(noiseBarrier(a.P)), pow2(noiseBarrier(t.P)))
+	row("margin over 2^1024", pow2(noiseBarrier(b.P)-1024), pow2(noiseBarrier(c.P)-1024), pow2(noiseBarrier(a.P)-1024), pow2(noiseBarrier(t.P)-1024))
+	row("56^P", pow2(log2Pow(56, b.P)), pow2(log2Pow(56, c.P)), pow2(log2Pow(56, a.P)), pow2(log2Pow(56, t.P)))
+	row("7^P", pow2(log2Pow(7, b.P)), pow2(log2Pow(7, c.P)), pow2(log2Pow(7, a.P)), pow2(log2Pow(7, t.P)))
+	row("config map 2^(62P)", pow2(configMap(b.P)), pow2(configMap(c.P)), pow2(configMap(a.P)), pow2(configMap(t.P)))
+	row("residue ≥ / at floor", fmt.Sprintf("%d / %d", b.Residue, b.ResidueAtFloor), fmt.Sprintf("%d / %d", c.Residue, c.ResidueAtFloor), fmt.Sprintf("%d / %d", a.Residue, a.ResidueAtFloor), fmt.Sprintf("%d / %d", t.Residue, t.ResidueAtFloor))
 	le := float64(landauerExp)
-	row("vs Landauer "+pow2(landauerExp), ratio(float64(noiseBarrier(b.P))/le), ratio(float64(noiseBarrier(a.P))/le), ratio(float64(noiseBarrier(t.P))/le))
+	row("vs Landauer "+pow2(landauerExp), ratio(float64(noiseBarrier(b.P))/le), ratio(float64(noiseBarrier(c.P))/le), ratio(float64(noiseBarrier(a.P))/le), ratio(float64(noiseBarrier(t.P))/le))
 	for _, m := range []int{2, 1} {
 		label := "Core ITB (2 seeds)"
 		if m == 1 {
 			label = "MAC + Reveal (1 seed)"
 		}
 		bc, bg := bruteForce(b.P, 1024, m)
+		cc, cg := bruteForce(c.P, 1024, m)
 		ac, ag := bruteForce(a.P, 1024, m)
 		tc, tg := bruteForce(t.P, 1024, m)
-		row(label+" classical", "~2^"+fixed(bc, 2), "~2^"+fixed(ac, 2), "~2^"+fixed(tc, 2))
-		row(label+" Grover", "~2^"+fixed(bg, 2), "~2^"+fixed(ag, 2), "~2^"+fixed(tg, 2))
+		row(label+" classical", "~2^"+fixed(bc, 2), "~2^"+fixed(cc, 2), "~2^"+fixed(ac, 2), "~2^"+fixed(tc, 2))
+		row(label+" Grover", "~2^"+fixed(bg, 2), "~2^"+fixed(cg, 2), "~2^"+fixed(ag, 2), "~2^"+fixed(tg, 2))
 	}
 
 	section("Per-pixel accounting")

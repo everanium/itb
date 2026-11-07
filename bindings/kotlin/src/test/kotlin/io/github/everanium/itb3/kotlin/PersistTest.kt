@@ -101,6 +101,11 @@ class PersistTest {
             assertTrue("\"nonce_bits\":256" in prof.toJson())
             assertTrue("\"barrier_fill\":4" in prof.toJson())
         }
+        Pipeline.init("streaming-aead-triple-mac-v1", Opts().mode(3)).use { pipe ->
+            val prof = Pipeline.inspect(pipe.save())
+            assertEquals(3, prof.containerMode())
+            assertTrue("\"container_mode\":3" in prof.toJson())
+        }
 
         // The registry entry is the recipe alone — neither field is
         // part of it, so both read as absent rather than as zero.

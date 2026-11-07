@@ -291,7 +291,7 @@ private fun buildFlags(): List<Flag> {
         ) { f, s -> s.toLongOrNull()?.also { f.blobCycleEvery = it } != null },
         Flag(
             "blob-mode", "int",
-            "container floor sizing mode: 1 (per-region, default) | 2 (per-container)",
+            "container floor sizing mode: 1 (per-region, default) | 2 (per-container) | 3 (gauss-posit)",
             false, defaultOf(d.blobMode),
         ) { f, s -> s.toLongOrNull()?.also { f.blobMode = it } != null },
         Flag(
@@ -642,9 +642,9 @@ private fun parseFlags(args: Array<String>): Parsed {
         )
         return Parsed(null, 2)
     }
-    if (f.blobMode !in listOf(1L, 2L)) {
+    if (f.blobMode !in listOf(1L, 2L, 3L)) {
         System.err.println(
-            "loop: --blob-mode must be 1 (per-region) | 2 (per-container), got ${f.blobMode}",
+            "loop: --blob-mode must be 1 (per-region) | 2 (per-container) | 3 (gauss-posit), got ${f.blobMode}",
         )
         return Parsed(null, 2)
     }
@@ -894,7 +894,7 @@ private fun logPipelineInitialised(profile: String, blob: ByteArray) {
             " mac=${dash(rec.mac())}" +
             " parallax=${onOff(rec.parallax())}" +
             " wrapper=${onOff(rec.wrapper())}" +
-            (if (rec.containerMode() == 2) " container-mode=2" else "") +
+            (if (rec.containerMode() == 2 || rec.containerMode() == 3) " container-mode=${rec.containerMode()}" else "") +
             (if (rec.drbg().isEmpty()) "" else " drbg=${rec.drbg()}") +
             (if (rec.interlock().isEmpty()) "" else " interlock=${rec.interlock()}"),
     )

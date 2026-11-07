@@ -88,7 +88,7 @@ function flag_table(): array
             'reopen each pipeline from its session blob every N iterations per worker; '
             . '0 = never'],
         ['blob-mode', 'int', KIND_INT, 1,
-            'container floor sizing mode: 1 (per-region, default) | 2 (per-container)'],
+            'container floor sizing mode: 1 (per-region, default) | 2 (per-container) | 3 (gauss-posit)'],
         ['chunk-size', 'string', KIND_STRING, '0',
             'streaming chunk-size budget (e.g. 4MB); 0 = profile default; inert for pure '
             . 'message shape'],
@@ -469,8 +469,8 @@ function parse_flags(array $argv): array
         return [-1, $cfg];
     }
     $cfg->blobMode = (int) $raw['blob-mode'];
-    if (!\in_array($cfg->blobMode, [1, 2], true)) {
-        err_line('--blob-mode must be 1 (per-region) | 2 (per-container), got '
+    if (!\in_array($cfg->blobMode, [1, 2, 3], true)) {
+        err_line('--blob-mode must be 1 (per-region) | 2 (per-container) | 3 (gauss-posit), got '
             . $cfg->blobMode);
         return [-1, $cfg];
     }
@@ -630,8 +630,9 @@ function log_pipeline_initialised(string $profile, string $blob): void
         on_off((bool) ($record['parallax'] ?? false)),
         on_off((bool) ($record['wrapper'] ?? false))
     );
-    if (record_int($record, 'container_mode') === 2) {
-        $line .= ' container-mode=2';
+    $containerMode = record_int($record, 'container_mode');
+    if ($containerMode === 2 || $containerMode === 3) {
+        $line .= ' container-mode=' . $containerMode;
     }
     if (record_str($record, 'drbg') !== '-') {
         $line .= ' drbg=' . $record['drbg'];

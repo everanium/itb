@@ -60,7 +60,8 @@ via `triple.Inspect`: `profile`, `mode`, `width`, either `inner_hash`
 or the 8-slot `mixed_hashes` comma list, `key_bits`, `nonce_bits`
 and `barrier_fill` (the two Init-time runtime globals — nonce width
 and DRBG barrier fill margin — the sender's Pipeline runs with,
-populated from the blob's inner Blob{N} snapshot), `container_mode`,
+populated from the blob's inner Blob{N} snapshot), `container_mode`
+(`per-region (1)`, `per-container (2)`, or `gauss-posit (3)`),
 `drbg` (the DRBG fill primitive the recipe states; `(auto: <cipher> on
 this host)` when the blob leaves the choice to the auto tier, which
 each host resolves for itself at encryption time), `interlock`
@@ -82,6 +83,8 @@ inherits the compile-in default), `wrapper` / `wrapper_cipher`,
 
 - The CLI is a pure wrapper: no new cryptographic logic, no new wire
   format, no on-disk state beyond the blob file.
+- `genblob --blob-mode 1|2|3` selects the container floor sizing mode
+  (`1` default = per-region; `2` = per-container; `3` = gauss-posit).
 - `genblob --drbg <name>` selects the primitive that fills the
   container carrier noise and the lane residue on the encrypt path
   (`itb3 drbgs` lists the accepted names); the choice is written into

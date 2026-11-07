@@ -294,8 +294,12 @@ class ItbTest < Minitest::Test
     pipe = ITB.create("singlemsg-triple-mac-v1", { "mode" => 2 })
     record = ITB.inspect_blob(pipe.save)
     assert_equal 2, record["container_mode"]
+    p3 = ITB.create("singlemsg-triple-mac-v1", { "mode" => 3 })
+    record3 = ITB.inspect_blob(p3.save)
+    assert_equal 3, record3["container_mode"]
   ensure
     pipe&.free
+    p3&.free
   end
 
   def test_max_workers

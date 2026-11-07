@@ -98,6 +98,12 @@ Public Class PersistTests
             Assert.Contains("""barrier_fill"":4", prof.ToJson())
         End Using
 
+        Using pipe3 As Pipeline = Pipeline.Init("streaming-aead-triple-mac-v1", New Opts().WithMode(3))
+            Dim prof3 As Global.Everanium.Itb3.Profile = Pipeline.Inspect(pipe3.Save())
+            Assert.Equal(3, prof3.ContainerMode)
+            Assert.Contains("""container_mode"":3", prof3.ToJson())
+        End Using
+
         ' The registry entry is the recipe alone — neither field is
         ' part of it, so both read as absent rather than as zero.
         Dim registry As Global.Everanium.Itb3.Profile = Pipeline.Lookup("streaming-aead-triple-mac-v1")

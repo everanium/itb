@@ -400,15 +400,15 @@ func isKnownWrapperCipher(name string) bool {
 // deferred failure. The caller argument tags the error prefix.
 //
 // Every check mirrors the [github.com/everanium/itb.Config]-side
-// enum for the field: Mode ∈ {0, 1, 2}, NonceBits ∈ {0, 128, 256, 512}, BarrierFill ∈
+// enum for the field: Mode ∈ {0, 1, 2, 3}, NonceBits ∈ {0, 128, 256, 512}, BarrierFill ∈
 // {0, 1, 2, 4, 8, 16, 32}. Zero remains the "defer to profile
 // default" sentinel for each. [Opts.MaxWorkers] is not range-checked
 // here — every value is accepted and clamped by [clampWorkers].
 func validateOptsCommon(caller string, opts Opts) error {
 	switch opts.Mode {
-	case 0, 1, 2:
+	case 0, 1, 2, 3:
 	default:
-		return fmt.Errorf("triple: %s: opts.Mode=%d must be 0 or one of {1, 2}", caller, opts.Mode)
+		return fmt.Errorf("triple: %s: opts.Mode=%d must be 0 or one of {1, 2, 3}", caller, opts.Mode)
 	}
 	switch opts.NonceBits {
 	case 0, 128, 256, 512:

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"math/bits"
 	"sync"
 	"unsafe"
 
@@ -834,7 +835,7 @@ func (p *Pipeline) chunkWireSize(chunkPlainLen, bf int) int {
 
 	minPx := (p.resolved.KeyBits*10000 + 28074 - 1) / 28074
 	var totalPixels int
-	if p.cfg != nil && p.cfg.Mode == 2 {
+	if p.cfg != nil && (p.cfg.Mode == 2 || p.cfg.Mode == 3) {
 		maxDataThirdPixels := 0
 		for i := 0; i < 3; i++ {
 			needed := cobsLens[i] + 1
@@ -844,8 +845,12 @@ func (p *Pipeline) chunkWireSize(chunkPlainLen, bf int) int {
 			}
 		}
 		totalPixels = 3 * maxDataThirdPixels
-		if totalPixels < minPx {
-			totalPixels = minPx
+		floorPx := minPx
+		if p.cfg.Mode == 3 {
+			floorPx = positGaussCircleFloorTriple(3 * minPx)
+		}
+		if totalPixels < floorPx {
+			totalPixels = floorPx
 		}
 	} else {
 		maxThirdPixels := 0
@@ -865,6 +870,49 @@ func (p *Pipeline) chunkWireSize(chunkPlainLen, bf int) int {
 	side := ceilSqrt(totalPixels) + bf
 	hdrLen := nonceLen + 4
 	return streamIDPrefixLen + hdrLen + side*side*itb.Channels
+}
+
+// positGaussCircleFloorTriple mirrors positGaussCircleFloor in package itb:
+// floor((2 * threeMinPx) / pi_posit(es=2)) + 1 in posit64(2) RNE arithmetic.
+func positGaussCircleFloorTriple(threeMinPx int) int {
+	if threeMinPx <= 1 {
+		return 1
+	}
+	n := uint64(2 * threeMinPx)
+	lz := bits.LeadingZeros64(n)
+	scale := (63 - lz) - 1
+	mA := n << uint(lz)
+	const mPi = uint64(0xc90fdaa22168c238) // decoded mantissa of positPi(2) = 0x4c90fdaa22168c23
+	var hi, lo uint64
+	if mA >= mPi {
+		hi = mA >> 1
+		lo = mA << 63
+	} else {
+		scale--
+		hi = mA
+		lo = 0
+	}
+	if scale < 0 {
+		return 1
+	}
+	quo, rem := bits.Div64(hi, lo, mPi)
+	r := scale >> 2
+	remLen := 59 - r
+	shift := uint(63 - remLen)
+	frac := (quo & 0x7fffffffffffffff) >> shift
+	guard := (quo >> (shift - 1)) & 1
+	roundSticky := (quo & ((uint64(1) << (shift - 1)) - 1)) | rem
+	if guard == 1 && (roundSticky != 0 || (frac&1) == 1) {
+		frac++
+	}
+	var quoRounded uint64
+	if frac == (uint64(1) << uint(remLen)) {
+		scale++
+		quoRounded = uint64(1) << 63
+	} else {
+		quoRounded = (uint64(1) << 63) | (frac << shift)
+	}
+	return int(quoRounded>>uint(63-scale)) + 1
 }
 
 func ceilSqrt(n int) int {

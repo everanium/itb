@@ -104,7 +104,7 @@ import ITB3.Stream
 
 -- | The binding's own version.
 bindingVersion :: String
-bindingVersion = "0.9.0"
+bindingVersion = "0.9.1"
 
 -- | Returns the libitb3 library version string.
 version :: IO String

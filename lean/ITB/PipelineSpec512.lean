@@ -1,9 +1,9 @@
 /-
-  ITB.PipelineSpec512 — Executable Reference Specification & Round-Trip Verification
+  Executable Reference Specification & Round-Trip Verification (32 formal theorems)
   of the 512-Bit (`Seed512`) + `BLAKE2b-512` (RFC 7693) + 48-Bit / 168-Bit Interlock
   (`Interlock = "48"` and `Interlock = "168"`) Desynchronized Interlocked Barrier Pipeline
-  across Mode 1 (`Mode = 1`) and Mode 2 (`Mode = 2`), key sizes `512 / 1024 / 2048` bits,
-  and nonce sizes `128 / 256 / 512` bits.
+  across Mode 1 (`Mode = 1`), Mode 2 (`Mode = 2`), and Mode 3 (`Mode = 3`, `Gauss-Posit`),
+  key sizes `512 / 1024 / 2048` bits, and nonce sizes `128 / 256 / 512` bits.
 -/
 import ITB.Thresholds
 import ITB.RankBarrier
@@ -11,6 +11,7 @@ import ITB.PixelBarrier
 import ITB.SplitRank
 import ITB.SeedIsolation
 import ITB.Desync
+import ITB.Posit
 
 namespace ITB.PipelineSpec512
 
@@ -1307,6 +1308,7 @@ def ceilSqrt (n : Nat) : Nat :=
     - `mode = 1` (**Mode 1**, `blobModePerRegion`): each third satisfies `max(pixels_i, minPx_i)`,
       `totalPixels = 3 * maxThirdPixels`.
     - `mode = 2` (**Mode 2**, `blobModePerContainer`): `totalPixels = max(3 * maxDataThirdPixels, minPxJoint)`.
+    - `mode = 3` (**Mode 3**, `blobModeGaussPosit`): `totalPixels = max(3 * maxDataThirdPixels, positGaussCircleFloor(3 * minPxJoint))`.
     - Returns `(side, side)` where `side = ceilSqrt(totalPixels) + barrierFill`. -/
 def calcContainerSize3Cfg512 (mode : Nat) (cobsLens0 cobsLens1 cobsLens2 : Nat)
     (minPx : Nat) (barrierFill : Nat := 1) : Nat × Nat :=
@@ -1315,8 +1317,9 @@ def calcContainerSize3Cfg512 (mode : Nat) (cobsLens0 cobsLens1 cobsLens2 : Nat)
   let px2 := ((cobsLens2 + 1) * 8 + 55) / 56
   let maxDataPx := max px0 (max px1 px2)
   let totalPixels :=
-    if mode == 2 then
-      max (3 * maxDataPx) minPx
+    if mode == 2 || mode == 3 then
+      let floorPx := if mode == 3 then ITB.Posit.positGaussCircleFloor (3 * minPx) else minPx
+      max (3 * maxDataPx) floorPx
     else
       3 * max maxDataPx minPx
   let side := ceilSqrt totalPixels + barrierFill
@@ -1398,16 +1401,23 @@ def buildSubregionSchedule512 (startPixel totalPixels : Nat) (w : Array UInt64) 
     (#[], #[], #[], #[0])
   { k, tau, offset, size, start, logOff }
 
-/-- Derive Layer I schedule for a `Seed512` `startSeed` (`desync.go:215-232`). -/
+/-- Derive Layer I schedule for a `Seed512` `startSeed` (`desync.go:215-232`),
+    dispatching to `ITB.Posit.buildSubregionSchedulePosit` when `mode == 3` and
+    `buildSubregionSchedule512` otherwise. -/
 def deriveSubregionSchedule512 (startSeed : Seed512) (mainNonce : ByteArray)
-    (startPixel totalPixels : Nat) : SubregionSchedule512 :=
+    (startPixel totalPixels : Nat) (mode : Nat := 1) : SubregionSchedule512 :=
   let buf := (ByteArray.empty.push 0x05) ++ mainNonce
   let h := chainHash512Words startSeed buf
   let (w0, w1) := fullWidthFold512 h.h0 h.h1
   let (w2, w3) := fullWidthFold512 h.h2 h.h3
   let (w4, w5) := fullWidthFold512 h.h4 h.h5
   let (w6, w7) := fullWidthFold512 h.h6 h.h7
-  buildSubregionSchedule512 startPixel totalPixels #[w0, w1, w2, w3, w4, w5, w6, w7]
+  let w := #[w0, w1, w2, w3, w4, w5, w6, w7]
+  if mode == 3 then
+    let sp := ITB.Posit.buildSubregionSchedulePosit startPixel totalPixels w
+    { k := sp.k, tau := #[], offset := sp.offset, size := sp.size, start := sp.start, logOff := sp.logOff }
+  else
+    buildSubregionSchedule512 startPixel totalPixels w
 
 /-- `noiseFold3(w)` (`noisepos.go:9-16`). -/
 def noiseFold3U64 (w : UInt64) : Nat :=
@@ -1542,7 +1552,7 @@ def readPixel8 (b : ByteArray) (off : Nat) : Pixel8 :=
 
 /-- Encrypt one container region (`process512Cfg` + `processSubregions512`, `itb512.go:29-56`, `desync.go:295-323`). -/
 def processRegionEncrypt512 (noiseSeed dataSeed startSeed : Seed512) (mainNonce : ByteArray)
-    (totalPixels noiseBase : Nat) (fillByte : UInt8) (payload : ByteArray) : ByteArray := Id.run do
+    (totalPixels noiseBase : Nat) (fillByte : UInt8) (payload : ByteArray) (mode : Nat := 1) : ByteArray := Id.run do
   let startPixel := deriveStartPixel512 startSeed mainNonce totalPixels
   let tpl := prepareBlockNonce512 mainNonce
   let origPx := Pixel8.replicate fillByte
@@ -1554,7 +1564,7 @@ def processRegionEncrypt512 (noiseSeed dataSeed startSeed : Seed512) (mainNonce 
       let px := encodePixel512 noiseSeed dataSeed tpl noiseBase p origPx packed56
       pixArr := pixArr.set! physIdx px
   else
-    let sched := deriveSubregionSchedule512 startSeed mainNonce startPixel totalPixels
+    let sched := deriveSubregionSchedule512 startSeed mainNonce startPixel totalPixels mode
     for step in [:sched.k] do
       let logStart := sched.logOff.getD step 0
       let m := sched.size.getD step 0
@@ -1573,7 +1583,7 @@ def processRegionEncrypt512 (noiseSeed dataSeed startSeed : Seed512) (mainNonce 
 
 /-- Decrypt one container region up to its `0x00` COBS delimiter (`process512Cfg` + `processSubregions512`, `itb512.go:367-382`). -/
 def processRegionDecrypt512 (noiseSeed dataSeed startSeed : Seed512) (mainNonce : ByteArray)
-    (regionBytes : ByteArray) (totalPixels noiseBase : Nat) : ByteArray := Id.run do
+    (regionBytes : ByteArray) (totalPixels noiseBase : Nat) (mode : Nat := 1) : ByteArray := Id.run do
   let startPixel := deriveStartPixel512 startSeed mainNonce totalPixels
   let tpl := prepareBlockNonce512 mainNonce
   let mut out := ByteArray.emptyWithCapacity (totalPixels * 7)
@@ -1593,7 +1603,7 @@ def processRegionDecrypt512 (noiseSeed dataSeed startSeed : Seed512) (mainNonce 
       if b0 == 0 || b1 == 0 || b2 == 0 || b3 == 0 || b4 == 0 || b5 == 0 || b6 == 0 then
         return out
   else
-    let sched := deriveSubregionSchedule512 startSeed mainNonce startPixel totalPixels
+    let sched := deriveSubregionSchedule512 startSeed mainNonce startPixel totalPixels mode
     for step in [:sched.k] do
       let logStart := sched.logOff.getD step 0
       let m := sched.size.getD step 0
@@ -1675,9 +1685,9 @@ def encrypt3x512DeterministicCfg (interlockMode : InterlockMode512) (c : Constel
   let pay1 := padCobsPayload512 (cobsEncodeWithNull lane1) cap1 fillByte
   let pay2 := padCobsPayload512 (cobsEncodeWithNull lane2) cap2 fillByte
   -- 5. Layer I (0x05) + 512-bit Pixel Barrier across the 3 regions
-  let reg0 := processRegionEncrypt512 c.noiseSeed c.dataSeed1 c.startSeed1 mainNonce third        0           fillByte pay0
-  let reg1 := processRegionEncrypt512 c.noiseSeed c.dataSeed2 c.startSeed2 mainNonce third        third       fillByte pay1
-  let reg2 := processRegionEncrypt512 c.noiseSeed c.dataSeed3 c.startSeed3 mainNonce thirdPixels2 (2 * third) fillByte pay2
+  let reg0 := processRegionEncrypt512 c.noiseSeed c.dataSeed1 c.startSeed1 mainNonce third        0           fillByte pay0 mode
+  let reg1 := processRegionEncrypt512 c.noiseSeed c.dataSeed2 c.startSeed2 mainNonce third        third       fillByte pay1 mode
+  let reg2 := processRegionEncrypt512 c.noiseSeed c.dataSeed3 c.startSeed3 mainNonce thirdPixels2 (2 * third) fillByte pay2 mode
   -- 6. Wire assembly: [prefix32][mainNonce][BE16(width)][BE16(height)][reg0][reg1][reg2]
   let hdr := pushU16BE512 (pushU16BE512 (prefix32 ++ mainNonce) width) height
   hdr ++ reg0 ++ reg1 ++ reg2
@@ -1688,12 +1698,9 @@ def encrypt3x512Deterministic (c : Constellation512) (plaintext : ByteArray) (mo
   encrypt3x512DeterministicCfg .i168 c plaintext mode ilNonce mainNonce fillByte prefix32 1
 
 /-- Specification of `Decrypt3x512Cfg` (`itb512.go:270-413`) supporting both `Interlock = "48"`
-    and `Interlock = "168"` and arbitrary `nonceBytes ∈ {16, 32, 64}`.
-    Notice that `decrypt3x512Cfg` has NO `mode` or `barrierFill` parameter: it reads `width` and
-    `height` directly from the wire header and selects the Layer I regime purely from
-    `regionPixels < 365`, so **Mode 1** and **Mode 2** wires decode identically! -/
+    and `Interlock = "168"` and arbitrary `nonceBytes ∈ {16, 32, 64}`. -/
 def decrypt3x512Cfg (interlockMode : InterlockMode512) (c : Constellation512)
-    (wire : ByteArray) (nonceBytes : Nat := 16) : Option ByteArray :=
+    (wire : ByteArray) (nonceBytes : Nat := 16) (mode : Nat := 1) : Option ByteArray :=
   let headerSize := 32 + nonceBytes + 4
   if wire.size < headerSize then none
   else
@@ -1714,9 +1721,9 @@ def decrypt3x512Cfg (interlockMode : InterlockMode512) (c : Constellation512)
         let reg1 := container.extract thirdBytes (2 * thirdBytes)
         let reg2 := container.extract (2 * thirdBytes) (2 * thirdBytes + thirdBytes2)
         -- 1. Layer I (0x05) + 512-bit Pixel Barrier decode
-        let dec0 := processRegionDecrypt512 c.noiseSeed c.dataSeed1 c.startSeed1 mainNonce reg0 third        0
-        let dec1 := processRegionDecrypt512 c.noiseSeed c.dataSeed2 c.startSeed2 mainNonce reg1 third        third
-        let dec2 := processRegionDecrypt512 c.noiseSeed c.dataSeed3 c.startSeed3 mainNonce reg2 thirdPixels2 (2 * third)
+        let dec0 := processRegionDecrypt512 c.noiseSeed c.dataSeed1 c.startSeed1 mainNonce reg0 third        0           mode
+        let dec1 := processRegionDecrypt512 c.noiseSeed c.dataSeed2 c.startSeed2 mainNonce reg1 third        third       mode
+        let dec2 := processRegionDecrypt512 c.noiseSeed c.dataSeed3 c.startSeed3 mainNonce reg2 thirdPixels2 (2 * third) mode
         -- 2. Null-search + COBS decode
         match cobsDecode dec0, cobsDecode dec1, cobsDecode dec2 with
         | some part0, some part1, some part2 =>
@@ -1749,9 +1756,10 @@ def PipelineConfig512.nonceBytes (cfg : PipelineConfig512) : Nat :=
   cfg.nonceBits / 8
 
 /-- Configuration-driven wrapper around `decrypt3x512Cfg` (`itb512.go:Decrypt3x512Cfg`).
-    Reads `W` and `H` directly from the wire header (independent of `cfg.mode` and `cfg.barrierFill`). -/
+    Reads `W` and `H` directly from the wire header (independent of `cfg.barrierFill`, and shared across Mode 1/2). -/
 def decrypt3x512WithCfg (cfg : PipelineConfig512) (c : Constellation512) (wire : ByteArray) : Option ByteArray :=
-  decrypt3x512Cfg cfg.interlockMode c wire cfg.nonceBytes
+  let decMode := if cfg.mode == 3 then 3 else 1
+  decrypt3x512Cfg cfg.interlockMode c wire cfg.nonceBytes decMode
 
 /-! ## Section 9: Stage-by-Stage & End-to-End Inversion Theorems -/
 
@@ -1803,19 +1811,21 @@ theorem pipeline_five_stage_comp_id
     h_rank h_slot h_cobs h_traj h_pixel msg
 
 /-- **Theorem 2 (Receiver Mode & BarrierFill Independence)**:
-    `decrypt3x512WithCfg` depends only on `cfg.interlockMode` and `cfg.nonceBytes`
-    (to slice `mainNonce` and `ilNonce`), and has **zero dependence** on `cfg.mode`,
-    `cfg.barrierFill`, `cfg.reserve`, or `cfg.fillByte`.
-    Because `W` and `H` are read from the wire header and `buildSubregionSchedule512` selects
-    `K_r ∈ [6, 10]` vs `K_r ∈ [8, 16]` purely from `totalPixels < 365`, any **Mode 1** wire
-    decrypts under a **Mode 2** receiver config and vice versa. -/
+    `decrypt3x512WithCfg` depends only on `cfg.interlockMode`, `cfg.nonceBytes`
+    (to slice `mainNonce` and `ilNonce`), and whether `cfg.mode == 3` (to select
+    `buildSubregionSchedulePosit` vs `buildSubregionSchedule512`), and has **zero dependence**
+    on `cfg.barrierFill`, `cfg.reserve`, or `cfg.fillByte`.
+    In particular, any **Mode 1** wire decrypts under a **Mode 2** receiver config and vice versa
+    (`(1 == 3) = (2 == 3)` holds as `false = false`), and any **Mode 3** wire decrypts under any
+    **Mode 3** receiver config regardless of `barrierFill`, `reserve`, or `fillByte`. -/
 theorem decrypt3x512Cfg_mode_barrierFill_independent
     (cfg1 cfg2 : PipelineConfig512) (c : Constellation512) (wire : ByteArray)
     (hIl : cfg1.interlockMode = cfg2.interlockMode)
-    (hNonce : cfg1.nonceBytes = cfg2.nonceBytes) :
+    (hNonce : cfg1.nonceBytes = cfg2.nonceBytes)
+    (hMode3 : (cfg1.mode == 3) = (cfg2.mode == 3)) :
     decrypt3x512WithCfg cfg1 c wire = decrypt3x512WithCfg cfg2 c wire := by
   unfold decrypt3x512WithCfg
-  rw [hIl, hNonce]
+  rw [hIl, hNonce, hMode3]
 
 /-- `nonceSplitLens n` partitions `n` bytes across the 3 lanes (`l0 + l1 + l2 = n`). -/
 theorem nonceSplitLens_sum (n : Nat) :
@@ -2583,7 +2593,7 @@ def katFullContainerSideLadder512 : List (Bool × Nat × Nat × Nat × Nat × Na
     1. `wire.size == wireLen`
     2. `blake2bSum512Words wire` matches `(dLo, dHi)`
     3. same-mode decrypt recovers `pt`
-    4. cross-mode decrypt (`Mode 1 ↔ Mode 2`, `barrierFill = 32`) recovers `pt`. -/
+    4. cross-mode/cross-fill decrypt (`Mode 1 ↔ Mode 2` or `Mode 3`, `barrierFill = 32`) recovers `pt`. -/
 def checkParamKatEntry512 (interlockMode : InterlockMode512)
     (keyBits nonceBits mode ptLen wireLen : Nat) (dLo dHi : UInt64) : Bool :=
   let numWords := keyBits / 64
@@ -2595,7 +2605,7 @@ def checkParamKatEntry512 (interlockMode : InterlockMode512)
   let wire := encrypt3x512DeterministicCfg interlockMode c pt mode ilNonce mainNonce 0x5A katPrefix32_512 1
   let d := blake2bSum512Words wire
   let decSame := decrypt3x512WithCfg { interlockMode, nonceBits, mode, barrierFill := 1 } c wire
-  let otherMode := if mode == 1 then 2 else 1
+  let otherMode := if mode == 3 then 3 else if mode == 1 then 2 else 1
   let decCross := decrypt3x512WithCfg { interlockMode, nonceBits, mode := otherMode, barrierFill := 32 } c wire
   wire.size == wireLen &&
   d.h0 == dLo && d.h1 == dHi &&
@@ -2630,6 +2640,228 @@ theorem kat_go_param_matrix48_all_18_exact :
 theorem kat_go_size_ladder512_encrypt_decrypt_exact :
     (katSizeLadderDigests168.all fun (sz, mode, wLen, dLo, dHi) =>
       checkParamKatEntry512 .i168 1024 128 mode sz wLen dLo dHi) = true := by
+  native_decide
+
+/-! ## Section 11: Mode 3 (`Gauss-Posit`) Container Floors, Isolation, & Bit-Exact Go KATs -/
+
+/-- **Mode 3 Theorem 1 (Canonical Mode 3 `Gauss-Posit` Container Floors & Strict Ordering)**:
+    For 512-bit seeds (`minPixelsForKeyBits512 ∈ {183, 365, 730}` for `512, 1024, 2048`-bit keys),
+    the Mode 3 inscribed Gauss-circle Posit floor `positGaussCircleFloor (3 * minPixelsForKeyBits512 keyBits)`
+    equals `350, 698, 1395` pixels, yielding minimum container sides `20, 28, 39` (`400, 784, 1521` px),
+    strictly between Mode 2 (`15, 21, 29`) and Mode 1 (`25, 35, 48`) across both `Interlock = "168"` and `Interlock = "48"`. -/
+theorem mode3_container_floors512_canonical :
+    ITB.Posit.positGaussCircleFloor (3 * minPixelsForKeyBits512 512) = 350 ∧
+    ITB.Posit.positGaussCircleFloor (3 * minPixelsForKeyBits512 1024) = 698 ∧
+    ITB.Posit.positGaussCircleFloor (3 * minPixelsForKeyBits512 2048) = 1395 ∧
+    (containerDimsForPayload512 .i168 512 16 3 1).1 = 20 ∧
+    (containerDimsForPayload512 .i168 1024 16 3 1).1 = 28 ∧
+    (containerDimsForPayload512 .i168 2048 16 3 1).1 = 39 ∧
+    (containerDimsForPayload512 .i48 512 16 3 1).1 = 20 ∧
+    (containerDimsForPayload512 .i48 1024 16 3 1).1 = 28 ∧
+    (containerDimsForPayload512 .i48 2048 16 3 1).1 = 39 ∧
+    (containerDimsForPayload512 .i168 512 16 2 1).1 < (containerDimsForPayload512 .i168 512 16 3 1).1 ∧
+    (containerDimsForPayload512 .i168 512 16 3 1).1 < (containerDimsForPayload512 .i168 512 16 1 1).1 ∧
+    (containerDimsForPayload512 .i168 1024 16 2 1).1 < (containerDimsForPayload512 .i168 1024 16 3 1).1 ∧
+    (containerDimsForPayload512 .i168 1024 16 3 1).1 < (containerDimsForPayload512 .i168 1024 16 1 1).1 ∧
+    (containerDimsForPayload512 .i168 2048 16 2 1).1 < (containerDimsForPayload512 .i168 2048 16 3 1).1 ∧
+    (containerDimsForPayload512 .i168 2048 16 3 1).1 < (containerDimsForPayload512 .i168 2048 16 1 1).1 := by
+  native_decide
+
+/-- Full 3252-byte Go reference wire for `Interlock = "168"`, 512-bit key, 128-bit nonce, **Mode 3**, `ptLen = 48`. -/
+def katWire168_512_mode3_pt48_hex : String :=
+  "303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f202122232425262728292a2b2c2d2e2f00140014ac0cc0dc80d6022e" ++
+  "2a7713e2563e2b7fb91b1a723b19ca42d5f49cb7d9b5dbb37af87a0b5b53296a9b8b8d1b9a024e12d61709d2d38106c579dbcec15d4af25356940f1b" ++
+  "4687c0592f6f1bcad7e2167a095a2b013f393d6cfaf0a2ec164226ba5b775ac1f457dac81ab07c72dea42a8c4e1f785ee9ed8cc9e9904132a2412ba0" ++
+  "0f4b489e9f0ef91a5bf179399149611358777d9db5dcfd317ce4627a597843e3f64de1d5c8fb6a5bbad571ffbf7a72def2573fdedef383c2255d0a67" ++
+  "0b0b0d494273206212ca7ab13269433263e1790a8d09d293cf81144152d6e1425b4b58fde3dfe1fc4d58c149182b2f084a2e0fcc9bc3c053d3ca496b" ++
+  "1ede98d3ca55d5c19774ba1e197f76f3b6fc10960e56486ed01f5c5c1a9b59c886d9dfc687c04d9f5378317a9a52f8fb9ce928ff5b6d5e9e6649de74" ++
+  "f168edf46f50eb7af6d1eb7738f1813a725358810aa9f2d0a333cbb1792f4769481f4a7b5744f8f2cb425372e40e7a6e44983226eab6fa3eea6a5478" ++
+  "8f1c88dd0687c98b1c86950c5fdb1e9c176a7f682016456022ec28806e58c456e9996300e9924bdad156744df5c7d1f3fb52aaebeb3332bbfa4ac68c" ++
+  "40d4cc487c76bb335b913f7bd8289e1c2cca298b8a7888b05081b2a9681233b052d3b2f2232ab3b3d9fbb901b04eeeaa545af284f05ece7af608926c" ++
+  "eadbf2503ae2131bc020e6c4f8b228809e739aab4a572b7337374c6d687b6f1020b8f0b638caacda89090d7cbd788d6e49f6f97b45fe6756d07c9af6" ++
+  "ff9cd6561c791a994e4afe7b626661f7c5e7cfd80babfadf98ec4a0ae86b76f74fdec2d28b03a3db89323268fff9e3d5caebf360d758dd7fc9d9cbd9" ++
+  "1eff11d7f75e333daa3abf2ddff9fcf95f96cb17965aa656fa9695199f9af253f00ae203ba1200531d6e1f7e7d18721c9fc09487d20307515f8b9d07" ++
+  "03890c0f583fb3f2f03a555e4d0160162e2d791d6633070b73022fd2332872d980d38908fccf2cc978893fdde06b61f548c441e33c450f007b2a0538" ++
+  "50c44be97afbcd581d4a2c724b2c7623d69297d84cca4b58f65ccf6c5bf5415a5f2b7bbfe67b9602d0ddb4bafd545f1798ec5e6e9200c248d3c2edc8" ++
+  "624ec5c2fb4d77d0f55d41744efb59fa8cfe98d8188e183ac4feb81060dcf834d6da3678de089dde9b4bfb7c1062c8f89a586cd84fc1480c455fcad8" ++
+  "b8bd69699b291c088e6454e096eec416c154f741794afc6346fccbd375754d7447ae5aa7fbe6a2f28181d2d2dd14dd4e5dce4c50e76a73db303ed436" ++
+  "ea4022de6dda5048ec4879ea1d948456895e89098b5e50cf42c3ce8b959dd599fe1cf41a341a9f37f53738f4ca3279624bf28973b3b7eabfc6db975a" ++
+  "db999885db8797191e716369035f7c6d91455901c34b4d45a7b7d22aef8bff1a3cbb1eb7d951bffc0fcb56404806581ce246aa8ffe7b26ea89beee7d" ++
+  "1adb69ddc6b6a484e2a48c0071b39b51a801b1ab5b6b4ba33a729beb406a7c37203b59135ac8a8bce8fd4f2c5eab5d681d7ddf2e69d23a49bb7069b8" ++
+  "a7aa7bc26bca8b3216ea6670443c2a962d55337e06786328980ebaf2ccdeaeb0b69677bf2342d28a7aaeecedec8c9dabb4aa645c14c054eea838336a" ++
+  "51c8e079eab85a939809ab61c9288ebd69accb2c7660e6d084900236d59814979eb77f32535a14780c5e7f40ee4ff9e545e672c43e490ea95f8cedf8" ++
+  "3edab9f8353b323bc07af1dd4e4bfddf381a5816c2ae224670dbe378d9d5e744d04c20c0e4d2546c096e2e4e570c54115e58fef244d2d04a44e8ba7e" ++
+  "a0fc9254fd44dbecf0c3cb58f578c778e146ced48f50115092d9c00d2ecb4abf1a2cfc9dabc3f029f212e1d25b39d2f7b4957b7ecb9edcbada9e5999" ++
+  "60d3b322b823c94b509c40578bde98908ede93931d07dd0d2a215c1f0c19320b687f2f59786c193d71bd31d8589754f2dfba02075262abdaf04bb9d9" ++
+  "f0cb683b75085119552a7830df9d791d54b55ab03dfb5f5177bb7a14ccc46f7b4b43e2cc460818944357d3d48b10514e9d1401c853b59e7cb63631de" ++
+  "4eeaa75296cefe7bce4f598f00440b16bfdfd31a36c2ee9341193c5767222862c21f430647f38a57eef8acb27ad826f4c2f93ad8787293131bdb5734" ++
+  "fcf85739100a4c562eb8a27c1a7e29192b187409380cae1a0d5eb8493c556c5646510c7a73731b670c6c183c7f76deeae5edc558bdfed17536b6da12" ++
+  "0f6a6c38366541559dfe3c8bdf1b1bdd29031a7649750e32ea88db7cbb2ccd891df6d41778d2113db23f7d75d910bf3c715450155895d95f891bf1f8" ++
+  "828319d379749e3c9c5137d6e9ae3b3999886d381eca3a7ac69e2b96f8f548d3de7d58df573b510525634238cd3d994e2d0f5e6e2f527668031d506d" ++
+  "33bfa29fcfc6de9246945fd0df560a1b578ed050ccd8c89e663d40256d7c3e318e0cff5e1c6bfc5d7368015f1c057136578f1aa6aa0ea7df0a7d3906" ++
+  "55340e703aa32b7606eec3b61b02c41a1dc91e9cd6866050fece72107a0a4a4a524f137762985286f45a4042a04ab202cadc9ef445dad84e155fc045" ++
+  "eb3803d16181126b2b22c68302fa1a8e13361871d8d0f05ed2fad40ae2ee3238e942d2d044e05b6dc98b2c1a7c4f1a8cdd3d58ae0c38ff3c7bedfb8a" ++
+  "9a6a4fed3a7a1896bff17d7e22c0ee28f07682109891988c91d4524a5b510d5b16280d23680258662e70009e352928677f1c1431f5b1d87b773cb3df" ++
+  "5ef80ca90f5ea96b305e3ecad6349e30b606fe90f4e042403b1c47566b0a610d34177219b1173cb8548ac819581e4c550a05286d5871276014011e1e" ++
+  "2d46400fe25ec89a96049876fa1cee6c1e34ca1c5e5c6fc873f3ecf6187421181b7b23105e75b292571993fa7872794d7d41d3e3c0e8b97aa80af278" ++
+  "306c202b5e3a1745c664a8c45e70ba1eebca8efa23fb2edb173f732771512c0eaa327b827f2b6f9742d0fd66e2c9d863ea9d383c7be9faba7df918b1" ++
+  "75991cbc0c114d4188c085d7010917003d6f165900f8d99a181a411bbc50d03a92c408540b26d393ca9ec253026bf3a61be3af4e2c55097f64246445" ++
+  "73fe31fef6b391d60ec0e020064066e6a814aabc40a8ac1a1e327b71d61e761dd0b3bcbc7a543f9ff821ba4129803903b6389272dd5b53b10a3ccb3a" ++
+  "989e7e09d85d5c6ad9ff89b86e2dbdeaf97ddc5f18583f5b9f197519bf48ba7f7aff5e8f84905bcddfdb184a792ba9414b513b70bab232f294740028" ++
+  "3411725ef037599b4bb83f3a184d6cdd38504b2907235d55de528c1a008941c357be9f36724b7a274a23367e6b413175c9d8d944f8e2d965ec4163ef" ++
+  "ea4b59ec1b7ecbef5e27c226d34e5f809085c1d2a0c89cd47e62e4e873eb66ee2a7eaaef917bf3ab9a63993a6e41ebf64de85851b0969cbdb8f19298" ++
+  "df75f6b03a5e58b85190d04ec85a4b89bd09becfec6f0c0ad1527a93480202214953b2d08b49e0981dc20bc98602570cea66b707138fe69358c80e58" ++
+  "0d4d0a4a5898fd783ad0f6b3fc88742a68fe6aaed049457f70fc635b20216e4e265a3c60190cbc2daa6bdd4cc0c57646445f6cd36820f22c6a20e06e" ++
+  "7678477e5c204825ce2a4652065a9e64443634653e4f4f01fc703254306cba166d2feb0f3e0dcbbcecdce85551c04b4a1c101a29712b0e6dde0dbf98" ++
+  "7eed7bfa6bb86ebff8bc0e8842534bc0caebcd547357eef5d4da42dbf06959fef94bff5e0a4280ba80c289d9fd1e5fed9b8b4f7c6e0e5426bc2a68a8" ++
+  "1a209872e18af9526604049010027e0e85971a93485b5cd88ace5e1422e864c4f1d2e07040cd6fcece7607471bbfc7dfd1503e999f75d772fa4892c8" ++
+  "c44aa0fa6f436dd8f44c65567b08a95af0e978899fdf7ed2fa52f9b3535742d3ce7c4bc59bc396809cc5560f75cd4cfdcfc6cce7e7e7e44af3e0f0c7" ++
+  "e4525bd555d0d16e5b7bfc4b515ddd57cf811e1ede959c0c73e9dbdac7d953c61cbfff70d85b5598d00c0fce120c101896d5bfb4d715bffaba380854" ++
+  "188e3c1c62aa365a26a2f2cefbd53f5dd5be141455593eb576927c5f59f25c6dcccbfe6b3e40ccee8a4c00e04efed5dc7c77c95430241d7b0b07540b" ++
+  "7a1c70693e385e20be044c46d27adacc476253468b1242b7e869caf974de726a653e5a7c770266457cfc56bc4a42ba7847ee5f75737ce5e37eaade94" ++
+  "4cc0a01c0747975f1b469e7e04b44a1210182a1c776dd2415edddadd11f0dd11dff31bf2583bb1561313dd3ac46e7564ecefef5e9b4144d913485d94" ++
+  "0dca88135bcadd92990d91d51fcc908b3a760a9fa3bf529348120e69155a63045989e87c3d0dc88fd9cb1ecfd31e008b987e19abcd1df9e9cd0eed09" ++
+  "1c699a9856f02e303e4a96c22ecd0d1f8a69193c52fc5999531ed8fb9a998d4fc8f99efb046e4238292a3f5f0c076d52675851728759d7c90b4408dd" ++
+  "f02886c6a22a78bef86bf2c8e87d6bfc4b62f363a8400ba3863e465a2e94bacc2e085e0f034a3e154e45d8f1ed60c97e44cd4b4669f2ea7e7a5d67dc" ++
+  "e478d5c17f7cd834705c5b58"
+
+def katWire168_k512_n128_m3_pt48 : ByteArray :=
+  encrypt3x512DeterministicCfg .i168 (makeKatConstellation512 8) katPlaintext48 3
+    katIlNonce512 katMainNonce512 0x5A katPrefix32_512
+
+/-- **Mode 3 Theorem 2 (Byte-Exact 3252-Byte Mode 3 Wire Equality & Decryption Round-Trip)**:
+    Lean's `encrypt3x512DeterministicCfg` in **Mode 3** (`20×20` container) produces the exact same
+    3252 wire bytes as Go `itb.Encrypt3x512Cfg`, and `decrypt3x512WithCfg` recovers `katPlaintext48`. -/
+theorem kat_wire168_k512_n128_m3_pt48_eq_and_decrypt :
+    (katWire168_k512_n128_m3_pt48 == hexToByteArray512 katWire168_512_mode3_pt48_hex) &&
+    (decrypt3x512WithCfg { interlockMode := .i168, nonceBits := 128, mode := 3, barrierFill := 32, reserve := 64, fillByte := 0xAA }
+      (makeKatConstellation512 8) katWire168_k512_n128_m3_pt48 == some katPlaintext48) = true := by
+  native_decide
+
+/-- **Mode 3 Theorem 3 (Layer I Schedule Isolation Between Mode 3 and Modes 1/2)**:
+    Because **Mode 3** dispatches Layer I (`0x05`) to `buildSubregionSchedulePosit` whereas
+    **Mode 1** and **Mode 2** dispatch to `buildSubregionSchedule512`, a Mode 3 wire decrypts to
+    `some katPlaintext48` under `mode := 3` but does not decrypt to `some katPlaintext48` under
+    `mode := 1` or `mode := 2`. -/
+theorem kat_go_mode3_isolation512 :
+    let c := makeKatConstellation512 8
+    let wire := katWire168_k512_n128_m3_pt48
+    (decrypt3x512WithCfg { interlockMode := .i168, nonceBits := 128, mode := 3, barrierFill := 32 } c wire == some katPlaintext48) &&
+    (decrypt3x512WithCfg { interlockMode := .i168, nonceBits := 128, mode := 1, barrierFill := 1 } c wire != some katPlaintext48) &&
+    (decrypt3x512WithCfg { interlockMode := .i168, nonceBits := 128, mode := 2, barrierFill := 1 } c wire != some katPlaintext48) = true := by
+  native_decide
+
+/-- All 9 `(keyBits ∈ {512, 1024, 2048}) × (nonceBits ∈ {128, 256, 512})` **Mode 3**
+    Go reference wire digests `(keyBits, nonceBits, wireLen, digestLo64, digestHi64)`
+    for `Interlock = "168"` on the 336-byte payload (`M = 17 >= 16` chunks). -/
+def katParamMatrix168Mode3 : List (Nat × Nat × Nat × UInt64 × UInt64) := [
+  (512, 128, 3252, 0x106e0e3793c28307, 0x21de62cf8db6451f),
+  (512, 256, 3268, 0x9adc628f7a62c948, 0x15da53c29b2520ef),
+  (512, 512, 3300, 0x68238e1412a33f22, 0x5dec00b620a0b09f),
+  (1024, 128, 6324, 0x2f4a3ed9678fba6a, 0x435fb9b63fc52426),
+  (1024, 256, 6340, 0x632d41b62fc28da6, 0xa9a418207e322a1e),
+  (1024, 512, 6372, 0xa6fa3e5787041009, 0x77f62cbb0065fd64),
+  (2048, 128, 12220, 0x477d40883ed51cfe, 0x4577b60786a61288),
+  (2048, 256, 12236, 0xacf71fa3fcfbf889, 0x5831dc601a24d9b3),
+  (2048, 512, 12268, 0xe5be95f44e55f0f5, 0xf7480b411a4128f1)
+]
+
+/-- **Mode 3 Theorem 4 (All 9 `(512/1024/2048) × (128/256/512)` Mode 3 Parameter Matrix KATs for `Interlock = "168"`)**:
+    Matches Go `itb.Encrypt3x512Cfg` wire digests and passes decryption round-trip. -/
+theorem kat_go_param_matrix168_mode3_all_9_exact :
+    (katParamMatrix168Mode3.all fun (kb, nb, wLen, dLo, dHi) =>
+      checkParamKatEntry512 .i168 kb nb 3 336 wLen dLo dHi) = true := by
+  native_decide
+
+/-- All 9 `(keyBits ∈ {512, 1024, 2048}) × (nonceBits ∈ {128, 256, 512})` **Mode 3**
+    Go reference wire digests `(keyBits, nonceBits, wireLen, digestLo64, digestHi64)`
+    for `Interlock = "48"` (`factor = 4`) on the 96-byte payload (`M = 17 >= 16` chunks). -/
+def katParamMatrix48Mode3 : List (Nat × Nat × Nat × UInt64 × UInt64) := [
+  (512, 128, 3252, 0x40376527ac9e750c, 0x2dc7bbcfb7f4acc4),
+  (512, 256, 3268, 0xb91d84cd2cc9e63f, 0x0124c15bd622c47d),
+  (512, 512, 3300, 0x37398c3745038cf6, 0x82bf77868e7793ab),
+  (1024, 128, 6324, 0x3e14947f2b982683, 0xc3747a19a013ac98),
+  (1024, 256, 6340, 0xaa38f39983ac1ded, 0xb0628637006d6747),
+  (1024, 512, 6372, 0x43ab2b69376b9a8f, 0x74bd473a2692aed3),
+  (2048, 128, 12220, 0x4bfbe4819d7fc565, 0x880ea711562342f6),
+  (2048, 256, 12236, 0x69f468fe54c42d81, 0xc737f862e1ee0673),
+  (2048, 512, 12268, 0x4815ce44d2e29117, 0xe19e34de5789fc1f)
+]
+
+/-- **Mode 3 Theorem 5 (All 9 `(512/1024/2048) × (128/256/512)` Mode 3 Parameter Matrix KATs for `Interlock = "48"`)**:
+    Matches Go `itb.Encrypt3x512Cfg` wire digests and passes decryption round-trip. -/
+theorem kat_go_param_matrix48_mode3_all_9_exact :
+    (katParamMatrix48Mode3.all fun (kb, nb, wLen, dLo, dHi) =>
+      checkParamKatEntry512 .i48 kb nb 3 96 wLen dLo dHi) = true := by
+  native_decide
+
+/-- **Mode 3** size ladder Go reference wire digests `(ptLen, wireLen, digestLo64, digestHi64)`
+    for `Interlock = "168"` (1024-bit key, 128-bit nonce) across `1 B .. 16 KB`. -/
+def katSizeLadderDigests168Mode3 : List (Nat × Nat × UInt64 × UInt64) := [
+  (1, 6324, 0x0db8f1b46ca14caf, 0x5e4cd94c660f666d),
+  (48, 6324, 0xb56ecf9a209423c8, 0x248aa6413496c250),
+  (336, 6324, 0x2f4a3ed9678fba6a, 0x435fb9b63fc52426),
+  (512, 6324, 0xdaa779ba1de3aede, 0x59556825421fbdb1),
+  (1024, 6324, 0x3889393715790e75, 0xe897edbfdb4049c6),
+  (4096, 6324, 0x6c72360e58d18803, 0x8cb05bb0dc398cab),
+  (16384, 20052, 0x31ac1b20729074a1, 0xceafb7bb5aaa4ca2)
+]
+
+/-- **Mode 3 Theorem 6 (End-to-End Mode 3 Payload Size Ladder `1 B .. 16 KB`)**:
+    Matches Go `itb.Encrypt3x512Cfg` wire digests across `1 B`, `48 B`, `336 B`, `512 B`,
+    `1 KB`, `4 KB`, and `16 KB` in **Mode 3** and round-trips through `decrypt3x512WithCfg`. -/
+theorem kat_go_size_ladder512_mode3_encrypt_decrypt_exact :
+    (katSizeLadderDigests168Mode3.all fun (sz, wLen, dLo, dHi) =>
+      checkParamKatEntry512 .i168 1024 128 3 sz wLen dLo dHi) = true := by
+  native_decide
+
+/-- Full 198-cell **Mode 3** container sizing ladder across all 11 payload sizes (`1 B` .. `64 MB`)
+    × both interlock modes (`true` = `"168"`, `false` = `"48"`) × 3 key sizes (`512`, `1024`, `2048` bits)
+    × 3 nonce sizes (`128`, `256`, `512` bits). -/
+def katFullContainerSideLadder512Mode3 : List (Bool × Nat × Nat × Nat × Nat) :=
+  [true, false].flatMap fun is168 => [
+    (is168, 1, 512, 128, 20), (is168, 1, 512, 256, 20), (is168, 1, 512, 512, 20),
+    (is168, 1, 1024, 128, 28), (is168, 1, 1024, 256, 28), (is168, 1, 1024, 512, 28),
+    (is168, 1, 2048, 128, 39), (is168, 1, 2048, 256, 39), (is168, 1, 2048, 512, 39),
+    (is168, 512, 512, 128, 20), (is168, 512, 512, 256, 20), (is168, 512, 512, 512, 20),
+    (is168, 512, 1024, 128, 28), (is168, 512, 1024, 256, 28), (is168, 512, 1024, 512, 28),
+    (is168, 512, 2048, 128, 39), (is168, 512, 2048, 256, 39), (is168, 512, 2048, 512, 39),
+    (is168, 1024, 512, 128, 20), (is168, 1024, 512, 256, 20), (is168, 1024, 512, 512, 20),
+    (is168, 1024, 1024, 128, 28), (is168, 1024, 1024, 256, 28), (is168, 1024, 1024, 512, 28),
+    (is168, 1024, 2048, 128, 39), (is168, 1024, 2048, 256, 39), (is168, 1024, 2048, 512, 39),
+    (is168, 4096, 512, 128, 26), (is168, 4096, 512, 256, 26), (is168, 4096, 512, 512, 26),
+    (is168, 4096, 1024, 128, 28), (is168, 4096, 1024, 256, 28), (is168, 4096, 1024, 512, 28),
+    (is168, 4096, 2048, 128, 39), (is168, 4096, 2048, 256, 39), (is168, 4096, 2048, 512, 39),
+    (is168, 16384, 512, 128, 50), (is168, 16384, 512, 256, 50), (is168, 16384, 512, 512, 50),
+    (is168, 16384, 1024, 128, 50), (is168, 16384, 1024, 256, 50), (is168, 16384, 1024, 512, 50),
+    (is168, 16384, 2048, 128, 50), (is168, 16384, 2048, 256, 50), (is168, 16384, 2048, 512, 50),
+    (is168, 131072, 512, 128, 139), (is168, 131072, 512, 256, 139), (is168, 131072, 512, 512, 139),
+    (is168, 131072, 1024, 128, 139), (is168, 131072, 1024, 256, 139), (is168, 131072, 1024, 512, 139),
+    (is168, 131072, 2048, 128, 139), (is168, 131072, 2048, 256, 139), (is168, 131072, 2048, 512, 139),
+    (is168, 524288, 512, 128, 276), (is168, 524288, 512, 256, 276), (is168, 524288, 512, 512, 276),
+    (is168, 524288, 1024, 128, 276), (is168, 524288, 1024, 256, 276), (is168, 524288, 1024, 512, 276),
+    (is168, 524288, 2048, 128, 276), (is168, 524288, 2048, 256, 276), (is168, 524288, 2048, 512, 276),
+    (is168, 1048576, 512, 128, 389), (is168, 1048576, 512, 256, 389), (is168, 1048576, 512, 512, 389),
+    (is168, 1048576, 1024, 128, 389), (is168, 1048576, 1024, 256, 389), (is168, 1048576, 1024, 512, 389),
+    (is168, 1048576, 2048, 128, 389), (is168, 1048576, 2048, 256, 389), (is168, 1048576, 2048, 512, 389),
+    (is168, 4194304, 512, 128, 777), (is168, 4194304, 512, 256, 777), (is168, 4194304, 512, 512, 777),
+    (is168, 4194304, 1024, 128, 777), (is168, 4194304, 1024, 256, 777), (is168, 4194304, 1024, 512, 777),
+    (is168, 4194304, 2048, 128, 777), (is168, 4194304, 2048, 256, 777), (is168, 4194304, 2048, 512, 777),
+    (is168, 16777216, 512, 128, 1553), (is168, 16777216, 512, 256, 1553), (is168, 16777216, 512, 512, 1553),
+    (is168, 16777216, 1024, 128, 1553), (is168, 16777216, 1024, 256, 1553), (is168, 16777216, 1024, 512, 1553),
+    (is168, 16777216, 2048, 128, 1553), (is168, 16777216, 2048, 256, 1553), (is168, 16777216, 2048, 512, 1553),
+    (is168, 67108864, 512, 128, 3104), (is168, 67108864, 512, 256, 3104), (is168, 67108864, 512, 512, 3104),
+    (is168, 67108864, 1024, 128, 3104), (is168, 67108864, 1024, 256, 3104), (is168, 67108864, 1024, 512, 3104),
+    (is168, 67108864, 2048, 128, 3104), (is168, 67108864, 2048, 256, 3104), (is168, 67108864, 2048, 512, 3104)
+  ]
+
+/-- **Mode 3 Theorem 7 (Full 198-Cell Mode 3 Container Sizing Ladder `1 B .. 64 MB`)**:
+    All 198 **Mode 3** container sizing cells across `1 B .. 64 MB`, `Interlock ∈ {"168", "48"}`,
+    `keyBits ∈ {512, 1024, 2048}`, and `nonceBits ∈ {128, 256, 512}` match Go `calcContainerSize3Cfg` exactly. -/
+theorem kat_go_container_side_ladder512_mode3_1B_to_64MB_exact :
+    (katFullContainerSideLadder512Mode3.all fun (is168, sz, kb, nb, expectedSide) =>
+      let ilMode := if is168 then InterlockMode512.i168 else InterlockMode512.i48
+      containerDimsForPayload512 ilMode kb (nb / 8) 3 sz == (expectedSide, expectedSide)) = true := by
   native_decide
 
 end ITB.PipelineSpec512

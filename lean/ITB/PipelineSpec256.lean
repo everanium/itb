@@ -1,9 +1,9 @@
 /-
-  ITB.PipelineSpec256 — Executable Reference Specification & Round-Trip Verification
+  Executable Reference Specification & Round-Trip Verification (30 formal theorems)
   of the 256-Bit (`Seed256`) + `BLAKE2b-256` (RFC 7693) + 48-Bit Interlock
   (`Interlock = "48"`, `factor = 2` chunks per `0x03` group call)
   Desynchronized Interlocked Barrier Pipeline (`Encrypt3x256Cfg` / `Decrypt3x256Cfg`)
-  across Mode 1 (`Mode = 1`) and Mode 2 (`Mode = 2`).
+  across Mode 1 (`Mode = 1`), Mode 2 (`Mode = 2`), and Mode 3 (`Mode = 3`, `Gauss-Posit`).
 -/
 import ITB.Thresholds
 import ITB.RankBarrier
@@ -11,6 +11,7 @@ import ITB.PixelBarrier
 import ITB.SplitRank
 import ITB.SeedIsolation
 import ITB.Desync
+import ITB.Posit
 
 namespace ITB.PipelineSpec256
 
@@ -1090,8 +1091,8 @@ def ceilSqrt256 (totalPixels : Nat) : Nat :=
   else loop 20 1 65536
 
 /-- `calcContainerSize3Cfg` (`itb.go:135-198`, `itb256.go:119-127`):
-    computes square container dimensions `(width, height)` for **Mode 2** (`mode = 2`)
-    and **Mode 1** (`mode = 1`). -/
+    computes square container dimensions `(width, height)` for **Mode 1** (`mode = 1`),
+    **Mode 2** (`mode = 2`), and **Mode 3** (`mode = 3`, `Gauss-Posit`). -/
 def calcContainerSize3_256 (mode barrierFill : Nat) (cobsLens : Nat × Nat × Nat)
     (minPxNoise : Nat) (minPxData minPxStart : Nat × Nat × Nat) : Nat × Nat :=
   let (c0, c1, c2) := cobsLens
@@ -1100,10 +1101,11 @@ def calcContainerSize3_256 (mode barrierFill : Nat) (cobsLens : Nat × Nat × Na
   let px0 := ((c0 + 1) * 8 + 55) / 56
   let px1 := ((c1 + 1) * 8 + 55) / 56
   let px2 := ((c2 + 1) * 8 + 55) / 56
-  if mode == 2 then
+  if mode == 2 || mode == 3 then
     let maxDataThirdPixels := max px0 (max px1 px2)
     let minPxJoint := max minPxNoise (max (max d0 (max d1 d2)) (max s0 (max s1 s2)))
-    let totalPixels := max (3 * maxDataThirdPixels) minPxJoint
+    let floorPx := if mode == 3 then ITB.Posit.positGaussCircleFloor (3 * minPxJoint) else minPxJoint
+    let totalPixels := max (3 * maxDataThirdPixels) floorPx
     let side := ceilSqrt256 totalPixels + barrierFill
     (side, side)
   else
@@ -1182,9 +1184,11 @@ def buildSubregionSchedule256 (startPixel totalPixels : Nat) (w : Array UInt64) 
     (#[], #[], #[], #[0])
   { k, offset, size, start, logOff }
 
-/-- `Seed256.deriveSubregionScheduleBody(nonce, startPixel, totalPixels)` (`desync.go:181-203`). -/
-def deriveSubregionSchedule256 (startSeed : Seed256) (nonce : ByteArray) (startPixel totalPixels : Nat) :
-    SubregionSchedule256 :=
+/-- `Seed256.deriveSubregionScheduleBody(nonce, startPixel, totalPixels)` (`desync.go:181-203`),
+    dispatching to `ITB.Posit.buildSubregionSchedulePosit` when `mode == 3` and
+    `buildSubregionSchedule256` otherwise. -/
+def deriveSubregionSchedule256 (startSeed : Seed256) (nonce : ByteArray) (startPixel totalPixels : Nat)
+    (mode : Nat := 1) : SubregionSchedule256 :=
   let basePrefix := (ByteArray.empty.push 0x05) ++ bExtract256 nonce 0 (nonce.size - 1)
   let baseByte := getByteD256 nonce (nonce.size - 1)
   let buf0 := basePrefix.push (baseByte ^^^ 0)
@@ -1195,14 +1199,20 @@ def deriveSubregionSchedule256 (startSeed : Seed256) (nonce : ByteArray) (startP
   let (w2, w3) := fullWidthFold256 h0.h2 h0.h3
   let (w4, w5) := fullWidthFold256 h1.h0 h1.h1
   let (w6, w7) := fullWidthFold256 h1.h2 h1.h3
-  buildSubregionSchedule256 startPixel totalPixels #[w0, w1, w2, w3, w4, w5, w6, w7]
+  let w := #[w0, w1, w2, w3, w4, w5, w6, w7]
+  if mode == 3 then
+    let sp := ITB.Posit.buildSubregionSchedulePosit startPixel totalPixels w
+    { k := sp.k, offset := sp.offset, size := sp.size, start := sp.start, logOff := sp.logOff }
+  else
+    buildSubregionSchedule256 startPixel totalPixels w
 
 /-- Map every logical pixel `p ∈ [0, totalPixels)` to its physical pixel index `linearIdx ∈ [0, totalPixels)`
     within the region (`processSubregionsRange256`, `process_generic.go:902-929`). -/
-def buildLinearIdxMap256 (startSeed : Seed256) (nonce : ByteArray) (totalPixels : Nat) : Array Nat :=
+def buildLinearIdxMap256 (startSeed : Seed256) (nonce : ByteArray) (totalPixels : Nat)
+    (mode : Nat := 1) : Array Nat :=
   let startPixel := deriveStartPixel256 startSeed nonce totalPixels
   if totalPixels >= minDesyncRegionPixels256 then
-    let sched := deriveSubregionSchedule256 startSeed nonce startPixel totalPixels
+    let sched := deriveSubregionSchedule256 startSeed nonce startPixel totalPixels mode
     ⟨(List.range sched.k).flatMap (fun step =>
       let m := aGetD256 sched.size step 0
       let physOff := aGetD256 sched.offset step 0
@@ -1336,8 +1346,8 @@ def decodeChannelByte256 (channelByte channelXOR : UInt8) (dataRotation noisePos
 /-- Encode a region's `payload` (of length `totalPixels * 7` bytes) into a `totalPixels * 8`-byte
     region container (`process256Cfg`, `itb256.go:29-56`). -/
 def processRegion256Encode (noiseSeed dataSeed startSeed : Seed256) (nonce : ByteArray)
-    (totalPixels noiseBase : Nat) (fillByte : UInt8) (payload : ByteArray) : ByteArray := Id.run do
-  let linearMap := buildLinearIdxMap256 startSeed nonce totalPixels
+    (totalPixels noiseBase : Nat) (fillByte : UInt8) (payload : ByteArray) (mode : Nat := 1) : ByteArray := Id.run do
+  let linearMap := buildLinearIdxMap256 startSeed nonce totalPixels mode
   let tpl := prepareBlockNonce256 nonce
   let origPx := Pixel8_256.replicate fillByte
   let mut pixArr := Array.replicate totalPixels origPx
@@ -1354,8 +1364,8 @@ def processRegion256Encode (noiseSeed dataSeed startSeed : Seed256) (nonce : Byt
 /-- Decode a `totalPixels * 8`-byte region container into its payload up to the `0x00` COBS delimiter
     (`process256Cfg`, `itb256.go:29-56`). -/
 def processRegion256Decode (noiseSeed dataSeed startSeed : Seed256) (nonce : ByteArray)
-    (regionContainer : ByteArray) (totalPixels noiseBase : Nat) : ByteArray := Id.run do
-  let linearMap := buildLinearIdxMap256 startSeed nonce totalPixels
+    (regionContainer : ByteArray) (totalPixels noiseBase : Nat) (mode : Nat := 1) : ByteArray := Id.run do
+  let linearMap := buildLinearIdxMap256 startSeed nonce totalPixels mode
   let tpl := prepareBlockNonce256 nonce
   let mut out := ByteArray.emptyWithCapacity (totalPixels * 7)
   for p in [:totalPixels] do
@@ -1420,15 +1430,15 @@ def encrypt3x256Deterministic (c : Constellation256) (plaintext : ByteArray) (mo
   let pay1 := buildRegionPayload256 frag1 lane1 cap1 fillByte
   let pay2 := buildRegionPayload256 frag2 lane2 cap2 fillByte
   -- 5. Layer I (`0x05`) + 256-bit Pixel Barrier across the 3 regions
-  let reg0 := processRegion256Encode c.noiseSeed c.dataSeed1 c.startSeed1 mainNonce third        0           fillByte pay0
-  let reg1 := processRegion256Encode c.noiseSeed c.dataSeed2 c.startSeed2 mainNonce third        third       fillByte pay1
-  let reg2 := processRegion256Encode c.noiseSeed c.dataSeed3 c.startSeed3 mainNonce thirdPixels2 (2 * third) fillByte pay2
+  let reg0 := processRegion256Encode c.noiseSeed c.dataSeed1 c.startSeed1 mainNonce third        0           fillByte pay0 mode
+  let reg1 := processRegion256Encode c.noiseSeed c.dataSeed2 c.startSeed2 mainNonce third        third       fillByte pay1 mode
+  let reg2 := processRegion256Encode c.noiseSeed c.dataSeed3 c.startSeed3 mainNonce thirdPixels2 (2 * third) fillByte pay2 mode
   -- 6. Wire assembly: [prefix32][mainNonce][BE16(width)][BE16(height)][reg0][reg1][reg2]
   let hdr := pushU16BE256 (pushU16BE256 (prefix32 ++ mainNonce) width) height
   hdr ++ reg0 ++ reg1 ++ reg2
 
 /-- Specification of `Decrypt3x256Cfg` (`itb256.go:270-410`) consuming `wire` directly. -/
-def decrypt3x256 (c : Constellation256) (wire : ByteArray) (nonceLen : Nat := 16) : Option ByteArray :=
+def decrypt3x256 (c : Constellation256) (wire : ByteArray) (nonceLen : Nat := 16) (mode : Nat := 1) : Option ByteArray :=
   let hdrSize := 32 + nonceLen + 4
   if wire.size < hdrSize then none
   else
@@ -1448,9 +1458,9 @@ def decrypt3x256 (c : Constellation256) (wire : ByteArray) (nonceLen : Nat := 16
         let reg1 := wire.extract (hdrSize + tBytes) (hdrSize + 2 * tBytes)
         let reg2 := wire.extract (hdrSize + 2 * tBytes) (hdrSize + 2 * tBytes + tBytes2)
         -- 1. Layer I (`0x05`) + 256-bit Pixel Barrier decode
-        let dec0 := processRegion256Decode c.noiseSeed c.dataSeed1 c.startSeed1 mainNonce reg0 third        0
-        let dec1 := processRegion256Decode c.noiseSeed c.dataSeed2 c.startSeed2 mainNonce reg1 third        third
-        let dec2 := processRegion256Decode c.noiseSeed c.dataSeed3 c.startSeed3 mainNonce reg2 thirdPixels2 (2 * third)
+        let dec0 := processRegion256Decode c.noiseSeed c.dataSeed1 c.startSeed1 mainNonce reg0 third        0           mode
+        let dec1 := processRegion256Decode c.noiseSeed c.dataSeed2 c.startSeed2 mainNonce reg1 third        third       mode
+        let dec2 := processRegion256Decode c.noiseSeed c.dataSeed3 c.startSeed3 mainNonce reg2 thirdPixels2 (2 * third) mode
         -- 2. Null-search + COBS decode
         let part0 := cobsDecodeNullTerm256 dec0
         let part1 := cobsDecodeNullTerm256 dec1
@@ -1474,9 +1484,10 @@ def PipelineConfig256.nonceBytes (cfg : PipelineConfig256) : Nat :=
   cfg.nonceBits / 8
 
 /-- Configuration-driven wrapper around `decrypt3x256` (`itb256.go:Decrypt3x256Cfg`).
-    Reads `W` and `H` directly from the wire header (independent of `cfg.mode` and `cfg.barrierFill`). -/
+    Reads `W` and `H` directly from the wire header (independent of `cfg.barrierFill`, and shared across Mode 1/2). -/
 def decrypt3x256Cfg (cfg : PipelineConfig256) (c : Constellation256) (wire : ByteArray) : Option ByteArray :=
-  decrypt3x256 c wire cfg.nonceBytes
+  let decMode := if cfg.mode == 3 then 3 else 1
+  decrypt3x256 c wire cfg.nonceBytes decMode
 
 /-! ## Section 9: Stage-by-Stage & End-to-End Inversion Theorems -/
 
@@ -1528,17 +1539,19 @@ theorem pipeline_five_stage_comp_id
     h_rank h_slot h_cobs h_traj h_pixel msg
 
 /-- **Theorem 2 (Receiver Mode & BarrierFill Independence)**:
-    `decrypt3x256Cfg` depends only on `cfg.nonceBytes` (to slice `mainNonce` and `ilNonce`),
-    and has **zero dependence** on `cfg.mode`, `cfg.barrierFill`, `cfg.reserve`, or `cfg.fillByte`.
-    Because `W` and `H` are read from the wire header and `buildSubregionSchedule256` selects
-    `K_r ∈ [6, 10]` vs `K_r ∈ [8, 16]` purely from `totalPixels < 365`, any **Mode 1** wire
-    decrypts under a **Mode 2** receiver config and vice versa. -/
+    `decrypt3x256Cfg` depends only on `cfg.nonceBytes` (to slice `mainNonce` and `ilNonce`)
+    and on whether `cfg.mode == 3` (to select `buildSubregionSchedulePosit` vs `buildSubregionSchedule256`),
+    and has **zero dependence** on `cfg.barrierFill`, `cfg.reserve`, or `cfg.fillByte`.
+    In particular, any **Mode 1** wire decrypts under a **Mode 2** receiver config and vice versa
+    (`(1 == 3) = (2 == 3)` holds as `false = false`), and any **Mode 3** wire decrypts under any
+    **Mode 3** receiver config regardless of `barrierFill`, `reserve`, or `fillByte`. -/
 theorem decrypt3x256Cfg_mode_barrierFill_independent
     (cfg1 cfg2 : PipelineConfig256) (c : Constellation256) (wire : ByteArray)
-    (hNonce : cfg1.nonceBytes = cfg2.nonceBytes) :
+    (hNonce : cfg1.nonceBytes = cfg2.nonceBytes)
+    (hMode3 : (cfg1.mode == 3) = (cfg2.mode == 3)) :
     decrypt3x256Cfg cfg1 c wire = decrypt3x256Cfg cfg2 c wire := by
   unfold decrypt3x256Cfg
-  rw [hNonce]
+  rw [hNonce, hMode3]
 
 /-- `nonceSplitLens256 n` partitions `n` bytes across the 3 lanes (`l0 + l1 + l2 = n`). -/
 theorem nonceSplitLens256_sum (n : Nat) :
@@ -1868,11 +1881,11 @@ theorem decrypt256_K512_N128_M2_L96_roundtrip_kat :
       some (mkDeterministicBytes256 96) := by
   native_decide
 
-/-- Run one deterministic encrypt + cross-mode decrypt check and compare `(wire.size, d0, d1, d2, d3)`
+/-- Run one deterministic encrypt + cross-mode/cross-fill decrypt check and compare `(wire.size, d0, d1, d2, d3)`
     against Go's `itb.Encrypt3x256Cfg` / `itb.Decrypt3x256Cfg`. -/
 def checkParamKatEntry256 (keyBits nonceBits mode msgLen wantWireLen : Nat)
     (want0 want1 want2 want3 : UInt64) : Bool :=
-  let otherMode := if mode == 1 then 2 else 1
+  let otherMode := if mode == 3 then 3 else if mode == 1 then 2 else 1
   let cfgDec : PipelineConfig256 := { nonceBits, barrierFill := 32, mode := otherMode }
   let c := mkKatConstellation256 keyBits
   let pt := mkDeterministicBytes256 msgLen
@@ -1938,6 +1951,139 @@ def katSizeLadderDigests256 : List (Nat × Nat × Nat × UInt64 × UInt64 × UIn
 theorem kat_go_size_ladder256_encrypt_decrypt_exact :
     (katSizeLadderDigests256.all fun (sz, mode, wLen, d0, d1, d2, d3) =>
       checkParamKatEntry256 1024 128 mode sz wLen d0 d1 d2 d3) = true := by
+  native_decide
+
+/-! ## Section 11: Mode 3 (`Gauss-Posit`) Container Floors, Isolation, & Bit-Exact Go KATs -/
+
+/-- **Mode 3 Theorem 1 (Canonical Mode 3 `Gauss-Posit` Container Floors & Strict Ordering)**:
+    For 256-bit seeds (`minPixels ∈ {183, 365, 730}` for `512, 1024, 2048`-bit keys),
+    the Mode 3 inscribed Gauss-circle Posit floor `positGaussCircleFloor (3 * minPixels)`
+    equals `350, 698, 1395` pixels, yielding minimum container sides `20, 28, 39` (`400, 784, 1521` px),
+    strictly between Mode 2 (`15, 21, 29`) and Mode 1 (`25, 35, 48`). -/
+theorem mode3_container_floors256_canonical :
+    ITB.Posit.positGaussCircleFloor (3 * 183) = 350 ∧
+    ITB.Posit.positGaussCircleFloor (3 * 365) = 698 ∧
+    ITB.Posit.positGaussCircleFloor (3 * 730) = 1395 ∧
+    calcExpectedContainerSide256 512 128 3 1 = 20 ∧
+    calcExpectedContainerSide256 1024 128 3 1 = 28 ∧
+    calcExpectedContainerSide256 2048 128 3 1 = 39 ∧
+    calcExpectedContainerSide256 512 128 2 1 < calcExpectedContainerSide256 512 128 3 1 ∧
+    calcExpectedContainerSide256 512 128 3 1 < calcExpectedContainerSide256 512 128 1 1 ∧
+    calcExpectedContainerSide256 1024 128 2 1 < calcExpectedContainerSide256 1024 128 3 1 ∧
+    calcExpectedContainerSide256 1024 128 3 1 < calcExpectedContainerSide256 1024 128 1 1 ∧
+    calcExpectedContainerSide256 2048 128 2 1 < calcExpectedContainerSide256 2048 128 3 1 ∧
+    calcExpectedContainerSide256 2048 128 3 1 < calcExpectedContainerSide256 2048 128 1 1 := by
+  native_decide
+
+/-- Expected `blake2b.Sum256(wire)` digest from Go `Encrypt3x256Cfg` for
+    `keyBits = 512, nonceBits = 128, Mode = 3, payloadLen = 96` (`M = 17` chunks, `3252` wire bytes). -/
+def katWireDigest256_K512_N128_M3_L96 : Array UInt64 := #[
+  0x008ccf3e6c758978,
+  0xa1d77c7d711f111e,
+  0x21da300f9626b400,
+  0x88742efe5fb63786
+]
+
+/-- **Mode 3 Theorem 2 (Mode 3 `K512, N128, L96` Wire Digest & Decrypt Round-Trip)**:
+    `encrypt3x256Deterministic` for `K512, N128, Mode 3, L = 96 B` produces the exact same
+    3252-byte wire digest as Go `Encrypt3x256Cfg`, and `decrypt3x256Cfg` (even with altered
+    `barrierFill := 32, reserve := 64, fillByte := 0xAA`) recovers the exact 96-byte plaintext. -/
+theorem encrypt_decrypt256_K512_N128_M3_L96_kat :
+    let wire := runKatEncrypt256 512 128 3 96
+    let cfgDec : PipelineConfig256 := { nonceBits := 128, barrierFill := 32, mode := 3, reserve := 64, fillByte := 0xAA }
+    (wire.size == 3252) &&
+    (blake2bSum256 wire == katWireDigest256_K512_N128_M3_L96) &&
+    (decrypt3x256Cfg cfgDec (mkKatConstellation256 512) wire == some (mkDeterministicBytes256 96)) = true := by
+  native_decide
+
+/-- **Mode 3 Theorem 3 (Layer I Schedule Isolation Between Mode 3 and Modes 1/2)**:
+    Because **Mode 3** dispatches Layer I (`0x05`) to `buildSubregionSchedulePosit` whereas
+    **Mode 1** and **Mode 2** dispatch to `buildSubregionSchedule256`, a Mode 3 wire decrypts to
+    `some pt` under `mode := 3` but does not decrypt to `some pt` under `mode := 1` or `mode := 2`. -/
+theorem kat_go_mode3_isolation256 :
+    let c := mkKatConstellation256 512
+    let pt := mkDeterministicBytes256 96
+    let wire := runKatEncrypt256 512 128 3 96
+    let cfgDecM3 : PipelineConfig256 := { nonceBits := 128, barrierFill := 32, mode := 3 }
+    let cfgDecM1 : PipelineConfig256 := { nonceBits := 128, barrierFill := 1, mode := 1 }
+    let cfgDecM2 : PipelineConfig256 := { nonceBits := 128, barrierFill := 1, mode := 2 }
+    (decrypt3x256Cfg cfgDecM3 c wire == some pt) &&
+    (decrypt3x256Cfg cfgDecM1 c wire != some pt) &&
+    (decrypt3x256Cfg cfgDecM2 c wire != some pt) = true := by
+  native_decide
+
+/-- All 9 **Mode 3** parameter combinations `(keyBits ∈ {512, 1024, 2048}) × (nonceBits ∈ {128, 256, 512})`
+    at `msgLen = 96` (`M = 17` chunks) captured from Go's `itb.Encrypt3x256Cfg`. -/
+def katParamMatrix256Mode3 : List (Nat × Nat × Nat × UInt64 × UInt64 × UInt64 × UInt64) := [
+  (512, 128, 3252, 0x008ccf3e6c758978, 0xa1d77c7d711f111e, 0x21da300f9626b400, 0x88742efe5fb63786),
+  (512, 256, 3268, 0x8c16b4612c724045, 0x77c04d22e36d2158, 0xb824c79fadbd8f8a, 0xf6b884e180600df3),
+  (512, 512, 3300, 0x54e746d8b99e42ee, 0x03ba369cba70761a, 0xdb35f01c27d42344, 0xf11d4c2a0377aa60),
+  (1024, 128, 6324, 0xa4c8e8aeda48adee, 0xa12b3339d9f57b6d, 0xebbe871f4d7af3fe, 0x2fe84a962fd38c4a),
+  (1024, 256, 6340, 0xe6d55fd20b6f92e5, 0x63c147f2b8385761, 0x57ad9fa65aaea77a, 0x727f2874ac2a0764),
+  (1024, 512, 6372, 0xc52d7f598f748c49, 0x02ef3c9dc8ee5357, 0x2cfe1fa886d73c0b, 0x14b911be5ca02d5c),
+  (2048, 128, 12220, 0xc599996c0ed691cb, 0xa5a7eb43ae9e8874, 0x74aac27ae09d927f, 0xcf8ae568d7481606),
+  (2048, 256, 12236, 0xe2f7d6415ddcb5d4, 0xbd3d2bbf0a0eb648, 0x9cae0f04de53c894, 0x527b38c909521a0c),
+  (2048, 512, 12268, 0x145564d049b93deb, 0x30b97ad6cd5f4e73, 0x75aa9cd9f48e9817, 0xaee80d9a7c025f01)
+]
+
+/-- **Mode 3 Theorem 4 (All 9 `(keyBits, nonceBits)` Mode 3 Configurations)**:
+    Verifies bit-exact Go wire digests and round-trip decryption across all
+    3 key sizes (`512`, `1024`, `2048` bits) and all 3 nonce sizes (`128`, `256`, `512` bits)
+    in **Mode 3**. -/
+theorem kat_go_param_matrix256_mode3_all_9_exact :
+    (katParamMatrix256Mode3.all fun (kb, nb, wLen, d0, d1, d2, d3) =>
+      checkParamKatEntry256 kb nb 3 96 wLen d0 d1 d2 d3) = true := by
+  native_decide
+
+/-- **Mode 3** payload size ladder (`1 B`, `96 B`, `512 B`, `1 KB`, `4 KB`, `16 KB`)
+    at `1024`-bit key, `128`-bit nonce captured from Go's `itb.Encrypt3x256Cfg`. -/
+def katSizeLadderDigests256Mode3 : List (Nat × Nat × UInt64 × UInt64 × UInt64 × UInt64) := [
+  (1, 6324, 0xfad5df37170d83d8, 0xd8f529becd594893, 0x0aa25a725f7789fe, 0xd736333f809d4dd3),
+  (96, 6324, 0xa4c8e8aeda48adee, 0xa12b3339d9f57b6d, 0xebbe871f4d7af3fe, 0x2fe84a962fd38c4a),
+  (512, 6324, 0x9bfc50e78d0d6b7c, 0x4e45645a0f54fbe3, 0x7a167c33d0705a83, 0xe33e7bf8818c6328),
+  (1024, 6324, 0x5fa5c4654cdb9baa, 0xc943db10ee8dcb9e, 0xa2402f495343db51, 0xd87eabce1b61db47),
+  (4096, 6324, 0xd9ae83b39f04d135, 0x396c0809590e60ac, 0xa8b266912d43cf13, 0x6027bdf0dce1887e),
+  (16384, 20052, 0xa718573f33c07281, 0xf52b068acc61d62a, 0xf0c23e4067626e0b, 0x3e3da9fa544642a3)
+]
+
+/-- **Mode 3 Theorem 5 (End-to-End Mode 3 Encrypt/Decrypt Payload Size Ladder `1 B` .. `16 KB`)**:
+    Verifies bit-exact Go wire digests and round-trip decryption across `1 B`, `96 B`, `512 B`,
+    `1 KB` (`1024`), `4 KB` (`4096`), and `16 KB` (`16384`) in **Mode 3**. -/
+theorem kat_go_size_ladder256_mode3_encrypt_decrypt_exact :
+    (katSizeLadderDigests256Mode3.all fun (sz, wLen, d0, d1, d2, d3) =>
+      checkParamKatEntry256 1024 128 3 sz wLen d0 d1 d2 d3) = true := by
+  native_decide
+
+/-- Expected square container sides `W = H` in **Mode 3** from Go across all `11 × 3 × 3 = 99`
+    combinations of `payloadLen ∈ katSizeLadder256`, `keyBits ∈ [512, 1024, 2048]`, and
+    `nonceBits ∈ [128, 256, 512]`. -/
+def katExpectedContainerSides256Mode3 : Array Nat := #[
+  20, 20, 20, 28, 28, 28, 39, 39, 39,
+  20, 20, 20, 28, 28, 28, 39, 39, 39,
+  20, 20, 20, 28, 28, 28, 39, 39, 39,
+  26, 26, 26, 28, 28, 28, 39, 39, 39,
+  50, 50, 50, 50, 50, 50, 50, 50, 50,
+  139, 139, 139, 139, 139, 139, 139, 139, 139,
+  276, 276, 276, 276, 276, 276, 276, 276, 276,
+  389, 389, 389, 389, 389, 389, 389, 389, 389,
+  777, 777, 777, 777, 777, 777, 777, 777, 777,
+  1553, 1553, 1553, 1553, 1553, 1553, 1553, 1553, 1553,
+  3104, 3104, 3104, 3104, 3104, 3104, 3104, 3104, 3104
+]
+
+/-- Evaluate `calcExpectedContainerSide256` in **Mode 3** (`mode = 3`) across all 99 combinations
+    of the 11-step size ladder. -/
+def computeContainerSidesLadder256Mode3 : Array Nat :=
+  katSizeLadder256.foldl (fun acc L =>
+    [512, 1024, 2048].foldl (fun acc2 kb =>
+      [128, 256, 512].foldl (fun acc3 nb =>
+        acc3.push (calcExpectedContainerSide256 kb nb 3 L)) acc2) acc) #[]
+
+/-- **Mode 3 Theorem 6 (Full 99-Cell Mode 3 Container Sizing Ladder `1 B` .. `64 MB`)**:
+    Verifies that `calcContainerSize3_256` in **Mode 3** (`mode = 3`) matches Go
+    `calcContainerSize3Cfg` across all 99 combinations of `(1 B .. 64 MB) × (512, 1024, 2048) × (128, 256, 512)`. -/
+theorem containerSides256_mode3_matches_go_ladder :
+    computeContainerSidesLadder256Mode3 = katExpectedContainerSides256Mode3 := by
   native_decide
 
 end ITB.PipelineSpec256

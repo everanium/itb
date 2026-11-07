@@ -109,7 +109,7 @@ func (s Status) String() string {
 		StatusReserved17:
 		return "reserved status"
 	case StatusBlobModeMismatch:
-		return "blob mode mismatch (expected mode=1 or mode=2)"
+		return "blob mode mismatch (expected mode=1, mode=2, or mode=3)"
 	case StatusBlobMalformed:
 		return "malformed state blob"
 	case StatusBlobVersionTooNew:

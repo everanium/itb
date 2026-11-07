@@ -155,9 +155,9 @@ func parseTripleOpts(query string) (opts triple.Opts, err error) {
 				return opts, fmt.Errorf("opts mode: %w", ierr)
 			}
 			switch n {
-			case 0, 1, 2:
+			case 0, 1, 2, 3:
 			default:
-				return opts, fmt.Errorf("opts mode=%d must be 0 or one of {1, 2}", n)
+				return opts, fmt.Errorf("opts mode=%d must be 0 or one of {1, 2, 3}", n)
 			}
 			opts.Mode = n
 		case "nonceBits":

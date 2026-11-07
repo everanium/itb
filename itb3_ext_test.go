@@ -58,6 +58,14 @@ func extTripleBenchCfg() *itb.Config {
 			cfg.MaxWorkers = n
 		}
 	}
+	switch os.Getenv("ITB_CONTAINER_MODE") {
+	case "1":
+		cfg.Mode = 1
+	case "2":
+		cfg.Mode = 2
+	case "3":
+		cfg.Mode = 3
+	}
 	return cfg
 }
 
@@ -1564,10 +1572,11 @@ func BenchmarkFleetGoNative_Production_168_Stream_Decrypt_64MB(b *testing.B) {
 // Environment surface (defaults in parentheses; every variable is
 // optional):
 //
-//	ITB_INNER_HASH    (areion512)   inner ITB hash primitive name
-//	ITB_KEY_BITS      (1024)        per-seed key width in bits
-//	ITB_NONCE_BITS    (512)         on-wire nonce width in bits
-//	ITB_INTERLOCK     (profile def) interlock width ("48" or "168")
+//	ITB_INNER_HASH     (areion512)   inner ITB hash primitive name
+//	ITB_KEY_BITS       (1024)        per-seed key width in bits
+//	ITB_NONCE_BITS     (512)         on-wire nonce width in bits
+//	ITB_CONTAINER_MODE (profile def) container sizing mode (1, 2, or 3)
+//	ITB_INTERLOCK      (profile def) interlock width ("48" or "168")
 //	ITB_WITH_PARALLAX (true)        parallax layer toggle
 //	ITB_WITH_WRAPPER  (true)        wrapper (Outer cipher) toggle
 //	ITB_WITH_MAC      (true)        MAC toggle (drives profile choice)
@@ -1603,15 +1612,16 @@ func BenchmarkFleetGoNative_Production_168_Stream_Decrypt_64MB(b *testing.B) {
 // from the corresponding ITB_* environment variable, with a full-
 // production-shape default when the variable is unset.
 type extProductionEnv struct {
-	profile      string
-	innerHash    string
-	keyBits      int
-	nonceBits    int
-	interlock    string
-	withParallax bool
-	withWrapper  bool
-	withMAC      bool
-	macName      string
+	profile       string
+	innerHash     string
+	keyBits       int
+	nonceBits     int
+	containerMode int
+	interlock     string
+	withParallax  bool
+	withWrapper   bool
+	withMAC       bool
+	macName       string
 }
 
 // extProductionEnvBool parses a boolean environment variable via
@@ -1659,14 +1669,15 @@ func extProductionEnvString(name, dflt string) string {
 // 1024-bit keys, 512-bit nonce.
 func resolveExtProductionEnv(surface string) extProductionEnv {
 	env := extProductionEnv{
-		innerHash:    extProductionEnvString("ITB_INNER_HASH", "areion512"),
-		keyBits:      extProductionEnvInt("ITB_KEY_BITS", 1024),
-		nonceBits:    extProductionEnvInt("ITB_NONCE_BITS", 512),
-		interlock:    extProductionEnvString("ITB_INTERLOCK", ""),
-		withParallax: extProductionEnvBool("ITB_WITH_PARALLAX", true),
-		withWrapper:  extProductionEnvBool("ITB_WITH_WRAPPER", true),
-		withMAC:      extProductionEnvBool("ITB_WITH_MAC", true),
-		macName:      extProductionEnvString("ITB_MAC_NAME", ""),
+		innerHash:     extProductionEnvString("ITB_INNER_HASH", "areion512"),
+		keyBits:       extProductionEnvInt("ITB_KEY_BITS", 1024),
+		nonceBits:     extProductionEnvInt("ITB_NONCE_BITS", 512),
+		containerMode: extProductionEnvInt("ITB_CONTAINER_MODE", 0),
+		interlock:     extProductionEnvString("ITB_INTERLOCK", ""),
+		withParallax:  extProductionEnvBool("ITB_WITH_PARALLAX", true),
+		withWrapper:   extProductionEnvBool("ITB_WITH_WRAPPER", true),
+		withMAC:       extProductionEnvBool("ITB_WITH_MAC", true),
+		macName:       extProductionEnvString("ITB_MAC_NAME", ""),
 	}
 	if p := os.Getenv("ITB_PROFILE"); p != "" {
 		env.profile = p
@@ -1695,6 +1706,7 @@ func (e extProductionEnv) opts() triple.Opts {
 		InnerHash:    e.innerHash,
 		KeyBits:      e.keyBits,
 		NonceBits:    e.nonceBits,
+		Mode:         e.containerMode,
 		Interlock:    e.interlock,
 		WithParallax: &parallaxOn,
 		WithWrapper:  &wrapperOn,
@@ -1715,8 +1727,8 @@ func (e extProductionEnv) logf(b *testing.B) {
 	if _, dup := extProductionLogged.LoadOrStore(name, struct{}{}); dup {
 		return
 	}
-	b.Logf("ExtProduction cfg: profile=%s inner=%s keyBits=%d nonceBits=%d interlock=%q parallax=%v wrapper=%v mac=%v macName=%q",
-		e.profile, e.innerHash, e.keyBits, e.nonceBits, e.interlock,
+	b.Logf("ExtProduction cfg: profile=%s inner=%s keyBits=%d nonceBits=%d mode=%d interlock=%q parallax=%v wrapper=%v mac=%v macName=%q",
+		e.profile, e.innerHash, e.keyBits, e.nonceBits, e.containerMode, e.interlock,
 		e.withParallax, e.withWrapper, e.withMAC, e.macName)
 }
 

@@ -123,6 +123,7 @@ func run(args []string) int {
 	outFile := fs.String("out", "", "-mode=encrypt|decrypt: output path")
 	nonceBits := fs.Int("nonce-bits", 512, "on-wire nonce width in bits (128 | 256 | 512)")
 	interlock := fs.String("interlock", "", "Interlocked Barrier chunk width (empty/48 default | 168 for 512-bit hashes)")
+	containerMode := fs.Int("container-mode", 0, "container floor mode (0=default/ITB_CONTAINER_MODE | 1=per-region | 2=per-container | 3=gauss-posit)")
 	workerDir := fs.String("worker-dir", "", "internal directory for -mode=selftest-tier-worker")
 	workerTier := fs.String("worker-tier", "", "internal tier label for -mode=selftest-tier-worker")
 
@@ -166,7 +167,7 @@ func run(args []string) int {
 
 	switch *mode {
 	case "init":
-		if err := doInit(*profile, *hash, *seedFile, *nonceBits, *interlock); err != nil {
+		if err := doInit(*profile, *hash, *seedFile, *nonceBits, *interlock, *containerMode); err != nil {
 			fmt.Fprintf(os.Stderr, "parity: init: %v\n", err)
 			return 1
 		}
@@ -268,8 +269,8 @@ func ensureProfile(profileName, hashName string) error {
 // consume the same blob, so both arms observe the identical seed state.
 // nonceBits selects the on-wire nonce width embedded into the session blob;
 // subsequent encrypt / decrypt calls reconstruct this width via [triple.Load].
-func doInit(profileName, hashName, seedPath string, nonceBits int, interlock string) error {
-	pipe, blob, err := triple.Init(profileName, triple.Opts{NonceBits: nonceBits, Interlock: interlock})
+func doInit(profileName, hashName, seedPath string, nonceBits int, interlock string, containerMode int) error {
+	pipe, blob, err := triple.Init(profileName, triple.Opts{NonceBits: nonceBits, Interlock: interlock, Mode: containerMode})
 	if err != nil {
 		return fmt.Errorf("triple.Init(%q): %w", profileName, err)
 	}
@@ -419,6 +420,7 @@ type selfTestTierSpec struct {
 	Profile   string
 	Hash      string
 	Interlock string
+	Mode      int
 }
 
 var selfTestTierSpecs = []selfTestTierSpec{
@@ -429,10 +431,24 @@ var selfTestTierSpecs = []selfTestTierSpec{
 		Interlock: "48",
 	},
 	{
+		Label:     "il48_areion512_mode3",
+		Profile:   "parity-areion512-v1",
+		Hash:      "areion512",
+		Interlock: "48",
+		Mode:      3,
+	},
+	{
 		Label:     "il168_areion512",
 		Profile:   "parity-areion512-il168-v1",
 		Hash:      "areion512",
 		Interlock: "168",
+	},
+	{
+		Label:     "il168_areion512_mode3",
+		Profile:   "parity-areion512-il168-v1",
+		Hash:      "areion512",
+		Interlock: "168",
+		Mode:      3,
 	},
 	{
 		Label:     "il168_blake2b512",
@@ -476,7 +492,7 @@ func runSelfTest(nonceBits int, interlockFilter string) error {
 	}
 
 	if run48 {
-		fmt.Println("=== [1/3] parity: standard interlock=48 across all registry primitives + mixed profiles ===")
+		fmt.Println("=== [1/4] parity: standard interlock=48 across all registry primitives + mixed profiles ===")
 		for _, spec := range hashes.Registry {
 			profName := "parity-" + spec.Name + "-v1"
 			if err := ensureProfile(profName, spec.Name); err != nil {
@@ -502,7 +518,7 @@ func runSelfTest(nonceBits int, interlockFilter string) error {
 	}
 
 	if run168 {
-		fmt.Println("=== [2/3] parity: selective interlock=168 on 512-bit primitives (areion512, blake2b512, areion512,blake2b512,areion512) ===")
+		fmt.Println("=== [2/4] parity: selective interlock=168 on 512-bit primitives (areion512, blake2b512, areion512,blake2b512,areion512) ===")
 		il168Configs := []struct {
 			label   string
 			profile string
@@ -585,7 +601,12 @@ func runSelfTest(nonceBits int, interlockFilter string) error {
 		fmt.Println("  PASS: non-512-bit primitives (areion256, blake3, aesitb128) reject interlock=168")
 	}
 
-	fmt.Println("=== [3/3] parity: cross-tier hardware matrix (ITB_FORCE_INTERLOCK_TIER vs scalar) ===")
+	fmt.Println("=== [3/4] parity: Mode 3 (Gauss-Posit) across 128/256/512-bit widths, Opts.Mode=3 & ITB_CONTAINER_MODE=3 ===")
+	if err := verifyMode3VectorSet(nonceBits, interlockFilter); err != nil {
+		return fmt.Errorf("mode3: %w", err)
+	}
+
+	fmt.Println("=== [4/4] parity: cross-tier hardware matrix (ITB_FORCE_INTERLOCK_TIER vs scalar) ===")
 	if err := runCrossTierSubprocessMatrix(nonceBits, interlockFilter); err != nil {
 		return err
 	}
@@ -741,6 +762,253 @@ func verifyStreamingVectorSet(profileName, interlockMode string, nonceBits int, 
 	return nil
 }
 
+func verifyMode3VectorSet(nonceBits int, interlockFilter string) error {
+	run48 := interlockFilter == "" || interlockFilter == "48"
+	run168 := interlockFilter == "" || interlockFilter == "168"
+
+	type mode3Config struct {
+		label     string
+		profile   string
+		hash      string
+		interlock string
+	}
+	var cfgs []mode3Config
+	if run48 {
+		cfgs = append(cfgs,
+			mode3Config{"aesitb128 (128-bit, il48)", "parity-aesitb128-v1", "aesitb128", "48"},
+			mode3Config{"areion256 (256-bit, il48)", "parity-areion256-v1", "areion256", "48"},
+			mode3Config{"areion512 (512-bit, il48)", "parity-areion512-v1", "areion512", "48"},
+			mode3Config{"areion512 (kmac256, il48)", "parity-mac-areion512-v1", "areion512", "48"},
+			mode3Config{"shipped singlemsg-triple-mac-mixed-v1 (il48)", triple.ProfileSingleMsgTripleMACMixedV1, "areion512,blake2b512,areion512", "48"},
+		)
+	}
+	if run168 {
+		cfgs = append(cfgs,
+			mode3Config{"areion512 (512-bit, il168)", "parity-areion512-il168-v1", "areion512", "168"},
+			mode3Config{"blake2b512 (kmac256, il168)", "parity-mac-blake2b512-il168-v1", "blake2b512", "168"},
+			mode3Config{"shipped singlemsg-triple-mac-v1 (il168)", triple.ProfileSingleMsgTripleMACV1, "areion512", "168"},
+		)
+	}
+
+	origEnv, hadEnv := os.LookupEnv("ITB_CONTAINER_MODE")
+	restoreEnv := func() {
+		if hadEnv {
+			os.Setenv("ITB_CONTAINER_MODE", origEnv)
+		} else {
+			os.Unsetenv("ITB_CONTAINER_MODE")
+		}
+	}
+	defer restoreEnv()
+
+	wantFloorWire := 6272 + 32 + 4 + nonceBits/8
+
+	for idx, cfg := range cfgs {
+		if err := ensureProfile(cfg.profile, cfg.hash); err != nil {
+			return fmt.Errorf("register %s: %w", cfg.profile, err)
+		}
+		for _, viaEnv := range []bool{false, true} {
+			var opts triple.Opts
+			pathLabel := "Opts.Mode=3"
+			if viaEnv {
+				pathLabel = "ITB_CONTAINER_MODE=3"
+				os.Setenv("ITB_CONTAINER_MODE", "3")
+				opts = triple.Opts{NonceBits: nonceBits, Interlock: cfg.interlock, Mode: 0}
+			} else {
+				os.Unsetenv("ITB_CONTAINER_MODE")
+				opts = triple.Opts{NonceBits: nonceBits, Interlock: cfg.interlock, Mode: 3}
+			}
+
+			encPipe, blob, err := triple.Init(cfg.profile, opts)
+			if err != nil {
+				return fmt.Errorf("%s (%s) Init: %w", cfg.label, pathLabel, err)
+			}
+			// Clear ITB_CONTAINER_MODE before Inspect and Load to verify that Mode=3
+			// is persisted inside the inner blob and restored independently of env.
+			os.Unsetenv("ITB_CONTAINER_MODE")
+
+			inspected, err := triple.Inspect(blob)
+			if err != nil {
+				encPipe.Close()
+				return fmt.Errorf("%s (%s) Inspect: %w", cfg.label, pathLabel, err)
+			}
+			if inspected.ContainerMode != 3 {
+				encPipe.Close()
+				return fmt.Errorf("%s (%s) Inspect.ContainerMode = %d, want 3", cfg.label, pathLabel, inspected.ContainerMode)
+			}
+
+			decPipe, err := triple.Load(blob)
+			if err != nil {
+				encPipe.Close()
+				return fmt.Errorf("%s (%s) Load: %w", cfg.label, pathLabel, err)
+			}
+
+			for _, sz := range selfTestIL168Sizes {
+				if sz == 0 {
+					continue
+				}
+				plain := deterministicPayload(sz, byte(sz+idx*7))
+				wire, err := encPipe.EncryptMessage(plain)
+				if err != nil {
+					decPipe.Close()
+					encPipe.Close()
+					return fmt.Errorf("%s (%s) size %d EncryptMessage: %w", cfg.label, pathLabel, sz, err)
+				}
+				wantWire := wantFloorWire
+				if inspected.Parallax {
+					wantWire += 12
+				}
+				if sz <= 512 && len(wire) != wantWire {
+					decPipe.Close()
+					encPipe.Close()
+					return fmt.Errorf("%s (%s) size %d wire len = %d, want Mode 3 floor %d", cfg.label, pathLabel, sz, len(wire), wantWire)
+				}
+				back, err := decPipe.DecryptMessage(wire)
+				if err != nil {
+					decPipe.Close()
+					encPipe.Close()
+					return fmt.Errorf("%s (%s) size %d DecryptMessage: %w", cfg.label, pathLabel, sz, err)
+				}
+				if !bytes.Equal(plain, back) {
+					decPipe.Close()
+					encPipe.Close()
+					return fmt.Errorf("%s (%s) size %d round-trip mismatch", cfg.label, pathLabel, sz)
+				}
+			}
+
+			// Verify Rekey preserves ContainerMode == 3 even with ITB_CONTAINER_MODE unset.
+			rekeyBlob, err := encPipe.Rekey(deterministicPayload(32, 0xc3), deterministicPayload(32, 0xd4))
+			if err != nil {
+				decPipe.Close()
+				encPipe.Close()
+				return fmt.Errorf("%s (%s) Rekey: %w", cfg.label, pathLabel, err)
+			}
+			rekeyProf, err := triple.Inspect(rekeyBlob)
+			if err != nil {
+				decPipe.Close()
+				encPipe.Close()
+				return fmt.Errorf("%s (%s) Inspect(Rekey): %w", cfg.label, pathLabel, err)
+			}
+			if rekeyProf.ContainerMode != 3 {
+				decPipe.Close()
+				encPipe.Close()
+				return fmt.Errorf("%s (%s) Inspect(Rekey).ContainerMode = %d, want 3", cfg.label, pathLabel, rekeyProf.ContainerMode)
+			}
+
+			// Verify InitKeys determinism under both Opts.Mode=3 and ITB_CONTAINER_MODE=3.
+			if viaEnv {
+				os.Setenv("ITB_CONTAINER_MODE", "3")
+			}
+			keys := deterministicMasterKeys(byte(0x40 + idx))
+			k1, kb1, err := triple.InitKeys(cfg.profile, opts, keys)
+			if err != nil {
+				decPipe.Close()
+				encPipe.Close()
+				return fmt.Errorf("%s (%s) InitKeys #1: %w", cfg.label, pathLabel, err)
+			}
+			k2, kb2, err := triple.InitKeys(cfg.profile, opts, keys)
+			if err != nil {
+				k1.Close()
+				decPipe.Close()
+				encPipe.Close()
+				return fmt.Errorf("%s (%s) InitKeys #2: %w", cfg.label, pathLabel, err)
+			}
+			os.Unsetenv("ITB_CONTAINER_MODE")
+			if !bytes.Equal(kb1, kb2) {
+				k2.Close()
+				k1.Close()
+				decPipe.Close()
+				encPipe.Close()
+				return fmt.Errorf("%s (%s) InitKeys blobs differ", cfg.label, pathLabel)
+			}
+			k1.Close()
+			k2.Close()
+			decPipe.Close()
+			encPipe.Close()
+		}
+		fmt.Printf("  PASS: %-48s (Opts.Mode=3 & ITB_CONTAINER_MODE=3) sizes=%v\n", cfg.label, selfTestIL168Sizes)
+	}
+
+	// Verify Streaming AEAD under Mode 3 (both Opts.Mode=3 and ITB_CONTAINER_MODE=3).
+	streamIL := "48"
+	if !run48 && run168 {
+		streamIL = "168"
+	}
+	for _, viaEnv := range []bool{false, true} {
+		var opts triple.Opts
+		if viaEnv {
+			os.Setenv("ITB_CONTAINER_MODE", "3")
+			opts = triple.Opts{NonceBits: nonceBits, Interlock: streamIL, Mode: 0}
+		} else {
+			os.Unsetenv("ITB_CONTAINER_MODE")
+			opts = triple.Opts{NonceBits: nonceBits, Interlock: streamIL, Mode: 3}
+		}
+		sEnc, sBlob, err := triple.Init(triple.ProfileStreamingAEADTripleMACV1, opts)
+		if err != nil {
+			return fmt.Errorf("streaming Mode 3 Init (viaEnv=%v): %w", viaEnv, err)
+		}
+		os.Unsetenv("ITB_CONTAINER_MODE")
+		sProf, err := triple.Inspect(sBlob)
+		if err != nil || sProf.ContainerMode != 3 {
+			sEnc.Close()
+			return fmt.Errorf("streaming Mode 3 Inspect (viaEnv=%v): mode=%d err=%v", viaEnv, sProf.ContainerMode, err)
+		}
+		sDec, err := triple.Load(sBlob)
+		if err != nil {
+			sEnc.Close()
+			return fmt.Errorf("streaming Mode 3 Load (viaEnv=%v): %w", viaEnv, err)
+		}
+		for _, sz := range selfTestIL168Sizes {
+			if sz == 0 {
+				continue
+			}
+			plain := deterministicPayload(sz, byte(sz+19))
+			wire, err := sEnc.EncryptStreamBytes(plain)
+			if err != nil {
+				sDec.Close()
+				sEnc.Close()
+				return fmt.Errorf("streaming Mode 3 size %d EncryptStreamBytes: %w", sz, err)
+			}
+			back, err := sDec.DecryptStreamBytes(wire)
+			if err != nil {
+				sDec.Close()
+				sEnc.Close()
+				return fmt.Errorf("streaming Mode 3 size %d DecryptStreamBytes: %w", sz, err)
+			}
+			if !bytes.Equal(plain, back) {
+				sDec.Close()
+				sEnc.Close()
+				return fmt.Errorf("streaming Mode 3 size %d round-trip mismatch", sz)
+			}
+		}
+		sDec.Close()
+		sEnc.Close()
+	}
+	fmt.Printf("  PASS: %-48s (Opts.Mode=3 & ITB_CONTAINER_MODE=3) sizes=%v\n",
+		"shipped streaming-aead-triple-mac-v1 (stream)", selfTestIL168Sizes)
+
+	// Negative guard: Mode 3 + ITB_BARRIERS_DESYNC=off must be rejected with a hard error.
+	origDesync, hadDesync := os.LookupEnv("ITB_BARRIERS_DESYNC")
+	defer func() {
+		if hadDesync {
+			os.Setenv("ITB_BARRIERS_DESYNC", origDesync)
+		} else {
+			os.Unsetenv("ITB_BARRIERS_DESYNC")
+		}
+	}()
+	negPipe, _, err := triple.Init(triple.ProfileSingleMsgTripleMACV1, triple.Opts{NonceBits: nonceBits, Interlock: streamIL, Mode: 3})
+	if err != nil {
+		return fmt.Errorf("negative guard Init: %w", err)
+	}
+	os.Setenv("ITB_BARRIERS_DESYNC", "off")
+	_, negErr := negPipe.EncryptMessage([]byte("mode3 desync off guard"))
+	negPipe.Close()
+	if negErr == nil {
+		return fmt.Errorf("expected error when Mode=3 and ITB_BARRIERS_DESYNC=off, got nil")
+	}
+	fmt.Println("  PASS: Mode 3 + ITB_BARRIERS_DESYNC=off rejected with hard error")
+	return nil
+}
+
 func hostInterlockTiers() []string {
 	switch runtime.GOARCH {
 	case "amd64":
@@ -784,7 +1052,7 @@ func runCrossTierSubprocessMatrix(nonceBits int, interlockFilter string) error {
 			return err
 		}
 		seedPath := filepath.Join(tmpDir, "seed_"+spec.Label+".json")
-		if err := doInit(spec.Profile, spec.Hash, seedPath, nonceBits, spec.Interlock); err != nil {
+		if err := doInit(spec.Profile, spec.Hash, seedPath, nonceBits, spec.Interlock, spec.Mode); err != nil {
 			return fmt.Errorf("doInit %s: %w", spec.Label, err)
 		}
 		activeSpecs = append(activeSpecs, spec)

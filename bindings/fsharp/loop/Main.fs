@@ -146,7 +146,7 @@ let private flags: Flag list =
         Store = storeInt (fun f v -> f.BlobCycleEvery <- v) }
       { Name = "blob-mode"
         TypeLabel = "int"
-        Help = "container floor sizing mode: 1 (per-region, default) | 2 (per-container)"
+        Help = "container floor sizing mode: 1 (per-region, default) | 2 (per-container) | 3 (gauss-posit)"
         IsBool = false
         DefaultSuffix = defaultOfInt dflt.BlobMode
         Store = storeInt (fun f v -> f.BlobMode <- v) }
@@ -504,8 +504,8 @@ let private parseFlags (args: string[]) : Config option * int =
         reject ("--key-bits must be 512 | 1024 | 2048 (or 0 = profile default), got " + d f.KeyBits)
     elif not (List.contains f.NonceBits [ 0L; 128L; 256L; 512L ]) then
         reject ("--nonce-bits must be 128 | 256 | 512 (or 0 = profile default), got " + d f.NonceBits)
-    elif f.BlobMode <> 1L && f.BlobMode <> 2L then
-        reject ("--blob-mode must be 1 (per-region) | 2 (per-container), got " + d f.BlobMode)
+    elif f.BlobMode <> 1L && f.BlobMode <> 2L && f.BlobMode <> 3L then
+        reject ("--blob-mode must be 1 (per-region) | 2 (per-container) | 3 (gauss-posit), got " + d f.BlobMode)
     elif not (List.contains f.BarrierFill [ 0L; 1L; 2L; 4L; 8L; 16L; 32L ]) then
         reject (
             "--barrier-fill must be 1 | 2 | 4 | 8 | 16 | 32 (or 0 = profile default), got "
@@ -664,7 +664,7 @@ let private logPipelineInitialised (profile: string) (blob: byte[]) =
             + string (orZero rec_.NonceBits) + " barrier-fill=" + string (orZero rec_.BarrierFill)
             + " chunk-size=" + string rec_.Chunk + " mac=" + dash rec_.Mac + " parallax="
             + onOff rec_.Parallax + " wrapper=" + onOff rec_.Wrapper
-            + (if rec_.ContainerMode.HasValue && rec_.ContainerMode.Value = 2 then " container-mode=2" else "")
+            + (if rec_.ContainerMode.HasValue && (rec_.ContainerMode.Value = 2 || rec_.ContainerMode.Value = 3) then " container-mode=" + string rec_.ContainerMode.Value else "")
             + (if String.IsNullOrEmpty rec_.Drbg then "" else " drbg=" + rec_.Drbg)
             + (if String.IsNullOrEmpty rec_.Interlock then "" else " interlock=" + rec_.Interlock)
         )
