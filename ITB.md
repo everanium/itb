@@ -68,7 +68,7 @@ Plaintext never reaches the regions as contiguous bytes. Every message first pas
 2. The byte stream is processed in 48-bit (`6`-byte) chunks by default, or in 168-bit (`21`-byte) chunks under `Interlock = "168"`.
 3. For each chunk, lane distribution is evaluated through a **two-stage cascade fill** (`lockSeed` + `interlock_nonce`) followed by combinadic unranking into a balanced mask triple `(m0, m1, m2)` — three disjoint 16-of-48 masks in 48-bit mode, or three disjoint 56-of-168 masks (`[3]uint64` each) in 168-bit mode (see §12 for full derivation).
 4. In 48-bit mode, `chunk48lock(x, m0, m1, m2)` compresses the 48-bit chunk into three 16-bit lane values `(l0, l1, l2)` using three BMI2 `PEXTQ` instructions on x86 (or portable fallback) in ~3 cycles per chunk in constant time (AMD Zen 1 / Zen 2: [microcoded](HWTHREATS.md#52-microarchitecture-floors--tier-dispatch)). In 168-bit mode (`chunk168lock` / `chunk168lockBatch`), the 168-bit (3-word) chunk is compressed into three 56-bit lane values `(l0, l1, l2)` via nine BMI2 `PEXTQ` instructions (`3 words × 3 lanes`) stitched with `POPCNTQ` shifts on x86, ARM64 SVE2 `BEXT`, or the constant-time 56-step branchless software fallbacks (`pext56` on ARM64 non-SVE2 via `TrailingZeros64` / `RBIT`+`CLZ`, and portable `softPEXT168`).
-5. Region 0 receives `l0` (`2` bytes in 48-bit mode; `7` bytes in 168-bit mode), Region 1 receives `l1`, and Region 2 receives `l2`. **Layer II** (keyed by `lockComps` under domain tag `0x06`, `laneSlotShift` in `lean/ITB/Desync.lean`) permutes the `M` chunk slots of `(p0, p1, p2)` with guaranteed distinct cyclic shifts `β_0 ≠ β_1 ⟹ μ_0(j) ≠ μ_1(j) ⟹ Σ_0(j) ≠ Σ_1(j)`, ensuring that the three fragments at any slot `j` originate from at least two distinct plaintext chunks (§12).
+5. Region 0 receives `l0` (`2` bytes in 48-bit mode; `7` bytes in 168-bit mode), Region 1 receives `l1`, and Region 2 receives `l2`. Instead of keeping slot `j` aligned across all three lanes (`l0[j], l1[j], l2[j]` from the same chunk `j`), **Layer II** (keyed by `lockComps` under domain tag `0x06`, `laneSlotShift` in `lean/ITB/Desync.lean`) cyclically shifts the `M` chunk slots of `(p0, p1, p2)` by guaranteed distinct offsets (`β_0 ≠ β_1 ⟹ μ_0(j) ≠ μ_1(j) ⟹ Σ_0(j) ≠ Σ_1(j)`). At every pre-COBS slot position `j`, the three lane fragments `(p0[j], p1[j], p2[j])` originate from at least two distinct plaintext chunks (§12).
 6. Each region's lane buffer begins with its respective fragment of the interlock nonce. The accumulated payload enters COBS encoding; these fragments sit inside the Pixel Barrier's encryption coverage and are authenticated under AEAD modes (MAC-Inside-Encrypt composition). Nonce splitting is derived deterministically from the configured nonce width, requiring no wire length metadata.
 
 ```
@@ -86,18 +86,27 @@ Plaintext + 4-byte BE length prefix
         │                                    │
         ▼                                    ▼
    chunk48lock / chunk168lock →         chunk48lock / chunk168lock →
-   (l0, l1, l2)                         (l0, l1, l2)
+   (l0[0], l1[0], l2[0])                (l0[1], l1[1], l2[1])
         │                                    │
-        ▼                                    ▼
-   Layer II cross-lane slot desynchronization (tag 0x06, laneSlotShift: Σ_0, Σ_1, Σ_2; β_0 ≠ β_1)
-        │
-        ▼
+        └─────────────────┬──────────────────┘
+                          ▼
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │ Layer II: Cross-Lane Slot Desynchronization (tag 0x06, lockComps)   │
+  │                                                                     │
+  │ Cyclically shifts the M chunk slots per lane by distinct secret     │
+  │ offsets (β_0 ≠ β_1) so slot j never aligns fragments of one chunk:  │
+  │   p0[j] = l0[(j + μ_0(j)) mod M]                                    │
+  │   p1[j] = l1[(j + μ_1(j)) mod M]   (at least two distinct chunks    │
+  │   p2[j] = l2[(j + μ_2(j)) mod M]    meet at every slot index j)     │
+  └─────────────────────────────────────────────────────────────────────┘
+                          │
+                          ▼
    Region 0 payload:  il_frag0 ‖ p0[0] ‖ p0[1] ‖ ...  (slot-permuted 16-bit slots in "48"; 56-bit / 7 B slots in "168")
    Region 1 payload:  il_frag1 ‖ p1[0] ‖ p1[1] ‖ ...
    Region 2 payload:  il_frag2 ‖ p2[0] ‖ p2[1] ‖ ...
 ```
 
-Without `lockSeed` and `interlock_nonce`, the mapping from plaintext bits to lane positions and pre-COBS chunk slots `(p0, p1, p2)` is an unobservable per-chunk and per-lane secret produced by the two-stage cascade fill. Known-plaintext cribs provide no fixed bit-to-lane anchor.
+Without `lockSeed` and `interlock_nonce`, the mapping from plaintext bits to lane positions and pre-COBS chunk slots `(p0, p1, p2)` is an unobservable per-chunk and per-lane secret produced by the two-stage cascade fill. Known-plaintext cribs provide no fixed bit-to-lane or slot-to-slot anchor.
 
 **Three parallel DRBG regions.** A single container is allocated and filled by three parallel goroutines via `internal/drbg`:
 
@@ -112,17 +121,38 @@ Container (one allocation, three parallel fills):
   pixels 0..P/3  pixels P/3..2P/3  pixels 2P/3..P
 ```
 
-**Three parallel encrypt pipelines.** Each region payload (16-bit lane fragments in 48-bit mode, or 56-bit lane fragments in 168-bit mode) is COBS-encoded, null-terminated, padded with DRBG fill, and encrypted using separate seeds:
+**Three parallel encrypt pipelines and Layer I sub-region trajectories.** Each region payload (16-bit lane fragments in 48-bit mode, or 56-bit lane fragments in 168-bit mode) is COBS-encoded, null-terminated, padded with DRBG fill, and encrypted using separate seeds:
 
 ```
-Region 0 payload (p0 / l0 stream) → COBS → [cobs|0x00|fill] → dataSeed1 + startSeed1 + noiseSeed → Region 0
-Region 1 payload (p1 / l1 stream) → COBS → [cobs|0x00|fill] → dataSeed2 + startSeed2 + noiseSeed → Region 1
-Region 2 payload (p2 / l2 stream) → COBS → [cobs|0x00|fill] → dataSeed3 + startSeed3 + noiseSeed → Region 2
-                                                               ─────────────────────────────────
-                                                               3 goroutines, each with numCPU/3 workers
+Region 0 payload (p0 stream) → COBS → [cobs|0x00|fill] → Layer I (startSeed1, 0x05) + Pixel Barrier (dataSeed1 + noiseSeed) → Region 0
+Region 1 payload (p1 stream) → COBS → [cobs|0x00|fill] → Layer I (startSeed2, 0x05) + Pixel Barrier (dataSeed2 + noiseSeed) → Region 1
+Region 2 payload (p2 stream) → COBS → [cobs|0x00|fill] → Layer I (startSeed3, 0x05) + Pixel Barrier (dataSeed3 + noiseSeed) → Region 2
+                                                         ──────────────────────────────────────────────────────────────────
+                                                         3 goroutines, each with numCPU/3 workers
 ```
 
-Inside each region, the Pixel Barrier applies per-pixel ChainHash derivation, rotation, XOR masking, and noise-bit preservation along the **Layer I** sub-region trajectory (`subregionAddr`, `effectiveStartPixel`, domain tag `0x05` on `startSeed1..3`). The Rank Barrier and Pixel Barrier operate in series as an indivisible composition.
+Instead of writing sequential payload bytes across a region in a single contiguous cyclic loop, **Layer I** (`subregionAddr`, `effectiveStartPixel`, domain tag `0x05` on `startSeed1..3`) breaks each region `r ∈ {0, 1, 2}` of `P_r` pixels into a secret dynamic number of sub-regions (`K_r ∈ [6, 10]` in **Mode 2** or `K_r ∈ [8, 16]` in **Mode 1**) with telescopic boundary jitter (`∑ M_{r,k} = P_r`), shuffles the order in which those sub-regions are visited via a Fisher-Yates permutation `τ_r ∈ S_{K_r}`, and walks each sub-region cyclically from its own independent local starting pixel `s_{r,k} ∈ [0, M_{r,k})`:
+
+```
+Region r physical pixel slice (P_r pixels, partitioned with telescopic boundary jitter):
+
+  ┌────────────────────┬──────────────────┬───────────┬─────────────────────┐
+  │   Sub-region 0     │   Sub-region 1   │    ...    │  Sub-region K_r - 1 │
+  │    (M_{r,0} px)    │   (M_{r,1} px)   │           │  (M_{r,K_r-1} px)   │
+  │  local start s_{r,0}│ local start s_{r,1}│         │ local start s_{r,K_r-1}│
+  └────────────────────┴──────────────────┴───────────┴─────────────────────┘
+            ▲                    ▲                               ▲
+            │ 2nd visited        │ 1st visited                   │ K_r-th visited
+            └────────────────────┴───────────────┬───────────────┘
+                                                 │
+         Layer I (tag 0x05 on startSeed_r + main_nonce, fullWidthFold):
+         1. Dynamic sub-region count K_r ∈ [6, 10] (Mode 2) or [8, 16] (Mode 1)
+         2. Jittered boundaries M_{r,k} summing to P_r (no gaps, no overlaps)
+         3. Fisher-Yates visit order τ_r = (τ_r(0), τ_r(1), ..., τ_r(K_r - 1))
+         4. Cyclic walk inside each visited sub-region k starting at s_{r,k}
+```
+
+Inside each visited sub-region, the Pixel Barrier applies per-pixel ChainHash derivation, rotation, XOR masking, and noise-bit preservation at each mapped physical pixel. The Rank Barrier (**Layer II** slot desynchronization + `PEXTQ` bit partitioning) and Pixel Barrier (**Layer I** sub-region trajectory + per-pixel absorption) operate in series as an indivisible composition.
 
 **Per-pixel bit-level processing.** For a lane byte `b` (from Region 0's `p0 / l0` stream after COBS framing):
 
@@ -233,9 +263,9 @@ Three collision scenarios exist in lab testing:
 - **Scenario B — main-only collision:** `main_nonce` repeats, `interlock_nonce` is fresh. Pixel configs and **Layer I** trajectories repeat, but Rank Barrier mask permutations and **Layer II** slot shifts re-randomize.
 - **Scenario C — interlock-only collision:** `interlock_nonce` repeats, `main_nonce` is fresh. Rank Barrier mask permutations and **Layer II** slot shifts repeat, but pixel configs and **Layer I** trajectories re-randomize.
 
-**Empirical verdict: plaintext recovery is null across all scenarios at tested sample sizes** (see [REDTEAM.md § Nonce reuse](REDTEAM.md#nonce-reuse-lab-only)). Even in Scenario A, the container XOR exposes data only up to the Rank Barrier's per-chunk permutation and **Layer I/II** permutations ([§ 12](#12-the-interlocked-barrier)): zero bytes are recovered across both random and near-identical plaintext pairs.
+**Empirical verdict: plaintext recovery is null across all scenarios at tested sample sizes** (see [REDTEAM.md § Nonce reuse](REDTEAM.md#nonce-reuse-lab-only)). Even in Scenario A, the container XOR exposes data only up to the Rank Barrier's per-chunk permutation and **Layer I/II** permutations ([§ 12](#12-the-desynchronized-interlocked-barrier)): zero bytes are recovered across both random and near-identical plaintext pairs.
 
-**Demasking is not plaintext recovery.** In a stream cipher, `C1 ⊕ C2` directly yields `P1 ⊕ P2`. In ITB, raw ciphertext XOR carries the difference of independent DRBG containers along with per-pixel rotations and XOR masks, and does not reduce to plaintext XOR. A dedicated demasker that strips these layers exposes only the raw PRF hash-output stream up to the barrier permutation, never plaintext bits. On the shipped wire, the per-chunk permutation and **Layer II** cross-lane slot desynchronization remove the demasking anchor entirely — the lane and slot assignments remain unobservable per-chunk and per-lane secrets protected by the two-stage cascade fill ([§ 12](#12-the-interlocked-barrier)).
+**Demasking is not plaintext recovery.** In a stream cipher, `C1 ⊕ C2` directly yields `P1 ⊕ P2`. In ITB, raw ciphertext XOR carries the difference of independent DRBG containers along with per-pixel rotations and XOR masks, and does not reduce to plaintext XOR. A dedicated demasker that strips these layers exposes only the raw PRF hash-output stream up to the barrier permutation, never plaintext bits. On the shipped wire, the per-chunk permutation and **Layer II** cross-lane slot desynchronization remove the demasking anchor entirely — the lane and slot assignments remain unobservable per-chunk and per-lane secrets protected by the two-stage cascade fill ([§ 12](#12-the-desynchronized-interlocked-barrier)).
 
 ## 10. CCA: Reveals Only Noise, Not Data
 
@@ -258,11 +288,11 @@ See [SECURITY.md § 2](SECURITY.md#2-cca-oracle-leak-comparison), [SCIENCE.md §
 
 Each region's `startPixel` (`0x02`) and its **Layer I** sub-region trajectory schedule (`0x05`, `subregionAddr`, `effectiveStartPixel`) are derived in registers from its `startSeed` and `main_nonce` via ChainHash. Offsets and sub-region boundaries are neither transmitted nor stored, adding zero bytes to the wire container.
 
-Each region `r ∈ {0, 1, 2}` is partitioned into `K_r = 6 + (w_0 mod 5) ∈ [6, 10]` (**Mode 2**, `P_r < 365`) or `K_r = 8 + (w_0 mod 9) ∈ [8, 16]` (**Mode 1**, `P_r ≥ 365`) disjoint sub-regions with telescopic boundary jitter (`∑ M_{r,k} = P_r`), Fisher-Yates sub-region permutation `τ_r ∈ S_{K_r}`, and independent local starting pixels `s_{r,k} ∈ [0, M_{r,k})` (`effectiveStartPixel`). The 3-region trajectory space spans `(2^7 · 8! · 18^8)^3 ≈ 2^166.98` configurations at `K_r = 8` on the **Mode 2** floor (`21 × 21 = 441` px) and `(4^7 · 8! · 51^8)^3 ≈ 2^224.04` at `K_r = 8` on the **Mode 1** floor (`35 × 35 = 1,225` px; up to `> 2^445` at `K_r = 16`).
+Each region `r ∈ {0, 1, 2}` is partitioned into `K_r = 6 + (w_0 mod 5) ∈ [6, 10]` (**Mode 2**, `P_r < 365`) or `K_r = 8 + (w_0 mod 9) ∈ [8, 16]` (**Mode 1**, `P_r ≥ 365`) disjoint sub-regions with telescopic boundary jitter (`∑ M_{r,k} = P_r`), Fisher-Yates sub-region permutation `τ_r ∈ S_{K_r}`, and independent local starting pixels `s_{r,k} ∈ [0, M_{r,k})` (`effectiveStartPixel`). The 3-region trajectory space spans `(2^7 · 8! · 18^8)^3 ≈ 2^166.98` configurations at `K_r = 8` on the **Mode 2** floor (`21 × 21 = 441` px) and `(4^7 · 8! · 51^8)^3 ≈ 2^224.04` at `K_r = 8` on the **Mode 1** floor (`35 × 35 = 1225` px; up to `> 2^445` at `K_r = 16`).
 
 The only theoretical recovery path for an offset is a local cache side-channel on the CPU. Even if a local cache side-channel discloses the initial entry pixel `Π_r(0)` in all three regions (`147^3 ≈ 2^21.6` entry-pixel combinations on the **Mode 2** floor; `408^2 · 409 ≈ 2^26.02` on the **Mode 1** floor), `> 2^145` trajectory configurations remain at `K_r = 8` on the **Mode 2** floor (`> 2^104` at the minimum `K_r = 6`) and `> 2^198` remain at `K_r = 8` on the **Mode 1** floor, alongside 7 rotation candidates per pixel and the unobservable per-chunk permutation ([SCIENCE.md § 1.2.1](SCIENCE.md#121-desynchronized-interlocked-barrier), [§ 2.3](SCIENCE.md#23-8-seed-isolation-theorems-3-3a), `lean/ITB/Desync.lean`).
 
-## 12. The Interlocked Barrier
+## 12. The Desynchronized Interlocked Barrier
 
 The **Desynchronized Interlocked Barrier** is a composite layer of two inseparable mechanisms operating in series across two zero-overhead combinatorial desynchronization layers:
 
@@ -273,7 +303,7 @@ The **Desynchronized Interlocked Barrier** is a composite layer of two inseparab
 
 Rank Barrier denies a stable bit-to-lane mapping; Pixel Barrier denies a per-byte observation channel. Neither runs in isolation.
 
-### Desynchronized Interlocked Barrier
+### Layer I and Layer II Desynchronization
 
 The **Desynchronized Interlocked Barrier** comprises two zero-overhead desynchronization layers across the Rank Barrier and Pixel Barrier ([SCIENCE.md § 1.2.1](SCIENCE.md#121-desynchronized-interlocked-barrier), `lean/ITB/Desync.lean`):
 

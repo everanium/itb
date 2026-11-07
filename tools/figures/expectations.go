@@ -695,7 +695,7 @@ func Registry(f *Figures) []Expectation {
 			w("theo_side", plain(t.Side)), w("theo_side", plain(t.Side)), w("theo_P", plain(t.P)),
 			w("noise_theo", pow2(noiseBarrier(t.P))), w("nocca_theo", pow2(nocca(t.P))), w("cca_theo", pow2(cca(t.P))), w("config_theo", pow2(configMap(t.P)))),
 		expect("POSTQUANTUM.md", `queries across .P = `+num+`. pixels vs\. .8P = `+num+`. exhaustive.*This leaks `+num+` bits per pixel \(`+dec+` % of the `+num+`-bit per-pixel configuration\)`,
-			w("m1_P", plain(a.P)), w("noise_m1_exp", comma(noiseBarrier(a.P))),
+			w("m1_P", plain(a.P)), w("noise_m1_exp", plain(noiseBarrier(a.P))),
 			w("noise_config_bits", plain(itb.NoiseConfigBits)), w("cca_leak_pct", ccaLeak), w("config_bits", plain(itb.NoiseConfigBits+itb.DataConfigBits))),
 		expect("POSTQUANTUM.md", `^\| Composition Mode \| .* \| 1024-bit Key \(\*\*Mode 2\*\*, P = `+num+` / Floor P = `+num+`\) \| 1024-bit Key \(\*\*Mode 1\*\*, P = `+num+`\) \|`,
 			w("m2_P", plain(b.P)), w("theo_P", plain(t.P)), w("m1_P", plain(a.P))),
