@@ -354,9 +354,9 @@ theorem factorial_subregion_counts :
      (`≈ 2^145.98`, or `> 2^124` after dividing out `147^3`).
   4. Including the `2^7` telescopic boundary jitter choices per region (`δ_k ∈ {-1, 0}`) at
      `K = 8`, the full 3-region trajectory space `(2^7 * 8! * 18^8)^3` is bracketed by
-     `2^166 < (2^7 * 8! * 18^8)^3 < 2^167` (`≈ 2^166.98 > 2^160`), and even if an oracle
-     grants the exact initial physical pixels `Π_r(0)` in all 3 regions (dividing out `147^3`),
-     the remaining unknown trajectory space strictly exceeds `2^145` (`> 2^138`).
+     `2^166 < (2^7 * 8! * 18^8)^3 < 2^167` (`≈ 2^166.98 > 2^160`), and for fixed initial
+     physical pixels `Π_r(0)` in all 3 regions (dividing out `147^3`),
+     the remaining trajectory space strictly exceeds `2^145` (`> 2^138`).
   5. At the upper Mode 2 count `K = 10` (`⌊147 / 10⌋ = 14` pixels/sub-region), the unjittered
      space `(10! * 14^10)^3` lies in `(2^179, 2^180)` and the jittered space
      `(2^9 * 10! * 14^10)^3` lies in `(2^206, 2^207)`.
@@ -397,9 +397,9 @@ theorem subregion_trajectory_bounds_mode2_floor :
      after dividing out `408^2 * 409`).
   3. Including the `4^7` telescopic boundary jitter choices per region (`δ_k ∈ {-2, -1, 0, +1}`)
      at `K = 8`, the full 3-region trajectory space `(4^7 * 8! * 51^8)^3` is bracketed by
-     `2^224 < (4^7 * 8! * 51^8)^3 < 2^225` (`≈ 2^224.04 > 2^216`), and even if an oracle
-     grants the exact initial physical pixels `Π_r(0)` in all 3 regions (dividing out `408^2 * 409`),
-     the remaining unknown trajectory space strictly exceeds `2^198` (`> 2^189`).
+     `2^224 < (4^7 * 8! * 51^8)^3 < 2^225` (`≈ 2^224.04 > 2^216`), and for fixed initial
+     physical pixels `Π_r(0)` in all 3 regions (dividing out `408^2 * 409`),
+     the remaining trajectory space strictly exceeds `2^198` (`> 2^189`).
   4. At the upper dynamic count `K = 16` (`⌊408 / 16⌋ = 25` pixels/sub-region,
      `16! = 20,922,789,888,000`), `(16! * 25^16)^3` lies in `(2^355, 2^356)` (`> 2^354`),
      and with `4^15` telescopic boundary jitter choices per region, `(4^15 * 16! * 25^16)^3`
