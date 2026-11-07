@@ -74,7 +74,7 @@ A parameterized symmetric cipher construction library for Go that suppresses has
 
 **[Post-quantum and combinatorial cryptanalysis](POSTQUANTUM.md)**
 
-**[Scientific paper (Preprint)](https://doi.org/10.5281/zenodo.19229395)**
+**[Scientific paper (Preprint)](https://doi.org/10.5281/zenodo.19229395)** (update in progress)
 
 **[Discord](https://discord.gg/wRYF8shHpd)**
 
