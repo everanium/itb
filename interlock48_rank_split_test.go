@@ -13,7 +13,7 @@ func TestSplitRank48Reciprocals(t *testing.T) {
 		t.Fatalf("B = %d is not in (2^%d, 2^%d)", interlockB48, interlockB48Shift, interlockB48Shift+1)
 	}
 	if !(1<<interlockA48Shift < interlockA48 && interlockA48 < 1<<(interlockA48Shift+1)) {
-		t.Fatalf("A = %d is not in (2^%d, 2^%d)", interlockA48, interlockA48Shift, interlockA48Shift+1)
+		t.Fatalf("A = %d is not in (2^%d, 2^%d)", uint64(interlockA48), interlockA48Shift, interlockA48Shift+1)
 	}
 	if mB, _ := bits.Div64(1<<interlockB48Shift, 0, interlockB48); mB != interlockB48Recip {
 		t.Fatalf("B reciprocal %d != %d", interlockB48Recip, mB)

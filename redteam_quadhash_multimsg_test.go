@@ -26,9 +26,10 @@ package itb
 import (
 	"bytes"
 	"crypto/sha256"
-	"encoding/binary"
 	"testing"
 	"time"
+
+	"github.com/everanium/itb/internal/forcetier"
 )
 
 // qhMakeUniversalEquivSeed builds a canonical 512-bit *Seed128 for slot in 0..7
@@ -63,36 +64,10 @@ func recoverQuadHash8EquivSeeds(cfg *Config, cts, cribs [][]byte) (seeds [8]*See
 			sm.container[2*third*Channels : totalPixels*Channels],
 		}
 
-		sbuf := make([]byte, 1+len(mainNonce))
-		sbuf[0] = 0x02
-		copy(sbuf[1:], mainNonce)
-		spLo, _ := ss.ChainHash128(sbuf)
-		sp := int(spLo % uint64(widths[r]))
-
-		pbuf := make([]byte, 4+len(mainNonce))
-		copy(pbuf[4:], mainNonce)
-
-		raw := make([]byte, 0, widths[r]*7)
-		zeroIdx := -1
-		for p := 0; p < widths[r]; p++ {
-			binary.LittleEndian.PutUint32(pbuf[:4], uint32(r*third+p))
-			nLo, nHi := ns.ChainHash128(pbuf)
-			np := noisePosition(nLo, nHi)
-
-			binary.LittleEndian.PutUint32(pbuf[:4], uint32(p))
-			dLo, _ := ds.ChainHash128(pbuf)
-			rot := uint((dLo & 0xFF) % 7)
-			xor := uint((dLo & 0xFF) >> DataRotationBits)
-
-			lin := (sp + p) % widths[r]
-			win := qhReadPixel(regions[r], lin, np, rot, xor)
-			base := len(raw)
-			raw = append(raw, win[:]...)
-			if z := bytes.IndexByte(win[:], 0); z >= 0 {
-				zeroIdx = base + z
-				break
-			}
-		}
+		raw := make([]byte, caps[r])
+		process128Cfg(cfg, ns, ds, ss, mainNonce,
+			regions[r], widths[r], 1, raw, false, 1, noiseCounterBase(r, third))
+		zeroIdx := bytes.IndexByte(raw, 0)
 		if zeroIdx <= lens[r]+2 {
 			return 0, false
 		}
@@ -118,6 +93,10 @@ func recoverQuadHash8EquivSeeds(cfg *Config, cts, cribs [][]byte) (seeds [8]*See
 	}
 
 	ls := qhMakeUniversalEquivSeed(1, 0, 0)
+	ssMax := byte(4)
+	if forcetier.BarriersDesyncOff() {
+		ssMax = 2
+	}
 
 	for nsBits := byte(0); nsBits < 4; nsBits++ {
 		ns := qhMakeUniversalEquivSeed(0, nsBits&1, (nsBits>>1)&1)
@@ -130,8 +109,8 @@ func recoverQuadHash8EquivSeeds(cfg *Config, cts, cribs [][]byte) (seeds [8]*See
 		for r := 0; r < 3; r++ {
 			for dsBit := byte(0); dsBit < 2; dsBit++ {
 				ds := qhMakeUniversalEquivSeed(2+r, dsBit, 0)
-				for ssBit := byte(0); ssBit < 2; ssBit++ {
-					ss := qhMakeUniversalEquivSeed(5+r, ssBit, 0)
+				for ssBits := byte(0); ssBits < ssMax; ssBits++ {
+					ss := qhMakeUniversalEquivSeed(5+r, ssBits&1, (ssBits>>1)&1)
 					allCOBS := true
 					for m := range cts {
 						if _, ok := checkRegionCOBS(cts[m], r, ns, ds, ss); !ok {

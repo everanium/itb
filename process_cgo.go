@@ -235,6 +235,42 @@ func callCBatch(noiseHashes, dataHashes []uint64, container, data []byte, startP
 	)
 }
 
+// callCBatchSubregions dispatches a contiguous logical pixel microbatch
+// [batchStart, batchEnd) across the overlapping sub-regions of sched,
+// running the C stack and SIMD register scrubber on the final overlapping
+// sub-region of the worker's range (eP >= workerEndP).
+func callCBatchSubregions(noiseHashes, dataHashes []uint64, container, data []byte, sched *subregionSchedule, batchStart, batchEnd, workerEndP, totalBits int, encode bool) {
+	for step := 0; step < sched.k; step++ {
+		logStart := sched.logOff[step]
+		logEnd := sched.logOff[step+1]
+		if logStart >= batchEnd {
+			break
+		}
+		if logEnd <= batchStart {
+			continue
+		}
+		sP := logStart
+		if batchStart > sP {
+			sP = batchStart
+		}
+		eP := logEnd
+		if batchEnd < eP {
+			eP = batchEnd
+		}
+		if sP >= eP {
+			continue
+		}
+		m := sched.size[step]
+		physOff := sched.offset[step]
+		subContainer := container[physOff*Channels : (physOff+m)*Channels]
+		effStart := effectiveStartPixel(m, sched.start[step], logStart)
+		off := sP - batchStart
+		cnt := eP - batchStart
+		callCBatch(noiseHashes[off:cnt], dataHashes[off:cnt], subContainer, data,
+			effStart, m, sP, eP, totalBits, encode, eP >= workerEndP)
+	}
+}
+
 func probePixelsCStack(noiseHashes, dataHashes []uint64, container, data []byte, startPixel, totalPixels, startP, endP, totalBits int, encode bool, mode, tier int, window []uint64) {
 	enc := C.int(0)
 	if encode {
@@ -590,6 +626,308 @@ func processChunk512Body(cfg *Config, noiseSeed, dataSeed *Seed512, nonce []byte
 
 		callCBatch(ha.noise[:bn], ha.data[:bn], container, data,
 			startPixel, totalPixels, batchStart, batchEnd, totalBits, encode, batchEnd >= endP)
+	}
+
+	clear(noiseHs8[:])
+	clear(dataHs8[:])
+	clear(noiseHs4[:])
+	clear(dataHs4[:])
+	clear(noiseH[:])
+	clear(dataH[:])
+	runtime.KeepAlive(&noiseHs8)
+	runtime.KeepAlive(&dataHs8)
+	runtime.KeepAlive(&noiseHs4)
+	runtime.KeepAlive(&dataHs4)
+	runtime.KeepAlive(&noiseH)
+	runtime.KeepAlive(&dataH)
+}
+
+func processSubregionsRange128(cfg *Config, noiseSeed, dataSeed *Seed128, nonce []byte, container []byte, data []byte, sched *subregionSchedule, startP, endP, totalBits, microBatch int, encode bool, noiseBase int) {
+	if endP <= startP {
+		return
+	}
+	wipePixelCallStack([9][8]uint64{})
+	processSubregionsRange128Body(cfg, noiseSeed, dataSeed, nonce, container, data, sched, startP, endP, totalBits, microBatch, encode, noiseBase)
+	wipePixelCallStack([9][8]uint64{})
+}
+
+//go:noinline
+func processSubregionsRange128Body(cfg *Config, noiseSeed, dataSeed *Seed128, nonce []byte, container []byte, data []byte, sched *subregionSchedule, startP, endP, totalBits, microBatch int, encode bool, noiseBase int) {
+	n := endP - startP
+
+	batchSz := microBatch
+	if batchSz > n {
+		batchSz = n
+	}
+	ha := getHashArraysFor(microBatch, batchSz)
+	defer putHashArrays(ha)
+
+	useBatch := noiseSeed.BatchHash != nil && dataSeed.BatchHash != nil
+
+	ls := newLaneScratch(nonce, currentNonceSizeCfg(cfg))
+	defer ls.wipe()
+	noiseBuf, dataBuf := ls.noise[0], ls.data[0]
+	noiseBufs, dataBufs := &ls.noise4, &ls.data4
+
+	useBatch8 := useBatch8Seeds(noiseSeed, dataSeed)
+	noiseBufs8, dataBufs8 := &ls.noise, &ls.data
+
+	var (
+		noiseHs8, dataHs8 [8][2]uint64
+		noiseHs4, dataHs4 [4][2]uint64
+	)
+
+	for batchStart := startP; batchStart < endP; batchStart += batchSz {
+		batchEnd := batchStart + batchSz
+		if batchEnd > endP {
+			batchEnd = endP
+		}
+		bn := batchEnd - batchStart
+
+		if useBatch {
+			i := 0
+			if useBatch8 {
+				for ; i+8 <= bn; i += 8 {
+					base := batchStart + i
+					pixelIndices := [8]int{base, base + 1, base + 2, base + 3, base + 4, base + 5, base + 6, base + 7}
+					noiseHs8 = noiseSeed.blockHash128x8(noiseBufs8, noiseIdx8(pixelIndices, noiseBase))
+					dataHs8 = dataSeed.blockHash128x8(dataBufs8, pixelIndices)
+					for lane := 0; lane < 8; lane++ {
+						ha.noise[i+lane] = uint64(noisePosition(noiseHs8[lane][0], noiseHs8[lane][1]))
+						ha.data[i+lane] = dataHs8[lane][0]
+					}
+				}
+			}
+			for ; i+4 <= bn; i += 4 {
+				pixelIndices := [4]int{batchStart + i, batchStart + i + 1, batchStart + i + 2, batchStart + i + 3}
+				noiseHs4 = noiseSeed.blockHash128x4(noiseBufs, noiseIdx4(pixelIndices, noiseBase))
+				dataHs4 = dataSeed.blockHash128x4(dataBufs, pixelIndices)
+				ha.noise[i+0] = uint64(noisePosition(noiseHs4[0][0], noiseHs4[0][1]))
+				ha.noise[i+1] = uint64(noisePosition(noiseHs4[1][0], noiseHs4[1][1]))
+				ha.noise[i+2] = uint64(noisePosition(noiseHs4[2][0], noiseHs4[2][1]))
+				ha.noise[i+3] = uint64(noisePosition(noiseHs4[3][0], noiseHs4[3][1]))
+				ha.data[i+0] = dataHs4[0][0]
+				ha.data[i+1] = dataHs4[1][0]
+				ha.data[i+2] = dataHs4[2][0]
+				ha.data[i+3] = dataHs4[3][0]
+			}
+			for ; i < bn; i++ {
+				noiseLo, noiseHi := noiseSeed.blockHash128(noiseBuf, noiseBase+batchStart+i)
+				ha.noise[i] = uint64(noisePosition(noiseLo, noiseHi))
+				ha.data[i], _ = dataSeed.blockHash128(dataBuf, batchStart+i)
+			}
+		} else {
+			for i := 0; i < bn; i++ {
+				noiseLo, noiseHi := noiseSeed.blockHash128(noiseBuf, noiseBase+batchStart+i)
+				ha.noise[i] = uint64(noisePosition(noiseLo, noiseHi))
+				ha.data[i], _ = dataSeed.blockHash128(dataBuf, batchStart+i)
+			}
+		}
+
+		callCBatchSubregions(ha.noise[:bn], ha.data[:bn], container, data,
+			sched, batchStart, batchEnd, endP, totalBits, encode)
+	}
+
+	clear(noiseHs8[:])
+	clear(dataHs8[:])
+	clear(noiseHs4[:])
+	clear(dataHs4[:])
+	runtime.KeepAlive(&noiseHs8)
+	runtime.KeepAlive(&dataHs8)
+	runtime.KeepAlive(&noiseHs4)
+	runtime.KeepAlive(&dataHs4)
+}
+
+func processSubregionsRange256(cfg *Config, noiseSeed, dataSeed *Seed256, nonce []byte, container []byte, data []byte, sched *subregionSchedule, startP, endP, totalBits, microBatch int, encode bool, noiseBase int) {
+	if endP <= startP {
+		return
+	}
+	wipePixelCallStack256([9][8]uint64{})
+	processSubregionsRange256Body(cfg, noiseSeed, dataSeed, nonce, container, data, sched, startP, endP, totalBits, microBatch, encode, noiseBase)
+	wipePixelCallStack256([9][8]uint64{})
+}
+
+//go:noinline
+func processSubregionsRange256Body(cfg *Config, noiseSeed, dataSeed *Seed256, nonce []byte, container []byte, data []byte, sched *subregionSchedule, startP, endP, totalBits, microBatch int, encode bool, noiseBase int) {
+	n := endP - startP
+
+	batchSz := microBatch
+	if batchSz > n {
+		batchSz = n
+	}
+	ha := getHashArraysFor(microBatch, batchSz)
+	defer putHashArrays(ha)
+
+	useBatch := noiseSeed.BatchHash != nil && dataSeed.BatchHash != nil
+
+	ls := newLaneScratch(nonce, currentNonceSizeCfg(cfg))
+	defer ls.wipe()
+	noiseBuf, dataBuf := ls.noise[0], ls.data[0]
+	noiseBufs, dataBufs := &ls.noise4, &ls.data4
+
+	useBatch8 := useBatch8Seeds256(noiseSeed, dataSeed)
+	noiseBufs8, dataBufs8 := &ls.noise, &ls.data
+
+	var (
+		noiseHs8, dataHs8 [8][4]uint64
+		noiseHs4, dataHs4 [4][4]uint64
+		noiseH, dataH     [4]uint64
+	)
+
+	for batchStart := startP; batchStart < endP; batchStart += batchSz {
+		batchEnd := batchStart + batchSz
+		if batchEnd > endP {
+			batchEnd = endP
+		}
+		bn := batchEnd - batchStart
+
+		if useBatch {
+			i := 0
+			if useBatch8 {
+				for ; i+8 <= bn; i += 8 {
+					base := batchStart + i
+					pixelIndices := [8]int{base, base + 1, base + 2, base + 3, base + 4, base + 5, base + 6, base + 7}
+					noiseHs8 = noiseSeed.blockHash256x8(noiseBufs8, noiseIdx8(pixelIndices, noiseBase))
+					dataHs8 = dataSeed.blockHash256x8(dataBufs8, pixelIndices)
+					for lane := 0; lane < 8; lane++ {
+						ha.noise[i+lane] = uint64(noisePosition(noiseHs8[lane][0], noiseHs8[lane][1]))
+						ha.data[i+lane] = dataHs8[lane][0]
+					}
+				}
+			}
+			for ; i+4 <= bn; i += 4 {
+				pixelIndices := [4]int{batchStart + i, batchStart + i + 1, batchStart + i + 2, batchStart + i + 3}
+				noiseHs4 = noiseSeed.blockHash256x4(noiseBufs, noiseIdx4(pixelIndices, noiseBase))
+				dataHs4 = dataSeed.blockHash256x4(dataBufs, pixelIndices)
+				ha.noise[i+0] = uint64(noisePosition(noiseHs4[0][0], noiseHs4[0][1]))
+				ha.noise[i+1] = uint64(noisePosition(noiseHs4[1][0], noiseHs4[1][1]))
+				ha.noise[i+2] = uint64(noisePosition(noiseHs4[2][0], noiseHs4[2][1]))
+				ha.noise[i+3] = uint64(noisePosition(noiseHs4[3][0], noiseHs4[3][1]))
+				ha.data[i+0] = dataHs4[0][0]
+				ha.data[i+1] = dataHs4[1][0]
+				ha.data[i+2] = dataHs4[2][0]
+				ha.data[i+3] = dataHs4[3][0]
+			}
+			for ; i < bn; i++ {
+				noiseH = noiseSeed.blockHash256(noiseBuf, noiseBase+batchStart+i)
+				dataH = dataSeed.blockHash256(dataBuf, batchStart+i)
+				ha.noise[i] = uint64(noisePosition(noiseH[0], noiseH[1]))
+				ha.data[i] = dataH[0]
+			}
+		} else {
+			for i := 0; i < bn; i++ {
+				noiseH = noiseSeed.blockHash256(noiseBuf, noiseBase+batchStart+i)
+				dataH = dataSeed.blockHash256(dataBuf, batchStart+i)
+				ha.noise[i] = uint64(noisePosition(noiseH[0], noiseH[1]))
+				ha.data[i] = dataH[0]
+			}
+		}
+
+		callCBatchSubregions(ha.noise[:bn], ha.data[:bn], container, data,
+			sched, batchStart, batchEnd, endP, totalBits, encode)
+	}
+
+	clear(noiseHs8[:])
+	clear(dataHs8[:])
+	clear(noiseHs4[:])
+	clear(dataHs4[:])
+	clear(noiseH[:])
+	clear(dataH[:])
+	runtime.KeepAlive(&noiseHs8)
+	runtime.KeepAlive(&dataHs8)
+	runtime.KeepAlive(&noiseHs4)
+	runtime.KeepAlive(&dataHs4)
+	runtime.KeepAlive(&noiseH)
+	runtime.KeepAlive(&dataH)
+}
+
+func processSubregionsRange512(cfg *Config, noiseSeed, dataSeed *Seed512, nonce []byte, container []byte, data []byte, sched *subregionSchedule, startP, endP, totalBits, microBatch int, encode bool, noiseBase int) {
+	if endP <= startP {
+		return
+	}
+	wipePixelCallStack512([9][8]uint64{})
+	processSubregionsRange512Body(cfg, noiseSeed, dataSeed, nonce, container, data, sched, startP, endP, totalBits, microBatch, encode, noiseBase)
+	wipePixelCallStack512([9][8]uint64{})
+}
+
+//go:noinline
+func processSubregionsRange512Body(cfg *Config, noiseSeed, dataSeed *Seed512, nonce []byte, container []byte, data []byte, sched *subregionSchedule, startP, endP, totalBits, microBatch int, encode bool, noiseBase int) {
+	n := endP - startP
+
+	batchSz := microBatch
+	if batchSz > n {
+		batchSz = n
+	}
+	ha := getHashArraysFor(microBatch, batchSz)
+	defer putHashArrays(ha)
+
+	useBatch := noiseSeed.BatchHash != nil && dataSeed.BatchHash != nil
+
+	ls := newLaneScratch(nonce, currentNonceSizeCfg(cfg))
+	defer ls.wipe()
+	noiseBuf, dataBuf := ls.noise[0], ls.data[0]
+	noiseBufs, dataBufs := &ls.noise4, &ls.data4
+
+	useBatch8 := useBatch8Seeds512(noiseSeed, dataSeed)
+	noiseBufs8, dataBufs8 := &ls.noise, &ls.data
+
+	var (
+		noiseHs8, dataHs8 [8][8]uint64
+		noiseHs4, dataHs4 [4][8]uint64
+		noiseH, dataH     [8]uint64
+	)
+
+	for batchStart := startP; batchStart < endP; batchStart += batchSz {
+		batchEnd := batchStart + batchSz
+		if batchEnd > endP {
+			batchEnd = endP
+		}
+		bn := batchEnd - batchStart
+
+		if useBatch {
+			i := 0
+			if useBatch8 {
+				for ; i+8 <= bn; i += 8 {
+					base := batchStart + i
+					pixelIndices := [8]int{base, base + 1, base + 2, base + 3, base + 4, base + 5, base + 6, base + 7}
+					noiseHs8 = noiseSeed.blockHash512x8(noiseBufs8, noiseIdx8(pixelIndices, noiseBase))
+					dataHs8 = dataSeed.blockHash512x8(dataBufs8, pixelIndices)
+					for lane := 0; lane < 8; lane++ {
+						ha.noise[i+lane] = uint64(noisePosition(noiseHs8[lane][0], noiseHs8[lane][1]))
+						ha.data[i+lane] = dataHs8[lane][0]
+					}
+				}
+			}
+			for ; i+4 <= bn; i += 4 {
+				pixelIndices := [4]int{batchStart + i, batchStart + i + 1, batchStart + i + 2, batchStart + i + 3}
+				noiseHs4 = noiseSeed.blockHash512x4(noiseBufs, noiseIdx4(pixelIndices, noiseBase))
+				dataHs4 = dataSeed.blockHash512x4(dataBufs, pixelIndices)
+				ha.noise[i+0] = uint64(noisePosition(noiseHs4[0][0], noiseHs4[0][1]))
+				ha.noise[i+1] = uint64(noisePosition(noiseHs4[1][0], noiseHs4[1][1]))
+				ha.noise[i+2] = uint64(noisePosition(noiseHs4[2][0], noiseHs4[2][1]))
+				ha.noise[i+3] = uint64(noisePosition(noiseHs4[3][0], noiseHs4[3][1]))
+				ha.data[i+0] = dataHs4[0][0]
+				ha.data[i+1] = dataHs4[1][0]
+				ha.data[i+2] = dataHs4[2][0]
+				ha.data[i+3] = dataHs4[3][0]
+			}
+			for ; i < bn; i++ {
+				noiseH = noiseSeed.blockHash512(noiseBuf, noiseBase+batchStart+i)
+				dataH = dataSeed.blockHash512(dataBuf, batchStart+i)
+				ha.noise[i] = uint64(noisePosition(noiseH[0], noiseH[1]))
+				ha.data[i] = dataH[0]
+			}
+		} else {
+			for i := 0; i < bn; i++ {
+				noiseH = noiseSeed.blockHash512(noiseBuf, noiseBase+batchStart+i)
+				dataH = dataSeed.blockHash512(dataBuf, batchStart+i)
+				ha.noise[i] = uint64(noisePosition(noiseH[0], noiseH[1]))
+				ha.data[i] = dataH[0]
+			}
+		}
+
+		callCBatchSubregions(ha.noise[:bn], ha.data[:bn], container, data,
+			sched, batchStart, batchEnd, endP, totalBits, encode)
 	}
 
 	clear(noiseHs8[:])

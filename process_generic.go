@@ -869,3 +869,90 @@ func processChunk512Body(cfg *Config, noiseSeed, dataSeed *Seed512, nonce []byte
 	runtime.KeepAlive(&noiseH)
 	runtime.KeepAlive(&dataH)
 }
+
+func processSubregionsRange128(cfg *Config, noiseSeed, dataSeed *Seed128, nonce []byte, container []byte, data []byte, sched *subregionSchedule, rangeStart, rangeEnd, totalBits, microBatch int, encode bool, noiseBase int) {
+	for step := 0; step < sched.k; step++ {
+		logStart := sched.logOff[step]
+		logEnd := sched.logOff[step+1]
+		if logStart >= rangeEnd {
+			break
+		}
+		if logEnd <= rangeStart {
+			continue
+		}
+		sP := logStart
+		if rangeStart > sP {
+			sP = rangeStart
+		}
+		eP := logEnd
+		if rangeEnd < eP {
+			eP = rangeEnd
+		}
+		if sP >= eP {
+			continue
+		}
+		m := sched.size[step]
+		physOff := sched.offset[step]
+		subContainer := container[physOff*Channels : (physOff+m)*Channels]
+		effStart := effectiveStartPixel(m, sched.start[step], logStart)
+		processChunk128(cfg, noiseSeed, dataSeed, nonce, subContainer, data, effStart, m, sP, eP, totalBits, microBatch, encode, noiseBase)
+	}
+}
+
+func processSubregionsRange256(cfg *Config, noiseSeed, dataSeed *Seed256, nonce []byte, container []byte, data []byte, sched *subregionSchedule, rangeStart, rangeEnd, totalBits, microBatch int, encode bool, noiseBase int) {
+	for step := 0; step < sched.k; step++ {
+		logStart := sched.logOff[step]
+		logEnd := sched.logOff[step+1]
+		if logStart >= rangeEnd {
+			break
+		}
+		if logEnd <= rangeStart {
+			continue
+		}
+		sP := logStart
+		if rangeStart > sP {
+			sP = rangeStart
+		}
+		eP := logEnd
+		if rangeEnd < eP {
+			eP = rangeEnd
+		}
+		if sP >= eP {
+			continue
+		}
+		m := sched.size[step]
+		physOff := sched.offset[step]
+		subContainer := container[physOff*Channels : (physOff+m)*Channels]
+		effStart := effectiveStartPixel(m, sched.start[step], logStart)
+		processChunk256(cfg, noiseSeed, dataSeed, nonce, subContainer, data, effStart, m, sP, eP, totalBits, microBatch, encode, noiseBase)
+	}
+}
+
+func processSubregionsRange512(cfg *Config, noiseSeed, dataSeed *Seed512, nonce []byte, container []byte, data []byte, sched *subregionSchedule, rangeStart, rangeEnd, totalBits, microBatch int, encode bool, noiseBase int) {
+	for step := 0; step < sched.k; step++ {
+		logStart := sched.logOff[step]
+		logEnd := sched.logOff[step+1]
+		if logStart >= rangeEnd {
+			break
+		}
+		if logEnd <= rangeStart {
+			continue
+		}
+		sP := logStart
+		if rangeStart > sP {
+			sP = rangeStart
+		}
+		eP := logEnd
+		if rangeEnd < eP {
+			eP = rangeEnd
+		}
+		if sP >= eP {
+			continue
+		}
+		m := sched.size[step]
+		physOff := sched.offset[step]
+		subContainer := container[physOff*Channels : (physOff+m)*Channels]
+		effStart := effectiveStartPixel(m, sched.start[step], logStart)
+		processChunk512(cfg, noiseSeed, dataSeed, nonce, subContainer, data, effStart, m, sP, eP, totalBits, microBatch, encode, noiseBase)
+	}
+}

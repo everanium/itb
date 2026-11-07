@@ -71,3 +71,18 @@ func TestAccessorsReturnInitValues(t *testing.T) {
 func TestWarnf(t *testing.T) {
 	Warnf("test-only note: %s tier / %d flags", "scalar", 3)
 }
+
+func TestBarriersDesyncOff(t *testing.T) {
+	for _, v := range []string{"", "1", "on", "ON", "true", "TRUE", "yes", "  on \t"} {
+		t.Setenv("ITB_BARRIERS_DESYNC", v)
+		if BarriersDesyncOff() {
+			t.Fatalf("ITB_BARRIERS_DESYNC=%q: got BarriersDesyncOff()=true, want false", v)
+		}
+	}
+	for _, v := range []string{"0", "off", "OFF", "false", "FALSE", "no", "NO", "  off \t"} {
+		t.Setenv("ITB_BARRIERS_DESYNC", v)
+		if !BarriersDesyncOff() {
+			t.Fatalf("ITB_BARRIERS_DESYNC=%q: got BarriersDesyncOff()=false, want true", v)
+		}
+	}
+}

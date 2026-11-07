@@ -119,6 +119,22 @@ func buildLockBatchPRF48_128Body(lockSeed *Seed128, nonce []byte) lockBatchPRF48
 		},
 		lockComps: lockComps,
 	}
+	if !forcetier.BarriersDesyncOff() {
+		bp.desyncWords = func() [4]uint64 {
+			var buf [13]byte
+			buf[0] = 0x06
+			binary.LittleEndian.PutUint32(buf[9:13], foldWord)
+			binary.LittleEndian.PutUint64(buf[1:9], 0)
+			lo0, hi0 := lockSeed.chainHash128With(lockComps, buf[:])
+			w0, w1 := fullWidthFold(lo0, hi0)
+			binary.LittleEndian.PutUint64(buf[1:9], 1)
+			lo1, hi1 := lockSeed.chainHash128With(lockComps, buf[:])
+			w2, w3 := fullWidthFold(lo1, hi1)
+			clear(buf[:])
+			runtime.KeepAlive(&buf)
+			return [4]uint64{w0, w1, w2, w3}
+		}
+	}
 	if lockSeed.BatchHash != nil && !forcetier.InterlockPRFFillSeq() && !forcetier.InterlockPRFFillX1() {
 		bp.fillRanksX4 = func(s *lockFillScratch48, groupIdx uint64, prf []uint64) {
 			for i := range s.bufs {
@@ -194,6 +210,26 @@ func buildLockBatchPRF48_256Body(lockSeed *Seed256, nonce []byte) lockBatchPRF48
 			runtime.KeepAlive(&out)
 		},
 		lockComps: lockComps,
+	}
+	if !forcetier.BarriersDesyncOff() {
+		bp.desyncWords = func() [4]uint64 {
+			var buf [13]byte
+			buf[0] = 0x06
+			binary.LittleEndian.PutUint32(buf[9:13], foldWord)
+			binary.LittleEndian.PutUint64(buf[1:9], 0)
+			out0 := lockSeed.chainHash256With(lockComps, buf[:])
+			w0, w1 := fullWidthFold(out0[0], out0[1])
+			clear(out0[:])
+			runtime.KeepAlive(&out0)
+			binary.LittleEndian.PutUint64(buf[1:9], 1)
+			out1 := lockSeed.chainHash256With(lockComps, buf[:])
+			w2, w3 := fullWidthFold(out1[0], out1[1])
+			clear(out1[:])
+			clear(buf[:])
+			runtime.KeepAlive(&out1)
+			runtime.KeepAlive(&buf)
+			return [4]uint64{w0, w1, w2, w3}
+		}
 	}
 	if lockSeed.BatchHash != nil && !forcetier.InterlockPRFFillSeq() && !forcetier.InterlockPRFFillX1() {
 		bp.fillRanksX4 = func(s *lockFillScratch48, groupIdx uint64, prf []uint64) {
@@ -273,6 +309,26 @@ func buildLockBatchPRF48_512Body(lockSeed *Seed512, nonce []byte) lockBatchPRF48
 			runtime.KeepAlive(&out)
 		},
 		lockComps: lockComps,
+	}
+	if !forcetier.BarriersDesyncOff() {
+		bp.desyncWords = func() [4]uint64 {
+			var buf [13]byte
+			buf[0] = 0x06
+			binary.LittleEndian.PutUint32(buf[9:13], foldWord)
+			binary.LittleEndian.PutUint64(buf[1:9], 0)
+			out0 := lockSeed.chainHash512With(lockComps, buf[:])
+			w0, w1 := fullWidthFold(out0[0], out0[1])
+			clear(out0[:])
+			runtime.KeepAlive(&out0)
+			binary.LittleEndian.PutUint64(buf[1:9], 1)
+			out1 := lockSeed.chainHash512With(lockComps, buf[:])
+			w2, w3 := fullWidthFold(out1[0], out1[1])
+			clear(out1[:])
+			clear(buf[:])
+			runtime.KeepAlive(&out1)
+			runtime.KeepAlive(&buf)
+			return [4]uint64{w0, w1, w2, w3}
+		}
 	}
 	if lockSeed.BatchHash != nil && !forcetier.InterlockPRFFillSeq() && !forcetier.InterlockPRFFillX1() {
 		bp.fillRanksX4 = func(s *lockFillScratch48, groupIdx uint64, prf []uint64) {

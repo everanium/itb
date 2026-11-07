@@ -33,6 +33,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/everanium/itb/internal/forcetier"
 )
 
 func quadHash(data []byte, seed0, seed1 uint64) (lo, hi uint64) {
@@ -43,27 +45,6 @@ func quadHash(data []byte, seed0, seed1 uint64) (lo, hi uint64) {
 		h = (((h + uint64(b)) * (h + uint64(b))) + 1) & 0xFF
 	}
 	return l, h
-}
-
-func qhReadPixel(region []byte, linearIdx int, np, rot, xor uint) [7]byte {
-	var packed uint64
-	noiseMask := byte(1) << np
-	for ch := 0; ch < Channels; ch++ {
-		b := region[linearIdx*Channels+ch]
-		low := b & (noiseMask - 1)
-		high := b >> (np + 1)
-		d := low | (high << np)
-		d = rotateBits7(d, 7-rot)
-		if ch == 0 {
-			d ^= byte(xor)
-		}
-		packed |= uint64(d) << uint(ch*DataBitsPerChannel)
-	}
-	var out [7]byte
-	for j := 0; j < 7; j++ {
-		out[j] = byte(packed >> uint(8*j))
-	}
-	return out
 }
 
 // qhMakeTruncSeed constructs a valid 512-bit *Seed128 for slot in 0..7 with
@@ -83,18 +64,28 @@ func qhMakeTruncSeed(slot int, c6, c7 byte) *Seed128 {
 	return s
 }
 
-func qhCandidateS6ForStart(slot int, mainNonce []byte) []byte {
+func qhCandidateStartSeeds(slot int, mainNonce []byte) []*Seed128 {
 	sbuf := make([]byte, 1+len(mainNonce))
 	sbuf[0] = 0x02
 	copy(sbuf[1:], mainNonce)
-	seen := map[uint64]bool{}
-	var out []byte
-	for x := 0; x < 256; x++ {
-		s := qhMakeTruncSeed(slot, byte(x), 0)
-		lo, _ := s.ChainHash128(sbuf)
-		if !seen[lo] {
-			seen[lo] = true
-			out = append(out, byte(x))
+	hiMax := 2
+	if forcetier.BarriersDesyncOff() {
+		hiMax = 1
+	}
+	seen := map[[2]uint64]bool{}
+	var out []*Seed128
+	for c6 := 0; c6 < 2; c6++ {
+		for c7 := 0; c7 < hiMax; c7++ {
+			s := qhMakeTruncSeed(slot, byte(c6), byte(c7))
+			lo, hi := s.ChainHash128(sbuf)
+			if forcetier.BarriersDesyncOff() {
+				hi = 0
+			}
+			key := [2]uint64{lo, hi}
+			if !seen[key] {
+				seen[key] = true
+				out = append(out, s)
+			}
 		}
 	}
 	return out
@@ -141,45 +132,21 @@ func solveQuadHashSingleMessage(cfg *Config, ct, crib []byte) (dec []byte, seeds
 		sm.container[2*third*Channels : totalPixels*Channels],
 	}
 
-	sCands := [3][]byte{
-		qhCandidateS6ForStart(5, mainNonce),
-		qhCandidateS6ForStart(6, mainNonce),
-		qhCandidateS6ForStart(7, mainNonce),
+	sCands := [3][]*Seed128{
+		qhCandidateStartSeeds(5, mainNonce),
+		qhCandidateStartSeeds(6, mainNonce),
+		qhCandidateStartSeeds(7, mainNonce),
 	}
 	nsLoReps, nsHiReps := qhCandidatePixelLanes(0, mainNonce, third)
 	dsLoReps, _ := qhCandidatePixelLanes(2, mainNonce, third)
 
+	rawBuf := make([]byte, caps[2])
 	checkRegionCOBS := func(r int, ns, ds, ss *Seed128) (int, bool) {
-		sbuf := make([]byte, 1+len(mainNonce))
-		sbuf[0] = 0x02
-		copy(sbuf[1:], mainNonce)
-		spLo, _ := ss.ChainHash128(sbuf)
-		sp := int(spLo % uint64(widths[r]))
-
-		pbuf := make([]byte, 4+len(mainNonce))
-		copy(pbuf[4:], mainNonce)
-
-		raw := make([]byte, 0, widths[r]*7)
-		zeroIdx := -1
-		for p := 0; p < widths[r]; p++ {
-			binary.LittleEndian.PutUint32(pbuf[:4], uint32(r*third+p))
-			nLo, nHi := ns.ChainHash128(pbuf)
-			np := noisePosition(nLo, nHi)
-
-			binary.LittleEndian.PutUint32(pbuf[:4], uint32(p))
-			dLo, _ := ds.ChainHash128(pbuf)
-			rot := uint((dLo & 0xFF) % 7)
-			xor := uint((dLo & 0xFF) >> DataRotationBits)
-
-			lin := (sp + p) % widths[r]
-			win := qhReadPixel(regions[r], lin, np, rot, xor)
-			base := len(raw)
-			raw = append(raw, win[:]...)
-			if z := bytes.IndexByte(win[:], 0); z >= 0 {
-				zeroIdx = base + z
-				break
-			}
-		}
+		raw := rawBuf[:caps[r]]
+		clear(raw)
+		process128Cfg(cfg, ns, ds, ss, mainNonce,
+			regions[r], widths[r], 1, raw, false, 1, noiseCounterBase(r, third))
+		zeroIdx := bytes.IndexByte(raw, 0)
 		if zeroIdx <= lens[r]+2 {
 			return 0, false
 		}
@@ -217,8 +184,7 @@ func solveQuadHashSingleMessage(cfg *Config, ct, crib []byte) (dec []byte, seeds
 			for r := 0; r < 3; r++ {
 				for _, ds6 := range dsLoReps {
 					ds := qhMakeTruncSeed(2+r, ds6, 0)
-					for _, sc6 := range sCands[r] {
-						ss := qhMakeTruncSeed(5+r, sc6, 0)
+					for _, ss := range sCands[r] {
 						if laneLen, ok := checkRegionCOBS(r, ns, ds, ss); ok {
 							validReg[r] = append(validReg[r], regPair{ds, ss, laneLen})
 						}

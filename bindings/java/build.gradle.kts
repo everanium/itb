@@ -23,7 +23,7 @@ repositories {
     mavenCentral()
 }
 
-version = "0.8.5"
+version = "0.9.0"
 
 // bindings/java -> <repo root>
 val repoRoot: File = layout.projectDirectory.asFile.parentFile.parentFile

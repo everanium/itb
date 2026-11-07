@@ -14,6 +14,7 @@ import (
 type encryptOpts struct {
 	inputPath  string
 	outputPath string
+	desync     string
 }
 
 // newEncryptCmd wires the `itb3 encrypt` cobra command.
@@ -28,8 +29,12 @@ func newEncryptCmd() *cobra.Command {
 payload is routed through the Single Message or Streaming cipher
 surface; the dispatch is automatic.
 
-    -i <file>   input plaintext (default stdin; refused when stdin is a TTY)
-    -o <file>   output ciphertext (default stdout)`,
+    -i <file>          input plaintext (default stdin; refused when stdin is a TTY)
+    -o <file>          output ciphertext (default stdout)
+    --desync <on|off>  Desynchronized Interlocked Barrier mode (default on)
+                       WARNING: DO NOT DISABLE DESYNC FOR PRODUCTION USE —
+                       FOR SYNCHRONOUS WIRE CONVERSION / DECRYPTION AND
+                       RESEARCH BASELINES ONLY.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runEncrypt(args[0], opts)
 		},
@@ -37,11 +42,18 @@ surface; the dispatch is automatic.
 	f := cmd.Flags()
 	f.StringVarP(&opts.inputPath, "input", "i", "", "input plaintext file (default stdin when piped)")
 	f.StringVarP(&opts.outputPath, "output", "o", "", "output ciphertext file (default stdout)")
+	f.StringVar(&opts.desync, "desync", "", desyncFlagWarning)
 	return cmd
 }
 
 // runEncrypt is the encrypt handler body.
 func runEncrypt(blobPath string, opts encryptOpts) error {
+	restoreDesync, err := applyDesyncFlag("encrypt", opts.desync)
+	if err != nil {
+		return err
+	}
+	defer restoreDesync()
+
 	pipe, prof, err := loadPipeline("encrypt", blobPath)
 	if err != nil {
 		return err

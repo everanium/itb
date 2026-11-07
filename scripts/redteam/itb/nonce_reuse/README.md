@@ -59,10 +59,10 @@ for its decision path. Two narrowly-scoped lab peeks are permitted and
 tagged at the call site:
 
 - `[lab-peek: sp_i]` — Layer B / C probes grant the attacker the three
-  region `startPixel` values. This is the single documented "would it
-  matter?" exception in the task brief.
+  region `startPixel` values (`0x02`, i.e., the initial entry offset $\Pi_r(0)$ alongside the `Desync` Layer I sub-region schedule under `0x05`). This is the single documented "would it
+  matter?" exception.
 - `[lab-peek: masks]` — the Layer B' `MaskOraclePeek` probe additionally
-  reveals the per-chunk interlock mask triples. Results here are the
+  reveals the per-chunk interlock mask triples (`0x03`, alongside the `Desync` Layer II cross-lane slot shifts under `0x06`). Results here are the
   UPPER BOUND — what the attack would achieve if a hypothetical
   primitive break revealed the `lockSeed`. Not attacker-realistic.
 

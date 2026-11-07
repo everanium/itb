@@ -70,6 +70,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/everanium/itb/internal/forcetier"
 )
 
 // nullHashAttackDir is the attacker's input directory. Uses the shared
@@ -101,6 +103,126 @@ func seedConst(lo, hi byte) *Seed128 {
 	return s
 }
 
+func seedConstSlot(slot int, lo, hi byte) *Seed128 {
+	s := seedConst(lo, hi)
+	s.Components[0] |= uint64(slot) << 8
+	return s
+}
+
+func nullHashUndesyncSingleLane(lane []byte, laneIdx int, bp lockBatchPRF48) []byte {
+	if bp.desyncWords == nil {
+		return lane
+	}
+	u0, u1, u2, stagePtr, stageBuf := desyncLaneDecrypt(lane, lane, lane, 2, bp)
+	if stagePtr == nil {
+		return lane
+	}
+	out := append([]byte(nil), [3][]byte{u0, u1, u2}[laneIdx]...)
+	releaseStage(stagePtr, stageBuf, len(stageBuf))
+	return out
+}
+
+// nullHashBuildRegionPerms128 precomputes the logical-to-physical pixel
+// trajectories for a region of width w across all candidate startSeed
+// states ([0, w) cyclic shifts when Desync is off; all 65,536 16-bit
+// (hLo, hHi) constants under Desync Layer I 0x05 + fullWidthFold).
+// Under nullHash, startSeed.ChainHash128 is independent of mainNonce.
+func nullHashBuildRegionPerms128(slot, w int, mainNonce []byte) (spMax int, spConsts []uint16, perms []uint16) {
+	if forcetier.BarriersDesyncOff() {
+		spMax = w
+		spConsts = make([]uint16, spMax)
+		perms = make([]uint16, spMax*w)
+		for spv := 0; spv < spMax; spv++ {
+			spConsts[spv] = uint16(spv) << 8
+			row := perms[spv*w : (spv+1)*w]
+			for logP := 0; logP < w; logP++ {
+				row[logP] = uint16((spv + logP) % w)
+			}
+		}
+		return spMax, spConsts, perms
+	}
+	spMax = 65536
+	spConsts = make([]uint16, spMax)
+	perms = make([]uint16, spMax*w)
+	startSeed := seedConstSlot(slot, 0, 0)
+	for spv := 0; spv < spMax; spv++ {
+		spConst := uint16(spv)
+		spConsts[spv] = spConst
+		startSeed.Components[0] = uint64(spConst>>8) | (uint64(slot) << 8)
+		startSeed.Components[1] = uint64(spConst & 0xFF)
+		sp := startSeed.deriveStartPixel(mainNonce, w)
+		sched := startSeed.deriveSubregionSchedule(mainNonce, sp, w)
+		row := perms[spv*w : (spv+1)*w]
+		for step := 0; step < sched.k; step++ {
+			logStart := sched.logOff[step]
+			m := sched.size[step]
+			physOff := sched.offset[step]
+			s := sched.start[step]
+			for idx := 0; idx < m; idx++ {
+				row[logStart+idx] = uint16(physOff + (s+idx)%m)
+			}
+		}
+	}
+	return spMax, spConsts, perms
+}
+
+// nullHashFillFirstNullPix records for each 7-byte physical pixel block in
+// physDecoded the byte offset 0..6 of its first 0x00 byte, or 7 if all 7
+// bytes are non-zero.
+func nullHashFillFirstNullPix(physDecoded, firstNullPix []byte, w int) {
+	for physP := 0; physP < w; physP++ {
+		blk := physDecoded[7*physP : 7*physP+7]
+		fn := byte(7)
+		for j := 0; j < 7; j++ {
+			if blk[j] == 0 {
+				fn = byte(j)
+				break
+			}
+		}
+		firstNullPix[physP] = fn
+	}
+}
+
+// nullHashDecodeUpToFirstNull locates the first 0x00 terminator along the
+// pixel permutation row without re-running per-pixel hashing. If the first
+// null byte appears at index fn >= minFN and the COBS pointer chain from
+// byte 0 lands cleanly on fn, it copies the active 7-byte pixel blocks into
+// dst[:fn] and returns (fn, true).
+func nullHashDecodeUpToFirstNull(physDecoded, firstNullPix []byte, row []uint16, minFN int, dst []byte) (int, bool) {
+	if firstNullPix[row[0]] < 7 {
+		return int(firstNullPix[row[0]]), false
+	}
+	fn := -1
+	lastLogP := 0
+	for logP := 1; logP < len(row); logP++ {
+		fnp := firstNullPix[row[logP]]
+		if fnp < 7 {
+			fn = 7*logP + int(fnp)
+			lastLogP = logP
+			break
+		}
+	}
+	if fn < minFN {
+		return fn, false
+	}
+	idx := 0
+	var lastCode byte
+	for idx < fn {
+		p := int(row[idx/7])
+		lastCode = physDecoded[p*7+idx%7]
+		idx += int(lastCode)
+	}
+	if idx != fn || lastCode == 0xFF {
+		return fn, false
+	}
+	for logP := 0; logP <= lastLogP; logP++ {
+		srcOff := int(row[logP]) * 7
+		dstOff := logP * 7
+		copy(dst[dstOff:dstOff+7], physDecoded[srcOff:srcOff+7])
+	}
+	return fn, true
+}
+
 // firstNull returns the index of the first 0x00 byte, or len(b).
 func firstNull(b []byte) int {
 	for i, x := range b {
@@ -114,26 +236,25 @@ func firstNull(b []byte) int {
 // nullHashCandidateSeeds reconstructs the full 8-seed Triple Ouroboros
 // constellation from the observable constants recovered by the search:
 // noisePos (3 bits of noiseSeed), the 16-bit lock constant, the three
-// dataSeed lo bytes, and the three given startPixels. Distinct hi bytes
-// are stamped per slot so the shipped 8-seed-distinctness guard in
-// Decrypt3x128Cfg accepts the set. Under nullHash the hi byte of the
-// data, lock-free and start slots is unused by every observable
-// derivation; the noise slot's hi byte enters noisePos through
-// noiseFold3(lo + rotl(hi, 1)), so it carries 0x44: its rotated value
-// 0x88 shares no bit with a lo constant below 8 and folds to zero, so
-// the slot's noisePos stays equal to its lo constant.
+// dataSeed lo bytes, and the three per-region startSeed constants.
+// Distinct slot tags are stamped into byte 1 of Components[0] (which
+// nullHash ignores) so the shipped 8-seed-distinctness guard in
+// Decrypt3x128Cfg accepts the set without altering any collapsed (lo, hi)
+// output. The noise slot's hi byte carries 0x44: its rotated value 0x88
+// shares no bit with a lo constant below 8 and folds to zero, so the
+// slot's noisePos stays equal to its lo constant.
 // Reused verbatim by any later KPA stage that recovers the same
 // constants through a different search.
-func nullHashCandidateSeeds(noisePos byte, lockConst uint16, dataLo [3]byte, startPixel [3]byte) [8]*Seed128 {
+func nullHashCandidateSeeds(noisePos byte, lockConst uint16, dataLo [3]byte, startConst [3]uint16) [8]*Seed128 {
 	return [8]*Seed128{
-		seedConst(noisePos, 0x44),
-		seedConst(byte(lockConst>>8), byte(lockConst&0xFF)),
-		seedConst(dataLo[0], 2),
-		seedConst(dataLo[1], 3),
-		seedConst(dataLo[2], 4),
-		seedConst(startPixel[0], 5),
-		seedConst(startPixel[1], 6),
-		seedConst(startPixel[2], 7),
+		seedConstSlot(0, noisePos, 0x44),
+		seedConstSlot(1, byte(lockConst>>8), byte(lockConst&0xFF)),
+		seedConstSlot(2, dataLo[0], 0),
+		seedConstSlot(3, dataLo[1], 0),
+		seedConstSlot(4, dataLo[2], 0),
+		seedConstSlot(5, byte(startConst[0]>>8), byte(startConst[0]&0xFF)),
+		seedConstSlot(6, byte(startConst[1]>>8), byte(startConst[1]&0xFF)),
+		seedConstSlot(7, byte(startConst[2]>>8), byte(startConst[2]&0xFF)),
 	}
 }
 
@@ -207,6 +328,11 @@ func TestRedTeamNullHashAttack(t *testing.T) {
 			S2 int `json:"region_2"`
 			S3 int `json:"region_3"`
 		} `json:"start_pixels"`
+		StartSeedConst struct {
+			S1 int `json:"region_1"`
+			S2 int `json:"region_2"`
+			S3 int `json:"region_3"`
+		} `json:"start_seed_const"`
 		Truth map[string]string `json:"truth_labonly"`
 	}
 	if err := json.Unmarshal(metaRaw, &meta); err != nil {
@@ -252,10 +378,17 @@ func TestRedTeamNullHashAttack(t *testing.T) {
 		(third * DataBitsPerPixel) / 8,
 		(thirdPixels2 * DataBitsPerPixel) / 8,
 	}
-	startPixelConst := [3]byte{
-		byte(meta.StartPixels.S1),
-		byte(meta.StartPixels.S2),
-		byte(meta.StartPixels.S3),
+	startConst := [3]uint16{
+		uint16(meta.StartPixels.S1) << 8,
+		uint16(meta.StartPixels.S2) << 8,
+		uint16(meta.StartPixels.S3) << 8,
+	}
+	if !forcetier.BarriersDesyncOff() {
+		startConst = [3]uint16{
+			uint16(meta.StartSeedConst.S1),
+			uint16(meta.StartSeedConst.S2),
+			uint16(meta.StartSeedConst.S3),
+		}
 	}
 
 	start := time.Now()
@@ -363,7 +496,7 @@ func TestRedTeamNullHashAttack(t *testing.T) {
 		regionHits := [3]map[uint16]byte{{}, {}, {}}
 		fragHits := [3]map[uint16][]byte{{}, {}, {}}
 		for i := 0; i < 3; i++ {
-			startSeed := seedConst(startPixelConst[i], 0)
+			startSeed := seedConstSlot(5+i, byte(startConst[i]>>8), byte(startConst[i]&0xFF))
 			decoded := make([]byte, caps[i])
 			for d := 0; d < 256; d++ {
 				dataSeed := seedConst(byte(d), 0)
@@ -429,7 +562,7 @@ func TestRedTeamNullHashAttack(t *testing.T) {
 	// the non-crib remainder to pass public COBS structural checks — the
 	// search (Phase A/B) is Full KPA specific, but this decode-and-verify
 	// primitive and nullHashCandidateSeeds carry over unchanged.
-	cand := nullHashCandidateSeeds(byte(foundNoisePos), foundLock, foundData, startPixelConst)
+	cand := nullHashCandidateSeeds(byte(foundNoisePos), foundLock, foundData, startConst)
 	kpaMatch, recovered := verifyRecovered(cfg, cand, ct, kpa, len(kpa), nil)
 	_ = recovered
 
@@ -593,6 +726,11 @@ func TestRedTeamNullHashAttackCrib(t *testing.T) {
 			S2 int `json:"region_2"`
 			S3 int `json:"region_3"`
 		} `json:"start_pixels"`
+		StartSeedConst struct {
+			S1 int `json:"region_1"`
+			S2 int `json:"region_2"`
+			S3 int `json:"region_3"`
+		} `json:"start_seed_const"`
 		Truth map[string]string `json:"truth_labonly"`
 	}
 	if err := json.Unmarshal(metaRaw, &meta); err != nil {
@@ -638,11 +776,19 @@ func TestRedTeamNullHashAttackCrib(t *testing.T) {
 		(third * DataBitsPerPixel) / 8,
 		(thirdPixels2 * DataBitsPerPixel) / 8,
 	}
-	startPixelConst := [3]byte{
-		byte(meta.StartPixels.S1),
-		byte(meta.StartPixels.S2),
-		byte(meta.StartPixels.S3),
+	startConst := [3]uint16{
+		uint16(meta.StartPixels.S1) << 8,
+		uint16(meta.StartPixels.S2) << 8,
+		uint16(meta.StartPixels.S3) << 8,
 	}
+	if !forcetier.BarriersDesyncOff() {
+		startConst = [3]uint16{
+			uint16(meta.StartSeedConst.S1),
+			uint16(meta.StartSeedConst.S2),
+			uint16(meta.StartSeedConst.S3),
+		}
+	}
+	bp0 := buildLockBatchPRF48_128Cfg(cfg, seedConst(0, 0), attackerNonce)
 
 	// The crib plus the 4-byte length prefix occupy framed bytes [0,52),
 	// so the first floor((4+48)/6) = 8 six-byte chunks are fully known.
@@ -694,11 +840,16 @@ func TestRedTeamNullHashAttackCrib(t *testing.T) {
 					make([]byte, n),
 				}
 				splitForTriple48LockedInto(cfg, probe, bp, ps[0], ps[1], ps[2])
+				u0, u1, u2, stagePtr, stageBuf := desyncLaneDecrypt(ps[0], ps[1], ps[2], 2, bp)
+				ups := [3][]byte{u0, u1, u2}
 				for i := 0; i < 3; i++ {
-					if len(ps[i]) < lanePrefixLen {
+					if len(ups[i]) < lanePrefixLen {
 						continue
 					}
-					local[i] = append(local[i], laneKey{string(ps[i][:lanePrefixLen]), uint16(c)})
+					local[i] = append(local[i], laneKey{string(ups[i][:lanePrefixLen]), uint16(c)})
+				}
+				if stagePtr != nil {
+					releaseStage(stagePtr, stageBuf, len(stageBuf))
 				}
 			}
 			shardResults[w] = local
@@ -737,7 +888,7 @@ func TestRedTeamNullHashAttackCrib(t *testing.T) {
 		// Per region: lockConst -> witness dataSeed lo values.
 		regionHits := [3]map[uint16][]byte{{}, {}, {}}
 		for i := 0; i < 3; i++ {
-			startSeed := seedConst(startPixelConst[i], 0)
+			startSeed := seedConstSlot(5+i, byte(startConst[i]>>8), byte(startConst[i]&0xFF))
 			decoded := make([]byte, caps[i])
 			for d := 0; d < 256; d++ {
 				dataSeed := seedConst(byte(d), 0)
@@ -760,7 +911,8 @@ func TestRedTeamNullHashAttackCrib(t *testing.T) {
 				if len(p) < lens[i]+lanePrefixLen {
 					continue
 				}
-				if lcs, ok := lockIdx[i][string(p[lens[i]:lens[i]+lanePrefixLen])]; ok {
+				bLane := nullHashUndesyncSingleLane(p[lens[i]:], i, bp0)
+				if lcs, ok := lockIdx[i][string(bLane[:lanePrefixLen])]; ok {
 					for _, lc := range lcs {
 						regionHits[i][lc] = append(regionHits[i][lc], byte(d))
 					}
@@ -796,13 +948,24 @@ func TestRedTeamNullHashAttackCrib(t *testing.T) {
 		t         tuple
 		recovered []byte
 	}
+	type verifyRes struct {
+		ok  bool
+		rec []byte
+	}
+	verifyCache := map[[4]byte]verifyRes{}
 	var survivors []survivor
 	restOK := func(rest []byte) bool { return printableASCII(rest) }
 	for _, c := range preJoin {
-		seeds := nullHashCandidateSeeds(c.noisePos, c.lock, c.d, startPixelConst)
-		ok, rec := verifyRecovered(cfg, seeds, ct, crib, nullHashCribLen, restOK)
-		if ok {
-			survivors = append(survivors, survivor{c, rec})
+		key := [4]byte{c.noisePos, c.d[0], c.d[1], c.d[2]}
+		res, seen := verifyCache[key]
+		if !seen {
+			seeds := nullHashCandidateSeeds(c.noisePos, c.lock, c.d, startConst)
+			ok, rec := verifyRecovered(cfg, seeds, ct, crib, nullHashCribLen, restOK)
+			res = verifyRes{ok, rec}
+			verifyCache[key] = res
+		}
+		if res.ok {
+			survivors = append(survivors, survivor{c, res.rec})
 		}
 	}
 	elapsed := time.Since(start)
@@ -840,6 +1003,10 @@ func TestRedTeamNullHashAttackCrib(t *testing.T) {
 		t.Fatalf("Crib KPA attack failed: no survivor passed structural verification")
 	}
 	for i, s := range survivors {
+		if i >= 40 {
+			t.Logf("  ... (%d more)", len(survivors)-i)
+			break
+		}
 		t.Logf("  survivor[%d]: noisePos=%d lock=0x%04x dLo=%02x %02x %02x",
 			i, s.t.noisePos, s.t.lock, s.t.d[0], s.t.d[1], s.t.d[2])
 	}
@@ -1019,19 +1186,46 @@ func TestRedTeamNullHashAttackNoKPA(t *testing.T) {
 	for w := 0; w < W; w++ {
 		regions[w] = regionsOf(cts[w])
 	}
+	bp0 := buildLockBatchPRF48_128Cfg(cfg, seedConst(0, 0), make([]byte, currentNonceSizeCfg(cfg)))
 
 	start := time.Now()
+
+	// Precompute the logical-to-physical pixel permutations once per region.
+	var (
+		regSpMax    [3]int
+		regSpConsts [3][]uint16
+		regPerms    [3][]uint16
+	)
+	for i := 0; i < 3; i++ {
+		if i == 1 && widths[1] == widths[0] {
+			regSpMax[1] = regSpMax[0]
+			regSpConsts[1] = regSpConsts[0]
+			regPerms[1] = regPerms[0]
+			continue
+		}
+		regSpMax[i], regSpConsts[i], regPerms[i] = nullHashBuildRegionPerms128(5+i, widths[i], mainNonce[0])
+	}
 
 	// ---------- Phase 1: per-region cross-ciphertext COBS gate ----------
 	type surv struct {
 		noisePos byte
 		d        byte
-		sp       int
+		sp       uint16
 		laneLen  int
 		chunk0   []uint16 // this region's chunk-0 lane value per wire
 		lane0    []byte   // this region's full wire-0 lane (for padding gate)
 	}
+	type spPeerKey struct {
+		d  byte
+		sp uint16
+	}
 	var regionSurv [3][8][]surv
+	var spPeers3 [3][8]map[spPeerKey]map[uint16]bool
+	for i := 0; i < 3; i++ {
+		for np := 0; np < 8; np++ {
+			spPeers3[i][np] = map[spPeerKey]map[uint16]bool{}
+		}
+	}
 	var mu sync.Mutex
 
 	numCPU := runtime.NumCPU()
@@ -1045,30 +1239,48 @@ func TestRedTeamNullHashAttackNoKPA(t *testing.T) {
 			go func(i, np int) {
 				defer wg.Done()
 				w := widths[i]
+				spMax := regSpMax[i]
+				spConsts := regSpConsts[i]
+				perms := regPerms[i]
+				minFN := lens[i] + 3
 				noiseSeed := seedConst(byte(np), 0)
+				physDecoded := make([][]byte, W)
+				firstNullPix := make([][]byte, W)
 				bufs := make([][]byte, W)
 				for k := 0; k < W; k++ {
+					physDecoded[k] = make([]byte, caps[i])
+					firstNullPix[k] = make([]byte, w)
 					bufs[k] = make([]byte, caps[i])
 				}
 				var local []surv
-				startSeed := seedConst(0, 0)
+				localPeers := map[spPeerKey]map[uint16]bool{}
 				for d := 0; d < 256; d++ {
 					dataSeed := seedConst(byte(d), 0)
-					for spv := 0; spv < w; spv++ {
-						startSeed.Components[0] = uint64(spv)
+					// Under nullHash, per-pixel noiseSeed and dataSeed masks are
+					// position-independent constants; decode all w physical pixels
+					// once per (np, d, wire) and traverse startSeed schedules over
+					// the pre-decoded 7-byte pixel blocks.
+					for k := 0; k < W; k++ {
+						pd := physDecoded[k]
+						for x := range pd {
+							pd[x] = 0
+						}
+						processChunk128(cfg, noiseSeed, dataSeed, mainNonce[k],
+							regions[k][i], pd, 0, w, 0, w, w*DataBitsPerPixel, chooseMicroBatch(caps[i]), false, noiseCounterBase(i, widths[0]))
+						nullHashFillFirstNullPix(pd, firstNullPix[k], w)
+					}
+					seenLane := map[string]uint16{}
+					for spv := 0; spv < spMax; spv++ {
+						spConst := spConsts[spv]
+						row := perms[spv*w : (spv+1)*w]
 						ok := true
 						laneLen := 0
 						chunk0 := make([]uint16, W)
 						var lane0 []byte
 						for k := 0; k < W; k++ {
 							b := bufs[k]
-							for x := range b {
-								b[x] = 0
-							}
-							process128Cfg(cfg, noiseSeed, dataSeed, startSeed, mainNonce[k],
-								regions[k][i], w, 1, b, false, 1, noiseCounterBase(i, widths[0]))
-							fn := firstNull(b)
-							if fn == len(b) || !cobsStructurallyValid(b[:fn]) {
+							fn, hasNull := nullHashDecodeUpToFirstNull(physDecoded[k], firstNullPix[k], row, minFN, b)
+							if !hasNull || !cobsStructurallyValid(b[:fn]) {
 								ok = false
 								break
 							}
@@ -1077,7 +1289,7 @@ func TestRedTeamNullHashAttackNoKPA(t *testing.T) {
 								ok = false
 								break
 							}
-							p = p[lens[i]:]
+							p = nullHashUndesyncSingleLane(p[lens[i]:], i, bp0)
 							if len(p) < 2 || len(p)%2 != 0 {
 								ok = false
 								break
@@ -1092,13 +1304,29 @@ func TestRedTeamNullHashAttackNoKPA(t *testing.T) {
 							chunk0[k] = uint16(p[0]) | uint16(p[1])<<8
 						}
 						if ok {
-							local = append(local, surv{byte(np), byte(d), spv, laneLen, chunk0, lane0})
+							sig := make([]byte, len(lane0)+2*W)
+							copy(sig, lane0)
+							for k := 0; k < W; k++ {
+								sig[len(lane0)+2*k] = byte(chunk0[k])
+								sig[len(lane0)+2*k+1] = byte(chunk0[k] >> 8)
+							}
+							sigStr := string(sig)
+							if repSp, dup := seenLane[sigStr]; dup {
+								localPeers[spPeerKey{byte(d), repSp}][spConst] = true
+								continue
+							}
+							seenLane[sigStr] = spConst
+							localPeers[spPeerKey{byte(d), spConst}] = map[uint16]bool{spConst: true}
+							local = append(local, surv{byte(np), byte(d), spConst, laneLen, chunk0, lane0})
 						}
 					}
 				}
 				if len(local) > 0 {
 					mu.Lock()
 					regionSurv[i][np] = append(regionSurv[i][np], local...)
+					for pk, peers := range localPeers {
+						spPeers3[i][np][pk] = peers
+					}
 					mu.Unlock()
 				}
 			}(i, np)
@@ -1147,7 +1375,7 @@ func TestRedTeamNullHashAttackNoKPA(t *testing.T) {
 		noisePos byte
 		lock     uint16
 		d        [3]byte
-		sp       [3]int
+		sp       [3]uint16
 	}
 	var candidates []cand
 	for np := 0; np < 8; np++ {
@@ -1213,7 +1441,7 @@ func TestRedTeamNullHashAttackNoKPA(t *testing.T) {
 								candidates = append(candidates, cand{
 									byte(np), uint16(c),
 									[3]byte{s0.d, s1.d, s2.d},
-									[3]int{s0.sp, s1.sp, s2.sp},
+									[3]uint16{s0.sp, s1.sp, s2.sp},
 								})
 							}
 						}
@@ -1226,36 +1454,51 @@ func TestRedTeamNullHashAttackNoKPA(t *testing.T) {
 
 	// ---------- Phase 3: full-decrypt confirmation on every wire ----------
 	buildSeeds := func(c cand) [8]*Seed128 {
-		seeds := nullHashCandidateSeeds(c.noisePos, c.lock, [3]byte{}, [3]byte{})
-		seeds[2] = seedConst(c.d[0], 2)
-		seeds[3] = seedConst(c.d[1], 3)
-		seeds[4] = seedConst(c.d[2], 4)
-		for j := 0; j < 3; j++ {
-			s := seedConst(0, byte(5+j))
-			s.Components[0] = uint64(c.sp[j])
-			seeds[5+j] = s
-		}
-		return seeds
+		return nullHashCandidateSeeds(c.noisePos, c.lock, c.d, c.sp)
 	}
+	type phase3Key [10]byte
+	makePhase3Key := func(c cand) phase3Key {
+		return phase3Key{
+			c.noisePos, c.d[0], c.d[1], c.d[2],
+			byte(c.sp[0] >> 8), byte(c.sp[0] & 0xFF),
+			byte(c.sp[1] >> 8), byte(c.sp[1] & 0xFF),
+			byte(c.sp[2] >> 8), byte(c.sp[2] & 0xFF),
+		}
+	}
+	type phase3Res struct {
+		ok   bool
+		rec0 string
+	}
+	phase3Cache := map[phase3Key]phase3Res{}
 	var confirmed []cand
 	for _, c := range candidates {
-		seeds := buildSeeds(c)
-		okBoth := true
-		recLen := -1
-		for w := 0; w < W; w++ {
-			rec, derr := Decrypt3x128Cfg(cfg, seeds[0], seeds[1], seeds[2], seeds[3], seeds[4], seeds[5], seeds[6], seeds[7], cts[w])
-			if derr != nil || len(rec) == 0 {
-				okBoth = false
-				break
+		pk := makePhase3Key(c)
+		res, seen := phase3Cache[pk]
+		if !seen {
+			seeds := buildSeeds(c)
+			okBoth := true
+			recLen := -1
+			var rec0 string
+			for w := 0; w < W; w++ {
+				rec, derr := Decrypt3x128Cfg(cfg, seeds[0], seeds[1], seeds[2], seeds[3], seeds[4], seeds[5], seeds[6], seeds[7], cts[w])
+				if derr != nil || len(rec) == 0 {
+					okBoth = false
+					break
+				}
+				if w == 0 {
+					rec0 = string(rec)
+				}
+				if recLen == -1 {
+					recLen = len(rec)
+				} else if len(rec) != recLen {
+					okBoth = false
+					break
+				}
 			}
-			if recLen == -1 {
-				recLen = len(rec)
-			} else if len(rec) != recLen {
-				okBoth = false
-				break
-			}
+			res = phase3Res{ok: okBoth, rec0: rec0}
+			phase3Cache[pk] = res
 		}
-		if okBoth {
+		if res.ok {
 			confirmed = append(confirmed, c)
 		}
 	}
@@ -1266,7 +1509,9 @@ func TestRedTeamNullHashAttackNoKPA(t *testing.T) {
 	funcKey := func(c cand) string {
 		return string([]byte{c.noisePos, byte(c.lock >> 8), byte(c.lock & 0xFF),
 			norm(c.d[0]), norm(c.d[1]), norm(c.d[2]),
-			byte(c.sp[0]), byte(c.sp[1]), byte(c.sp[2])})
+			byte(c.sp[0] >> 8), byte(c.sp[0] & 0xFF),
+			byte(c.sp[1] >> 8), byte(c.sp[1] & 0xFF),
+			byte(c.sp[2] >> 8), byte(c.sp[2] & 0xFF)})
 	}
 	funcSet := map[string]cand{}
 	for _, c := range confirmed {
@@ -1284,8 +1529,8 @@ func TestRedTeamNullHashAttackNoKPA(t *testing.T) {
 	t.Logf("  Phase 1 (COBS gate):  %v", phase1.Sub(start))
 	t.Logf("  Phase 2 (join):       %v", phase2.Sub(phase1))
 	t.Logf("  Phase 3 (verify):     %v", elapsed-phase2.Sub(start))
-	t.Logf("per-region decodes enumerated: %d (%d wires x 8 noisePos x 256 dataSeed x [0,third) startPixel)",
-		W*(8*256*(third+third+thirdPixels2)), W)
+	t.Logf("per-region decodes enumerated: %d (%d wires x 8 noisePos x 256 dataSeed x %d startSeed states)",
+		W*(8*256*(regSpMax[0]+regSpMax[1]+regSpMax[2])), W, regSpMax[0])
 	t.Logf("Phase 1 cross-ct COBS survivors (all regions/noisePos): %d", total1)
 	t.Logf("Phase 2 length-join candidates: %d", len(candidates))
 	t.Logf("survivors after full verification: %d raw, %d functionally distinct, %d distinct lock constants",
@@ -1321,8 +1566,13 @@ func TestRedTeamNullHashAttackNoKPA(t *testing.T) {
 		truthNoisePos, truthLock, truthDLo[0], truthDLo[1], truthDLo[2], truthSP[0], truthSP[1], truthSP[2])
 	matchTruth := false
 	for _, c := range funcSet {
-		if c.noisePos == byte(truthNoisePos) && c.lock == truthLock &&
-			c.sp[0] == truthSP[0] && c.sp[1] == truthSP[1] && c.sp[2] == truthSP[2] &&
+		spOK := int(c.sp[0]>>8)%third == truthSP[0] && int(c.sp[1]>>8)%third == truthSP[1] && int(c.sp[2]>>8)%thirdPixels2 == truthSP[2]
+		if !forcetier.BarriersDesyncOff() {
+			spOK = spPeers3[0][c.noisePos][spPeerKey{c.d[0], c.sp[0]}][tv("K_startSeed_1")] &&
+				spPeers3[1][c.noisePos][spPeerKey{c.d[1], c.sp[1]}][tv("K_startSeed_2")] &&
+				spPeers3[2][c.noisePos][spPeerKey{c.d[2], c.sp[2]}][tv("K_startSeed_3")]
+		}
+		if c.noisePos == byte(truthNoisePos) && c.lock == truthLock && spOK &&
 			norm(c.d[0]) == norm(truthDLo[0]) && norm(c.d[1]) == norm(truthDLo[1]) && norm(c.d[2]) == norm(truthDLo[2]) {
 			matchTruth = true
 		}
@@ -1331,34 +1581,20 @@ func TestRedTeamNullHashAttackNoKPA(t *testing.T) {
 
 	kpa0, _ := os.ReadFile(filepath.Join(dir, "kpa_0.bin"))
 	fullMatch := false
-	for _, c := range funcSet {
-		seeds := buildSeeds(c)
-		rec, derr := Decrypt3x128Cfg(cfg, seeds[0], seeds[1], seeds[2], seeds[3], seeds[4], seeds[5], seeds[6], seeds[7], cts[0])
-		if derr == nil && len(kpa0) > 0 && string(rec) == string(kpa0) {
-			fullMatch = true
-			break
-		}
-	}
-	t.Logf("a survivor reproduces the FULL original plaintext of wire 0: %v", fullMatch)
-
-	// Diagnostic (post-hoc, labonly): how many DISTINCT wire-0 plaintexts
-	// do the survivors decrypt to, and how many equal the true plaintext?
-	// This separates "the lock low byte is a functional don't-care (all
-	// survivors -> one plaintext)" from "genuine residual ambiguity (many
-	// distinct candidate plaintexts)".
 	distinctPT := map[string]int{}
 	trueMatchCount := 0
 	for _, c := range funcSet {
-		seeds := buildSeeds(c)
-		rec, derr := Decrypt3x128Cfg(cfg, seeds[0], seeds[1], seeds[2], seeds[3], seeds[4], seeds[5], seeds[6], seeds[7], cts[0])
-		if derr != nil {
+		res := phase3Cache[makePhase3Key(c)]
+		if !res.ok {
 			continue
 		}
-		distinctPT[string(rec)]++
-		if len(kpa0) > 0 && string(rec) == string(kpa0) {
+		distinctPT[res.rec0]++
+		if len(kpa0) > 0 && res.rec0 == string(kpa0) {
+			fullMatch = true
 			trueMatchCount++
 		}
 	}
+	t.Logf("a survivor reproduces the FULL original plaintext of wire 0: %v", fullMatch)
 	t.Logf("survivors decrypt wire 0 to %d DISTINCT plaintexts; %d survivor(s) equal the true plaintext", len(distinctPT), trueMatchCount)
 	if len(lockSet) > 1 {
 		t.Logf("NOTE: %d lock constants survive; %d distinct plaintexts. See report on the structural COA limit.", len(lockSet), len(distinctPT))
@@ -1413,6 +1649,11 @@ func TestRedTeamNullHashAttackCribNoStartPixels(t *testing.T) {
 			S2 int `json:"region_2"`
 			S3 int `json:"region_3"`
 		} `json:"start_pixels"`
+		StartSeedConst struct {
+			S1 int `json:"region_1"`
+			S2 int `json:"region_2"`
+			S3 int `json:"region_3"`
+		} `json:"start_seed_const"`
 		Truth map[string]string `json:"truth_labonly"`
 	}
 	if err := json.Unmarshal(metaRaw, &meta); err != nil {
@@ -1458,6 +1699,7 @@ func TestRedTeamNullHashAttackCribNoStartPixels(t *testing.T) {
 	const lanePrefixLen = 16 // 8 crib+len chunks x 2 bytes/lane
 	probe := make([]byte, ptLen)
 	copy(probe, crib)
+	bp0 := buildLockBatchPRF48_128Cfg(cfg, seedConst(0, 0), attackerNonce)
 
 	numCPU := runtime.NumCPU()
 	if numCPU > 12 {
@@ -1465,6 +1707,22 @@ func TestRedTeamNullHashAttackCribNoStartPixels(t *testing.T) {
 	}
 
 	start := time.Now()
+
+	// Precompute the logical-to-physical pixel permutations once per region.
+	var (
+		regSpMax    [3]int
+		regSpConsts [3][]uint16
+		regPerms    [3][]uint16
+	)
+	for i := 0; i < 3; i++ {
+		if i == 1 && widths[1] == widths[0] {
+			regSpMax[1] = regSpMax[0]
+			regSpConsts[1] = regSpConsts[0]
+			regPerms[1] = regPerms[0]
+			continue
+		}
+		regSpMax[i], regSpConsts[i], regPerms[i] = nullHashBuildRegionPerms128(5+i, widths[i], mainNonce)
+	}
 
 	// ---------- Phase A': index lock constants by crib lane prefixes ----------
 	type laneKey struct {
@@ -1497,11 +1755,16 @@ func TestRedTeamNullHashAttackCribNoStartPixels(t *testing.T) {
 					make([]byte, n),
 				}
 				splitForTriple48LockedInto(cfg, probe, bp, ps[0], ps[1], ps[2])
+				u0, u1, u2, stagePtr, stageBuf := desyncLaneDecrypt(ps[0], ps[1], ps[2], 2, bp)
+				ups := [3][]byte{u0, u1, u2}
 				for i := 0; i < 3; i++ {
-					if len(ps[i]) < lanePrefixLen {
+					if len(ups[i]) < lanePrefixLen {
 						continue
 					}
-					local[i] = append(local[i], laneKey{string(ps[i][:lanePrefixLen]), uint16(c)})
+					local[i] = append(local[i], laneKey{string(ups[i][:lanePrefixLen]), uint16(c)})
+				}
+				if stagePtr != nil {
+					releaseStage(stagePtr, stageBuf, len(stageBuf))
 				}
 			}
 			shardResults[w] = local
@@ -1522,12 +1785,14 @@ func TestRedTeamNullHashAttackCribNoStartPixels(t *testing.T) {
 	// Per (noisePos, region): lockConst -> witnesses (dataLo, startPixel).
 	type witness struct {
 		dLo byte
-		sp  int
+		sp  uint16
 	}
 	var regionHits [8][3]map[uint16][]witness
+	var spPeers [8][3]map[witness]map[uint16]bool
 	for np := 0; np < 8; np++ {
 		for i := 0; i < 3; i++ {
 			regionHits[np][i] = map[uint16][]witness{}
+			spPeers[np][i] = map[witness]map[uint16]bool{}
 		}
 	}
 	var mu sync.Mutex
@@ -1541,24 +1806,33 @@ func TestRedTeamNullHashAttackCribNoStartPixels(t *testing.T) {
 			go func(np, i int) {
 				defer wgB.Done()
 				w := widths[i]
+				spMax := regSpMax[i]
+				spConsts := regSpConsts[i]
+				perms := regPerms[i]
+				minFN := lens[i] + lanePrefixLen + 1
 				noiseSeed := seedConst(byte(np), 0)
-				startSeed := seedConst(0, 0)
+				physDecoded := make([]byte, caps[i])
+				firstNullPix := make([]byte, w)
 				decoded := make([]byte, caps[i])
 				local := map[uint16][]witness{}
+				localPeers := map[witness]map[uint16]bool{}
 				var localFrag []byte
 				var dc int64
 				for d := 0; d < 256; d++ {
 					dataSeed := seedConst(byte(d), 0)
-					for sp := 0; sp < w; sp++ {
-						startSeed.Components[0] = uint64(sp)
-						for k := range decoded {
-							decoded[k] = 0
-						}
-						process128Cfg(cfg, noiseSeed, dataSeed, startSeed, mainNonce,
-							regions[i], w, 1, decoded, false, 1, noiseCounterBase(i, widths[0]))
+					for k := range physDecoded {
+						physDecoded[k] = 0
+					}
+					processChunk128(cfg, noiseSeed, dataSeed, mainNonce,
+						regions[i], physDecoded, 0, w, 0, w, w*DataBitsPerPixel, chooseMicroBatch(caps[i]), false, noiseCounterBase(i, widths[0]))
+					nullHashFillFirstNullPix(physDecoded, firstNullPix, w)
+					seenLane := map[string]uint16{}
+					for sp := 0; sp < spMax; sp++ {
+						spConst := spConsts[sp]
+						row := perms[sp*w : (sp+1)*w]
 						dc++
-						fn := firstNull(decoded)
-						if fn == len(decoded) || !cobsStructurallyValid(decoded[:fn]) {
+						fn, hasNull := nullHashDecodeUpToFirstNull(physDecoded, firstNullPix, row, minFN, decoded)
+						if !hasNull || !cobsStructurallyValid(decoded[:fn]) {
 							continue
 						}
 						p := cobsDecodeInto(make([]byte, fn), decoded[:fn])
@@ -1569,9 +1843,18 @@ func TestRedTeamNullHashAttackCribNoStartPixels(t *testing.T) {
 						// fragment; its length is public, so the crib anchor
 						// is taken past it and the fragment is kept as an
 						// output of the recovery.
-						if lcs, ok := lockIdx[i][string(p[lens[i]:lens[i]+lanePrefixLen])]; ok {
+						bLane := nullHashUndesyncSingleLane(p[lens[i]:], i, bp0)
+						if lcs, ok := lockIdx[i][string(bLane[:lanePrefixLen])]; ok {
+							laneKeyStr := string(p)
+							if repSp, dup := seenLane[laneKeyStr]; dup {
+								localPeers[witness{byte(d), repSp}][spConst] = true
+								continue
+							}
+							seenLane[laneKeyStr] = spConst
+							wit := witness{byte(d), spConst}
+							localPeers[wit] = map[uint16]bool{spConst: true}
 							for _, lc := range lcs {
-								local[lc] = append(local[lc], witness{byte(d), sp})
+								local[lc] = append(local[lc], wit)
 							}
 							if localFrag == nil {
 								localFrag = append([]byte(nil), p[:lens[i]]...)
@@ -1582,6 +1865,9 @@ func TestRedTeamNullHashAttackCribNoStartPixels(t *testing.T) {
 				mu.Lock()
 				for lc, ws := range local {
 					regionHits[np][i][lc] = append(regionHits[np][i][lc], ws...)
+				}
+				for wit, peers := range localPeers {
+					spPeers[np][i][wit] = peers
 				}
 				if localFrag != nil && fragWitness[i] == nil {
 					fragWitness[i] = localFrag
@@ -1599,7 +1885,7 @@ func TestRedTeamNullHashAttackCribNoStartPixels(t *testing.T) {
 		noisePos byte
 		lock     uint16
 		d        [3]byte
-		sp       [3]byte
+		sp       [3]uint16
 	}
 	var preJoin []cand
 	for np := 0; np < 8; np++ {
@@ -1615,7 +1901,7 @@ func TestRedTeamNullHashAttackCribNoStartPixels(t *testing.T) {
 						preJoin = append(preJoin, cand{
 							byte(np), lc,
 							[3]byte{a.dLo, b.dLo, cc.dLo},
-							[3]byte{byte(a.sp), byte(b.sp), byte(cc.sp)},
+							[3]uint16{a.sp, b.sp, cc.sp},
 						})
 					}
 				}
@@ -1628,13 +1914,30 @@ func TestRedTeamNullHashAttackCribNoStartPixels(t *testing.T) {
 		c   cand
 		rec []byte
 	}
+	type verifyKey [10]byte
+	type verifyRes struct {
+		ok  bool
+		rec []byte
+	}
+	verifyCache := map[verifyKey]verifyRes{}
 	var survivors []survivor
 	restOK := func(rest []byte) bool { return printableASCII(rest) }
 	for _, c := range preJoin {
-		seeds := nullHashCandidateSeeds(c.noisePos, c.lock, c.d, c.sp)
-		ok, rec := verifyRecovered(cfg, seeds, ct, crib, nullHashCribLen, restOK)
-		if ok {
-			survivors = append(survivors, survivor{c, rec})
+		vk := verifyKey{
+			c.noisePos, c.d[0], c.d[1], c.d[2],
+			byte(c.sp[0] >> 8), byte(c.sp[0] & 0xFF),
+			byte(c.sp[1] >> 8), byte(c.sp[1] & 0xFF),
+			byte(c.sp[2] >> 8), byte(c.sp[2] & 0xFF),
+		}
+		res, seen := verifyCache[vk]
+		if !seen {
+			seeds := nullHashCandidateSeeds(c.noisePos, c.lock, c.d, c.sp)
+			ok, rec := verifyRecovered(cfg, seeds, ct, crib, nullHashCribLen, restOK)
+			res = verifyRes{ok, rec}
+			verifyCache[vk] = res
+		}
+		if res.ok {
+			survivors = append(survivors, survivor{c, res.rec})
 		}
 	}
 	elapsed := time.Since(start)
@@ -1644,7 +1947,10 @@ func TestRedTeamNullHashAttackCribNoStartPixels(t *testing.T) {
 	norm := func(x byte) byte { return byte((int(x)%7)<<5) | (x >> 3) }
 	funcKey := func(c cand) string {
 		return string([]byte{c.noisePos, byte(c.lock >> 8), byte(c.lock & 0xFF),
-			norm(c.d[0]), norm(c.d[1]), norm(c.d[2]), c.sp[0], c.sp[1], c.sp[2]})
+			norm(c.d[0]), norm(c.d[1]), norm(c.d[2]),
+			byte(c.sp[0] >> 8), byte(c.sp[0] & 0xFF),
+			byte(c.sp[1] >> 8), byte(c.sp[1] & 0xFF),
+			byte(c.sp[2] >> 8), byte(c.sp[2] & 0xFF)})
 	}
 	funcSet := map[string]cand{}
 	for _, s := range survivors {
@@ -1655,7 +1961,7 @@ func TestRedTeamNullHashAttackCribNoStartPixels(t *testing.T) {
 	t.Logf("wall-clock total:       %v", elapsed)
 	t.Logf("  Phase A' (2^16 splits): %v", phaseA.Sub(start))
 	t.Logf("  Phase B + verify:       %v", elapsed-phaseA.Sub(start))
-	t.Logf("per-region decodes: %d (8 noisePos x 256 dataSeed x [0,third) startPixel x 3 regions)", decodeCount)
+	t.Logf("per-region decodes: %d (8 noisePos x 256 dataSeed x %d startSeed states x 3 regions)", decodeCount, regSpMax[0])
 	t.Logf("pre-join candidates: %d", len(preJoin))
 	t.Logf("survivors after full verification: %d raw, %d functionally distinct", len(survivors), len(funcSet))
 	recoveredIl := make([]byte, currentNonceSizeCfg(cfg))
@@ -1666,9 +1972,14 @@ func TestRedTeamNullHashAttackCribNoStartPixels(t *testing.T) {
 	if len(funcSet) == 0 {
 		t.Fatalf("Stage 2.5 attack failed: no survivor")
 	}
+	shown := 0
 	for _, c := range funcSet {
-		t.Logf("  survivor: noisePos=%d lock=0x%04x dLo=%02x %02x %02x sp=%d,%d,%d",
-			c.noisePos, c.lock, c.d[0], c.d[1], c.d[2], int(c.sp[0]), int(c.sp[1]), int(c.sp[2]))
+		t.Logf("  survivor: noisePos=%d lock=0x%04x dLo=%02x %02x %02x sp=0x%04x,0x%04x,0x%04x",
+			c.noisePos, c.lock, c.d[0], c.d[1], c.d[2], c.sp[0], c.sp[1], c.sp[2])
+		if shown++; shown >= 40 {
+			t.Logf("  ... (%d more)", len(funcSet)-shown)
+			break
+		}
 	}
 
 	// ---------- Lab-only validation (post-hoc, decorative) ----------
@@ -1689,8 +2000,13 @@ func TestRedTeamNullHashAttackCribNoStartPixels(t *testing.T) {
 		truthNoisePos, truthLock, truthDLo[0], truthDLo[1], truthDLo[2], truthSP[0], truthSP[1], truthSP[2])
 	matchTruth := false
 	for _, c := range funcSet {
-		if c.noisePos == byte(truthNoisePos) && c.lock == truthLock &&
-			int(c.sp[0]) == truthSP[0] && int(c.sp[1]) == truthSP[1] && int(c.sp[2]) == truthSP[2] &&
+		spOK := int(c.sp[0]>>8)%third == truthSP[0] && int(c.sp[1]>>8)%third == truthSP[1] && int(c.sp[2]>>8)%thirdPixels2 == truthSP[2]
+		if !forcetier.BarriersDesyncOff() {
+			spOK = spPeers[c.noisePos][0][witness{c.d[0], c.sp[0]}][tv("K_startSeed_1")] &&
+				spPeers[c.noisePos][1][witness{c.d[1], c.sp[1]}][tv("K_startSeed_2")] &&
+				spPeers[c.noisePos][2][witness{c.d[2], c.sp[2]}][tv("K_startSeed_3")]
+		}
+		if c.noisePos == byte(truthNoisePos) && c.lock == truthLock && spOK &&
 			norm(c.d[0]) == norm(truthDLo[0]) && norm(c.d[1]) == norm(truthDLo[1]) && norm(c.d[2]) == norm(truthDLo[2]) {
 			matchTruth = true
 		}

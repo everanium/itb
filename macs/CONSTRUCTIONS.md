@@ -14,7 +14,7 @@ For the standards' own conformance, refer to the upstream specifications and lib
 
 - NIST SP 800-185 §4.3.1 — KMAC256.
 - RFC 2104 / FIPS 198-1 — HMAC; RFC 4231 — HMAC-SHA-256 test vectors.
-- `golang.org/x/crypto/sha3` — the cSHAKE256 sponge underlying KMAC256.
+- `macs/internal/keccakasm` — the cSHAKE256 sponge underlying KMAC256 (pinned against `golang.org/x/crypto/sha3` and pycryptodome in tests).
 - `crypto/hmac` + `crypto/sha256` — the stdlib HMAC-SHA-256.
 - `github.com/zeebo/blake3` — BLAKE3 native keyed mode (BLAKE3 spec §2.3).
 
@@ -26,7 +26,7 @@ Listed in canonical registry order (referenced by `triple.Profile.MacName` and t
 
 | # | Registry name | Underlying primitive | Construction shape | Key (min / recommended) | Tag |
 |---|---|---|---|---|---|
-| 1 | `kmac256` | cSHAKE256 (`x/crypto/sha3`) | NIST SP 800-185 KMAC256, `L = 256`, empty customization | 16 / 32 bytes | 32 bytes |
+| 1 | `kmac256` | cSHAKE256 (`macs/internal/keccakasm`) | NIST SP 800-185 KMAC256, `L = 256`, empty customization | 16 / 32 bytes | 32 bytes |
 | 2 | `hmac-sha256` | SHA-256 (`crypto/sha256`) | RFC 2104 / FIPS 198-1 HMAC | 16 / 32 bytes | 32 bytes |
 | 3 | `hmac-blake3` | BLAKE3 keyed (`zeebo/blake3.NewKeyed`) | BLAKE3 **native keyed mode** — **not** RFC 2104 HMAC | 32 / 32 bytes | 32 bytes |
 
@@ -34,16 +34,16 @@ Listed in canonical registry order (referenced by `triple.Profile.MacName` and t
 
 ### KMAC256 (registry: `kmac256`)
 
-**Underlying primitive.** cSHAKE256, the customizable SHAKE256 sponge (`golang.org/x/crypto/sha3`).
+**Underlying primitive.** cSHAKE256, the customizable SHAKE256 sponge (`macs/internal/keccakasm`, `keccakasm.CShake256`).
 
 **Construction.** NIST SP 800-185 §4.3.1 KMAC256 with requested output length `L = 256` bits and an empty customization string `S`. Defined in `kmac256.go::KMAC256` (a thin wrapper over `KMAC256WithCustomization(key, nil)`). This is the standard, conformant KMAC256 — no divergence.
 
 **Per-call flow** (data `X`):
 
-1. Once at construction: build `prefix = bytepad(encode_string(K), 136)` (136 = the cSHAKE256 rate in bytes) and `suffix = right_encode(256)`, then absorb `prefix` into a template `cSHAKE256` initialised with function-name `N = "KMAC"` and customization `S`.
-2. Per call: clone the template (sponge-state copy), `Write(X)`, `Write(suffix)`, then `Read` 32 output bytes.
+1. Once at construction: build `prefix = bytepad(encodeString(K), 136)` (136 = the cSHAKE256 rate in bytes) and `suffix = rightEncode(256)`, then absorb `prefix` into a template `keccakasm.CShake256` initialised with function-name `N = "KMAC"` and customization `S`.
+2. Per call: copy the template state into a stack-allocated `var h keccakasm.CShake256` via `h.CopyFrom(tmpl)`, `Write(X)`, `Write(suffix)`, extract 32 output bytes via `h.Sum256Into(ret)`, and scrub the stack frame via `wipe.CallStack2K`.
 
-The `left_encode` / `right_encode` / `encode_string` / `bytepad` helpers in `kmac256.go` implement NIST SP 800-185 Algorithms 5 / 6 / 3 / 4 respectively; the bit-exact KAT against pycryptodome's KMAC256 pins their correctness.
+The `leftEncode` / `rightEncode` / `encodeString` / `bytepad` helpers in `kmac256.go` implement NIST SP 800-185 Algorithms 5 / 6 / 3 / 4 respectively; the bit-exact KAT against pycryptodome's KMAC256 pins their correctness.
 
 **Customization.** The shipped factory uses an empty `S`. `KMAC256WithCustomization` exposes a non-empty `S` for callers needing domain separation across distinct usages of the same key.
 
@@ -51,7 +51,7 @@ The `left_encode` / `right_encode` / `encode_string` / `bytepad` helpers in `kma
 
 **Security claim.** Inherits KMAC256's PRF / MAC security argument verbatim (cSHAKE256 modelled as a random oracle / sponge-PRF).
 
-**AVX-512 tier.** On amd64 hosts with the AVX-512 F/BW/VL/DQ baseline the factory routes through the vendored Keccak-f[1600] kernel in `macs/internal/keccakasm/` (one lane per XMM register, VPTERNLOGQ theta/chi folds, VPROLQ rho, pi as register renaming, fused rate-block absorb). The NIST SP 800-185 framing above is tier-independent; the two tiers emit byte-identical tags.
+**Hardware & portable tiers.** On amd64 hosts with the AVX-512 F/BW/VL/DQ baseline, `macs/internal/keccakasm/` routes through the vendored AVX-512 Keccak-f[1600] kernel (one lane per XMM register, `VPTERNLOGQ` theta/chi folds, `VPROLQ` rho, pi as register renaming, fused rate-block absorb), while all other hosts and `-tags noitbasm` builds execute the zeroizable portable Go permutation `keccakF1600Generic`. The NIST SP 800-185 framing above is tier-independent; the two tiers emit byte-identical tags.
 
 ### HMAC-SHA256 (registry: `hmac-sha256`)
 
@@ -76,8 +76,8 @@ The `left_encode` / `right_encode` / `encode_string` / `bytepad` helpers in `kma
 
 **Per-call flow** (data):
 
-1. Once at construction: `template = blake3.NewKeyed(key)` (the 32-byte key replaces the IV constants in BLAKE3's chunk chaining values — the spec keyed-PRF mode, §2.3).
-2. Per call: clone the template (internal-state copy), `Write` the data, finalise to 32 bytes. Each clone is independent, so concurrent goroutines may call the closure in parallel.
+1. Once at construction: `template = blake3.NewKeyed(key)` (the 32-byte key replaces the IV constants in BLAKE3's chunk chaining values — the spec keyed-PRF mode, §2.3), backed by a `sync.Pool` of pre-cloned instances (`newBLAKE3MACPool`).
+2. Per call: check out an entry from the pool (`template.Clone()` runs only on pool miss), `Write` the data, finalise to 32 bytes, and scrub the entry via `scrubBLAKE3MACEntry` + `wipe.CallStack2K`. Each pooled entry is independent, so concurrent goroutines may call the closure in parallel.
 
 **Why this is not RFC 2104 HMAC.** The name `hmac-blake3` is a **deliberate misnomer**, not a claim of the nested `H(K ⊕ opad ‖ H(K ⊕ ipad ‖ M))` HMAC construction. BLAKE3-keyed mode is chosen here **precisely because the BLAKE3 authors recommend it instead of HMAC**: BLAKE3's keyed mode is itself a sound keyed PRF (BLAKE3 spec §6.1), so the nested HMAC wrapper RFC 2104 builds around an unkeyed Merkle-Damgård hash is unnecessary with BLAKE3 — and would only add cost without adding security. Wrapping BLAKE3 in literal RFC 2104 HMAC is redundant for this primitive and adds cost without cryptographic benefit.
 
@@ -91,7 +91,7 @@ The registry name is nonetheless kept as `hmac-blake3` for two reasons. First, *
 
 **Uniform 32-byte tag.** Every shipped primitive emits exactly 32 bytes regardless of key length, so a consumer does not vary its authenticated-payload layout based on which MAC was selected — a binding-friendly invariant every `triple.Profile` fixed-tag consumer relies on.
 
-**Pre-key once, clone / pool per call.** Each factory absorbs its key into a long-lived template once, then reuses it per call with no key-derivation overhead: KMAC256 clones a cSHAKE256 template pre-absorbed up through `bytepad(encode_string(K), 136)`; HMAC-SHA-256 draws a pre-keyed `hmac.Hash` from a `sync.Pool` and `Reset()`s it to the post-ipad state; HMAC-BLAKE3 clones a `blake3.NewKeyed` template. Every shipped closure is safe for concurrent invocation across goroutines.
+**Pre-key once, copy / pool per call.** Each factory absorbs its key into a long-lived template once, then reuses it per call with no key-derivation overhead: KMAC256 copies a `keccakasm.CShake256` template (pre-absorbed up through `bytepad(encodeString(K), 136)`) into a stack-allocated sponge via `CopyFrom`; HMAC-SHA-256 draws a pre-keyed `hmac.Hash` from a `sync.Pool`, `Reset()`s it to the post-ipad state, and scrubs block buffers on return via `scrubHMACSHA256Entry`; HMAC-BLAKE3 draws a pre-cloned `blake3.NewKeyed` entry from `newBLAKE3MACPool` and scrubs it via `scrubBLAKE3MACEntry`. Every shipped closure is safe for concurrent invocation across goroutines.
 
 **No fixed-width-slot truncation.** Every shipped primitive is a native variable-length absorb primitive — the full message (the three region payloads plus the stream binding, which is what the MAC authenticates) reaches the tag with no silent truncation hidden in a fixed-width nonce or IV slot. The trap documented for the keyed-hash registry in [`hashes/CONSTRUCTIONS.md`](../hashes/CONSTRUCTIONS.md) does not arise here.
 

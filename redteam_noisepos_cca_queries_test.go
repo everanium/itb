@@ -35,6 +35,8 @@ import (
 	"sort"
 	"sync"
 	"testing"
+
+	"github.com/everanium/itb/internal/forcetier"
 )
 
 type ccaQueryTrialStats struct {
@@ -154,6 +156,23 @@ func TestRedTeamNoisePosCCAQueryStats(t *testing.T) {
 
 				for i := 0; i < 3; i++ {
 					T := sizes[i]
+					physToLog := make([]int, T)
+					if forcetier.BarriersDesyncOff() || T < minDesyncRegionPixels {
+						for j := 0; j < T; j++ {
+							physToLog[j] = (j - truthSP[i] + T) % T
+						}
+					} else {
+						sched := s[5+i].deriveSubregionSchedule(nonce, truthSP[i], T)
+						for step := 0; step < sched.k; step++ {
+							m := sched.size[step]
+							off := sched.offset[step]
+							stOff := sched.start[step]
+							lOff := sched.logOff[step]
+							for q := 0; q < m; q++ {
+								physToLog[off+(stOff+q)%m] = lOff + q
+							}
+						}
+					}
 					for j := 0; j < T; j++ {
 						off := containerOff + (base[i]+j)*Channels
 						found := 7
@@ -177,7 +196,7 @@ func TestRedTeamNoisePosCCAQueryStats(t *testing.T) {
 							st.confirm8Queries += queries
 						}
 
-						pStep := (j - truthSP[i] + T) % T
+						pStep := physToLog[j]
 						lo, hi := s[0].blockHash128(buf, base[i]+pStep)
 						if found != int(noisePosition(lo, hi)) {
 							st.mismatchedPixels++

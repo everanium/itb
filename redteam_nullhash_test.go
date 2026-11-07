@@ -268,6 +268,11 @@ func writeSingleNullHashExpose(t *testing.T, outDir string, keyBits, ptSize, bar
 			"region_2": sp2,
 			"region_3": sp3,
 		},
+		"start_seed_const": map[string]int{
+			"region_1": int(nullHashConstant(s1.Components)),
+			"region_2": int(nullHashConstant(s2.Components)),
+			"region_3": int(nullHashConstant(s3.Components)),
+		},
 		"truth_labonly": truth,
 	}
 

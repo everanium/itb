@@ -13,7 +13,7 @@ plugins {
 }
 
 group = "io.github.everanium"
-version = "0.8.5"
+version = "0.9.0"
 
 repositories {
     mavenCentral()

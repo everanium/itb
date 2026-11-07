@@ -324,13 +324,7 @@ func decryptStreamAuthenticated3x512CfgInto(cfg *Config, dst []byte, noiseSeed, 
 
 	var decodedPtrs [3]*[]byte
 	decoded := [3][]byte{}
-	defer func() {
-		for i := range decodedPtrs {
-			if decodedPtrs[i] != nil {
-				releaseBuffer(decodedPtrs[i], decoded[i])
-			}
-		}
-	}()
+	defer releaseTripleBuffers(&decodedPtrs, &decoded)
 	for i := 0; i < 3; i++ {
 		var decBuf []byte
 		decodedPtrs[i], decBuf = acquireBuffer(caps[2])

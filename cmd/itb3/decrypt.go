@@ -13,6 +13,7 @@ import (
 type decryptOpts struct {
 	inputPath  string
 	outputPath string
+	desync     string
 }
 
 // newDecryptCmd wires the `itb3 decrypt` cobra command.
@@ -28,8 +29,12 @@ wire is routed through the Single Message or Streaming cipher surface;
 the dispatch is automatic. MAC failures surface with exit code 3 and a
 neutral message so the CLI does not become an oracle.
 
-    -i <file>   input ciphertext (default stdin; refused when stdin is a TTY)
-    -o <file>   output plaintext  (default stdout)`,
+    -i <file>          input ciphertext (default stdin; refused when stdin is a TTY)
+    -o <file>          output plaintext  (default stdout)
+    --desync <on|off>  Desynchronized Interlocked Barrier mode (default on)
+                       WARNING: DO NOT DISABLE DESYNC FOR PRODUCTION USE —
+                       FOR SYNCHRONOUS WIRE CONVERSION / DECRYPTION AND
+                       RESEARCH BASELINES ONLY.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runDecrypt(args[0], opts)
 		},
@@ -37,11 +42,18 @@ neutral message so the CLI does not become an oracle.
 	f := cmd.Flags()
 	f.StringVarP(&opts.inputPath, "input", "i", "", "input ciphertext file (default stdin when piped)")
 	f.StringVarP(&opts.outputPath, "output", "o", "", "output plaintext file (default stdout)")
+	f.StringVar(&opts.desync, "desync", "", desyncFlagWarning)
 	return cmd
 }
 
 // runDecrypt is the decrypt handler body.
 func runDecrypt(blobPath string, opts decryptOpts) error {
+	restoreDesync, err := applyDesyncFlag("decrypt", opts.desync)
+	if err != nil {
+		return err
+	}
+	defer restoreDesync()
+
 	pipe, prof, err := loadPipeline("decrypt", blobPath)
 	if err != nil {
 		return err

@@ -21,8 +21,8 @@ After any generator change, run the `--check` form and confirm
 ## Fused ChainHash cascade kernels — `gen_fused_kernels.py`
 
 The fused-cascade kernels that evaluate the whole `Seed128.ChainHash128`
-cascade in one call (see `internal/aesitbasm/aesitbasm_fused.go`): four
-per-pixel nonce-buffer shapes, `aesitb_fusedchain128_<shape>x4_<tier>_amd64.s` (tiers aesni / vex /
+cascade in one call (see `internal/aesitbasm/aesitbasm_fused.go`): the three
+per-pixel nonce-buffer shapes (20 / 36 / 68) and the 13-byte Interlocked Barrier fill shape (13), `aesitb_fusedchain128_<shape>x4_<tier>_amd64.s` (tiers aesni / vex /
 vaesavx2 / avx512), `aesitb_fusedchain128_<shape>x1_<tier>_amd64.s` (tiers
 aesni / vex), `aesitb_fusedchain128_<shape>x{1,4}_neon_arm64.s`, and — at
 the three nonce-buf shapes 20 / 36 / 68 only —

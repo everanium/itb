@@ -23,9 +23,9 @@ In FFI-stable index order:
 
 | # | Name (FFI)    | Key size | Tag size | Caching |
 |---|---------------|---------:|---------:|---------|
-| 0 | `kmac256`     | ≥16 B    | 32 B     | cSHAKE256 template with key absorbed once, `Clone()` per call |
+| 0 | `kmac256`     | ≥16 B    | 32 B     | `keccakasm.CShake256` template with key absorbed once, stack `CopyFrom` per call |
 | 1 | `hmac-sha256` | ≥16 B    | 32 B     | `sync.Pool` of `hmac.New(sha256.New, key)` instances |
-| 2 | `hmac-blake3` | 32 B     | 32 B     | `blake3.NewKeyed(key)` template with `Clone()` per call |
+| 2 | `hmac-blake3` | 32 B     | 32 B     | `sync.Pool` of pre-cloned `blake3.NewKeyed(key)` instances |
 
 `kmac256` follows NIST SP 800-185 with output length L = 256 bits.
 `hmac-sha256` follows RFC 2104 with SHA-256. `hmac-blake3` uses
@@ -131,12 +131,7 @@ and `HMAC-BLAKE3` take the key as their only argument — there is
 no separate `WithKey` variant since the key is already the only
 state the factory holds.
 
-On amd64 hosts with the AVX-512 F/BW/VL/DQ baseline, `KMAC256`
-routes through a vendored AVX-512 Keccak-f[1600] kernel in
-`macs/internal/keccakasm/` (Tier A only; other hosts and
-`-tags noitbasm` builds keep the stdlib-backed scalar cSHAKE256).
-Both tiers produce byte-identical tags — pinned by a 200-fixture
-parity oracle and the bit-exact KAT.
+`KMAC256` runs through `macs/internal/keccakasm/` (`keccakasm.CShake256`), using the vendored AVX-512 Keccak-f[1600] kernel on amd64 hosts with the AVX-512 F/BW/VL/DQ baseline and the zeroizable portable Go permutation `keccakF1600Generic` on all other hosts and `-tags noitbasm` builds. Both tiers produce byte-identical tags — pinned by a 200-fixture parity oracle and the bit-exact KAT.
 
 ## High-level facade — `triple.Pipeline`
 

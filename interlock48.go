@@ -413,6 +413,12 @@ type lockBatchPRF48 struct {
 	// pinned by the batch-32 parity tests.
 	fillRanksSuper32 func(s *lockFillScratch48, groupIdxBase uint64, prf []uint64)
 
+	// desyncWords evaluates the two 13-byte Layer II (0x06) blocks over
+	// lockComps and folds each 128-bit output via fullWidthFold into four
+	// 64-bit words driving cross-lane chunk-slot desynchronization. Nil
+	// when ITB_BARRIERS_DESYNC is set to off.
+	desyncWords func() [4]uint64
+
 	// lockComps holds the prepended [K || Components] cascade slice so
 	// wipe() can zero it in place without a heap-allocated closure once
 	// all interlock split / interleave workers have completed.
@@ -1223,12 +1229,17 @@ func interleaveTriple48WorkerBody(gs, ge, M, factor int, result, p0, p1, p2 []by
 // original payload extent, and the lanes are written into the
 // caller-provided p0 / p1 / p2, each of at least
 // tripleLaneLen(len(data)) bytes.
-func splitForTriple48LockedInto(cfg *Config, data []byte, bp lockBatchPRF48, p0, p1, p2 []byte) {
+func splitForTriple48RawInto(cfg *Config, data []byte, bp lockBatchPRF48, p0, p1, p2 []byte) {
 	var head [4]byte
 	binary.BigEndian.PutUint32(head[:], uint32(len(data)))
 	splitTriple48LockedBatchInto(framedSrc48{head: head[:], body: data}, p0, p1, p2, bp, cfg)
 	clear(head[:])
 	runtime.KeepAlive(&head)
+}
+
+func splitForTriple48LockedInto(cfg *Config, data []byte, bp lockBatchPRF48, p0, p1, p2 []byte) {
+	splitForTriple48RawInto(cfg, data, bp, p0, p1, p2)
+	desyncLaneEncrypt(p0, p1, p2, 2, bp)
 }
 
 // interleaveForTriple48LockedCfg is the inverse of
@@ -1265,6 +1276,10 @@ func interleaveForTriple48LockedCfgInto(cfg *Config, dst, p0, p1, p2 []byte, bp 
 	}
 	if len(p2) != origLen2 {
 		defer secureWipe(p2)
+	}
+	p0, p1, p2, desyncPtr, desyncBuf := desyncLaneDecrypt(p0, p1, p2, 2, bp)
+	if desyncPtr != nil {
+		defer releaseDesyncStage(desyncPtr, desyncBuf)
 	}
 	if cap(dst) > 0 {
 		M := len(p0) / 2

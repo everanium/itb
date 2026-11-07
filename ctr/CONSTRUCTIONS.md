@@ -30,7 +30,7 @@ For the standards' own conformance, refer to the upstream specifications and lib
 | `blake2s` | native keyed BLAKE2s-256 (RFC 7693), 32-byte output | PRF-counter mode | 32 B (collision bound 2^128) | 32 bytes | 16 bytes |
 | `blake3` | native keyed BLAKE3, 32-byte output | PRF-counter mode | 32 B (collision bound 2^128) | 32 bytes | 16 bytes |
 | `aescmac` | AES-128 (`github.com/everanium/areion`) | AES-128 in CTR mode (`areion.AES128CTRXOR`, bit-exact with `crypto/cipher.NewCTR`) | 16 B (NIST CTR, hardware-accelerated) | 16 bytes | 16 bytes |
-| `siphash24` | SipHash-2-4, 128-bit output (`github.com/dchest/siphash`) | PRF-counter mode | 16 B (collision bound 2^64) | 16 bytes | 16 bytes |
+| `siphash24` | SipHash-2-4, 128-bit output (`internal/siphash24`) | PRF-counter mode | 16 B (collision bound 2^64) | 16 bytes | 16 bytes |
 | `chacha20` | ChaCha20 (RFC 8439) | RFC 8439 ChaCha20 keystream | 64 B (standard RFC 8439 stream, SIMD-accelerated) | 32 bytes | 12 bytes |
 
 ## Areion-CTR (registry: `areion256`, `areion512`)
@@ -103,7 +103,7 @@ Each keystream block hashes a 24-byte PRF input (`nonce(16) || LE64(counter)`) a
 
 ## SipHash-CTR (registry: `siphash24`)
 
-**Underlying primitive.** SipHash-2-4 with 128-bit output (`github.com/dchest/siphash`, `Hash128`).
+**Underlying primitive.** SipHash-2-4 with 128-bit output (`internal/siphash24`, pinned in tests against `github.com/dchest/siphash`).
 
 **Construction.** PRF-counter mode. SipHash-2-4 is a 128-bit-keyed PRF / MAC; its 128-bit-output variant (SipHash-2-4-128) drives the keystream. Building a keystream from a PRF by hashing a counter is the standard counter-mode construction:
 

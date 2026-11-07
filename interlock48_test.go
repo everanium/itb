@@ -105,7 +105,7 @@ func TestBinomialC48Pascal(t *testing.T) {
 	}
 	// Anchor: C(48, 16) is the top-of-table value.
 	if binomialC48[48][16] != interlockA48 {
-		t.Fatalf("binomialC48[48][16] = %d, want %d", binomialC48[48][16], interlockA48)
+		t.Fatalf("binomialC48[48][16] = %d, want %d", binomialC48[48][16], uint64(interlockA48))
 	}
 	// Anchor: C(32, 16) is the m1Local top-of-range.
 	if binomialC48[32][16] != interlockB48 {

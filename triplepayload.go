@@ -3,6 +3,7 @@ package itb
 import (
 	"encoding/binary"
 	"fmt"
+	"runtime"
 	"sync"
 	"unsafe"
 
@@ -165,15 +166,38 @@ type triplePayloads struct {
 	payloadLen [3]int
 }
 
+// releaseTripleBuffers wipes and returns three per-third buffers to
+// bufferPool, parallelizing the zeroization across 3 goroutines for large
+// buffers.
+func releaseTripleBuffers(ptrs *[3]*[]byte, bufs *[3][]byte) {
+	if ptrs[0] != nil && ptrs[1] != nil && ptrs[2] != nil &&
+		len(bufs[0]) >= minDesyncParallelLaneBytes && runtime.GOMAXPROCS(0) > 1 {
+		var wg sync.WaitGroup
+		wg.Add(2)
+		for i := 0; i < 2; i++ {
+			go func(idx int) {
+				defer wg.Done()
+				releaseBuffer(ptrs[idx], bufs[idx])
+				ptrs[idx] = nil
+			}(i)
+		}
+		releaseBuffer(ptrs[2], bufs[2])
+		ptrs[2] = nil
+		wg.Wait()
+		return
+	}
+	for i := range ptrs {
+		if ptrs[i] != nil {
+			releaseBuffer(ptrs[i], bufs[i])
+			ptrs[i] = nil
+		}
+	}
+}
+
 // release wipes and returns every payload buffer to bufferPool. Safe to
 // call on a partially built set (nil entries are skipped).
 func (tp *triplePayloads) release() {
-	for i := range tp.ptrs {
-		if tp.ptrs[i] != nil {
-			releaseBuffer(tp.ptrs[i], tp.full[i])
-			tp.ptrs[i] = nil
-		}
-	}
+	releaseTripleBuffers(&tp.ptrs, &tp.full)
 }
 
 // buildTripleWire3 fuses payload assembly and wire allocation for one
@@ -343,7 +367,10 @@ func buildTripleWire3Into(cfg *Config, dst, data []byte, bp lockBatchPRF48, rese
 	}
 	releaseLanes := func() {
 		for i := range lanes {
-			releaseBuffer(lanePtrs[i], lanes[i])
+			if lanePtrs[i] != nil {
+				releaseBuffer(lanePtrs[i], lanes[i])
+				lanePtrs[i] = nil
+			}
 		}
 	}
 
@@ -356,18 +383,49 @@ func buildTripleWire3Into(cfg *Config, dst, data []byte, bp lockBatchPRF48, rese
 		tp.bufs[i] = tp.full[i]
 	}
 
-	if currentInterlockCfg(cfg) == Interlock168 {
-		splitForTriple168LockedInto(cfg, data, bp,
-			lanes[0][lens[0]:], lanes[1][lens[1]:], lanes[2][lens[2]:])
+	is168 := currentInterlockCfg(cfg) == Interlock168
+	slotBytes := 2
+	if is168 {
+		slotBytes = 7
+	}
+	mSlots := laneLen / slotBytes
+	desyncActive := bp.desyncWords != nil && mSlots >= 2
+
+	var (
+		desyncPtr *[]byte
+		desyncBuf []byte
+		rawLanes  [3][]byte
+		sched     laneDesyncSchedule
+	)
+	if desyncActive {
+		desyncPtr, desyncBuf = acquireStage(3 * laneLen)
+		rawLanes[0] = desyncBuf[:laneLen]
+		rawLanes[1] = desyncBuf[laneLen : 2*laneLen]
+		rawLanes[2] = desyncBuf[2*laneLen : 3*laneLen]
+		if is168 {
+			splitForTriple168RawInto(cfg, data, bp, rawLanes[0], rawLanes[1], rawLanes[2])
+		} else {
+			splitForTriple48RawInto(cfg, data, bp, rawLanes[0], rawLanes[1], rawLanes[2])
+		}
+		w := evalDesyncWords(bp)
+		sched = buildLaneDesyncSchedule(mSlots, w)
+		clear(w[:])
+		runtime.KeepAlive(&w)
 	} else {
-		splitForTriple48LockedInto(cfg, data, bp,
-			lanes[0][lens[0]:], lanes[1][lens[1]:], lanes[2][lens[2]:])
+		if is168 {
+			splitForTriple168RawInto(cfg, data, bp,
+				lanes[0][lens[0]:], lanes[1][lens[1]:], lanes[2][lens[2]:])
+		} else {
+			splitForTriple48RawInto(cfg, data, bp,
+				lanes[0][lens[0]:], lanes[1][lens[1]:], lanes[2][lens[2]:])
+		}
 	}
 
 	// Consumer stage — three COBS + tail DRBG lane goroutines.
-	// Each lane's tail depends on its own COBS length, so the fused
-	// per-lane goroutine handles both in sequence for that lane while
-	// the other lanes run concurrently.
+	// When Layer II Desync is active, each lane goroutine first performs the
+	// single-pass forward slot permutation from rawLanes[i] into lanes[i],
+	// wipes rawLanes[i], immediately COBS-encodes lanes[i] while hot in L2,
+	// and wipes lanes[i] in parallel.
 	var (
 		wgLanes sync.WaitGroup
 		laneErr [3]error
@@ -377,7 +435,13 @@ func buildTripleWire3Into(cfg *Config, dst, data []byte, bp lockBatchPRF48, rese
 		i := i
 		go func() {
 			defer wgLanes.Done()
+			if desyncActive {
+				desyncLaneEncryptTo(lanes[i][lens[i]:], rawLanes[i], &sched, i, slotBytes)
+				secureWipe(rawLanes[i])
+			}
 			tp.encLen[i] = len(cobsEncodeInto(tp.full[i], lanes[i]))
+			releaseBuffer(lanePtrs[i], lanes[i])
+			lanePtrs[i] = nil
 			if tp.encLen[i]+1 > tp.payloadLen[i] {
 				laneErr[i] = fmt.Errorf("itb: internal error: container third %d too small", i)
 				return
@@ -396,6 +460,11 @@ func buildTripleWire3Into(cfg *Config, dst, data []byte, bp lockBatchPRF48, rese
 		}()
 	}
 	wgLanes.Wait()
+	if desyncActive {
+		sched = laneDesyncSchedule{}
+		runtime.KeepAlive(&sched)
+		releaseStage(desyncPtr, desyncBuf, 0)
+	}
 	releaseLanes()
 
 	// Container fill has been running since t=0; in the common case

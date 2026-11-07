@@ -45,6 +45,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/everanium/itb/internal/forcetier"
 )
 
 func trainHash(data []byte, seed0, seed1 uint64) (lo, hi uint64) {
@@ -1353,7 +1355,7 @@ func runTrainHashMultiMsgSession(t *testing.T, corpus string, cribLen, numMsgs i
 	}
 
 	candNS := tcSolveNoiseSeedFromBins(allNoiseObs, 8)
-	if len(candNS) == 0 {
+	if forcetier.BarriersDesyncOff() && len(candNS) == 0 {
 		t.Fatalf("corpus=%s: failed to solve noiseSeed from %d crib observations", corpus, len(allNoiseObs))
 	}
 
@@ -1427,7 +1429,7 @@ func runTrainHashMultiMsgSession(t *testing.T, corpus string, cribLen, numMsgs i
 		}
 	}
 
-	if truncLS == nil {
+	if forcetier.BarriersDesyncOff() && truncLS == nil {
 		t.Fatalf("corpus=%s: failed to select gauge-consistent lockSeed/startSeeds on messages 0..1", corpus)
 	}
 
@@ -1435,8 +1437,11 @@ func runTrainHashMultiMsgSession(t *testing.T, corpus string, cribLen, numMsgs i
 	msgsSHA256Match := 0
 	unkTotal, unkExact := 0, 0
 	for _, vm := range sess.messages {
-		ptDec, err := Decrypt3x128Cfg(sess.cfg, truncNS, truncLS, truncD[0], truncD[1], truncD[2], truncS[0], truncS[1], truncS[2], vm.wire)
 		unkTotal += 512 - cribLen
+		if truncLS == nil {
+			continue
+		}
+		ptDec, err := Decrypt3x128Cfg(sess.cfg, truncNS, truncLS, truncD[0], truncD[1], truncD[2], truncS[0], truncS[1], truncS[2], vm.wire)
 		if err == nil && len(ptDec) == 512 {
 			msgsDecrypted++
 			if sha256.Sum256(ptDec) == sha256.Sum256(vm.plaintext) {
@@ -1448,6 +1453,18 @@ func runTrainHashMultiMsgSession(t *testing.T, corpus string, cribLen, numMsgs i
 				}
 			}
 		}
+	}
+
+	if !forcetier.BarriersDesyncOff() {
+		t.Logf("corpus=%-6s | Desync=on (default) | msgs=%d | crib=%dB (25%%) | resolvedBands=%d/%d | noiseSeedCands=%d | Decrypt3x128Cfg SHA-256=%d/%d (%.2f%%) | wall=%v (set ITB_BARRIERS_DESYNC=off to run synchronous-mode 50/50 recovery)",
+			corpus, numMsgs, cribLen, len(resolvedAttacks), numMsgs, len(candNS),
+			msgsSHA256Match, numMsgs, 100*float64(msgsSHA256Match)/float64(numMsgs),
+			time.Since(t0))
+		if msgsDecrypted != 0 || msgsSHA256Match != 0 {
+			t.Fatalf("corpus=%s: expected 0/%d messages decrypted under Desync=on, got decrypted=%d sha256=%d",
+				corpus, numMsgs, msgsDecrypted, msgsSHA256Match)
+		}
+		return
 	}
 
 	var rawNSLo, rawNSHi [4]byte

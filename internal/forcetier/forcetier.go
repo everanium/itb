@@ -19,6 +19,9 @@
 //	ITB_FORCE_INTERLOCK_PRF_FILL_X4      = 1 | true | yes
 //	ITB_FORCE_INTERLOCK_PRF_FILL_X16     = 1 | true | yes
 //	ITB_FORCE_INTERLOCK_PRF_FILL_TIER    = avx512 | vaesavx2 | avx2 | vex | aesni | gpr | neon | scalar
+//	ITB_BARRIERS_DESYNC                  = on | off | 1 | 0 | true | false (default on;
+//	                                       WARNING: DO NOT DISABLE DESYNC FOR PRODUCTION USE — FOR SYNCHRONOUS
+//	                                       WIRE CONVERSION / DECRYPTION AND RESEARCH BASELINES ONLY.)
 //
 // An empty or unset variable keeps auto-dispatch (the production
 // default — no visible change). An unknown value keeps auto-dispatch

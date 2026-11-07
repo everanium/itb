@@ -43,8 +43,8 @@ Each Go test emits one JSON record to `~/scratch/redteam/related_seed/`.
 The related-seed differential is a **structural diffusion probe**, not
 an attacker-realistic recovery path. A real attacker cannot force
 1-bit seed deltas because `Encrypt3x128Cfg` draws every seed
-independently through `NewSeed*`, and the shipped API rejects seed
-pointer collisions. The lab-forced Δ is a probe INPUT designed to
+independently through `NewSeed*`, and the shipped API rejects both seed
+pointer and byte-level `Components` collisions (8-seed isolation). The lab-forced Δ is a probe INPUT designed to
 measure whether the barrier absorbs perturbations.
 
 Every probe consumes attacker-visible inputs (ciphertext bytes only)
@@ -61,16 +61,16 @@ the lockSeed axis**:
 - **lockSeed axis, both primitives**: χ² ≈ 300-800 across the Δ
   patterns the primitive carries into the masks and both plaintext
   kinds — within a few multiples of the df=255 uniform band top. A 1-bit
-  Δ on lockSeed re-derives the interlock's per-chunk permutation
+  Δ on lockSeed re-derives the interlock's per-chunk permutation and Layer II cross-lane slot shifts
   entirely, avalanching the plaintext-byte-to-region split and
   randomising every touched pixel byte's 7 data bits. The bit_high
   pattern (top bit of the last component, the high word of the final
-  ChainHash round) is a null Δ under FNV-1a on this axis: the flip
+  ChainHash round) is a null Δ under FNV-1a on the `0x04 → 0x03 / 0x06` cascade path: the flip
   survives `deriveInterLockSeed` at bit 127 and is cancelled when the
   `[K ‖ components]` cascade XORs the flipped component back in at its
   last round, so that cell sits at the no-Δ floor (42.2M), not above it.
-  On the dataSeed_i / startSeed_i axes bit_high is a null Δ for both
-  primitives (only `hLo` is consumed there; neither lab primitive
+  On the per-pixel dataSeed_i and `deriveStartPixel` (`0x02`) paths bit_high is a null Δ for both
+  primitives (`hLo` alone is consumed on those paths, whereas `Desync` Layer I `0x05` and Layer II `0x06` fold both `(hLo, hHi)` words via `fullWidthFold`; neither lab primitive
   carries a high-word change into the low word); on the noiseSeed axis
   the position mixes both words, so the same flip moves every noise
   position and lands below the floor.

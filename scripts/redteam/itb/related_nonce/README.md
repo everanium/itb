@@ -50,12 +50,12 @@ each of the 8 shipped seed roles:
 
 | Seed role  | Derivation           | Nonce buf layout             | Output consumed as |
 |------------|----------------------|------------------------------|--------------------|
-| noiseSeed  | `blockHash*(buf, base_i + p)` | `noiseCounter (4 LE) \|\| nonce` (not restarted per region) | per-pixel `noisePos = noiseFold3(h[0] + rotl64(h[1], 1))` |
-| dataSeed_i | `blockHash*(buf, p)` | `pixIdx (4 LE) \|\| nonce`   | per-pixel `dataRotation` + `channelXOR` per region |
-| startSeed_i| `ChainHash*(buf)`    | `0x02 \|\| nonce`            | `startPixel = h.lo % totalPixels` per region |
-| lockSeed   | `deriveInterLockSeed`| `0x04 \|\| nonce`            | full-width Rank Barrier per-chunk mask key |
+| noiseSeed  | `blockHash*(buf, base_i + p)` | `noiseCounter (4 LE) \|\| main_nonce` (`20 / 36 / 68 B`, not restarted per region) | per-pixel `noisePos = noiseFold3(h[0] + rotl64(h[1], 1))` |
+| dataSeed_i | `blockHash*(buf, p)` | `pixIdx (4 LE) \|\| main_nonce` (`20 / 36 / 68 B`) | per-pixel `dataRotation` + `channelXOR` per region |
+| startSeed_i| `ChainHash*(buf)`    | `0x02 \|\| main_nonce` and `0x05 \|\| main_nonce` (`17 / 33 / 65 B`) | `startPixel = h.lo % totalPixels` per region and Layer I sub-region schedule $\Pi_r$ (`subregionAddr` / `effectiveStartPixel` via `fullWidthFold`) |
+| lockSeed   | `deriveInterLockSeed`| `0x04 \|\| interlock_nonce` (`17 / 33 / 65 B`, feeding `13 B` `0x03` rank fill and `0x06` `Desync` slot shifts) | full-width Rank Barrier per-chunk mask key and Layer II cross-lane slot shifts $\Sigma_\ell$ (`laneSlotShift` via `fullWidthFold`) |
 
-Every one of the 8 seeds consumes the nonce. A 1-bit nonce Δ perturbs
+Every one of the 8 seeds consumes the nonce pair (`setBrokenTestNonce` perturbs both `main_nonce` and `interlock_nonce` jointly). A 1-bit nonce Δ perturbs
 ALL 8 seed-derived outputs simultaneously — fundamentally different
 from Rank 2's single-seed Δ. The lockSeed derivation slot is one of
 eight nonce consumers, not a bottleneck; **nonce Δ SUPERSETS lockSeed

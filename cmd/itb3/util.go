@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/everanium/itb"
 	"github.com/everanium/itb/triple"
@@ -271,4 +272,38 @@ func classifyLoadError(subcmd string, err error) error {
 		return cryptoErr(subcmd, "permanent and wrapper masters are identical — reject")
 	}
 	return runtimeErr(subcmd, "triple.Load: %v", err)
+}
+
+// desyncFlagWarning is the mandatory warning text included on --desync
+// help output in encrypt and decrypt.
+const desyncFlagWarning = "Desynchronized Interlocked Barrier mode: on|off (default on). WARNING: DO NOT DISABLE DESYNC FOR PRODUCTION USE — FOR SYNCHRONOUS WIRE CONVERSION / DECRYPTION AND RESEARCH BASELINES ONLY."
+
+// applyDesyncFlag validates an optional --desync flag ("on" or "off") and
+// sets ITB_BARRIERS_DESYNC for the duration of the command, returning a
+// cleanup closure that restores the prior environment state.
+func applyDesyncFlag(subcmd, val string) (func(), error) {
+	v := strings.ToLower(strings.TrimSpace(val))
+	if v == "" {
+		return func() {}, nil
+	}
+	var target string
+	switch v {
+	case "on", "1", "true":
+		target = "on"
+	case "off", "0", "false":
+		target = "off"
+	default:
+		return nil, usageErr(subcmd, "invalid --desync value %q — accepted: on, off", val)
+	}
+	prev, hadPrev := os.LookupEnv("ITB_BARRIERS_DESYNC")
+	if err := os.Setenv("ITB_BARRIERS_DESYNC", target); err != nil {
+		return nil, runtimeErr(subcmd, "setenv ITB_BARRIERS_DESYNC: %v", err)
+	}
+	return func() {
+		if hadPrev {
+			_ = os.Setenv("ITB_BARRIERS_DESYNC", prev)
+		} else {
+			_ = os.Unsetenv("ITB_BARRIERS_DESYNC")
+		}
+	}, nil
 }

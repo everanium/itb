@@ -40,6 +40,8 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"testing"
+
+	"github.com/everanium/itb/internal/forcetier"
 )
 
 // nonceInvarianceReport is the outcome of [probeInterlockNonceInvariance128].
@@ -336,7 +338,7 @@ func mirrorLockBatchPRF48_128(lockSeed *Seed128, keyLo, keyHi uint64, fold [4]by
 	lockComps := make([]uint64, 2+len(lockSeed.Components))
 	lockComps[0], lockComps[1] = keyLo, keyHi
 	copy(lockComps[2:], lockSeed.Components)
-	return lockBatchPRF48{
+	bp := lockBatchPRF48{
 		factor: lockBatchFactor48_128,
 		fill: func(buf []byte, groupIdx uint64, masks *[lockBatchFactor48Max][3]uint64) {
 			buf[0] = 0x03
@@ -354,6 +356,22 @@ func mirrorLockBatchPRF48_128(lockSeed *Seed128, keyLo, keyHi uint64, fold [4]by
 			prf[0], prf[1] = lockSeed.chainHash128With(lockComps, buf)
 		},
 	}
+	if !forcetier.BarriersDesyncOff() {
+		bp.desyncWords = func() [4]uint64 {
+			var buf [13]byte
+			buf[0] = 0x06
+			copy(buf[9:13], fold[:])
+			var out [4]uint64
+			for i := uint64(0); i < 2; i++ {
+				binary.LittleEndian.PutUint64(buf[1:9], i)
+				lo, hi := lockSeed.chainHash128With(lockComps, buf[:])
+				out[2*i], out[2*i+1] = fullWidthFold(lo, hi)
+			}
+			clear(buf[:])
+			return out
+		}
+	}
+	return bp
 }
 
 // assertMirrorLockBatchParity128 verifies that [mirrorLockBatchPRF48_128]

@@ -37,8 +37,8 @@ itb3 verify  blob.json
 | Subcommand | Purpose |
 |---|---|
 | `itb3 genblob <mode> <hash> [flags]` | Build a fresh session configuration blob. |
-| `itb3 encrypt <blob.json> [-i FILE] [-o FILE]` | Encrypt input plaintext under a blob. |
-| `itb3 decrypt <blob.json> [-i FILE] [-o FILE]` | Decrypt input ciphertext under a blob. |
+| `itb3 encrypt <blob.json> [-i FILE] [-o FILE] [--desync on\|off]` | Encrypt input plaintext under a blob (`--desync` default `on`). |
+| `itb3 decrypt <blob.json> [-i FILE] [-o FILE] [--desync on\|off]` | Decrypt input ciphertext under a blob (`--desync` default `on`). |
 | `itb3 rekey <blob.json> [-p] [-w] [-o FILE]` | Rotate parallax / wrapper masters (blob wins toggle assertion). |
 | `itb3 inspect <blob.json> [-o FILE]` | Print blob metadata (no secret material). |
 | `itb3 verify <blob.json>` | Validate a stored blob (silent on success, non-zero on failure). |
@@ -92,6 +92,11 @@ inherits the compile-in default), `wrapper` / `wrapper_cipher`,
 - `genblob --interlock 48|168` selects the Interlocked Barrier chunk
   width (`48` default; `168` requires a 512-bit hash or `mixed512` and
   is recorded in the blob's recipe under `"interlock":"168"`).
+- `encrypt --desync on|off` and `decrypt --desync on|off` (or the
+  environment variable `ITB_BARRIERS_DESYNC=off`) control the
+  Desynchronized Interlocked Barrier (`Desync`, default `on`).
+  **WARNING: DO NOT DISABLE DESYNC FOR PRODUCTION USE — FOR SYNCHRONOUS
+  WIRE CONVERSION / DECRYPTION AND RESEARCH BASELINES ONLY.**
 - `-o` writes the blob to disk with mode `0600`; every read path
   loads it via `triple.LoadF`. The blob carries the resolved
   `triple.Profile` record — the shipped-catalogue prefix reserved for

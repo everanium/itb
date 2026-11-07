@@ -529,3 +529,76 @@ func TestGenblobInterlockFlag(t *testing.T) {
 		}
 	}
 }
+
+func TestDesyncFlag(t *testing.T) {
+	dir := t.TempDir()
+	blobPath := filepath.Join(dir, "session.blob")
+	opts := genblobOpts{
+		keyBits:     512,
+		nonceBits:   128,
+		barrierFill: 1,
+		blobMode:    1,
+		mac:         "hmac-sha256",
+		output:      blobPath,
+	}
+	if err := runGenblob("mac", "aesitb128", opts, genblobFlagsSet{mac: true}); err != nil {
+		t.Fatalf("runGenblob: %v", err)
+	}
+
+	plainPath := filepath.Join(dir, "plain.bin")
+	plain := []byte("desync flag CLI roundtrip and cross-mode incompatibility test payload")
+	if err := os.WriteFile(plainPath, plain, 0o600); err != nil {
+		t.Fatalf("WriteFile plain: %v", err)
+	}
+
+	// 1. Default (desync on) -> decrypt with --desync on succeeds; decrypt with --desync off fails MAC.
+	ctOnPath := filepath.Join(dir, "ct_on.bin")
+	decOnPath := filepath.Join(dir, "dec_on.bin")
+	if err := runEncrypt(blobPath, encryptOpts{inputPath: plainPath, outputPath: ctOnPath, desync: "on"}); err != nil {
+		t.Fatalf("runEncrypt --desync on: %v", err)
+	}
+	if err := runDecrypt(blobPath, decryptOpts{inputPath: ctOnPath, outputPath: decOnPath, desync: "on"}); err != nil {
+		t.Fatalf("runDecrypt --desync on: %v", err)
+	}
+	gotOn, err := os.ReadFile(decOnPath)
+	if err != nil || !bytes.Equal(gotOn, plain) {
+		t.Fatalf("roundtrip --desync on mismatch: err=%v", err)
+	}
+	errCross1 := runDecrypt(blobPath, decryptOpts{inputPath: ctOnPath, outputPath: filepath.Join(dir, "bad1.bin"), desync: "off"})
+	var ce *cliError
+	if !errors.As(errCross1, &ce) || ce.code != exitCrypto {
+		t.Fatalf("decrypt --desync off on desync-on wire: got %v, want exit %d", errCross1, exitCrypto)
+	}
+
+	// 2. Legacy conversion (--desync off) -> decrypt with --desync off succeeds; decrypt with default (on) fails MAC.
+	ctOffPath := filepath.Join(dir, "ct_off.bin")
+	decOffPath := filepath.Join(dir, "dec_off.bin")
+	if err := runEncrypt(blobPath, encryptOpts{inputPath: plainPath, outputPath: ctOffPath, desync: "off"}); err != nil {
+		t.Fatalf("runEncrypt --desync off: %v", err)
+	}
+	if err := runDecrypt(blobPath, decryptOpts{inputPath: ctOffPath, outputPath: decOffPath, desync: "off"}); err != nil {
+		t.Fatalf("runDecrypt --desync off: %v", err)
+	}
+	gotOff, err := os.ReadFile(decOffPath)
+	if err != nil || !bytes.Equal(gotOff, plain) {
+		t.Fatalf("roundtrip --desync off mismatch: err=%v", err)
+	}
+	errCross2 := runDecrypt(blobPath, decryptOpts{inputPath: ctOffPath, outputPath: filepath.Join(dir, "bad2.bin")})
+	if !errors.As(errCross2, &ce) || ce.code != exitCrypto {
+		t.Fatalf("decrypt default on desync-off wire: got %v, want exit %d", errCross2, exitCrypto)
+	}
+
+	// 3. Invalid --desync value fails with exitUsage.
+	errBad := runEncrypt(blobPath, encryptOpts{inputPath: plainPath, outputPath: ctOnPath, desync: "maybe"})
+	if !errors.As(errBad, &ce) || ce.code != exitUsage {
+		t.Fatalf("invalid --desync value: got %v, want exit %d", errBad, exitUsage)
+	}
+
+	// 4. Help output contains the mandatory uppercase production warning.
+	encHelp := newEncryptCmd().UsageString() + newEncryptCmd().Long
+	decHelp := newDecryptCmd().UsageString() + newDecryptCmd().Long
+	const wantWarn = "WARNING: DO NOT DISABLE DESYNC FOR PRODUCTION USE"
+	if !strings.Contains(encHelp, wantWarn) || !strings.Contains(decHelp, wantWarn) {
+		t.Fatalf("help output missing %q", wantWarn)
+	}
+}

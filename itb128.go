@@ -7,6 +7,8 @@ import (
 	"math"
 	"slices"
 	"sync"
+
+	"github.com/everanium/itb/internal/forcetier"
 )
 
 // process128Cfg is the per-region encode/decode engine (128-bit variant).
@@ -47,6 +49,11 @@ func process128Cfg(cfg *Config, noiseSeed, dataSeed, startSeed *Seed128, nonce [
 	// Adaptive CGO batch stride is decided once per invocation from the
 	// actual payload size and threaded uniformly to every worker.
 	microBatch := chooseMicroBatch(len(data))
+
+	if !forcetier.BarriersDesyncOff() && totalPixels >= minDesyncRegionPixels {
+		processSubregions128(cfg, noiseSeed, dataSeed, startSeed, nonce, container, data, startPixel, totalPixels, dataPixels, totalBits, microBatch, encode, numWorkers, noiseBase)
+		return
+	}
 
 	if numWorkers == 1 {
 		processChunk128(cfg, noiseSeed, dataSeed, nonce, container, data, startPixel, totalPixels, 0, dataPixels, totalBits, microBatch, encode, noiseBase)
@@ -343,13 +350,7 @@ func decrypt3x128CfgInto(cfg *Config, dst []byte, noiseSeed, lockSeed, dataSeed1
 
 	var decodedPtrs [3]*[]byte
 	decoded := [3][]byte{}
-	defer func() {
-		for i := range decodedPtrs {
-			if decodedPtrs[i] != nil {
-				releaseBuffer(decodedPtrs[i], decoded[i])
-			}
-		}
-	}()
+	defer releaseTripleBuffers(&decodedPtrs, &decoded)
 	for i := 0; i < 3; i++ {
 		var decBuf []byte
 		decodedPtrs[i], decBuf = acquireBuffer(caps[2])

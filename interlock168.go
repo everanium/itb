@@ -580,14 +580,19 @@ func interleaveTriple168WorkerBody(gs, ge, M int, result, p0, p1, p2 []byte, bp 
 	wipeInterlockWorker168(ws)
 }
 
-// splitForTriple168LockedInto dispatches plaintext splitting through the
-// 168-bit interlock overlay path.
-func splitForTriple168LockedInto(cfg *Config, data []byte, bp lockBatchPRF48, p0, p1, p2 []byte) {
+func splitForTriple168RawInto(cfg *Config, data []byte, bp lockBatchPRF48, p0, p1, p2 []byte) {
 	var head [4]byte
 	binary.BigEndian.PutUint32(head[:], uint32(len(data)))
 	splitTriple168LockedBatchInto(framedSrc168{head: head[:], body: data}, p0, p1, p2, bp, cfg)
 	clear(head[:])
 	runtime.KeepAlive(&head)
+}
+
+// splitForTriple168LockedInto dispatches plaintext splitting through the
+// 168-bit interlock overlay path.
+func splitForTriple168LockedInto(cfg *Config, data []byte, bp lockBatchPRF48, p0, p1, p2 []byte) {
+	splitForTriple168RawInto(cfg, data, bp, p0, p1, p2)
+	desyncLaneEncrypt(p0, p1, p2, 7, bp)
 }
 
 // interleaveForTriple168LockedCfg is the inverse of [splitForTriple168LockedInto].
@@ -607,6 +612,10 @@ func interleaveForTriple168LockedCfgInto(cfg *Config, dst, p0, p1, p2 []byte, bp
 	}
 	if len(p2) != origLen2 {
 		defer secureWipe(p2)
+	}
+	p0, p1, p2, desyncPtr, desyncBuf := desyncLaneDecrypt(p0, p1, p2, 7, bp)
+	if desyncPtr != nil {
+		defer releaseDesyncStage(desyncPtr, desyncBuf)
 	}
 	if cap(dst) > 0 {
 		M := len(p0) / 7
