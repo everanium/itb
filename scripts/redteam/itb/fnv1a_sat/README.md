@@ -14,7 +14,7 @@ to the nonce-reuse re-verification (see
 nonce (the fixed test nonce is a reproducibility knob, not a lab
 assumption on the attacker). The closure narrative for this track is
 **multi-seed joint coupling** — every attacker-visible byte is the composition
-of independent contributions from noiseSeed, lockSeed (`0x04` setup feeding per-chunk Rank Barrier mask triples under `0x03` and Layer II cross-lane slot shifts under `0x06` via `fullWidthFold`), dataSeed_i, and startSeed_i (`startPixel_i` under `0x02` and Layer I sub-region trajectories under `0x05` via `fullWidthFold`), so
+of independent contributions from noiseSeed, lockSeed (`0x04` setup feeding per-chunk Rank Barrier mask triples under `0x03` and **Layer II** cross-lane slot shifts under `0x06` via `fullWidthFold`), dataSeed_i, and startSeed_i (`startPixel_i` under `0x02` and **Layer I** sub-region trajectories under `0x05` via `fullWidthFold`), so
 no per-chain observation channel exists.
 
 ## Files
@@ -56,7 +56,7 @@ for downstream aggregation.
   crib pixel. Confirms the anchor logic is sensitive.
 - `TestRedTeamBrokenFNV1aCribKPAStartPixelPeek` — F4: Layer 3
   scoped bonus with per-region `sp_i` (`Π_r(0)`) disclosed via
-  `deriveStartPixel` (`0x02`, while the `0x05` Layer I sub-region trajectory and `0x03`/`0x06` Rank Barrier / Layer II permutations remain unrevealed). Reports channel matches at the disclosed sp
+  `deriveStartPixel` (`0x02`, while the `0x05` **Layer I** sub-region trajectory and `0x03`/`0x06` Rank Barrier / **Layer II** permutations remain unrevealed). Reports channel matches at the disclosed sp
   versus the shift-averaged floor. Under barrier: the disclosed sp
   count is at the same floor as every other shift.
 - `TestRedTeamBrokenFNV1aCribKPADisplacement` — F5: displacement
@@ -100,7 +100,7 @@ chains inverted for free) and only the single dataSeed_i lo lane stays
 symbolic. If this UPPER-BOUND SAT does not recover the true lane
 (UNSAT, or a model the cross-validation pixel rejects), the full
 coupled-8-chain SAT (all 8 chains unknown + per-chunk interlock mask
-triples, Layer II slot shifts, and Layer I sub-region trajectories symbolic) is trivially harder.
+triples, **Layer II** slot shifts, and **Layer I** sub-region trajectories symbolic) is trivially harder.
 
 Full symbolic 8-chain SAT is beyond a single-cycle scope; the
 anchoring-level closure documented by F1 / F2 / F4 / F5 is the

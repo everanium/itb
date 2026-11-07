@@ -113,7 +113,7 @@ func Print(out *os.File, f *Figures) {
 	row("payload", "bytes", "side", "s", "P", "wire", "expansion", "residue ≥ (2s+1)·7", "7^P", "vs 2^1024", "56^P", "vs 2^1024", "2^(8P)")
 	for _, r := range f.Sizes {
 		row(r.Label, r.N, dims(r.Side), r.Side-1, comma(r.P), comma(r.Wire), fixed(float64(r.Wire)/float64(r.N), 3), comma(r.Residue),
-			pow2c(log2Pow(7, r.P)), ratio(float64(log2Pow(7, r.P))/1024), pow2c(log2Pow(56, r.P)), ratio(float64(log2Pow(56, r.P))/1024), pow2c(noiseBarrier(r.P)))
+			pow2(log2Pow(7, r.P)), ratio(float64(log2Pow(7, r.P))/1024), pow2(log2Pow(56, r.P)), ratio(float64(log2Pow(56, r.P))/1024), pow2(noiseBarrier(r.P)))
 	}
 
 	row("expansion max over [10,000 B, 64 MiB]", fixed(f.ExpansionMax, 4), fmt.Sprintf("at %d B", f.ExpansionMaxAt))
@@ -124,11 +124,11 @@ func Print(out *os.File, f *Figures) {
 	row("metric", "Mode 2", "Mode 1", "theoretical")
 	row("container", dims(b.Side), dims(a.Side), dims(t.Side))
 	row("P", b.P, a.P, t.P)
-	row("noise barrier 2^(8P)", pow2c(noiseBarrier(b.P)), pow2c(noiseBarrier(a.P)), pow2c(noiseBarrier(t.P)))
-	row("margin over 2^1024", pow2c(noiseBarrier(b.P)-1024), pow2c(noiseBarrier(a.P)-1024), pow2c(noiseBarrier(t.P)-1024))
-	row("56^P", pow2c(log2Pow(56, b.P)), pow2c(log2Pow(56, a.P)), pow2c(log2Pow(56, t.P)))
-	row("7^P", pow2c(log2Pow(7, b.P)), pow2c(log2Pow(7, a.P)), pow2c(log2Pow(7, t.P)))
-	row("config map 2^(62P)", pow2c(configMap(b.P)), pow2c(configMap(a.P)), pow2c(configMap(t.P)))
+	row("noise barrier 2^(8P)", pow2(noiseBarrier(b.P)), pow2(noiseBarrier(a.P)), pow2(noiseBarrier(t.P)))
+	row("margin over 2^1024", pow2(noiseBarrier(b.P)-1024), pow2(noiseBarrier(a.P)-1024), pow2(noiseBarrier(t.P)-1024))
+	row("56^P", pow2(log2Pow(56, b.P)), pow2(log2Pow(56, a.P)), pow2(log2Pow(56, t.P)))
+	row("7^P", pow2(log2Pow(7, b.P)), pow2(log2Pow(7, a.P)), pow2(log2Pow(7, t.P)))
+	row("config map 2^(62P)", pow2(configMap(b.P)), pow2(configMap(a.P)), pow2(configMap(t.P)))
 	row("residue ≥ / at floor", fmt.Sprintf("%d / %d", b.Residue, b.ResidueAtFloor), fmt.Sprintf("%d / %d", a.Residue, a.ResidueAtFloor), fmt.Sprintf("%d / %d", t.Residue, t.ResidueAtFloor))
 	le := float64(landauerExp)
 	row("vs Landauer "+pow2(landauerExp), ratio(float64(noiseBarrier(b.P))/le), ratio(float64(noiseBarrier(a.P))/le), ratio(float64(noiseBarrier(t.P))/le))

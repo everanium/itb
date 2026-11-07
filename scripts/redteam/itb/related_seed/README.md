@@ -61,7 +61,7 @@ the lockSeed axis**:
 - **lockSeed axis, both primitives**: χ² ≈ 236–357 across the Δ
   patterns the primitive carries into the masks and both plaintext
   kinds — within the df=255 uniform band (or just above its one-sided 3σ top ≈ 323). A 1-bit
-  Δ on lockSeed re-derives the interlock's per-chunk permutation and Layer II cross-lane slot shifts
+  Δ on lockSeed re-derives the interlock's per-chunk permutation and **Layer II** cross-lane slot shifts
   entirely, avalanching the plaintext-byte-to-region split and
   randomising every touched pixel byte's 7 data bits. The bit_high
   pattern (top bit of the last component, the high word of the final
@@ -70,7 +70,7 @@ the lockSeed axis**:
   `[K ‖ components]` cascade XORs the flipped component back in at its
   last round, so that cell sits at the no-Δ floor (42.09M / 42.03M), not above it.
   On the per-pixel dataSeed_i path bit_high is a null Δ for both
-  primitives (`hLo` alone is consumed on the per-pixel data path, sitting at 42.12M / 42.13M, whereas on `startSeed_i` Layer I `0x05` folds both `(hLo, hHi)` words via `fullWidthFold` without a cancelling primer round, diffusing `bit_high` on `startSeed_i` down to 18.57M–18.73M alongside `bit0` and `bit_mid`); on the noiseSeed axis
+  primitives (`hLo` alone is consumed on the per-pixel data path, sitting at 42.12M / 42.13M, whereas on `startSeed_i` **Layer I** `0x05` folds both `(hLo, hHi)` words via `fullWidthFold` without a cancelling primer round, diffusing `bit_high` on `startSeed_i` down to 18.57M–18.73M alongside `bit0` and `bit_mid`); on the noiseSeed axis
   the position mixes both words, so the same flip moves every noise
   position and lands below the floor (5.88M–15.98M).
 - **Every other seed axis** (noiseSeed / dataSeed_i / startSeed_i):

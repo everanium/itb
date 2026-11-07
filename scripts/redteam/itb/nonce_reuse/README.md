@@ -35,7 +35,7 @@ for downstream aggregation.
 - `TestRedTeamNonceReuseLayerBRandomPair` — Layer B random floor: same
   probe with random plaintext pair (no artificial quiet chunks).
 - `TestRedTeamNonceReuseLayerBMaskOraclePeek` — Layer B': upper bound
-  under `startPixel`-peek + mask-oracle-peek (`[lab-peek: sp_i]` + `[lab-peek: masks]`). Under the shipped Desynchronized Interlocked Barrier, revealing `startPixel_i` (`0x02`), the `0x03` mask triples, and Layer II's `0x06` slot shifts still anchors `0 / 63` pixels because Layer I (`0x05`) partitions each region into `K_r` secret-bounded sub-regions (`subregionAddr` / `effectiveStartPixel`), breaking the contiguous `(sp_i + pp) mod third_i` trajectory; only under `ITB_BARRIERS_DESYNC=off` does the demasker's Layer 1 anchor `55 / 63` content pixels (`304 / 324` content bytes in `CrossMessageDecrypt`), while the interlock-nonce fragment pixels stay ambiguous with zero XOR under the forced nonce collision.
+  under `startPixel`-peek + mask-oracle-peek (`[lab-peek: sp_i]` + `[lab-peek: masks]`). Under the shipped Desynchronized Interlocked Barrier, revealing `startPixel_i` (`0x02`), the `0x03` mask triples, and **Layer II**'s `0x06` slot shifts still anchors `0 / 63` pixels because **Layer I** (`0x05`) partitions each region into `K_r` secret-bounded sub-regions (`subregionAddr` / `effectiveStartPixel`), breaking the contiguous `(sp_i + pp) mod third_i` trajectory; only under `ITB_BARRIERS_DESYNC=off` does the demasker's Layer 1 anchor `55 / 63` content pixels (`304 / 324` content bytes in `CrossMessageDecrypt`), while the interlock-nonce fragment pixels stay ambiguous with zero XOR under the forced nonce collision.
 - `TestRedTeamNonceReuseLayerCFNVAlgebraic` — Layer C: attacker-realistic
   FNV-1a algebraic-recovery precondition. Zero pixels admit any (np, r)
   under the naive (no mask peek) constraint.
@@ -56,10 +56,10 @@ for its decision path. Two narrowly-scoped lab peeks are permitted and
 tagged at the call site:
 
 - `[lab-peek: sp_i]` — Layer B / C probes grant the attacker the three
-  region `startPixel` values (`0x02`, i.e., the initial entry offset Π_r(0) alongside the Layer I sub-region schedule under `0x05`). This is the single documented "would it
+  region `startPixel` values (`0x02`, i.e., the initial entry offset Π_r(0) alongside the **Layer I** sub-region schedule under `0x05`). This is the single documented "would it
   matter?" exception.
 - `[lab-peek: masks]` — the Layer B' `MaskOraclePeek` probe additionally
-  reveals the per-chunk interlock mask triples (`0x03`, alongside the Layer II cross-lane slot shifts under `0x06`). Results here are the
+  reveals the per-chunk interlock mask triples (`0x03`, alongside the **Layer II** cross-lane slot shifts under `0x06`). Results here are the
   UPPER BOUND — what the attack would achieve if a hypothetical
   primitive break revealed the `lockSeed`. Not attacker-realistic.
 
