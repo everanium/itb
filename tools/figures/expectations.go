@@ -673,10 +673,10 @@ func Registry(f *Figures) []Expectation {
 	// NOT FOUND, which fails the check as a STALE figure would.
 	add(
 		// ----- POSTQUANTUM.md -----------------------------------------
-		expect("POSTQUANTUM.md", `conservative Grover work factor is .√P × 2\^keyBits. \(~`+p2+` at 1024-bit keys for \*\*Mode 2\*\* P = `+num+` and theoretical floor P = `+num+`; ~`+p2+` at \*\*Mode 1\*\* P = `+num+`\)`,
-			w("grover2_m2", bG1), w("m2_P", plain(b.P)), w("theo_P", plain(t.P)), w("grover2_m1", aG1), w("m1_P", plain(a.P))),
-		expect("POSTQUANTUM.md", `giving a conservative Grover work factor of .√P × 2\^\(keyBits/2\). \(~`+p2+` at 1024-bit keys for \*\*Mode 2\*\* P = `+num+` and P = `+num+`; ~`+p2+` at \*\*Mode 1\*\* P = `+num+`\)`,
-			w("grover1_m2", bG2), w("m2_P", plain(b.P)), w("theo_P", plain(t.P)), w("grover1_m1", aG2), w("m1_P", plain(a.P))),
+		expect("POSTQUANTUM.md", `conservative Grover work factor is .√P × 2\^keyBits. \(~`+p2+` at 1024-bit keys for \*\*Mode 2\*\* P = `+num+` and theoretical floor P = `+num+`; ~`+p2+` at \*\*Mode 3\*\* P = `+num+` and \*\*Mode 1\*\* P = `+num+`\)`,
+			w("grover2_m2", bG1), w("m2_P", plain(b.P)), w("theo_P", plain(t.P)), w("grover2_m1", aG1), w("m3_P", plain(c.P)), w("m1_P", plain(a.P))),
+		expect("POSTQUANTUM.md", `giving a conservative Grover work factor of .√P × 2\^\(keyBits/2\). \(~`+p2+` at 1024-bit keys for \*\*Mode 2\*\* P = `+num+` and P = `+num+`; ~`+p2+` at \*\*Mode 3\*\* P = `+num+` and \*\*Mode 1\*\* P = `+num+`\)`,
+			w("grover1_m2", bG2), w("m2_P", plain(b.P)), w("theo_P", plain(t.P)), w("grover1_m1", aG2), w("m3_P", plain(c.P)), w("m1_P", plain(a.P))),
 		expect("POSTQUANTUM.md", `^\| Core ITB \(No MAC\) \| .* \| ~`+p2+` \| ~`+p2+` \|`,
 			w("grover2_m2", bG1), w("grover2_m1", aG1)),
 		expect("POSTQUANTUM.md", `^\| MAC \+ Silent Drop \[1\] \| .* \| ~`+p2+` \| ~`+p2+` \|`,
@@ -694,6 +694,9 @@ func Registry(f *Figures) []Expectation {
 		expect("POSTQUANTUM.md", `^\- \*\*Mode 1 \(`+"`"+num+x+num+"`"+`, `+"`P = "+num+"`"+`\):\*\* Noise barrier `+"`2\\^\\(8P\\) = "+p2+"`"+`; encoding ambiguity `+"`56\\^P ≈ "+p2+"`"+` \(without CCA\) and `+"`7\\^P ≈ "+p2+"`"+` \(under CCA\); configuration space `+"`2\\^\\(62P\\) = "+p2+"`"+`\.$`,
 			w("m1_side", plain(a.Side)), w("m1_side", plain(a.Side)), w("m1_P", plain(a.P)),
 			w("noise_m1", pow2(noiseBarrier(a.P))), w("nocca_m1", pow2(nocca(a.P))), w("cca_m1", pow2(cca(a.P))), w("config_m1", pow2(configMap(a.P)))),
+		expect("POSTQUANTUM.md", `^\- \*\*Mode 3 \(`+"`"+num+x+num+"`"+`, `+"`P = "+num+"`"+`\):\*\* Noise barrier `+"`2\\^\\(8P\\) = "+p2+"`"+`; encoding ambiguity `+"`56\\^P ≈ "+p2+"`"+` \(without CCA\) and `+"`7\\^P ≈ "+p2+"`"+` \(under CCA\); configuration space `+"`2\\^\\(62P\\) = "+p2+"`"+`\.$`,
+			w("m3_side", plain(c.Side)), w("m3_side", plain(c.Side)), w("m3_P", plain(c.P)),
+			w("noise_m3", pow2(noiseBarrier(c.P))), w("nocca_m3", pow2(nocca(c.P))), w("cca_m3", pow2(cca(c.P))), w("config_m3", pow2(configMap(c.P)))),
 		expect("POSTQUANTUM.md", `^\- \*\*Mode 2 \(`+"`"+num+x+num+"`"+`, `+"`P = "+num+"`"+`\):\*\* Noise barrier `+"`2\\^\\(8P\\) = "+p2+"`"+`; encoding ambiguity `+"`56\\^P ≈ "+p2+"`"+` \(without CCA\) and `+"`7\\^P ≈ "+p2+"`"+` \(under CCA\); configuration space `+"`2\\^\\(62P\\) = "+p2+"`"+`\.$`,
 			w("m2_side", plain(b.Side)), w("m2_side", plain(b.Side)), w("m2_P", plain(b.P)),
 			w("noise_m2", pow2(noiseBarrier(b.P))), w("nocca_m2", pow2(nocca(b.P))), w("cca_m2", pow2(cca(b.P))), w("config_m2", pow2(configMap(b.P)))),
@@ -703,8 +706,8 @@ func Registry(f *Figures) []Expectation {
 		expect("POSTQUANTUM.md", `queries across .P = `+num+`. pixels vs\. .8P = `+num+`. exhaustive.*This leaks `+num+` bits per pixel \(`+dec+` % of the `+num+`-bit per-pixel configuration\)`,
 			w("m1_P", plain(a.P)), w("noise_m1_exp", plain(noiseBarrier(a.P))),
 			w("noise_config_bits", plain(itb.NoiseConfigBits)), w("cca_leak_pct", ccaLeak), w("config_bits", plain(itb.NoiseConfigBits+itb.DataConfigBits))),
-		expect("POSTQUANTUM.md", `^\| Composition Mode \| .* \| 1024-bit Key \(\*\*Mode 2\*\*, P = `+num+` / Floor P = `+num+`\) \| 1024-bit Key \(\*\*Mode 1\*\*, P = `+num+`\) \|`,
-			w("m2_P", plain(b.P)), w("theo_P", plain(t.P)), w("m1_P", plain(a.P))),
+		expect("POSTQUANTUM.md", `^\| Composition Mode \| .* \| 1024-bit Key \(\*\*Mode 2\*\*, P = `+num+` / Floor P = `+num+`\) \| 1024-bit Key \(\*\*Mode 1\*\*, P = `+num+` / \*\*Mode 3\*\*, P = `+num+`\) \|`,
+			w("m2_P", plain(b.P)), w("theo_P", plain(t.P)), w("m1_P", plain(a.P)), w("m3_P", plain(c.P))),
 		expect("POSTQUANTUM.md", `\(default .DefaultNonceBits = `+num+`. bits each\)`,
 			w("nonce_bits", plain(f.NonceBits))),
 		expect("POSTQUANTUM.md", `.A = C\(48, 16\) = `+num+`. \(.log₂ ≈ `+dec+`.\).*and .m_1. is drawn from the .B = C\(32, 16\) = `+num+`. \(.log₂ ≈ `+dec+`.\)`,
@@ -722,8 +725,9 @@ func Registry(f *Figures) []Expectation {
 		expect("POSTQUANTUM.md", `enforces .P ≥ MinPixels = ⌈k / log₂ 7⌉. \(`+num+`, `+num+`, `+num+` pixels for .k = 512, 1024, 2048. under CCA; vs\. .⌈k / log₂ 56⌉ = `+num+`, `+num+`, `+num+`. pixels without CCA\)`,
 			w("minpixels_512", plain(f.MinPixels[512])), w("minpixels_1024", plain(mp)), w("minpixels_2048", plain(f.MinPixels[2048])),
 			w("threshold_nocca_512", plain(f.ThresholdNoCCA[512])), w("threshold_nocca_1024", plain(f.ThresholdNoCCA[1024])), w("threshold_nocca_2048", plain(f.ThresholdNoCCA[2048]))),
-		expect("POSTQUANTUM.md", `\(≥ `+num+` bytes at \*\*Mode 2\*\* .P = `+num+`., ≥ `+num+` bytes at \*\*Mode 1\*\* .P = `+num+`., ≥ `+num+` bytes at .P = `+num+`., \[Proof 10\]`,
+		expect("POSTQUANTUM.md", `\(≥ `+num+` bytes at \*\*Mode 2\*\* .P = `+num+`., ≥ `+num+` bytes at \*\*Mode 3\*\* .P = `+num+`., ≥ `+num+` bytes at \*\*Mode 1\*\* .P = `+num+`., ≥ `+num+` bytes at .P = `+num+`., \[Proof 10\]`,
 			w("m2_residue", plain(b.Residue)), w("m2_P", plain(b.P)),
+			w("m3_residue", plain(c.Residue)), w("m3_P", plain(c.P)),
 			w("m1_residue", plain(a.Residue)), w("m1_P", plain(a.P)),
 			w("theo_residue", plain(t.Residue)), w("theo_P", plain(t.P))),
 		expect("POSTQUANTUM.md", `^\| \*\*Grover Seed Search \(Full-Container Verification\)\*\* \| .* \| √P × 2\^keyBits \(Core ITB Full KPA / MAC \+ Silent Drop \[1\], ~`+p2+`–`+p2+` at 1024-bit\); √P × 2\^\(keyBits/2\) \(MAC \+ Reveal, ~`+p2+`–`+p2+` at 1024-bit\) \|$`,
@@ -790,12 +794,12 @@ func Registry(f *Figures) []Expectation {
 		add(sweep(file, `(2\^311\.\d\d)`, w("desync_lane168_fold_mode2", "2^311.89")))
 		add(sweep(file, `(2\^316\.\d\d)`, w("desync_lane168_fold_mode1", "2^316.51")))
 	}
-	for _, file := range []string{"SCIENCE.md", "PROOFS.md", "SECURITY.md", "README.md", "lean/README.md"} {
+	for _, file := range []string{"SCIENCE.md", "PROOFS.md", "SECURITY.md", "POSTQUANTUM.md", "README.md", "lean/README.md"} {
 		add(sweep(file, `(2\^187\.\d\d)`, w("desync_traj_mode3_k8", "2^187.16")))
 		add(sweep(file, `(2\^99\.\d\d)`, w("desync_lane48_mode3", "2^99.54")))
 		add(sweep(file, `(2\^282\.\d\d)`, w("desync_lane168_mode3", "2^282.52")))
 	}
-	for _, file := range []string{"SCIENCE.md", "PROOFS.md", "SECURITY.md", "README.md", "lean/README.md"} {
+	for _, file := range []string{"SCIENCE.md", "PROOFS.md", "SECURITY.md", "POSTQUANTUM.md", "README.md", "lean/README.md"} {
 		add(sweep(file, `(2\^131\.\d\d)`, w("desync_lane48_fold_mode3", "2^131.54")))
 		add(sweep(file, `(2\^314\.\d\d)`, w("desync_lane168_fold_mode3", "2^314.52")))
 	}
