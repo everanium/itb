@@ -1,3 +1,5 @@
+//go:build cgo
+
 package capi
 
 // Regression coverage for the TripleStreamRead teardown-flag sync

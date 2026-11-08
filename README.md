@@ -180,14 +180,14 @@ itb.SetGCPercent(100)
 
 ```bash
 # CGO backend (default)
-go test -timeout=3600s -race ./...
+go test -timeout=3600s -race -count=1 ./...
 
 # CGO backend without ITB-native ASM
-go test -tags=noitbasm -timeout=3600s -race ./...
+go test -tags=noitbasm -timeout=3600s -race -count=1 ./...
 
 # Pure Go
-CGO_ENABLED=0 go test -timeout=3600s . ./triple ./hashes ./macs ./internal/...
-CGO_ENABLED=0 go test -tags=noitbasm -timeout=3600s . ./triple ./hashes ./macs ./internal/...
+go test -tags=purego -timeout=3600s -race -count=1 ./...
+CGO_ENABLED=0 go test -tags=purego -timeout=3600s -count=1 ./...
 ```
 
 ### Benchmarks
@@ -201,12 +201,15 @@ go test -tags=noitbasm -bench='Benchmark*' -run='^$' -benchtime=5s -count=1 .
 
 # Pure Go
 CGO_ENABLED=0 go test -bench='Benchmark*' -run='^$' -benchtime=5s -count=1 .
+CGO_ENABLED=0 go test -tags=purego -bench='Benchmark*' -run='^$' -benchtime=5s -count=1 .
 ```
 
 ### Coverage
 
 ```bash
-go test -coverprofile=coverage.out $(go list ./... | grep -vE 'tools/eitb|cmd/cshared$')
+PKGS=$(go list ./... | grep -vE '/(cmd/cshared$|cmd/itb3|scripts|tools)')
+go test -short -count=1 -coverpkg="$(echo "$PKGS" | paste -sd, -)" -coverprofile=coverage.out $PKGS
+go tool cover -func=coverage.out | tail -n 1
 ```
 
 ### Performance
