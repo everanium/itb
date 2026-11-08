@@ -174,7 +174,7 @@ itb.SetGCPercent(100)
 
 ### Container mode
 
-`ITB_CONTAINER_MODE=1` sets the process-wide default container floor and **Layer I** (`0x05`) trajectory mode at process init (accepted values: `1` / `2` / `3` or `mode1` / `mode2` / `mode3` / `posit` / `gauss-posit`; default `1`). Per-Pipeline overrides in `triple.Opts.Mode`, `*itb.Config.Mode`, and `Blob*Opts.Mode` take precedence when explicitly set (`1`, `2`, or `3`).
+`ITB_CONTAINER_MODE=1` sets the process-wide default container floor and **Layer I** (`0x05`) trajectory mode at process init (accepted values: `1` / `2` / `3`; default `1`). Per-Pipeline overrides in `triple.Opts.Mode`, `*itb.Config.Mode`, and `Blob*Opts.Mode` take precedence when explicitly set (`1` = **Mode 1** Per-Region, `2` = **Mode 2** Per-Container, `3` = **Mode 3** Gauss-Posit).
 
 ### Tests
 
