@@ -107,7 +107,7 @@ Full matrix:
 - 34 × 34 (Go Core + 33 bindings) = 1156 pairs
 - 13 shipped profiles (6 Single Message, 6 Streaming, 1 blob-only)
 - 1 sample file (`tools/eitb/in-file.txt`, 4 KiB, deterministic)
-- **13872 cells PASS** (12 cipher-carrying profiles × 34 × 34); 1156 cells N/A (blob-only profile intentionally exposes no cipher surface); 0 FAIL across the full 15028-cell matrix
+- **13872 cells PASS** across the 34 × 34 cross-binding interop matrix (`scripts/compat/cross-verify.sh`: 12 cipher-carrying profiles × 34 × 34); 1156 cells N/A (blob-only profile intentionally exposes no cipher surface); 0 FAIL across the full 15028-cell matrix
 - **8124 cells PASS** across the 7-section C ↔ pure-Go cross-build & SIMD tier parity matrix (`scripts/parity/cross-build-parity.sh`: 360 host-tier + 1800 forced-pixel-tier + 2880 forced-hash-arm + 576 interlock-tier + 1104 interlock168-tier + 24 kmac-mac + 612 batch-16-fill + 768 mode3-posit); 0 FAIL
 
 **All features fully implemented.** Every binding is a thin proxy over the same `ITB_Triple_*` FFI surface and exposes both shapes uniformly — Single Message and Streaming, AEAD and Non-AEAD — with the stream pump adapted to each language's native IO idiom (`io.Reader` / `io.Writer` in Go, the equivalent stream abstraction per language).
