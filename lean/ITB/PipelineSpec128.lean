@@ -1920,12 +1920,423 @@ def katFullContainerSideLadderMode3 : List (Nat × Nat × Nat × Nat) := [
   (67108864, 2048, 128, 3104), (67108864, 2048, 256, 3104), (67108864, 2048, 512, 3104)
 ]
 
-/-- **Mode 3 Theorem 6 (Full 99-Cell Mode 3 Container Sizing Ladder `1 B` .. `64 MB`)**:
+-- ============================================================================
+-- § 12. MAC Authenticated (`EncryptAuthenticated3x128Cfg`) & Streaming AEAD
+--       (`EncryptStreamAuthenticated3x128Cfg`) with `hmac-blake3`
+-- ============================================================================
+
+/-- 32-bit right rotation on `UInt32` for BLAKE3 Quarter-Round `G`. -/
+@[inline] def rotr32 (x : UInt32) (n : Nat) : UInt32 :=
+  let s := n % 32
+  if s == 0 then x
+  else (x >>> UInt32.ofNat s) ||| (x <<< UInt32.ofNat (32 - s))
+
+/-- BLAKE3 IV words (`0x6A09E667..0x5BE0CD19`). -/
+def blake3IV : Array UInt32 := #[
+  0x6A09E667, 0xBB67AE85, 0x3C6EF372, 0xA54FF53A,
+  0x510E527F, 0x9B05688C, 0x1F83D9AB, 0x5BE0CD19
+]
+
+/-- BLAKE3 inter-round message word permutation `σ`. -/
+def blake3MsgPerm : Array Nat := #[2, 6, 3, 10, 7, 0, 4, 13, 1, 11, 12, 5, 9, 14, 15, 8]
+
+/-- BLAKE3 Quarter-Round `G(s, a, b, c, d, mx, my)` with right-rotations `(16, 12, 8, 7)`. -/
+@[inline] def blake3G (s : Array UInt32) (a b c d : Nat) (mx my : UInt32) : Array UInt32 :=
+  let va := s.getD a 0 + s.getD b 0 + mx
+  let vd := rotr32 (s.getD d 0 ^^^ va) 16
+  let vc := s.getD c 0 + vd
+  let vb := rotr32 (s.getD b 0 ^^^ vc) 12
+  let va := va + vb + my
+  let vd := rotr32 (vd ^^^ va) 8
+  let vc := vc + vd
+  let vb := rotr32 (vb ^^^ vc) 7
+  (((s.set! a va).set! b vb).set! c vc).set! d vd
+
+/-- BLAKE3 7-round compression returning the 8-word (`32 B`) chaining/root output `s[0..7] ⊕ s[8..15]`. -/
+def blake3Compress8 (cv m0 : Array UInt32) (counter : UInt64) (blockLen flags : UInt32) : Array UInt32 := Id.run do
+  let mut s : Array UInt32 := #[
+    cv.getD 0 0, cv.getD 1 0, cv.getD 2 0, cv.getD 3 0,
+    cv.getD 4 0, cv.getD 5 0, cv.getD 6 0, cv.getD 7 0,
+    blake3IV.getD 0 0, blake3IV.getD 1 0, blake3IV.getD 2 0, blake3IV.getD 3 0,
+    counter.toUInt32, (counter >>> 32).toUInt32, blockLen, flags
+  ]
+  let mut m := m0
+  for r in [:7] do
+    s := blake3G s 0 4 8  12 (m.getD 0 0)  (m.getD 1 0)
+    s := blake3G s 1 5 9  13 (m.getD 2 0)  (m.getD 3 0)
+    s := blake3G s 2 6 10 14 (m.getD 4 0)  (m.getD 5 0)
+    s := blake3G s 3 7 11 15 (m.getD 6 0)  (m.getD 7 0)
+    s := blake3G s 0 5 10 15 (m.getD 8 0)  (m.getD 9 0)
+    s := blake3G s 1 6 11 12 (m.getD 10 0) (m.getD 11 0)
+    s := blake3G s 2 7 8  13 (m.getD 12 0) (m.getD 13 0)
+    s := blake3G s 3 4 9  14 (m.getD 14 0) (m.getD 15 0)
+    if r < 6 then
+      m := blake3MsgPerm.map (fun idx => m.getD idx 0)
+  let mut out := Array.mkEmpty 8
+  for i in [:8] do
+    out := out.push (s.getD i 0 ^^^ s.getD (i + 8) 0)
+  return out
+
+/-- Compress one 1024-byte BLAKE3 chunk `c` (`KEYED_HASH = 16`, `CHUNK_START = 1`, `CHUNK_END = 2`, `ROOT = 8`). -/
+def blake3ChunkCV (keyWords : Array UInt32) (msg : ByteArray) (c : Nat) (isSingleChunk : Bool) : Array UInt32 := Id.run do
+  let chunkStart := c * 1024
+  let chunkEnd := Nat.min msg.size ((c + 1) * 1024)
+  let chunkLen := chunkEnd - chunkStart
+  let numBlocks := if chunkLen == 0 then 1 else (chunkLen + 63) / 64
+  let mut cv := keyWords
+  for b in [:numBlocks] do
+    let blkOff := chunkStart + b * 64
+    let blkBytes := if chunkLen == 0 then 0 else Nat.min 64 (chunkEnd - blkOff)
+    let mut blkBuf := ByteArray.emptyWithCapacity 64
+    for i in [:64] do
+      blkBuf := blkBuf.push (if i < blkBytes then getByteD msg (blkOff + i) else 0)
+    let mut m := Array.mkEmpty 16
+    for w in [:16] do
+      m := m.push (readU32LE blkBuf (w * 4))
+    let startFlag : UInt32 := if b == 0 then 1 else 0
+    let endFlag : UInt32 := if b + 1 == numBlocks then 2 else 0
+    let rootFlag : UInt32 := if isSingleChunk && b + 1 == numBlocks then 8 else 0
+    let flags : UInt32 := 16 ||| startFlag ||| endFlag ||| rootFlag
+    cv := blake3Compress8 cv m c.toUInt64 blkBytes.toUInt32 flags
+  return cv
+
+/-- Executable specification of `macs.HMACBLAKE3(key32)(msg)` (`blake3.NewKeyed(key32)`):
+    handles arbitrary single-chunk (`≤ 1024 B`) and multi-chunk (`> 1024 B`) Merkle-tree inputs. -/
+def hmacBlake3 (key32 msg : ByteArray) : ByteArray := Id.run do
+  let mut keyWords := Array.mkEmpty 8
+  for i in [:8] do
+    keyWords := keyWords.push (readU32LE key32 (i * 4))
+  let numChunks := if msg.size == 0 then 1 else (msg.size + 1023) / 1024
+  let rootWords : Array UInt32 := Id.run do
+    if numChunks == 1 then
+      return blake3ChunkCV keyWords msg 0 true
+    let mut stack : Array (Array UInt32) := #[]
+    for c in [:numChunks] do
+      let mut newCV := blake3ChunkCV keyWords msg c false
+      let mut totalChunks := c + 1
+      while totalChunks % 2 == 0 && (stack.size > 1 || c + 1 < numChunks) do
+        let leftCV := stack.getD (stack.size - 1) #[]
+        stack := stack.pop
+        newCV := blake3Compress8 keyWords (leftCV ++ newCV) 0 64 (16 ||| 4)
+        totalChunks := totalChunks / 2
+      stack := stack.push newCV
+    while stack.size > 2 do
+      let rightCV := stack.getD (stack.size - 1) #[]
+      stack := stack.pop
+      let leftCV := stack.getD (stack.size - 1) #[]
+      stack := stack.pop
+      stack := stack.push (blake3Compress8 keyWords (leftCV ++ rightCV) 0 64 (16 ||| 4))
+    let leftCV := stack.getD 0 #[]
+    let rightCV := stack.getD 1 #[]
+    return blake3Compress8 keyWords (leftCV ++ rightCV) 0 64 (16 ||| 4 ||| 8)
+  let mut out := ByteArray.emptyWithCapacity 32
+  for i in [:8] do
+    out := pushU32LE out (rootWords.getD i 0)
+  return out
+
+/-- Decode pixels `[startP, endP)` from `container` into `decoded` without stopping at `0x00`
+    (required by `DecryptAuthenticated3x128Cfg` / `DecryptStreamAuthenticated3x128Cfg` to recover
+    full region capacities and verify the embedded MAC tag before COBS decoding). -/
+def decodeChunk128Full (noiseSeed dataSeed : Seed128) (tpl : BlockNonceTemplate128)
+    (container : ByteArray) (physBaseOffset : Nat) (decoded : Array UInt8)
+    (startPixel regionPixels startP endP totalBits noiseBase : Nat) : Array UInt8 := Id.run do
+  let mut dec := decoded
+  let mut bitIndex := startP * 56
+  for p in [startP:endP] do
+    if bitIndex < totalBits then
+      let linearIdx := (startPixel + p) % regionPixels
+      let pixelOffset := physBaseOffset + linearIdx * 8
+      let (noiseLo, noiseHi) := blockHash128Tpl noiseSeed tpl (noiseBase + p)
+      let noiseHash := noiseMixU64 noiseLo noiseHi
+      let (dataHash, _) := blockHash128Tpl dataSeed tpl p
+      let noisePos := noiseFold3U64 noiseHash
+      let dataRotation := (dataHash % 7).toNat
+      let xorMask := dataHash >>> 3
+      let bitsLeft := totalBits - bitIndex
+      let chCount := if bitsLeft < 56 then (bitsLeft + 6) / 7 else 8
+      let mut packed : UInt64 := 0
+      for ch in [:chCount] do
+        let channelXOR := ((xorMask >>> UInt64.ofNat (ch * 7)) &&& 0x7F).toUInt8
+        let channelByte := getByteD container (pixelOffset + ch)
+        let dataBits := decodeChannelByte channelByte channelXOR dataRotation noisePos
+        packed := packed ||| (dataBits.toUInt64 <<< UInt64.ofNat (ch * 7))
+      let byteStart := bitIndex / 8
+      let bytesToWrite := (chCount * 7 + 7) / 8
+      for i in [:bytesToWrite] do
+        if byteStart + i < dec.size then
+          let b := ((packed >>> UInt64.ofNat (i * 8)) &&& 0xFF).toUInt8
+          dec := dec.set! (byteStart + i) b
+      bitIndex := bitIndex + chCount * 7
+  return dec
+
+/-- Full-capacity region decoder (`process128Cfg` on the authenticated decrypt path). -/
+def decodeRegion128Full (noiseSeed dataSeed startSeed : Seed128) (nonce : ByteArray)
+    (container : ByteArray) (regionByteOffset regionPixels payloadCap noiseBase : Nat)
+    (mode : Nat := 1) : ByteArray := Id.run do
+  let tpl := prepareBlockNonce128 nonce
+  let startPixel := deriveStartPixel startSeed nonce regionPixels
+  let totalBits := payloadCap * 8
+  let dataPixels := Nat.min regionPixels ((totalBits + 55) / 56)
+  let mut dec := Array.replicate payloadCap (0 : UInt8)
+  if regionPixels >= 32 then
+    let sched := deriveSubregionSchedule128 startSeed nonce startPixel regionPixels mode
+    for step in [:sched.k] do
+      let logStart := sched.logOff.getD step 0
+      let logEnd := sched.logOff.getD (step + 1) 0
+      if logStart < dataPixels then
+        let sP := logStart
+        let eP := Nat.min logEnd dataPixels
+        if sP < eP then
+          let m := sched.size.getD step 0
+          let physOff := sched.offset.getD step 0
+          let effStart := effectiveStartPixel m (sched.start.getD step 0) logStart
+          dec := decodeChunk128Full noiseSeed dataSeed tpl container
+            (regionByteOffset + physOff * 8) dec effStart m sP eP totalBits noiseBase
+  else
+    dec := decodeChunk128Full noiseSeed dataSeed tpl container
+      regionByteOffset dec startPixel regionPixels 0 dataPixels totalBits noiseBase
+  return ByteArray.mk dec
+
+/-- Deterministic specification of `itb.EncryptStreamAuthenticated3x128Cfg` (`auth128.go:135-249`)
+    with `macs.HMACBLAKE3(macKey32)`. Returns the chunk bytes `[mainNonce ‖ BE16(W) ‖ BE16(H) ‖ container]`
+    (without the 32-byte prefix ahead of the chunk, matching `EncryptStreamAuthenticated3x128Cfg`). -/
+def encryptStreamAuth3x128Deterministic (cfg : PipelineConfig) (seeds : Array Seed128)
+    (macKey32 streamID32 chunkPrefix mainNonce ilNonce plaintext : ByteArray)
+    (cumulativePixelOffset : UInt64) (finalFlag : Bool) : ByteArray := Id.run do
+  let s0 : Seed128 := seeds.getD 0 ⟨#[]⟩
+  let lockSeed : Seed128 := seeds.getD 1 ⟨#[]⟩
+  let dSeed0 : Seed128 := seeds.getD 2 ⟨#[]⟩
+  let dSeed1 : Seed128 := seeds.getD 3 ⟨#[]⟩
+  let dSeed2 : Seed128 := seeds.getD 4 ⟨#[]⟩
+  let stSeed0 : Seed128 := seeds.getD 5 ⟨#[]⟩
+  let stSeed1 : Seed128 := seeds.getD 6 ⟨#[]⟩
+  let stSeed2 : Seed128 := seeds.getD 7 ⟨#[]⟩
+  let (raw0, raw1, raw2) := splitTriple48Raw lockSeed ilNonce plaintext
+  let (des0, des1, des2) := desyncLaneEncrypt lockSeed ilNonce raw0 raw1 raw2
+  let (lane0, lane1, lane2) := prependInterlockNonce ilNonce des0 des1 des2
+  let cobs0 := cobsEncode lane0
+  let cobs1 := cobsEncode lane1
+  let cobs2 := cobsEncode lane2
+  let laneLen := raw0.size
+  let ((nl0, nl1, nl2), _) := nonceSplitOffsets ilNonce.size
+  let b0 := cobsEncodeBound (nl0 + laneLen)
+  let b1 := cobsEncodeBound (nl1 + laneLen)
+  let b2 := cobsEncodeBound (nl2 + laneLen) + 33
+  let (width, height) := calcContainerSize3Cfg cfg (b0, b1, b2)
+    s0.minPixelsAuth
+    (dSeed0.minPixelsAuth, dSeed1.minPixelsAuth, dSeed2.minPixelsAuth)
+    (stSeed0.minPixelsAuth, stSeed1.minPixelsAuth, stSeed2.minPixelsAuth)
+  let totalPixels := width * height
+  let (third, thirdPixels2, (cap0, cap1, cap2)) := tripleThirdCaps totalPixels
+  let pay0 := buildThirdPayload cobs0 cap0 cfg.drbgFillByte
+  let pay1 := buildThirdPayload cobs1 cap1 cfg.drbgFillByte
+  let pay2 := buildThirdPayload cobs2 (cap2 - 33) cfg.drbgFillByte
+  let flag : UInt8 := if finalFlag then 0xFF else 0x00
+  let offLE := pushU64LE ByteArray.empty cumulativePixelOffset
+  let macInput :=
+    if chunkPrefix.size == 0 then
+      pay0 ++ pay1 ++ pay2 ++ streamID32 ++ offLE ++ (ByteArray.empty.push flag)
+    else
+      pay0 ++ pay1 ++ pay2 ++ streamID32 ++ chunkPrefix ++ offLE ++ (ByteArray.empty.push flag)
+  let tag := hmacBlake3 macKey32 macInput
+  let full2 := (pay2 ++ tag).push flag
+  let mut cont := Array.replicate (totalPixels * 8) cfg.drbgFillByte
+  let off1 := third * 8
+  let off2 := 2 * third * 8
+  cont := encodeRegion128 s0 dSeed0 stSeed0 mainNonce cont 0 third pay0 (noiseCounterBase 0 third) cfg.mode
+  cont := encodeRegion128 s0 dSeed1 stSeed1 mainNonce cont off1 third pay1 (noiseCounterBase 1 third) cfg.mode
+  cont := encodeRegion128 s0 dSeed2 stSeed2 mainNonce cont off2 thirdPixels2 full2 (noiseCounterBase 2 third) cfg.mode
+  let mut chunk := mainNonce
+  chunk := pushU16BE chunk (UInt16.ofNat width)
+  chunk := pushU16BE chunk (UInt16.ofNat height)
+  chunk := chunk ++ ByteArray.mk cont
+  return chunk
+
+/-- Deterministic specification of `itb.EncryptAuthenticated3x128Cfg` (`auth128.go:26-68`):
+    prepends `streamID32` to a single terminating chunk (`cumulativePixelOffset = 0, finalFlag = true`). -/
+def encryptAuth3x128Deterministic (cfg : PipelineConfig) (seeds : Array Seed128)
+    (macKey32 streamID32 mainNonce ilNonce plaintext : ByteArray) : ByteArray :=
+  streamID32 ++ encryptStreamAuth3x128Deterministic cfg seeds macKey32 streamID32 ByteArray.empty mainNonce ilNonce plaintext 0 true
+
+/-- Executable specification of `itb.DecryptStreamAuthenticated3x128Cfg` (`auth128.go:258-439`):
+    decodes all 3 regions to full capacity, verifies the `hmac-blake3` tag **before** COBS decoding,
+    enforces `requireFinal` when requested, and returns `some (plaintext, finalFlag, totalPixels)` on success. -/
+def decryptStreamAuth3x128Cfg (cfg : PipelineConfig) (seeds : Array Seed128)
+    (macKey32 streamID32 chunkPrefix chunkData : ByteArray)
+    (cumulativePixelOffset : UInt64) (requireFinal : Bool) : Option (ByteArray × Bool × Nat) :=
+  let nonceLen := cfg.nonceBytes
+  let decMode := if cfg.mode == 3 then 3 else 1
+  if chunkData.size < nonceLen + 4 + 8 then none
+  else
+    let mainNonce := chunkData.extract 0 nonceLen
+    let width := (readU16BE chunkData nonceLen).toNat
+    let height := (readU16BE chunkData (nonceLen + 2)).toNat
+    if width == 0 || height == 0 || width != height then none
+    else
+      let totalPixels := width * height
+      let container := chunkData.extract (nonceLen + 4) chunkData.size
+      if container.size != totalPixels * 8 then none
+      else
+        let (third, thirdPixels2, (cap0, cap1, cap2)) := tripleThirdCaps totalPixels
+        if cap2 <= 33 then none
+        else
+          let s0 : Seed128 := seeds.getD 0 ⟨#[]⟩
+          let lockSeed : Seed128 := seeds.getD 1 ⟨#[]⟩
+          let dSeed0 : Seed128 := seeds.getD 2 ⟨#[]⟩
+          let dSeed1 : Seed128 := seeds.getD 3 ⟨#[]⟩
+          let dSeed2 : Seed128 := seeds.getD 4 ⟨#[]⟩
+          let stSeed0 : Seed128 := seeds.getD 5 ⟨#[]⟩
+          let stSeed1 : Seed128 := seeds.getD 6 ⟨#[]⟩
+          let stSeed2 : Seed128 := seeds.getD 7 ⟨#[]⟩
+          let off1 := third * 8
+          let off2 := 2 * third * 8
+          let dec0 := decodeRegion128Full s0 dSeed0 stSeed0 mainNonce container 0 third cap0 (noiseCounterBase 0 third) decMode
+          let dec1 := decodeRegion128Full s0 dSeed1 stSeed1 mainNonce container off1 third cap1 (noiseCounterBase 1 third) decMode
+          let dec2 := decodeRegion128Full s0 dSeed2 stSeed2 mainNonce container off2 thirdPixels2 cap2 (noiseCounterBase 2 third) decMode
+          let payloadLen2 := cap2 - 33
+          let payload2 := dec2.extract 0 payloadLen2
+          let tag := dec2.extract payloadLen2 (payloadLen2 + 32)
+          let flag := getByteD dec2 (payloadLen2 + 32)
+          let offLE := pushU64LE ByteArray.empty cumulativePixelOffset
+          let macInput :=
+            if chunkPrefix.size == 0 then
+              dec0 ++ dec1 ++ payload2 ++ streamID32 ++ offLE ++ (ByteArray.empty.push flag)
+            else
+              dec0 ++ dec1 ++ payload2 ++ streamID32 ++ chunkPrefix ++ offLE ++ (ByteArray.empty.push flag)
+          let expectedTag := hmacBlake3 macKey32 macInput
+          if tag != expectedTag then none
+          else
+            let finalFlag := flag == 0xFF
+            if requireFinal && !finalFlag then none
+            else
+              let n0 := findNullByte dec0
+              let n1 := findNullByte dec1
+              let n2 := findNullByte payload2
+              if n0 >= dec0.size || n1 >= dec1.size || n2 >= payload2.size then none
+              else
+                let part0 := cobsDecode (dec0.extract 0 n0)
+                let part1 := cobsDecode (dec1.extract 0 n1)
+                let part2 := cobsDecode (payload2.extract 0 n2)
+                let (ilNonce, lane0, lane1, lane2) := recoverInterlockNonce nonceLen part0 part1 part2
+                let (u0, u1, u2) := desyncLaneDecrypt lockSeed ilNonce lane0 lane1 lane2
+                some (interleaveTriple48Raw lockSeed ilNonce u0 u1 u2, finalFlag, totalPixels)
+
+/-- Executable specification of `itb.DecryptAuthenticated3x128Cfg` (`auth128.go:80-117`). -/
+def decryptAuth3x128Cfg (cfg : PipelineConfig) (seeds : Array Seed128)
+    (macKey32 wire : ByteArray) : Option ByteArray :=
+  if wire.size < 32 then none
+  else
+    let streamID32 := wire.extract 0 32
+    let chunkData := wire.extract 32 wire.size
+    match decryptStreamAuth3x128Cfg cfg seeds macKey32 streamID32 ByteArray.empty chunkData 0 true with
+    | some (pt, _, _) => some pt
+    | none => none
+
+/-- Decode a 2-chunk Streaming AEAD transcript `[streamID32 ‖ chunk0 ‖ chunkPrefix1 ‖ chunk1]`,
+    enforcing `finalFlag = false` on chunk 0, cumulative pixel offset `W0 * H0` on chunk 1,
+    and `finalFlag = true` on chunk 1. -/
+def decryptStream2ChunksAuth128Cfg (cfg : PipelineConfig) (seeds : Array Seed128)
+    (macKey32 streamWire : ByteArray) : Option ByteArray :=
+  let nonceLen := cfg.nonceBytes
+  if streamWire.size < 32 + nonceLen + 4 + 8 then none
+  else
+    let streamID32 := streamWire.extract 0 32
+    let w0 := (readU16BE streamWire (32 + nonceLen)).toNat
+    let h0 := (readU16BE streamWire (32 + nonceLen + 2)).toNat
+    let chunk0Len := nonceLen + 4 + w0 * h0 * 8
+    if streamWire.size < 32 + chunk0Len + 32 then none
+    else
+      let chunk0 := streamWire.extract 32 (32 + chunk0Len)
+      let chunkPrefix1 := streamWire.extract (32 + chunk0Len) (64 + chunk0Len)
+      let chunk1 := streamWire.extract (64 + chunk0Len) streamWire.size
+      match decryptStreamAuth3x128Cfg cfg seeds macKey32 streamID32 ByteArray.empty chunk0 0 false with
+      | none => none
+      | some (pt0, fin0, px0) =>
+        if fin0 then none
+        else
+          match decryptStreamAuth3x128Cfg cfg seeds macKey32 streamID32 chunkPrefix1 chunk1 px0.toUInt64 true with
+          | none => none
+          | some (pt1, _, _) => some (pt0 ++ pt1)
+
+/-- Flip all 8 bits of byte at `idx` (`^^^ 0xFF`) for tamper-rejection testing
+    (flips all 7 data bits of a channel byte regardless of `noisePos ∈ {0..7}`). -/
+def flipByteAt128 (b : ByteArray) (idx : Nat) : ByteArray :=
+  if idx < b.size then
+    ByteArray.mk (b.data.set! idx (getByteD b idx ^^^ 0xFF))
+  else b
+
+/-- Comprehensive boolean KAT checker for:
+    1. Standalone `hmac-blake3` (`macs.HMACBLAKE3`) across 1-chunk (`15 B`), 3-chunk (`2809 B`), and 5-chunk (`4415 B`) inputs.
+    2. `EncryptAuthenticated3x128Cfg` / `DecryptAuthenticated3x128Cfg` across **Mode 1**, **Mode 2**, and **Mode 3**
+       (exact wire lengths, exact Go `SipHash-2-4-128` wire digests, round-trip decryption, and tamper rejection).
+    3. 2-chunk `Streaming AEAD` (`EncryptStreamAuthenticated3x128Cfg` / `DecryptStreamAuthenticated3x128Cfg`)
+       across **Mode 1**, **Mode 2**, and **Mode 3** (exact stream wire lengths, exact Go digests,
+       round-trip decryption, and rejection of prefix tamper, stream truncation, and chunk reordering). -/
+def checkAuthAndStreamAeadKat128 : Bool :=
+  let macKey := mkSeqBytes 0x70 32
+  -- 1. Standalone HMAC-BLAKE3 KATs (1, 3, and 5 chunks)
+  let h15 := hmacBlake3 macKey (mkSeqBytes 0x00 15) ==
+    fromHex "384aec08401657ad4f1aa128a00e32d44aecc174964d0f26fc283e46bbd53006"
+  let h2809 := hmacBlake3 macKey (mkDeterministicBytes 2809) ==
+    fromHex "17837d6c48d5df9af15f1d5f28fa58e48586b89d6d139d79b961008e6f070001"
+  let h4415 := hmacBlake3 macKey (mkDeterministicBytes 4415) ==
+    fromHex "39839be251dfe374d1275720fe272b0b1f35a529565456410701737f190a28aa"
+  -- 2. Single-Message EncryptAuthenticated3x128Cfg across Mode 1, Mode 2, Mode 3
+  let seeds := mkDeterministicSeeds8 512
+  let pt96 := mkDeterministicBytes 96
+  let streamID := mkSeqBytes 0x30 32
+  let il0 := mkSeqBytes 0x10 16
+  let mn0 := mkSeqBytes 0x20 16
+  let authCases : List (Nat × Nat × UInt64 × UInt64) := [
+    (1, 5052, 0xbfd0fc99fe8d3e60, 0xbb0956120817fda9),
+    (2, 1852, 0xa9d9a18e935ba2ac, 0xa946040819c93882),
+    (3, 3252, 0x6d10d83ebedcb2a4, 0x14368e321da69cbc)
+  ]
+  let authOk := authCases.all fun (mode, wantLen, wantLo, wantHi) =>
+    let cfg : PipelineConfig := { nonceBits := 128, barrierFill := 1, mode }
+    let wire := encryptAuth3x128Deterministic cfg seeds macKey streamID mn0 il0 pt96
+    let (dLo, dHi) := sipHash24_128 0x0706050403020100 0x0f0e0d0c0b0a0908 wire
+    let decOk := decryptAuth3x128Cfg cfg seeds macKey wire == some pt96
+    let tamperPrefix := decryptAuth3x128Cfg cfg seeds macKey (flipByteAt128 wire 0) == none
+    let tamperNonce  := decryptAuth3x128Cfg cfg seeds macKey (flipByteAt128 wire 32) == none
+    let tamperReg0   := decryptAuth3x128Cfg cfg seeds macKey (flipByteAt128 wire 64) == none
+    let tamperReg2   := decryptAuth3x128Cfg cfg seeds macKey (flipByteAt128 wire (wire.size - 8)) == none
+    (wire.size == wantLen) && (dLo == wantLo) && (dHi == wantHi) &&
+    decOk && tamperPrefix && tamperNonce && tamperReg0 && tamperReg2
+  -- 3. 2-Chunk Streaming AEAD across Mode 1, Mode 2, Mode 3
+  let pt0 := mkDeterministicBytes 48
+  let pt1 := mkDeterministicBytes 60
+  let cp1 := mkSeqBytes 0x50 32
+  let il1 := mkSeqBytes 0x60 16
+  let mn1 := mkSeqBytes 0x40 16
+  let streamCases : List (Nat × Nat × UInt64 × UInt64 × UInt64) := [
+    (1, 10104, 625, 0xd58fa5967713e5ba, 0x590760bc15521abd),
+    (2, 3704,  225, 0x21f8697993662dbc, 0xdc1813d5e0a92513),
+    (3, 6504,  400, 0x8e92ab6dc3bcc806, 0xa427fc227d101807)
+  ]
+  let streamOk := streamCases.all fun (mode, wantLen, off1, wantLo, wantHi) =>
+    let cfg : PipelineConfig := { nonceBits := 128, barrierFill := 1, mode }
+    let c0 := encryptStreamAuth3x128Deterministic cfg seeds macKey streamID ByteArray.empty mn0 il0 pt0 0 false
+    let c1 := encryptStreamAuth3x128Deterministic cfg seeds macKey streamID cp1 mn1 il1 pt1 off1 true
+    let streamWire := streamID ++ c0 ++ cp1 ++ c1
+    let (dLo, dHi) := sipHash24_128 0x0706050403020100 0x0f0e0d0c0b0a0908 streamWire
+    let decOk := decryptStream2ChunksAuth128Cfg cfg seeds macKey streamWire == some (pt0 ++ pt1)
+    let tamperCp1 := decryptStream2ChunksAuth128Cfg cfg seeds macKey (flipByteAt128 streamWire (32 + c0.size)) == none
+    let truncated := decryptAuth3x128Cfg cfg seeds macKey (streamID ++ c0) == none
+    let wrongOff  := decryptStreamAuth3x128Cfg cfg seeds macKey streamID cp1 c1 0 true == none
+    (streamWire.size == wantLen) && (dLo == wantLo) && (dHi == wantHi) &&
+    decOk && tamperCp1 && truncated && wrongOff
+  h15 && h2809 && h4415 && authOk && streamOk
+
+/-- **Mode 3 Theorem 6 (Full 99-Cell Mode 3 Container Sizing Ladder `1 B` .. `64 MB` & Auth/Streaming AEAD KATs)**:
     Verifies that `calcContainerSideForMsg` in **Mode 3** (`mode = 3`) matches Go's
     `calcContainerSize3Cfg` across all 11 canonical payload sizes (`1 B` .. `64 MB`) ×
-    `keyBits ∈ {512, 1024, 2048}` × `nonceBits ∈ {128, 256, 512}`. -/
+    `keyBits ∈ {512, 1024, 2048}` × `nonceBits ∈ {128, 256, 512}`, and that `checkAuthAndStreamAeadKat128`
+    (`EncryptAuthenticated3x128Cfg` and 2-chunk `EncryptStreamAuthenticated3x128Cfg` with `hmac-blake3`
+    across **Mode 1**, **Mode 2**, and **Mode 3**, plus tamper/truncation/reorder rejection) holds. -/
 theorem kat_full_container_side_ladder_mode3_exact :
-    (katFullContainerSideLadderMode3.all fun (sz, kb, nb, wantSide) =>
-      calcContainerSideForMsg sz kb nb 3 == wantSide) = true := by native_decide
+    ((katFullContainerSideLadderMode3.all fun (sz, kb, nb, wantSide) =>
+      calcContainerSideForMsg sz kb nb 3 == wantSide) &&
+     checkAuthAndStreamAeadKat128) = true := by native_decide
 
 end ITB.PipelineSpec128
