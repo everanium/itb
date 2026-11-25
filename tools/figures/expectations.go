@@ -91,6 +91,43 @@ func Registry(f *Figures) []Expectation {
 	invGCD168 := 1 / float64(f.GCD168.Uint64())
 	chainRounds := func(k int) int { return k / narrowestWidth }
 
+	d := f.Desync
+	trajM2K8 := "2^" + fixed(d.TrajMode2K8, 2)
+	trajM3K8 := "2^" + fixed(d.TrajMode3K8, 2)
+	trajM1K8 := "2^" + fixed(d.TrajMode1K8, 2)
+	trajM1K12 := "2^" + fixed(d.TrajMode1K12, 2)
+	lane48M2 := desyncLaneExp(2, d.Lane48[2])
+	lane48M3 := desyncLaneExp(3, d.Lane48[3])
+	lane48M1 := desyncLaneExp(1, d.Lane48[1])
+	lane48FoldM2 := desyncLaneExp(2, d.Lane48Fold[2])
+	lane48FoldM3 := desyncLaneExp(3, d.Lane48Fold[3])
+	lane48FoldM1 := desyncLaneExp(1, d.Lane48Fold[1])
+	lane168M2 := desyncLaneExp(2, d.Lane168[2])
+	lane168M3 := desyncLaneExp(3, d.Lane168[3])
+	lane168M1 := desyncLaneExp(1, d.Lane168[1])
+	lane168FoldM2 := desyncLaneExp(2, d.Lane168Fold[2])
+	lane168FoldM3 := desyncLaneExp(3, d.Lane168Fold[3])
+	lane168FoldM1 := desyncLaneExp(1, d.Lane168Fold[1])
+	joint48M2K8 := "2^" + fixed(d.Joint48K8[2], 2)
+	joint48M3K8 := "2^" + fixed(d.Joint48K8[3], 2)
+	joint48M1K8 := "2^" + fixed(d.Joint48K8[1], 2)
+	joint48M1K12 := "2^" + fixed(d.Joint48Mode1K12, 2)
+	joint48FoldM2K8 := "2^" + fixed(d.Joint48FoldK8[2], 2)
+	joint48FoldM3K8 := "2^" + fixed(d.Joint48FoldK8[3], 2)
+	joint48FoldM1K8 := "2^" + fixed(d.Joint48FoldK8[1], 2)
+	joint48FoldM1K12 := "2^" + fixed(d.Joint48FoldM1K12, 2)
+	joint168M2K8 := "2^" + fixed(d.Joint168K8[2], 2)
+	joint168M3K8 := "2^" + fixed(d.Joint168K8[3], 2)
+	joint168M1K8 := "2^" + fixed(d.Joint168K8[1], 2)
+	joint168M1K12 := "2^" + fixed(d.Joint168Mode1K12, 2)
+	joint168FoldM2K8 := "2^" + fixed(d.Joint168FoldK8[2], 2)
+	joint168FoldM3K8 := "2^" + fixed(d.Joint168FoldK8[3], 2)
+	joint168FoldM1K8 := "2^" + fixed(d.Joint168FoldK8[1], 2)
+	joint168FoldM1K12 := "2^" + fixed(d.Joint168FoldM1K12, 2)
+	contCCAM2 := pow2(d.ContainerCCA48K8[2])
+	contCCAM3 := pow2(d.ContainerCCA48K8[3])
+	contCCAM1 := pow2(d.ContainerCCA48K8[1])
+
 	residueLine := func() string {
 		return "\\(`s = " + num + "`, container `" + num + x + num + " = " + num + "`\\): `gap ≥ \\(2" + x + num + " \\+ 1\\)" + x + "7 = " + num + " bytes`"
 	}
@@ -249,6 +286,7 @@ func Registry(f *Figures) []Expectation {
 	}
 	add(
 		expect("SCIENCE.md", `^\| \*\*Mode 2\*\* container floor \(payload ≤ ~`+dec+` KB\) \|`, w("m2_max_payload_kb", kb(b.MaxPayload))),
+		expect("SCIENCE.md", `^\| \*\*Mode 3\*\* container floor \(payload ≤ ~`+dec+` KB\) \|`, w("m3_max_payload_kb", kb(c.MaxPayload))),
 		expect("SCIENCE.md", `^\| \*\*Mode 1\*\* container floor \(payload ≤ ~`+dec+` KB\) \|`, w("m1_max_payload_kb", kb(a.MaxPayload))),
 		// The theoretical floor is not a shipped shape. Its container is
 		// the Mode 2 raw square before the barrier margin, so the payloads
@@ -256,6 +294,7 @@ func Registry(f *Figures) []Expectation {
 		// takes the Mode 2 measured fit while the two containers coincide.
 		expect("SCIENCE.md", `^\| Theoretical single-region floor \(~`+dec+` KB\) \|`, w("theo_max_payload_kb", theoPayloadKB)),
 		ambRow(`\*\*Mode 2\*\* container floor \(payload ≤ ~[\d.]+ KB\)`, b.P, plain),
+		ambRow(`\*\*Mode 3\*\* container floor \(payload ≤ ~[\d.]+ KB\)`, c.P, plain),
 		ambRow(`\*\*Mode 1\*\* container floor \(payload ≤ ~[\d.]+ KB\)`, a.P, plain),
 		ambRow(`Theoretical single-region floor \(~[\d.]+ KB\)`, t.P, plain),
 		ambRow(`64 KB`, s64k.P, plain),
@@ -550,21 +589,36 @@ func Registry(f *Figures) []Expectation {
 			w("expansion_m1_2500B", ex(a.Wire, 2500, 0)), w("expansion_m1_500B", ex(a.Wire, 500, 0)),
 			w("expansion_m2_2500B", ex(b.Wire, 2500, 1)), w("expansion_m2_500B", ex(b.Wire, 500, 0))),
 		expect("README.md", `^\| Key space \| Up to `+p2+` \|$`, w("max_key_space", pow2(itb.MaxKeyBits))),
-		expect("README.md", `^\| \*\*Desynchronized Interlocked Barrier\*\* \| \*\*Layer I\*\* \(0x05 on startSeed1\.\.3\) dynamic K_r sub-region trajectories \(≈ `+p2d+` \*\*Mode 2\*\* / ≈ `+p2d+` \*\*Mode 1\*\* at K_r = 8 on 1024-bit ITB floors\) \+ \*\*Layer II\*\* \(0x06 on lockSeed\) cross-lane slot desynchronization \(β_0 ≠ β_1, \\\|Ω_chunk\\\| · M\^3 ≈ `+p2d+`–`+p2d+` in 48-bit and ≈ `+p2d+`–`+p2d+` in 168-bit, or ≈ `+p2d+`–`+p2d+` and ≈ `+p2d+`–`+p2d+` with 4 B fold at 1024-bit ITB floors\); 0 B wire overhead \| Stable \|$`,
-			w("desync_traj_mode2_k8", "2^166.98"), w("desync_traj_mode1_k8", "2^224.04"),
-			w("desync_lane48_mode2", "2^96.91"), w("desync_lane48_mode1", "2^101.53"),
-			w("desync_lane168_mode2", "2^279.89"), w("desync_lane168_mode1", "2^284.51"),
-			w("desync_lane48_fold_mode2", "2^128.91"), w("desync_lane48_fold_mode1", "2^133.53"),
-			w("desync_lane168_fold_mode2", "2^311.89"), w("desync_lane168_fold_mode1", "2^316.51")),
-		expect("README.md", `^\| \*\*Rank Barrier \(168-bit Interlock\)\*\* \| 21-byte chunk → 3 × 56-bit lanes; C\(168,56\)·C\(112,56\) ≈ `+p2d+` mask space; bias ≈ (2\^-\d+\.\d);`,
+		expect("README.md", `^\| \*\*Desynchronized Interlocked Barrier\*\* \| Composite 1-chunk crib\+trajectory desynchronization space \\\|Ω_chunk\\\| · M\^3 · \\\|T_I\\\| ≈ `+p2d+` / `+p2d+` / `+p2d+`–2\^547\.20 \(midpoint `+p2d+`\) in 48-bit, or ≈ `+p2d+` / `+p2d+` / `+p2d+`–2\^579\.20 \(midpoint `+p2d+`\) with 4 B fold v, and ≈ `+p2d+` / `+p2d+` / `+p2d+`–2\^730\.18 \(midpoint `+p2d+`\) in 168-bit, or ≈ `+p2d+` / `+p2d+` / `+p2d+`–2\^762\.18 \(midpoint `+p2d+`\) with fold v across 1024-bit ITB \*\*Mode 2\*\* / \*\*Mode 3\*\* / \*\*Mode 1\*\* floors \(container-wide CCA ambiguity with 7\^P > `+p2+` / `+p2+` / `+p2+`\): product of \*\*Layer I\*\* \(0x05 on startSeed1\.\.3\) dynamic K_r sub-region trajectories \(2\^126–2\^206, mid ≈ `+p2d+` at K_r = 8 \*\*Mode 2\*\*; 2\^141–2\^233, mid ≈ `+p2d+` at K_r = 8 \*\*Mode 3\*\*; 2\^224–2\^445, min ≈ `+p2d+` at K_r = 8, mid ≈ `+p2d+` at K_r = 12 \*\*Mode 1\*\*\) and \*\*Layer II\*\* \(0x06 on lockSeed\) single-chunk cross-lane slot desynchronization \(β_0 ≠ β_1, single-chunk \\\|Ω_chunk\\\| · M\^3 ≈ `+p2d+` / `+p2d+` / `+p2d+` in 48-bit and ≈ `+p2d+` / `+p2d+` / `+p2d+` in 168-bit, or ≈ `+p2d+` / `+p2d+` / `+p2d+` and ≈ `+p2d+` / `+p2d+` / `+p2d+` with 4 B fold v\); 0 B wire overhead \| Stable \|$`,
+			w("desync_joint48_mode2_k8", joint48M2K8), w("desync_joint48_mode3_k8", joint48M3K8), w("desync_joint48_mode1_k8", joint48M1K8), w("desync_joint48_mode1_k12", joint48M1K12),
+			w("desync_joint48_fold_mode2_k8", joint48FoldM2K8), w("desync_joint48_fold_mode3_k8", joint48FoldM3K8), w("desync_joint48_fold_mode1_k8", joint48FoldM1K8), w("desync_joint48_fold_mode1_k12", joint48FoldM1K12),
+			w("desync_joint168_mode2_k8", joint168M2K8), w("desync_joint168_mode3_k8", joint168M3K8), w("desync_joint168_mode1_k8", joint168M1K8), w("desync_joint168_mode1_k12", joint168M1K12),
+			w("desync_joint168_fold_mode2_k8", joint168FoldM2K8), w("desync_joint168_fold_mode3_k8", joint168FoldM3K8), w("desync_joint168_fold_mode1_k8", joint168FoldM1K8), w("desync_joint168_fold_mode1_k12", joint168FoldM1K12),
+			w("desync_cca_mode2", contCCAM2), w("desync_cca_mode3", contCCAM3), w("desync_cca_mode1", contCCAM1),
+			w("desync_traj_mode2_k8", trajM2K8), w("desync_traj_mode3_k8", trajM3K8), w("desync_traj_mode1_k8", trajM1K8), w("desync_traj_mode1_k12", trajM1K12),
+			w("desync_lane48_mode2", lane48M2), w("desync_lane48_mode3", lane48M3), w("desync_lane48_mode1", lane48M1),
+			w("desync_lane168_mode2", lane168M2), w("desync_lane168_mode3", lane168M3), w("desync_lane168_mode1", lane168M1),
+			w("desync_lane48_fold_mode2", lane48FoldM2), w("desync_lane48_fold_mode3", lane48FoldM3), w("desync_lane48_fold_mode1", lane48FoldM1),
+			w("desync_lane168_fold_mode2", lane168FoldM2), w("desync_lane168_fold_mode3", lane168FoldM3), w("desync_lane168_fold_mode1", lane168FoldM1)),
+		expect("README.md", `^\| \*\*Rank Barrier \(168-bit Interlock\)\*\* \| 21-byte chunk → 3 × 56-bit lanes; C\(168,56\)·C\(112,56\) ≈ `+p2d+` per-chunk mask space; bias ≈ (2\^-\d+\.\d);`,
 			w("log2_AB168", "2^"+log2AB168), w("bias168", "2^"+bias168)),
-		expect("README.md", `^\| \*\*Rank Barrier \(48-bit Interlock, default\)\*\* \| 6-byte chunk → 3 × 16-bit lanes; C\(48,16\)·C\(32,16\) ≈ `+p2d+` mask space; bias ≈ (2\^-\d+\.\d);`,
+		expect("README.md", `^\| \*\*Rank Barrier \(48-bit Interlock, default\)\*\* \| 6-byte chunk → 3 × 16-bit lanes; C\(48,16\)·C\(32,16\) ≈ `+p2d+` per-chunk mask space; bias ≈ (2\^-\d+\.\d);`,
 			w("log2_AB", "2^"+log2AB), w("bias", "2^"+bias)),
-		expect("README.md", `^\| Rank Barrier \| Per-chunk 48-bit keyed permutation over three regions \(C\(48, 16\) · C\(32, 16\) ≈ `+p2d+` balanced partitions, bias ≈ (2\^-\d+\.\d)\), or optional 168-bit permutation for 512-bit primitives \(C\(168, 56\) · C\(112, 56\) ≈ `+p2d+` balanced partitions, bias ≈ (2\^-\d+\.\d)\) \|$`,
+		expect("README.md", `^\| \*\*Pixel Barrier \(8-channel RGBWYOPA\)\*\* \| `+num+` data bits \+ `+num+` noise bits per pixel; 7\^P CCA ambiguity \(≈ `+p2+` \*\*Mode 2\*\* / `+p2+` \*\*Mode 3\*\* / `+p2+` \*\*Mode 1\*\* at 1024-bit floors\);`,
+			w("data_bits_per_pixel", plain(itb.DataBitsPerPixel)), w("noise_bits_per_pixel", plain(itb.Channels)),
+			w("cca_m2", pow2(cca(b.P))), w("cca_m3", pow2(cca(c.P))), w("cca_m1", pow2(cca(a.P)))),
+		expect("README.md", `^\| Desynchronized Interlocked Barrier \| Zero wire overhead \(0 B\): composite 1-chunk crib\+trajectory desynchronization space \\\|Ω_chunk\\\| · M\^3 · \\\|T_I\\\| ≈ `+p2d+` / `+p2d+` / `+p2d+`–2\^547\.20 \(midpoint `+p2d+`\) in 48-bit, or ≈ `+p2d+` / `+p2d+` / `+p2d+`–2\^579\.20 \(midpoint `+p2d+`\) with the 4-byte fold v, and ≈ `+p2d+` / `+p2d+` / `+p2d+`–2\^730\.18 \(midpoint `+p2d+`\) in 168-bit, or ≈ `+p2d+` / `+p2d+` / `+p2d+`–2\^762\.18 \(midpoint `+p2d+`\) with fold v across the 1024-bit ITB \*\*Mode 2\*\* / \*\*Mode 3\*\* / \*\*Mode 1\*\* floors \(container-wide CCA ambiguity with 7\^P exceeding `+p2+` / `+p2+` / `+p2+`\)`,
+			w("desync_joint48_mode2_k8", joint48M2K8), w("desync_joint48_mode3_k8", joint48M3K8), w("desync_joint48_mode1_k8", joint48M1K8), w("desync_joint48_mode1_k12", joint48M1K12),
+			w("desync_joint48_fold_mode2_k8", joint48FoldM2K8), w("desync_joint48_fold_mode3_k8", joint48FoldM3K8), w("desync_joint48_fold_mode1_k8", joint48FoldM1K8), w("desync_joint48_fold_mode1_k12", joint48FoldM1K12),
+			w("desync_joint168_mode2_k8", joint168M2K8), w("desync_joint168_mode3_k8", joint168M3K8), w("desync_joint168_mode1_k8", joint168M1K8), w("desync_joint168_mode1_k12", joint168M1K12),
+			w("desync_joint168_fold_mode2_k8", joint168FoldM2K8), w("desync_joint168_fold_mode3_k8", joint168FoldM3K8), w("desync_joint168_fold_mode1_k8", joint168FoldM1K8), w("desync_joint168_fold_mode1_k12", joint168FoldM1K12),
+			w("desync_cca_mode2", contCCAM2), w("desync_cca_mode3", contCCAM3), w("desync_cca_mode1", contCCAM1)),
+		expect("README.md", `^\| Rank Barrier \| Per-chunk 48-bit keyed permutation over three regions \(C\(48, 16\) · C\(32, 16\) ≈ `+p2d+` per-chunk mask space of balanced partitions, bias ≈ (2\^-\d+\.\d)\), or optional 168-bit permutation for 512-bit primitives \(C\(168, 56\) · C\(112, 56\) ≈ `+p2d+` per-chunk mask space of balanced partitions, bias ≈ (2\^-\d+\.\d)\) \|$`,
 			w("log2_AB", "2^"+log2AB), w("bias", "2^"+bias), w("log2_AB168", "2^"+log2AB168), w("bias168", "2^"+bias168)),
-		expect("README.md", `^\| Pixel Barrier \| `+num+`-channel RGBWYOPA pixels \(`+num+` data bits \+ `+num+` noise bits per pixel across `+num+` channels, with per-pixel `+num+`-bit XOR masking, secret `+num+`-way bit rotation yielding 7\^P CCA-surviving configurations, and CSPRNG-seeded DRBG noise; \*\*Mode 1\*\* per-region and \*\*Mode 2\*\* per-container ambiguity floors\) \|$`,
+		expect("README.md", `^\| Pixel Barrier \| `+num+`-channel RGBWYOPA pixels \(`+num+` data bits \+ `+num+` noise bits per pixel across `+num+` channels, with per-pixel `+num+`-bit XOR masking, secret `+num+`-way bit rotation yielding 7\^P CCA-surviving configurations — ≈ `+p2+` \*\*Mode 2\*\* / `+p2+` \*\*Mode 3\*\* / `+p2+` \*\*Mode 1\*\* at 1024-bit floors — and CSPRNG-seeded DRBG noise; \*\*Mode 1\*\* per-region, \*\*Mode 2\*\* per-container, and \*\*Mode 3\*\* Gauss-Posit ambiguity floors\) \|$`,
 			w("channels", plain(itb.Channels)), w("data_bits_per_pixel", plain(itb.DataBitsPerPixel)), w("noise_bits_per_pixel", plain(itb.Channels)),
-			w("channels", plain(itb.Channels)), w("data_bits_per_pixel", plain(itb.DataBitsPerPixel)), w("rotation_way", plain(itb.DataBitsPerChannel))),
+			w("channels", plain(itb.Channels)), w("data_bits_per_pixel", plain(itb.DataBitsPerPixel)), w("rotation_way", plain(itb.DataBitsPerChannel)),
+			w("cca_m2", pow2(cca(b.P))), w("cca_m3", pow2(cca(c.P))), w("cca_m1", pow2(cca(a.P)))),
 		expect("README.md", `The partition constants are .A₁₆₈ = C\(168, 56\) = `+num+`. \(.log₂ ≈ `+dec+`.\) and .B₁₆₈ = C\(112, 56\) = `+num+`. \(.log₂ ≈ `+dec+`.\), yielding a per-chunk mask space of .\|Ω_chunk,168\| = A₁₆₈ · B₁₆₈ = `+num+` ≈ `+p2d+`. balanced partitions\. With .⌊2\^512 / \(A₁₆₈ · B₁₆₈\)⌋ ≈ `+p2d+`. preimages per mask triple, the per-chunk bias is .≈ (2\^-\d+\.\d). \(.≈ (2\^-\d+\.\d). accumulated across a maximum 64 MiB message of .`+num+` ≈ `+p2d+`. chunks, requiring .1 / ε² ≈ `+p2d+`. chunk samples or .~`+p2+`. maximum-size messages for a statistical distinguisher\), and a single 168-bit \(21-byte\) crib leaves .≈ `+p2d+`. \(.≈ `+p2+`.\) compatible mask triples\.`,
 			w("A168", commaBig(f.A168)), w("log2_A168", log2A168), w("B168", commaBig(f.B168)), w("log2_B168", log2B168),
 			w("AB168", commaBig(f.AB168)), w("log2_AB168", "2^"+log2AB168), w("log2_preimages168", "2^"+log2Pre168),
@@ -777,34 +831,55 @@ func Registry(f *Figures) []Expectation {
 	}
 	add(sweep("PROOFS.md", `\b(10078335949946663\d{3})\b`, w("gcd168", gcd168Plain)))
 	for _, file := range []string{"SCIENCE.md", "PROOFS.md", "lean/README.md"} {
-		add(sweep(file, `\b(3,176,\d{3})\b`, w("entry_pixels_mode2", "3,176,523")))
-		add(sweep(file, `\b(68,083,\d{3})\b`, w("entry_pixels_mode1", "68,083,776")))
+		add(sweep(file, `\b(3,176,\d{3})\b`, w("entry_pixels_mode2", comma(d.EntryPixels[2]))))
+		add(sweep(file, `\b(68,083,\d{3})\b`, w("entry_pixels_mode1", comma(d.EntryPixels[1]))))
 	}
-	for _, file := range []string{"SCIENCE.md", "PROOFS.md", "SECURITY.md", "ITB.md", "POSTQUANTUM.md", "README.md", "REDTEAM.md", "FAQ.md"} {
-		add(sweep(file, `(2\^166\.\d\d)`, w("desync_traj_mode2_k8", "2^166.98")))
-		add(sweep(file, `(2\^224\.\d\d)`, w("desync_traj_mode1_k8", "2^224.04")))
-		add(sweep(file, `(2\^96\.\d\d)`, w("desync_lane48_mode2", "2^96.91")))
-		add(sweep(file, `(2\^101\.\d\d)`, w("desync_lane48_mode1", "2^101.53")))
-		add(sweep(file, `(2\^128\.\d\d)`, w("desync_lane48_fold_mode2", "2^128.91")))
-		add(sweep(file, `(2\^133\.\d\d)`, w("desync_lane48_fold_mode1", "2^133.53")))
+	for _, file := range []string{"SCIENCE.md", "PROOFS.md", "SECURITY.md", "ITB.md", "POSTQUANTUM.md", "README.md", "REDTEAM.md", "FAQ.md", "lean/README.md"} {
+		add(sweep(file, `(2\^166\.\d\d)`, w("desync_traj_mode2_k8", trajM2K8)))
+		add(sweep(file, `(2\^187\.\d\d)`, w("desync_traj_mode3_k8", trajM3K8)))
+		add(sweep(file, `(2\^224\.\d\d)`, w("desync_traj_mode1_k8", trajM1K8)))
+		add(sweep(file, `(2\^335\.\d\d)`, w("desync_traj_mode1_k12", trajM1K12)))
+		add(sweep(file, `(2\^96\.\d\d)`, w("desync_lane48_mode2", lane48M2)))
+		add(sweep(file, `(2\^99\.\d\d)`, w("desync_lane48_mode3", lane48M3)))
+		add(sweep(file, `(2\^101\.\d\d)`, w("desync_lane48_mode1", lane48M1)))
+		add(sweep(file, `(2\^128\.\d\d)`, w("desync_lane48_fold_mode2", lane48FoldM2)))
+		add(sweep(file, `(2\^131\.\d\d)`, w("desync_lane48_fold_mode3", lane48FoldM3)))
+		add(sweep(file, `(2\^133\.\d\d)`, w("desync_lane48_fold_mode1", lane48FoldM1)))
+		add(sweep(file, `(2\^279\.\d\d)`, w("desync_lane168_mode2", lane168M2)))
+		add(sweep(file, `(2\^282\.\d\d)`, w("desync_lane168_mode3", lane168M3)))
+		add(sweep(file, `(2\^284\.\d\d)`, w("desync_lane168_mode1", lane168M1)))
+		add(sweep(file, `(2\^311\.\d\d)`, w("desync_lane168_fold_mode2", lane168FoldM2)))
+		add(sweep(file, `(2\^314\.\d\d)`, w("desync_lane168_fold_mode3", lane168FoldM3)))
+		add(sweep(file, `(2\^316\.\d\d)`, w("desync_lane168_fold_mode1", lane168FoldM1)))
+		add(sweep(file, `(2\^263\.\d\d)`, w("desync_joint48_mode2_k8", joint48M2K8)))
+		add(sweep(file, `(2\^286\.\d\d)`, w("desync_joint48_mode3_k8", joint48M3K8)))
+		add(sweep(file, `(2\^325\.\d\d)`, w("desync_joint48_mode1_k8", joint48M1K8)))
+		add(sweep(file, `(2\^437\.\d\d)`, w("desync_joint48_mode1_k12", joint48M1K12)))
+		add(sweep(file, `(2\^446\.\d\d)`, w("desync_joint168_mode2_k8", joint168M2K8)))
+		add(sweep(file, `(2\^469\.6\d)`, w("desync_joint168_mode3_k8", joint168M3K8)))
+		add(sweep(file, `(2\^508\.\d\d)`, w("desync_joint168_mode1_k8", joint168M1K8)))
+		add(sweep(file, `(2\^620\.\d\d)`, w("desync_joint168_mode1_k12", joint168M1K12)))
 	}
-	for _, file := range []string{"SCIENCE.md", "PROOFS.md", "SECURITY.md", "ITB.md", "POSTQUANTUM.md", "README.md", "REDTEAM.md"} {
-		add(sweep(file, `(2\^279\.\d\d)`, w("desync_lane168_mode2", "2^279.89")))
-		add(sweep(file, `(2\^284\.\d\d)`, w("desync_lane168_mode1", "2^284.51")))
-		add(sweep(file, `(2\^311\.\d\d)`, w("desync_lane168_fold_mode2", "2^311.89")))
-		add(sweep(file, `(2\^316\.\d\d)`, w("desync_lane168_fold_mode1", "2^316.51")))
+	for _, file := range []string{"README.md", "SCIENCE.md", "PROOFS.md", "ITB.md", "POSTQUANTUM.md", "REDTEAM.md", "SECURITY.md", "lean/README.md"} {
+		add(sweep(file, `(2\^295\.\d\d)`, w("desync_joint48_fold_mode2_k8", joint48FoldM2K8)))
+		add(sweep(file, `(2\^318\.\d\d)`, w("desync_joint48_fold_mode3_k8", joint48FoldM3K8)))
+		add(sweep(file, `(2\^357\.\d\d)`, w("desync_joint48_fold_mode1_k8", joint48FoldM1K8)))
+		add(sweep(file, `(2\^478\.\d\d)`, w("desync_joint168_fold_mode2_k8", joint168FoldM2K8)))
+		add(sweep(file, `(2\^501\.\d\d)`, w("desync_joint168_fold_mode3_k8", joint168FoldM3K8)))
+		add(sweep(file, `(2\^540\.\d\d)`, w("desync_joint168_fold_mode1_k8", joint168FoldM1K8)))
 	}
-	for _, file := range []string{"SCIENCE.md", "PROOFS.md", "SECURITY.md", "POSTQUANTUM.md", "README.md", "lean/README.md"} {
-		add(sweep(file, `(2\^187\.\d\d)`, w("desync_traj_mode3_k8", "2^187.16")))
-		add(sweep(file, `(2\^99\.\d\d)`, w("desync_lane48_mode3", "2^99.54")))
-		add(sweep(file, `(2\^282\.\d\d)`, w("desync_lane168_mode3", "2^282.52")))
+	for _, file := range []string{"README.md", "ITB.md", "POSTQUANTUM.md", "REDTEAM.md", "SECURITY.md", "lean/README.md"} {
+		add(sweep(file, `(2\^469\.1\d)`, w("desync_joint48_fold_mode1_k12", joint48FoldM1K12)))
+		add(sweep(file, `(2\^652\.\d\d)`, w("desync_joint168_fold_mode1_k12", joint168FoldM1K12)))
 	}
-	for _, file := range []string{"SCIENCE.md", "PROOFS.md", "SECURITY.md", "POSTQUANTUM.md", "README.md", "lean/README.md"} {
-		add(sweep(file, `(2\^131\.\d\d)`, w("desync_lane48_fold_mode3", "2^131.54")))
-		add(sweep(file, `(2\^314\.\d\d)`, w("desync_lane168_fold_mode3", "2^314.52")))
+	for _, file := range []string{"HWTHREATS.md"} {
+		add(sweep(file, `(2\^96\.\d\d)`, w("desync_lane48_mode2", lane48M2)))
+		add(sweep(file, `(2\^101\.\d\d)`, w("desync_lane48_mode1", lane48M1)))
+		add(sweep(file, `(2\^279\.\d\d)`, w("desync_lane168_mode2", lane168M2)))
+		add(sweep(file, `(2\^284\.\d\d)`, w("desync_lane168_mode1", lane168M1)))
 	}
 	for _, file := range []string{"SCIENCE.md", "PROOFS.md", "SECURITY.md", "lean/README.md"} {
-		add(sweep(file, `\b(17,847,\d{3})\b`, w("entry_pixels_mode3", "17,847,702")))
+		add(sweep(file, `\b(17,847,\d{3})\b`, w("entry_pixels_mode3", comma(d.EntryPixels[3]))))
 	}
 	add(
 		// ----- Mode 3 (Gauss-Posit) container floors & theorem counts -----

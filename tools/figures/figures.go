@@ -197,9 +197,48 @@ type Figures struct {
 	SampleBudget168    float64 // 2 × Log2Preimage168
 	Log2Messages168    float64 // SampleBudget168 − Log2Chunks168
 
+	// Desynchronized Interlocked Barrier figures at the 1024-bit floors
+	// (SCIENCE.md § 1.2.1, Proof 4a, Proof 11).
+	Desync DesyncFigures
+
 	// Wrapper nonce sizes per outer cipher, measured as the wire delta
 	// of wrapper.Wrap over the raw wire.
 	WrapperNonce map[string]int
+}
+
+// DesyncFigures carries the deterministic Desynchronized Interlocked Barrier
+// figures at the 1024-bit container floors across Mode 2 (P = 441), Mode 3
+// (Gauss-Posit, P = 784), and Mode 1 (P = 1225): initial entry-pixel spaces
+// Π_r(0), Layer I (0x05) 3-region trajectory bounds |T_I|, Layer II (0x06)
+// single-chunk cross-lane slot-matching spaces |Ω_chunk| · M^3 (and with the
+// 32-bit interlock-nonce fold v), composite joint 1-chunk desync anchors
+// |Ω_chunk| · M^3 · |T_I|, and container-wide 1-crib + CCA pixel ambiguity
+// |Ω_chunk| · M^3 · |T_I| · 7^P.
+type DesyncFigures struct {
+	EntryPixels map[int]int // [mode] -> P_0 · P_1 · P_2
+
+	TrajMode2K8  float64 // (2^7 · 8! · 18^8)^3
+	TrajMode3K8  float64 // (2^7 · 8! · ∏ M_j)^3 on canonical 8-chord partition
+	TrajMode1K8  float64 // (4^7 · 8! · 51^8)^3 (minimum K_r = 8)
+	TrajMode1K12 float64 // (4^11 · 12! · 34^12)^3 (midpoint K_r = 12)
+
+	Slots48     map[int]int
+	Slots168    map[int]int
+	Lane48      map[int]float64
+	Lane48Fold  map[int]float64
+	Lane168     map[int]float64
+	Lane168Fold map[int]float64
+
+	Joint48K8         map[int]float64
+	Joint48FoldK8     map[int]float64
+	Joint48Mode1K12   float64
+	Joint48FoldM1K12  float64
+	Joint168K8        map[int]float64
+	Joint168FoldK8    map[int]float64
+	Joint168Mode1K12  float64
+	Joint168FoldM1K12 float64
+
+	ContainerCCA48K8 map[int]int
 }
 
 // Compute measures and derives every figure at the compiled-in defaults.
@@ -279,6 +318,9 @@ func Compute() (*Figures, error) {
 	f.HeaderSize = f.HeaderSizes[f.NonceBits]
 
 	f.rankBarrier()
+	if err := f.desyncBarrier(); err != nil {
+		return nil, err
+	}
 
 	if err := f.wrapperNonces(); err != nil {
 		return nil, err
@@ -571,6 +613,127 @@ func (f *Figures) rankBarrier() {
 	f.AccumBias168 = f.Log2Chunks168 - f.Log2Preimage168
 	f.SampleBudget168 = 2 * f.Log2Preimage168
 	f.Log2Messages168 = f.SampleBudget168 - f.Log2Chunks168
+}
+
+// desyncBarrier derives the Desynchronized Interlocked Barrier figures at the
+// 1024-bit container floors across Mode 2 (P = 441), Mode 3 (Gauss-Posit,
+// P = 784), and Mode 1 (P = 1225): initial entry-pixel spaces Π_r(0), Layer I
+// (0x05) 3-region trajectory spaces |T_I| (SCIENCE.md § 1.2.1, Proof 4a,
+// lean/ITB/Desync.lean, lean/ITB/Posit.lean), Layer II (0x06) single-chunk
+// cross-lane slot-matching spaces |Ω_chunk| · M^3 (Proof 11), and composite
+// joint 1-chunk desync anchors |Ω_chunk| · M^3 · |T_I|.
+func (f *Figures) desyncBarrier() error {
+	d := DesyncFigures{
+		EntryPixels:      map[int]int{},
+		Slots48:          map[int]int{2: 480, 3: 880, 1: 1395},
+		Slots168:         map[int]int{2: 137, 3: 251, 1: 398},
+		Lane48:           map[int]float64{},
+		Lane48Fold:       map[int]float64{},
+		Lane168:          map[int]float64{},
+		Lane168Fold:      map[int]float64{},
+		Joint48K8:        map[int]float64{},
+		Joint48FoldK8:    map[int]float64{},
+		Joint168K8:       map[int]float64{},
+		Joint168FoldK8:   map[int]float64{},
+		ContainerCCA48K8: map[int]int{},
+	}
+	p0 := map[int]int{}
+	for _, mode := range modes {
+		P := f.Floor[1024][mode].P
+		r0 := P / 3
+		r2 := P - 2*r0
+		p0[mode] = r0
+		d.EntryPixels[mode] = r0 * r0 * r2
+		if d.Slots168[mode] != r0-10 {
+			return fmt.Errorf("mode %d 168-bit slot count %d != P_r - 10 (%d)", mode, d.Slots168[mode], r0-10)
+		}
+	}
+
+	// Layer I (0x05) 3-region trajectory bounds |T_I|.
+	tM2K8 := uniformTraj3(2, 8, p0[2]/8)
+	d.TrajMode2K8 = log2Big(tM2K8)
+
+	// Canonical 8-chord Gauss-Posit partition at P_r = 261, K_r = 8
+	// (SCIENCE.md § 1.2.1, PROOFS.md, lean/README.md).
+	mode3Chords8 := []int{36, 39, 36, 35, 34, 30, 27, 24}
+	chordSum := 0
+	chordProd := big.NewInt(1)
+	for _, ch := range mode3Chords8 {
+		chordSum += ch
+		chordProd.Mul(chordProd, big.NewInt(int64(ch)))
+	}
+	if chordSum != p0[3] {
+		return fmt.Errorf("Mode 3 canonical 8-chord sum %d != P_r (%d)", chordSum, p0[3])
+	}
+	tM3One := new(big.Int).Mul(new(big.Int).Lsh(big.NewInt(1), 7), factorialBig(8))
+	tM3One.Mul(tM3One, chordProd)
+	tM3K8 := new(big.Int).Exp(tM3One, big.NewInt(3), nil)
+	d.TrajMode3K8 = log2Big(tM3K8)
+
+	tM1K8 := uniformTraj3(4, 8, p0[1]/8)
+	tM1K12 := uniformTraj3(4, 12, p0[1]/12)
+	d.TrajMode1K8 = log2Big(tM1K8)
+	d.TrajMode1K12 = log2Big(tM1K12)
+
+	trajK8 := map[int]*big.Int{2: tM2K8, 3: tM3K8, 1: tM1K8}
+	for _, mode := range modes {
+		m48Cube := new(big.Int).Exp(big.NewInt(int64(d.Slots48[mode])), big.NewInt(3), nil)
+		lane48 := new(big.Int).Mul(f.AB, m48Cube)
+		d.Lane48[mode] = log2Big(lane48)
+		d.Lane48Fold[mode] = d.Lane48[mode] + 32
+
+		m168Cube := new(big.Int).Exp(big.NewInt(int64(d.Slots168[mode])), big.NewInt(3), nil)
+		lane168 := new(big.Int).Mul(f.AB168, m168Cube)
+		d.Lane168[mode] = log2Big(lane168)
+		d.Lane168Fold[mode] = d.Lane168[mode] + 32
+
+		j48 := new(big.Int).Mul(lane48, trajK8[mode])
+		d.Joint48K8[mode] = log2Big(j48)
+		d.Joint48FoldK8[mode] = d.Joint48K8[mode] + 32
+
+		j168 := new(big.Int).Mul(lane168, trajK8[mode])
+		d.Joint168K8[mode] = log2Big(j168)
+		d.Joint168FoldK8[mode] = d.Joint168K8[mode] + 32
+
+		P := f.Floor[1024][mode].P
+		d.ContainerCCA48K8[mode] = int(math.Round(d.Joint48K8[mode] + float64(P)*math.Log2(7)))
+
+		if mode == 1 {
+			d.Joint48Mode1K12 = log2Big(new(big.Int).Mul(lane48, tM1K12))
+			d.Joint48FoldM1K12 = d.Joint48Mode1K12 + 32
+			d.Joint168Mode1K12 = log2Big(new(big.Int).Mul(lane168, tM1K12))
+			d.Joint168FoldM1K12 = d.Joint168Mode1K12 + 32
+		}
+	}
+	f.Desync = d
+	return nil
+}
+
+// uniformTraj3 returns `(jitterBase^(k-1) · k! · bucket^k)^3`.
+func uniformTraj3(jitterBase, k, bucket int) *big.Int {
+	j := new(big.Int).Exp(big.NewInt(int64(jitterBase)), big.NewInt(int64(k-1)), nil)
+	b := new(big.Int).Exp(big.NewInt(int64(bucket)), big.NewInt(int64(k)), nil)
+	one := new(big.Int).Mul(j, factorialBig(k))
+	one.Mul(one, b)
+	return new(big.Int).Exp(one, big.NewInt(3), nil)
+}
+
+func factorialBig(n int) *big.Int {
+	out := big.NewInt(1)
+	for i := 2; i <= n; i++ {
+		out.Mul(out, big.NewInt(int64(i)))
+	}
+	return out
+}
+
+// desyncLaneExp formats a Layer II |Ω_chunk| · M^3 log₂ exponent in the
+// published precision: Desync.lean floors Mode 1 and Mode 2 to two decimal
+// places (trunc), whereas Posit.lean rounds Mode 3 to nearest (fixed).
+func desyncLaneExp(mode int, exp float64) string {
+	if mode == 3 {
+		return "2^" + fixed(exp, 2)
+	}
+	return "2^" + trunc(exp, 2)
 }
 
 // wrapperNonces measures the outer-cipher nonce each wrapper cipher

@@ -189,6 +189,26 @@ func Print(out *os.File, f *Figures) {
 	row("distinguisher sample budget", "2^"+fixed(f.SampleBudget168, 1)+" chunks", "~2^"+fixed(f.Log2Messages168, 1)+" messages")
 	row("masks consistent with one 168-bit crib", "2^"+fixed(f.Log2AB168-168, 1))
 
+	section("Desynchronized Interlocked Barrier (1024-bit floors)")
+	d := f.Desync
+	row("metric", "Mode 2", "Mode 3", "Mode 1")
+	row("entry-pixel space Π_r(0)", comma(d.EntryPixels[2]), comma(d.EntryPixels[3]), comma(d.EntryPixels[1]))
+	row("Layer I |T_I| (0x05, K_r = 8)", "2^"+fixed(d.TrajMode2K8, 2), "2^"+fixed(d.TrajMode3K8, 2), "2^"+fixed(d.TrajMode1K8, 2))
+	row("Layer I |T_I| (0x05, Mode 1 mid K_r = 12)", "–", "–", "2^"+fixed(d.TrajMode1K12, 2))
+	row("Layer II |Ω_chunk| · M^3 (0x06, 48-bit)", desyncLaneExp(2, d.Lane48[2]), desyncLaneExp(3, d.Lane48[3]), desyncLaneExp(1, d.Lane48[1]))
+	row("Layer II |Ω_chunk| · M^3 w/ 4 B v (48-bit)", desyncLaneExp(2, d.Lane48Fold[2]), desyncLaneExp(3, d.Lane48Fold[3]), desyncLaneExp(1, d.Lane48Fold[1]))
+	row("Layer II |Ω_chunk,168| · M^3 (0x06, 168-bit)", desyncLaneExp(2, d.Lane168[2]), desyncLaneExp(3, d.Lane168[3]), desyncLaneExp(1, d.Lane168[1]))
+	row("Layer II |Ω_chunk,168| · M^3 w/ 4 B v (168-bit)", desyncLaneExp(2, d.Lane168Fold[2]), desyncLaneExp(3, d.Lane168Fold[3]), desyncLaneExp(1, d.Lane168Fold[1]))
+	row("Joint 1-chunk |Ω_chunk| · M^3 · |T_I| (48-bit, K_r = 8)", "2^"+fixed(d.Joint48K8[2], 2), "2^"+fixed(d.Joint48K8[3], 2), "2^"+fixed(d.Joint48K8[1], 2))
+	row("Joint 1-chunk |Ω_chunk| · M^3 · |T_I| (48-bit, Mode 1 K_r = 12)", "–", "–", "2^"+fixed(d.Joint48Mode1K12, 2))
+	row("Joint 1-chunk w/ 4 B v (48-bit, K_r = 8)", "2^"+fixed(d.Joint48FoldK8[2], 2), "2^"+fixed(d.Joint48FoldK8[3], 2), "2^"+fixed(d.Joint48FoldK8[1], 2))
+	row("Joint 1-chunk w/ 4 B v (48-bit, Mode 1 K_r = 12)", "–", "–", "2^"+fixed(d.Joint48FoldM1K12, 2))
+	row("Joint 1-chunk |Ω_chunk,168| · M^3 · |T_I| (168-bit, K_r = 8)", "2^"+fixed(d.Joint168K8[2], 2), "2^"+fixed(d.Joint168K8[3], 2), "2^"+fixed(d.Joint168K8[1], 2))
+	row("Joint 1-chunk |Ω_chunk,168| · M^3 · |T_I| (168-bit, Mode 1 K_r = 12)", "–", "–", "2^"+fixed(d.Joint168Mode1K12, 2))
+	row("Joint 1-chunk w/ 4 B v (168-bit, K_r = 8)", "2^"+fixed(d.Joint168FoldK8[2], 2), "2^"+fixed(d.Joint168FoldK8[3], 2), "2^"+fixed(d.Joint168FoldK8[1], 2))
+	row("Joint 1-chunk w/ 4 B v (168-bit, Mode 1 K_r = 12)", "–", "–", "2^"+fixed(d.Joint168FoldM1K12, 2))
+	row("Container 1-crib + CCA 7^P (48-bit, K_r = 8)", pow2(d.ContainerCCA48K8[2]), pow2(d.ContainerCCA48K8[3]), pow2(d.ContainerCCA48K8[1]))
+
 	section("Wrapper nonce per outer cipher")
 	for _, name := range wrapper.CipherNames {
 		row(name, fmt.Sprintf("%d B", f.WrapperNonce[name]))
