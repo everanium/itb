@@ -24,7 +24,7 @@ In networked protocols such as end-to-end encrypted (E2EE) messaging, peers esta
 
 1. **Deterministic Seed Agreement (`triple.InitKeys`)**: Both endpoints independently derive an identical array of eight 64-byte slot master keys `masters [8][]byte` from an asymmetric key-encapsulation handshake and pass them to `triple.InitKeys(profile, opts, masters)`.
 2. **Secret-Free Topology Extraction (`triple.Inspect`)**: When the initiating peer generates a dynamic per-epoch configuration via `triple.Opts`, it passes the returned `blob` to `prof, err := triple.Inspect(blob)` to extract **only** the non-secret `triple.Profile` recipe (primitive names, widths, segment size, container mode, nonce width, and barrier fill) and **immediately zeroes `blob` in memory** (`clear(blob)`).
-3. **Split Configuration Transport**: The extracted `triple.Profile` contains zero keys or seed components. Its serialized bytes are sliced into three fragments and masked across three parallel asymmetric channels so that neither the network relay nor a partial asymmetric break can observe the active ITB topology.
+3. **Split and Authenticated Configuration Transport**: The extracted `triple.Profile` contains zero keys or seed components. Its serialized bytes are sliced into three fragments, masked across three parallel asymmetric channels, and bound by a 32-byte `3-of-3 Tri-PRF` confirmation tag (`cfgTag`) so that neither the network relay nor a partial asymmetric break can observe or malleate the active ITB topology.
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────┐
@@ -84,16 +84,17 @@ Channel 2: HQC-1        ──► kem[2] ──► kdf.Derive("blake2b512", kem[
 ### Security under a 2-of-3 Asymmetric Break
 
 - **All-or-Nothing Seed Secrecy**: Because every `masters[slot]` (`slot = 0..7`) is the bitwise XOR of `subsetPRK[slotSubsets[slot]]` and three per-slot 512-bit pseudorandom outputs produced by `"blake3"` on `kem[0]`, `"areion512"` on `kem[1]`, and `"blake2b512"` on `kem[2]`, under the PRF assumption on the unbroken channel's KDF, an adversary who completely breaks **any two of the three** KEMs still faces an independent 512-bit pseudorandom mask from the unbroken third KEM on **every single slot**.
+- **Division of Labor Between Stage A and Stage B**: **Stage B** (`3-of-3 Per-Slot Tri-KDF XOR-Fold`) provides the strict `3-of-3` information-theoretic masking on each of the eight slots (including slots `6` and `7`, which share `subsetPRK[7]`) with respect to any single unbroken KEM channel (`deriveSeeds3to8_joint_8slot_bijection`), whereas **Stage A** (`7-Subset Combinatorial Partition` across `slotSubsets = [8]int{1, 2, 4, 6, 5, 3, 7, 7}`) introduces combinatorial domain asymmetry across intermediate PRKs spanning all `2^3 - 1 = 7` non-empty channel subsets as a defense-in-depth layer (with strict Stage A / Stage B KDF label disjointness `stageA_stageB_domain_disjoint` preventing mutual XOR self-cancellation between stages).
 - **All-or-Nothing Layer Master Secrecy**: Inside `triple.InitKeys`, when `Opts.PermMaster` and `Opts.WrapMaster` are omitted, `PermMaster`, `WrapMaster`, and `macKey` are automatically derived via an 8-way XOR fold across all eight slot KDF outputs. Consequently, every inner seed, Parallax schedule, Wrapper key, and MAC key inherits the full 3-of-3 asymmetric security bound.
-- **Machine-Checked Application Blueprint Verification**: The combinatorial `2^3 - 1 = 7` subset partition, Stage A / Stage B KDF domain separation, 2-of-3 all-or-nothing bijections (`deriveSeeds3to8` and `deriveRatchetRoot`), 3-part configuration slicing (`splitProfile3` / `joinProfile3`), and schema clamping (`min(appVer_A, appVer_B)`) are machine-checked in Lean 4 in [`lean/Apps/README.md`](lean/Apps/README.md) ([`lean/Apps/ThreeToEight.lean`](lean/Apps/ThreeToEight.lean)). Note that `lean/Apps/` verifies only this reference application integration scheme and is separate from the core ITB cipher specification.
+- **Machine-Checked Application Blueprint Verification**: The combinatorial `2^3 - 1 = 7` subset partition, 8-family KDF domain separation (including `cfgMac` and `rekeyChain`), 2-of-3 all-or-nothing bijections (`deriveSeeds3to8` and `deriveRatchetRoot`), 3-part authenticated configuration slicing (`splitProfile3` / `joinProfile3` with `cfgTag`), and schema clamping (`min(appVer_A, appVer_B)`) are machine-checked in Lean 4 in [`lean/Apps/README.md`](lean/Apps/README.md) ([`lean/Apps/ThreeToEight.lean`](lean/Apps/ThreeToEight.lean)). Note that `lean/Apps/` verifies only this reference application integration scheme and is separate from the core ITB cipher specification.
 
 ---
 
 ## 3. 3-Part Configuration Slicing via `triple.Inspect`
 
-In a static deployment, both peers hardcode a shipped profile name (such as `triple.ProfileStreamingAEADTripleMACV1`). In an advanced dynamic deployment (**Chameleon Epochs**), the epoch initiator randomizes the ITB topology on every epoch — picking a fresh 8-slot `MixedHashes` constellation, a randomized `ParallaxPalette` and coprime `ParallaxSegmentSize` (for example, `17` bytes so even short chat messages traverse multiple Parallax cipher segments), a fresh `OuterCipher`, `MacName`, `DRBG`, and `BarrierFill`.
+In a static out-of-band configuration deployment, both peers hardcode a shipped profile name (such as `triple.ProfileStreamingAEADTripleMACV1`) and exchange only the three KEM ciphertexts without any configuration fragments. In an advanced dynamic discovery deployment (**Chameleon Epochs**), the epoch initiator randomizes the ITB topology on every epoch — picking a fresh 8-slot `MixedHashes` constellation, a randomized `ParallaxPalette` and coprime `ParallaxSegmentSize` (for example, `17` bytes so even short chat messages traverse multiple Parallax cipher segments), a fresh `OuterCipher`, `MacName`, `DRBG`, and `BarrierFill`.
 
-To communicate this dynamic topology without leaking it to the relay server or to an attacker who breaks two of the three KEMs, the initiator executes the **Inspect-Slice-Mask** pipeline:
+To communicate this dynamic topology without leaking it to the relay server, exposing it to a 2-of-3 KEM break, or allowing an active relay to malleate structural fields, the initiator executes the **Inspect-Slice-Mask-Authenticate** pipeline:
 
 1. **Extract Non-Secret Recipe**: Call `prof, err := triple.Inspect(blob)` and immediately wipe `blob` (`clear(blob)`). The `triple.Profile` struct contains only structural parameters:
 
@@ -104,7 +105,7 @@ To communicate this dynamic topology without leaking it to the relay server or t
 | **Domain 3 — Outer Wrapper & Framing** | `Name`, `Mode`, `ContainerMode`, `NonceBits`, `Wrapper`, `OuterCipher`, `MacName`, `ChunkSize`, `TagStubSize` |
 
 2. **Slice into 3 Equal Structural Fragments**: Serialize `prof` (`raw, _ := json.Marshal(prof)`), pad with trailing whitespace to a multiple of 3 bytes, and slice `raw` into three contiguous 1/3 fragments (`parts[0]`, `parts[1]`, `parts[2]`, ~140 bytes each). Each parallel asymmetric channel carries only one third of the serialized configuration, avoiding any 3x bandwidth amplification.
-3. **Cross-Channel 3-of-3 Tri-KDF Masking (Zero AES-GCM Required)**: Mask each fragment `parts[frag]` (`frag = 0, 1, 2`) by XORing it with three keystream pads derived via `kdf.Derive` from all three KEM shared secrets (`"blake3"`, `"areion512"`, `"blake2b512"`). No external `AES-256-GCM` cipher is required, and under the PRF assumption on the unbroken channel's KDF, breaking any two of the three KEMs reveals **zero bytes** of any of the three configuration fragments.
+3. **Cross-Channel 3-of-3 Tri-KDF Masking and Tri-PRF Confirmation (`cfgTag`, Zero AES-GCM Required)**: Mask each fragment `parts[frag]` (`frag = 0, 1, 2`) by XORing it with three keystream pads derived via `kdf.Derive` from all three KEM shared secrets (`"blake3"`, `"areion512"`, `"blake2b512"`). Because unauthenticated XOR masking over deterministic `json.Marshal` output would allow an active relay to flip known JSON field bits inside `parts[0..2]` without altering `kem[0..2]` (for example, downgrading `"BarrierFill"` or flipping cross-compatible `"ContainerMode"` **Mode 1** ↔ **Mode 2** on the responder's outgoing path, since `triple.InitKeys` derives keys from `masters` without hashing those structural fields), `splitProfile3` also computes a 32-byte **`3-of-3 Tri-PRF` confirmation tag** `cfgTag` by XOR-folding three 32-byte `kdf.Derive` outputs keyed by `kem[0..2]` over `"itb-chat-v1|cfg-mac|..."` bound to `transcript` and `SHA-256(parts[0] ‖ parts[1] ‖ parts[2])`. Inside `joinProfile3`, `cfgTag` is verified via `subtle.ConstantTimeCompare` **before** unmasking or calling `json.Unmarshal`, rejecting active modification of any configuration fragment with forgery probability `2^-256` whenever at least one of the three KEMs remains unbroken.
 4. **Optional Enterprise Pre-Shared Bootstrap Layer**: In corporate or closed-group deployments with a pre-shared tenant secret (password server or hardware token), the entire 3-KEM epoch handshake packet can additionally be wrapped inside an outer bootstrap `*triple.Pipeline` initialized from the corporate secret, isolating handshake metadata from unauthorized network observers before KEM decapsulation even begins.
 
 ```
@@ -138,6 +139,11 @@ To communicate this dynamic topology without leaking it to the relay server or t
             ▼                        ▼                        ▼
     [ct_0 || parts[0]]       [ct_1 || parts[1]]       [ct_2 || parts[2]]
      (X25519 Channel)        (ML-KEM-1024 Chan.)        (HQC-1 Channel)
+            │                        │                        │
+            └────────────────────────┼────────────────────────┘
+                                     ▼
+                   cfgTag (32 B 3-of-3 Tri-PRF MAC over
+                   SHA-256(parts[0..2]) + transcript)
 ```
 
 ---
@@ -157,7 +163,8 @@ In an end-to-end encrypted chat system built on ITB, the central relay server is
            │                                               │
            │ 2. Single Epoch Packet:                       │
            │    [ct_0, parts[0] | ct_1, parts[1] |         │
-           │     ct_2, parts[2] | epochID | appVer=1]      │
+           │     ct_2, parts[2] | cfgTag | epochID |       │
+           │     appVer=1]                                 │
            ▼                                               │
 ┌──────────────────────────────────────────────────────────┴───────────┐
 │                    UNTRUSTED CHAT RELAY SERVER                       │
@@ -171,7 +178,7 @@ In an end-to-end encrypted chat system built on ITB, the central relay server is
 
 ### 1. Server Blindness vs. Operational Metadata
 
-The relay server stores only public prekey bundles (`X25519` public key, `ML-KEM-1024` encapsulation key, `HQC-1` public key), room participant lists, delivery receipts, and each client's advertised application schema integer (`appVer`). All three KEM ciphertexts (`ct_0, ct_1, ct_2`) and the three masked configuration fragments (`parts[0..2]`) travel in a **single atomic epoch handshake packet** so the relay never correlates separate round-trips.
+The relay server stores only public prekey bundles (`X25519` public key, `ML-KEM-1024` encapsulation key, `HQC-1` public key), room participant lists, delivery receipts, and each client's advertised application schema integer (`appVer`). All three KEM ciphertexts (`ct_0, ct_1, ct_2`), the three masked configuration fragments (`parts[0..2]`), and the 32-byte `3-of-3` confirmation tag (`cfgTag`) travel in a **single atomic epoch handshake packet** so the relay never correlates separate round-trips.
 
 ### 2. Application-Level Schema Versioning (`min(appVer_A, appVer_B)`)
 
@@ -183,14 +190,14 @@ ITB itself does not negotiate versions over the wire: its wire format is frozen,
 
 ### 3. Two-Speed Ratchet Lifecycle (Inter-Epoch KEM + Intra-Epoch `Rekey`)
 
-1. **Inter-Epoch Ratchet (3-KEM + Topology Rotation)**: Triggered every `N` messages (for example, every 50 messages), upon a timer expiration, or when group membership changes. A fresh 3-KEM encapsulation produces new `masters[0..7]` and a newly randomized `triple.Profile`. Once the bounded out-of-order decryption window for the previous epoch closes, the client calls `oldPipe.Close()`, wiping all eight seed component tables, PRF keys, MAC keys, and retained blobs in memory.
-2. **Intra-Epoch Ratchet (Per-Message `Pipeline.Rekey`)**: Immediately after the epoch handshake, both peers fold all three KEM secrets into a 64-byte 3-of-3 `ratchetRoot` (`deriveRatchetRoot`) and wipe `kem[0..2]`. Between heavy 3-KEM epochs, clients step a fast symmetric ratchet on every message by deriving fresh 64-byte `(permMaster, wrapMaster)` pairs from `ratchetRoot` and calling `pipe.Rekey(pm, wm)` (immediately wiping the returned blob slice). `Rekey` rebuilds the Parallax segment schedule and Wrapper outer stream key in microseconds without re-running the 8-seed `InitKeys` setup.
+1. **Inter-Epoch Ratchet (3-KEM + Topology Rotation)**: Triggered every `N` messages (for example, every 50 messages), upon a timer expiration, or when group membership changes. A fresh 3-KEM encapsulation produces new `masters[0..7]`, a fresh `MAC` key, a fresh `ratchetRoot`, and a newly randomized `triple.Profile`. Once the bounded out-of-order decryption window for the previous epoch closes, the client calls `oldPipe.Close()`, wiping all eight seed component tables, PRF keys, MAC keys, and retained blobs in memory — providing **inter-epoch post-compromise security and full 8-seed forward secrecy**.
+2. **Intra-Epoch Ratchet (Per-Message `Pipeline.Rekey`)**: Immediately after the epoch handshake, both peers fold all three KEM secrets into a 64-byte 3-of-3 `ratchetRoot` (`deriveRatchetRoot`) and wipe `kem[0..2]`. Between heavy 3-KEM epochs, clients step a one-way symmetric ratchet on every message `seq` (`stepRatchet`): deriving fresh 64-byte `(permMaster, wrapMaster)` pairs alongside `nextRoot = kdf.Derive("blake2b512", ratchetRoot, fmt.Sprintf("rekey-chain|seq:%d", seq), 64)`, immediately zeroizing the consumed `ratchetRoot` (`clear(ratchetRoot)`), and calling `pipe.Rekey(pm, wm)` (immediately wiping the returned blob slice). Chaining and zeroizing `ratchetRoot` achieves **intra-epoch forward secrecy on the Parallax segment schedule and Outer Wrapper stream key** in microseconds without re-running the 8-seed `InitKeys` setup (so a memory compromise at message `seq` cannot recover `pm`/`wm` for messages `1..seq-1`), whereas full rotation of the **8 inner ITB seeds and MAC key** takes place at the inter-epoch 3-KEM boundary.
 
 ### 4. Active MITM Defense via Out-of-Band Safety Numbers / Emoji Verification
 
-Because an untrusted relay server could attempt an active man-in-the-middle (MITM) attack by substituting all three ephemeral public keys (`X25519`, `ML-KEM-1024`, `HQC-1`), clients bind each participant's long-term identity public keys into the epoch `transcript` string fed to every `kdf.Derive` call.
+Because an untrusted relay server could attempt an active man-in-the-middle (MITM) attack by substituting all three ephemeral public keys (`X25519`, `ML-KEM-1024`, `HQC-1`) or tampering with the masked configuration fragments, clients bind each participant's long-term identity public keys into the epoch `transcript` string fed to every `kdf.Derive` call and verify the 32-byte `3-of-3` confirmation tag `cfgTag` over `parts[0..2]`.
 
-Users verify the hash of both peers' long-term identity bundles out-of-band using **numeric safety numbers (60-digit fingerprint blocks)** or **Short Authentication String (SAS) emoji sequences** (identical in user experience to Signal safety numbers or Matrix emoji verification). If a malicious server substitutes any ephemeral or identity key on the wire, the `transcript` diverges on both endpoints, causing both `joinProfile3` and `DecryptMessage` to fail closed.
+Users verify the hash of both peers' long-term identity bundles out-of-band using **numeric safety numbers (60-digit fingerprint blocks)** or **Short Authentication String (SAS) emoji sequences** (identical in user experience to Signal safety numbers or Matrix emoji verification). If a malicious server substitutes any ephemeral or identity key on the wire (`transcript` diverges) or flips any configuration bit in `parts[0..2]` (`cfgTag` fails constant-time verification), both `joinProfile3` and `DecryptMessage` fail closed.
 
 ---
 
@@ -200,8 +207,8 @@ The following self-contained Go program demonstrates the complete E2EE chat epoc
 
 1. Deriving eight 64-byte ITB master keys from three parallel KEM shared secrets (`deriveSeeds3to8`) with 2-of-3 compromise resilience;
 2. Initializing a dynamic chameleon epoch pipeline (`triple.InitKeys`), extracting only the non-secret `triple.Profile` via `triple.Inspect`, and immediately wiping the secret session blob (`clear(aliceBlob)`);
-3. Slicing the serialized `triple.Profile` into three 1/3 fragments and cross-masking them across the three KEM channels (`splitProfile3` / `joinProfile3`);
-4. Reconstructing the identical `*triple.Pipeline` on the receiver via `triple.InitKeys`, wiping `kem[0..2]` after deriving the 3-of-3 intra-epoch `ratchetRoot`, exchanging encrypted chat messages, and advancing the per-message symmetric ratchet (`Pipeline.Rekey`).
+3. Slicing the serialized `triple.Profile` into three 1/3 fragments, cross-masking them across the three KEM channels, and authenticating them with a 32-byte `3-of-3 Tri-PRF` confirmation tag (`splitProfile3` / `joinProfile3`);
+4. Reconstructing the identical `*triple.Pipeline` on the receiver via `triple.InitKeys`, wiping `kem[0..2]` after deriving the 3-of-3 intra-epoch `ratchetRoot`, exchanging encrypted chat messages, and advancing the forward-chained per-message symmetric ratchet (`stepRatchet` + `Pipeline.Rekey`).
 
 ```go
 package main
@@ -209,6 +216,8 @@ package main
 import (
 	"bytes"
 	"crypto/rand"
+	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -286,14 +295,39 @@ func deriveRatchetRoot(kem [3][]byte, transcript string) ([]byte, error) {
 	return root, nil
 }
 
+// computeCfgTag derives a 32-byte 3-of-3 Tri-PRF confirmation tag binding the
+// three masked configuration fragments and the epoch transcript across all 3 KEMs.
+func computeCfgTag(parts [3][]byte, kem [3][]byte, transcript string) ([]byte, error) {
+	h := sha256.New()
+	for frag := 0; frag < 3; frag++ {
+		h.Write(parts[frag])
+	}
+	fragSum := h.Sum(nil)
+	tag := make([]byte, 32)
+	for c := 0; c < 3; c++ {
+		label := fmt.Sprintf("itb-chat-v1|cfg-mac|ch-%d|%s|%x", c, transcript, fragSum)
+		macShare, err := kdf.Derive(channelKDFs[c], kem[c], label, 32)
+		if err != nil {
+			clear(tag)
+			return nil, err
+		}
+		for b := range tag {
+			tag[b] ^= macShare[b]
+		}
+		clear(macShare)
+	}
+	return tag, nil
+}
+
 // splitProfile3 takes the non-secret triple.Profile from triple.Inspect(blob),
 // slices its serialized bytes into 3 equal fragments (1/3 per asymmetric channel),
-// and masks each fragment with a 3-of-3 Tri-KDF pad across all 3 KEM shared secrets.
-// Breaking any 2 of 3 KEMs leaks zero bytes of the dynamic epoch configuration.
-func splitProfile3(prof triple.Profile, kem [3][]byte, transcript string) ([3][]byte, error) {
+// masks each fragment with a 3-of-3 Tri-KDF pad, and computes a 32-byte 3-of-3
+// Tri-PRF confirmation tag (cfgTag). Breaking any 2 of 3 KEMs neither leaks nor
+// allows forging the dynamic epoch configuration.
+func splitProfile3(prof triple.Profile, kem [3][]byte, transcript string) ([3][]byte, []byte, error) {
 	raw, err := json.Marshal(prof)
 	if err != nil {
-		return [3][]byte{}, err
+		return [3][]byte{}, nil, err
 	}
 	for len(raw)%3 != 0 {
 		raw = append(raw, ' ')
@@ -306,7 +340,8 @@ func splitProfile3(prof triple.Profile, kem [3][]byte, transcript string) ([3][]
 			label := fmt.Sprintf("itb-chat-v1|cfg-frag-%d|ch-%d|%s", frag, c, transcript)
 			pad, err := kdf.Derive(channelKDFs[c], kem[c], label, partLen)
 			if err != nil {
-				return [3][]byte{}, err
+				clear(raw)
+				return [3][]byte{}, nil, err
 			}
 			for i := 0; i < partLen; i++ {
 				parts[frag][i] ^= pad[i]
@@ -315,13 +350,26 @@ func splitProfile3(prof triple.Profile, kem [3][]byte, transcript string) ([3][]
 		}
 	}
 	clear(raw)
-	return parts, nil
+	cfgTag, err := computeCfgTag(parts, kem, transcript)
+	if err != nil {
+		return [3][]byte{}, nil, err
+	}
+	return parts, cfgTag, nil
 }
 
-func joinProfile3(parts [3][]byte, kem [3][]byte, transcript string) (triple.Profile, error) {
+func joinProfile3(parts [3][]byte, cfgTag []byte, kem [3][]byte, transcript string) (triple.Profile, error) {
 	partLen := len(parts[0])
-	if partLen == 0 || len(parts[1]) != partLen || len(parts[2]) != partLen {
+	if partLen == 0 || len(parts[1]) != partLen || len(parts[2]) != partLen || len(cfgTag) != 32 {
 		return triple.Profile{}, errors.New("malformed profile fragments")
+	}
+	expectedTag, err := computeCfgTag(parts, kem, transcript)
+	if err != nil {
+		return triple.Profile{}, err
+	}
+	tagOK := subtle.ConstantTimeCompare(cfgTag, expectedTag) == 1
+	clear(expectedTag)
+	if !tagOK {
+		return triple.Profile{}, errors.New("profile fragment authentication failed")
 	}
 	raw := make([]byte, 0, partLen*3)
 	for frag := 0; frag < 3; frag++ {
@@ -330,6 +378,8 @@ func joinProfile3(parts [3][]byte, kem [3][]byte, transcript string) (triple.Pro
 			label := fmt.Sprintf("itb-chat-v1|cfg-frag-%d|ch-%d|%s", frag, c, transcript)
 			pad, err := kdf.Derive(channelKDFs[c], kem[c], label, partLen)
 			if err != nil {
+				clear(buf)
+				clear(raw)
 				return triple.Profile{}, err
 			}
 			for i := 0; i < partLen; i++ {
@@ -341,9 +391,31 @@ func joinProfile3(parts [3][]byte, kem [3][]byte, transcript string) (triple.Pro
 		clear(buf)
 	}
 	var prof triple.Profile
-	err := json.Unmarshal(raw, &prof)
+	err = json.Unmarshal(raw, &prof)
 	clear(raw)
 	return prof, err
+}
+
+// stepRatchet derives per-message (permMaster, wrapMaster) keys for seq and
+// chains ratchetRoot forward one-way, zeroizing the consumed root in place.
+func stepRatchet(ratchetRoot []byte, seq int) (pm, wm, nextRoot []byte, err error) {
+	pm, err = kdf.Derive("blake3", ratchetRoot, fmt.Sprintf("rekey-perm|seq:%d", seq), 64)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	wm, err = kdf.Derive("areion512", ratchetRoot, fmt.Sprintf("rekey-wrap|seq:%d", seq), 64)
+	if err != nil {
+		clear(pm)
+		return nil, nil, nil, err
+	}
+	nextRoot, err = kdf.Derive("blake2b512", ratchetRoot, fmt.Sprintf("rekey-chain|seq:%d", seq), 64)
+	clear(ratchetRoot)
+	if err != nil {
+		clear(pm)
+		clear(wm)
+		return nil, nil, nil, err
+	}
+	return pm, wm, nextRoot, nil
 }
 
 func optsFromProfile(p triple.Profile) triple.Opts {
@@ -413,14 +485,14 @@ func main() {
 	}
 	clear(aliceBlob) // Secret blob never leaves memory or touches the wire.
 
-	cfgParts, err := splitProfile3(prof, kem, transcript)
+	cfgParts, cfgTag, err := splitProfile3(prof, kem, transcript)
 	if err != nil {
 		panic(err)
 	}
 
-	// 3. Bob receives the 3 KEM ciphertexts + 3 masked config fragments in one packet,
-	//    reassembles triple.Profile, derives the same 8 seeds, and calls InitKeys.
-	bobProf, err := joinProfile3(cfgParts, kem, transcript)
+	// 3. Bob receives the 3 KEM ciphertexts + 3 masked config fragments + cfgTag
+	//    in one packet, verifies cfgTag before unmasking, derives the 8 seeds, and calls InitKeys.
+	bobProf, err := joinProfile3(cfgParts, cfgTag, kem, transcript)
 	if err != nil {
 		panic(err)
 	}
@@ -447,7 +519,7 @@ func main() {
 		clear(kem[c])
 	}
 
-	// 4. End-to-end message exchange + fast intra-epoch symmetric Rekey.
+	// 4. End-to-end message exchange + forward-chained intra-epoch symmetric Rekey.
 	ct, err := alice.EncryptMessage([]byte("Zero-blob 3-to-8 chameleon epoch online."))
 	if err != nil {
 		panic(err)
@@ -460,26 +532,43 @@ func main() {
 		panic("round-trip mismatch")
 	}
 
-	// Per-message symmetric ratchet step (rotates Parallax & Wrapper keys).
-	pm, _ := kdf.Derive("blake3", ratchetRoot, "rekey-perm|seq:1", 64)
-	wm, _ := kdf.Derive("areion512", ratchetRoot, "rekey-wrap|seq:1", 64)
-	clear(ratchetRoot)
-	b1, _ := alice.Rekey(pm, wm)
-	b2, _ := bob.Rekey(pm, wm)
-	clear(b1)
-	clear(b2)
-	clear(pm)
-	clear(wm)
+	// Forward-chained per-message symmetric ratchet loop (rotates Parallax & Wrapper
+	// keys while zeroizing each consumed ratchetRoot for intra-epoch forward secrecy).
+	var ptLast []byte
+	for seq := 1; seq <= 2; seq++ {
+		var pm, wm []byte
+		pm, wm, ratchetRoot, err = stepRatchet(ratchetRoot, seq)
+		if err != nil {
+			panic(err)
+		}
+		b1, err := alice.Rekey(pm, wm)
+		if err != nil {
+			panic(err)
+		}
+		b2, err := bob.Rekey(pm, wm)
+		if err != nil {
+			panic(err)
+		}
+		clear(b1)
+		clear(b2)
+		clear(pm)
+		clear(wm)
 
-	ct2, err := alice.EncryptMessage([]byte("Post-rekey message #2."))
-	if err != nil {
-		panic(err)
+		msg := fmt.Appendf(nil, "Post-rekey message #%d.", seq+1)
+		ctSeq, err := alice.EncryptMessage(msg)
+		if err != nil {
+			panic(err)
+		}
+		ptLast, err = bob.DecryptMessage(ctSeq)
+		if err != nil {
+			panic(err)
+		}
+		if !bytes.Equal(ptLast, msg) {
+			panic("post-rekey round-trip mismatch")
+		}
 	}
-	pt2, err := bob.DecryptMessage(ct2)
-	if err != nil {
-		panic(err)
-	}
-	fmt.Printf("OK: %s | %s (fragment size=%dB)\n", string(pt), string(pt2), len(cfgParts[0]))
+	clear(ratchetRoot)
+	fmt.Printf("OK: %s | %s (fragment size=%dB, tag=%dB)\n", string(pt), string(ptLast), len(cfgParts[0]), len(cfgTag))
 }
 ```
 

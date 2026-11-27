@@ -2421,3 +2421,197 @@ func BenchmarkExtKMAC256_168_Stream_Decrypt_16MB(b *testing.B) {
 func BenchmarkExtKMAC256_168_Stream_Decrypt_64MB(b *testing.B) {
 	benchKMAC256_168_StreamDecrypt(b, 64<<20)
 }
+
+// TestLockSeedOnlyDiffOnAllZeroPlaintext verifies the oracle-free deniability
+// quantifier on all-zero plaintexts in No MAC mode:
+//   - Varying only lockSeed while keeping all 7 pixel-layer seeds
+//     (noiseSeed, dataSeed1..3, startSeed1..3) identical cancels the pixel
+//     keystream and Layer I trajectory identically, leaving only Layer II
+//     cross-lane chunk-slot permutation and Rank Barrier PEXT/PDEP bit
+//     routing over the framed stream BE32(len) || 0x00...00. Because both
+//     operations are pure bit/slot bijections without XOR whitening, the
+//     reconstructed framed stream preserves exact Hamming weight
+//     popcount(uint32(len)), so the sliced output has Hamming weight at most
+//     popcount(uint32(len)) on every trial.
+//   - Varying any pixel-layer seed breaks channelXOR cancellation and exceeds
+//     that Hamming-weight bound; under an independently generated 8-seed
+//     tuple, pre-COBS extracted region capacities are uniform and the
+//     post-COBS/interleave output distribution is plaintext-independent
+//     (matching across all-0x00 and all-0xFF plaintexts around the analytical
+//     (6/11)*4.0 ≈ 2.18 bits/byte post-COBS lane-pad density).
+func TestLockSeedOnlyDiffOnAllZeroPlaintext(t *testing.T) {
+	popcountBytes := func(buf []byte) int {
+		ones := 0
+		for _, b := range buf {
+			for v := b; v != 0; v &= v - 1 {
+				ones++
+			}
+		}
+		return ones
+	}
+	popcountU32 := func(x uint32) int {
+		ones := 0
+		for v := x; v != 0; v &= v - 1 {
+			ones++
+		}
+		return ones
+	}
+	newSeed := func() *itb.Seed128 {
+		s, _, err := hashes.NewSeed128(hashes.CipherSipHash24, 1024)
+		if err != nil {
+			t.Fatalf("NewSeed128: %v", err)
+		}
+		return s
+	}
+
+	ns := newSeed()
+	ls := newSeed()
+	ds1 := newSeed()
+	ds2 := newSeed()
+	ds3 := newSeed()
+	ss1 := newSeed()
+	ss2 := newSeed()
+	ss3 := newSeed()
+
+	for _, zeroLen := range []int{63, 255, 4096} {
+		zeroPlain := make([]byte, zeroLen)
+		headerHW := popcountU32(uint32(zeroLen))
+
+		ct, err := itb.Encrypt3x128Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, zeroPlain)
+		if err != nil {
+			t.Fatalf("Encrypt3x128Cfg(len=%d): %v", zeroLen, err)
+		}
+		ptTrue, err := itb.Decrypt3x128Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, ct)
+		if err != nil {
+			t.Fatalf("Decrypt3x128Cfg true tuple (len=%d): %v", zeroLen, err)
+		}
+		if !bytes.Equal(ptTrue, zeroPlain) {
+			t.Fatalf("roundtrip mismatch for len=%d", zeroLen)
+		}
+
+		// 1. Vary ONLY lockSeed (7 pixel-layer seeds unchanged).
+		const lockTrials = 48
+		nonEmptyLock := 0
+		totalLockBytes := 0
+		totalLockOnes := 0
+		for trial := 0; trial < lockTrials; trial++ {
+			lsAlt := newSeed()
+			ptLock, err := itb.Decrypt3x128Cfg(nil, ns, lsAlt, ds1, ds2, ds3, ss1, ss2, ss3, ct)
+			if err != nil {
+				t.Fatalf("Decrypt3x128Cfg lockSeed-only (len=%d, trial=%d): %v", zeroLen, trial, err)
+			}
+			hw := popcountBytes(ptLock)
+			if hw > headerHW {
+				t.Fatalf("lockSeed-only diff exceeded framed Hamming weight bound: len=%d got hw=%d > headerHW=%d (outLen=%d)",
+					zeroLen, hw, headerHW, len(ptLock))
+			}
+			if len(ptLock) > 0 {
+				nonEmptyLock++
+				totalLockBytes += len(ptLock)
+				totalLockOnes += hw
+			}
+		}
+		t.Logf("zeroLen=%d (headerHW=%d): lockSeed-only across %d trials -> nonEmpty=%d, totalBytes=%d, totalOnes=%d",
+			zeroLen, headerHW, lockTrials, nonEmptyLock, totalLockBytes, totalLockOnes)
+	}
+
+	// 2. Contrast against single pixel-layer seed variations on 4096-byte
+	// all-zero plaintext (headerHW = 1).
+	zeroPlain := make([]byte, 4096)
+	ctZero, err := itb.Encrypt3x128Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, zeroPlain)
+	if err != nil {
+		t.Fatalf("Encrypt3x128Cfg(zero 4096): %v", err)
+	}
+
+	singlePixelCases := []struct {
+		name  string
+		tuple func() (*itb.Seed128, *itb.Seed128, *itb.Seed128, *itb.Seed128, *itb.Seed128, *itb.Seed128, *itb.Seed128, *itb.Seed128)
+	}{
+		{
+			name: "noiseSeed_only",
+			tuple: func() (*itb.Seed128, *itb.Seed128, *itb.Seed128, *itb.Seed128, *itb.Seed128, *itb.Seed128, *itb.Seed128, *itb.Seed128) {
+				return newSeed(), ls, ds1, ds2, ds3, ss1, ss2, ss3
+			},
+		},
+		{
+			name: "dataSeed1_only",
+			tuple: func() (*itb.Seed128, *itb.Seed128, *itb.Seed128, *itb.Seed128, *itb.Seed128, *itb.Seed128, *itb.Seed128, *itb.Seed128) {
+				return ns, ls, newSeed(), ds2, ds3, ss1, ss2, ss3
+			},
+		},
+		{
+			name: "startSeed1_only",
+			tuple: func() (*itb.Seed128, *itb.Seed128, *itb.Seed128, *itb.Seed128, *itb.Seed128, *itb.Seed128, *itb.Seed128, *itb.Seed128) {
+				return ns, ls, ds1, ds2, ds3, newSeed(), ss2, ss3
+			},
+		},
+	}
+
+	for _, tc := range singlePixelCases {
+		const trials = 32
+		totalBytes := 0
+		totalOnes := 0
+		for trial := 0; trial < trials; trial++ {
+			c0, c1, c2, c3, c4, c5, c6, c7 := tc.tuple()
+			ptWrong, err := itb.Decrypt3x128Cfg(nil, c0, c1, c2, c3, c4, c5, c6, c7, ctZero)
+			if err != nil {
+				t.Fatalf("Decrypt3x128Cfg %s (trial=%d): %v", tc.name, trial, err)
+			}
+			totalBytes += len(ptWrong)
+			totalOnes += popcountBytes(ptWrong)
+		}
+		// Under lockSeed-only on zeroLen=4096 (headerHW=1), totalOnes <= trials (32).
+		// Changing even a single pixel-layer seed injects hundreds/thousands of 1-bits.
+		if totalOnes <= 128 {
+			t.Fatalf("%s: expected channelXOR desynchronization to exceed sparse bound, got totalOnes=%d across %d trials",
+				tc.name, totalOnes, trials)
+		}
+		t.Logf("%s across %d trials -> totalBytes=%d, totalOnes=%d (bitsPerByte=%.4f)",
+			tc.name, trials, totalBytes, totalOnes, float64(totalOnes)/float64(totalBytes))
+	}
+
+	// 3. Independently generated 8-seed tuples on all-0x00 vs all-0xFF
+	// plaintexts produce indistinguishable post-COBS/interleave bit density.
+	onesPlain := bytes.Repeat([]byte{0xFF}, 4096)
+	ctOnes, err := itb.Encrypt3x128Cfg(nil, ns, ls, ds1, ds2, ds3, ss1, ss2, ss3, onesPlain)
+	if err != nil {
+		t.Fatalf("Encrypt3x128Cfg(ones 4096): %v", err)
+	}
+
+	measureIndepDensity := func(label string, ct []byte) float64 {
+		const trials = 64
+		totalBytes := 0
+		totalOnes := 0
+		for trial := 0; trial < trials; trial++ {
+			ptWrong, err := itb.Decrypt3x128Cfg(nil,
+				newSeed(), newSeed(), newSeed(), newSeed(),
+				newSeed(), newSeed(), newSeed(), newSeed(), ct)
+			if err != nil {
+				t.Fatalf("Decrypt3x128Cfg indep (%s, trial=%d): %v", label, trial, err)
+			}
+			totalBytes += len(ptWrong)
+			totalOnes += popcountBytes(ptWrong)
+		}
+		if totalBytes < 2048 {
+			t.Fatalf("indep (%s): unexpectedly short aggregate output (%d bytes)", label, totalBytes)
+		}
+		density := float64(totalOnes) / float64(totalBytes)
+		t.Logf("independent_8_seeds (%s) across %d trials -> totalBytes=%d, bitsPerByte=%.4f",
+			label, trials, totalBytes, density)
+		if density < 1.4 || density > 2.9 {
+			t.Fatalf("indep (%s): expected post-COBS/pad wrong-seed density around ~2.1 bits/byte, got %.4f",
+				label, density)
+		}
+		return density
+	}
+
+	dZero := measureIndepDensity("all_0x00", ctZero)
+	dOnes := measureIndepDensity("all_0xFF", ctOnes)
+	diff := dZero - dOnes
+	if diff < 0 {
+		diff = -diff
+	}
+	if diff > 0.75 {
+		t.Fatalf("independent_8_seeds density differs between all-0x00 (%.4f) and all-0xFF (%.4f)", dZero, dOnes)
+	}
+}

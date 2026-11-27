@@ -12,7 +12,9 @@
 
 **No bespoke cryptography.** ITB composes established, standardized primitives rather than introducing new cryptographic designs. Security properties and regulatory status are inherited from the underlying primitives; see [README.md](README.md) for jurisdictional certification details.
 
-Results below were collected at `ITB_NONCE_BITS=512` with `ITB_GOMEMLIMIT=4GiB` + `ITB_GOGC=100` capping the Go runtime heap. ARX-based PRF-grade primitives dispatch through hand-written AVX-512 / AVX2 chain-absorb ASM kernels (each primitive family at its natural active register width); AES-family primitives (AES-ITB-128, Areion-SoEM-256, Areion-SoEM-512, AES-CMAC) dispatch through VAES / AES-NI kernels: the pixel-pipeline fused cascade and the batch-16 Interlocked Barrier fill cascade both auto-select the widest VAES tier the host offers (ZMM on VAES + AVX-512F, YMM on VAES + AVX2 without AVX-512F, VEX / non-VEX SSE XMM on the remaining AES-NI hosts). The fused cascade tier is overridable via `ITB_FORCE_HASH_TIER`; the batch-16 fill cascade tier is separately overridable via `ITB_FORCE_INTERLOCK_PRF_FILL_TIER`.
+Results below were collected at `ITB_NONCE_BITS=512` with `ITB_GOMEMLIMIT=4GiB` + `ITB_GOGC=100` capping the Go runtime heap. ARX-based PRF-grade primitives dispatch through hand-written AVX-512 / AVX2 chain-absorb ASM kernels (each primitive family at its natural active register width); AES-family primitives (AES-ITB-128, Areion-SoEM-256, Areion-SoEM-512, AES-CMAC) dispatch through VAES / AES-NI kernels: the pixel-pipeline fused cascade and the batch-16 Interlocked Barrier fill cascade both auto-select the widest VAES tier the host offers (ZMM on VAES + AVX-512F, YMM on VAES + AVX2 without AVX-512F, VEX / non-VEX SSE XMM on the remaining AES-NI hosts). The fused cascade tier is overridable via `ITB_FORCE_HASH_TIER`; the batch-16 fill cascade tier is separately overridable via `ITB_FORCE_INTERLOCK_PRF_FILL_TIER`. All Encrypt / Decrypt columns report throughput in MB/s.
+
+Throughput at `1 MB / 16 MB / 64 MB` is identical across **Mode 1**, **Mode 2**, and **Mode 3** within measurement noise because container mode selection governs only the minimum container floor (orders of magnitude below the `1–64 MB` payload buffers). Under **Mode 3** (`Gauss-Posit`), the one-time semicircle chord schedule in integer `posit64` and 512-bit quire arithmetic executes in single-digit microseconds per container and produces no measurable change in MB/s throughput.
 
 Reproduction:
 
@@ -218,5 +220,5 @@ Reproduction:
 ```sh
 ITB_NONCE_BITS=512 ITB_GOMEMLIMIT=4GiB ITB_GOGC=100 \
   go test -bench='BenchmarkExtTripleAESITB128DRBG' -run='^$' -benchtime=5s -count=3
-  go test -bench='BenchmarkArmsParallel3/.*/18MB' -run='^$' -benchtime=2s -count=3 ./internal/drbg/
+go test -bench='BenchmarkArmsParallel3/.*/18MB' -run='^$' -benchtime=2s -count=3 ./internal/drbg/
 ```

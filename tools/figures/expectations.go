@@ -54,14 +54,21 @@ func Registry(f *Figures) []Expectation {
 	}
 	aC1, aG1 := bf(a.P, 2)
 	bC1, bG1 := bf(b.P, 2)
+	cC1, cG1 := bf(c.P, 2)
 	aC2, aG2 := bf(a.P, 1)
 	bC2, bG2 := bf(b.P, 1)
+	cC2, cG2 := bf(c.P, 1)
 	_, tG1 := bf(t.P, 2)
 	_, tG2 := bf(t.P, 1)
 	if tG1 != bG1 || tG2 != bG2 {
 		// SCIENCE.md § 3.3 states one Grover figure for the Mode 2 and the
 		// theoretical floor together; a divergence surfaces as STALE.
 		tG1, tG2 = "divergent", "divergent"
+	}
+	if cG1 != aG1 || cG2 != aG2 {
+		// SCIENCE.md § 3.3 and POSTQUANTUM.md state one Grover figure for
+		// the Mode 3 and Mode 1 floors together; a divergence surfaces as STALE.
+		cG1, cG2 = "divergent", "divergent"
 	}
 
 	log2AB := fixed(f.Log2AB, 2)
@@ -137,8 +144,8 @@ func Registry(f *Figures) []Expectation {
 		theoPayloadKB = "divergent"
 	}
 	// The README storage-overhead row reads the 0.5-2.5 KB expansion off
-	// the floor wire, valid while 2.5 KB fits both 1024-bit floors.
-	floorFits2500 := a.MaxPayload >= 2500 && b.MaxPayload >= 2500
+	// the floor wire, valid while 2.5 KB fits all three 1024-bit floors.
+	floorFits2500 := a.MaxPayload >= 2500 && b.MaxPayload >= 2500 && c.MaxPayload >= 2500
 	expansionMin := fixed(f.ExpansionMin, 2)
 	if expansionMin != fixed(f.ExpansionMinEnd, 2) {
 		// The interval minimum lies between the two; they no longer
@@ -173,17 +180,22 @@ func Registry(f *Figures) []Expectation {
 	)
 	add(wireOffsets("SCIENCE.md", f, `Prefix`)...)
 	add(
-		expect("SCIENCE.md", "For `P = "+num+"` \\(\\*\\*Mode 2\\*\\* per-container floor at a 1024-bit key — joint floor `MinPixels = "+num+"`, square-rounded to `"+num+x+num+" = "+num+"` with `DefaultBarrierFill = "+num+"`\\): `7\\^"+num+" ≈ "+p2+"`. For `P = "+num+"` \\(\\*\\*Mode 1\\*\\* per-region floor — `3"+x+num+" = "+num+"` total pixels, square-rounded to `"+num+x+num+" = "+num+"`\\): `7\\^"+num+" ≈ "+p2+"` observation-consistent candidate configurations \\(with `7\\^"+num+" ≈ "+p2+"`",
+		expect("SCIENCE.md", "For `P = "+num+"` \\(\\*\\*Mode 2\\*\\* per-container floor at a 1024-bit key — joint floor `MinPixels = "+num+"`, square-rounded to `"+num+x+num+" = "+num+"` with `DefaultBarrierFill = "+num+"`\\): `7\\^"+num+" ≈ "+p2+"`\\. For `P = "+num+"` \\(\\*\\*Mode 3\\*\\* Gauss-Posit inscribed circle floor — `⌊\\(6"+x+num+"\\) / π_posit\\(es=2\\)⌋ \\+ 1 = "+num+"` pixels, square-rounded to `"+num+x+num+" = "+num+"`\\): `7\\^"+num+" ≈ "+p2+"`\\. For `P = "+num+"` \\(\\*\\*Mode 1\\*\\* per-region floor — `3"+x+num+" = "+num+"` total pixels, square-rounded to `"+num+x+num+" = "+num+"`\\): `7\\^"+num+" ≈ "+p2+"` observation-consistent candidate configurations \\(with `7\\^"+num+" ≈ "+p2+"`",
 			w("m2_P", plain(b.P)), w("minpixels_1024", plain(mp)), w("m2_side", plain(b.Side)), w("m2_side", plain(b.Side)), w("m2_P", plain(b.P)), w("barrier_fill", plain(f.BarrierFill)),
 			w("m2_P", plain(b.P)), w("cca_m2", pow2(cca(b.P))),
+			w("m3_P", plain(c.P)), w("minpixels_1024", plain(mp)), w("m3_floor_px", plain(c.FloorPixels)), w("m3_side", plain(c.Side)), w("m3_side", plain(c.Side)), w("m3_P", plain(c.P)),
+			w("m3_P", plain(c.P)), w("cca_m3", pow2(cca(c.P))),
 			w("m1_P", plain(a.P)), w("minpixels_1024", plain(mp)), w("m1_floor_px", plain(a.FloorPixels)), w("m1_side", plain(a.Side)), w("m1_side", plain(a.Side)), w("m1_P", plain(a.P)),
 			w("m1_P", plain(a.P)), w("cca_m1", pow2(cca(a.P))),
 			w("theo_P", plain(t.P)), w("cca_theo", pow2(cca(t.P)))),
 		expect("SCIENCE.md", "≈ 2\\^\\((\\d+\\.\\d+) × C\\)` observation-consistent mask configurations",
 			w("log2_AB", log2AB)),
-		expect("SCIENCE.md", "For `keyBits = 1024`: joint floor `MinPixels = "+num+"`. In \\*\\*Mode 2\\*\\* \\(per-container\\), the joint floor produces a `"+num+x+num+"` container \\(`P = "+num+"`\\), where the noise barrier is `"+p2+" ≫ "+p2+"` \\(a margin of `"+p2+"`\\). In \\*\\*Mode 1\\*\\* \\(per-region\\), each region independently enforces `MinPixels = "+num+"`, requiring at least `3"+x+num+" = "+num+"` data pixels; square container rounding \\(`⌈√"+num+"⌉ = "+num+"`\\) plus `DefaultBarrierFill = "+num+"` yields `"+num+x+num+" = "+num+"` pixels, expanding the noise barrier to `"+p2+"` \\(a margin of `"+p2+"` over the key space\\)",
+		expect("SCIENCE.md", "For `keyBits = 1024`: joint floor `MinPixels = "+num+"`\\. In \\*\\*Mode 2\\*\\* \\(per-container\\), the joint floor produces a `"+num+x+num+"` container \\(`P = "+num+"`\\), where the noise barrier is `"+p2+" ≫ "+p2+"` \\(a margin of `"+p2+"`\\)\\. In \\*\\*Mode 3\\*\\* \\(Gauss-Posit\\), the inscribed circle floor `⌊\\(6"+x+num+"\\) / π_posit\\(es=2\\)⌋ \\+ 1 = "+num+"` \\(`⌈√"+num+"⌉ = "+num+"` plus `DefaultBarrierFill = "+num+"`\\) produces a `"+num+x+num+"` container \\(`P = "+num+"`\\), where the noise barrier is `"+p2+" ≫ "+p2+"` \\(a margin of `"+p2+"`\\)\\. In \\*\\*Mode 1\\*\\* \\(per-region\\), each region independently enforces `MinPixels = "+num+"`, requiring at least `3"+x+num+" = "+num+"` data pixels; square container rounding \\(`⌈√"+num+"⌉ = "+num+"`\\) plus `DefaultBarrierFill = "+num+"` yields `"+num+x+num+" = "+num+"` pixels, expanding the noise barrier to `"+p2+"` \\(a margin of `"+p2+"` over the key space\\)",
 			w("minpixels_1024", plain(mp)), w("m2_side", plain(b.Side)), w("m2_side", plain(b.Side)), w("m2_P", plain(b.P)),
 			w("noise_m2", pow2(noiseBarrier(b.P))), w("key_space", pow2(1024)), w("noise_margin_m2", pow2(noiseBarrier(b.P)-1024)),
+			w("minpixels_1024", plain(mp)), w("m3_floor_px", plain(c.FloorPixels)), w("m3_floor_px", plain(c.FloorPixels)), w("m3_raw_square", plain(c.RawSquare)), w("barrier_fill", plain(f.BarrierFill)),
+			w("m3_side", plain(c.Side)), w("m3_side", plain(c.Side)), w("m3_P", plain(c.P)),
+			w("noise_m3", pow2(noiseBarrier(c.P))), w("key_space", pow2(1024)), w("noise_margin_m3", pow2(noiseBarrier(c.P)-1024)),
 			w("minpixels_1024", plain(mp)), w("minpixels_1024", plain(mp)), w("m1_floor_px", plain(a.FloorPixels)), w("m1_floor_px", plain(a.FloorPixels)), w("m1_raw_square", plain(a.RawSquare)), w("barrier_fill", plain(f.BarrierFill)),
 			w("m1_side", plain(a.Side)), w("m1_side", plain(a.Side)), w("m1_P", plain(a.P)),
 			w("noise_m1", pow2(noiseBarrier(a.P))), w("noise_margin_m1", pow2(noiseBarrier(a.P)-1024))),
@@ -193,6 +205,9 @@ func Registry(f *Figures) []Expectation {
 		expect("SCIENCE.md", `^- \*\*Mode 1\*\* per-region container `+residueLine()+" \\(`\\("+num+" − "+num+"\\)"+x+"7 = "+num+" bytes` at the exact floor\\)",
 			w("m1_s", plain(a.Side-1)), w("m1_side", plain(a.Side)), w("m1_side", plain(a.Side)), w("m1_P", plain(a.P)), w("m1_s", plain(a.Side-1)), w("m1_residue", plain(a.Residue)),
 			w("m1_P", plain(a.P)), w("m1_floor_px", plain(a.FloorPixels)), w("m1_residue_floor", plain(a.ResidueAtFloor))),
+		expect("SCIENCE.md", `^- \*\*Mode 3\*\* Gauss-Posit container `+residueLine()+" \\(`\\("+num+" − "+num+"\\)"+x+"7 = "+num+" bytes` at the exact floor\\)",
+			w("m3_s", plain(c.Side-1)), w("m3_side", plain(c.Side)), w("m3_side", plain(c.Side)), w("m3_P", plain(c.P)), w("m3_s", plain(c.Side-1)), w("m3_residue", plain(c.Residue)),
+			w("m3_P", plain(c.P)), w("m3_floor_px", plain(c.FloorPixels)), w("m3_residue_floor", plain(c.ResidueAtFloor))),
 		expect("SCIENCE.md", `^- \*\*Mode 2\*\* per-container container `+residueLine()+" \\(`\\("+num+" − "+num+"\\)"+x+"7 = "+num+" bytes` at the exact floor\\)",
 			w("m2_s", plain(b.Side-1)), w("m2_side", plain(b.Side)), w("m2_side", plain(b.Side)), w("m2_P", plain(b.P)), w("m2_s", plain(b.Side-1)), w("m2_residue", plain(b.Residue)),
 			w("m2_P", plain(b.P)), w("minpixels_1024", plain(mp)), w("m2_residue_floor", plain(b.ResidueAtFloor))),
@@ -208,37 +223,45 @@ func Registry(f *Figures) []Expectation {
 			w("gcd", comma(gcd)), w("excluded_pct", trunc(100*(1-invGCD), 3)), w("gcd", comma(gcd)), w("gcd", comma(gcd)), w("log2_gcd", fixed(f.Log2GCD, 2))),
 		expect("SCIENCE.md", `In 168-bit mode, the collapse is dramatically steeper: .gcd\(A₁₆₈, B₁₆₈\) = `+num+`. \(.log₂ ≈ `+dec+`.\), so naive same-rank reduction .\(R_512 mod A₁₆₈, R_512 mod B₁₆₈\). reaches only .1 / `+num+` ≈ ([\d.]+ × 10⁻..). of the .A₁₆₈ × B₁₆₈. mask space, eroding .`+dec+`. bits of per-chunk entropy \(collapsing .`+p2d+`. down to .≈ `+p2d+`.\)`,
 			w("gcd168", gcd168Comma), w("log2_gcd168", log2GCD168), w("gcd168", gcd168Comma), w("inv_gcd168", sci(invGCD168, 1)), w("log2_gcd168", log2GCD168), w("log2_AB168", "2^"+log2AB168), w("collapsed_AB168", "2^"+fixed(f.Log2AB168-f.Log2GCD168, 2))),
-		// Barrier strength table (1024-bit key): Mode 2 | Mode 1 | theoretical.
-		expect("SCIENCE.md", `^\| Container dimensions \| `+dimsP+` \| `+dimsP+` \| `+dimsP+` \|$`,
+		// Barrier strength table (1024-bit key): Mode 2 | Mode 3 | Mode 1 | theoretical.
+		expect("SCIENCE.md", `^\| Container dimensions \| `+dimsP+` \| `+dimsP+` \| `+dimsP+` \| `+dimsP+` \|$`,
 			w("m2_side", plain(b.Side)), w("m2_side", plain(b.Side)), w("m2_P", plain(b.P)),
+			w("m3_side", plain(c.Side)), w("m3_side", plain(c.Side)), w("m3_P", plain(c.P)),
 			w("m1_side", plain(a.Side)), w("m1_side", plain(a.Side)), w("m1_P", plain(a.P)),
 			w("theo_side", plain(t.Side)), w("theo_side", plain(t.Side)), w("theo_P", plain(t.P))),
-		expect("SCIENCE.md", `^\| MinPixels enforcement \| `+num+` joint → `+num+` \| 3`+x+num+` = `+num+` → `+num+` \| `+num+` → `+num+` \|$`,
-			w("minpixels_1024", plain(mp)), w("m2_P", plain(b.P)), w("minpixels_1024", plain(mp)), w("m1_floor_px", plain(a.FloorPixels)), w("m1_P", plain(a.P)), w("minpixels_1024", plain(mp)), w("theo_P", plain(t.P))),
-		expect("SCIENCE.md", `^\| Noise barrier \(2\^\(8P\)\) \| `+p2+` \| `+p2+` \| `+p2+` \|$`,
-			w("noise_m2", pow2(noiseBarrier(b.P))), w("noise_m1", pow2(noiseBarrier(a.P))), w("noise_theo", pow2(noiseBarrier(t.P)))),
-		expect("SCIENCE.md", `^\| Encoding ambiguity 56\^P \(No CCA\) \| `+p2+` \| `+p2+` \| `+p2+` \|$`,
-			w("nocca_m2", pow2(nocca(b.P))), w("nocca_m1", pow2(nocca(a.P))), w("nocca_theo", pow2(nocca(t.P)))),
-		expect("SCIENCE.md", `^\| Encoding ambiguity 7\^P \(Under CCA\) \| `+p2+` \| `+p2+` \| `+p2+` \|$`,
-			w("cca_m2", pow2(cca(b.P))), w("cca_m1", pow2(cca(a.P))), w("cca_theo", pow2(cca(t.P)))),
-		expect("SCIENCE.md", `^\| DRBG residue \(Theorem 10\) \| ≥ `+num+` bytes \(s = `+num+`; `+num+` B at floor\) \| ≥ `+num+` bytes \(s = `+num+`; `+num+` B at floor\) \| ≥ `+num+` bytes \(s = `+num+`; `+num+` B at floor\) \|$`,
+		expect("SCIENCE.md", `^\| MinPixels enforcement \| `+num+` joint → `+num+` \| ⌊\(6`+x+num+`\) / π_posit\(es=2\)⌋ \+ 1 = `+num+` → `+num+` \| 3`+x+num+` = `+num+` → `+num+` \| `+num+` → `+num+` \|$`,
+			w("minpixels_1024", plain(mp)), w("m2_P", plain(b.P)),
+			w("minpixels_1024", plain(mp)), w("m3_floor_px", plain(c.FloorPixels)), w("m3_P", plain(c.P)),
+			w("minpixels_1024", plain(mp)), w("m1_floor_px", plain(a.FloorPixels)), w("m1_P", plain(a.P)),
+			w("minpixels_1024", plain(mp)), w("theo_P", plain(t.P))),
+		expect("SCIENCE.md", `^\| Noise barrier \(2\^\(8P\)\) \| `+p2+` \| `+p2+` \| `+p2+` \| `+p2+` \|$`,
+			w("noise_m2", pow2(noiseBarrier(b.P))), w("noise_m3", pow2(noiseBarrier(c.P))), w("noise_m1", pow2(noiseBarrier(a.P))), w("noise_theo", pow2(noiseBarrier(t.P)))),
+		expect("SCIENCE.md", `^\| Encoding ambiguity 56\^P \(No CCA\) \| `+p2+` \| `+p2+` \| `+p2+` \| `+p2+` \|$`,
+			w("nocca_m2", pow2(nocca(b.P))), w("nocca_m3", pow2(nocca(c.P))), w("nocca_m1", pow2(nocca(a.P))), w("nocca_theo", pow2(nocca(t.P)))),
+		expect("SCIENCE.md", `^\| Encoding ambiguity 7\^P \(Under CCA\) \| `+p2+` \| `+p2+` \| `+p2+` \| `+p2+` \|$`,
+			w("cca_m2", pow2(cca(b.P))), w("cca_m3", pow2(cca(c.P))), w("cca_m1", pow2(cca(a.P))), w("cca_theo", pow2(cca(t.P)))),
+		expect("SCIENCE.md", `^\| DRBG residue \(Theorem 10\) \| ≥ `+num+` bytes \(s = `+num+`; `+num+` B at floor\) \| ≥ `+num+` bytes \(s = `+num+`; `+num+` B at floor\) \| ≥ `+num+` bytes \(s = `+num+`; `+num+` B at floor\) \| `+num+` B at floor \(≥ `+num+` bytes at s = `+num+`\) \|$`,
 			w("m2_residue", plain(b.Residue)), w("m2_s", plain(b.Side-1)), w("m2_residue_floor", plain(b.ResidueAtFloor)),
+			w("m3_residue", plain(c.Residue)), w("m3_s", plain(c.Side-1)), w("m3_residue_floor", plain(c.ResidueAtFloor)),
 			w("m1_residue", plain(a.Residue)), w("m1_s", plain(a.Side-1)), w("m1_residue_floor", plain(a.ResidueAtFloor)),
-			w("theo_residue", plain(t.Residue)), w("theo_s", plain(t.Side-1)), w("theo_residue_floor", plain(t.ResidueAtFloor))),
-		expect("SCIENCE.md", `^\| Config map space \(2\^\(62P\)\) \| `+p2+` \| `+p2+` \| `+p2+` \|$`,
-			w("config_m2", pow2(configMap(b.P))), w("config_m1", pow2(configMap(a.P))), w("config_theo", pow2(configMap(t.P)))),
-		expect("SCIENCE.md", `^\| Mask-space cardinality \(A₁₆₈ · B₁₆₈, 168-bit\) \| ≈ `+p2d+` \| ≈ `+p2d+` \| ≈ `+p2d+` \|$`,
-			w("log2_AB168", "2^"+log2AB168), w("log2_AB168", "2^"+log2AB168), w("log2_AB168", "2^"+log2AB168)),
-		expect("SCIENCE.md", `^\| PRF-preimages per mask triple \(168-bit, 2\^512\) \| ≈ `+p2d+` \| ≈ `+p2d+` \| ≈ `+p2d+` \|$`,
-			w("log2_preimages168", "2^"+log2Pre168), w("log2_preimages168", "2^"+log2Pre168), w("log2_preimages168", "2^"+log2Pre168)),
-		expect("SCIENCE.md", `^\| Distinguisher sample budget \(168-bit\) \| ≈ `+p2d+` chunks \(~`+p2+` msgs\) \| ≈ `+p2d+` chunks \(~`+p2+` msgs\) \| ≈ `+p2d+` chunks \(~`+p2+` msgs\) \|$`,
+			w("theo_residue_floor", plain(t.ResidueAtFloor)), w("theo_residue", plain(t.Residue)), w("theo_s", plain(t.Side-1))),
+		expect("SCIENCE.md", `^\| Config map space \(2\^\(62P\)\) \| `+p2+` \| `+p2+` \| `+p2+` \| `+p2+` \|$`,
+			w("config_m2", pow2(configMap(b.P))), w("config_m3", pow2(configMap(c.P))), w("config_m1", pow2(configMap(a.P))), w("config_theo", pow2(configMap(t.P)))),
+		expect("SCIENCE.md", `^\| Mask-space cardinality \(A₁₆₈ · B₁₆₈, 168-bit\) \| ≈ `+p2d+` \| ≈ `+p2d+` \| ≈ `+p2d+` \| ≈ `+p2d+` \|$`,
+			w("log2_AB168", "2^"+log2AB168), w("log2_AB168", "2^"+log2AB168), w("log2_AB168", "2^"+log2AB168), w("log2_AB168", "2^"+log2AB168)),
+		expect("SCIENCE.md", `^\| PRF-preimages per mask triple \(168-bit, 2\^512\) \| ≈ `+p2d+` \| ≈ `+p2d+` \| ≈ `+p2d+` \| ≈ `+p2d+` \|$`,
+			w("log2_preimages168", "2^"+log2Pre168), w("log2_preimages168", "2^"+log2Pre168), w("log2_preimages168", "2^"+log2Pre168), w("log2_preimages168", "2^"+log2Pre168)),
+		expect("SCIENCE.md", `^\| Distinguisher sample budget \(168-bit\) \| ≈ `+p2d+` chunks \(~`+p2+` msgs\) \| ≈ `+p2d+` chunks \(~`+p2+` msgs\) \| ≈ `+p2d+` chunks \(~`+p2+` msgs\) \| ≈ `+p2d+` chunks \(~`+p2+` msgs\) \|$`,
+			w("sample_budget168", "2^"+budget168), w("log2_messages168", msgs168),
 			w("sample_budget168", "2^"+budget168), w("log2_messages168", msgs168),
 			w("sample_budget168", "2^"+budget168), w("log2_messages168", msgs168),
 			w("sample_budget168", "2^"+budget168), w("log2_messages168", msgs168)),
-		expect("SCIENCE.md", `^\| Key space \| `+p2+` \| `+p2+` \| `+p2+` \|$`,
-			w("key_space", pow2(1024)), w("key_space", pow2(1024)), w("key_space", pow2(1024))),
+		expect("SCIENCE.md", `^\| Key space \| `+p2+` \| `+p2+` \| `+p2+` \| `+p2+` \|$`,
+			w("key_space", pow2(1024)), w("key_space", pow2(1024)), w("key_space", pow2(1024)), w("key_space", pow2(1024))),
+		expect("SCIENCE.md", "container-wide 1-crib desynchronization \\+ CCA ambiguity .* reaches `≈ "+p2+" / "+p2+" / "+p2+"` across the 1024-bit \\*\\*Mode 2\\*\\* / \\*\\*Mode 3\\*\\* / \\*\\*Mode 1\\*\\* floors",
+			w("desync_cca_mode2", contCCAM2), w("desync_cca_mode3", contCCAM3), w("desync_cca_mode1", contCCAM1)),
 	)
-	// Container floor scaling table (Mode 2 vs Mode 1 per key size).
+	// Container floor scaling table (Mode 2 / Mode 3 / Mode 1 per key size).
 	for _, k := range keySizes {
 		mtu := ""
 		mtuW := []Want{}
@@ -246,26 +269,28 @@ func Registry(f *Figures) []Expectation {
 		if k == 512 {
 			mtu = ` \[` + num + x + num + ` at 1460 B payload\]`
 			mtuW = []Want{w("mtu512_side", plain(f.MTU512.Side)), w("mtu512_side", plain(f.MTU512.Side))}
-			mtuTail = `; ` + num + ` B at 1460 B payload`
+			mtuTail = `; ` + num + ` B in \*\*Mode 2\*\* at 1460 B payload`
 		}
 		wants := []Want{w(fmt.Sprintf("minpixels_%d", k), plain(f.MinPixels[k])),
 			w(fmt.Sprintf("m2_side_%d", k), plain(m2[k].Side)), w(fmt.Sprintf("m2_side_%d", k), plain(m2[k].Side)), w(fmt.Sprintf("m2_P_%d", k), plain(m2[k].P))}
 		wants = append(wants, mtuW...)
 		wants = append(wants,
+			w(fmt.Sprintf("m3_side_%d", k), plain(m3[k].Side)), w(fmt.Sprintf("m3_side_%d", k), plain(m3[k].Side)), w(fmt.Sprintf("m3_P_%d", k), plain(m3[k].P)),
 			w(fmt.Sprintf("m1_side_%d", k), plain(m1[k].Side)), w(fmt.Sprintf("m1_side_%d", k), plain(m1[k].Side)), w(fmt.Sprintf("m1_P_%d", k), plain(m1[k].P)),
-			w(fmt.Sprintf("m2_wire_%d", k), comma(m2[k].Wire)), w(fmt.Sprintf("m1_wire_%d", k), comma(m1[k].Wire)),
-			w(fmt.Sprintf("m2_vs_m1_%d", k), pct(m1[k].Wire, m2[k].Wire)+"%"))
+			w(fmt.Sprintf("m2_wire_%d", k), comma(m2[k].Wire)), w(fmt.Sprintf("m3_wire_%d", k), comma(m3[k].Wire)), w(fmt.Sprintf("m1_wire_%d", k), comma(m1[k].Wire)),
+			w(fmt.Sprintf("m2_vs_m1_%d", k), pct(m1[k].Wire, m2[k].Wire)+"%"),
+			w(fmt.Sprintf("m3_vs_m1_%d", k), pct(m1[k].Wire, m3[k].Wire)+"%"))
 		if k == 512 {
 			wants = append(wants, w("mtu512_wire", comma(f.MTU512.Wire)))
 		}
-		add(expect("SCIENCE.md", fmt.Sprintf(`^\| %d-bit \| `, k)+num+` px \| `+dimsP+mtu+` \| `+dimsP+` \| `+num+` B vs `+num+` B \((−[\d.]+%)`+mtuTail+`\) \|$`, wants...))
+		add(expect("SCIENCE.md", fmt.Sprintf(`^\| %d-bit \| `, k)+num+` px \| `+dimsP+mtu+` \| `+dimsP+` \| `+dimsP+` \| `+num+` B / `+num+` B / `+num+` B \((−[\d.]+%) / (−[\d.]+%)`+mtuTail+`\) \|$`, wants...))
 	}
 	add(
 		expect("SCIENCE.md", `Wire sizes measured with DefaultNonceBits = `+num+` \(`+num+`-byte stream prefix \+ `+num+`-byte header\), DefaultBarrierFill = `+num+`,`,
 			w("nonce_bits", plain(f.NonceBits)), w("prefix", plain(f.Prefix)), w("header", plain(f.HeaderSize)), w("barrier_fill", plain(f.BarrierFill))),
-		expect("SCIENCE.md", `Core ITB: .√P × 2\^keyBits. \(~`+p2+` at 1024-bit for \*\*Mode 2\*\* P = `+num+` and theoretical floor P = `+num+`; ~`+p2+` at \*\*Mode 1\*\* P = `+num+`\)\. MAC \+ Reveal: .√P × 2\^\(keyBits/2\). \(~`+p2+` at 1024-bit for P = `+num+` and P = `+num+`; ~`+p2+` at \*\*Mode 1\*\* P = `+num+`\)`,
-			w("grover2_m2", bG1), w("m2_P", plain(b.P)), w("theo_P", plain(t.P)), w("grover2_m1", aG1), w("m1_P", plain(a.P)),
-			w("grover1_m2", bG2), w("m2_P", plain(b.P)), w("theo_P", plain(t.P)), w("grover1_m1", aG2), w("m1_P", plain(a.P))),
+		expect("SCIENCE.md", `Core ITB: .√P × 2\^keyBits. oracle calls \(~`+p2+` at 1024-bit for \*\*Mode 2\*\* P = `+num+` and theoretical floor P = `+num+`; ~`+p2+` at \*\*Mode 3\*\* P = `+num+` and \*\*Mode 1\*\* P = `+num+`\)\. MAC \+ Reveal: .√P × 2\^\(keyBits/2\). oracle calls \(~`+p2+` at 1024-bit for \*\*Mode 2\*\* P = `+num+` and P = `+num+`; ~`+p2+` at \*\*Mode 3\*\* P = `+num+` and \*\*Mode 1\*\* P = `+num+`\)`,
+			w("grover2_m2", bG1), w("m2_P", plain(b.P)), w("theo_P", plain(t.P)), w("grover2_m3_m1", cG1), w("m3_P", plain(c.P)), w("m1_P", plain(a.P)),
+			w("grover1_m2", bG2), w("m2_P", plain(b.P)), w("theo_P", plain(t.P)), w("grover1_m3_m1", cG2), w("m3_P", plain(c.P)), w("m1_P", plain(a.P))),
 		expect("SCIENCE.md", `the `+p2+` noise-barrier at 1024-bit keys \(P = `+num+`\) is .`+p2+`×. the ~`+p2+` Landauer bound`,
 			w("noise_m1", pow2(noiseBarrier(a.P))), w("m1_P", plain(a.P)), w("noise_m1_vs_landauer", pow2(noiseBarrier(a.P)-landauerExp)), w("landauer", pow2(landauerExp))),
 		expect("SCIENCE.md", `Under CCA \(MAC \+ Reveal\): .P_threshold = ⌈k / log₂ 7⌉ ≈ ⌈k / `+dec+`⌉`,
@@ -305,10 +330,11 @@ func Registry(f *Figures) []Expectation {
 			w("P_64MiB_sci", fixed(float64(s64m.P)/1e6, 1)), w("hash_calls_64MiB_millions", plain(int(math.Round(float64(s64m.P*2*chainRounds(1024))/1e6))))),
 		expect("SCIENCE.md", "Wire format: `prefix \\("+num+" bytes\\) ‖ main_nonce \\(N bytes\\) ‖ W \\(2 bytes\\) ‖ H \\(2 bytes\\) ‖ W × H × 8 raw RGBWYOPA` for a Single Message, with one chunk header of `N \\+ 4` bytes \\(`N` = the configured nonce width in bytes; default `DefaultNonceBits = "+num+"` bits, `N = "+num+"`\\)",
 			w("prefix", plain(f.Prefix)), w("nonce_bits", plain(f.NonceBits)), w("nonce_bytes", plain(f.NonceBytes))),
-		expect("SCIENCE.md", "\\*\\*Mode 1\\*\\* enforces the per-region floor `MinPixels = "+num+"` across all three regions \\(`3"+x+num+" = "+num+"` square-rounded to `"+num+x+num+" = "+num+"` with `DefaultBarrierFill = "+num+"`\\), yielding barrier `"+p2+"`; \\*\\*Mode 2\\*\\* enforces `MinPixels = "+num+"` jointly across the container \\(`"+num+x+num+" = "+num+"` with `DefaultBarrierFill = "+num+"`\\), yielding barrier `"+p2+"`.*\\(`≥ "+p2+"` at 1024-bit\\).*settles at `8/56 ≈ "+num+"%`",
+		expect("SCIENCE.md", "\\*\\*Mode 1\\*\\* enforces the per-region floor `MinPixels = "+num+"` across all three regions \\(`3"+x+num+" = "+num+"` square-rounded to `"+num+x+num+" = "+num+"` with `DefaultBarrierFill = "+num+"`\\), yielding barrier `"+p2+"`; \\*\\*Mode 2\\*\\* enforces `MinPixels = "+num+"` jointly across the container \\(`"+num+x+num+" = "+num+"` with `DefaultBarrierFill = "+num+"`\\), yielding barrier `"+p2+"`; and \\*\\*Mode 3\\*\\* \\(Gauss-Posit\\) enforces the inscribed Gauss-circle floor `⌊\\(6"+x+num+"\\) / π_posit\\(es=2\\)⌋ \\+ 1 = "+num+"` \\(`"+num+x+num+" = "+num+"` with `DefaultBarrierFill = "+num+"`\\), yielding barrier `"+p2+"`.*\\(`≥ "+p2+"` at 1024-bit\\).*settles at `8/56 ≈ "+num+"%`",
 			w("minpixels_1024", plain(mp)), w("minpixels_1024", plain(mp)), w("m1_floor_px", plain(a.FloorPixels)), w("m1_side", plain(a.Side)), w("m1_side", plain(a.Side)), w("m1_P", plain(a.P)), w("barrier_fill", plain(f.BarrierFill)),
 			w("noise_m1", pow2(noiseBarrier(a.P))), w("minpixels_1024", plain(mp)), w("m2_side", plain(b.Side)), w("m2_side", plain(b.Side)), w("m2_P", plain(b.P)), w("barrier_fill", plain(f.BarrierFill)),
-			w("noise_m2", pow2(noiseBarrier(b.P))), w("noise_margin_m1", pow2(noiseBarrier(a.P)-1024)),
+			w("noise_m2", pow2(noiseBarrier(b.P))), w("minpixels_1024", plain(mp)), w("m3_floor_px", plain(c.FloorPixels)), w("m3_side", plain(c.Side)), w("m3_side", plain(c.Side)), w("m3_P", plain(c.P)), w("barrier_fill", plain(f.BarrierFill)),
+			w("noise_m3", pow2(noiseBarrier(c.P))), w("noise_margin_m1", pow2(noiseBarrier(a.P)-1024)),
 			w("noise_overhead_pct", fixed(math.Round(100*float64(itb.Channels)/float64(itb.DataBitsPerPixel)), 0))),
 		expect("SCIENCE.md", `relative deviation of ≈ (2\^-\d+\.\d).*maximum-size message of (2\^\d+\.\d+) chunks, the per-message deviation is bounded by ≈ (2\^-\d+\.\d)\..*1/ε² ≈ (2\^\d+\.\d). chunk samples`,
 			w("bias", "2^"+bias), w("max_chunks", "2^"+chunks), w("accum_bias", "2^"+accum), w("sample_budget", "2^"+budget)),
@@ -330,10 +356,12 @@ func Registry(f *Figures) []Expectation {
 	add(
 		expect("PROOFS.md", "^- Under \\*\\*Mode 1\\*\\* \\(per-region floor `MinPixels = "+num+"` applied to each of three regions, `3"+x+num+" = "+num+"`, square-rounded to `"+num+x+num+" = "+num+"` with `DefaultBarrierFill = "+num+"`\\): `7\\^"+num+" ≈ "+p2+"`",
 			w("minpixels_1024", plain(mp)), w("minpixels_1024", plain(mp)), w("m1_floor_px", plain(a.FloorPixels)), w("m1_side", plain(a.Side)), w("m1_side", plain(a.Side)), w("m1_P", plain(a.P)), w("barrier_fill", plain(f.BarrierFill)), w("m1_P", plain(a.P)), w("cca_m1", pow2(cca(a.P)))),
+		expect("PROOFS.md", "^- Under \\*\\*Mode 3\\*\\* \\(Gauss-Posit inscribed circle floor `⌊\\(6 · "+num+"\\) / π_posit\\(es=2\\)⌋ \\+ 1 = "+num+"`, square-rounded to `"+num+x+num+" = "+num+"` with `DefaultBarrierFill = "+num+"`\\): `7\\^"+num+" ≈ "+p2+"`",
+			w("minpixels_1024", plain(mp)), w("m3_floor_px", plain(c.FloorPixels)), w("m3_side", plain(c.Side)), w("m3_side", plain(c.Side)), w("m3_P", plain(c.P)), w("barrier_fill", plain(f.BarrierFill)), w("m3_P", plain(c.P)), w("cca_m3", pow2(cca(c.P)))),
 		expect("PROOFS.md", "^- Under \\*\\*Mode 2\\*\\* \\(per-container floor `MinPixels = "+num+"` evaluated across the container, square-rounded to `"+num+x+num+" = "+num+"` with `DefaultBarrierFill = "+num+"`\\): `7\\^"+num+" ≈ "+p2+"`",
 			w("minpixels_1024", plain(mp)), w("m2_side", plain(b.Side)), w("m2_side", plain(b.Side)), w("m2_P", plain(b.P)), w("barrier_fill", plain(f.BarrierFill)), w("m2_P", plain(b.P)), w("cca_m2", pow2(cca(b.P)))),
-		expect("PROOFS.md", `The noise barrier \(`+p2+` for \*\*Mode 1\*\*, `+p2+` for \*\*Mode 2\*\*,`,
-			w("noise_m1", pow2(noiseBarrier(a.P))), w("noise_m2", pow2(noiseBarrier(b.P)))),
+		expect("PROOFS.md", `The noise barrier \(`+p2+` for \*\*Mode 1\*\*, `+p2+` for \*\*Mode 2\*\*, and `+p2+` for \*\*Mode 3\*\*,`,
+			w("noise_m1", pow2(noiseBarrier(a.P))), w("noise_m2", pow2(noiseBarrier(b.P))), w("noise_m3", pow2(noiseBarrier(c.P)))),
 		expect("PROOFS.md", `^MinPixels = MinPixelsAuth = ⌈1024 / log₂\(7\)⌉ = ⌈1024 / `+dec+`⌉ = `+num+` per region$`,
 			w("log2_7", fixed(math.Log2(7), 3)), w("minpixels_1024", plain(mp))),
 		expect("PROOFS.md", `^Total pixels = 3 × per-region floor = `+num+`; square container side = ⌈√`+num+`⌉ = `+num+`; with default barrier margin \(.DefaultBarrierFill = `+num+`.\) side = `+num+`; P = `+num+x+num+` = `+num+`\.$`,
@@ -343,6 +371,8 @@ func Registry(f *Figures) []Expectation {
 		expect("PROOFS.md", `^The barrier strictly exceeds the key space by a factor of `+p2+`\.$`, w("noise_margin_m1", pow2(noiseBarrier(a.P)-1024))),
 		expect("PROOFS.md", "^- \\*\\*Mode 1\\*\\* \\(per-region floor\\): `P ≥ 3 × ⌈keyBits / log₂\\(7\\)⌉`. For a 1024-bit key, `P = "+num+"`, yielding noise barrier `2\\^\\(8"+x+num+"\\) = "+p2+" > "+p2+"` \\(margin `"+p2+"`\\)",
 			w("m1_P", plain(a.P)), w("m1_P", plain(a.P)), w("noise_m1", pow2(noiseBarrier(a.P))), w("key_space", pow2(1024)), w("noise_margin_m1", pow2(noiseBarrier(a.P)-1024))),
+		expect("PROOFS.md", "^- \\*\\*Mode 3\\*\\* \\(Gauss-Posit inscribed circle floor\\): `P ≥ ⌊\\(6 · ⌈keyBits / log₂\\(7\\)⌉\\) / π_posit\\(es=2\\)⌋ \\+ 1`. For a 1024-bit key, `P = "+num+"`, yielding noise barrier `2\\^\\(8"+x+num+"\\) = "+p2+" > "+p2+"` \\(margin `"+p2+"`\\)",
+			w("m3_P", plain(c.P)), w("m3_P", plain(c.P)), w("noise_m3", pow2(noiseBarrier(c.P))), w("key_space", pow2(1024)), w("noise_margin_m3", pow2(noiseBarrier(c.P)-1024))),
 		expect("PROOFS.md", "^- \\*\\*Mode 2\\*\\* \\(per-container floor\\): `P ≥ ⌈keyBits / log₂\\(7\\)⌉`. For a 1024-bit key, `P = "+num+"`, yielding noise barrier `2\\^\\(8"+x+num+"\\) = "+p2+" > "+p2+"` \\(margin `"+p2+"`\\)",
 			w("m2_P", plain(b.P)), w("m2_P", plain(b.P)), w("noise_m2", pow2(noiseBarrier(b.P))), w("key_space", pow2(1024)), w("noise_margin_m2", pow2(noiseBarrier(b.P)-1024))),
 		expect("PROOFS.md", "Because `Channels = (\\d+)` and `8 / log₂\\(7\\) ≈ "+dec+" > 1`",
@@ -357,7 +387,7 @@ func Registry(f *Figures) []Expectation {
 			w("noise_config_bits", plain(itb.NoiseConfigBits)), w("config_bits", plain(itb.NoiseConfigBits+itb.DataConfigBits)),
 			w("cca_leak_pct", fixed(100*float64(itb.NoiseConfigBits)/float64(itb.NoiseConfigBits+itb.DataConfigBits), 1))),
 	)
-	for _, k := range []int{1024, 2048} {
+	for _, k := range keySizes {
 		add(expect("PROOFS.md", fmt.Sprintf(`^\| %d-bit \| P_region ≥ `, k)+num+` pixels \| P_region ≥ `+num+` pixels \|$`,
 			w(fmt.Sprintf("minpixels_%d", k), plain(f.MinPixels[k])), w(fmt.Sprintf("threshold_nocca_%d", k), plain(f.ThresholdNoCCA[k]))))
 	}
@@ -365,12 +395,18 @@ func Registry(f *Figures) []Expectation {
 		expect("PROOFS.md", "^- \\*\\*Mode 1\\*\\* composite container \\(per-region floor `MinPixels = "+num+"` × 3 regions = "+num+" total pixels, `s = ⌈√"+num+"⌉ = "+num+"`, container `"+num+x+num+" = "+num+"`\\): `gap ≥ \\(2"+x+num+" \\+ 1\\)"+x+"7 = "+num+" bytes`, and `\\("+num+" - "+num+"\\)"+x+"7 = "+num+" bytes` at the exact "+num+"-pixel floor",
 			w("minpixels_1024", plain(mp)), w("m1_floor_px", plain(a.FloorPixels)), w("m1_floor_px", plain(a.FloorPixels)), w("m1_s", plain(a.Side-1)), w("m1_side", plain(a.Side)), w("m1_side", plain(a.Side)), w("m1_P", plain(a.P)),
 			w("m1_s", plain(a.Side-1)), w("m1_residue", plain(a.Residue)), w("m1_P", plain(a.P)), w("m1_floor_px", plain(a.FloorPixels)), w("m1_residue_floor", plain(a.ResidueAtFloor)), w("m1_floor_px", plain(a.FloorPixels))),
+		expect("PROOFS.md", "^- \\*\\*Mode 3\\*\\* Gauss-Posit container \\(inscribed circle floor `⌊\\(6"+x+num+"\\) / π_posit\\(es=2\\)⌋ \\+ 1 = "+num+"`, `s = ⌈√"+num+"⌉ = "+num+"`, container `"+num+x+num+" = "+num+"`\\): `gap ≥ \\(2"+x+num+" \\+ 1\\)"+x+"7 = "+num+" bytes` for payloads ≤ "+num+"² = "+num+" pixels \\(payload ≤ ~"+dec+" KB\\), and `\\("+num+" - "+num+"\\)"+x+"7 = "+num+" bytes` at the exact "+num+"-pixel floor",
+			w("minpixels_1024", plain(mp)), w("m3_floor_px", plain(c.FloorPixels)), w("m3_floor_px", plain(c.FloorPixels)), w("m3_s", plain(c.Side-1)), w("m3_side", plain(c.Side)), w("m3_side", plain(c.Side)), w("m3_P", plain(c.P)),
+			w("m3_s", plain(c.Side-1)), w("m3_residue", plain(c.Residue)), w("m3_s", plain(c.Side-1)), w("m3_s_sq", plain((c.Side-1)*(c.Side-1))), w("m3_max_payload_kb", kb(c.MaxPayload)),
+			w("m3_P", plain(c.P)), w("m3_floor_px", plain(c.FloorPixels)), w("m3_residue_floor", plain(c.ResidueAtFloor)), w("m3_floor_px", plain(c.FloorPixels))),
 		expect("PROOFS.md", "^- \\*\\*Mode 2\\*\\* compact container \\(per-container floor `MinPixels = "+num+"`, `s = ⌈√"+num+"⌉ = "+num+"`, container `"+num+x+num+" = "+num+"`\\): `gap ≥ \\(2"+x+num+" \\+ 1\\)"+x+"7 = "+num+" bytes` for payloads ≤ "+num+"² = "+num+" pixels \\(payload ≤ ~"+dec+" KB\\), and `\\("+num+" - "+num+"\\)"+x+"7 = "+num+" bytes` at the exact "+num+"-pixel floor",
 			w("minpixels_1024", plain(mp)), w("minpixels_1024", plain(mp)), w("m2_s", plain(b.Side-1)), w("m2_side", plain(b.Side)), w("m2_side", plain(b.Side)), w("m2_P", plain(b.P)),
 			w("m2_s", plain(b.Side-1)), w("m2_residue", plain(b.Residue)), w("m2_s", plain(b.Side-1)), w("m2_s_sq", plain((b.Side-1)*(b.Side-1))), w("m2_max_payload_kb", kb(b.MaxPayload)),
 			w("m2_P", plain(b.P)), w("minpixels_1024", plain(mp)), w("m2_residue_floor", plain(b.ResidueAtFloor)), w("minpixels_1024", plain(mp))),
 		expect("PROOFS.md", `^\| \*\*Mode 2\*\* per-container floor \(1024-bit key, P = `+num+`\) \| `+num+` \| `+num+` bytes \(`+num+` bytes at `+num+`-pixel floor\) \|$`,
 			w("m2_P", plain(b.P)), w("m2_s", plain(b.Side-1)), w("m2_residue", plain(b.Residue)), w("m2_residue_floor", plain(b.ResidueAtFloor)), w("minpixels_1024", plain(mp))),
+		expect("PROOFS.md", `^\| \*\*Mode 3\*\* Gauss-Posit floor \(1024-bit key, P = `+num+`\) \| `+num+` \| `+num+` bytes \(`+num+` bytes at `+num+`-pixel floor\) \|$`,
+			w("m3_P", plain(c.P)), w("m3_s", plain(c.Side-1)), w("m3_residue", plain(c.Residue)), w("m3_residue_floor", plain(c.ResidueAtFloor)), w("m3_floor_px", plain(c.FloorPixels))),
 		expect("PROOFS.md", `^\| \*\*Mode 1\*\* per-region floor \(1024-bit key, P = `+num+`\) \| `+num+` \| `+num+` bytes \(`+num+` bytes at `+num+`-pixel floor\) \|$`,
 			w("m1_P", plain(a.P)), w("m1_s", plain(a.Side-1)), w("m1_residue", plain(a.Residue)), w("m1_residue_floor", plain(a.ResidueAtFloor)), w("m1_floor_px", plain(a.FloorPixels))),
 		expect("PROOFS.md", `^\| 16 KB \| `+num+` \| `+num+` bytes \|$`, w("s_16KiB", plain(s16k.Side-1)), w("residue_16KiB", plain(s16k.Residue))),
@@ -437,44 +473,50 @@ func Registry(f *Figures) []Expectation {
 			w("config_bits", plain(itb.NoiseConfigBits+itb.DataConfigBits)), w("noise_config_bits", plain(itb.NoiseConfigBits)),
 			w("cca_leak_pct", fixed(100*float64(itb.NoiseConfigBits)/float64(itb.NoiseConfigBits+itb.DataConfigBits), 1)),
 			w("data_config_bits", plain(itb.DataConfigBits)), w("protected_pct", fixed(100*float64(itb.DataConfigBits)/float64(itb.NoiseConfigBits+itb.DataConfigBits), 1))),
-		expect("SECURITY.md", `\(\*\*Mode 1\*\*, P = `+num+`\): classical ~`+p2+`, Grover ~`+p2+` \(under per-container \*\*Mode 2\*\*, P = `+num+`: classical ~`+p2+`, Grover ~`+p2+`\)`,
-			w("m1_P", plain(a.P)), w("classical2_m1", aC1), w("grover2_m1", aG1), w("m2_P", plain(b.P)), w("classical2_m2", bC1), w("grover2_m2", bG1)),
-		expect("SECURITY.md", `\(\*\*Mode 1\*\*, P = `+num+` = 3 × per-region floor `+num+`, square-rounded to `+num+x+num+` with DefaultBarrierFill = `+num+`\): classical ~`+p2+`, Grover ~`+p2+` \(under per-container \*\*Mode 2\*\*, P = `+num+`: classical ~`+p2+`, Grover ~`+p2+`\)`,
+		expect("SECURITY.md", `\(\*\*Mode 1\*\*, P = `+num+`\): classical ~`+p2+`, Grover ~`+p2+` \(under per-container \*\*Mode 2\*\*, P = `+num+`: classical ~`+p2+`, Grover ~`+p2+`\), and under Gauss-Posit \*\*Mode 3\*\* \(P = `+num+`\): classical ~`+p2+`, Grover ~`+p2,
+			w("m1_P", plain(a.P)), w("classical2_m1", aC1), w("grover2_m1", aG1), w("m2_P", plain(b.P)), w("classical2_m2", bC1), w("grover2_m2", bG1), w("m3_P", plain(c.P)), w("classical2_m3", cC1), w("grover2_m3", cG1)),
+		expect("SECURITY.md", `\(\*\*Mode 1\*\*, P = `+num+` = 3 × per-region floor `+num+`, square-rounded to `+num+x+num+` with DefaultBarrierFill = `+num+`\): classical ~`+p2+`, Grover ~`+p2+` \(under per-container \*\*Mode 2\*\*, P = `+num+`: classical ~`+p2+`, Grover ~`+p2+`\), and under Gauss-Posit \*\*Mode 3\*\* \(P = `+num+`\): classical ~`+p2+`, Grover ~`+p2,
 			w("m1_P", plain(a.P)), w("minpixels_1024", plain(mp)), w("m1_side", plain(a.Side)), w("m1_side", plain(a.Side)), w("barrier_fill", plain(f.BarrierFill)),
-			w("classical1_m1", aC2), w("grover1_m1", aG2), w("m2_P", plain(b.P)), w("classical1_m2", bC2), w("grover1_m2", bG2)),
+			w("classical1_m1", aC2), w("grover1_m1", aG2), w("m2_P", plain(b.P)), w("classical1_m2", bC2), w("grover1_m2", bG2), w("m3_P", plain(c.P)), w("classical1_m3", cC2), w("grover1_m3", cG2)),
 		expect("SECURITY.md", `reaches ~50 % after 2\^\(N/2\) messages \(~`+p2+` for default `+num+`-bit, ~`+p2+` for 128-bit\); simultaneous dual-slot collision requires the product probability ~2\^N messages \(~`+p2+` for default `+num+`-bit\)`,
 			w("birthday_default", pow2(f.NonceBits/2)), w("nonce_bits", plain(f.NonceBits)), w("birthday_128", pow2(128/2)), w("dual_birthday_default", pow2(f.NonceBits)), w("nonce_bits", plain(f.NonceBits))),
-		expect("SECURITY.md", `^\| Container dimensions \| `+dimsP+` \| `+dimsP+` \| `+dimsP+` \|$`,
+		expect("SECURITY.md", `^\| Container dimensions \| `+dimsP+` \| `+dimsP+` \| `+dimsP+` \| `+dimsP+` \|$`,
 			w("m2_side", plain(b.Side)), w("m2_side", plain(b.Side)), w("m2_P", plain(b.P)),
+			w("m3_side", plain(c.Side)), w("m3_side", plain(c.Side)), w("m3_P", plain(c.P)),
 			w("m1_side", plain(a.Side)), w("m1_side", plain(a.Side)), w("m1_P", plain(a.P)),
 			w("theo_side", plain(t.Side)), w("theo_side", plain(t.Side)), w("theo_P", plain(t.P))),
-		expect("SECURITY.md", `^\| MinPixels enforcement \| `+num+` joint → `+num+` \(DefaultBarrierFill = `+num+`\) \| 3`+x+num+` = `+num+` → `+num+` \(DefaultBarrierFill = `+num+`\) \| `+num+` → `+num+` \|$`,
-			w("minpixels_1024", plain(mp)), w("m2_P", plain(b.P)), w("barrier_fill", plain(f.BarrierFill)), w("minpixels_1024", plain(mp)), w("m1_floor_px", plain(a.FloorPixels)), w("m1_P", plain(a.P)), w("barrier_fill", plain(f.BarrierFill)), w("minpixels_1024", plain(mp)), w("theo_P", plain(t.P))),
-		expect("SECURITY.md", `^\| Noise barrier \(2\^\(8P\)\) \| `+p2+` \| `+p2+` \| `+p2+` \|$`,
-			w("noise_m2", pow2(noiseBarrier(b.P))), w("noise_m1", pow2(noiseBarrier(a.P))), w("noise_theo", pow2(noiseBarrier(t.P)))),
-		expect("SECURITY.md", `^\| Encoding ambiguity 56\^P \(No CCA, Theorem 9\) \| `+p2+` \| `+p2+` \| `+p2+` \|$`,
-			w("nocca_m2", pow2(nocca(b.P))), w("nocca_m1", pow2(nocca(a.P))), w("nocca_theo", pow2(nocca(t.P)))),
-		expect("SECURITY.md", `^\| Encoding ambiguity 7\^P \(Under CCA, Theorem 9\) \| `+p2+` \| `+p2+` \| `+p2+` \|$`,
-			w("cca_m2", pow2(cca(b.P))), w("cca_m1", pow2(cca(a.P))), w("cca_theo", pow2(cca(t.P)))),
-		expect("SECURITY.md", `^\| Guaranteed DRBG residue \(Theorem 10\) \| ≥ `+num+` bytes \(s = `+num+`\) / `+num+` bytes \| ≥ `+num+` bytes \(s = `+num+`\) / `+num+` bytes \| ≥ `+num+` bytes \(s = `+num+`\) / `+num+` bytes \|$`,
+		expect("SECURITY.md", `^\| MinPixels enforcement \| `+num+` joint → `+num+` \(DefaultBarrierFill = `+num+`\) \| ⌊6`+x+num+` / π_posit\(es=2\)⌋ \+ 1 = `+num+` → `+num+` \(DefaultBarrierFill = `+num+`\) \| 3`+x+num+` = `+num+` → `+num+` \(DefaultBarrierFill = `+num+`\) \| `+num+` → `+num+` \|$`,
+			w("minpixels_1024", plain(mp)), w("m2_P", plain(b.P)), w("barrier_fill", plain(f.BarrierFill)),
+			w("minpixels_1024", plain(mp)), w("m3_floor_px", plain(c.FloorPixels)), w("m3_P", plain(c.P)), w("barrier_fill", plain(f.BarrierFill)),
+			w("minpixels_1024", plain(mp)), w("m1_floor_px", plain(a.FloorPixels)), w("m1_P", plain(a.P)), w("barrier_fill", plain(f.BarrierFill)),
+			w("minpixels_1024", plain(mp)), w("theo_P", plain(t.P))),
+		expect("SECURITY.md", `^\| Noise barrier \(2\^\(8P\)\) \| `+p2+` \| `+p2+` \| `+p2+` \| `+p2+` \|$`,
+			w("noise_m2", pow2(noiseBarrier(b.P))), w("noise_m3", pow2(noiseBarrier(c.P))), w("noise_m1", pow2(noiseBarrier(a.P))), w("noise_theo", pow2(noiseBarrier(t.P)))),
+		expect("SECURITY.md", `^\| Encoding ambiguity 56\^P \(No CCA, Theorem 9\) \| `+p2+` \| `+p2+` \| `+p2+` \| `+p2+` \|$`,
+			w("nocca_m2", pow2(nocca(b.P))), w("nocca_m3", pow2(nocca(c.P))), w("nocca_m1", pow2(nocca(a.P))), w("nocca_theo", pow2(nocca(t.P)))),
+		expect("SECURITY.md", `^\| Encoding ambiguity 7\^P \(Under CCA, Theorem 9\) \| `+p2+` \| `+p2+` \| `+p2+` \| `+p2+` \|$`,
+			w("cca_m2", pow2(cca(b.P))), w("cca_m3", pow2(cca(c.P))), w("cca_m1", pow2(cca(a.P))), w("cca_theo", pow2(cca(t.P)))),
+		expect("SECURITY.md", `^\| Guaranteed DRBG residue \(Theorem 10\) \| ≥ `+num+` bytes \(s = `+num+`; `+num+` bytes floor\) \| ≥ `+num+` bytes \(s = `+num+`; `+num+` bytes floor\) \| ≥ `+num+` bytes \(s = `+num+`; `+num+` bytes floor\) \| `+num+` bytes floor \(≥ `+num+` bytes at s = `+num+`\) \|$`,
 			w("m2_residue", plain(b.Residue)), w("m2_s", plain(b.Side-1)), w("m2_residue_floor", plain(b.ResidueAtFloor)),
+			w("m3_residue", plain(c.Residue)), w("m3_s", plain(c.Side-1)), w("m3_residue_floor", plain(c.ResidueAtFloor)),
 			w("m1_residue", plain(a.Residue)), w("m1_s", plain(a.Side-1)), w("m1_residue_floor", plain(a.ResidueAtFloor)),
-			w("theo_residue", plain(t.Residue)), w("theo_s", plain(t.Side-1)), w("theo_residue_floor", plain(t.ResidueAtFloor))),
-		expect("SECURITY.md", `^\| Blind-enumeration exponent vs Landauer \| `+dec+`× \(`+num+` / `+num+`\) \| `+dec+`× \(`+num+` / `+num+`\) \| `+dec+`× \(`+num+` / `+num+`\) \|$`,
+			w("theo_residue_floor", plain(t.ResidueAtFloor)), w("theo_residue", plain(t.Residue)), w("theo_s", plain(t.Side-1))),
+		expect("SECURITY.md", `^\| Blind-enumeration exponent vs Landauer \| `+dec+`× \(`+num+` / `+num+`\) \| `+dec+`× \(`+num+` / `+num+`\) \| `+dec+`× \(`+num+` / `+num+`\) \| `+dec+`× \(`+num+` / `+num+`\) \|$`,
 			w("noise_m2_vs_landauer", landauer(noiseBarrier(b.P))), w("noise_m2_exp", plain(noiseBarrier(b.P))), w("landauer_exp", plain(landauerExp)),
+			w("noise_m3_vs_landauer", landauer(noiseBarrier(c.P))), w("noise_m3_exp", plain(noiseBarrier(c.P))), w("landauer_exp", plain(landauerExp)),
 			w("noise_m1_vs_landauer", landauer(noiseBarrier(a.P))), w("noise_m1_exp", plain(noiseBarrier(a.P))), w("landauer_exp", plain(landauerExp)),
 			w("noise_theo_vs_landauer", landauer(noiseBarrier(t.P))), w("noise_theo_exp", plain(noiseBarrier(t.P))), w("landauer_exp", plain(landauerExp))),
-		expect("SECURITY.md", `^\| Config map space \(2\^\(62P\)\) \| `+p2+` \| `+p2+` \| `+p2+` \|$`,
-			w("config_m2", pow2(configMap(b.P))), w("config_m1", pow2(configMap(a.P))), w("config_theo", pow2(configMap(t.P)))),
-		expect("SECURITY.md", `^\| Key space \| `+p2+` \| `+p2+` \| `+p2+` \|$`, w("key_space", pow2(1024)), w("key_space", pow2(1024)), w("key_space", pow2(1024))),
-		expect("SECURITY.md", `^\| gcd\(A, B\) anti-collapse factor \(Theorem 12\) \| `+num+` \(full Cartesian reached\) \| `+num+` \(full Cartesian reached\) \| `+num+` \(full Cartesian reached\) \|$`,
-			w("gcd", comma(gcd)), w("gcd", comma(gcd)), w("gcd", comma(gcd))),
-		expect("SECURITY.md", `^\| Mask-space cardinality per chunk, 168-bit \(Theorem 11\) \| ≈ `+p2d+` \| ≈ `+p2d+` \| ≈ `+p2d+` \|$`,
-			w("log2_AB168", "2^"+log2AB168), w("log2_AB168", "2^"+log2AB168), w("log2_AB168", "2^"+log2AB168)),
-		expect("SECURITY.md", `^\| PRF-preimage count per mask triple, 168-bit \(512-bit PRF\) \| ≈ `+p2d+` \| ≈ `+p2d+` \| ≈ `+p2d+` \|$`,
-			w("log2_preimages168", "2^"+log2Pre168), w("log2_preimages168", "2^"+log2Pre168), w("log2_preimages168", "2^"+log2Pre168)),
-		expect("SECURITY.md", `^\| gcd\(A₁₆₈, B₁₆₈\) anti-collapse factor, 168-bit \(Theorem 12\) \| `+num+` \(full Cartesian reached\) \| `+num+` \(full Cartesian reached\) \| `+num+` \(full Cartesian reached\) \|$`,
-			w("gcd168", gcd168Comma), w("gcd168", gcd168Comma), w("gcd168", gcd168Comma)),
+		expect("SECURITY.md", `^\| Config map space \(2\^\(62P\)\) \| `+p2+` \| `+p2+` \| `+p2+` \| `+p2+` \|$`,
+			w("config_m2", pow2(configMap(b.P))), w("config_m3", pow2(configMap(c.P))), w("config_m1", pow2(configMap(a.P))), w("config_theo", pow2(configMap(t.P)))),
+		expect("SECURITY.md", `^\| Key space \| `+p2+` \| `+p2+` \| `+p2+` \| `+p2+` \|$`, w("key_space", pow2(1024)), w("key_space", pow2(1024)), w("key_space", pow2(1024)), w("key_space", pow2(1024))),
+		expect("SECURITY.md", `^\| gcd\(A, B\) anti-collapse factor \(Theorem 12\) \| `+num+` \(full Cartesian reached\) \| `+num+` \(full Cartesian reached\) \| `+num+` \(full Cartesian reached\) \| `+num+` \(full Cartesian reached\) \|$`,
+			w("gcd", comma(gcd)), w("gcd", comma(gcd)), w("gcd", comma(gcd)), w("gcd", comma(gcd))),
+		expect("SECURITY.md", `^\| Mask-space cardinality per chunk, 168-bit \(Theorem 11\) \| ≈ `+p2d+` \| ≈ `+p2d+` \| ≈ `+p2d+` \| ≈ `+p2d+` \|$`,
+			w("log2_AB168", "2^"+log2AB168), w("log2_AB168", "2^"+log2AB168), w("log2_AB168", "2^"+log2AB168), w("log2_AB168", "2^"+log2AB168)),
+		expect("SECURITY.md", `^\| PRF-preimage count per mask triple, 168-bit \(512-bit PRF\) \| ≈ `+p2d+` \| ≈ `+p2d+` \| ≈ `+p2d+` \| ≈ `+p2d+` \|$`,
+			w("log2_preimages168", "2^"+log2Pre168), w("log2_preimages168", "2^"+log2Pre168), w("log2_preimages168", "2^"+log2Pre168), w("log2_preimages168", "2^"+log2Pre168)),
+		expect("SECURITY.md", `^\| gcd\(A₁₆₈, B₁₆₈\) anti-collapse factor, 168-bit \(Theorem 12\) \| `+num+` \(full Cartesian reached\) \| `+num+` \(full Cartesian reached\) \| `+num+` \(full Cartesian reached\) \| `+num+` \(full Cartesian reached\) \|$`,
+			w("gcd168", gcd168Comma), w("gcd168", gcd168Comma), w("gcd168", gcd168Comma), w("gcd168", gcd168Comma)),
 		expect("SECURITY.md", `about (2\^\d+\.\d+) chunks of 168 bits`,
 			w("log2_chunks168", "2^"+chunks168)),
 		expect("SECURITY.md", `^\| 8/1 \(ITB\) \| `+num+` \| `+num+` \| `+dec+`× \| `+dec+` % \| `+p2+` \|$`,
@@ -491,9 +533,10 @@ func Registry(f *Figures) []Expectation {
 			w("m1_side", plain(a.Side)), w("m1_side", plain(a.Side)), w("m1_P", plain(a.P))),
 		expect("ITB.md", `Small messages clamp to .MinPixels. total pixels, yielding a `+num+x+num+` container \(`+num+` pixels\) at 1024-bit keys`,
 			w("m2_side", plain(b.Side)), w("m2_side", plain(b.Side)), w("m2_P", plain(b.P))),
-		expect("ITB.md", "At 1024-bit keys \\(`MinPixels = "+num+"`\\), \\*\\*Mode 1\\*\\* \\(per-region, `3"+x+num+" = "+num+"` pixels, `s = "+num+"`, container `"+num+x+num+" = "+num+"` pixels\\) yields `gap ≥ "+num+" bytes`; \\*\\*Mode 2\\*\\* \\(per-container, `totalPixels = "+num+"`, `s = "+num+"`, container `"+num+x+num+" = "+num+"` pixels\\) yields `gap ≥ "+num+" bytes`",
+		expect("ITB.md", "At 1024-bit keys \\(`MinPixels = "+num+"`\\), \\*\\*Mode 1\\*\\* \\(per-region, `3"+x+num+" = "+num+"` pixels, `s = "+num+"`, container `"+num+x+num+" = "+num+"` pixels\\) yields `gap ≥ "+num+" bytes`; \\*\\*Mode 2\\*\\* \\(per-container, `totalPixels = "+num+"`, `s = "+num+"`, container `"+num+x+num+" = "+num+"` pixels\\) yields `gap ≥ "+num+" bytes`; \\*\\*Mode 3\\*\\* \\(Gauss-Posit, inscribed-circle floor `"+num+"` pixels, `s = "+num+"`, container `"+num+x+num+" = "+num+"` pixels\\) yields `gap ≥ "+num+" bytes` \\(`"+num+" bytes` at the `"+num+"`-pixel floor\\)",
 			w("minpixels_1024", plain(mp)), w("minpixels_1024", plain(mp)), w("m1_floor_px", plain(a.FloorPixels)), w("m1_s", plain(a.Side-1)), w("m1_side", plain(a.Side)), w("m1_side", plain(a.Side)), w("m1_P", plain(a.P)), w("m1_residue", plain(a.Residue)),
-			w("minpixels_1024", plain(mp)), w("m2_s", plain(b.Side-1)), w("m2_side", plain(b.Side)), w("m2_side", plain(b.Side)), w("m2_P", plain(b.P)), w("m2_residue", plain(b.Residue))),
+			w("minpixels_1024", plain(mp)), w("m2_s", plain(b.Side-1)), w("m2_side", plain(b.Side)), w("m2_side", plain(b.Side)), w("m2_P", plain(b.P)), w("m2_residue", plain(b.Residue)),
+			w("m3_floor_px", plain(c.FloorPixels)), w("m3_s", plain(c.Side-1)), w("m3_side", plain(c.Side)), w("m3_side", plain(c.Side)), w("m3_P", plain(c.P)), w("m3_residue", plain(c.Residue)), w("m3_residue_floor", plain(c.ResidueAtFloor)), w("m3_floor_px", plain(c.FloorPixels))),
 		expect("ITB.md", "^- `A · B = "+num+"` \\(log₂ ≈ "+dec+"\\)\\.$", w("AB", commaBig(f.AB)), w("log2_AB", log2AB)),
 		expect("ITB.md", `the number of preimages per mask triple is .⌊2\^128 / \(A · B\)⌋ ≈ `+p2d+`.`, w("log2_preimages", "2^"+log2Pre)),
 		expect("ITB.md", `because .gcd\(A, B\) = gcd\(C\(48, 16\), C\(32, 16\)\) = `+num+` = (.+?)., which would restrict reachable pairs to .1 / `+num+` ≈ ([\d.]+ × 10⁻.). of the space \(eroding .log₂ `+num+` ≈ `+dec+`. bits of entropy\)`,
@@ -502,27 +545,15 @@ func Registry(f *Figures) []Expectation {
 			w("bias", "2^"+bias), w("max_chunks", "2^"+chunks), w("accum_bias", "2^"+accum), w("sample_budget", "2^"+budget), w("log2_messages", "2^"+fixed(math.Round(f.Log2Messages), 0))),
 		expect("ITB.md", `at most `+num+` ≈ `+p2d+` chunks of 168 bits across a ≈ `+p2d+` mask space`,
 			w("max_chunks168", comma(f.MaxChunks168)), w("log2_chunks168", "2^"+chunks168), w("log2_AB168", "2^"+log2AB168)),
-		expect("ITB.md", `^- .A₁₆₈ = C\(168, 56\) = `+num+`. \(.log₂ ≈ `+dec+`.\) — choices for the 56 bit positions routed to lane 0`,
-			w("A168", commaBig(f.A168)), w("log2_A168", log2A168)),
-		expect("ITB.md", `^- .B₁₆₈ = C\(112, 56\) = `+num+`. \(.log₂ ≈ `+dec+`.\) — choices for the 56 bit positions routed to lane 1`,
-			w("B168", commaBig(f.B168)), w("log2_B168", log2B168)),
-		expect("ITB.md", `^- .\|Ω_chunk,168\| = A₁₆₈ · B₁₆₈ = `+num+`. \(.log₂ ≈ `+dec+`., .≈ `+p2d+`.\)\.$`,
-			w("AB168", commaBig(f.AB168)), w("log2_AB168_bare", log2AB168), w("log2_AB168", "2^"+log2AB168)),
-		expect("ITB.md", `^- \*\*Preimages per mask triple:\*\* .⌊2\^512 / \(A₁₆₈ · B₁₆₈\)⌋ = `+num+` ≈ `+p2d+`.\.$`,
-			w("preimages168", commaBig(f.Preimages168)), w("log2_preimages168", "2^"+log2Pre168)),
-		expect("ITB.md", `For a typical balanced 168-bit crib, .≈ `+p2d+`. \(.≈ `+p2+`.\) distinct mask triples out of .≈ `+p2d+`. remain algebraically compatible`,
-			w("masks_per_crib168", crib168), w("masks_per_crib168_floor", crib168Floor), w("log2_AB168", "2^"+log2AB168)),
-		expect("ITB.md", `^- .gcd\(A₁₆₈, B₁₆₈\) = gcd\(C\(168, 56\), C\(112, 56\)\) = `+num+` = (.+?). \(.log₂ ≈ `+dec+`., .1 / gcd ≈ ([\d.]+ × 10⁻..).\)\.$`,
-			w("gcd168", gcd168Comma), w("gcd168_factors", f.GCD168Factors), w("log2_gcd168", log2GCD168), w("inv_gcd168", sci(invGCD168, 1))),
-		expect("ITB.md", `restricting reachable masks to .1 / `+num+` ≈ ([\d.]+ × 10⁻..). of the space and destroying .log₂ gcd ≈ `+dec+`. bits of entropy.*Cartesian space \(.≈ `+p2d+`.\)\.$`,
-			w("gcd168", gcd168Comma), w("inv_gcd168", sci(invGCD168, 1)), w("log2_gcd168", log2GCD168), w("log2_AB168", "2^"+log2AB168)),
-		expect("ITB.md", `^- \*\*Per-chunk bias:\*\* .≈ (2\^-\d+\.\d).\.$`,
-			w("bias168", "2^"+bias168)),
-		expect("ITB.md", `^- \*\*Maximum chunks in a 64 MiB message:\*\* .`+num+`. \(.≈ `+p2d+`.\)\.$`,
-			w("max_chunks168", comma(f.MaxChunks168)), w("log2_chunks168", "2^"+chunks168)),
-		expect("ITB.md", `^- \*\*Accumulated bias across a maximum 64 MiB message:\*\* .≈ (2\^-\d+\.\d).\.$`,
-			w("accum_bias168", "2^"+accum168)),
-		expect("ITB.md", `^- \*\*Statistical distinguisher sample budget \(.1 / ε².\):\*\* .≈ `+p2d+`. chunk samples \(.~`+p2+`. maximum-size 64 MiB messages\)\.$`,
+		expect("ITB.md", `Choosing 56 of 168 bits for lane 0 \(.A₁₆₈ = C\(168, 56\) ≈ ([\d.]+ × 10..)., .log₂ ≈ `+dec+`.\) and 56 of the remaining 112 bits for lane 1 \(.B₁₆₈ = C\(112, 56\) ≈ ([\d.]+ × 10..)., .log₂ ≈ `+dec+`.\) yields .\|Ω_chunk,168\| = A₁₆₈ · B₁₆₈ ≈ ([\d.]+ × 10..). \(.≈ `+p2d+`.\).*Each mask triple has .⌊2\^512 / \(A₁₆₈ · B₁₆₈\)⌋ ≈ `+p2d+`. 512-bit preimages, and a balanced 21-byte crib leaves .≈ `+p2d+`. \(.≈ `+p2+`.\) compatible mask triples\.`,
+			w("A168_sci", sci(math.Exp2(f.Log2A168), 2)), w("log2_A168", log2A168),
+			w("B168_sci", sci(math.Exp2(f.Log2B168), 2)), w("log2_B168", log2B168),
+			w("AB168_sci", sci(math.Exp2(f.Log2AB168), 2)), w("log2_AB168", "2^"+log2AB168),
+			w("log2_preimages168", "2^"+log2Pre168), w("masks_per_crib168", crib168), w("masks_per_crib168_floor", crib168Floor)),
+		expect("ITB.md", `avoids the naive double-modulo CRT collapse caused by .gcd\(A₁₆₈, B₁₆₈\) = `+num+`. \(.log₂ ≈ `+dec+`., .1 / gcd ≈ ([\d.]+ × 10⁻..).\), which would otherwise destroy .`+dec+`. bits of entropy\. Because .2\^512. is .`+p2d+` ×. larger than .A₁₆₈ · B₁₆₈., per-chunk bias drops to .≈ (2\^-\d+\.\d). \(.≈ (2\^-\d+\.\d). across a maximum 64 MiB message of .`+num+` ≈ `+p2d+`. chunks\), requiring .1 / ε² ≈ `+p2d+`. chunk samples \(.~`+p2+`. maximum-size messages\)`,
+			w("gcd168", gcd168Comma), w("log2_gcd168", log2GCD168), w("inv_gcd168", sci(invGCD168, 1)), w("log2_gcd168", log2GCD168),
+			w("log2_preimages168", "2^"+log2Pre168), w("bias168", "2^"+bias168), w("accum_bias168", "2^"+accum168),
+			w("max_chunks168", comma(f.MaxChunks168)), w("log2_chunks168", "2^"+chunks168),
 			w("sample_budget168", "2^"+budget168), w("log2_messages168", msgs168)),
 		expect("ITB.md", `^\| \*\*Choice count A \(m0\)\*\* \| C\(48, 16\) = `+num+` \(log₂ ≈ `+dec+`\) \| C\(168, 56\) ≈ ([\d.]+ × 10..) \(log₂ ≈ `+dec+`\) \|$`,
 			w("A", commaBig(f.A)), w("log2_A", fixed(f.Log2A, 2)), w("A168_sci", sci(math.Exp2(f.Log2A168), 2)), w("log2_A168", log2A168)),
@@ -548,6 +579,7 @@ func Registry(f *Figures) []Expectation {
 			w("sample_budget168", "2^"+budget168), w("log2_messages168", msgs168)),
 		expect("ITB.md", "requires `2\\^\\(62·P\\)` attempts \\(≈ "+p2+" for 1024-bit keys\\)", w("config_m1", pow2(configMap(a.P)))),
 		expect("ITB.md", `^\| Min container \(\*\*Mode 1\*\*, payload ≤ ~`+dec+` KB, 1024-bit key\) \| `+num+` \|`, w("m1_max_payload_kb", kb(a.MaxPayload)), w("m1_P", plain(a.P))),
+		expect("ITB.md", `^\| Min container \(\*\*Mode 3\*\*, payload ≤ ~`+dec+` KB, 1024-bit key\) \| `+num+` \|`, w("m3_max_payload_kb", kb(c.MaxPayload)), w("m3_P", plain(c.P))),
 		expect("ITB.md", `^\| Min container \(\*\*Mode 2\*\*, payload ≤ ~`+dec+` KB, 1024-bit key\) \| `+num+` \|`, w("m2_max_payload_kb", kb(b.MaxPayload)), w("m2_P", plain(b.P))),
 		expect("ITB.md", `^\| 4 MB \| `+num+` \|`, w("P_4MiB", comma(s4m.P))),
 		expect("ITB.md", `^\| 16 MB \| `+num+` \|`, w("P_16MiB", comma(s16m.P))),
@@ -567,10 +599,11 @@ func Registry(f *Figures) []Expectation {
 			w("minpixels_1024", plain(mp)), w("m2_raw_square_P", plain(b.RawSquare*b.RawSquare)), w("m2_raw_square", plain(b.RawSquare)), w("m2_side", plain(b.Side)), w("m2_side", plain(b.Side)), w("m2_P", plain(b.P)), w("m2_wire_kb", kb(b.Wire))),
 	)
 	for _, k := range keySizes {
-		add(expect("README.md", fmt.Sprintf(`^\| %d bits\s+\| `, k)+num+` px \| `+num+x+num+` = `+num+` px\s+\| ~`+dec+` KB \| `+num+x+num+` = `+num+` px \| ~`+dec+` KB \|$`,
+		add(expect("README.md", fmt.Sprintf(`^\| %d bits\s+\| `, k)+num+` px \| `+num+x+num+` = `+num+` px\s+\| ~`+dec+` KB \| `+num+x+num+` = `+num+` px\s*\| ~`+dec+` KB \| `+num+x+num+` = `+num+` px\s*\| ~`+dec+` KB \|$`,
 			w(fmt.Sprintf("minpixels_%d", k), plain(f.MinPixels[k])),
 			w(fmt.Sprintf("m1_side_%d", k), plain(m1[k].Side)), w(fmt.Sprintf("m1_side_%d", k), plain(m1[k].Side)), w(fmt.Sprintf("m1_P_%d", k), plain(m1[k].P)), w(fmt.Sprintf("m1_wire_kb_%d", k), kb(m1[k].Wire)),
-			w(fmt.Sprintf("m2_side_%d", k), plain(m2[k].Side)), w(fmt.Sprintf("m2_side_%d", k), plain(m2[k].Side)), w(fmt.Sprintf("m2_P_%d", k), plain(m2[k].P)), w(fmt.Sprintf("m2_wire_kb_%d", k), kb(m2[k].Wire))))
+			w(fmt.Sprintf("m2_side_%d", k), plain(m2[k].Side)), w(fmt.Sprintf("m2_side_%d", k), plain(m2[k].Side)), w(fmt.Sprintf("m2_P_%d", k), plain(m2[k].P)), w(fmt.Sprintf("m2_wire_kb_%d", k), kb(m2[k].Wire)),
+			w(fmt.Sprintf("m3_side_%d", k), plain(m3[k].Side)), w(fmt.Sprintf("m3_side_%d", k), plain(m3[k].Side)), w(fmt.Sprintf("m3_P_%d", k), plain(m3[k].P)), w(fmt.Sprintf("m3_wire_kb_%d", k), kb(m3[k].Wire))))
 	}
 	ex := func(wire, n int, d int) string {
 		if !floorFits2500 {
@@ -584,12 +617,13 @@ func Registry(f *Figures) []Expectation {
 	}
 	add(
 		expect("README.md", "The on-wire header `\\[main_nonce\\]\\[W\\]\\[H\\]` following the "+num+"-byte prefix", w("prefix", plain(f.Prefix))),
-		expect("README.md", `^\| Storage overhead \| ~`+dec+`-`+dec+`× from ~10 KB to 64 MiB at 1024-bit keys \(~`+num+`-`+num+`× \*\*Mode 1\*\* / ~`+dec+`-`+num+`× \*\*Mode 2\*\* for 0\.5-2\.5 KB payloads\) \|$`,
+		expect("README.md", `^\| Storage overhead \| ~`+dec+`-`+dec+`× from ~10 KB to 64 MiB at 1024-bit keys \(~`+num+`-`+num+`× \*\*Mode 1\*\* / ~`+dec+`-`+num+`× \*\*Mode 2\*\* / ~`+dec+`-`+num+`× \*\*Mode 3\*\* for 0\.5-2\.5 KB payloads\) \|$`,
 			w("expansion_min_10KB_64MiB", expansionMin), w("expansion_max_10KB_64MiB", fixed(f.ExpansionMax, 2)),
 			w("expansion_m1_2500B", ex(a.Wire, 2500, 0)), w("expansion_m1_500B", ex(a.Wire, 500, 0)),
-			w("expansion_m2_2500B", ex(b.Wire, 2500, 1)), w("expansion_m2_500B", ex(b.Wire, 500, 0))),
+			w("expansion_m2_2500B", ex(b.Wire, 2500, 1)), w("expansion_m2_500B", ex(b.Wire, 500, 0)),
+			w("expansion_m3_2500B", ex(c.Wire, 2500, 1)), w("expansion_m3_500B", ex(c.Wire, 500, 0))),
 		expect("README.md", `^\| Key space \| Up to `+p2+` \|$`, w("max_key_space", pow2(itb.MaxKeyBits))),
-		expect("README.md", `^\| \*\*Desynchronized Interlocked Barrier\*\* \| Composite 1-chunk crib\+trajectory desynchronization space \\\|Ω_chunk\\\| · M\^3 · \\\|T_I\\\| ≈ `+p2d+` / `+p2d+` / `+p2d+`–2\^547\.20 \(midpoint `+p2d+`\) in 48-bit, or ≈ `+p2d+` / `+p2d+` / `+p2d+`–2\^579\.20 \(midpoint `+p2d+`\) with 4 B fold v, and ≈ `+p2d+` / `+p2d+` / `+p2d+`–2\^730\.18 \(midpoint `+p2d+`\) in 168-bit, or ≈ `+p2d+` / `+p2d+` / `+p2d+`–2\^762\.18 \(midpoint `+p2d+`\) with 4 B fold v across 1024-bit ITB \*\*Mode 2\*\* / \*\*Mode 3\*\* / \*\*Mode 1\*\* floors \(container-wide CCA ambiguity with 7\^P > `+p2+` / `+p2+` / `+p2+`\): product of \*\*Layer I\*\* \(0x05 on startSeed1\.\.3\) dynamic K_r sub-region trajectories \(2\^126–2\^206, mid ≈ `+p2d+` at K_r = 8 \*\*Mode 2\*\*; 2\^141–2\^233, mid ≈ `+p2d+` at K_r = 8 \*\*Mode 3\*\*; 2\^224–2\^445, min ≈ `+p2d+` at K_r = 8, mid ≈ `+p2d+` at K_r = 12 \*\*Mode 1\*\*\) and \*\*Layer II\*\* \(0x06 on lockSeed\) single-chunk cross-lane slot desynchronization \(β_0 ≠ β_1, single-chunk \\\|Ω_chunk\\\| · M\^3 ≈ `+p2d+` / `+p2d+` / `+p2d+` in 48-bit and ≈ `+p2d+` / `+p2d+` / `+p2d+` in 168-bit, or ≈ `+p2d+` / `+p2d+` / `+p2d+` and ≈ `+p2d+` / `+p2d+` / `+p2d+` with 4 B fold v\); 0 B wire overhead \| Stable \|$`,
+		expect("README.md", `^\| \*\*Desynchronized Interlocked Barrier\*\* \| Composite 1-chunk crib\+trajectory desynchronization space \\\|Ω_chunk\\\| · M\^3 · \\\|T_I\\\| ≈ `+p2d+` / `+p2d+` / `+p2d+`–2\^547\.20 \(midpoint `+p2d+`\) in 48-bit, or ≈ `+p2d+` / `+p2d+` / `+p2d+`–2\^579\.20 \(midpoint `+p2d+`\) with 4 B fold v, and ≈ `+p2d+` / `+p2d+` / `+p2d+`–2\^730\.18 \(midpoint `+p2d+`\) in 168-bit, or ≈ `+p2d+` / `+p2d+` / `+p2d+`–2\^762\.18 \(midpoint `+p2d+`\) with 4 B fold v across 1024-bit ITB \*\*Mode 2\*\* / \*\*Mode 3\*\* / \*\*Mode 1\*\* floors \(container-wide CCA ambiguity combined with 7\^P: ≈ `+p2+` / `+p2+` / `+p2+`\): product of \*\*Layer I\*\* \(0x05 on startSeed1\.\.3\) dynamic K_r sub-region trajectories \(2\^126–2\^206, mid ≈ `+p2d+` at K_r = 8 \*\*Mode 2\*\*; 2\^141–2\^233, mid ≈ `+p2d+` at K_r = 8 \*\*Mode 3\*\*; 2\^224–2\^445, min ≈ `+p2d+` at K_r = 8, mid ≈ `+p2d+` at K_r = 12 \*\*Mode 1\*\*\) and \*\*Layer II\*\* \(0x06 on lockSeed\) single-chunk cross-lane slot desynchronization \(β_0 ≠ β_1, single-chunk \\\|Ω_chunk\\\| · M\^3 ≈ `+p2d+` / `+p2d+` / `+p2d+` in 48-bit and ≈ `+p2d+` / `+p2d+` / `+p2d+` in 168-bit, or ≈ `+p2d+` / `+p2d+` / `+p2d+` and ≈ `+p2d+` / `+p2d+` / `+p2d+` with 4 B fold v\); 0 B wire overhead \| Stable \|$`,
 			w("desync_joint48_mode2_k8", joint48M2K8), w("desync_joint48_mode3_k8", joint48M3K8), w("desync_joint48_mode1_k8", joint48M1K8), w("desync_joint48_mode1_k12", joint48M1K12),
 			w("desync_joint48_fold_mode2_k8", joint48FoldM2K8), w("desync_joint48_fold_mode3_k8", joint48FoldM3K8), w("desync_joint48_fold_mode1_k8", joint48FoldM1K8), w("desync_joint48_fold_mode1_k12", joint48FoldM1K12),
 			w("desync_joint168_mode2_k8", joint168M2K8), w("desync_joint168_mode3_k8", joint168M3K8), w("desync_joint168_mode1_k8", joint168M1K8), w("desync_joint168_mode1_k12", joint168M1K12),
@@ -607,7 +641,7 @@ func Registry(f *Figures) []Expectation {
 		expect("README.md", `^\| \*\*Pixel Barrier \(8-channel RGBWYOPA\)\*\* \| `+num+` data bits \+ `+num+` noise bits per pixel; 7\^P CCA ambiguity \(≈ `+p2+` \*\*Mode 2\*\* / `+p2+` \*\*Mode 3\*\* / `+p2+` \*\*Mode 1\*\* at 1024-bit floors\);`,
 			w("data_bits_per_pixel", plain(itb.DataBitsPerPixel)), w("noise_bits_per_pixel", plain(itb.Channels)),
 			w("cca_m2", pow2(cca(b.P))), w("cca_m3", pow2(cca(c.P))), w("cca_m1", pow2(cca(a.P)))),
-		expect("README.md", `^\| Desynchronized Interlocked Barrier \| Zero wire overhead \(0 B\): composite 1-chunk crib\+trajectory desynchronization space \\\|Ω_chunk\\\| · M\^3 · \\\|T_I\\\| ≈ `+p2d+` / `+p2d+` / `+p2d+`–2\^547\.20 \(midpoint `+p2d+`\) in 48-bit, or ≈ `+p2d+` / `+p2d+` / `+p2d+`–2\^579\.20 \(midpoint `+p2d+`\) with the 4-byte fold v, and ≈ `+p2d+` / `+p2d+` / `+p2d+`–2\^730\.18 \(midpoint `+p2d+`\) in 168-bit, or ≈ `+p2d+` / `+p2d+` / `+p2d+`–2\^762\.18 \(midpoint `+p2d+`\) with fold v across the 1024-bit ITB \*\*Mode 2\*\* / \*\*Mode 3\*\* / \*\*Mode 1\*\* floors \(container-wide CCA ambiguity with 7\^P exceeding `+p2+` / `+p2+` / `+p2+`\)`,
+		expect("README.md", `^\| Desynchronized Interlocked Barrier \| Zero wire overhead \(0 B\): composite 1-chunk crib\+trajectory desynchronization space \\\|Ω_chunk\\\| · M\^3 · \\\|T_I\\\| ≈ `+p2d+` / `+p2d+` / `+p2d+`–2\^547\.20 \(midpoint `+p2d+`\) in 48-bit, or ≈ `+p2d+` / `+p2d+` / `+p2d+`–2\^579\.20 \(midpoint `+p2d+`\) with the 4-byte fold v, and ≈ `+p2d+` / `+p2d+` / `+p2d+`–2\^730\.18 \(midpoint `+p2d+`\) in 168-bit, or ≈ `+p2d+` / `+p2d+` / `+p2d+`–2\^762\.18 \(midpoint `+p2d+`\) with fold v across the 1024-bit ITB \*\*Mode 2\*\* / \*\*Mode 3\*\* / \*\*Mode 1\*\* floors \(container-wide CCA ambiguity combined with 7\^P: ≈ `+p2+` / `+p2+` / `+p2+`\)`,
 			w("desync_joint48_mode2_k8", joint48M2K8), w("desync_joint48_mode3_k8", joint48M3K8), w("desync_joint48_mode1_k8", joint48M1K8), w("desync_joint48_mode1_k12", joint48M1K12),
 			w("desync_joint48_fold_mode2_k8", joint48FoldM2K8), w("desync_joint48_fold_mode3_k8", joint48FoldM3K8), w("desync_joint48_fold_mode1_k8", joint48FoldM1K8), w("desync_joint48_fold_mode1_k12", joint48FoldM1K12),
 			w("desync_joint168_mode2_k8", joint168M2K8), w("desync_joint168_mode3_k8", joint168M3K8), w("desync_joint168_mode1_k8", joint168M1K8), w("desync_joint168_mode1_k12", joint168M1K12),
@@ -728,9 +762,9 @@ func Registry(f *Figures) []Expectation {
 	add(
 		// ----- POSTQUANTUM.md -----------------------------------------
 		expect("POSTQUANTUM.md", `conservative Grover work factor is .√P × 2\^keyBits. \(~`+p2+` at 1024-bit keys for \*\*Mode 2\*\* P = `+num+` and theoretical floor P = `+num+`; ~`+p2+` at \*\*Mode 3\*\* P = `+num+` and \*\*Mode 1\*\* P = `+num+`\)`,
-			w("grover2_m2", bG1), w("m2_P", plain(b.P)), w("theo_P", plain(t.P)), w("grover2_m1", aG1), w("m3_P", plain(c.P)), w("m1_P", plain(a.P))),
+			w("grover2_m2", bG1), w("m2_P", plain(b.P)), w("theo_P", plain(t.P)), w("grover2_m3_m1", cG1), w("m3_P", plain(c.P)), w("m1_P", plain(a.P))),
 		expect("POSTQUANTUM.md", `giving a conservative Grover work factor of .√P × 2\^\(keyBits/2\). \(~`+p2+` at 1024-bit keys for \*\*Mode 2\*\* P = `+num+` and P = `+num+`; ~`+p2+` at \*\*Mode 3\*\* P = `+num+` and \*\*Mode 1\*\* P = `+num+`\)`,
-			w("grover1_m2", bG2), w("m2_P", plain(b.P)), w("theo_P", plain(t.P)), w("grover1_m1", aG2), w("m3_P", plain(c.P)), w("m1_P", plain(a.P))),
+			w("grover1_m2", bG2), w("m2_P", plain(b.P)), w("theo_P", plain(t.P)), w("grover1_m3_m1", cG2), w("m3_P", plain(c.P)), w("m1_P", plain(a.P))),
 		expect("POSTQUANTUM.md", `^\| Core ITB \(No MAC\) \| .* \| ~`+p2+` \| ~`+p2+` \|`,
 			w("grover2_m2", bG1), w("grover2_m1", aG1)),
 		expect("POSTQUANTUM.md", `^\| MAC \+ Silent Drop \[1\] \| .* \| ~`+p2+` \| ~`+p2+` \|`,
@@ -754,9 +788,12 @@ func Registry(f *Figures) []Expectation {
 		expect("POSTQUANTUM.md", `^\- \*\*Mode 2 \(`+"`"+num+x+num+"`"+`, `+"`P = "+num+"`"+`\):\*\* Noise barrier `+"`2\\^\\(8P\\) = "+p2+"`"+`; encoding ambiguity `+"`56\\^P ≈ "+p2+"`"+` \(without CCA\) and `+"`7\\^P ≈ "+p2+"`"+` \(under CCA\); configuration space `+"`2\\^\\(62P\\) = "+p2+"`"+`\.$`,
 			w("m2_side", plain(b.Side)), w("m2_side", plain(b.Side)), w("m2_P", plain(b.P)),
 			w("noise_m2", pow2(noiseBarrier(b.P))), w("nocca_m2", pow2(nocca(b.P))), w("cca_m2", pow2(cca(b.P))), w("config_m2", pow2(configMap(b.P)))),
-		expect("POSTQUANTUM.md", `^\- \*\*Theoretical single-region floor \(`+"`"+num+x+num+"`"+`, `+"`P = "+num+"`"+`\):\*\* Noise barrier `+"`2\\^\\(8P\\) = "+p2+"`"+`; encoding ambiguity `+"`56\\^P ≈ "+p2+"`"+` \(without CCA\) and `+"`7\\^P ≈ "+p2+"`"+` \(under CCA\); configuration space `+"`2\\^\\(62P\\) = "+p2+"`"+`\.$`,
+		expect("POSTQUANTUM.md", `^\- \*\*Theoretical single-region floor \(`+"`"+num+x+num+"`"+`, `+"`P = "+num+"`"+`\):\*\* Noise barrier `+"`2\\^\\(8P\\) = "+p2+"`"+`; encoding ambiguity `+"`56\\^P ≈ "+p2d+"`"+` \(`+"`> "+p2+"`"+`, without CCA\) and `+"`7\\^P ≈ "+p2d+"`"+` \(`+"`> "+p2+"`"+`, under CCA\); configuration space `+"`2\\^\\(62P\\) = "+p2+"`"+`\.$`,
 			w("theo_side", plain(t.Side)), w("theo_side", plain(t.Side)), w("theo_P", plain(t.P)),
-			w("noise_theo", pow2(noiseBarrier(t.P))), w("nocca_theo", pow2(nocca(t.P))), w("cca_theo", pow2(cca(t.P))), w("config_theo", pow2(configMap(t.P)))),
+			w("noise_theo", pow2(noiseBarrier(t.P))),
+			w("nocca_theo_1dp", "2^"+fixed(float64(t.P)*math.Log2(56), 1)), w("nocca_theo_floor", pow2(int(math.Floor(float64(t.P)*math.Log2(56))))),
+			w("cca_theo_1dp", "2^"+fixed(float64(t.P)*math.Log2(7), 1)), w("cca_theo_floor", pow2(int(math.Floor(float64(t.P)*math.Log2(7))))),
+			w("config_theo", pow2(configMap(t.P)))),
 		expect("POSTQUANTUM.md", `queries across .P = `+num+`. pixels vs\. .8P = `+num+`. exhaustive.*This leaks `+num+` bits per pixel \(`+dec+` % of the `+num+`-bit per-pixel configuration\)`,
 			w("m1_P", plain(a.P)), w("noise_m1_exp", plain(noiseBarrier(a.P))),
 			w("noise_config_bits", plain(itb.NoiseConfigBits)), w("cca_leak_pct", ccaLeak), w("config_bits", plain(itb.NoiseConfigBits+itb.DataConfigBits))),
@@ -873,14 +910,31 @@ func Registry(f *Figures) []Expectation {
 		add(sweep(file, `(2\^652\.\d\d)`, w("desync_joint168_fold_mode1_k12", joint168FoldM1K12)))
 	}
 	for _, file := range []string{"HWTHREATS.md"} {
+		add(sweep(file, `(2\^166\.\d\d)`, w("desync_traj_mode2_k8", trajM2K8)))
+		add(sweep(file, `(2\^187\.\d\d)`, w("desync_traj_mode3_k8", trajM3K8)))
 		add(sweep(file, `(2\^96\.\d\d)`, w("desync_lane48_mode2", lane48M2)))
+		add(sweep(file, `(2\^99\.\d\d)`, w("desync_lane48_mode3", lane48M3)))
 		add(sweep(file, `(2\^101\.\d\d)`, w("desync_lane48_mode1", lane48M1)))
 		add(sweep(file, `(2\^279\.\d\d)`, w("desync_lane168_mode2", lane168M2)))
+		add(sweep(file, `(2\^282\.\d\d)`, w("desync_lane168_mode3", lane168M3)))
 		add(sweep(file, `(2\^284\.\d\d)`, w("desync_lane168_mode1", lane168M1)))
 	}
 	for _, file := range []string{"SCIENCE.md", "PROOFS.md", "SECURITY.md", "lean/README.md"} {
 		add(sweep(file, `\b(17,847,\d{3})\b`, w("entry_pixels_mode3", comma(d.EntryPixels[3]))))
 	}
+	const (
+		leanCoreMods   = 239
+		leanDesync     = 40
+		leanPosit      = 30
+		leanPipe128    = 30
+		leanPipe256    = 30
+		leanPipe512    = 32
+		leanPipeline   = leanPipe128 + leanPipe256 + leanPipe512
+		leanCoreITB    = leanCoreMods + leanPosit + leanPipeline
+		leanApps       = 31
+		leanPureKernel = leanCoreMods + leanPosit + leanApps
+		leanTotal      = leanCoreITB + leanApps
+	)
 	add(
 		// ----- Mode 3 (Gauss-Posit) container floors & theorem counts -----
 		expect("README.md",
@@ -907,8 +961,16 @@ func Registry(f *Figures) []Expectation {
 			w("m3_floor_px_2048", plain(m3[2048].FloorPixels)), w("m3_raw_2048", plain(m3[2048].RawSquare)), w("m3_raw_2048", plain(m3[2048].RawSquare)), w("m3_side_2048", plain(m3[2048].Side)), w("m3_side_2048", plain(m3[2048].Side)), w("m3_P_2048", plain(m3[2048].P)), w("m3_wire_kb_2048", kb(m3[2048].Wire)),
 		),
 		expect("README.md",
-			"Formalization pillars \\(with `"+num+"` core mathematical, combinatorial, and bit-vector theorems — `"+num+"` across six `ITB/\\*\\.lean` core modules including `"+num+"` in `ITB/Desync\\.lean`, plus `"+num+"` in `Apps/ThreeToEight\\.lean` — accompanied by `"+num+"` \\*\\*Mode 3\\*\\* Gauss-Posit theorems in `ITB/Posit\\.lean` and `"+num+"` additional theorems",
-			w("lean_total_theorems", "270"), w("lean_core_theorems", "239"), w("lean_desync_theorems", "40"), w("lean_kdf_theorems", "31"), w("lean_posit_theorems", "30"), w("lean_pipeline_theorems", "92"),
+			"Formalization pillars \\(with `"+num+"` zero-`sorry`, zero-`axiom` theorems in total — `"+num+"` \\*\\*Core ITB\\*\\* theorems across ten `ITB/\\*\\.lean` modules plus `"+num+"` application-protocol theorems in `Apps/ThreeToEight\\.lean`, comprising `"+num+"` pure-kernel mathematical, combinatorial, and bit-vector theorems \\(`"+num+"` across six `ITB/\\*\\.lean` core modules including `"+num+"` in `ITB/Desync\\.lean`, `"+num+"` \\*\\*Mode 3\\*\\* Gauss-Posit theorems in `ITB/Posit\\.lean`, and `"+num+"` in `Apps/ThreeToEight\\.lean`\\) checked without `native_decide` and `"+num+"` executable specification",
+			w("lean_total_theorems", plain(leanTotal)),
+			w("lean_core_itb_theorems", plain(leanCoreITB)),
+			w("lean_kdf_theorems", plain(leanApps)),
+			w("lean_pure_kernel_theorems", plain(leanPureKernel)),
+			w("lean_core_theorems", plain(leanCoreMods)),
+			w("lean_desync_theorems", plain(leanDesync)),
+			w("lean_posit_theorems", plain(leanPosit)),
+			w("lean_kdf_theorems", plain(leanApps)),
+			w("lean_pipeline_theorems", plain(leanPipeline)),
 		),
 		expect("ITB.md",
 			`yielding a `+num+`-pixel floor and a `+num+x+num+` = `+num+`-pixel container or ~`+dec+` KB wire floor at 1024-bit keys — `+dec+`% smaller than \*\*Mode 1\*\* while keeping `+num+` pixels per region and ≥ `+num+` bytes of guaranteed DRBG residue, or `+num+` bytes at the `+num+`-pixel floor`,
@@ -939,47 +1001,103 @@ func Registry(f *Figures) []Expectation {
 			w("m3_residue", plain(c.Residue)), w("m3_residue_floor", plain(c.ResidueAtFloor)), w("m3_floor_px_1024", plain(c.FloorPixels)),
 		),
 		expect("SECURITY.md",
-			`^\*\*Note on Mode 3 \(Gauss-Posit\)\.\*\*.*⌊\(6 × `+num+`\) / π_posit\(es=2\)⌋ \+ 1 = `+num+` → `+num+x+num+` \(P = `+num+`, P_0 = P_1 = `+num+`, P_2 = `+num+`\) with `+"`DefaultBarrierFill = "+num+"`"+` \(`+num+` B wire floor at 128-bit nonce vs `+num+` B in \*\*Mode 1\*\*, or `+num+` B vs `+num+` B at 512-bit nonce, saving `+num+` B / `+dec+`%\): noise barrier 2\^\(8P\) = `+p2+` \(`+dec+`× the `+p2+` Landauer exponent\); encoding ambiguity 56\^`+num+` ≈ `+p2+` \(No CCA\) and 7\^`+num+` ≈ `+p2+` \(Under CCA\); guaranteed DRBG residue ≥ `+num+` bytes \(s = `+num+`, `+num+` bytes at the `+num+`-pixel floor\); config map space 2\^\(62P\) = `+p2,
+			`^\*\*Note on Mode 3 \(Gauss-Posit\)\.\*\*.*⌊\(6 × `+num+`\) / π_posit\(es=2\)⌋ \+ 1 = `+num+` → `+num+x+num+` \(P = `+num+`, P_0 = P_1 = `+num+`, P_2 = `+num+`\) with `+"`DefaultBarrierFill = "+num+"`"+` yields a `+num+` B wire floor at 128-bit nonce vs `+num+` B in \*\*Mode 1\*\*, or `+num+` B vs `+num+` B at 512-bit nonce \(saving `+num+` B / `+dec+`%\).*across `+num+`² · `+num+` = `+num+` ≈ `+p2d+` entry-pixel combinations\.`,
 			w("minpixels_1024", plain(mp)), w("m3_floor_px", plain(c.FloorPixels)), w("m3_side", plain(c.Side)), w("m3_side", plain(c.Side)), w("m3_P", plain(c.P)),
 			w("m3_P0", plain(c.P/3)), w("m3_P2", plain(c.P-2*(c.P/3))), w("barrier_fill", plain(f.BarrierFill)),
 			w("m3_wire_128", plain(m3Wire128)), w("m1_wire_128", plain(m1Wire128)), w("m3_wire_512", plain(c.Wire)), w("m1_wire_512", plain(a.Wire)),
 			w("m3_save_bytes", plain(m3SaveBytes)), w("m3_save_pct_128", m3SavePct128),
-			w("noise_m3", pow2(noiseBarrier(c.P))), w("noise_m3_vs_landauer", landauer(noiseBarrier(c.P))), w("landauer", pow2(landauerExp)),
-			w("m3_P", plain(c.P)), w("nocca_m3", pow2(nocca(c.P))), w("m3_P", plain(c.P)), w("cca_m3", pow2(cca(c.P))),
-			w("m3_residue", plain(c.Residue)), w("m3_s", plain(c.Side-1)), w("m3_residue_floor", plain(c.ResidueAtFloor)), w("m3_floor_px", plain(c.FloorPixels)),
-			w("config_m3", pow2(configMap(c.P))),
+			w("m3_P0", plain(c.P/3)), w("m3_P2", plain(c.P-2*(c.P/3))), w("entry_pixels_mode3", comma(d.EntryPixels[3])), w("entry_pixels_mode3_log2", "2^"+fixed(math.Log2(float64(d.EntryPixels[3])), 2)),
 		),
 		expect("FAQ.md",
-			"machine-checked across "+num+" core theorems plus "+num+" \\*\\*Mode 3\\*\\* Gauss-Posit theorems in `ITB/Posit\\.lean` and "+num+" executable \\*\\*Core ITB\\*\\* pipeline specification",
-			w("lean_total_theorems", "270"), w("lean_posit_theorems", "30"), w("lean_pipeline_theorems", "92"),
+			"machine-checked across "+num+" theorems in Lean 4 — "+num+" \\*\\*Core ITB\\*\\* theorems comprising "+num+" foundational barrier/isolation theorems, "+num+" \\*\\*Mode 3\\*\\* Gauss-Posit theorems in `ITB/Posit\\.lean`, and "+num+" executable \\*\\*Core ITB\\*\\* pipeline specification and Go wire-parity theorems, plus "+num+" application-layer theorems in `Apps/ThreeToEight\\.lean`",
+			w("lean_total_theorems", plain(leanTotal)),
+			w("lean_core_itb_theorems", plain(leanCoreITB)),
+			w("lean_core_theorems", plain(leanCoreMods)),
+			w("lean_posit_theorems", plain(leanPosit)),
+			w("lean_pipeline_theorems", plain(leanPipeline)),
+			w("lean_kdf_theorems", plain(leanApps)),
 		),
 		expect("lean/README.md",
-			"`"+num+"` theorems across the six `ITB/\\*\\.lean` core modules, plus `"+num+"` theorems in `Apps/ThreeToEight\\.lean`, totaling `"+num+"` machine-checked theorems; accompanied by `"+num+"` \\*\\*Mode 3\\*\\* Gauss-Posit theorems in \\[`ITB/Posit\\.lean`\\]\\(ITB/Posit\\.lean\\) and `"+num+"` additional pipeline specification",
-			w("lean_core_theorems", "239"),
-			w("lean_kdf_theorems", "31"),
-			w("lean_total_theorems", "270"),
-			w("lean_posit_theorems", "30"),
-			w("lean_pipeline_theorems", "92"),
+			"\\*\\*`"+num+"` machine-checked theorems\\*\\* in total: \\*\\*`"+num+"` Core ITB theorems\\*\\* across the ten `ITB/\\*\\.lean` verification modules — `"+num+"` across the six `ITB/\\*\\.lean` core modules, `"+num+"` \\*\\*Mode 3\\*\\* Gauss-Posit theorems in \\[`ITB/Posit\\.lean`\\]\\(ITB/Posit\\.lean\\), and `"+num+"` executable pipeline specification .* plus \\*\\*`"+num+"` application-blueprint theorems\\*\\* in \\[`Apps/ThreeToEight\\.lean`\\]\\(Apps/ThreeToEight\\.lean\\)\\).*all \\*\\*`"+num+"` analytical, combinatorial, bit-vector, Posit, and KDF theorems\\*\\* \\(`"+num+"` core \\+ `"+num+"` `Posit` \\+ `"+num+"` `Apps`\\).*to the \\*\\*`"+num+"` executable pipeline specification",
+			w("lean_total_theorems", plain(leanTotal)),
+			w("lean_core_itb_theorems", plain(leanCoreITB)),
+			w("lean_core_theorems", plain(leanCoreMods)),
+			w("lean_posit_theorems", plain(leanPosit)),
+			w("lean_pipeline_theorems", plain(leanPipeline)),
+			w("lean_kdf_theorems", plain(leanApps)),
+			w("lean_pure_kernel_theorems", plain(leanPureKernel)),
+			w("lean_core_theorems", plain(leanCoreMods)),
+			w("lean_posit_theorems", plain(leanPosit)),
+			w("lean_kdf_theorems", plain(leanApps)),
+			w("lean_pipeline_theorems", plain(leanPipeline)),
 		),
 		expect("lean/README.md",
 			`\[ITB/Desync\.lean\]\(ITB/Desync\.lean\) \(`+num+` theorems\)`,
-			w("lean_desync_theorems", "40"),
+			w("lean_desync_theorems", plain(leanDesync)),
 		),
 		expect("lean/README.md",
 			`\[ITB/Posit\.lean\]\(ITB/Posit\.lean\) \(`+num+` theorems & Go KATs\)`,
-			w("lean_posit_theorems", "30"),
+			w("lean_posit_theorems", plain(leanPosit)),
 		),
 		expect("lean/README.md",
 			`\[ITB/PipelineSpec128\.lean\]\(ITB/PipelineSpec128\.lean\) \(`+num+` theorems & Go wire KATs\)`,
-			w("lean_pipeline128_theorems", "30"),
+			w("lean_pipeline128_theorems", plain(leanPipe128)),
 		),
 		expect("lean/README.md",
 			`\[ITB/PipelineSpec256\.lean\]\(ITB/PipelineSpec256\.lean\) \(`+num+` theorems & Go wire KATs\)`,
-			w("lean_pipeline256_theorems", "30"),
+			w("lean_pipeline256_theorems", plain(leanPipe256)),
 		),
 		expect("lean/README.md",
 			`\[ITB/PipelineSpec512\.lean\]\(ITB/PipelineSpec512\.lean\) \(`+num+` theorems & Go wire KATs\)`,
-			w("lean_pipeline512_theorems", "32"),
+			w("lean_pipeline512_theorems", plain(leanPipe512)),
+		),
+		expect("lean/README.md",
+			`\[Apps/ThreeToEight\.lean\]\(Apps/ThreeToEight\.lean\) \(`+num+` theorems\)`,
+			w("lean_kdf_theorems", plain(leanApps)),
+		),
+		expect("lean/README.md",
+			`^\| \*\*Total \(11 theorem modules \+ `+"`ITB\\.lean`"+` root\)\*\* \| \*\*`+"`"+num+"`"+` machine-checked theorems\*\* \(`+"`"+num+"`"+` \*\*Core ITB\*\* across 10 `+"`ITB/\\*\\.lean`"+` modules \+ `+"`"+num+"`"+` application-blueprint theorems in `+"`Apps/ThreeToEight\\.lean`"+`; TCB split: `+"`"+num+"`"+` pure-kernel theorems with zero `+"`native_decide`"+` \+ `+"`"+num+"`"+` executable `+"`PipelineSpec`"+``,
+			w("lean_total_theorems", plain(leanTotal)),
+			w("lean_core_itb_theorems", plain(leanCoreITB)),
+			w("lean_kdf_theorems", plain(leanApps)),
+			w("lean_pure_kernel_theorems", plain(leanPureKernel)),
+			w("lean_pipeline_theorems", plain(leanPipeline)),
+		),
+		expect("lean/README.md",
+			"^Alongside the \\*\\*`"+num+"` pure-kernel theorems\\*\\* \\(`"+num+"` across the six `ITB/\\*\\.lean` core modules \\+ `"+num+"` \\*\\*Mode 3\\*\\* Gauss-Posit theorems in \\[`ITB/Posit\\.lean`\\]\\(ITB/Posit\\.lean\\) \\+ `"+num+"` application-blueprint theorems in \\[`Apps/ThreeToEight\\.lean`\\]\\(Apps/ThreeToEight\\.lean\\), verified with zero `native_decide`\\).*contributing \\*\\*`"+num+"` additional kernel-evaluated \\(`by native_decide`\\) pipeline theorems and Go reference wire-parity KATs\\*\\* \\(\\*\\*`"+num+"` theorems in total\\*\\*, of which `"+num+"` verify \\*\\*Core ITB\\*\\*\\):$",
+			w("lean_pure_kernel_theorems", plain(leanPureKernel)),
+			w("lean_core_theorems", plain(leanCoreMods)),
+			w("lean_posit_theorems", plain(leanPosit)),
+			w("lean_kdf_theorems", plain(leanApps)),
+			w("lean_pipeline_theorems", plain(leanPipeline)),
+			w("lean_total_theorems", plain(leanTotal)),
+			w("lean_core_itb_theorems", plain(leanCoreITB)),
+		),
+		expect("lean/README.md",
+			"^\\- \\*\\*Strict TCB isolation \\(`"+num+"` pure-kernel vs\\. `"+num+"` `native_decide`\\)\\*\\*: all `"+num+"` mathematical, combinatorial, bit-vector, \\*\\*Mode 3\\*\\* `Posit`, and `Apps` KDF theorems \\(`ITB/\\*\\.lean` core `"+num+"` \\+ `ITB/Posit\\.lean` `"+num+"` \\+ `Apps/ThreeToEight\\.lean` `"+num+"`\\).*to the `"+num+"` executable pipeline specification",
+			w("lean_pure_kernel_theorems", plain(leanPureKernel)),
+			w("lean_pipeline_theorems", plain(leanPipeline)),
+			w("lean_pure_kernel_theorems", plain(leanPureKernel)),
+			w("lean_core_theorems", plain(leanCoreMods)),
+			w("lean_posit_theorems", plain(leanPosit)),
+			w("lean_kdf_theorems", plain(leanApps)),
+			w("lean_pipeline_theorems", plain(leanPipeline)),
+		),
+		expect("HWTHREATS.md",
+			"container-wide 1-crib \\+ CCA `7\\^P` ambiguity exceeding `"+p2+"` / `"+p2+"` / `"+p2+"` across the \\*\\*Mode 2\\*\\* / \\*\\*Mode 3\\*\\* / \\*\\*Mode 1\\*\\* floors",
+			w("desync_cca_mode2", contCCAM2), w("desync_cca_mode3", contCCAM3), w("desync_cca_mode1", contCCAM1),
+		),
+		expect("REDTEAM.md",
+			"\\*\\*Mode 3\\*\\* \\(`Gauss-Posit`\\) scales the three-region floor by the inscribed Gauss-circle ratio `⌊\\(6 · MinPixels\\) / π_posit\\(es=2\\)⌋ \\+ 1` before rounding up to the smallest perfect square plus the default DRBG barrier margin \\(`"+num+x+num+" = "+num+"` pixels at 1024-bit keys\\)",
+			w("m3_side_1024", plain(c.Side)), w("m3_side_1024", plain(c.Side)), w("m3_P_1024", plain(c.P)),
+		),
+		expect("REDTEAM.md",
+			"\\*\\*Mode 2\\*\\* floor trajectories at `P_r = "+num+", K_r = 8` .* \\*\\*Mode 3\\*\\* floor trajectories at `P_r = "+num+", K_r = 8`, and .* \\*\\*Mode 1\\*\\* floor trajectories at `P_r = "+num+", K_r = 8`",
+			w("m2_P0", plain(b.P/3)), w("m3_P0", plain(c.P/3)), w("m1_P0", plain(a.P/3)),
+		),
+		expect("FAQ.md",
+			"\\*\\*Mode 2\\*\\* floor trajectories at `P_r = "+num+", K_r = 8` .* \\*\\*Mode 3\\*\\* floor trajectories at `P_r = "+num+", K_r = 8`, and .* \\*\\*Mode 1\\*\\* floor trajectories at `P_r = "+num+", K_r = 8`",
+			w("m2_P0", plain(b.P/3)), w("m3_P0", plain(c.P/3)), w("m1_P0", plain(a.P/3)),
 		),
 	)
 	return exps

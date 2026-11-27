@@ -36,7 +36,7 @@ Four primitives in scope: **t1ha1_64le**, **SeaHash**, **mx3**, **SipHash-1-3**.
 
 Four orthogonal axes:
 
-**Axis A — hLo-projected lab bias.** SMHasher-style avalanche on the local Python mirror, projected onto the hLo lane that ITB observes through `ChainHash128`'s parallel two-lane wrapper. Random-input flip-1-bit measurement; max bias is `2 × |P(flip) − 0.5| × 100 %` over all (input_bit, output_bit) pairs.
+**Axis A — hLo-projected lab bias.** SMHasher-style avalanche on the local Python mirror, projected onto the hLo lane that ITB observes through `ChainHash128`'s parallel two-lane wrapper (specifically on the per-pixel `dataSeed_i` surface; `noiseMix`, **Layer I/II** `fullWidthFold` under `0x05`/`0x06`, and the **Rank Barrier** `0x03` fill consume both `(hLo, hHi)` — see [§3.5](#35-sat-free-algebraic--differential-pre-screen) and [§3.10](#310-aes-itb-128-standalone-breaks-and-cascade-dissolution)). Random-input flip-1-bit measurement; max bias is `2 × |P(flip) − 0.5| × 100 %` over all (input_bit, output_bit) pairs.
 
 **Axis A' — structural-input bias.** Per-bit output frequency, byte-distribution chi-square (df = 255), and adjacency XOR statistics, all at fixed seed against varying structured inputs (`json_structured`, `html_structured`). Mirrors the ITB-realistic threat model where seeds are deployment invariants and inputs share schema.
 
@@ -58,10 +58,10 @@ False-positive rate at N = 32 holdout: `2⁻²⁰⁴⁸`, astronomically small.
 
 ### 3.1. Axis A — lab bias on raw primitive
 
-Random-input avalanche. Reference: published [`rurban/smhasher`](https://github.com/rurban/smhasher) numbers.
+Random-input avalanche. Reference: published [`rurban/smhasher`](https://github.com/rurban/smhasher) numbers. In SMHasher terminology, `input_bits` (`key_bits` in upstream reports; `--key-sizes` in bytes in [§5.1](#51-shelf-primitives--axis-a--a--b--c-template)) denotes the hashed message/data block length in bits under a fixed primitive seed, distinct from ITB's cryptographic seed width `keyBits = 512 / 1024 / 2048`.
 
-| Primitive | key_bits | n_keys | measured max bias | published (rurban) | reproduction ratio |
-|:----------|---------:|------:|------------------:|-------------------:|:-------------------|
+| Primitive | input_bits (SMHasher key) | n_inputs | measured max bias | published (rurban) | reproduction ratio |
+|:----------|--------------------------:|---------:|------------------:|-------------------:|:-------------------|
 | **t1ha1_64le** | 256 | 65 536 | 1.82 % | not separately reported | noise-dominated (max-noise floor ≈ 1.78 %) |
 | **t1ha1_64le** | 512 | 65 536 | **3.19 %** | 3.77 % | **85 %** |
 | **t1ha1_64le** | 1024 | 65 536 | **3.24 %** | 3.95 % | **82 %** |
@@ -72,7 +72,7 @@ Random-input avalanche. Reference: published [`rurban/smhasher`](https://github.
 | **mx3**        | 2048 | 65 536 | 1.89 % | not separately reported (clean) | at noise |
 | **mx3**        | 8192 | 65 536 | 2.08 % | not separately reported (clean) | at noise |
 | **SipHash-1-3** | 256  | 65 536 | 1.88 % | ~0.9 % (reduced-round profile) | at noise (max-noise floor ≈ 1.66 %; ~13 % above floor — borderline, consistent with reduced-round avalanche signature surviving into the hLo projection) |
-| **SipHash-1-3** | 2048 | 65 536 | 1.78 % | ~0.9 % (reduced-round profile) | at noise; bias stable across key size (ARX scaling) |
+| **SipHash-1-3** | 2048 | 65 536 | 1.78 % | ~0.9 % (reduced-round profile) | at noise; bias stable across input size (ARX scaling) |
 | **SipHash-1-3** | 8192 | 65 536 | 1.71 % | ~0.9 % (reduced-round profile) | at noise; bias stable |
 
 t1ha1's published avalanche scaling is partially reproduced (82–85 % of rurban magnitude). SeaHash and mx3 are at-noise on avalanche (their documented weaknesses are PerlinNoise on coordinate-structured inputs, not exercised by random-flip avalanche). SipHash-1-3 sits at-noise but slightly above max-noise floor — consistent with the reduced 1+3 round avalanche signature.
@@ -117,7 +117,7 @@ The raw-mode bias-audit probe measures the per-shift conflict-rate distribution 
 
 ### 3.4. Axis C — SAT KPA seed-recovery resistance
 
-Axis C asks whether commodity-scale Bitwuzla / Z3 KPA recovers a primitive's seed from `(message, ChainHash(message, seed))` pairs. The table consolidates every primitive at **rounds = 1** (the bare round map — at this depth the ChainHash composition degenerates to a single hash call, no feedforward) and at **rounds ≥ 2** (the minimum ITB deployment, ChainHash-4, where the inter-round feedforward `k = seed[r] ⊕ h_prev` is active), and records whether the hi-lane discard alone walls the primitive before any round structure contributes. Rows are grouped by the deciding mechanism, not by shelf order: **(A)** invertible round maps that fall at rounds = 1, **(B)** a primitive walled by the internal discard alone, **(C)** primitives with no invertibility hook for SAT to grab.
+Axis C asks whether commodity-scale Bitwuzla / Z3 KPA recovers a primitive's seed from `(message, ChainHash(message, seed))` pairs. The table consolidates every primitive at **rounds = 1** (the bare round map — at this depth the ChainHash composition degenerates to a single hash call, no feedforward) and at **rounds ≥ 2** (the minimum ITB deployment, ChainHash-4, where the inter-round feedforward `k = seed[r] ⊕ h_prev` is active), and records whether the per-pixel `dataSeed_i` hi-lane discard alone walls the primitive before any round structure contributes (`noiseMix`, **Layer I/II** `fullWidthFold`, and the **Rank Barrier** fill consume both `(hLo, hHi)`). Rows are grouped by the deciding mechanism, not by shelf order: **(A)** invertible round maps that fall at rounds = 1, **(B)** a primitive walled by the internal discard alone, **(C)** primitives with no invertibility hook for SAT to grab.
 
 | Primitive | round map / lane structure | hi-lane discard | r = 1 SAT | r ≥ 2 SAT (deployment) | verdict |
 |:----------|:---------------------------|:----------------|:----------|:-----------------------|:--------|
@@ -136,7 +136,7 @@ The three groupings share one mechanism narrative:
 
 **(A) Invertible round maps fall at rounds = 1; only a carry-up T-function carries the break into deployment.** `splitmix64`, `mx3`, and `fnv1a` all carry `inv = Y` ([§3.5](#35-sat-free-algebraic--differential-pre-screen)) — a single round is a bijection the solver inverts directly. At rounds ≥ 2 the feedforward masks the intermediate output, so the seed solves only through the whole composition, which stays tractable only when the round map is a **carry-up T-function** (output bit t depends on input bits 0..t, plane-by-plane LSB → MSB). `fnv1a`'s ×0x13B lo-lane has that structure and solves at rounds = 4; `splitmix64` and `mx3` lack it — right-shifts (`z ^ (z>>30 / >>27 / >>31)`) push high bits into low and destroy triangularity — so both resist at the 24 h budget from rounds = 2 despite equal single-round invertibility. Because `splitmix64`'s lo lane is self-contained (its parallel hi lane is dropped by the discard), its rounds ≥ 2 resistance is purely a property of right-shift mixing.
 
-**(B) The hi-lane discard walls a lane-mixing primitive with no round structure required.** `murmur3` (MurmurHash3_x64_128) is the only primitive here whose 128-bit state halves cross-mix in finalisation: the full-128 seed recovers in ≈ 2.1 s, whereas ITB's lo-lane 128 → 64 projection times out at rounds = 1 before the feedforward contributes. For the lane-parallel primitives the lo lane is computed independently of the hi lane, so dropping the hi lane removes no constraint. Real ITB stacks both barriers plus per-pixel `noisePos` / rotation and the 48-bit Interlocked Barrier permutation on top.
+**(B) The hi-lane discard walls a lane-mixing primitive with no round structure required.** `murmur3` (MurmurHash3_x64_128) is the only primitive here whose 128-bit state halves cross-mix in finalisation: the full-128 seed recovers in ≈ 2.1 s, whereas the per-pixel `dataSeed_i` lo-lane 128 → 64 projection times out at rounds = 1 before the feedforward contributes. For the lane-parallel primitives the lo lane is computed independently of the hi lane, so dropping the hi lane removes no constraint. Real ITB stacks both barriers plus per-pixel `noisePos` / rotation and the 48-bit Interlocked Barrier permutation on top.
 
 **(C) No invertibility hook makes seed-recovery SAT structurally inapplicable.** `t1ha1`, `SeaHash` (across all 4 encodings × 2 solver backends, 8 cells), `SipHash-1-3`, and `aes2r` ([§3.7](#37-reduced-round-primitive-control--2-round-aes-integral-break-through-chainhash)) lack both single-round invertibility and triangular carry-up paths, so 24 h timeouts reflect an algebraic barrier rather than bounded compute. Surfaced weaknesses in `t1ha1` and `SeaHash` are strictly differential ([§3.5](#35-sat-free-algebraic--differential-pre-screen)) and absorbed by ITB's encoding ([Axis B](#33-axis-b--itb-wrapped-raw-mode-bias)); `aes2r` falls to a chosen-plaintext integral ([§3.7](#37-reduced-round-primitive-control--2-round-aes-integral-break-through-chainhash)). "Resistant to SAT KPA" indicates the absence of an algebraic SAT hook rather than general cryptographic security.
 
@@ -249,7 +249,7 @@ Methodology is the pre-wire ChainHash layer only — no wire, no interlock, no `
 
 ### 3.9. Construction-level structural harness — barrier core, primitive-agnostic
 
-§3.1–§3.7 measure the inner primitive through `ChainHash128`. A separate
+§3.1–§3.8 measure the inner primitive through `ChainHash128`. A separate
 primitive-agnostic harness measures the **48-bit Rank Barrier core of the Interlocked Barrier**
 directly — the mask-space cardinality and lane-independence the KPA closure
 argument rests on (Theorem 11, [Proof 11](PROOFS.md#proof-11-48-bit-rank-barrier-mask-space-interlocked-barrier)) — and the wire the Triple facade produces. Go tests
@@ -259,13 +259,13 @@ the facade wire, invoked with `go test -tags redteam -count=1`) with full-sample
 [REDTEAM.md Phase 4](REDTEAM.md#phase-4--construction-level-creative-probes-triple--interlocked-barrier).
 
 The barrier-core measurements are independent of the lockSeed-keying primitive
-and belong at the construction layer rather than per shelf primitive:
+and belong at the construction layer rather than per shelf primitive (representative `crypto/rand` run):
 
 - **Mask-space uniformity + balance.** The per-chunk mask-triple derivation
   produces balanced 16-of-48 lane partitions on 100 % of draws (union covers
   all 48 bits, lanes pairwise disjoint); each bit lands in lane 0 at 16/48 ±
   the sampling floor (max 2.99 sigma at N = 200 000), and the reduced indices
-  are uniform (chi-square 259.8 / 245.2 over 256 bins, band [142, 368]) (Theorem 11).
+  are uniform (chi-square 259.8 / 245.2 over 256 bins, ±5σ acceptance band [142, 368] for df = 255, two-sided 90% interval [219, 293]) (Theorem 11).
 - **gcd anti-collapse trap (Theorem 12, [Proof 12](PROOFS.md#proof-12-gcda-b-anti-collapse-trap)).** The shipped two-step reduction spreads the reduced
   indices across the full residue grid: the fraction on the diagonal
   `idx0 ≡ idx1 (mod 66861)` is 2.20 × 10⁻⁵ at N = 500 000 (11 draws), consistent
@@ -288,6 +288,8 @@ cipher wrapper's property; the full characterisation is
 ### 3.10. AES-ITB-128 standalone breaks and cascade dissolution
 
 [§3.7](#37-reduced-round-primitive-control--2-round-aes-integral-break-through-chainhash) plugs in a **lab** reduced-round primitive (AES cut to 2 rounds, the seed as the AES key) and shows ChainHash's feedforward neutralises its textbook integral. This control repeats the treatment on the reduced-round primitive that **ships** in the registry — **AES-ITB-128** (`aesitb128`, `aesitb.go`; the `ClassNPRF` inner-PRF-only entry) — and asks the same question at every cascade depth up to the 2048-bit deployment. One AES-ITB-128 call is a nonce-free CBC-MAC-style chain absorption over public AES rounds, keyed through the initial state: `state = fixedKey ⊕ (LE64(seed0) ‖ LE64(seed1))`, then `state = AESRound(state ⊕ block_i, RC[i mod 8])` over the PKCS#7-padded input, then two finalising rounds under `RC[b mod 8]`, `RC[(b+1) mod 8]` for `b` absorbed blocks, so one call uses no constant twice up to six blocks — every round a full AESENC (MixColumns included), the constants the NUMS table (the first eight 128-bit words of the hexadecimal fractional expansion of π). The seed enters **once, by XOR, ahead of a fixed public permutation** — there is no key schedule. For a one-block lab input (≤ 15 bytes) the call is exactly three full rounds, a public permutation **P** applied to `fixedKey ⊕ seed ⊕ pad(data)`; the shipped per-pixel inputs (`LE32(idx) ‖ nonce`, 20 / 36 / 68 bytes) absorb 2 / 3 / 5 blocks and run 4 / 5 / 7 rounds.
+
+#### 3.10.1. Two observable surfaces and standalone (r = 1) baseline
 
 **Two observable surfaces.** `aesitb128` operates at two disjoint inner-Barrier sites; the shipped wire exposes a different observable at each and the defence composition differs in kind:
 
@@ -397,11 +399,11 @@ Isolated `unusual` flags at p ≈ 10⁻³ – 10⁻⁵ are the expected backgrou
 
 ## 4. Primitive shelf
 
-Provenance and published SMHasher signature for each shelf primitive. Per-axis measurements and verdict definitions (`neutralized ✓`, `Resistant at tested budget`, `Dangerous`, `Fully broken`) are in [§2](#2-methodology) and [§3.3](#33-axis-b--itb-wrapped-raw-mode-bias)–[§3.4](#34-axis-c--sat-kpa-seed-recovery-resistance).
+Provenance and published SMHasher signature for each shelf primitive. Per-axis measurements and verdict definitions (`neutralized ✓`, `Resistant` / `Resistant to SAT KPA`, `Dangerous (r = 1); Resistant (r ≥ 2)`, `128-bit invertible`, `cautionary control`) are in [§2](#2-methodology) and [§3.3](#33-axis-b--itb-wrapped-raw-mode-bias)–[§3.4](#34-axis-c--sat-kpa-seed-recovery-resistance).
 
 | # | Primitive | Published Axis A signature |
 |--:|-----------|:---------------------------|
-| 1 | **t1ha1_64le** (Yuriev) | Avalanche 3.77–3.95 % at 512–1024-bit keys |
+| 1 | **t1ha1_64le** (Yuriev) | Avalanche 3.77–3.95 % at 512–1024-bit inputs (SMHasher keys) |
 | 2 | **SeaHash** (Ticki, 2016) | PerlinNoise 2.2 × 10¹² × |
 | 3 | **mx3** (Maiga, 2022) | PerlinNoise AV 1.48 × 10¹² × |
 | 4 | **SipHash-1-3** (reduced-round) | 0.9 % avalanche bias (reduced-round) |
@@ -409,11 +411,11 @@ Provenance and published SMHasher signature for each shelf primitive. Per-axis m
 
 ## 5. Reproduction
 
-Reproduction commands that invoke a `go test` step (directly or through a shell driver) require the `redteam` build tag: `go test -tags redteam ...`. The Axis-B shell drivers (one `harness_bias_audit.sh` per primitive under `scripts/redteam/itb/theory/<primitive>/`) already pass the tag internally. The self-parity tests in [§5.5](#55-self-parity-tests) and the pre-screen invocations in [§5.6](#56-sat-free-pre-screen-35) are Python-only and do not require the tag. The four shelf primitives (t1ha1_64le, SeaHash, mx3, SipHash-1-3) share the [§5.1](#51-shelf-primitives--axis-a--a--b--c-template) template; §5.5–§5.10 cover the auxiliary controls and reduced-round rows.
+Reproduction commands that invoke a `go test` step (directly or through a shell driver) require the `redteam` build tag: `go test -tags redteam ...`. The Axis-B shell drivers (one `harness_bias_audit.sh` per primitive under `scripts/redteam/itb/theory/<primitive>/`) already pass the tag internally. The self-parity tests in [§5.2](#52-self-parity-tests) and the pre-screen invocations in [§5.3](#53-sat-free-pre-screen-35) are Python-only and do not require the tag. The four shelf primitives (t1ha1_64le, SeaHash, mx3, SipHash-1-3) share the [§5.1](#51-shelf-primitives--axis-a--a--b--c-template) template; §5.2–§5.7 cover the auxiliary controls and reduced-round rows.
 
 ### 5.1. Shelf primitives — Axis A / A' / B / C template
 
-The four shelf primitives share a common reproduction shape; the per-primitive parameter table below fills the `$PRIM`, `$STRESSDIR`, `$KEY_SIZES` and Axis C variant slots. Report paths follow the default directory `~/scratch/redteam/${STRESSDIR}/` (configurable via CLI flags or matching `REDTEAM_*_OUTPUT_DIR` environment variables).
+The four shelf primitives share a common reproduction shape; the per-primitive parameter table below fills the `$PRIM`, `$STRESSDIR`, `$KEY_SIZES` (hashed input block lengths in bytes passed to `--key-sizes` in SMHasher notation), and Axis C variant slots. Report paths follow the default directory `~/scratch/redteam/${STRESSDIR}/` (configurable via CLI flags or matching `REDTEAM_*_OUTPUT_DIR` environment variables).
 
 ```bash
 # Axis A — raw-primitive avalanche
@@ -443,8 +445,8 @@ python3 scripts/redteam/itb/theory/${PRIM}/sat_calibration_raw_${PRIM}.py \
     --json-report ~/scratch/redteam/${STRESSDIR}/axis_c_raw_bw.json
 ```
 
-| `$PRIM` | `$STRESSDIR` | `$KEY_SIZES` | Axis C variant |
-|:--------|:-------------|:-------------|:---------------|
+| `$PRIM` | `$STRESSDIR` | `$KEY_SIZES` (input bytes) | Axis C variant |
+|:--------|:-------------|:---------------------------|:---------------|
 | `t1ha1` | `t1ha1stress` | `32,64,128` | template defaults |
 | `seahash` | `seahashstress` | `32,64,128` | 4 encodings × 2 backends — see block below |
 | `mx3` | `mx3stress` | `32,256,1024` | 60 s timeout suffices (Tier 3 in ≈ 5 s Z3 / ≈ 2 s Bitwuzla) |
@@ -461,7 +463,7 @@ for MUL in native explicit; do for VAR in native case-split; do for SOLVER in z3
 done; done; done
 ```
 
-### 5.5. Self-parity tests
+### 5.2. Self-parity tests
 
 Cross-check concrete vs Z3 symbolic for each primitive's chain-hash mirror:
 
@@ -473,7 +475,7 @@ python3 scripts/redteam/itb/theory/mx3/mx3_chain_lo_concrete.py --rounds 1,2,4 -
 python3 scripts/redteam/itb/theory/siphash13/siphash13_chain_lo_concrete.py --rounds 1,2,4 --vectors 4
 ```
 
-### 5.6. SAT-free pre-screen (§3.5)
+### 5.3. SAT-free pre-screen (§3.5)
 
 Algebraic / avalanche battery and the low-byte XOR-differential battery over the full primitive set (the four shelf primitives plus murmur3 / xxhash64 / splitmix64):
 
@@ -505,7 +507,7 @@ python3 scripts/redteam/itb/theory/splitmix64/sat_calibration_raw_splitmix64.py 
     --rounds 1 --obs 8 --timeout-sec 900 --solver bitwuzla
 ```
 
-### 5.7. Trapdoor-primitive control (BEA-1, §3.6)
+### 5.4. Trapdoor-primitive control (BEA-1, §3.6)
 
 The BEA-1 cipher and its trapdoor are a clean-room reimplementation transcribed from arXiv:1702.06475 (Bannier & Filiol) / IACR ePrint 2016/493; `bea1_validate.py` self-checks the transcription and `bea1_trapdoor.py` re-derives the partition from the published constants.
 
@@ -526,7 +528,7 @@ python3 scripts/redteam/itb/theory/bea1/exp3_chainhash_feedforward.py
 python3 scripts/redteam/itb/theory/bea1/exp3_structure_solver.py
 ```
 
-### 5.8. Reduced-round-primitive control (2-round AES, §3.7)
+### 5.5. Reduced-round-primitive control (2-round AES, §3.7)
 
 `chainhashes/aes2r.py` is the 2-round-AES inner primitive (FIPS-197-validated, self-tested on import). The scripts below are in `scripts/redteam/itb/theory/aes2r/`.
 
@@ -560,7 +562,7 @@ python3 gd_chainhash_aes2r.py     # emits relationfile_chainhash_r{1,2}_discard{
 # autoguess -i ~/scratch/redteam/gd_chainhash_aes2r/relationfile_chainhash_r1_discard0.txt -s sat -sats cadical195 -mg 12 -ms 20
 ```
 
-### 5.9. Chosen-constants collision control (Malicious-SHA-1, §3.8)
+### 5.6. Chosen-constants collision control (Malicious-SHA-1, §3.8)
 
 The Malicious-SHA-1 core is a clean-room transcription of RFC 3174 with the round constants exposed as a parameter (`sha1_malicious.py`); the modified K set and the colliding shell-script pair are embedded verbatim as bytes literals in `sha1_collide.py` — attribution: Albertini, Aumasson, Eichlseder, Mendel, Schläffer, IACR ePrint 2014/694; Maria Eichlseder's PoC bundle at `malicioussha1.github.io`. The wrap function (`sha1_chainhash.py`) mirrors the two production references cited inline: `hashes/blake3.go` `BLAKE3WithKey` (input-XOR keying) and `seed128.go` `ChainHash128` (feedforward).
 
@@ -572,7 +574,7 @@ The Malicious-SHA-1 core is a clean-room transcription of RFC 3174 with the roun
 python3 scripts/redteam/itb/theory/msha1/exp1_snap.py
 ```
 
-### 5.10. Reduced-round-primitive control (AES-ITB-128, §3.10)
+### 5.7. Reduced-round-primitive control (AES-ITB-128, §3.10)
 
 `chainhashes/aesitb128.py` is the shipped AES-ITB-128 chain absorption mirrored in Python (self-tested on import against the `aesitb/aesitb_test.go` generic vectors and its own numpy batched evaluator; AES building blocks imported from `chainhashes/aes2r.py`). Scripts live in `scripts/redteam/itb/theory/aesitb128/`; every cascade screen sweeps r ∈ {1, 2, 3, 4, 5, 6, 7, 8, 12, 16}. `--data-len 20|36|68` switches any cascade screen to a shipped per-pixel shape. Attacker-model flags follow `--model {lab, realistic}`: `realistic` = lo lane, idx-only Λ-sets (active bytes ⊆ `LE32(idx)` bytes 0..3), random nonce per set; `lab` = full 128-bit output, chosen data across all input bytes. Recovery scripts default to lab grants and print the realistic-model result under `--model realistic`.
 

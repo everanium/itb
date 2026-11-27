@@ -18,11 +18,11 @@ Drop-in factories that produce `itb.HashFunc{128|256|512}` closures
 for the PRF-grade primitives ITB ships with as built-in factories for
 the C / FFI / mobile shared-library distribution.
 
-Every factory pre-keys its primitive once at construction, reuses a
-`sync.Pool` of scratch buffers, and is safe to call concurrently from
-multiple goroutines. Without this caching, per-pixel hashing would
-re-key the underlying primitive on every call — the dominant cost in
-ITB's encrypt / decrypt path.
+Every factory pre-keys its primitive once at construction, uses
+stack-allocated state arrays (or a `sync.Pool` of scratch buffers), and
+is safe to call concurrently from multiple goroutines. Without this
+caching, per-pixel hashing would re-key the underlying primitive on
+every call — the dominant cost in ITB's encrypt / decrypt path.
 
 Each factory accepts a variadic optional fixed key:
 - pass nothing → CSPRNG-generated key (returned alongside the closure
@@ -60,12 +60,14 @@ hash, AES-128-CTR as an outer cipher / palette entry), and every
 shipped entry carries an outer cipher dispatch `Class`
 (`ClassNativeStream` for primitives with a native keystream mode,
 `ClassPRFCounter` for hash primitives run as PRF-counter cores).
-`Names()` returns the shipped name list in this order, `ClassOf(name)`
-the class of a shipped name (`ClassNPRF` otherwise), and `FullView()`
+`Names()` returns the full shipped name list in this order,
+`KeystreamNames()` returns the outer-cipher-eligible subset (excluding
+`ClassNPRF` entries such as `"aesitb128"`), `ClassOf(name)` returns the
+class of a shipped name (`ClassNPRF` otherwise), and `FullView()` returns
 the plain-data `Info` snapshot (name / width / class) without the
-factory hooks. The `ctr` and `kdf` packages dispatch on these
-constants; `wrapper` and `parallax` delegate to `ctr` by name. None of
-the four holds a name list of its own.
+factory hooks. The `ctr` and `kdf` packages dispatch on the
+`KeystreamNames()` subset; `wrapper` and `parallax` delegate to `ctr` by
+name. None of the four holds a name list of its own.
 
 ## Custom user-primitive builders
 
@@ -99,7 +101,7 @@ The custom-primitive pattern in the main repo [README — "Custom user-supplied 
 
 A user primitive **requires** a builder when **at least one** of these holds:
 
-1. **Output-width upscaling**: primitive native output is narrower than the required HashFunc width. SHA-256 (32 bytes) → `HashFunc512` (64 bytes) is the classic trap — naive zero-padding of the upper half destroys half the intermediate-state entropy. The builder calls the underlying hash twice with domain separation to fill the full output width safely.
+1. **Output-width upscaling**: primitive native output is narrower than the required `HashFunc` width — for example a 128-bit block cipher or 16-byte-rate sponge targeting `HashFunc256` (32 bytes) or `HashFunc512` (64 bytes). Naive zero-padding of the upper words destroys intermediate-state entropy; `BuildCBCMACChainAbsorb{256,512}` and `BuildSpongeChainAbsorb{256,512}` evaluate the underlying primitive across two or four domain-separated passes to fill the full output width safely. (Note that `BuildARXChainAbsorb512` requires a 64-byte `Hash512Fn` such as `sha512.Sum512`; targeting `HashFunc512` from a 32-byte digest like SHA-256 requires either switching to `SHA-512` or supplying a two-pass domain-separated `[64]byte` `Hash512Fn` adapter to `BuildARXChainAbsorb512`.)
 2. **No native variable-length absorb**: primitive only handles fixed-width input in isolation. Raw `cipher.Block` (16-byte block), raw permutation function (320-bit Ascon-p state), block cipher used as a primitive rather than via a higher-level AEAD wrapper. The CBC-MAC or sponge builder constructs the chain externally so all input bytes reach the digest.
 3. **Defence against caller-side mistakes**: even when (1) and (2) of the "safe handwritten" conditions hold, a builder removes the opportunity to forget seed-component XOR or output-width matching. Useful for casual users / quick experiments / audit-friendly code.
 
@@ -108,15 +110,15 @@ A user primitive **requires** a builder when **at least one** of these holds:
 | BLAKE3 → `HashFunc256` (handwritten via `Write`) | No | Native variable-length absorb + native output 32 B matches |
 | BLAKE2b → `HashFunc{256,512}` (handwritten via `Sum`) | No | Same — native variable-length absorb, output width matches |
 | SHA-256 → `HashFunc256` | No (but builder simplifies) | Native MD absorb + 32 B output matches; builder still removes seed-injection responsibility |
-| SHA-256 → `HashFunc512` | **Yes** | Output-width upscaling — without builder, upper 32 B silently zero-padded |
+| SHA-256 → `HashFunc512` | **Adapter + Yes** | Naive 32 B → 64 B zero-padding destroys half the state entropy; pair `BuildARXChainAbsorb512` with `SHA-512` or a two-pass domain-separated `[64]byte` `Hash512Fn` adapter |
 | SHA-512 → `HashFunc512` | No (but builder simplifies) | Native MD absorb + 64 B output matches |
-| AES block cipher → `HashFunc{128,256,512}` | **Yes** | Raw block cipher has no native variable-length absorb |
+| AES block cipher → `HashFunc{128,256,512}` | **Yes** | Raw block cipher has no native variable-length absorb (and upscales 16 B → 32 / 64 B across 2 / 4 passes) |
 | Ascon-p / Keccak-f (raw permutation) → `HashFunc{128,256,512}` | **Yes** | Raw permutation has no native variable-length absorb; sponge wrapper needed externally |
 | Camellia / SM4 / ARIA block cipher | **Yes** | Same as AES — raw block cipher needs CBC-MAC chain |
 
 ### Runnable examples — one snippet per builder
 
-The four snippets below share the same 8-seed / `Encrypt3xNNNCfg` scaffold; only the primitive-selection line changes. Each snippet has been round-tripped end-to-end (encrypt then decrypt, byte-exact recovery). Order follows the builders table above: CBC-MAC → Sponge → ARX → HMAC.
+The four snippets below share the same 8-seed / `Encrypt3xNNNCfg` scaffold; only the primitive-selection line changes. Each snippet has been round-tripped end-to-end (encrypt then decrypt, byte-exact recovery). Order follows the builders table above: CBC-MAC → Sponge → ARX → HMAC. Passing a single builder closure across all eight seeds keeps the examples concise because each `itb.NewSeed*` call draws independent CSPRNG `Components` separated by per-role domain tags; deployments seeking independent fixed keys across slots can instantiate a separate `fixedKey` and builder closure per seed, matching the `hashes.NewSeed512` pattern in [Usage](#usage) below.
 
 #### 1. `BuildCBCMACChainAbsorb256` — Serpent-CBC-MAC
 
@@ -325,11 +327,15 @@ func main() {
 
 HMAC-SHA-512 uses `BuildHMACChainAbsorb512` with a `func([]byte) [64]byte` closure over `hmac.New(sha512.New, key)`, a `[64]byte` fixed key, and the `NewSeed512` / `Encrypt3x512Cfg` entry points — the width switch parallels the ARX variant above.
 
+### Wide builders and lane mixing
+
+`BuildCBCMACChainAbsorb{256,512}`, `BuildSpongeChainAbsorb{256,512}`, and `BuildARXChainAbsorb256` (together with its `BuildHMACChainAbsorb256` alias) fill their 256- or 512-bit output by concatenating two or four independent 128-bit domain-separated passes, each keyed by its own pair of `seed` words. Because `ChainHash` XOR-chains each 128-bit lane of a round solely into the matching lane of the next round, an `itb.Seed256` or `itb.Seed512` over one of these closures executes as two or four parallel 128-bit cascades — each driven by half or a quarter of the seed components — rather than mixing all state words across lanes on every round. By contrast, `BuildARXChainAbsorb512` (along with `BuildHMACChainAbsorb512`) absorbs all eight seed words in a single `Hash512Fn` invocation, and every wide shipped registry primitive mixes its full state width across words natively.
+
 ### Performance note for builders
 
 Builders dispatch through interface callbacks (`cipher.Block.Encrypt`) and `[]byte` state buffers, costing 5-15% throughput vs the inline per-primitive closures shipped here (`aescmac.go`, `chacha20.go`, ...). The built-in closures use stack-allocated fixed-size state arrays (`var state [32]byte`), inlined permutation calls, and `unsafe.Pointer` escape-analysis tricks. The builders are intentionally simpler — they target correctness-by-construction for user primitives, not peak throughput. Callers who need both correctness **and** peak throughput for a specific primitive write a dedicated closure following the `hashes/*.go` patterns.
 
-`BatchHash` (4-pixel batched SIMD asm) is **not** provided by these builders — the batched arm is inherently primitive-specific (VAES for AES, multi-buffer SHA-NI for SHA-256, etc.) and cannot be templated. Seeds constructed from builder closures leave `BatchHash = nil`, which makes ITB fall back silently to the per-pixel scalar loop (`process_generic.go`). Correctness is preserved; throughput on AVX-512 hosts is left on the table.
+`BatchHash` (4-pixel batched SIMD asm) is **not** provided by these builders — the batched arm is inherently primitive-specific (VAES for AES, multi-buffer SHA-NI for SHA-256, etc.) and cannot be templated. Seeds constructed from builder closures leave `BatchHash = nil` (and fused cascade hooks nil), which routes per-pixel hashing through the sequential single-pixel `ChainHash` loop (leaving 4- and 8-lane SIMD hash batching on the table, while pixel bit-packing in default CGO builds still dispatches through the C SIMD `itb_process_pixels_batch` kernel). Correctness is preserved; throughput on AVX-512 hosts is left on the table.
 
 ## Runtime primitive selection
 
@@ -457,7 +463,7 @@ func main() {
 }
 ```
 
-`bDst := &itb.Blob512{}; err := bDst.Import3Cfg(blob, cfg)` on the receiver restores per-slot hash keys + Components into `bDst` and restores the captured `*itb.Config` into `cfg`. `Hash` / `BatchHash` on each restored seed stay nil so the caller wires them from the saved `Key*` bytes through the matching PairWithKey factory. See the `itb.Blob512` doc-comment for the receiver-side wiring pattern.
+`bDst := &itb.Blob512{}; err := bDst.Import3Cfg(blob, cfg)` on the receiver restores per-slot hash keys + Components into `bDst` and restores the captured `*itb.Config` into `cfg`. `Hash` / `BatchHash` on each restored seed stay nil so the caller either wires them from the saved `Key*` bytes through the matching PairWithKey factory or rebuilds each seed with every fast-path hook via `hashes.SeedFromComponents512` (`SeedFromComponents128` / `SeedFromComponents256` at narrower widths). See the `itb.Blob512` doc-comment for the receiver-side wiring pattern.
 
 SipHash-2-4 has no internal fixed key — the paired (single, batched) constructor returns a 2-tuple without a key element; the caller passes `nil` for every `KeyN..KeyS3` argument when exporting via `Blob128.Export3Cfg`. Every other registry primitive follows the shipped paired-factory shape used above.
 

@@ -12,13 +12,13 @@ blob does not have to write Go.
 go install github.com/everanium/itb/cmd/itb3@latest
 ```
 
-The binary is a `CGO_ENABLED=0` static build.
+Release binaries ship as `CGO_ENABLED=0` static builds; prefix `CGO_ENABLED=0` on `go install` for a static pure-Go binary (using the Plan 9 assembly kernels), or build with default CGO enabled (`CGO_ENABLED=1`) to link the fused C SIMD pixel kernels.
 
 ## Quick start
 
 ```sh
-# Generate a Streaming AEAD session blob:
-itb3 genblob aead mixed256 -k 2048 -m kmac256 -c 16 -o blob.json
+# Generate a Streaming AEAD session blob with parallax and wrapper enabled:
+itb3 genblob aead mixed256 -k 2048 -m kmac256 -c 16 -p areion256,chacha20,blake3 -w chacha20 -o blob.json
 
 # Encrypt / decrypt a payload under the session:
 itb3 encrypt blob.json -i plain.txt -o cipher.bin
@@ -53,6 +53,23 @@ itb3 verify  blob.json
 | `itb3 completion [bash\|zsh\|fish\|powershell]` | Emit shell-completion script. |
 | `itb3 help [subcmd]` | Cobra-auto help. |
 
+### `genblob` arguments and flags
+
+- **`<mode>`**: `mac` (`singlemsg-mac`), `nomac` (`singlemsg-nomac`), `aead` (`streaming-aead`), or `noaead` (`streaming-noaead`).
+- **`<hash>`**: a shipped primitive name from `itb3 hashes`, or a uniform-width random 8-slot constellation pseudonym (`mixed128`, `mixed256`, `mixed512`).
+- **Core flags**: `-k, --keybits 512|1024|2048` (default `1024`), `-n, --noncebits 128|256|512` (default `512`), `-b, --barrier 1|2|4|8|16|32` (default `1`), `-m, --mac <mac>` (required for `mac` / `aead`; rejected for `nomac` / `noaead`), `-c, --chunk 1..64` (chunk size in MiB for `aead` / `noaead`, default `16`).
+- **Outer-layer & container flags**: `-p, --palette a,b,c` (comma-list of `3..255` outer ciphers from `itb3 ciphers`), `-s, --segment <int>` (`1..65535` coprime to `504`, default `4093`; requires `-p`), `-w, --wrapper <cipher>` (outer cipher from `itb3 ciphers`), `--blob-mode 1|2|3` (**Mode 1** per-region default, **Mode 2** per-container, **Mode 3** Gauss-Posit), `--drbg <name>` (see `itb3 drbgs`; omitted = auto tier), `--interlock 48|168` (default `48`; `168` requires a 512-bit hash or `mixed512`), `-o, --output <file>` (created with mode `0600`; omitted = stdout).
+
+### Exit codes
+
+| Code | Meaning |
+|---:|---|
+| `0` | Success. |
+| `1` | Usage error (flag validation, mode-vs-flag conflict, missing TTY input, `-p` / `-w` toggle mismatch). |
+| `2` | Runtime / structural error (file I/O failure, wire parse error, blob schema or recipe validation error). |
+| `3` | Cryptographic failure (MAC tag verification failure, decrypt failure, identical outer masters). |
+| `64` | Internal lifecycle error (`triple.ErrClosed`). |
+
 ### `inspect` field set
 
 `itb3 inspect blob.json` renders the recipe carried inside the blob
@@ -84,7 +101,7 @@ inherits the compile-in default), `wrapper` / `wrapper_cipher`,
 - The CLI is a pure wrapper: no new cryptographic logic, no new wire
   format, no on-disk state beyond the blob file.
 - `genblob --blob-mode 1|2|3` selects the container floor sizing mode
-  (`1` default = per-region; `2` = per-container; `3` = gauss-posit).
+  (`1` default = **Mode 1** per-region; `2` = **Mode 2** per-container; `3` = **Mode 3** gauss-posit).
 - `genblob --drbg <name>` selects the primitive that fills the
   container carrier noise and the lane residue on the encrypt path
   (`itb3 drbgs` lists the accepted names); the choice is written into
@@ -100,8 +117,12 @@ inherits the compile-in default), `wrapper` / `wrapper_cipher`,
   Desynchronized Interlocked Barrier (`--desync`, default `on`).
   **WARNING: DO NOT DISABLE DESYNC FOR PRODUCTION USE — FOR SYNCHRONOUS
   WIRE CONVERSION / DECRYPTION AND RESEARCH BASELINES ONLY.**
-- `-o` writes the blob to disk with mode `0600`; every read path
-  loads it via `triple.LoadF`. The blob carries the resolved
+- `genblob -o` and `rekey -o` write secret key blobs to disk with mode
+  `0600` (whereas `encrypt`, `decrypt`, and `inspect` write `-o` output
+  files with mode `0644`). Every blob read path enforces
+  `itb.MaxBlobJSONSize` (`1 MiB`), decodes the in-memory buffer via
+  `triple.Inspect` (followed by `triple.Load` on pipeline-opening
+  commands), and scrubs the raw buffer with `clear(blob)`. The blob carries the resolved
   `triple.Profile` record — the shipped-catalogue prefix reserved for
   CLI-generated handles is `itb3-<mode>-<hash>` and is only a label
   the sender attaches; the receiver reconstructs from the recipe

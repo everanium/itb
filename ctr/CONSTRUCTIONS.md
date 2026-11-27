@@ -35,9 +35,9 @@ For the standards' own conformance, refer to the upstream specifications and lib
 | `blake2b512` | native keyed BLAKE2b-512 (RFC 7693), 64-byte output | PRF-counter mode | 64 B (collision bound 2^256) | 32 bytes | 16 bytes |
 | `blake2s` | native keyed BLAKE2s-256 (RFC 7693), 32-byte output | PRF-counter mode | 32 B (collision bound 2^128) | 32 bytes | 16 bytes |
 | `blake3` | native keyed BLAKE3, 32-byte output | PRF-counter mode | 32 B (collision bound 2^128) | 32 bytes | 16 bytes |
-| `aescmac` | AES-128 (`github.com/everanium/areion`) | AES-128 in CTR mode (`areion.AES128CTRXOR`, bit-exact with `crypto/cipher.NewCTR`) | 16 B (NIST CTR, hardware-accelerated) | 16 bytes | 16 bytes |
+| `aescmac` | AES-128 (`github.com/everanium/areion`) | AES-128 in CTR mode (`areion.AES128CTRXOR`, bit-exact with `crypto/cipher.NewCTR`) | 16 B (NIST CTR, PRP–PRF bound 2^64 blocks, hardware-accelerated) | 16 bytes | 16 bytes |
 | `siphash24` | SipHash-2-4, 128-bit output (`internal/siphash24`) | PRF-counter mode | 16 B (collision bound 2^64) | 16 bytes | 16 bytes |
-| `chacha20` | ChaCha20 (RFC 8439) | RFC 8439 ChaCha20 keystream | 64 B (standard RFC 8439 stream, SIMD-accelerated) | 32 bytes | 12 bytes |
+| `chacha20` | ChaCha20 (RFC 8439) | RFC 8439 ChaCha20 keystream | 64 B (standard RFC 8439 stream, counter cap 2^32 blocks / 256 GiB, SIMD-accelerated) | 32 bytes | 12 bytes |
 
 ## Areion-CTR (registry: `areion256`, `areion512`)
 
@@ -119,8 +119,8 @@ keystream_block_i = SipHash128(K, nonce_hi || (nonce_lo XOR counter_le))   (16 b
 
 where:
 
-- **`K`** is the 16-byte key, split into the little-endian halves `(k0, k1)` that form the entire 128-bit SipHash key.
-- **`nonce`** is 16 bytes wide, partitioned as `(nonce_hi || nonce_lo)` (little-endian 64-bit halves).
+- **`K`** is the 16-byte key, split into the little-endian halves `k0 = uint64_le(key[0..8))` and `k1 = uint64_le(key[8..16))` that form the entire 128-bit SipHash key.
+- **`nonce`** is 16 bytes wide, partitioned as `(nonce_hi || nonce_lo)` with `nonce_hi = uint64_le(nonce[0..8))` and `nonce_lo = uint64_le(nonce[8..16))` (little-endian 64-bit halves).
 - **`counter_le`** is a 64-bit block counter, starting at 0 and incrementing per 16-byte block.
 
 Each keystream block hashes a 16-byte PRF input formed from `nonce_hi || (nonce_lo XOR counter_le)`. This binds every block to the stream's nonce while injecting unique 64-bit counter material per block. The 16-byte `(lo, hi)` SipHash-128 output is the keystream block; sub-block tails consume the leading bytes of a freshly hashed block.
@@ -145,7 +145,7 @@ Each keystream block hashes a 16-byte PRF input formed from `nonce_hi || (nonce_
 
 **Standards posture.** This is the standard RFC 8439 ChaCha20 keystream, bit-exact with `golang.org/x/crypto/chacha20`.
 
-**Stream shape.** ChaCha20 is a stream-native cipher whose keystream is generated from distinct block-counter values; there is no keystream-block collision until the counter space is exhausted. This is the standard stream-cipher property.
+**Stream shape.** ChaCha20 is a stream-native cipher whose keystream is generated from distinct block-counter values; there is no keystream-block collision until the counter space is exhausted (`2^32` blocks = `256 GiB` per nonce under RFC 8439's 32-bit block counter). This is the standard stream-cipher property.
 
 **Security claim.** PRF-secure keystream under the keystream-as-PRF assumption on ChaCha20 (the same assumption underlying ChaCha20-based AEAD), conditional on the `(key, nonce)` pair not being reused across distinct streams. No security beyond the standard ChaCha20 keystream is claimed.
 
@@ -155,7 +155,7 @@ Each keystream block hashes a 16-byte PRF input formed from `nonce_hi || (nonce_
 
 **Determinism.** All keystreams are deterministic in `(name, key, nonce)`: the byte at a given stream offset is fixed by those three inputs. Chunked and whole-buffer calls produce the same output for the same total offset — `XORKeyStream` maintains a continuous internal counter across calls. Because the byte at any offset is fixed, `NewAt(name, key, nonce, byteOffset)` constructs a keystream positioned at an arbitrary byte offset (a whole-block counter jump plus a sub-block skip of fewer than one block's bytes, never a linear discard), so one logical stream can be XORed in parallel across workers, each emitting a byte-identical disjoint range.
 
-**Nonce-reuse caveat.** As with every counter-mode keystream, reusing a `(key, nonce)` pair across two distinct messages reuses the same keystream and is a confidentiality break (the XOR of the two ciphertexts equals the XOR of the two plaintexts). A distinct per-stream nonce under a fixed key is required for all constructions.
+**Nonce-reuse caveat.** As with every counter-mode keystream, reusing a `(key, nonce)` pair across two distinct messages reuses the same keystream and is a confidentiality break (the XOR of the two ciphertexts equals the XOR of the two plaintexts). A fresh CSPRNG-generated random per-stream nonce under a fixed key is required (as `wrapper/`, `parallax/`, and `internal/drbg/` enforce on every call); whereas `areion*`, `blake*`, and `chacha20` place `nonce` and `counter` in disjoint fields, `aescmac` (`IV + i`) and `siphash24` (`nonce_lo ⊕ i`) fold the block counter into the nonce words and therefore must not be driven with sequential `+1` nonces.
 
 **Standards posture.** `aescmac` (AES-128-CTR) and `chacha20` (RFC 8439 ChaCha20) are standard, widely analysed keystreams. The remaining primitives are sound PRF-counter constructions over non-NIST PRFs: the Areion family inherits the SoEM22 PRF argument behind the Areion-SoEM keyed hash under two secret subkeys, the BLAKE family inherits the keyed-BLAKE PRF argument, and `siphash24` inherits SipHash-2-4's PRF argument. None of the PRF-counter constructions is a NIST-approved cipher. These distinctions are stated so an integrator selecting a construction for a regulated context knows which keystreams are standard and which are PRF-counter constructions.
 

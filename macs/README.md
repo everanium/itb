@@ -16,7 +16,8 @@
 
 Drop-in factories that produce `itb.MACFunc` closures for the
 shipped MAC primitives. Every shipped primitive produces a 32-byte
-tag and accepts a 32-byte (or longer for the HMAC variants) key. The
+tag and accepts a 32-byte key (`kmac256` and `hmac-sha256` accept
+any key `≥ 16` bytes; `hmac-blake3` requires an exact 32-byte key). The
 fixed 32-byte tag size lets bindings size their authenticated
 payload buffer the same way regardless of which MAC was selected.
 
@@ -109,7 +110,7 @@ func main() {
 }
 ```
 
-On the receiver, `bDst := &itb.Blob512{}; err := bDst.Import3Cfg(blob, cfg)` populates per-slot hash keys + Components + the MAC key + name into `bDst` and restores the captured `*itb.Config` into `cfg`. `Hash` / `BatchHash` on each restored seed stay nil so the caller wires them from the saved `Key*` bytes through the matching factory (`Areion512PairWithKey`), then rebuilds the MAC via `macs.Make(bDst.MACName, bDst.MACKey)` and decrypts with `itb.DecryptAuthenticated3x512Cfg`.
+On the receiver, `bDst := &itb.Blob512{}; err := bDst.Import3Cfg(blob, cfg)` populates per-slot hash keys + Components + the MAC key + name into `bDst` and restores the captured `*itb.Config` into `cfg`. `Hash` / `BatchHash` on each restored seed stay nil so the caller either wires them from the saved `Key*` bytes through the matching factory (`Areion512PairWithKey`) or rebuilds each seed with its full set of fused-cascade and batch-16/32 hooks via `hashes.SeedFromComponents512` (`SeedFromComponents128` / `SeedFromComponents256` at narrower widths; wire output is byte-identical either way), then rebuilds the MAC via `macs.Make(bDst.MACName, bDst.MACKey)` and decrypts with `itb.DecryptAuthenticated3x512Cfg`.
 
 BLAKE2b-512 paired with HMAC-SHA256 (universal interoperability standard, RFC 4231) follows the same shape — swap `hashes.CipherAreion512` for `hashes.CipherBLAKE2b512`, swap the MAC factory for `macs.HMACSHA256(macKey[:])`, and keep the rest identical. SipHash-2-4 has no internal fixed key (the seed components are the entire SipHash key), so `hashes.NewSeed128(hashes.CipherSipHash24, …)` returns a `nil` key and its paired constructor `hashes.SipHash24Pair()` returns just `(single, batched)`; every `Key*` argument passed to `Blob128.Export3Cfg` is `nil`.
 
@@ -145,7 +146,7 @@ Callers who want the 8-seed constellation, MAC, parallax layer, and outer cipher
 
 ## Curated primitive selection
 
-ITB's MAC-Inside-Encrypt appends the tag to the post-Rank Barrier lane payload before Pixel Barrier dispersal, requiring only PRF security from the underlying MAC; see [CONSTRUCTIONS.md](CONSTRUCTIONS.md#design-rationale-and-prf-sufficiency) for design rationale.
+ITB's MAC-Inside-Encrypt appends the tag (and flag byte) to the third COBS-framed lane payload (after the Rank Barrier and **Layer II** slot desynchronization) before **Layer I** sub-region trajectory routing and Pixel Barrier dispersal, requiring only PRF security from the underlying MAC; see [CONSTRUCTIONS.md](CONSTRUCTIONS.md#design-rationale-and-prf-sufficiency) for design rationale.
 
 A curated primitive set keeps the choice tractable:
 
@@ -209,7 +210,7 @@ type Spec struct {
   present in the shipped `Registry` or among prior registrations
   (`macs.ErrMACExists`, shipped-name shadowing included).
 - **Sizes** — `KeySize ≥ MinKeyBytes ≥ 16` and `TagSize` in
-  `[16, 64]`. The tag size is variable per Spec: the Low-Level
+  `[16, 64]` (session serialization through `itb.Blob{128,256,512}` — and transitively `triple` blobs — caps explicit `MACKey` lengths at `128` bytes via `maxMACKeyHexLen = 256`, so custom MACs persisted in blobs must keep `KeySize ≤ 128`). The tag size is variable per Spec: the Low-Level
   authenticated paths probe the closure's tag length at construction,
   so a custom primitive is not bound to the shipped 32-byte tag. The
   ceiling covers the longest realistic MAC tag (64 bytes, e.g.
@@ -564,7 +565,8 @@ func main() {
 ### Cross-process blob contract
 
 A seed blob exported under a custom MAC name records the **name**,
-not the construction — the name is a promise. Opening the blob in
+not the construction — the name is a promise (with serialized explicit
+`MACKey` lengths bounded at `128` bytes in `Blob{128,256,512}`). Opening the blob in
 another process requires that process to have registered the same
 name with the same construction before `triple.Load` /
 `triple.LoadF` (or `Blob{N}.Import3Cfg` + `macs.Make`). A missing

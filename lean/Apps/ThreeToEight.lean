@@ -1,7 +1,8 @@
 /-
   Formal verification of the reference application-level 3-to-8 Multi-KEM Key
-  Agreement (`deriveSeeds3to8`), 3-of-3 Intra-Epoch Ratchet Root (`deriveRatchetRoot`),
-  3-Part Configuration Slicing (`splitProfile3` / `joinProfile3`), and Downgrade-Safe
+  Agreement (`deriveSeeds3to8`), 3-of-3 Intra-Epoch Ratchet Root and Forward
+  Chain (`deriveRatchetRoot` / `stepRatchet`), 3-Part Authenticated Configuration
+  Slicing (`splitProfile3` / `joinProfile3` with `cfgTag`), and Downgrade-Safe
   Schema Clamping (`min(appVer_A, appVer_B)`) presented in `APPS.md`.
 
   Scope note: This module verifies only the reference application integration
@@ -79,22 +80,26 @@ theorem stageA_subset_participation_counts :
 /-! ## 2. Domain Separation Across All KDF Label Families in `APPS.md` -/
 
 /--
-  Structured representation of all six domain-separated KDF label families
+  Structured representation of all eight domain-separated KDF label families
   used in `APPS.md`:
   - `prkSubset`: `"itb-chat-v1|prk-subset-%d|ch-%d|%s"` (Stage A)
   - `slotShare`: `"itb-chat-v1|slot-%d|sub-%d|ch-%d|%s"` (Stage B)
   - `ratchetRoot`: `"itb-chat-v1|ratchet-root|ch-%d|%s"` (Intra-epoch ratchet root)
   - `cfgFrag`: `"itb-chat-v1|cfg-frag-%d|ch-%d|%s"` (3-part configuration masking)
+  - `cfgMac`: `"itb-chat-v1|cfg-mac|ch-%d|%s|%x"` (3-of-3 configuration confirmation tag)
   - `rekeyPerm`: `"rekey-perm|seq:%d"` (Per-message Parallax ratchet key)
   - `rekeyWrap`: `"rekey-wrap|seq:%d"` (Per-message Wrapper ratchet key)
+  - `rekeyChain`: `"rekey-chain|seq:%d"` (Per-message forward-chained ratchet root)
 -/
 inductive AppsKDFDomain where
   | prkSubset   (mask : Nat) (ch : Fin 3)
   | slotShare   (slot : Fin 8) (sub : Nat) (ch : Fin 3)
   | ratchetRoot (ch : Fin 3)
   | cfgFrag     (frag : Fin 3) (ch : Fin 3)
+  | cfgMac      (ch : Fin 3)
   | rekeyPerm   (seq : Nat)
   | rekeyWrap   (seq : Nat)
+  | rekeyChain  (seq : Nat)
   deriving DecidableEq, Repr
 
 /--
@@ -123,7 +128,7 @@ theorem stageB_labels_injective (s1 s2 : Fin 8) (c1 c2 : Fin 3)
   Configuration Fragment Label Injectivity:
   All `3 × 3 = 9` configuration-masking KDF calls across `frag ∈ Fin 3` and
   `ch ∈ Fin 3` produce pairwise-distinct domain tags and are disjoint from
-  `prkSubset`, `slotShare`, and `ratchetRoot`.
+  `prkSubset`, `slotShare`, `ratchetRoot`, and `cfgMac`.
 -/
 theorem cfgFrag_labels_injective (f1 f2 c1 c2 : Fin 3)
     (h : AppsKDFDomain.cfgFrag f1 c1 = AppsKDFDomain.cfgFrag f2 c2) :
@@ -132,42 +137,73 @@ theorem cfgFrag_labels_injective (f1 f2 c1 c2 : Fin 3)
   exact ⟨hf, hc⟩
 
 /--
-  Ratchet Root Label Disjointness & Injectivity:
-  The 3 intra-epoch ratchet root labels `ratchetRoot c` (`c ∈ Fin 3`) are pairwise
-  distinct and strictly disjoint from all Stage A (`prkSubset`), Stage B (`slotShare`),
-  and configuration fragment (`cfgFrag`) labels.
+  Ratchet Root & Configuration MAC Label Disjointness & Injectivity:
+  The 3 intra-epoch ratchet root labels `ratchetRoot c` (`c ∈ Fin 3`) and the 3
+  configuration confirmation tag labels `cfgMac c` (`c ∈ Fin 3`) are each pairwise
+  distinct in `c`, mutually disjoint, and strictly disjoint from all Stage A
+  (`prkSubset`), Stage B (`slotShare`), and configuration fragment (`cfgFrag`) labels.
 -/
 theorem ratchetRoot_domain_disjoint (c1 c2 : Fin 3) (mask : Nat) (s : Fin 8) (sub : Nat) (f : Fin 3) :
     (AppsKDFDomain.ratchetRoot c1 = AppsKDFDomain.ratchetRoot c2 → c1 = c2) ∧
+    (AppsKDFDomain.cfgMac c1 = AppsKDFDomain.cfgMac c2 → c1 = c2) ∧
+    AppsKDFDomain.ratchetRoot c1 ≠ AppsKDFDomain.cfgMac c2 ∧
     AppsKDFDomain.ratchetRoot c1 ≠ AppsKDFDomain.prkSubset mask c2 ∧
     AppsKDFDomain.ratchetRoot c1 ≠ AppsKDFDomain.slotShare s sub c2 ∧
-    AppsKDFDomain.ratchetRoot c1 ≠ AppsKDFDomain.cfgFrag f c2 := by
-  refine ⟨?_, ?_, ?_, ?_⟩
+    AppsKDFDomain.ratchetRoot c1 ≠ AppsKDFDomain.cfgFrag f c2 ∧
+    AppsKDFDomain.cfgMac c1 ≠ AppsKDFDomain.prkSubset mask c2 ∧
+    AppsKDFDomain.cfgMac c1 ≠ AppsKDFDomain.slotShare s sub c2 ∧
+    AppsKDFDomain.cfgMac c1 ≠ AppsKDFDomain.cfgFrag f c2 := by
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · intro h; injection h
+  · intro h; injection h
+  · intro h; nomatch h
+  · intro h; nomatch h
+  · intro h; nomatch h
+  · intro h; nomatch h
   · intro h; nomatch h
   · intro h; nomatch h
   · intro h; nomatch h
 
 /--
-  Per-Message Symmetric Rekey Label Disjointness & Sequence Injectivity:
-  The per-message `rekeyPerm seq` (`"rekey-perm|seq:%d"`) and `rekeyWrap seq`
-  (`"rekey-wrap|seq:%d"`) labels are injective in the message sequence number `seq`,
-  mutually disjoint (`rekeyPerm seq1 ≠ rekeyWrap seq2`), and strictly disjoint from
-  `prkSubset`, `slotShare`, `ratchetRoot`, and `cfgFrag`.
+  Per-Message Symmetric Rekey & Ratchet-Chain Label Disjointness & Sequence Injectivity:
+  The per-message `rekeyPerm seq` (`"rekey-perm|seq:%d"`), `rekeyWrap seq`
+  (`"rekey-wrap|seq:%d"`), and `rekeyChain seq` (`"rekey-chain|seq:%d"`) labels are
+  each injective in the message sequence number `seq`, pairwise mutually disjoint, and
+  strictly disjoint from `prkSubset`, `slotShare`, `ratchetRoot`, `cfgFrag`, and `cfgMac`.
 -/
 theorem rekey_domain_disjoint_and_injective
     (seq1 seq2 mask sub : Nat) (c : Fin 3) (s : Fin 8) (f : Fin 3) :
     (AppsKDFDomain.rekeyPerm seq1 = AppsKDFDomain.rekeyPerm seq2 → seq1 = seq2) ∧
     (AppsKDFDomain.rekeyWrap seq1 = AppsKDFDomain.rekeyWrap seq2 → seq1 = seq2) ∧
+    (AppsKDFDomain.rekeyChain seq1 = AppsKDFDomain.rekeyChain seq2 → seq1 = seq2) ∧
     AppsKDFDomain.rekeyPerm seq1 ≠ AppsKDFDomain.rekeyWrap seq2 ∧
+    AppsKDFDomain.rekeyPerm seq1 ≠ AppsKDFDomain.rekeyChain seq2 ∧
+    AppsKDFDomain.rekeyWrap seq1 ≠ AppsKDFDomain.rekeyChain seq2 ∧
     AppsKDFDomain.rekeyPerm seq1 ≠ AppsKDFDomain.ratchetRoot c ∧
     AppsKDFDomain.rekeyWrap seq1 ≠ AppsKDFDomain.ratchetRoot c ∧
+    AppsKDFDomain.rekeyChain seq1 ≠ AppsKDFDomain.ratchetRoot c ∧
     AppsKDFDomain.rekeyPerm seq1 ≠ AppsKDFDomain.prkSubset mask c ∧
     AppsKDFDomain.rekeyPerm seq1 ≠ AppsKDFDomain.slotShare s sub c ∧
-    AppsKDFDomain.rekeyPerm seq1 ≠ AppsKDFDomain.cfgFrag f c := by
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    AppsKDFDomain.rekeyPerm seq1 ≠ AppsKDFDomain.cfgFrag f c ∧
+    AppsKDFDomain.rekeyPerm seq1 ≠ AppsKDFDomain.cfgMac c ∧
+    AppsKDFDomain.rekeyWrap seq1 ≠ AppsKDFDomain.cfgMac c ∧
+    AppsKDFDomain.rekeyChain seq1 ≠ AppsKDFDomain.prkSubset mask c ∧
+    AppsKDFDomain.rekeyChain seq1 ≠ AppsKDFDomain.slotShare s sub c ∧
+    AppsKDFDomain.rekeyChain seq1 ≠ AppsKDFDomain.cfgFrag f c ∧
+    AppsKDFDomain.rekeyChain seq1 ≠ AppsKDFDomain.cfgMac c := by
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · intro h; injection h
   · intro h; injection h
+  · intro h; injection h
+  · intro h; nomatch h
+  · intro h; nomatch h
+  · intro h; nomatch h
+  · intro h; nomatch h
+  · intro h; nomatch h
+  · intro h; nomatch h
+  · intro h; nomatch h
+  · intro h; nomatch h
+  · intro h; nomatch h
   · intro h; nomatch h
   · intro h; nomatch h
   · intro h; nomatch h
@@ -601,55 +637,109 @@ def updateChannelFragPads {w : Nat} (padShare : Fin 3 → Fin 3 → BitVec w)
   fun f c => if c = u then wFrag f else padShare f c
 
 /--
-  Joint 3-Fragment Secrecy Bijection for `splitProfile3`:
-  For any unbroken channel `u : Fin 3`, any 3 plaintext fragments `plain : Fin 3 → BitVec w`,
-  any compromised channel pads `padShare`, and any 3 observed ciphertext fragments
-  `ct : Fin 3 → BitVec w`, there exists a unique 3-tuple of pads `wFrag : Fin 3 → BitVec w`
-  on channel `u` that simultaneously maps all 3 plaintext fragments to `ct`.
+  3-of-3 Configuration Confirmation Tag (`cfgTag` in `splitProfile3` / `joinProfile3`)
+  on 256-bit (`32`-byte) tags: computes `sh0 ⊕ sh1 ⊕ sh2` across the 3 channel shares
+  (`base = 0#256`).
+-/
+def evalCfgMac (macShare : Fin 3 → BitVec 256) : BitVec 256 :=
+  triKDFXorFold 0#256
+    (macShare ⟨0, by decide⟩)
+    (macShare ⟨1, by decide⟩)
+    (macShare ⟨2, by decide⟩)
+
+/--
+  Joint 3-Fragment Secrecy & 3-of-3 Confirmation Tag Bijection for `splitProfile3` / `joinProfile3`:
+  For any unbroken channel `u : Fin 3`:
+  1. Given any 3 plaintext fragments `plain : Fin 3 → BitVec w`, any compromised channel
+     pads `padShare`, and any 3 observed ciphertext fragments `ct : Fin 3 → BitVec w`,
+     there exists a unique 3-tuple of pads `wFrag : Fin 3 → BitVec w` on channel `u`
+     that simultaneously maps all 3 plaintext fragments to `ct`.
+  2. Given any compromised confirmation-tag shares `macShare : Fin 3 → BitVec 256` and
+     any target 256-bit tag `targetTag : BitVec 256`, there exists a unique 256-bit share
+     `wMac : BitVec 256` on channel `u` producing `targetTag`.
 -/
 theorem splitProfile3_joint_3fragment_bijection {w : Nat}
     (u : Fin 3)
     (plain : Fin 3 → BitVec w)
     (padShare : Fin 3 → Fin 3 → BitVec w)
-    (ct : Fin 3 → BitVec w) :
-    ∃ wFrag : Fin 3 → BitVec w,
+    (ct : Fin 3 → BitVec w)
+    (macShare : Fin 3 → BitVec 256)
+    (targetTag : BitVec 256) :
+    (∃ wFrag : Fin 3 → BitVec w,
       (∀ f : Fin 3, evalConfigFrag plain (updateChannelFragPads padShare u wFrag) f = ct f) ∧
       (∀ wFrag' : Fin 3 → BitVec w,
         (∀ f : Fin 3, evalConfigFrag plain (updateChannelFragPads padShare u wFrag') f = ct f) →
-        wFrag' = wFrag) := by
-  let wFrag : Fin 3 → BitVec w := fun f =>
-    match u.val with
-    | 0 => ct f ^^^ plain f ^^^ padShare f ⟨1, by decide⟩ ^^^ padShare f ⟨2, by decide⟩
-    | 1 => ct f ^^^ plain f ^^^ padShare f ⟨0, by decide⟩ ^^^ padShare f ⟨2, by decide⟩
-    | _ => ct f ^^^ plain f ^^^ padShare f ⟨0, by decide⟩ ^^^ padShare f ⟨1, by decide⟩
-  have hsurj : ∀ f : Fin 3, evalConfigFrag plain (updateChannelFragPads padShare u wFrag) f = ct f := by
-    intro f
+        wFrag' = wFrag)) ∧
+    (∃ wMac : BitVec 256,
+      evalCfgMac (fun c => if c = u then wMac else macShare c) = targetTag ∧
+      ∀ wMac' : BitVec 256,
+        evalCfgMac (fun c => if c = u then wMac' else macShare c) = targetTag →
+        wMac' = wMac) := by
+  constructor
+  · let wFrag : Fin 3 → BitVec w := fun f =>
+      match u.val with
+      | 0 => ct f ^^^ plain f ^^^ padShare f ⟨1, by decide⟩ ^^^ padShare f ⟨2, by decide⟩
+      | 1 => ct f ^^^ plain f ^^^ padShare f ⟨0, by decide⟩ ^^^ padShare f ⟨2, by decide⟩
+      | _ => ct f ^^^ plain f ^^^ padShare f ⟨0, by decide⟩ ^^^ padShare f ⟨1, by decide⟩
+    have hsurj : ∀ f : Fin 3, evalConfigFrag plain (updateChannelFragPads padShare u wFrag) f = ct f := by
+      intro f
+      rcases fin3_cases u with rfl | rfl | rfl
+      · unfold evalConfigFrag updateChannelFragPads wFrag
+        simp
+        exact triKDFXorFold_surjective_ch0 (plain f) (padShare f ⟨1, by decide⟩) (padShare f ⟨2, by decide⟩) (ct f)
+      · unfold evalConfigFrag updateChannelFragPads wFrag
+        simp
+        exact triKDFXorFold_surjective_ch1 (plain f) (padShare f ⟨0, by decide⟩) (padShare f ⟨2, by decide⟩) (ct f)
+      · unfold evalConfigFrag updateChannelFragPads wFrag
+        simp
+        exact triKDFXorFold_surjective_ch2 (plain f) (padShare f ⟨0, by decide⟩) (padShare f ⟨1, by decide⟩) (ct f)
+    refine ⟨wFrag, hsurj, ?_⟩
+    intro wFrag' hw'
+    funext f
+    have hf := hw' f
+    have hf0 := hsurj f
+    have hboth := hf.trans hf0.symm
     rcases fin3_cases u with rfl | rfl | rfl
-    · unfold evalConfigFrag updateChannelFragPads wFrag
-      simp
-      exact triKDFXorFold_surjective_ch0 (plain f) (padShare f ⟨1, by decide⟩) (padShare f ⟨2, by decide⟩) (ct f)
-    · unfold evalConfigFrag updateChannelFragPads wFrag
-      simp
-      exact triKDFXorFold_surjective_ch1 (plain f) (padShare f ⟨0, by decide⟩) (padShare f ⟨2, by decide⟩) (ct f)
-    · unfold evalConfigFrag updateChannelFragPads wFrag
-      simp
-      exact triKDFXorFold_surjective_ch2 (plain f) (padShare f ⟨0, by decide⟩) (padShare f ⟨1, by decide⟩) (ct f)
-  refine ⟨wFrag, hsurj, ?_⟩
-  intro wFrag' hw'
-  funext f
-  have hf := hw' f
-  have hf0 := hsurj f
-  have hboth := hf.trans hf0.symm
-  rcases fin3_cases u with rfl | rfl | rfl
-  · unfold evalConfigFrag updateChannelFragPads at hboth
-    simp at hboth
-    exact triKDFXorFold_injective_ch0 (plain f) (padShare f ⟨1, by decide⟩) (padShare f ⟨2, by decide⟩) (wFrag' f) (wFrag f) hboth
-  · unfold evalConfigFrag updateChannelFragPads at hboth
-    simp at hboth
-    exact triKDFXorFold_injective_ch1 (plain f) (padShare f ⟨0, by decide⟩) (padShare f ⟨2, by decide⟩) (wFrag' f) (wFrag f) hboth
-  · unfold evalConfigFrag updateChannelFragPads at hboth
-    simp at hboth
-    exact triKDFXorFold_injective_ch2 (plain f) (padShare f ⟨0, by decide⟩) (padShare f ⟨1, by decide⟩) (wFrag' f) (wFrag f) hboth
+    · unfold evalConfigFrag updateChannelFragPads at hboth
+      simp at hboth
+      exact triKDFXorFold_injective_ch0 (plain f) (padShare f ⟨1, by decide⟩) (padShare f ⟨2, by decide⟩) (wFrag' f) (wFrag f) hboth
+    · unfold evalConfigFrag updateChannelFragPads at hboth
+      simp at hboth
+      exact triKDFXorFold_injective_ch1 (plain f) (padShare f ⟨0, by decide⟩) (padShare f ⟨2, by decide⟩) (wFrag' f) (wFrag f) hboth
+    · unfold evalConfigFrag updateChannelFragPads at hboth
+      simp at hboth
+      exact triKDFXorFold_injective_ch2 (plain f) (padShare f ⟨0, by decide⟩) (padShare f ⟨1, by decide⟩) (wFrag' f) (wFrag f) hboth
+  · rcases fin3_cases u with rfl | rfl | rfl
+    · have hsurj : evalCfgMac (fun c => if c = ⟨0, by decide⟩ then targetTag ^^^ 0#256 ^^^ macShare ⟨1, by decide⟩ ^^^ macShare ⟨2, by decide⟩ else macShare c) = targetTag := by
+        unfold evalCfgMac
+        simpa using triKDFXorFold_surjective_ch0 0#256 (macShare ⟨1, by decide⟩) (macShare ⟨2, by decide⟩) targetTag
+      refine ⟨targetTag ^^^ 0#256 ^^^ macShare ⟨1, by decide⟩ ^^^ macShare ⟨2, by decide⟩, hsurj, ?_⟩
+      intro wMac' hw'
+      have h1 : triKDFXorFold 0#256 wMac' (macShare ⟨1, by decide⟩) (macShare ⟨2, by decide⟩) = targetTag := by
+        unfold evalCfgMac at hw'
+        simpa using hw'
+      have hboth := h1.trans (triKDFXorFold_surjective_ch0 0#256 (macShare ⟨1, by decide⟩) (macShare ⟨2, by decide⟩) targetTag).symm
+      exact triKDFXorFold_injective_ch0 0#256 (macShare ⟨1, by decide⟩) (macShare ⟨2, by decide⟩) wMac' (targetTag ^^^ 0#256 ^^^ macShare ⟨1, by decide⟩ ^^^ macShare ⟨2, by decide⟩) hboth
+    · have hsurj : evalCfgMac (fun c => if c = ⟨1, by decide⟩ then targetTag ^^^ 0#256 ^^^ macShare ⟨0, by decide⟩ ^^^ macShare ⟨2, by decide⟩ else macShare c) = targetTag := by
+        unfold evalCfgMac
+        simpa using triKDFXorFold_surjective_ch1 0#256 (macShare ⟨0, by decide⟩) (macShare ⟨2, by decide⟩) targetTag
+      refine ⟨targetTag ^^^ 0#256 ^^^ macShare ⟨0, by decide⟩ ^^^ macShare ⟨2, by decide⟩, hsurj, ?_⟩
+      intro wMac' hw'
+      have h1 : triKDFXorFold 0#256 (macShare ⟨0, by decide⟩) wMac' (macShare ⟨2, by decide⟩) = targetTag := by
+        unfold evalCfgMac at hw'
+        simpa using hw'
+      have hboth := h1.trans (triKDFXorFold_surjective_ch1 0#256 (macShare ⟨0, by decide⟩) (macShare ⟨2, by decide⟩) targetTag).symm
+      exact triKDFXorFold_injective_ch1 0#256 (macShare ⟨0, by decide⟩) (macShare ⟨2, by decide⟩) wMac' (targetTag ^^^ 0#256 ^^^ macShare ⟨0, by decide⟩ ^^^ macShare ⟨2, by decide⟩) hboth
+    · have hsurj : evalCfgMac (fun c => if c = ⟨2, by decide⟩ then targetTag ^^^ 0#256 ^^^ macShare ⟨0, by decide⟩ ^^^ macShare ⟨1, by decide⟩ else macShare c) = targetTag := by
+        unfold evalCfgMac
+        simpa using triKDFXorFold_surjective_ch2 0#256 (macShare ⟨0, by decide⟩) (macShare ⟨1, by decide⟩) targetTag
+      refine ⟨targetTag ^^^ 0#256 ^^^ macShare ⟨0, by decide⟩ ^^^ macShare ⟨1, by decide⟩, hsurj, ?_⟩
+      intro wMac' hw'
+      have h1 : triKDFXorFold 0#256 (macShare ⟨0, by decide⟩) (macShare ⟨1, by decide⟩) wMac' = targetTag := by
+        unfold evalCfgMac at hw'
+        simpa using hw'
+      have hboth := h1.trans (triKDFXorFold_surjective_ch2 0#256 (macShare ⟨0, by decide⟩) (macShare ⟨1, by decide⟩) targetTag).symm
+      exact triKDFXorFold_injective_ch2 0#256 (macShare ⟨0, by decide⟩) (macShare ⟨1, by decide⟩) wMac' (targetTag ^^^ 0#256 ^^^ macShare ⟨0, by decide⟩ ^^^ macShare ⟨1, by decide⟩) hboth
 
 /--
   Downgrade-Safe Application Schema Clamping (`min(appVer_A, appVer_B)`):

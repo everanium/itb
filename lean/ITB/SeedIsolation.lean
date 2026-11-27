@@ -208,9 +208,23 @@ theorem eight_seed_minimality (k : Nat) (hk : k ≤ 7) (f : Domain8 → Fin k) :
 
 /--
   Attack-surface observability predicate on `Domain8` (Proof 3a Part 1):
-  `N` (CCA bit-flip oracle under MAC + Reveal) and `S1, S2, S3` (cache side-channel)
-  have documented observable surfaces; `L` and `D1, D2, D3` execute in constant-time
-  registers/tables with zero software-observable side-channel.
+  `isObservable = true` denotes externally bindable observability over unauthenticated
+  wire inputs or the public `main_nonce`: `N` (CCA bit-flip oracle under `MAC + Reveal`)
+  and `S1, S2, S3` (outer pixel-decoding pass keyed by the public `main_nonce`).
+  `D1, D2, D3` execute in register/single-cacheline arithmetic with zero externally
+  bindable side-channel, while `L` (`lockSeed`) satisfies `isObservable .L = false`
+  for two independent cryptographic reasons:
+  1. In `MAC Authenticated` mode (`Verify-before-COBS`), `lockSeed` (`L`) — covering
+     both Rank Barrier unranking (`0x03`/`0x04`) and Layer II inverse slot
+     desynchronization (`invLaneDesync`, `0x06`) — sits behind the MAC verification
+     gate over the region-decoded lanes (evaluated strictly from `(N, D1, D2, D3,
+     S1, S2, S3)` and `MACKey` without `L`), so forged ciphertexts never invoke `L`.
+  2. Even for Layer II (`0x06`, whose contiguous sub-lane copies shift slots in
+     memory), the schedule derivation on `lockSeed` (`0x04` / `0x06`) is keyed not by
+     the public `main_nonce`, but by the hidden one-time `interlock_nonce` recovered
+     only after decoding all `P` container pixels through the 7 pixel-layer seeds
+     `(N, D1, D2, D3, S1, S2, S3)` and COBS deframing, yielding zero externally
+     bindable inputs to `lockSeed`.
 -/
 def isObservable : Domain8 → Bool
   | .N | .S1 | .S2 | .S3 => true

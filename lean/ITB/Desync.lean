@@ -685,9 +685,18 @@ theorem desync_preserves_noiseCounter_injective
 /--
   Preservation of Proof 3a (`desync_preserves_seed_isolation`):
   Layer I (`subregionAddr` driven exclusively by `startSeed_r` in domains `.S1, .S2, .S3`,
-  where `isObservable = true`) and Layer II (`laneSlotShift` driven exclusively by `lockSeed`
-  in domain `.L`, where `isObservable = false`) introduce zero cross-domain seed sharing,
-  preserving `eight_seed_minimality` and the exact `32 / 12 / 12` leakage-class partition.
+  where `isObservable = true` under the public `main_nonce`) and Layer II (`laneSlotShift`
+  driven exclusively by `lockSeed` in domain `.L`, where `isObservable = false`) introduce
+  zero cross-domain seed sharing, preserving `eight_seed_minimality` and the exact
+  `32 / 12 / 12` leakage-class partition. Domain `.L` retains `isObservable .L = false`
+  for two independent cryptographic reasons: (1) in `MAC Authenticated` mode
+  (`Verify-before-COBS`), `invLaneDesync` sits behind the MAC verification gate over the
+  region-decoded lanes (which uses `(N, D1, D2, D3, S1, S2, S3)` and `MACKey` without `L`),
+  so forged ciphertexts never reach `lockSeed`; and (2) even for Layer II (`0x06`) slot
+  shifts in memory, the derivation on `lockSeed` (`0x04` / `0x06`) is keyed not by the
+  public `main_nonce`, but by the hidden one-time `interlock_nonce` recovered only after
+  decoding all `P` container pixels through the 7 pixel-layer seeds
+  `(N, D1, D2, D3, S1, S2, S3)` and COBS deframing.
 -/
 theorem desync_preserves_seed_isolation :
     isObservable .S1 = true ∧

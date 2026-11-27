@@ -59,15 +59,15 @@ func XORParallelAt(name string, key, nonce []byte, base int, dst, src []byte) er
 
 - **`Keystream`** is the outer cipher's CTR-mode keystream interface, aliased directly from `ctr.Keystream`. The contract matches `crypto/cipher.Stream`: `XORKeyStream(dst, src)` XORs one keystream segment over `src` into `dst` and advances the internal counter.
 - **`CipherNames`** enumerates the outer cipher palette in canonical primitive order as a snapshot of the shipped `hashes.Registry` names (`hashes.KeystreamNames()`); it is the iteration source for cross-cipher tests and benchmarks. Each entry is named by a `hashes.Cipher*` constant; `hashes.CipherAES128CTR = "aescmac"` is the registry alias for AES-128 in CTR mode (identical to the underlying cipher behind the `aescmac` MAC entry).
-- **`ParallelThreshold`** is the byte cap below which `Wrap` / `Unwrap` / `WrapInPlace` / `UnwrapInPlace` keep the body XOR in the caller's goroutine. Above it the work is split across up to `min(32, GOMAXPROCS, chunks)` worker goroutines, each seeking its own keystream to the chunk's byte offset via `ctr.NewAt`. Exposed as a read-only constant for out-of-package tests and benchmarks.
+- **`ParallelThreshold`** (`256 KiB`) is the buffer size below which `Wrap` / `Unwrap` / `WrapInPlace` / `UnwrapInPlace`, `XORParallel` / `XORParallelAt`, and individual `NewWrapWriter.Write` / `NewUnwrapReader.Read` calls keep the keystream XOR in the caller's goroutine. At or above `ParallelThreshold` (`len >= ParallelThreshold`), the work is split across up to `min(32, GOMAXPROCS)` worker goroutines, each seeking its own keystream to its slice's byte offset via `ctr.NewAt`. Exposed as a read-only constant for out-of-package tests and benchmarks.
 - **`KeySize` / `NonceSize`** report the per-cipher key and nonce widths in bytes; both delegate to [`ctr`](../ctr/), which is the single source of truth for the registered cipher sizing.
 - **`GenerateKey`** draws a fresh CSPRNG outer cipher key of the appropriate width. Use this in self-test contexts or when no out-of-band key material is available.
-- **`DeriveKey`** derives a deterministic outer cipher key from a high-entropy master (`32 <= len(master) <= MaxMasterKeySize`) via [`kdf.Derive`](../kdf/) under a wrapper-specific label. Use this when the application already holds a shared secret (an ML-KEM encapsulated key, an HKDF output, an out-of-band negotiated key) and wants the outer cipher key to be reproducible without re-distribution. The caller wipes the master after this returns.
+- **`DeriveKey`** derives a deterministic outer cipher key from a high-entropy master (`32 <= len(master) <= MaxMasterKeySize`) by calling `kdf.Derive(name, master, name, KeySize(name))` (see [`kdf`](../kdf/)). Because the cipher `name` itself serves as the KDF domain-separation label, callers sharing the same `master` across direct `kdf.Derive` calls must not reuse a bare cipher `name` as an application label. Inside `kdf.Derive`, 128-bit ciphers (`"aescmac"`, `"siphash24"`) consume `master[:16]` and all 256- and 512-bit ciphers consume `master[:32]` (with `"areion512"` stretching `master[:32]` to 64 bytes). Use this when the application already holds a shared secret (an ML-KEM encapsulated key, an HKDF output, an out-of-band negotiated key) and wants the outer cipher key to be reproducible without re-distribution. The caller wipes the master after this returns.
 - **`MakeKeystream` / `MakeKeystreamAt`** construct a `Keystream` ready to XOR data. `MakeKeystreamAt(name, key, nonce, offset)` is the byte-offset positioned variant; it returns a keystream as if `MakeKeystream` had been called and then advanced by `offset` bytes — used by the worker pool to split one logical keystream into disjoint parallel chunks that re-concatenate byte-identical to a serial pass.
 - **`Wrap` / `Unwrap`** are the blob (Single Message) round-trip pair. `Wrap` allocates a fresh `nonce(NonceSize(name)) || keystream-XOR(blob)` wire, drawing the nonce from `crypto/rand`. `Unwrap` reverses it.
 - **`WrapInPlace` / `UnwrapInPlace`** are the zero-body-allocation counterparts. `WrapInPlace` mutates `blob` to its ciphertext form in place and returns the per-stream nonce; the caller emits `nonce` followed by `blob` to the wire without allocating an intermediate wire buffer. `UnwrapInPlace` strips the leading nonce from `wire`, XOR-decrypts the body in place, and returns an aliased slice `wire[NonceSize(name):]` to the decrypted data.
-- **`NewWrapWriter` / `NewUnwrapReader`** are the streaming wrap surface. The wrap writer emits the nonce on its first underlying `dst.Write` then XORs every subsequent byte through the keystream; the unwrap reader is symmetric. One stream session uses one nonce and the keystream counter advances monotonically across every byte written.
-- **`FinishWrapStream`** flushes and finalises a stream created with `NewWrapWriter`, ensuring any pending nonce is emitted even if zero payload bytes were written.
+- **`NewWrapWriter` / `NewUnwrapReader`** are the streaming wrap surface. The wrap writer coalesces `nonce || keystream-XOR(first_chunk)` into its first **non-empty** `Write` as a single atomic `dst.Write` call, then XORs every subsequent write through the keystream (empty writes are no-ops, and if zero bytes are written and `FinishWrapStream` is not called, nothing reaches `dst`, which `NewUnwrapReader` symmetrically decodes as an empty stream). One stream session uses one nonce and the keystream counter advances monotonically across every byte written. `NewUnwrapReader` zeroizes its internal key copy, nonce, and keystream state automatically on `io.EOF` (or read error) and implements `io.Closer` for early-abort cleanup.
+- **`FinishWrapStream`** flushes and finalises a stream created with `NewWrapWriter`, emitting any pending nonce when zero payload bytes were written and calling `Close()` on the underlying writer to zeroize its internal key copy, nonce, and keystream state while wiping and returning its scratch buffer to the pool.
 - **`XORParallel` / `XORParallelAt`** are the low-level parallel XOR helpers exposed for callers that want the wrap-style worker-pool split without the surrounding wrap envelope. `XORParallelAt(name, key, nonce, base, dst, src)` accepts a `base` byte offset so the leading chunk is positioned at the caller's intended starting point and the result stays byte-identical to a serial XOR over the same `(key, nonce, base, src)` tuple.
 
 ### Wire format
@@ -82,17 +82,17 @@ The keystream for each outer cipher is built by the [`ctr`](../ctr/) package,
 which is the single source of truth for cipher key / nonce sizes. The wrapper
 delegates `MakeKeystream` / `KeySize` / `NonceSize` to it.
 
-| Cipher | Key | Nonce |
-|---|---|---|
-| Areion-SoEM-256 | 32 B | 16 B |
-| Areion-SoEM-512 | 64 B | 16 B |
-| BLAKE2b-256 | 32 B | 16 B |
-| BLAKE2b-512 | 32 B | 16 B |
-| BLAKE2s | 32 B | 16 B |
-| BLAKE3 | 32 B | 16 B |
-| AES-128-CTR | 16 B | 16 B |
-| SipHash-2-4 in CTR mode | 16 B | 16 B |
-| ChaCha20 (RFC 8439) | 32 B | 12 B |
+| Cipher | Name | Key | Nonce |
+|---|---|---|---|
+| Areion-SoEM-256 | `"areion256"` | 32 B | 16 B |
+| Areion-SoEM-512 | `"areion512"` | 64 B | 16 B |
+| BLAKE2b-256 | `"blake2b256"` | 32 B | 16 B |
+| BLAKE2b-512 | `"blake2b512"` | 32 B | 16 B |
+| BLAKE2s | `"blake2s"` | 32 B | 16 B |
+| BLAKE3 | `"blake3"` | 32 B | 16 B |
+| AES-128-CTR | `"aescmac"` | 16 B | 16 B |
+| SipHash-2-4 in CTR mode | `"siphash24"` | 16 B | 16 B |
+| ChaCha20 (RFC 8439) | `"chacha20"` | 32 B | 12 B |
 
 **Per-stream length cap under ChaCha20 outer cipher — 256 GiB per `(key, nonce)`.** RFC 8439 fixes the ChaCha20 block counter at 32 bits, so one logical outer cipher stream under a single `(key, nonce)` covers at most `2^32 × 64 B = 256 GiB` before the counter would wrap. `ctr.NewAt` returns an explicit error at the first seek at or above that offset rather than silently reusing keystream. The impact of a hypothetical wrap is scoped to the outer format-deniability layer — inner ITB confidentiality is not carried by the outer cipher and stays intact regardless — but the wrapper still refuses the wrap because reused outer keystream weakens format deniability at the wire (an attacker XORing two wire positions exactly 256 GiB apart would cancel the outer whitener and expose the inner ITB-encrypted body pattern to traffic analysis, though not the plaintext). For streaming a single logical outer stream past this cap, choose an outer cipher whose counter is wider than 32 bits — **AES-128-CTR** uses a 128-bit big-endian counter and is practically unlimited for random nonces; SipHash-CTR and the PRF-counter ciphers (Areion, BLAKE2, BLAKE3) all use 64-bit counters.
 
@@ -133,7 +133,9 @@ encrypted, _ := sender.EncryptMessage(plaintext)
 
 // Fresh outer cipher key per test; in a real deployment derive from a
 // shared master via wrapper.DeriveKey(cipherName, master).
+cipherName := "chacha20"
 outerKey, _ := wrapper.GenerateKey(cipherName)
+defer clear(outerKey)
 wire, _ := wrapper.Wrap(cipherName, outerKey, encrypted)
 
 // Receiver — the blob carries the resolved recipe; no profile
@@ -150,6 +152,7 @@ pt, _ := receiver.DecryptMessage(recovered)
 ```go
 import (
     "bytes"
+    "io"
 
     "github.com/everanium/itb/triple"
     "github.com/everanium/itb/wrapper"
@@ -165,11 +168,14 @@ defer sender.Close()
 // The receiver reopens with:
 //   receiver, _ := triple.LoadF("session.json")
 
+cipherName := "chacha20"
 outerKey, _ := wrapper.GenerateKey(cipherName)
+defer clear(outerKey)
 
 var wireBuf bytes.Buffer
 wrapWriter, _ := wrapper.NewWrapWriter(cipherName, outerKey, &wireBuf)
 _ = sender.EncryptStream(plaintextReader, wrapWriter)
+_ = wrapper.FinishWrapStream(wrapWriter) // flushes empty-stream nonce and zeroizes writer state
 
 // Receiver — the blob carries the resolved recipe; no profile
 // registration and no Opts are needed on the receiving side.
@@ -177,6 +183,9 @@ receiver, _ := triple.Load(blob)
 defer receiver.Close()
 
 unwrapReader, _ := wrapper.NewUnwrapReader(cipherName, outerKey, bytes.NewReader(wireBuf.Bytes()))
+if c, ok := unwrapReader.(io.Closer); ok {
+    defer c.Close() // zeroizes reader state on early abort; idempotent after EOF
+}
 var dst bytes.Buffer
 _ = receiver.DecryptStream(unwrapReader, &dst)
 ```
